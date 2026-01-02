@@ -110,8 +110,8 @@ Entità da creare:
 - [x] Step 6: NextAuth.js configurazione
 - [x] Step 7: Layout base con sidebar
 - [x] Step 8: Protezione route
-- [ ] Step 9: GitHub repository
-- [ ] Step 10: Configurazione ambiente
+- [x] Step 9: GitHub repository
+- [x] Step 10: Configurazione ambiente
 
 ---
 
@@ -158,3 +158,16 @@ Entità da creare:
   - Redirect a /login per non autenticati
   - Controllo ruoli per /impostazioni (admin, manager only)
   - Matchers configurati correttamente
+- **Step 9 COMPLETATO**: Git Repository
+  - Repository git inizializzato
+  - Commit iniziale con tutti i file
+  - README.md con documentazione setup
+- **Step 10 COMPLETATO**: Configurazione ambiente
+  - .env.example aggiornato con tutte le variabili
+  - Documentazione setup locale nel README
+
+### TASK 001 COMPLETATO
+Setup MVP e autenticazione completati. Il sistema è pronto per lo sviluppo delle feature principali:
+- Chiusura Cassa
+- Prima Nota
+- Report
