@@ -21,7 +21,7 @@ const reports = [
     details: 'Analizza le performance rispetto all\'anno precedente',
     href: '/report/confronto-annuale',
     icon: TrendingUp,
-    available: false,
+    available: true,
   },
   {
     title: 'Riepilogo Mensile',
