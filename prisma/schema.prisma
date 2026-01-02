@@ -1,0 +1,403 @@
+// Schema Prisma - Sistema Gestionale Weiss Cafè
+// Modulo 1: Contabilità e Controllo di Gestione
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==================== UTENTI E AUTENTICAZIONE ====================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String    @map("password_hash")
+  firstName     String    @map("first_name")
+  lastName      String    @map("last_name")
+  role          Role      @relation(fields: [roleId], references: [id])
+  roleId        String    @map("role_id")
+  venue         Venue?    @relation(fields: [venueId], references: [id])
+  venueId       String?   @map("venue_id")
+  hourlyRate    Decimal?  @map("hourly_rate") @db.Decimal(10, 2)
+  isFixedStaff  Boolean   @default(false) @map("is_fixed_staff")
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  // Relazioni
+  submittedClosures   DailyClosure[] @relation("SubmittedBy")
+  validatedClosures   DailyClosure[] @relation("ValidatedBy")
+  journalEntries      JournalEntry[]
+  attendanceRecords   DailyAttendance[]
+
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique  // "admin", "manager", "staff"
+  description String?
+  isCustom    Boolean  @default(false) @map("is_custom")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  users       User[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  code        String   @unique  // "closure.create", "closure.validate", etc.
+  description String?
+  module      String   // "cash", "bank", "reports", "admin"
+
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  role         Role       @relation(fields: [roleId], references: [id])
+  roleId       String     @map("role_id")
+  permission   Permission @relation(fields: [permissionId], references: [id])
+  permissionId String     @map("permission_id")
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ==================== SEDI ====================
+
+model Venue {
+  id           String   @id @default(cuid())
+  name         String   // "Weiss Cafè", "Villa Varda", "Casette"
+  code         String   @unique  // "WEISS", "VV", "CAS"
+  address      String?
+  defaultFloat Decimal  @default(114.00) @map("default_float") @db.Decimal(10, 2)
+  vatRate      Decimal  @default(10.00) @map("vat_rate") @db.Decimal(5, 2)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  users            User[]
+  closures         DailyClosure[]
+  journalEntries   JournalEntry[]
+  stationTemplates CashStationTemplate[]
+  registerBalances RegisterBalance[]
+
+  @@map("venues")
+}
+
+model CashStationTemplate {
+  id       String  @id @default(cuid())
+  venue    Venue   @relation(fields: [venueId], references: [id])
+  venueId  String  @map("venue_id")
+  name     String  // "BAR", "CASSA 1", "TAVOLI", etc.
+  position Int     @default(0)
+  isActive Boolean @default(true) @map("is_active")
+
+  @@map("cash_station_templates")
+}
+
+// ==================== CHIUSURA CASSA ====================
+
+model DailyClosure {
+  id                  String   @id @default(cuid())
+  venue               Venue    @relation(fields: [venueId], references: [id])
+  venueId             String   @map("venue_id")
+  date                DateTime @db.Date
+
+  // Meteo (opzionale)
+  weatherMorning      String?  @map("weather_morning")
+  weatherAfternoon    String?  @map("weather_afternoon")
+  weatherEvening      String?  @map("weather_evening")
+
+  // Note
+  notes               String?  @db.Text
+
+  // Evento
+  isEvent             Boolean  @default(false) @map("is_event")
+  eventName           String?  @map("event_name")
+
+  // Workflow
+  status              ClosureStatus @default(DRAFT)
+  submittedBy         User?    @relation("SubmittedBy", fields: [submittedById], references: [id])
+  submittedById       String?  @map("submitted_by")
+  submittedAt         DateTime? @map("submitted_at")
+  validatedBy         User?    @relation("ValidatedBy", fields: [validatedById], references: [id])
+  validatedById       String?  @map("validated_by")
+  validatedAt         DateTime? @map("validated_at")
+  rejectionNotes      String?  @map("rejection_notes") @db.Text
+
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  // Relazioni
+  stations            CashStation[]
+  partials            HourlyPartial[]
+  expenses            DailyExpense[]
+  attendance          DailyAttendance[]
+  journalEntries      JournalEntry[]
+
+  @@unique([venueId, date])
+  @@map("daily_closures")
+}
+
+enum ClosureStatus {
+  DRAFT
+  SUBMITTED
+  VALIDATED
+  REJECTED
+}
+
+model CashStation {
+  id              String       @id @default(cuid())
+  closure         DailyClosure @relation(fields: [closureId], references: [id], onDelete: Cascade)
+  closureId       String       @map("closure_id")
+  name            String       // "BAR", "CASSA 1", etc.
+  position        Int          @default(0)
+
+  // Incassi
+  receiptAmount   Decimal      @default(0) @map("receipt_amount") @db.Decimal(10, 2)    // Corrispettivo
+  receiptVat      Decimal      @default(0) @map("receipt_vat") @db.Decimal(10, 2)       // IVA scorporata
+  invoiceAmount   Decimal      @default(0) @map("invoice_amount") @db.Decimal(10, 2)   // Fatture
+  invoiceVat      Decimal      @default(0) @map("invoice_vat") @db.Decimal(10, 2)
+  suspendedAmount Decimal      @default(0) @map("suspended_amount") @db.Decimal(10, 2) // Sospesi
+  cashAmount      Decimal      @default(0) @map("cash_amount") @db.Decimal(10, 2)      // Contanti
+  posAmount       Decimal      @default(0) @map("pos_amount") @db.Decimal(10, 2)       // POS
+
+  // Calcolati (possono essere stored per performance)
+  totalAmount     Decimal      @default(0) @map("total_amount") @db.Decimal(10, 2)     // cash + pos
+  nonReceiptAmount Decimal     @default(0) @map("non_receipt_amount") @db.Decimal(10, 2) // totale - corrispettivo
+
+  // Fondo cassa
+  floatAmount     Decimal      @default(114.00) @map("float_amount") @db.Decimal(10, 2)
+
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  cashCount       CashCount?
+
+  @@map("cash_stations")
+}
+
+model CashCount {
+  id              String      @id @default(cuid())
+  station         CashStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  stationId       String      @unique @map("station_id")
+
+  // Banconote
+  bills500        Int         @default(0) @map("bills_500")
+  bills200        Int         @default(0) @map("bills_200")
+  bills100        Int         @default(0) @map("bills_100")
+  bills50         Int         @default(0) @map("bills_50")
+  bills20         Int         @default(0) @map("bills_20")
+  bills10         Int         @default(0) @map("bills_10")
+  bills5          Int         @default(0) @map("bills_5")
+
+  // Monete
+  coins2          Int         @default(0) @map("coins_2")
+  coins1          Int         @default(0) @map("coins_1")
+  coins050        Int         @default(0) @map("coins_050")
+  coins020        Int         @default(0) @map("coins_020")
+  coins010        Int         @default(0) @map("coins_010")
+  coins005        Int         @default(0) @map("coins_005")
+  coins002        Int         @default(0) @map("coins_002")
+  coins001        Int         @default(0) @map("coins_001")
+
+  // Totali calcolati
+  totalCounted    Decimal     @default(0) @map("total_counted") @db.Decimal(10, 2)
+  expectedTotal   Decimal     @default(0) @map("expected_total") @db.Decimal(10, 2)
+  difference      Decimal     @default(0) @db.Decimal(10, 2)
+
+  createdAt       DateTime    @default(now()) @map("created_at")
+
+  @@map("cash_counts")
+}
+
+model HourlyPartial {
+  id                String       @id @default(cuid())
+  closure           DailyClosure @relation(fields: [closureId], references: [id], onDelete: Cascade)
+  closureId         String       @map("closure_id")
+  timeSlot          String       // "16:00", "21:00"
+
+  receiptProgressive Decimal     @default(0) @map("receipt_progressive") @db.Decimal(10, 2)
+  posProgressive     Decimal     @default(0) @map("pos_progressive") @db.Decimal(10, 2)
+  coffeeCounter      Int?        @map("coffee_counter")
+  coffeeDelta        Int?        @map("coffee_delta")
+  weather            String?
+
+  createdAt         DateTime     @default(now()) @map("created_at")
+
+  @@unique([closureId, timeSlot])
+  @@map("hourly_partials")
+}
+
+// ==================== USCITE E SPESE ====================
+
+model DailyExpense {
+  id              String       @id @default(cuid())
+  closure         DailyClosure @relation(fields: [closureId], references: [id], onDelete: Cascade)
+  closureId       String       @map("closure_id")
+
+  payee           String       // Beneficiario
+  description     String?      // Causale
+  documentRef     String?      @map("document_ref")
+  documentType    DocumentType @default(NONE) @map("document_type")
+  amount          Decimal      @db.Decimal(10, 2)
+  vatAmount       Decimal?     @map("vat_amount") @db.Decimal(10, 2)
+
+  account         Account?     @relation(fields: [accountId], references: [id])
+  accountId       String?      @map("account_id")
+
+  isPaid          Boolean      @default(true) @map("is_paid")
+  paidBy          String?      @map("paid_by")  // Chi ha anticipato (es. "LUCA")
+
+  position        Int          @default(0)
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  @@map("daily_expenses")
+}
+
+enum DocumentType {
+  FATTURA
+  DDT
+  RICEVUTA
+  PERSONALE
+  NONE
+}
+
+// ==================== PRESENZE ====================
+
+model DailyAttendance {
+  id          String       @id @default(cuid())
+  closure     DailyClosure @relation(fields: [closureId], references: [id], onDelete: Cascade)
+  closureId   String       @map("closure_id")
+  user        User         @relation(fields: [userId], references: [id])
+  userId      String       @map("user_id")
+
+  shift       Shift
+  hours       Decimal?     @db.Decimal(4, 1)  // NULL se codice
+  statusCode  String?      @map("status_code") // "FE", "R", "Z", "C"
+  hourlyRate  Decimal?     @map("hourly_rate") @db.Decimal(10, 2)
+  totalPay    Decimal?     @map("total_pay") @db.Decimal(10, 2)
+  isPaid      Boolean      @default(false) @map("is_paid")
+  notes       String?
+
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  @@unique([closureId, userId, shift])
+  @@map("daily_attendance")
+}
+
+enum Shift {
+  MORNING
+  EVENING
+}
+
+// ==================== PIANO DEI CONTI ====================
+
+model Account {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  name        String
+  type        AccountType
+  category    String?
+  parent      Account?  @relation("AccountHierarchy", fields: [parentId], references: [id])
+  parentId    String?   @map("parent_id")
+  children    Account[] @relation("AccountHierarchy")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  expenses           DailyExpense[]
+  journalEntries     JournalEntry[]
+  counterpartEntries JournalEntry[] @relation("Counterpart")
+  suppliers          Supplier[]
+
+  @@map("accounts")
+}
+
+enum AccountType {
+  RICAVO
+  COSTO
+  ATTIVO
+  PASSIVO
+}
+
+// ==================== PRIMA NOTA ====================
+
+model JournalEntry {
+  id              String       @id @default(cuid())
+  venue           Venue        @relation(fields: [venueId], references: [id])
+  venueId         String       @map("venue_id")
+  date            DateTime     @db.Date
+
+  registerType    RegisterType @map("register_type")
+  documentRef     String?      @map("document_ref")
+  documentType    String?      @map("document_type")
+  description     String
+
+  debitAmount     Decimal?     @map("debit_amount") @db.Decimal(10, 2)   // Dare
+  creditAmount    Decimal?     @map("credit_amount") @db.Decimal(10, 2)  // Avere
+  vatAmount       Decimal?     @map("vat_amount") @db.Decimal(10, 2)
+
+  account         Account?     @relation(fields: [accountId], references: [id])
+  accountId       String?      @map("account_id")
+  counterpart     Account?     @relation("Counterpart", fields: [counterpartId], references: [id])
+  counterpartId   String?      @map("counterpart_id")
+
+  // Collegamenti
+  closure         DailyClosure? @relation(fields: [closureId], references: [id])
+  closureId       String?      @map("closure_id")
+
+  // Saldo progressivo (calcolato)
+  runningBalance  Decimal?     @map("running_balance") @db.Decimal(12, 2)
+
+  createdBy       User?        @relation(fields: [createdById], references: [id])
+  createdById     String?      @map("created_by")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  @@map("journal_entries")
+}
+
+enum RegisterType {
+  CASH
+  BANK
+}
+
+// ==================== SALDI ====================
+
+model RegisterBalance {
+  id             String       @id @default(cuid())
+  venue          Venue        @relation(fields: [venueId], references: [id])
+  venueId        String       @map("venue_id")
+  registerType   RegisterType @map("register_type")
+  date           DateTime     @db.Date
+
+  openingBalance Decimal      @map("opening_balance") @db.Decimal(12, 2)
+  totalDebits    Decimal      @map("total_debits") @db.Decimal(12, 2)
+  totalCredits   Decimal      @map("total_credits") @db.Decimal(12, 2)
+  closingBalance Decimal      @map("closing_balance") @db.Decimal(12, 2)
+
+  @@unique([venueId, registerType, date])
+  @@map("register_balances")
+}
+
+// ==================== FORNITORI (per autocompletamento) ====================
+
+model Supplier {
+  id              String    @id @default(cuid())
+  name            String
+  vatNumber       String?   @map("vat_number")
+  address         String?
+  defaultAccount  Account?  @relation(fields: [defaultAccountId], references: [id])
+  defaultAccountId String?  @map("default_account_id")
+  isActive        Boolean   @default(true) @map("is_active")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@map("suppliers")
+}
