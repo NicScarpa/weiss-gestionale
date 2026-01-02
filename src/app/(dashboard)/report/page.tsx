@@ -37,7 +37,7 @@ const reports = [
     details: 'Monitora le spese per categoria e fornitore',
     href: '/report/analisi-costi',
     icon: PieChart,
-    available: false,
+    available: true,
   },
 ]
 
