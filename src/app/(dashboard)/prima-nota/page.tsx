@@ -1,58 +1,37 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { auth } from '@/lib/auth'
+import { redirect } from 'next/navigation'
+import { prisma } from '@/lib/prisma'
+import { PrimaNotaClient } from './PrimaNotaClient'
 
 export const metadata = {
   title: 'Prima Nota'
 }
 
-export default function PrimaNotaPage() {
+export default async function PrimaNotaPage() {
+  const session = await auth()
+
+  if (!session?.user) {
+    redirect('/login')
+  }
+
+  // Fetch accounts for the form
+  const accounts = await prisma.account.findMany({
+    where: {
+      isActive: true,
+    },
+    select: {
+      id: true,
+      code: true,
+      name: true,
+    },
+    orderBy: { code: 'asc' },
+  })
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Prima Nota</h1>
-        <p className="text-muted-foreground">
-          Registro dei movimenti contabili
-        </p>
-      </div>
-
-      <Tabs defaultValue="cassa" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="cassa">Prima Nota Cassa</TabsTrigger>
-          <TabsTrigger value="banca">Prima Nota Banca</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="cassa">
-          <Card>
-            <CardHeader>
-              <CardTitle>Movimenti Cassa</CardTitle>
-              <CardDescription>
-                Registro dei movimenti di cassa
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-center h-64 text-muted-foreground">
-                Nessun movimento di cassa registrato
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="banca">
-          <Card>
-            <CardHeader>
-              <CardTitle>Movimenti Banca</CardTitle>
-              <CardDescription>
-                Registro dei movimenti bancari
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-center h-64 text-muted-foreground">
-                Nessun movimento bancario registrato
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-    </div>
+    <PrimaNotaClient
+      venueId={session.user.venueId || undefined}
+      isAdmin={session.user.role === 'admin'}
+      accounts={accounts}
+    />
   )
 }

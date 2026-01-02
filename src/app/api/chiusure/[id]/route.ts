@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { z } from 'zod'
+
+// Schema per aggiornamento chiusura
+const updateClosureSchema = z.object({
+  isEvent: z.boolean().optional(),
+  eventName: z.string().optional(),
+  weatherMorning: z.string().optional(),
+  weatherAfternoon: z.string().optional(),
+  weatherEvening: z.string().optional(),
+  notes: z.string().optional(),
+})
 
 // GET /api/chiusure/[id] - Dettaglio singola chiusura
 export async function GET(
@@ -229,6 +240,149 @@ export async function GET(
     console.error('Errore GET /api/chiusure/[id]:', error)
     return NextResponse.json(
       { error: 'Errore nel recupero della chiusura' },
+      { status: 500 }
+    )
+  }
+}
+
+// PUT /api/chiusure/[id] - Aggiorna chiusura (solo DRAFT)
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth()
+
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
+    }
+
+    const { id } = await params
+    const body = await request.json()
+    const validatedData = updateClosureSchema.parse(body)
+
+    // Verifica che la chiusura esista
+    const existingClosure = await prisma.dailyClosure.findUnique({
+      where: { id },
+      select: { id: true, status: true, venueId: true },
+    })
+
+    if (!existingClosure) {
+      return NextResponse.json(
+        { error: 'Chiusura non trovata' },
+        { status: 404 }
+      )
+    }
+
+    // Verifica accesso
+    if (
+      session.user.role !== 'admin' &&
+      session.user.venueId !== existingClosure.venueId
+    ) {
+      return NextResponse.json(
+        { error: 'Non autorizzato' },
+        { status: 403 }
+      )
+    }
+
+    // Solo DRAFT può essere modificata
+    if (existingClosure.status !== 'DRAFT') {
+      return NextResponse.json(
+        { error: 'Solo le chiusure in bozza possono essere modificate' },
+        { status: 400 }
+      )
+    }
+
+    // Aggiorna
+    const updated = await prisma.dailyClosure.update({
+      where: { id },
+      data: validatedData,
+      select: { id: true, updatedAt: true },
+    })
+
+    return NextResponse.json(updated)
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Dati non validi', details: error.issues },
+        { status: 400 }
+      )
+    }
+
+    console.error('Errore PUT /api/chiusure/[id]:', error)
+    return NextResponse.json(
+      { error: 'Errore nell\'aggiornamento della chiusura' },
+      { status: 500 }
+    )
+  }
+}
+
+// DELETE /api/chiusure/[id] - Elimina chiusura (solo DRAFT)
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth()
+
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
+    }
+
+    const { id } = await params
+
+    // Verifica che la chiusura esista
+    const existingClosure = await prisma.dailyClosure.findUnique({
+      where: { id },
+      select: { id: true, status: true, venueId: true },
+    })
+
+    if (!existingClosure) {
+      return NextResponse.json(
+        { error: 'Chiusura non trovata' },
+        { status: 404 }
+      )
+    }
+
+    // Verifica accesso (solo admin o manager della sede)
+    if (
+      session.user.role !== 'admin' &&
+      session.user.role !== 'manager'
+    ) {
+      return NextResponse.json(
+        { error: 'Solo admin e manager possono eliminare chiusure' },
+        { status: 403 }
+      )
+    }
+
+    if (
+      session.user.role === 'manager' &&
+      session.user.venueId !== existingClosure.venueId
+    ) {
+      return NextResponse.json(
+        { error: 'Non autorizzato per questa sede' },
+        { status: 403 }
+      )
+    }
+
+    // Solo DRAFT può essere eliminata
+    if (existingClosure.status !== 'DRAFT') {
+      return NextResponse.json(
+        { error: 'Solo le chiusure in bozza possono essere eliminate' },
+        { status: 400 }
+      )
+    }
+
+    // Elimina (cascade elimina anche stazioni, parziali, uscite, presenze)
+    await prisma.dailyClosure.delete({
+      where: { id },
+    })
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Errore DELETE /api/chiusure/[id]:', error)
+    return NextResponse.json(
+      { error: 'Errore nell\'eliminazione della chiusura' },
       { status: 500 }
     )
   }

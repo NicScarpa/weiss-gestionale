@@ -1,0 +1,358 @@
+'use client'
+
+import { useState } from 'react'
+import { format } from 'date-fns'
+import { it } from 'date-fns/locale'
+import {
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+  ArrowUpRight,
+  ArrowDownLeft,
+  Link as LinkIcon,
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
+import { formatCurrency } from '@/lib/constants'
+import type { JournalEntry } from '@/types/prima-nota'
+
+interface JournalEntryTableProps {
+  entries: JournalEntry[]
+  pagination?: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
+  summary?: {
+    totalDebits: number
+    totalCredits: number
+    netMovement: number
+  }
+  onPageChange?: (page: number) => void
+  onEdit?: (entry: JournalEntry) => void
+  onDelete?: (entry: JournalEntry) => void
+  isLoading?: boolean
+  showVenue?: boolean
+}
+
+export function JournalEntryTable({
+  entries,
+  pagination,
+  summary,
+  onPageChange,
+  onEdit,
+  onDelete,
+  isLoading = false,
+  showVenue = false,
+}: JournalEntryTableProps) {
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const handleDelete = async (entry: JournalEntry) => {
+    if (!onDelete) return
+
+    const confirmed = window.confirm(
+      `Eliminare il movimento "${entry.description}"?`
+    )
+    if (!confirmed) return
+
+    setDeletingId(entry.id)
+    try {
+      await onDelete(entry)
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  // Determina se il movimento è modificabile
+  const isEditable = (entry: JournalEntry) => !entry.closureId
+
+  // Colore badge per tipo registro
+  const getRegisterBadge = (registerType: string) => {
+    switch (registerType) {
+      case 'CASH':
+        return (
+          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+            Cassa
+          </Badge>
+        )
+      case 'BANK':
+        return (
+          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+            Banca
+          </Badge>
+        )
+      default:
+        return <Badge variant="outline">{registerType}</Badge>
+    }
+  }
+
+  // Formatta importo con colore
+  const formatAmount = (entry: JournalEntry) => {
+    const debit = entry.debitAmount || 0
+    const credit = entry.creditAmount || 0
+
+    if (debit > 0) {
+      return (
+        <span className="text-green-600 font-mono font-medium flex items-center gap-1">
+          <ArrowDownLeft className="h-3 w-3" />
+          +{formatCurrency(debit)}
+        </span>
+      )
+    }
+
+    if (credit > 0) {
+      return (
+        <span className="text-red-600 font-mono font-medium flex items-center gap-1">
+          <ArrowUpRight className="h-3 w-3" />
+          -{formatCurrency(credit)}
+        </span>
+      )
+    }
+
+    return <span className="text-muted-foreground font-mono">€0,00</span>
+  }
+
+  // Formatta saldo progressivo
+  const formatBalance = (balance?: number) => {
+    if (balance === undefined || balance === null) return '-'
+    return (
+      <span
+        className={cn(
+          'font-mono font-medium',
+          balance >= 0 ? 'text-foreground' : 'text-red-600'
+        )}
+      >
+        {formatCurrency(balance)}
+      </span>
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <div className="border rounded-lg">
+        <div className="p-8 text-center text-muted-foreground">
+          Caricamento movimenti...
+        </div>
+      </div>
+    )
+  }
+
+  if (entries.length === 0) {
+    return (
+      <div className="border rounded-lg">
+        <div className="p-8 text-center text-muted-foreground">
+          Nessun movimento trovato
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Tabella */}
+      <div className="border rounded-lg overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[100px]">Data</TableHead>
+              {showVenue && <TableHead className="w-[100px]">Sede</TableHead>}
+              <TableHead className="w-[80px]">Registro</TableHead>
+              <TableHead>Descrizione</TableHead>
+              <TableHead className="w-[130px] text-right">Dare</TableHead>
+              <TableHead className="w-[130px] text-right">Avere</TableHead>
+              <TableHead className="w-[130px] text-right">Saldo</TableHead>
+              <TableHead className="w-[50px]"></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {entries.map((entry) => (
+              <TableRow
+                key={entry.id}
+                className={cn(
+                  entry.closureId && 'bg-muted/30',
+                  deletingId === entry.id && 'opacity-50'
+                )}
+              >
+                <TableCell className="font-medium">
+                  {format(new Date(entry.date), 'dd/MM/yy', { locale: it })}
+                </TableCell>
+
+                {showVenue && (
+                  <TableCell>
+                    <Badge variant="secondary" className="text-xs">
+                      {entry.venue?.code || '-'}
+                    </Badge>
+                  </TableCell>
+                )}
+
+                <TableCell>{getRegisterBadge(entry.registerType)}</TableCell>
+
+                <TableCell>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-medium">{entry.description}</span>
+                    <div className="flex gap-2 text-xs text-muted-foreground">
+                      {entry.documentRef && (
+                        <span className="flex items-center gap-1">
+                          <LinkIcon className="h-3 w-3" />
+                          {entry.documentRef}
+                        </span>
+                      )}
+                      {entry.closureId && (
+                        <Badge variant="outline" className="text-xs py-0">
+                          da chiusura
+                        </Badge>
+                      )}
+                      {entry.account && (
+                        <span className="text-muted-foreground">
+                          {entry.account.code}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </TableCell>
+
+                <TableCell className="text-right font-mono">
+                  {entry.debitAmount && entry.debitAmount > 0 ? (
+                    <span className="text-green-600">
+                      {formatCurrency(entry.debitAmount)}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground/30">-</span>
+                  )}
+                </TableCell>
+
+                <TableCell className="text-right font-mono">
+                  {entry.creditAmount && entry.creditAmount > 0 ? (
+                    <span className="text-red-600">
+                      {formatCurrency(entry.creditAmount)}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground/30">-</span>
+                  )}
+                </TableCell>
+
+                <TableCell className="text-right">
+                  {formatBalance(entry.runningBalance)}
+                </TableCell>
+
+                <TableCell>
+                  {isEditable(entry) && (onEdit || onDelete) && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          disabled={deletingId === entry.id}
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {onEdit && (
+                          <DropdownMenuItem onClick={() => onEdit(entry)}>
+                            <Pencil className="h-4 w-4 mr-2" />
+                            Modifica
+                          </DropdownMenuItem>
+                        )}
+                        {onDelete && (
+                          <DropdownMenuItem
+                            onClick={() => handleDelete(entry)}
+                            className="text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Elimina
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Riepilogo totali */}
+      {summary && (
+        <div className="flex justify-end">
+          <div className="bg-muted/50 rounded-lg px-4 py-2 text-sm space-y-1">
+            <div className="flex justify-between gap-8">
+              <span className="text-muted-foreground">Totale Dare:</span>
+              <span className="font-mono font-medium text-green-600">
+                {formatCurrency(summary.totalDebits)}
+              </span>
+            </div>
+            <div className="flex justify-between gap-8">
+              <span className="text-muted-foreground">Totale Avere:</span>
+              <span className="font-mono font-medium text-red-600">
+                {formatCurrency(summary.totalCredits)}
+              </span>
+            </div>
+            <div className="flex justify-between gap-8 pt-1 border-t">
+              <span className="font-medium">Saldo:</span>
+              <span
+                className={cn(
+                  'font-mono font-semibold',
+                  summary.netMovement >= 0 ? 'text-green-600' : 'text-red-600'
+                )}
+              >
+                {summary.netMovement >= 0 ? '+' : ''}
+                {formatCurrency(summary.netMovement)}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Paginazione */}
+      {pagination && pagination.totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            Pagina {pagination.page} di {pagination.totalPages} ({pagination.total}{' '}
+            movimenti)
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onPageChange?.(pagination.page - 1)}
+              disabled={pagination.page <= 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Precedente
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onPageChange?.(pagination.page + 1)}
+              disabled={pagination.page >= pagination.totalPages}
+            >
+              Successivo
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
