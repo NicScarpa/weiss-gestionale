@@ -29,7 +29,7 @@ const reports = [
     details: 'Visualizza il totale delle entrate e uscite per mese',
     href: '/report/riepilogo-mensile',
     icon: Calendar,
-    available: false,
+    available: true,
   },
   {
     title: 'Analisi Costi',
