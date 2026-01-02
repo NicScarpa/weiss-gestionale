@@ -101,7 +101,7 @@ const COIN_DENOMINATIONS = [2, 1, 0.5, 0.2, 0.1, 0.05, 0.01]
 
 ## Checklist
 
-- [ ] Step 1: Types e validazione Zod
+- [x] Step 1: Types e validazione Zod
 - [ ] Step 2: API lettura
 - [ ] Step 3: API scrittura
 - [ ] Step 4: CashCountGrid component
@@ -118,3 +118,8 @@ const COIN_DENOMINATIONS = [2, 1, 0.5, 0.2, 0.1, 0.05, 0.01]
 
 ### 2 Gennaio 2026
 - Piano creato
+- **Step 1 COMPLETATO**: Types e validazione Zod
+  - `src/lib/constants.ts` - Costanti (tagli, default, formattatori)
+  - `src/types/chiusura-cassa.ts` - Tipi TypeScript completi
+  - `src/lib/validations/chiusura-cassa.ts` - Schema Zod per form
+  - `src/lib/calculations.ts` - Utility calcoli con Decimal.js
