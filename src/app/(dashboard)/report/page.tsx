@@ -1,8 +1,45 @@
+import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { ChevronRight, BarChart3, TrendingUp, Calendar, PieChart } from 'lucide-react'
 
 export const metadata = {
   title: 'Report'
 }
+
+const reports = [
+  {
+    title: 'Incassi Giornalieri',
+    description: 'Report degli incassi giornalieri per periodo',
+    details: 'Visualizza gli incassi giornalieri con possibilità di filtro per date',
+    href: '/report/incassi-giornalieri',
+    icon: BarChart3,
+    available: true,
+  },
+  {
+    title: 'Confronto Annuale',
+    description: 'Confronto year-over-year degli incassi',
+    details: 'Analizza le performance rispetto all\'anno precedente',
+    href: '/report/confronto-annuale',
+    icon: TrendingUp,
+    available: false,
+  },
+  {
+    title: 'Riepilogo Mensile',
+    description: 'Riepilogo delle operazioni mensili',
+    details: 'Visualizza il totale delle entrate e uscite per mese',
+    href: '/report/riepilogo-mensile',
+    icon: Calendar,
+    available: false,
+  },
+  {
+    title: 'Analisi Costi',
+    description: 'Analisi delle spese e dei costi',
+    details: 'Monitora le spese per categoria e fornitore',
+    href: '/report/analisi-costi',
+    icon: PieChart,
+    available: false,
+  },
+]
 
 export default function ReportPage() {
   return (
@@ -15,61 +52,57 @@ export default function ReportPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <Card className="cursor-pointer hover:bg-slate-50 transition-colors">
-          <CardHeader>
-            <CardTitle>Incassi Giornalieri</CardTitle>
-            <CardDescription>
-              Report degli incassi giornalieri per periodo
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-sm text-muted-foreground">
-              Visualizza gli incassi giornalieri con possibilità di filtro per date
-            </div>
-          </CardContent>
-        </Card>
+        {reports.map((report) => {
+          const Icon = report.icon
 
-        <Card className="cursor-pointer hover:bg-slate-50 transition-colors">
-          <CardHeader>
-            <CardTitle>Confronto Annuale</CardTitle>
-            <CardDescription>
-              Confronto year-over-year degli incassi
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-sm text-muted-foreground">
-              Analizza le performance rispetto all&apos;anno precedente
-            </div>
-          </CardContent>
-        </Card>
+          if (!report.available) {
+            return (
+              <Card key={report.title} className="opacity-60">
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <Icon className="h-5 w-5 text-muted-foreground" />
+                    <CardTitle>{report.title}</CardTitle>
+                  </div>
+                  <CardDescription>
+                    {report.description}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-sm text-muted-foreground">
+                    {report.details}
+                  </div>
+                  <div className="mt-3 text-xs text-muted-foreground">
+                    Prossimamente disponibile
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          }
 
-        <Card className="cursor-pointer hover:bg-slate-50 transition-colors">
-          <CardHeader>
-            <CardTitle>Riepilogo Mensile</CardTitle>
-            <CardDescription>
-              Riepilogo delle operazioni mensili
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-sm text-muted-foreground">
-              Visualizza il totale delle entrate e uscite per mese
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="cursor-pointer hover:bg-slate-50 transition-colors">
-          <CardHeader>
-            <CardTitle>Analisi Costi</CardTitle>
-            <CardDescription>
-              Analisi delle spese e dei costi
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-sm text-muted-foreground">
-              Monitora le spese per categoria e fornitore
-            </div>
-          </CardContent>
-        </Card>
+          return (
+            <Link key={report.title} href={report.href}>
+              <Card className="cursor-pointer hover:bg-slate-50 transition-colors h-full">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Icon className="h-5 w-5 text-primary" />
+                      <CardTitle>{report.title}</CardTitle>
+                    </div>
+                    <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <CardDescription>
+                    {report.description}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-sm text-muted-foreground">
+                    {report.details}
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          )
+        })}
       </div>
     </div>
   )
