@@ -1,7 +1,6 @@
 'use client'
 
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select,
@@ -10,10 +9,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Users, Plus, Trash2 } from 'lucide-react'
+import { Users, UserPlus, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
-import { formatCurrency, ATTENDANCE_CODES } from '@/lib/constants'
+import { formatCurrency } from '@/lib/constants'
 
 // Tipo per presenza
 export interface AttendanceData {
@@ -27,6 +25,7 @@ export interface AttendanceData {
   totalPay?: number
   isPaid?: boolean
   notes?: string
+  isExtra?: boolean // Flag per distinguere staff fisso da extra
 }
 
 // Opzioni turno
@@ -35,7 +34,7 @@ const SHIFT_OPTIONS = [
   { value: 'EVENING', label: 'Sera' },
 ]
 
-// Opzioni codice presenza
+// Opzioni codice presenza per staff fisso
 const STATUS_CODE_OPTIONS = [
   { value: 'P', label: 'P - Presente' },
   { value: 'FE', label: 'FE - Ferie' },
@@ -48,6 +47,8 @@ interface StaffMember {
   id: string
   firstName: string
   lastName: string
+  isFixedStaff?: boolean
+  hourlyRate?: number | null
 }
 
 interface AttendanceSectionProps {
@@ -65,12 +66,21 @@ export function AttendanceSection({
   disabled = false,
   className,
 }: AttendanceSectionProps) {
-  // Calcola totale ore e compensi
-  const totalHours = attendance.reduce((sum, a) => sum + (a.hours || 0), 0)
-  const totalPay = attendance.reduce((sum, a) => sum + (a.totalPay || 0), 0)
+  // Separa staff fisso da extra
+  const fixedStaff = staffMembers.filter((s) => s.isFixedStaff)
+  const extraStaff = staffMembers.filter((s) => !s.isFixedStaff)
+
+  // Separa presenze fissi da extra
+  const fixedAttendance = attendance.filter((a) => !a.isExtra)
+  const extraAttendance = attendance.filter((a) => a.isExtra)
+
+  // Calcola totali
+  const fixedTotalHours = fixedAttendance.reduce((sum, a) => sum + (a.hours || 0), 0)
+  const extraTotalHours = extraAttendance.reduce((sum, a) => sum + (a.hours || 0), 0)
+  const extraTotalPay = extraAttendance.reduce((sum, a) => sum + (a.totalPay || 0), 0)
 
   // Aggiungi nuova presenza
-  const handleAdd = () => {
+  const handleAddFixed = () => {
     onChange([
       ...attendance,
       {
@@ -79,6 +89,22 @@ export function AttendanceSection({
         hours: 8,
         statusCode: 'P',
         isPaid: false,
+        isExtra: false,
+      },
+    ])
+  }
+
+  const handleAddExtra = () => {
+    onChange([
+      ...attendance,
+      {
+        userId: '',
+        shift: 'MORNING',
+        hours: 0,
+        hourlyRate: 0,
+        totalPay: 0,
+        isPaid: false,
+        isExtra: true,
       },
     ])
   }
@@ -104,17 +130,24 @@ export function AttendanceSection({
         [field]: numValue,
       }
 
-      // Ricalcola totalPay
-      const hours: number = field === 'hours' ? numValue : Number(current.hours || 0)
-      const rate: number = field === 'hourlyRate' ? numValue : Number(current.hourlyRate || 0)
-      updated[index].totalPay = hours * rate
+      // Ricalcola totalPay per extra
+      if (current.isExtra) {
+        const hours: number = field === 'hours' ? numValue : Number(current.hours || 0)
+        const rate: number = field === 'hourlyRate' ? numValue : Number(current.hourlyRate || 0)
+        updated[index].totalPay = hours * rate
+      }
     } else if (field === 'userId') {
-      // Trova il nome dello staff
+      // Trova il nome dello staff e la tariffa
       const staff = staffMembers.find((s) => s.id === value)
       updated[index] = {
         ...current,
         userId: value as string,
         userName: staff ? `${staff.firstName} ${staff.lastName}` : undefined,
+        hourlyRate: staff?.hourlyRate || current.hourlyRate,
+      }
+      // Ricalcola totalPay per extra
+      if (current.isExtra && staff?.hourlyRate) {
+        updated[index].totalPay = (current.hours || 0) * staff.hourlyRate
       }
     } else {
       updated[index] = {
@@ -126,176 +159,341 @@ export function AttendanceSection({
     onChange(updated)
   }
 
+  // Trova l'indice reale nell'array completo
+  const getRealIndex = (att: AttendanceData): number => {
+    return attendance.findIndex((a) => a === att)
+  }
+
   return (
-    <Card className={className}>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <div className="flex items-center gap-2">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Users className="h-5 w-5" />
-            Presenze Staff
-          </CardTitle>
-          {totalHours > 0 && (
-            <span className="text-sm text-muted-foreground">
-              ({totalHours}h)
-            </span>
-          )}
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={handleAdd}
-          disabled={disabled}
-          className="gap-1"
-        >
-          <Plus className="h-4 w-4" />
-          Aggiungi
-        </Button>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {attendance.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-4">
-            Nessuna presenza registrata. Clicca &quot;Aggiungi&quot; per inserire lo staff.
-          </p>
-        ) : (
-          <>
-            {/* Header */}
-            <div className="grid grid-cols-[1fr_120px_100px_80px_100px_100px_40px] gap-2 text-xs font-medium text-muted-foreground border-b pb-2">
-              <span>Dipendente</span>
-              <span>Turno</span>
-              <span>Codice</span>
-              <span>Ore</span>
-              <span>Tariffa/h</span>
-              <span>Totale</span>
-              <span></span>
-            </div>
-
-            {attendance.map((att, index) => (
-              <div
-                key={index}
-                className="grid grid-cols-[1fr_120px_100px_80px_100px_100px_40px] gap-2 items-center"
-              >
-                {/* Dipendente */}
-                <Select
-                  value={att.userId}
-                  onValueChange={(value) =>
-                    handleFieldChange(index, 'userId', value)
-                  }
-                  disabled={disabled}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleziona..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {staffMembers.map((staff) => (
-                      <SelectItem key={staff.id} value={staff.id}>
-                        {staff.firstName} {staff.lastName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                {/* Turno */}
-                <Select
-                  value={att.shift}
-                  onValueChange={(value) =>
-                    handleFieldChange(index, 'shift', value)
-                  }
-                  disabled={disabled}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SHIFT_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                {/* Codice Presenza */}
-                <Select
-                  value={att.statusCode || 'P'}
-                  onValueChange={(value) =>
-                    handleFieldChange(index, 'statusCode', value)
-                  }
-                  disabled={disabled}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STATUS_CODE_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                {/* Ore */}
-                <Input
-                  type="number"
-                  min="0"
-                  max="24"
-                  step="0.5"
-                  value={att.hours ?? ''}
-                  onChange={(e) =>
-                    handleFieldChange(index, 'hours', e.target.value)
-                  }
-                  disabled={disabled}
-                  className="font-mono"
-                  placeholder="0"
-                />
-
-                {/* Tariffa oraria */}
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={att.hourlyRate ?? ''}
-                  onChange={(e) =>
-                    handleFieldChange(index, 'hourlyRate', e.target.value)
-                  }
-                  disabled={disabled}
-                  className="font-mono"
-                  placeholder="0,00"
-                />
-
-                {/* Totale */}
-                <span className="font-mono text-sm">
-                  {formatCurrency(att.totalPay || 0)}
-                </span>
-
-                {/* Rimuovi */}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => handleRemove(index)}
-                  disabled={disabled}
-                  className="text-destructive hover:text-destructive"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+    <div className={`space-y-4 ${className || ''}`}>
+      {/* SEZIONE DIPENDENTI FISSI */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Dipendenti Fissi
+            </CardTitle>
+            {fixedTotalHours > 0 && (
+              <span className="text-sm text-muted-foreground">
+                ({fixedTotalHours}h)
+              </span>
+            )}
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleAddFixed}
+            disabled={disabled}
+            className="gap-1"
+          >
+            <Plus className="h-4 w-4" />
+            Aggiungi
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {fixedAttendance.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              Nessun dipendente fisso registrato.
+            </p>
+          ) : (
+            <>
+              {/* Header */}
+              <div className="grid grid-cols-[1fr_120px_100px_80px_40px] gap-2 text-xs font-medium text-muted-foreground border-b pb-2">
+                <span>Dipendente</span>
+                <span>Turno</span>
+                <span>Codice</span>
+                <span>Ore</span>
+                <span></span>
               </div>
-            ))}
 
-            {/* Totale */}
-            <div className="flex justify-between pt-2 border-t text-sm">
-              <span className="text-muted-foreground">
-                Totale: <strong>{totalHours}h</strong>
+              {fixedAttendance.map((att) => {
+                const realIndex = getRealIndex(att)
+                return (
+                  <div
+                    key={realIndex}
+                    className="grid grid-cols-[1fr_120px_100px_80px_40px] gap-2 items-center"
+                  >
+                    {/* Dipendente */}
+                    <Select
+                      value={att.userId}
+                      onValueChange={(value) =>
+                        handleFieldChange(realIndex, 'userId', value)
+                      }
+                      disabled={disabled}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleziona..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {fixedStaff.map((staff) => (
+                          <SelectItem key={staff.id} value={staff.id}>
+                            {staff.firstName} {staff.lastName}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {/* Turno */}
+                    <Select
+                      value={att.shift}
+                      onValueChange={(value) =>
+                        handleFieldChange(realIndex, 'shift', value)
+                      }
+                      disabled={disabled}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SHIFT_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {/* Codice Presenza */}
+                    <Select
+                      value={att.statusCode || 'P'}
+                      onValueChange={(value) =>
+                        handleFieldChange(realIndex, 'statusCode', value)
+                      }
+                      disabled={disabled}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {STATUS_CODE_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {/* Ore */}
+                    <Input
+                      type="number"
+                      min="0"
+                      max="24"
+                      step="0.5"
+                      value={att.hours ?? ''}
+                      onChange={(e) =>
+                        handleFieldChange(realIndex, 'hours', e.target.value)
+                      }
+                      disabled={disabled}
+                      className="font-mono"
+                      placeholder="0"
+                    />
+
+                    {/* Rimuovi */}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleRemove(realIndex)}
+                      disabled={disabled}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )
+              })}
+
+              {/* Totale Ore */}
+              <div className="flex justify-end pt-2 border-t text-sm">
+                <span className="text-muted-foreground">
+                  Totale ore: <strong>{fixedTotalHours}h</strong>
+                </span>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* SEZIONE PERSONALE EXTRA */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <UserPlus className="h-5 w-5" />
+              Personale Extra / Occasionale
+            </CardTitle>
+            {extraTotalHours > 0 && (
+              <span className="text-sm text-muted-foreground">
+                ({extraTotalHours}h - {formatCurrency(extraTotalPay)})
               </span>
-              <span>
-                <span className="text-muted-foreground">Compenso: </span>
-                <strong className="font-mono">{formatCurrency(totalPay)}</strong>
-              </span>
-            </div>
-          </>
-        )}
-      </CardContent>
-    </Card>
+            )}
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleAddExtra}
+            disabled={disabled}
+            className="gap-1"
+          >
+            <Plus className="h-4 w-4" />
+            Aggiungi Extra
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {extraAttendance.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              Nessun personale extra registrato.
+            </p>
+          ) : (
+            <>
+              {/* Header */}
+              <div className="grid grid-cols-[1fr_100px_80px_100px_100px_80px_40px] gap-2 text-xs font-medium text-muted-foreground border-b pb-2">
+                <span>Nome</span>
+                <span>Turno</span>
+                <span>Ore</span>
+                <span>Tariffa/h</span>
+                <span>Totale</span>
+                <span>Pagato</span>
+                <span></span>
+              </div>
+
+              {extraAttendance.map((att) => {
+                const realIndex = getRealIndex(att)
+                return (
+                  <div
+                    key={realIndex}
+                    className="grid grid-cols-[1fr_100px_80px_100px_100px_80px_40px] gap-2 items-center"
+                  >
+                    {/* Nome (da lista extra o testo libero) */}
+                    {extraStaff.length > 0 ? (
+                      <Select
+                        value={att.userId}
+                        onValueChange={(value) =>
+                          handleFieldChange(realIndex, 'userId', value)
+                        }
+                        disabled={disabled}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleziona..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {extraStaff.map((staff) => (
+                            <SelectItem key={staff.id} value={staff.id}>
+                              {staff.firstName} {staff.lastName}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        value={att.userName || ''}
+                        onChange={(e) =>
+                          handleFieldChange(realIndex, 'userName', e.target.value)
+                        }
+                        disabled={disabled}
+                        placeholder="Nome collaboratore"
+                      />
+                    )}
+
+                    {/* Turno */}
+                    <Select
+                      value={att.shift}
+                      onValueChange={(value) =>
+                        handleFieldChange(realIndex, 'shift', value)
+                      }
+                      disabled={disabled}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SHIFT_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {/* Ore */}
+                    <Input
+                      type="number"
+                      min="0"
+                      max="24"
+                      step="0.5"
+                      value={att.hours ?? ''}
+                      onChange={(e) =>
+                        handleFieldChange(realIndex, 'hours', e.target.value)
+                      }
+                      disabled={disabled}
+                      className="font-mono"
+                      placeholder="0"
+                    />
+
+                    {/* Tariffa oraria */}
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={att.hourlyRate ?? ''}
+                      onChange={(e) =>
+                        handleFieldChange(realIndex, 'hourlyRate', e.target.value)
+                      }
+                      disabled={disabled}
+                      className="font-mono"
+                      placeholder="0,00"
+                    />
+
+                    {/* Totale */}
+                    <span className="font-mono text-sm">
+                      {formatCurrency(att.totalPay || 0)}
+                    </span>
+
+                    {/* Checkbox Pagato */}
+                    <div className="flex items-center justify-center">
+                      <input
+                        type="checkbox"
+                        checked={att.isPaid || false}
+                        onChange={(e) =>
+                          handleFieldChange(realIndex, 'isPaid', e.target.checked)
+                        }
+                        disabled={disabled}
+                        className="h-4 w-4"
+                      />
+                    </div>
+
+                    {/* Rimuovi */}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleRemove(realIndex)}
+                      disabled={disabled}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )
+              })}
+
+              {/* Totale */}
+              <div className="flex justify-between pt-2 border-t text-sm">
+                <span className="text-muted-foreground">
+                  Totale: <strong>{extraTotalHours}h</strong>
+                </span>
+                <span>
+                  <span className="text-muted-foreground">Compenso: </span>
+                  <strong className="font-mono">{formatCurrency(extraTotalPay)}</strong>
+                </span>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   )
 }

@@ -42,6 +42,7 @@ export default async function NuovaChiusuraPage() {
         id: true,
         name: true,
         position: true,
+        isEventOnly: true,
       },
       orderBy: { position: 'asc' },
     }),
@@ -55,8 +56,10 @@ export default async function NuovaChiusuraPage() {
         id: true,
         firstName: true,
         lastName: true,
+        isFixedStaff: true,
+        hourlyRate: true,
       },
-      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+      orderBy: [{ isFixedStaff: 'desc' }, { lastName: 'asc' }, { firstName: 'asc' }],
     }),
     // Piano conti (solo conti di spesa/costo)
     prisma.account.findMany({
@@ -81,10 +84,17 @@ export default async function NuovaChiusuraPage() {
   const stations = cashStationTemplates.length > 0
     ? cashStationTemplates
     : [
-        { id: 'bar', name: 'BAR', position: 0 },
-        { id: 'cassa1', name: 'CASSA 1', position: 1 },
-        { id: 'cassa2', name: 'CASSA 2', position: 2 },
+        { id: 'bar', name: 'BAR', position: 0, isEventOnly: false },
+        { id: 'cassa1', name: 'CASSA 1', position: 1, isEventOnly: false },
+        { id: 'cassa2', name: 'CASSA 2', position: 2, isEventOnly: true },
+        { id: 'cassa3', name: 'CASSA 3', position: 3, isEventOnly: true },
       ]
+
+  // Converti Decimal a number per staffMembers
+  const formattedStaff = staffMembers.map((s) => ({
+    ...s,
+    hourlyRate: s.hourlyRate ? Number(s.hourlyRate) : null,
+  }))
 
   return (
     <NuovaChiusuraClient
@@ -95,7 +105,7 @@ export default async function NuovaChiusuraPage() {
         defaultFloat: Number(venue.defaultFloat) || 114,
       }}
       cashStationTemplates={stations}
-      staffMembers={staffMembers}
+      staffMembers={formattedStaff}
       accounts={accounts}
     />
   )

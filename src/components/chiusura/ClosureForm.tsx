@@ -61,7 +61,7 @@ export interface ClosureFormData {
   weatherAfternoon?: string
   weatherEvening?: string
   notes?: string
-  stations: CashStationData[]
+  stations: (CashStationData & { isEventOnly?: boolean })[]
   partials: HourlyPartialData[]
   expenses: ExpenseData[]
   attendance: AttendanceData[]
@@ -74,8 +74,8 @@ interface ClosureFormProps {
   venueName: string
   vatRate?: number
   defaultFloat?: number
-  cashStationTemplates: { id: string; name: string; position: number }[]
-  staffMembers: { id: string; firstName: string; lastName: string }[]
+  cashStationTemplates: { id: string; name: string; position: number; isEventOnly?: boolean }[]
+  staffMembers: { id: string; firstName: string; lastName: string; isFixedStaff?: boolean; hourlyRate?: number | null }[]
   accounts: { id: string; code: string; name: string }[]
   closureId?: string
   status?: 'DRAFT' | 'SUBMITTED' | 'VALIDATED'
@@ -101,14 +101,22 @@ export function ClosureForm({
   const [isSaving, setIsSaving] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Inizializza stazioni da template
-  const initializeStations = useCallback((): CashStationData[] => {
+  // Inizializza stazioni da template (include tutte, verranno filtrate in visualizzazione)
+  const initializeStations = useCallback((): (CashStationData & { isEventOnly?: boolean })[] => {
     if (initialData?.stations?.length) {
-      return initialData.stations
+      // Per chiusure esistenti, aggiungi isEventOnly dal template
+      return initialData.stations.map((station) => {
+        const template = cashStationTemplates.find((t) => t.name === station.name)
+        return {
+          ...station,
+          isEventOnly: template?.isEventOnly || false,
+        }
+      })
     }
     return cashStationTemplates.map((template) => ({
       name: template.name,
       position: template.position,
+      isEventOnly: template.isEventOnly || false,
       ...emptyCashStation,
       floatAmount: defaultFloat,
       cashCount: { ...emptyCashCount },
@@ -139,7 +147,7 @@ export function ClosureForm({
       0
     )
 
-    // Totale contanti
+    // Totale contanti incassati
     const cashTotal = formData.stations.reduce(
       (sum, s) => sum + (s.cashAmount || 0),
       0
@@ -151,24 +159,9 @@ export function ClosureForm({
       0
     )
 
-    // Totale contato
+    // Totale contato (somma conteggio fisico banconote/monete)
     const countedTotal = formData.stations.reduce(
       (sum, s) => sum + calculateCashCountTotal(s.cashCount),
-      0
-    )
-
-    // Differenza cassa
-    const cashDifference = countedTotal - cashTotal
-
-    // IVA stimata
-    const estimatedVat = grossTotal * vatRate
-
-    // Totale netto
-    const netTotal = grossTotal - estimatedVat
-
-    // Totale uscite
-    const expensesTotal = formData.expenses.reduce(
-      (sum, e) => sum + (e.amount || 0),
       0
     )
 
@@ -178,19 +171,47 @@ export function ClosureForm({
       0
     )
 
-    // Versamento banca (contanti - fondi - uscite)
-    const bankDeposit = Math.max(0, cashTotal - floatsTotal - expensesTotal)
+    // Totale uscite (tutte)
+    const expensesTotal = formData.expenses.reduce(
+      (sum, e) => sum + (e.amount || 0),
+      0
+    )
+
+    // Uscite pagate in contanti dalla cassa (isPaid=true E paidBy vuoto)
+    // Le uscite anticipate da qualcuno (paidBy valorizzato) NON impattano la cassa
+    const cashExpensesTotal = formData.expenses
+      .filter(e => e.isPaid && (!e.paidBy || e.paidBy.trim() === ''))
+      .reduce((sum, e) => sum + (e.amount || 0), 0)
+
+    // QUADRATURA CASSA (formula corretta):
+    // CASSA ATTESA = Fondo cassa + Incassi contanti - Uscite pagate in contanti
+    const expectedCash = floatsTotal + cashTotal - cashExpensesTotal
+
+    // DIFFERENZA = Cassa contata - Cassa attesa
+    const cashDifference = countedTotal - expectedCash
+
+    // IVA stimata
+    const estimatedVat = grossTotal * vatRate
+
+    // Totale netto
+    const netTotal = grossTotal - estimatedVat
+
+    // Versamento banca = Contato - Fondo da lasciare in cassa
+    // (il versamento tiene conto che le uscite sono già state sottratte dalla cassa fisica)
+    const bankDeposit = Math.max(0, countedTotal - floatsTotal)
 
     return {
       grossTotal,
       cashTotal,
       posTotal,
       countedTotal,
+      floatsTotal,
+      expensesTotal,
+      cashExpensesTotal,
+      expectedCash,
       cashDifference,
       estimatedVat,
       netTotal,
-      expensesTotal,
-      floatsTotal,
       bankDeposit,
       hasSignificantDifference:
         countedTotal > 0 &&
@@ -207,6 +228,36 @@ export function ClosureForm({
     const updated = [...formData.stations]
     updated[index] = data
     setFormData((prev) => ({ ...prev, stations: updated }))
+  }
+
+  // Handler per presenze con auto-generazione uscite per extra pagati
+  const handleAttendanceChange = (newAttendance: AttendanceData[]) => {
+    // Identifica gli extra pagati nella nuova lista
+    const paidExtras = newAttendance.filter((a) => a.isExtra && a.isPaid && (a.totalPay || 0) > 0)
+
+    // Rimuovi tutte le uscite auto-generate per extra (identificate dal prefisso [EXTRA])
+    const nonAutoExpenses = formData.expenses.filter(
+      (e) => !e.payee.startsWith('[EXTRA]')
+    )
+
+    // Genera nuove uscite per ogni extra pagato
+    const autoExpenses: ExpenseData[] = paidExtras.map((extra) => ({
+      payee: `[EXTRA] ${extra.userName || 'Personale Extra'}`,
+      description: `Compenso ${extra.shift === 'MORNING' ? 'mattina' : 'sera'} - ${extra.hours || 0}h x ${formatCurrency(extra.hourlyRate || 0)}/h`,
+      documentType: 'PERSONALE' as const,
+      amount: extra.totalPay || 0,
+      isPaid: true,
+      paidBy: '', // Pagato dalla cassa, impatta quadratura
+    }))
+
+    // Combina le uscite
+    const updatedExpenses = [...nonAutoExpenses, ...autoExpenses]
+
+    setFormData((prev) => ({
+      ...prev,
+      attendance: newAttendance,
+      expenses: updatedExpenses,
+    }))
   }
 
   // Salva bozza
@@ -403,15 +454,27 @@ export function ClosureForm({
       {/* Sezione Postazioni Cassa */}
       <div className="space-y-4">
         <h2 className="text-lg font-semibold">Postazioni Cassa</h2>
-        {formData.stations.map((station, index) => (
-          <CashStationCard
-            key={station.name}
-            station={station}
-            onChange={(data) => handleStationChange(index, data)}
-            disabled={isReadOnly}
-            defaultExpanded={index === 0}
-          />
-        ))}
+        {formData.stations
+          .filter((station) => {
+            // Mostra tutte le postazioni se è un evento
+            // Altrimenti mostra solo quelle NON marcate come "solo evento"
+            if (formData.isEvent) return true
+            return !station.isEventOnly
+          })
+          .map((station) => {
+            // Trova l'indice originale per l'handler di modifica
+            const originalIndex = formData.stations.findIndex((s) => s.name === station.name)
+            return (
+              <CashStationCard
+                key={station.name}
+                station={station}
+                onChange={(data) => handleStationChange(originalIndex, data)}
+                disabled={isReadOnly}
+                defaultExpanded={originalIndex === 0}
+                vatRate={vatRate}
+              />
+            )
+          })}
       </div>
 
       {/* Parziali Orari */}
@@ -432,7 +495,7 @@ export function ClosureForm({
       {/* Presenze */}
       <AttendanceSection
         attendance={formData.attendance}
-        onChange={(attendance) => handleFieldChange('attendance', attendance)}
+        onChange={handleAttendanceChange}
         staffMembers={staffMembers}
         disabled={isReadOnly}
       />
@@ -472,6 +535,7 @@ export function ClosureForm({
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4 text-sm">
+            {/* Colonna sinistra: Incassi */}
             <div className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Totale Lordo:</span>
@@ -508,44 +572,73 @@ export function ClosureForm({
               </div>
             </div>
 
+            {/* Colonna destra: Quadratura Cassa */}
             <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Contanti Contati:</span>
-                <span className="font-mono">
-                  {formatCurrency(totals.countedTotal)}
-                </span>
-              </div>
-              <div
-                className={cn(
-                  'flex justify-between',
-                  totals.hasSignificantDifference && 'text-destructive font-semibold'
-                )}
-              >
-                <span>Differenza Cassa:</span>
-                <span className="font-mono">
-                  {totals.cashDifference >= 0 ? '+' : ''}
-                  {formatCurrency(totals.cashDifference)}
-                </span>
-              </div>
-              <Separator />
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Uscite:</span>
-                <span className="font-mono">
-                  {formatCurrency(totals.expensesTotal)}
-                </span>
-              </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Fondi Cassa:</span>
                 <span className="font-mono">
                   {formatCurrency(totals.floatsTotal)}
                 </span>
               </div>
-              <div className="flex justify-between font-semibold text-primary">
-                <span>Versamento Banca:</span>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">+ Incassi Contanti:</span>
                 <span className="font-mono">
-                  {formatCurrency(totals.bankDeposit)}
+                  {formatCurrency(totals.cashTotal)}
                 </span>
               </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">- Uscite Contanti:</span>
+                <span className="font-mono">
+                  {formatCurrency(totals.cashExpensesTotal)}
+                </span>
+              </div>
+              <Separator />
+              <div className="flex justify-between font-semibold">
+                <span>= Cassa Attesa:</span>
+                <span className="font-mono">
+                  {formatCurrency(totals.expectedCash)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Cassa Contata:</span>
+                <span className="font-mono">
+                  {formatCurrency(totals.countedTotal)}
+                </span>
+              </div>
+              <div
+                className={cn(
+                  'flex justify-between font-semibold',
+                  totals.hasSignificantDifference && 'text-destructive'
+                )}
+              >
+                <span>Differenza:</span>
+                <span className="font-mono">
+                  {totals.cashDifference >= 0 ? '+' : ''}
+                  {formatCurrency(totals.cashDifference)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Riga inferiore: Uscite e Versamento */}
+          <Separator />
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="space-y-1">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Totale Uscite:</span>
+                <span className="font-mono">{formatCurrency(totals.expensesTotal)}</span>
+              </div>
+              {totals.expensesTotal !== totals.cashExpensesTotal && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">(di cui anticipate: {formatCurrency(totals.expensesTotal - totals.cashExpensesTotal)})</span>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-between font-semibold text-primary">
+              <span>Versamento Banca:</span>
+              <span className="font-mono">
+                {formatCurrency(totals.bankDeposit)}
+              </span>
             </div>
           </div>
         </CardContent>

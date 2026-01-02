@@ -11,8 +11,8 @@ interface NuovaChiusuraClientProps {
     vatRate: number
     defaultFloat: number
   }
-  cashStationTemplates: { id: string; name: string; position: number }[]
-  staffMembers: { id: string; firstName: string; lastName: string }[]
+  cashStationTemplates: { id: string; name: string; position: number; isEventOnly: boolean }[]
+  staffMembers: { id: string; firstName: string; lastName: string; isFixedStaff: boolean; hourlyRate: number | null }[]
   accounts: { id: string; code: string; name: string }[]
 }
 

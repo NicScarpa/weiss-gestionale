@@ -93,12 +93,13 @@ model Venue {
 }
 
 model CashStationTemplate {
-  id       String  @id @default(cuid())
-  venue    Venue   @relation(fields: [venueId], references: [id])
-  venueId  String  @map("venue_id")
-  name     String  // "BAR", "CASSA 1", "TAVOLI", etc.
-  position Int     @default(0)
-  isActive Boolean @default(true) @map("is_active")
+  id          String  @id @default(cuid())
+  venue       Venue   @relation(fields: [venueId], references: [id])
+  venueId     String  @map("venue_id")
+  name        String  // "BAR", "CASSA 1", "TAVOLI", etc.
+  position    Int     @default(0)
+  isActive    Boolean @default(true) @map("is_active")
+  isEventOnly Boolean @default(false) @map("is_event_only") // Solo per eventi (es. CASSA 2, CASSA 3)
 
   @@map("cash_station_templates")
 }

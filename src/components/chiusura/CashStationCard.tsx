@@ -1,22 +1,17 @@
 'use client'
 
-import { useState, useMemo } from 'react'
-import { ChevronDown, ChevronUp, Banknote, CreditCard, AlertTriangle } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronDown, ChevronUp, Banknote, CreditCard } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
-import {
-  formatCurrency,
-  CASH_DIFFERENCE_THRESHOLD,
-  DEFAULT_CASH_FLOAT,
-} from '@/lib/constants'
+import { formatCurrency, DEFAULT_CASH_FLOAT } from '@/lib/constants'
 import {
   CashCountGrid,
   CashCountValues,
@@ -59,6 +54,7 @@ interface CashStationCardProps {
   disabled?: boolean
   defaultExpanded?: boolean
   className?: string
+  vatRate?: number // Aliquota IVA (es. 0.10 per 10%)
 }
 
 export function CashStationCard({
@@ -67,18 +63,24 @@ export function CashStationCard({
   disabled = false,
   defaultExpanded = false,
   className,
+  vatRate = 0.10,
 }: CashStationCardProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded)
 
   // Calcola totali
   const totalAmount = station.cashAmount + station.posAmount
   const cashCounted = calculateCashCountTotal(station.cashCount)
-  const expectedCash = station.cashAmount - station.floatAmount
-  const cashDifference = cashCounted - station.cashAmount
 
-  // Determina se c'è una differenza significativa
-  const hasSignificantDifference =
-    Math.abs(cashDifference) > CASH_DIFFERENCE_THRESHOLD
+  // Calcola "non battuto" (totale - corrispettivo scontrini)
+  // Rappresenta l'incasso non registrato nei corrispettivi
+  const nonBattuto = totalAmount - station.receiptAmount
+
+  // Calcola IVA da importo lordo: IVA = lordo - (lordo / (1 + aliquota))
+  const calculateVatFromGross = (grossAmount: number): number => {
+    if (grossAmount <= 0) return 0
+    // Per aliquota 10%: IVA = lordo - (lordo / 1.10) = lordo * 0.0909...
+    return grossAmount - (grossAmount / (1 + vatRate))
+  }
 
   // Handler per cambio campo numerico
   const handleFieldChange = (
@@ -86,6 +88,29 @@ export function CashStationCard({
     value: string
   ) => {
     const numValue = parseFloat(value) || 0
+
+    // Se cambia receiptAmount, auto-calcola receiptVat
+    if (field === 'receiptAmount') {
+      const calculatedVat = calculateVatFromGross(numValue)
+      onChange({
+        ...station,
+        receiptAmount: numValue,
+        receiptVat: Math.round(calculatedVat * 100) / 100, // Arrotonda a 2 decimali
+      })
+      return
+    }
+
+    // Se cambia invoiceAmount, auto-calcola invoiceVat
+    if (field === 'invoiceAmount') {
+      const calculatedVat = calculateVatFromGross(numValue)
+      onChange({
+        ...station,
+        invoiceAmount: numValue,
+        invoiceVat: Math.round(calculatedVat * 100) / 100,
+      })
+      return
+    }
+
     onChange({
       ...station,
       [field]: numValue,
@@ -115,12 +140,6 @@ export function CashStationCard({
             >
               <div className="flex items-center gap-3">
                 <CardTitle className="text-lg">{station.name}</CardTitle>
-                {hasSignificantDifference && cashCounted > 0 && (
-                  <Badge variant="destructive" className="gap-1">
-                    <AlertTriangle className="h-3 w-3" />
-                    Differenza
-                  </Badge>
-                )}
               </div>
               <div className="flex items-center gap-4">
                 <span className="font-mono font-bold text-lg">
@@ -180,10 +199,11 @@ export function CashStationCard({
                   />
                 </div>
 
-                {/* IVA Scontrini */}
+                {/* IVA Scontrini (auto-calcolata) */}
                 <div className="space-y-2">
-                  <Label htmlFor={`receipt-vat-${station.position}`}>
+                  <Label htmlFor={`receipt-vat-${station.position}`} className="flex items-center gap-1">
                     IVA Scontrini (€)
+                    <span className="text-xs text-muted-foreground">(auto)</span>
                   </Label>
                   <Input
                     id={`receipt-vat-${station.position}`}
@@ -195,7 +215,7 @@ export function CashStationCard({
                       handleFieldChange('receiptVat', e.target.value)
                     }
                     disabled={disabled}
-                    className="font-mono"
+                    className="font-mono bg-muted/50"
                     placeholder="0,00"
                   />
                 </div>
@@ -220,10 +240,11 @@ export function CashStationCard({
                   />
                 </div>
 
-                {/* IVA Fatture */}
+                {/* IVA Fatture (auto-calcolata) */}
                 <div className="space-y-2">
-                  <Label htmlFor={`invoice-vat-${station.position}`}>
+                  <Label htmlFor={`invoice-vat-${station.position}`} className="flex items-center gap-1">
                     IVA Fatture (€)
+                    <span className="text-xs text-muted-foreground">(auto)</span>
                   </Label>
                   <Input
                     id={`invoice-vat-${station.position}`}
@@ -235,7 +256,7 @@ export function CashStationCard({
                       handleFieldChange('invoiceVat', e.target.value)
                     }
                     disabled={disabled}
-                    className="font-mono"
+                    className="font-mono bg-muted/50"
                     placeholder="0,00"
                   />
                 </div>
@@ -351,58 +372,53 @@ export function CashStationCard({
               />
             </div>
 
-            {/* Riepilogo Differenza */}
-            {station.cashAmount > 0 && cashCounted > 0 && (
-              <div
-                className={cn(
-                  'rounded-lg p-4 space-y-2',
-                  hasSignificantDifference
-                    ? 'bg-destructive/10 border-2 border-destructive'
-                    : 'bg-muted/50'
-                )}
-              >
+            {/* Riepilogo Conteggio */}
+            {cashCounted > 0 && (
+              <div className="rounded-lg p-4 space-y-2 bg-muted/50">
                 <div className="flex justify-between text-sm">
-                  <span>Contanti dichiarati:</span>
+                  <span>Fondo cassa:</span>
+                  <span className="font-mono">
+                    {formatCurrency(station.floatAmount)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>Incasso contanti:</span>
                   <span className="font-mono">
                     {formatCurrency(station.cashAmount)}
                   </span>
                 </div>
-                <div className="flex justify-between text-sm">
+                <div className="border-t pt-2 flex justify-between text-sm">
                   <span>Contanti contati:</span>
-                  <span className="font-mono">{formatCurrency(cashCounted)}</span>
+                  <span className="font-mono font-semibold">{formatCurrency(cashCounted)}</span>
                 </div>
-                <div className="border-t pt-2 flex justify-between font-medium">
-                  <span className="flex items-center gap-2">
-                    Differenza:
-                    {hasSignificantDifference && (
-                      <AlertTriangle className="h-4 w-4 text-destructive" />
-                    )}
-                  </span>
-                  <span
-                    className={cn(
-                      'font-mono font-bold',
-                      hasSignificantDifference
-                        ? 'text-destructive'
-                        : cashDifference === 0
-                        ? 'text-green-600'
-                        : 'text-amber-600'
-                    )}
-                  >
-                    {cashDifference >= 0 ? '+' : ''}
-                    {formatCurrency(cashDifference)}
-                  </span>
-                </div>
+                <p className="text-xs text-muted-foreground">
+                  La quadratura completa (con uscite) è nel riepilogo finale.
+                </p>
               </div>
             )}
 
-            {/* Totale Postazione */}
-            <div className="rounded-lg bg-primary/10 border-2 border-primary p-4">
+            {/* Totale Postazione con dettaglio non battuto */}
+            <div className="rounded-lg bg-primary/10 border-2 border-primary p-4 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="font-semibold">Totale Postazione</span>
                 <span className="font-mono font-bold text-xl text-primary">
                   {formatCurrency(totalAmount)}
                 </span>
               </div>
+              {/* Non battuto (se c'è differenza tra totale e scontrini) */}
+              {totalAmount > 0 && station.receiptAmount > 0 && Math.abs(nonBattuto) > 0.01 && (
+                <div className="flex justify-between text-sm pt-2 border-t border-primary/30">
+                  <span className="text-muted-foreground">
+                    Non battuto (fatture, sospesi, etc.)
+                  </span>
+                  <span className={cn(
+                    "font-mono",
+                    nonBattuto > 0 ? "text-amber-600" : "text-green-600"
+                  )}>
+                    {nonBattuto >= 0 ? '+' : ''}{formatCurrency(nonBattuto)}
+                  </span>
+                </div>
+              )}
             </div>
           </CardContent>
         </CollapsibleContent>
