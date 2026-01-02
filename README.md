@@ -1,36 +1,92 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Weiss Cafè Gestionale
 
-## Getting Started
+Sistema gestionale per Weiss Cafè - Contabilità e controllo di gestione.
 
-First, run the development server:
+## Requisiti
+
+- Node.js 18+
+- PostgreSQL 15+ (Supabase consigliato)
+
+## Setup Locale
+
+### 1. Clona il repository
+
+```bash
+git clone https://github.com/YOUR_USERNAME/weiss-gestionale.git
+cd weiss-gestionale
+```
+
+### 2. Installa le dipendenze
+
+```bash
+npm install
+```
+
+### 3. Configura le variabili d'ambiente
+
+```bash
+cp .env.example .env
+```
+
+Modifica `.env` con le tue credenziali:
+
+```env
+DATABASE_URL="postgresql://..."
+NEXTAUTH_SECRET="genera-con-openssl-rand-base64-32"
+AUTH_SECRET="stesso-valore-di-nextauth-secret"
+```
+
+### 4. Setup Database
+
+```bash
+# Crea le tabelle
+npx prisma db push
+
+# Popola con dati di test
+npm run db:seed
+```
+
+### 5. Avvia il server di sviluppo
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Apri [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Credenziali Test
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Admin**: admin@weisscafe.it / admin123
+- **Manager**: manager@weisscafe.it / manager123
+- **Staff**: staff@weisscafe.it / staff123
 
-## Learn More
+## Stack Tecnologico
 
-To learn more about Next.js, take a look at the following resources:
+- **Frontend**: Next.js 16 + React 19 + TypeScript
+- **Styling**: TailwindCSS + shadcn/ui
+- **Database**: PostgreSQL + Prisma 7
+- **Auth**: NextAuth.js v5
+- **State**: TanStack Query
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Struttura Progetto
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+src/
+├── app/
+│   ├── (auth)/          # Pagine di autenticazione
+│   ├── (dashboard)/     # Pagine protette
+│   └── api/             # API routes
+├── components/
+│   ├── layout/          # Layout components (sidebar, header)
+│   └── ui/              # shadcn/ui components
+└── lib/                 # Utilities (auth, prisma, utils)
+```
 
-## Deploy on Vercel
+## Documentazione
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- [PRD Modulo Contabilità](./PRD/PRD_v1_1.md)
+- [PRD Modulo Personale](./PRD/PRD_Modulo_Gestione_Personale_v1.0.md)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## License
+
+Private - All rights reserved
