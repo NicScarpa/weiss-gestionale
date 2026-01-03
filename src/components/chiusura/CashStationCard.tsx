@@ -181,10 +181,10 @@ export function CashStationCard({
               </h4>
 
               <div className="grid grid-cols-2 gap-4">
-                {/* Scontrini */}
+                {/* Corrispettivo */}
                 <div className="space-y-2">
                   <Label htmlFor={`receipt-${station.position}`}>
-                    Scontrini (€)
+                    Corrispettivo
                   </Label>
                   <Input
                     id={`receipt-${station.position}`}
@@ -201,10 +201,10 @@ export function CashStationCard({
                   />
                 </div>
 
-                {/* IVA Scontrini (auto-calcolata) */}
+                {/* IVA Corrispettivo (auto-calcolata) */}
                 <div className="space-y-2">
                   <Label htmlFor={`receipt-vat-${station.position}`} className="flex items-center gap-1">
-                    IVA Scontrini (€)
+                    IVA Corrispettivo
                     <span className="text-xs text-muted-foreground">(auto)</span>
                   </Label>
                   <Input
@@ -225,7 +225,7 @@ export function CashStationCard({
                 {/* Fatture */}
                 <div className="space-y-2">
                   <Label htmlFor={`invoice-${station.position}`}>
-                    Fatture (€)
+                    Fatture
                   </Label>
                   <Input
                     id={`invoice-${station.position}`}
@@ -245,7 +245,7 @@ export function CashStationCard({
                 {/* IVA Fatture (auto-calcolata) */}
                 <div className="space-y-2">
                   <Label htmlFor={`invoice-vat-${station.position}`} className="flex items-center gap-1">
-                    IVA Fatture (€)
+                    IVA Fatture
                     <span className="text-xs text-muted-foreground">(auto)</span>
                   </Label>
                   <Input
@@ -266,7 +266,7 @@ export function CashStationCard({
                 {/* Sospesi */}
                 <div className="space-y-2 col-span-2">
                   <Label htmlFor={`suspended-${station.position}`}>
-                    Sospesi (€)
+                    Sospesi
                   </Label>
                   <Input
                     id={`suspended-${station.position}`}
@@ -299,7 +299,7 @@ export function CashStationCard({
                     className="flex items-center gap-2"
                   >
                     <Banknote className="h-4 w-4" />
-                    Contanti (€)
+                    Contanti
                   </Label>
                   <Input
                     id={`cash-${station.position}`}
@@ -323,7 +323,7 @@ export function CashStationCard({
                     className="flex items-center gap-2"
                   >
                     <CreditCard className="h-4 w-4" />
-                    POS (€)
+                    POS
                   </Label>
                   <Input
                     id={`pos-${station.position}`}

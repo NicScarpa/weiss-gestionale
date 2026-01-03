@@ -48,6 +48,7 @@ interface StaffMember {
   lastName: string
   isFixedStaff?: boolean
   hourlyRate?: number | null
+  defaultShift?: 'MORNING' | 'EVENING' | null
 }
 
 interface AttendanceSectionProps {
@@ -135,13 +136,15 @@ export function AttendanceSection({
         updated[index].totalPay = hours * rate
       }
     } else if (field === 'userId') {
-      // Trova il nome dello staff e la tariffa
+      // Trova il nome dello staff, la tariffa e il turno default
       const staff = staffMembers.find((s) => s.id === value)
       updated[index] = {
         ...current,
         userId: value as string,
         userName: staff ? `${staff.firstName} ${staff.lastName}` : undefined,
         hourlyRate: staff?.hourlyRate || current.hourlyRate,
+        // Auto-fill turno default se disponibile
+        shift: staff?.defaultShift || current.shift,
       }
       // Ricalcola totalPay per extra
       if (current.isExtra && staff?.hourlyRate) {
@@ -164,13 +167,13 @@ export function AttendanceSection({
 
   return (
     <div className={`space-y-4 ${className || ''}`}>
-      {/* SEZIONE DIPENDENTI FISSI */}
+      {/* SEZIONE DIPENDENTI */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <div className="flex items-center gap-2">
             <CardTitle className="text-lg flex items-center gap-2">
               <Users className="h-5 w-5" />
-              Dipendenti Fissi
+              Dipendenti
             </CardTitle>
             {fixedTotalHours > 0 && (
               <span className="text-sm text-muted-foreground">
@@ -198,11 +201,11 @@ export function AttendanceSection({
           ) : (
             <>
               {/* Header */}
-              <div className="grid grid-cols-[1fr_120px_100px_80px_40px] gap-2 text-xs font-medium text-muted-foreground border-b pb-2">
+              <div className="grid grid-cols-[1fr_100px_70px_60px_40px] gap-3 text-xs font-medium text-muted-foreground border-b pb-2">
                 <span>Dipendente</span>
                 <span>Turno</span>
-                <span>Codice</span>
-                <span>Ore</span>
+                <span className="text-center">Codice</span>
+                <span className="text-center">Ore</span>
                 <span></span>
               </div>
 
@@ -211,7 +214,7 @@ export function AttendanceSection({
                 return (
                   <div
                     key={realIndex}
-                    className="grid grid-cols-[1fr_120px_100px_80px_40px] gap-2 items-center"
+                    className="grid grid-cols-[1fr_100px_70px_60px_40px] gap-3 items-center"
                   >
                     {/* Dipendente */}
                     <Select
@@ -314,13 +317,13 @@ export function AttendanceSection({
         </CardContent>
       </Card>
 
-      {/* SEZIONE PERSONALE EXTRA */}
+      {/* SEZIONE EXTRA */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <div className="flex items-center gap-2">
             <CardTitle className="text-lg flex items-center gap-2">
               <UserPlus className="h-5 w-5" />
-              Personale Extra / Occasionale
+              Extra
             </CardTitle>
             {extraTotalHours > 0 && (
               <span className="text-sm text-muted-foreground">
@@ -348,10 +351,10 @@ export function AttendanceSection({
           ) : (
             <>
               {/* Header */}
-              <div className="grid grid-cols-[1fr_120px_80px_40px] gap-2 text-xs font-medium text-muted-foreground border-b pb-2">
+              <div className="grid grid-cols-[1fr_100px_60px_40px] gap-3 text-xs font-medium text-muted-foreground border-b pb-2">
                 <span>Nome</span>
                 <span>Turno</span>
-                <span>Ore</span>
+                <span className="text-center">Ore</span>
                 <span></span>
               </div>
 
@@ -360,7 +363,7 @@ export function AttendanceSection({
                 return (
                   <div
                     key={realIndex}
-                    className="grid grid-cols-[1fr_120px_80px_40px] gap-2 items-center"
+                    className="grid grid-cols-[1fr_100px_60px_40px] gap-3 items-center"
                   >
                     {/* Nome (da lista extra o testo libero) */}
                     {extraStaff.length > 0 ? (

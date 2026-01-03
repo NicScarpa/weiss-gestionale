@@ -58,6 +58,7 @@ export default async function NuovaChiusuraPage() {
         lastName: true,
         isFixedStaff: true,
         hourlyRate: true,
+        defaultShift: true,
       },
       orderBy: [{ isFixedStaff: 'desc' }, { lastName: 'asc' }, { firstName: 'asc' }],
     }),

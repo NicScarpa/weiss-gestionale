@@ -23,6 +23,7 @@ model User {
   venueId       String?   @map("venue_id")
   hourlyRate    Decimal?  @map("hourly_rate") @db.Decimal(10, 2)
   isFixedStaff  Boolean   @default(false) @map("is_fixed_staff")
+  defaultShift  Shift?    @map("default_shift") // Turno di default per presenze
   isActive      Boolean   @default(true) @map("is_active")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")

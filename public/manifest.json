@@ -1,0 +1,29 @@
+{
+  "name": "Weiss Cafè Gestionale",
+  "short_name": "Weiss",
+  "description": "Sistema Gestionale per Weiss Cafè - Chiusura cassa e contabilità",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0f172a",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["business", "finance", "productivity"],
+  "lang": "it-IT",
+  "dir": "ltr",
+  "scope": "/",
+  "prefer_related_applications": false
+}

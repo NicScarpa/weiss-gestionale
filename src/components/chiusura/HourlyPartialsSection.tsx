@@ -130,7 +130,7 @@ export function HourlyPartialsSection({
                 />
               </div>
 
-              {/* Totale (ex Progressivo Scontrini) */}
+              {/* Totale (ex Progressivo Corrispettivo) */}
               <div className="space-y-1">
                 <Label className="text-xs">Totale</Label>
                 <Input

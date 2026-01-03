@@ -177,7 +177,7 @@ export function ExpensesSection({
               {/* Seconda riga: Importi e Documento */}
               <div className="grid grid-cols-4 gap-2 items-end">
                 <div className="space-y-1">
-                  <Label className="text-xs">Importo (€) *</Label>
+                  <Label className="text-xs">Importo *</Label>
                   <Input
                     type="number"
                     min="0"
@@ -193,7 +193,7 @@ export function ExpensesSection({
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-xs">IVA (€)</Label>
+                  <Label className="text-xs">IVA</Label>
                   <Input
                     type="number"
                     min="0"

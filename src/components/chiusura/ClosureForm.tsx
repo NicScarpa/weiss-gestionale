@@ -73,7 +73,7 @@ interface ClosureFormProps {
   venueName: string
   vatRate?: number
   cashStationTemplates: { id: string; name: string; position: number; isEventOnly?: boolean }[]
-  staffMembers: { id: string; firstName: string; lastName: string; isFixedStaff?: boolean; hourlyRate?: number | null }[]
+  staffMembers: { id: string; firstName: string; lastName: string; isFixedStaff?: boolean; hourlyRate?: number | null; defaultShift?: 'MORNING' | 'EVENING' | null }[]
   accounts: { id: string; code: string; name: string }[]
   closureId?: string
   status?: 'DRAFT' | 'SUBMITTED' | 'VALIDATED'

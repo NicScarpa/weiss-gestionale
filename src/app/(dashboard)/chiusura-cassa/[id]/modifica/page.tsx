@@ -98,8 +98,11 @@ export default async function ModificaChiusuraPage({ params }: Props) {
         id: true,
         firstName: true,
         lastName: true,
+        isFixedStaff: true,
+        hourlyRate: true,
+        defaultShift: true,
       },
-      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+      orderBy: [{ isFixedStaff: 'desc' }, { lastName: 'asc' }, { firstName: 'asc' }],
     }),
     prisma.account.findMany({
       where: {
@@ -219,7 +222,10 @@ export default async function ModificaChiusuraPage({ params }: Props) {
         name: s.name,
         position: s.position,
       }))}
-      staffMembers={staffMembers}
+      staffMembers={staffMembers.map((s) => ({
+        ...s,
+        hourlyRate: s.hourlyRate ? Number(s.hourlyRate) : null,
+      }))}
       accounts={accounts}
       isEditingValidated={isEditingValidated}
     />

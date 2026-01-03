@@ -178,7 +178,7 @@ export default async function DettaglioChiusuraPage({ params }: Props) {
     switch (closure.status) {
       case 'DRAFT':
         return (
-          <Badge variant="outline" className="gap-1">
+          <Badge variant="outline" className="gap-1 border-amber-500 bg-amber-50 text-amber-700">
             <FileText className="h-3 w-3" />
             Bozza
           </Badge>
