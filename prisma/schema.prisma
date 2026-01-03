@@ -33,6 +33,7 @@ model User {
   validatedClosures   DailyClosure[] @relation("ValidatedBy")
   journalEntries      JournalEntry[]
   attendanceRecords   DailyAttendance[]
+  budgetsCreated      Budget[]
 
   @@map("users")
 }
@@ -89,6 +90,7 @@ model Venue {
   journalEntries   JournalEntry[]
   stationTemplates CashStationTemplate[]
   registerBalances RegisterBalance[]
+  budgets          Budget[]
 
   @@map("venues")
 }
@@ -318,6 +320,7 @@ model Account {
   journalEntries     JournalEntry[]
   counterpartEntries JournalEntry[] @relation("Counterpart")
   suppliers          Supplier[]
+  budgetLines        BudgetLine[]
 
   @@map("accounts")
 }
@@ -402,4 +405,98 @@ model Supplier {
   createdAt       DateTime  @default(now()) @map("created_at")
 
   @@map("suppliers")
+}
+
+// ==================== BUDGET MODULE ====================
+
+model Budget {
+  id          String       @id @default(cuid())
+  venue       Venue        @relation(fields: [venueId], references: [id])
+  venueId     String       @map("venue_id")
+  year        Int
+  name        String?
+  status      BudgetStatus @default(DRAFT)
+  notes       String?      @db.Text
+
+  createdBy   User?        @relation(fields: [createdById], references: [id])
+  createdById String?      @map("created_by")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  lines       BudgetLine[]
+  alerts      BudgetAlert[]
+
+  @@unique([venueId, year])
+  @@map("budgets")
+}
+
+enum BudgetStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+model BudgetLine {
+  id          String   @id @default(cuid())
+  budget      Budget   @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  budgetId    String   @map("budget_id")
+  account     Account  @relation(fields: [accountId], references: [id])
+  accountId   String   @map("account_id")
+
+  // Valori mensili
+  jan         Decimal  @default(0) @db.Decimal(12, 2)
+  feb         Decimal  @default(0) @db.Decimal(12, 2)
+  mar         Decimal  @default(0) @db.Decimal(12, 2)
+  apr         Decimal  @default(0) @db.Decimal(12, 2)
+  may         Decimal  @default(0) @db.Decimal(12, 2)
+  jun         Decimal  @default(0) @db.Decimal(12, 2)
+  jul         Decimal  @default(0) @db.Decimal(12, 2)
+  aug         Decimal  @default(0) @db.Decimal(12, 2)
+  sep         Decimal  @default(0) @db.Decimal(12, 2)
+  oct         Decimal  @default(0) @db.Decimal(12, 2)
+  nov         Decimal  @default(0) @db.Decimal(12, 2)
+  dec         Decimal  @default(0) @db.Decimal(12, 2)
+
+  annualTotal Decimal  @default(0) @map("annual_total") @db.Decimal(12, 2)
+  notes       String?
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([budgetId, accountId])
+  @@map("budget_lines")
+}
+
+model BudgetAlert {
+  id              String          @id @default(cuid())
+  budget          Budget          @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  budgetId        String          @map("budget_id")
+  accountId       String?         @map("account_id")
+  month           Int?
+
+  alertType       BudgetAlertType @map("alert_type")
+  budgetAmount    Decimal         @map("budget_amount") @db.Decimal(12, 2)
+  actualAmount    Decimal         @map("actual_amount") @db.Decimal(12, 2)
+  varianceAmount  Decimal         @map("variance_amount") @db.Decimal(12, 2)
+  variancePercent Decimal         @map("variance_percent") @db.Decimal(5, 2)
+
+  status          AlertStatus     @default(ACTIVE)
+  acknowledgedBy  String?         @map("acknowledged_by")
+  acknowledgedAt  DateTime?       @map("acknowledged_at")
+  message         String?
+
+  createdAt       DateTime        @default(now()) @map("created_at")
+
+  @@map("budget_alerts")
+}
+
+enum BudgetAlertType {
+  OVER_BUDGET
+  UNDER_REVENUE
+}
+
+enum AlertStatus {
+  ACTIVE
+  ACKNOWLEDGED
+  RESOLVED
 }

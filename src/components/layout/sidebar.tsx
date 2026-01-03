@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Receipt,
   BookOpen,
+  Calculator,
   BarChart3,
   Settings,
   ChevronLeft,
@@ -19,6 +20,7 @@ const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Chiusura Cassa', href: '/chiusura-cassa', icon: Receipt },
   { name: 'Prima Nota', href: '/prima-nota', icon: BookOpen },
+  { name: 'Budget', href: '/budget', icon: Calculator },
   { name: 'Report', href: '/report', icon: BarChart3 },
   { name: 'Impostazioni', href: '/impostazioni', icon: Settings },
 ]
