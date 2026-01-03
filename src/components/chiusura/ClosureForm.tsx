@@ -297,7 +297,7 @@ export function ClosureForm({
     try {
       await onSubmit(formData)
       toast.success('Chiusura inviata per validazione')
-      router.push('/chiusure')
+      router.push('/chiusura-cassa')
     } catch (error) {
       console.error('Errore invio:', error)
       toast.error('Errore nell\'invio')
