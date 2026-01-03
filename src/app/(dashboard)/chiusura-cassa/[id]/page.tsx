@@ -17,6 +17,7 @@ import {
   Banknote,
   CreditCard,
   Trash2,
+  Download,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -223,6 +224,14 @@ export default async function DettaglioChiusuraPage({ params }: Props) {
         </div>
 
         <div className="flex gap-2">
+          {/* Scarica PDF */}
+          <Button variant="outline" asChild>
+            <a href={`/api/chiusure/${id}/pdf`} download>
+              <Download className="mr-2 h-4 w-4" />
+              PDF
+            </a>
+          </Button>
+
           {/* Modifica: DRAFT per tutti, qualsiasi stato per admin */}
           {(closure.status === 'DRAFT' || session.user.role === 'admin') && (
             <Button variant="outline" asChild>

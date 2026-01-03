@@ -4,12 +4,14 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
+import { renderToBuffer } from '@react-pdf/renderer'
+import { PrimaNotaPdfDocument } from '@/lib/pdf/PrimaNotaPdfTemplate'
 
 const exportFiltersSchema = z.object({
   registerType: z.enum(['CASH', 'BANK']).optional(),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
-  format: z.enum(['csv', 'json']).default('csv'),
+  format: z.enum(['csv', 'json', 'pdf']).default('csv'),
 })
 
 // GET /api/prima-nota/export - Esporta movimenti
@@ -90,6 +92,48 @@ export async function GET(request: NextRequest) {
         })),
         exportedAt: new Date().toISOString(),
         filters,
+      })
+    }
+
+    // Genera PDF
+    if (filters.format === 'pdf') {
+      // Calcola totali
+      const totaleDebiti = entries.reduce((sum, e) => sum + (e.debitAmount ? Number(e.debitAmount) : 0), 0)
+      const totaleCrediti = entries.reduce((sum, e) => sum + (e.creditAmount ? Number(e.creditAmount) : 0), 0)
+      const saldoPeriodo = totaleDebiti - totaleCrediti
+
+      // Prepara dati per PDF
+      const pdfEntries = entries.map((e) => ({
+        id: e.id,
+        date: e.date,
+        description: e.description,
+        registerType: e.registerType as 'CASH' | 'BANK',
+        debitAmount: e.debitAmount ? Number(e.debitAmount) : null,
+        creditAmount: e.creditAmount ? Number(e.creditAmount) : null,
+        documentRef: e.documentRef,
+        account: e.account,
+        venue: e.venue,
+      }))
+
+      const pdfBuffer = await renderToBuffer(
+        PrimaNotaPdfDocument({
+          entries: pdfEntries,
+          registerType: filters.registerType ? filters.registerType as 'CASH' | 'BANK' : 'ALL',
+          dateFrom: filters.dateFrom ? format(new Date(filters.dateFrom), 'dd/MM/yyyy') : undefined,
+          dateTo: filters.dateTo ? format(new Date(filters.dateTo), 'dd/MM/yyyy') : undefined,
+          totaleDebiti,
+          totaleCrediti,
+          saldoPeriodo,
+        })
+      )
+
+      const filename = `prima-nota-${filters.registerType?.toLowerCase() || 'tutti'}-${format(new Date(), 'yyyy-MM-dd')}.pdf`
+
+      return new NextResponse(new Uint8Array(pdfBuffer), {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="${filename}"`,
+        },
       })
     }
 
