@@ -43,7 +43,7 @@ export const budgetLineSchema = z.object({
   oct: monthlyValueSchema,
   nov: monthlyValueSchema,
   dec: monthlyValueSchema,
-  notes: z.string().optional(),
+  notes: z.string().optional().nullable(),
 })
 
 // Schema per creazione/aggiornamento righe budget (array)
