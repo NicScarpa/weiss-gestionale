@@ -1,6 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
+import { format } from 'date-fns'
 import { ClosureForm, ClosureFormData } from '@/components/chiusura'
 import { toast } from 'sonner'
 import { AlertTriangle } from 'lucide-react'
@@ -38,6 +39,7 @@ export function ModificaChiusuraClient({
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        date: format(data.date, 'yyyy-MM-dd'),
         isEvent: data.isEvent,
         eventName: data.eventName,
         weatherMorning: data.weatherMorning,

@@ -33,14 +33,17 @@ const SHIFT_OPTIONS = [
   { value: 'EVENING', label: 'Sera' },
 ]
 
-// Opzioni codice presenza per staff fisso
+// Opzioni codice presenza per staff fisso (solo codice)
 const STATUS_CODE_OPTIONS = [
-  { value: 'P', label: 'P - Presente' },
-  { value: 'FE', label: 'FE - Ferie' },
-  { value: 'R', label: 'R - Riposo' },
-  { value: 'Z', label: 'Z - Permesso' },
-  { value: 'C', label: 'C - Altra Sede' },
+  { value: 'P', label: 'P' },
+  { value: 'R', label: 'R' },
+  { value: 'Z', label: 'Z' },
+  { value: 'FE', label: 'FE' },
+  { value: 'C', label: 'C' },
 ]
+
+// Legenda codici
+const STATUS_CODE_LEGEND = 'P = Presente | R = Riposo | Z = Permesso | FE = Ferie | C = Altra sede'
 
 interface StaffMember {
   id: string
@@ -73,10 +76,6 @@ export function AttendanceSection({
   // Separa presenze fissi da extra
   const fixedAttendance = attendance.filter((a) => !a.isExtra)
   const extraAttendance = attendance.filter((a) => a.isExtra)
-
-  // Calcola totali ore
-  const fixedTotalHours = fixedAttendance.reduce((sum, a) => sum + (a.hours || 0), 0)
-  const extraTotalHours = extraAttendance.reduce((sum, a) => sum + (a.hours || 0), 0)
 
   // Aggiungi nuova presenza
   const handleAddFixed = () => {
@@ -170,17 +169,10 @@ export function AttendanceSection({
       {/* SEZIONE DIPENDENTI */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-2">
-          <div className="flex items-center gap-2">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              Dipendenti
-            </CardTitle>
-            {fixedTotalHours > 0 && (
-              <span className="text-sm text-muted-foreground">
-                ({fixedTotalHours}h)
-              </span>
-            )}
-          </div>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            Dipendenti
+          </CardTitle>
           <Button
             type="button"
             variant="outline"
@@ -276,19 +268,19 @@ export function AttendanceSection({
                       </SelectContent>
                     </Select>
 
-                    {/* Ore */}
+                    {/* Ore - solo se codice = P */}
                     <Input
                       type="number"
                       min="0"
                       max="24"
                       step="0.5"
-                      value={att.hours ?? ''}
+                      value={att.statusCode === 'P' ? (att.hours ?? '') : ''}
                       onChange={(e) =>
                         handleFieldChange(realIndex, 'hours', e.target.value)
                       }
-                      disabled={disabled}
+                      disabled={disabled || att.statusCode !== 'P'}
                       className="font-mono"
-                      placeholder="0"
+                      placeholder={att.statusCode === 'P' ? '0' : '-'}
                     />
 
                     {/* Rimuovi */}
@@ -306,12 +298,10 @@ export function AttendanceSection({
                 )
               })}
 
-              {/* Totale Ore */}
-              <div className="flex justify-end pt-2 border-t text-sm">
-                <span className="text-muted-foreground">
-                  Totale ore: <strong>{fixedTotalHours}h</strong>
-                </span>
-              </div>
+              {/* Legenda codici */}
+              <p className="text-xs text-muted-foreground pt-2 border-t">
+                {STATUS_CODE_LEGEND}
+              </p>
             </>
           )}
         </CardContent>
@@ -320,17 +310,10 @@ export function AttendanceSection({
       {/* SEZIONE EXTRA */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-2">
-          <div className="flex items-center gap-2">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <UserPlus className="h-5 w-5" />
-              Extra
-            </CardTitle>
-            {extraTotalHours > 0 && (
-              <span className="text-sm text-muted-foreground">
-                ({extraTotalHours}h)
-              </span>
-            )}
-          </div>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <UserPlus className="h-5 w-5" />
+            Extra
+          </CardTitle>
           <Button
             type="button"
             variant="outline"
@@ -445,13 +428,6 @@ export function AttendanceSection({
                   </div>
                 )
               })}
-
-              {/* Totale Ore */}
-              <div className="flex justify-end pt-2 border-t text-sm">
-                <span className="text-muted-foreground">
-                  Totale ore: <strong>{extraTotalHours}h</strong>
-                </span>
-              </div>
             </>
           )}
         </CardContent>

@@ -389,7 +389,7 @@ export function ClosureForm({
                 onChange={(e) =>
                   handleFieldChange('date', new Date(e.target.value))
                 }
-                disabled={isReadOnly || !!closureId}
+                disabled={isReadOnly}
               />
             </div>
 

@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
-import { Pencil, Users, UserPlus, Loader2 } from 'lucide-react'
+import { Pencil, Users, UserPlus, Loader2, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Staff {
@@ -50,10 +50,11 @@ export function StaffManagement() {
   const [loading, setLoading] = useState(true)
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showInactive, setShowInactive] = useState(false)
 
-  // Form state
+  // Form state per modifica
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -63,11 +64,21 @@ export function StaffManagement() {
     isActive: true,
   })
 
+  // Form state per creazione
+  const [createFormData, setCreateFormData] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    isFixedStaff: true,
+    hourlyRate: '',
+    defaultShift: '' as 'MORNING' | 'EVENING' | '',
+  })
+
   // Carica lista staff
   const fetchStaff = async () => {
     try {
       setLoading(true)
-      const res = await fetch(`/api/staff?includeInactive=${showInactive}`)
+      const res = await fetch(`/api/staff?showInactive=${showInactive}`)
       if (!res.ok) throw new Error('Errore nel caricamento')
       const data = await res.json()
       setStaff(data.data || [])
@@ -137,6 +148,55 @@ export function StaffManagement() {
     }
   }
 
+  // Crea nuovo dipendente
+  const handleCreate = async () => {
+    if (!createFormData.firstName || !createFormData.lastName || !createFormData.email) {
+      toast.error('Compila tutti i campi obbligatori')
+      return
+    }
+
+    try {
+      setSaving(true)
+
+      const newStaffData: any = {
+        firstName: createFormData.firstName,
+        lastName: createFormData.lastName,
+        email: createFormData.email,
+        isFixedStaff: createFormData.isFixedStaff,
+        hourlyRate: createFormData.hourlyRate ? parseFloat(createFormData.hourlyRate) : null,
+        defaultShift: createFormData.defaultShift || null,
+      }
+
+      const res = await fetch('/api/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newStaffData),
+      })
+
+      if (!res.ok) {
+        const error = await res.json()
+        throw new Error(error.error || 'Errore nella creazione')
+      }
+
+      toast.success('Dipendente creato')
+      setIsCreateDialogOpen(false)
+      setCreateFormData({
+        firstName: '',
+        lastName: '',
+        email: '',
+        isFixedStaff: true,
+        hourlyRate: '',
+        defaultShift: '',
+      })
+      fetchStaff()
+    } catch (error: any) {
+      console.error('Errore:', error)
+      toast.error(error.message || 'Errore nella creazione')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   // Separa dipendenti e extra
   const fixedStaff = staff.filter((s) => s.isFixedStaff)
   const extraStaff = staff.filter((s) => !s.isFixedStaff)
@@ -174,6 +234,10 @@ export function StaffManagement() {
             Mostra inattivi
           </Label>
         </div>
+        <Button onClick={() => setIsCreateDialogOpen(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          Nuovo Dipendente
+        </Button>
       </div>
 
       {/* Dipendenti Fissi */}
@@ -420,6 +484,141 @@ export function StaffManagement() {
                 </>
               ) : (
                 'Salva'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Creazione */}
+      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nuovo Dipendente</DialogTitle>
+            <DialogDescription>
+              Inserisci i dati del nuovo dipendente
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Nome e Cognome */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="create-firstName">Nome *</Label>
+                <Input
+                  id="create-firstName"
+                  value={createFormData.firstName}
+                  onChange={(e) =>
+                    setCreateFormData({ ...createFormData, firstName: e.target.value })
+                  }
+                  placeholder="Mario"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="create-lastName">Cognome *</Label>
+                <Input
+                  id="create-lastName"
+                  value={createFormData.lastName}
+                  onChange={(e) =>
+                    setCreateFormData({ ...createFormData, lastName: e.target.value })
+                  }
+                  placeholder="Rossi"
+                />
+              </div>
+            </div>
+
+            {/* Email */}
+            <div className="space-y-2">
+              <Label htmlFor="create-email">Email *</Label>
+              <Input
+                id="create-email"
+                type="email"
+                value={createFormData.email}
+                onChange={(e) =>
+                  setCreateFormData({ ...createFormData, email: e.target.value })
+                }
+                placeholder="mario.rossi@esempio.it"
+              />
+            </div>
+
+            {/* Tipo Dipendente */}
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Tipo Dipendente</Label>
+                <p className="text-sm text-muted-foreground">
+                  {createFormData.isFixedStaff ? 'Dipendente fisso' : 'Collaboratore extra'}
+                </p>
+              </div>
+              <Switch
+                checked={createFormData.isFixedStaff}
+                onCheckedChange={(checked) =>
+                  setCreateFormData({ ...createFormData, isFixedStaff: checked })
+                }
+              />
+            </div>
+
+            {/* Turno Default (solo per fissi) */}
+            {createFormData.isFixedStaff && (
+              <div className="space-y-2">
+                <Label htmlFor="create-defaultShift">Turno Default</Label>
+                <Select
+                  value={createFormData.defaultShift}
+                  onValueChange={(value: 'MORNING' | 'EVENING' | '') =>
+                    setCreateFormData({ ...createFormData, defaultShift: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleziona turno..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="MORNING">Mattina</SelectItem>
+                    <SelectItem value="EVENING">Sera</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Paga Oraria (solo per extra) */}
+            {!createFormData.isFixedStaff && (
+              <div className="space-y-2">
+                <Label htmlFor="create-hourlyRate">Paga Oraria</Label>
+                <div className="relative">
+                  <Input
+                    id="create-hourlyRate"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={createFormData.hourlyRate}
+                    onChange={(e) =>
+                      setCreateFormData({ ...createFormData, hourlyRate: e.target.value })
+                    }
+                    className="pr-10"
+                    placeholder="0.00"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                    €/h
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsCreateDialogOpen(false)}
+              disabled={saving}
+            >
+              Annulla
+            </Button>
+            <Button onClick={handleCreate} disabled={saving}>
+              {saving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Creazione...
+                </>
+              ) : (
+                'Crea Dipendente'
               )}
             </Button>
           </DialogFooter>

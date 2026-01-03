@@ -38,12 +38,34 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// Funzione per ottenere saldo iniziale dell'anno corrente
+async function getInitialBalance(venueId: string) {
+  const currentYear = new Date().getFullYear()
+
+  const initialBalance = await prisma.initialBalance.findUnique({
+    where: {
+      venueId_year: {
+        venueId,
+        year: currentYear,
+      },
+    },
+  })
+
+  return {
+    cashBalance: initialBalance ? Number(initialBalance.cashBalance) : 0,
+    bankBalance: initialBalance ? Number(initialBalance.bankBalance) : 0,
+  }
+}
+
 // Funzione helper per calcolare saldi dai movimenti
 async function calculateBalancesFromEntries(venueId?: string) {
   const registerTypes = ['CASH', 'BANK'] as const
 
   // Se c'è una sede specifica, calcola per quella
   if (venueId) {
+    // Ottieni saldo iniziale
+    const initialBalance = await getInitialBalance(venueId)
+
     const results = await Promise.all(
       registerTypes.map(async (registerType) => {
         const aggregation = await prisma.journalEntry.aggregate({
@@ -59,11 +81,18 @@ async function calculateBalancesFromEntries(venueId?: string) {
 
         const totalDebits = Number(aggregation._sum.debitAmount || 0)
         const totalCredits = Number(aggregation._sum.creditAmount || 0)
-        const closingBalance = totalDebits - totalCredits
+
+        // Saldo iniziale per questo registro
+        const openingBalance = registerType === 'CASH'
+          ? initialBalance.cashBalance
+          : initialBalance.bankBalance
+
+        // Saldo finale = apertura + dare - avere
+        const closingBalance = openingBalance + totalDebits - totalCredits
 
         return {
           registerType,
-          openingBalance: 0,
+          openingBalance,
           totalDebits,
           totalCredits,
           closingBalance,
@@ -96,6 +125,9 @@ async function calculateBalancesFromEntries(venueId?: string) {
 
   const allResults = await Promise.all(
     venues.map(async (venue) => {
+      // Ottieni saldo iniziale per questa sede
+      const initialBalance = await getInitialBalance(venue.id)
+
       const results = await Promise.all(
         registerTypes.map(async (registerType) => {
           const aggregation = await prisma.journalEntry.aggregate({
@@ -111,11 +143,18 @@ async function calculateBalancesFromEntries(venueId?: string) {
 
           const totalDebits = Number(aggregation._sum.debitAmount || 0)
           const totalCredits = Number(aggregation._sum.creditAmount || 0)
-          const closingBalance = totalDebits - totalCredits
+
+          // Saldo iniziale per questo registro
+          const openingBalance = registerType === 'CASH'
+            ? initialBalance.cashBalance
+            : initialBalance.bankBalance
+
+          // Saldo finale = apertura + dare - avere
+          const closingBalance = openingBalance + totalDebits - totalCredits
 
           return {
             registerType,
-            openingBalance: 0,
+            openingBalance,
             totalDebits,
             totalCredits,
             closingBalance,

@@ -2,17 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { format } from 'date-fns'
-import { it } from 'date-fns/locale'
 import {
   Plus,
-  Search,
   Filter,
-  Eye,
   Pencil,
-  Trash2,
-  Send,
-  CheckCircle,
+  CheckCircle2,
   Clock,
   FileText,
 } from 'lucide-react'
@@ -41,16 +35,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { formatCurrency } from '@/lib/constants'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
-import { DeleteClosureDialog } from '@/components/chiusura/DeleteClosureDialog'
+
+interface Station {
+  id: string
+  name: string
+  totalAmount: number
+}
 
 interface Closure {
   id: string
@@ -71,6 +64,26 @@ interface Closure {
   createdAt: string
   stationsCount: number
   expensesCount: number
+  stations?: Station[]
+}
+
+// Formatta data in formato compatto: "SAB 03/01/26"
+const formatDateCompact = (dateStr: string) => {
+  const days = ['DOM', 'LUN', 'MAR', 'MER', 'GIO', 'VEN', 'SAB']
+  const d = new Date(dateStr)
+  const day = days[d.getDay()]
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const yy = String(d.getFullYear()).slice(-2)
+  return `${day} ${dd}/${mm}/${yy}`
+}
+
+// Ottieni nomi postazioni movimentate
+const getActiveStationNames = (stations?: Station[]) => {
+  if (!stations || stations.length === 0) return '-'
+  const active = stations.filter(s => s.totalAmount > 0)
+  if (active.length === 0) return '-'
+  return active.map(s => s.name).join(', ')
 }
 
 interface ClosureListProps {
@@ -128,61 +141,26 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
     fetchClosures()
   }, [venueId, filter.status, filter.dateFrom, filter.dateTo, pagination.page])
 
-  // Delete closure
-  const handleDelete = async (id: string) => {
-    if (!confirm('Sei sicuro di voler eliminare questa chiusura?')) return
-
-    try {
-      const res = await fetch(`/api/chiusure/${id}`, { method: 'DELETE' })
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || 'Errore eliminazione')
-      }
-      toast.success('Chiusura eliminata')
-      fetchClosures()
-    } catch (error: any) {
-      toast.error(error.message)
-    }
-  }
-
-  // Submit for validation
-  const handleSubmit = async (id: string) => {
-    try {
-      const res = await fetch(`/api/chiusure/${id}/submit`, { method: 'POST' })
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || 'Errore invio')
-      }
-      toast.success('Chiusura inviata per validazione')
-      fetchClosures()
-    } catch (error: any) {
-      toast.error(error.message)
-    }
-  }
-
-  // Status badge
-  const getStatusBadge = (status: Closure['status']) => {
+  // Status icon (solo icona senza testo)
+  const getStatusIcon = (status: Closure['status']) => {
     switch (status) {
       case 'DRAFT':
         return (
-          <Badge variant="outline" className="gap-1 border-amber-500 bg-amber-50 text-amber-700">
-            <FileText className="h-3 w-3" />
-            Bozza
-          </Badge>
+          <span title="Bozza">
+            <FileText className="h-5 w-5 text-amber-500" />
+          </span>
         )
       case 'SUBMITTED':
         return (
-          <Badge variant="secondary" className="gap-1">
-            <Clock className="h-3 w-3" />
-            In attesa
-          </Badge>
+          <span title="In attesa di validazione">
+            <Clock className="h-5 w-5 text-orange-500" />
+          </span>
         )
       case 'VALIDATED':
         return (
-          <Badge variant="default" className="gap-1 bg-green-600">
-            <CheckCircle className="h-3 w-3" />
-            Validata
-          </Badge>
+          <span title="Validata">
+            <CheckCircle2 className="h-5 w-5 text-green-500" />
+          </span>
         )
     }
   }
@@ -291,32 +269,33 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
                   <TableRow>
                     <TableHead>Data</TableHead>
                     {isAdmin && <TableHead>Sede</TableHead>}
-                    <TableHead>Stato</TableHead>
-                    <TableHead className="text-right">Totale Lordo</TableHead>
-                    <TableHead className="text-center">Postazioni</TableHead>
+                    <TableHead className="text-right">Incasso</TableHead>
+                    <TableHead>Postazioni</TableHead>
                     <TableHead>Evento</TableHead>
-                    <TableHead className="text-right">Azioni</TableHead>
+                    <TableHead className="w-10"></TableHead>
+                    <TableHead className="w-10"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {closures.map((closure) => (
-                    <TableRow key={closure.id}>
+                    <TableRow
+                      key={closure.id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => router.push(`/chiusura-cassa/${closure.id}`)}
+                    >
                       <TableCell className="font-medium">
-                        {format(new Date(closure.date), 'EEEE d MMMM yyyy', {
-                          locale: it,
-                        })}
+                        {formatDateCompact(closure.date)}
                       </TableCell>
                       {isAdmin && (
                         <TableCell>
                           <Badge variant="outline">{closure.venue.code}</Badge>
                         </TableCell>
                       )}
-                      <TableCell>{getStatusBadge(closure.status)}</TableCell>
                       <TableCell className="text-right font-mono">
                         {formatCurrency(closure.grossTotal)}
                       </TableCell>
-                      <TableCell className="text-center">
-                        {closure.stationsCount}
+                      <TableCell className="text-sm text-muted-foreground">
+                        {getActiveStationNames(closure.stations)}
                       </TableCell>
                       <TableCell>
                         {closure.isEvent ? (
@@ -325,77 +304,17 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm">
-                              Azioni
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem asChild>
-                              <Link href={`/chiusura-cassa/${closure.id}`}>
-                                <Eye className="mr-2 h-4 w-4" />
-                                Visualizza
-                              </Link>
-                            </DropdownMenuItem>
-
-                            {/* Modifica: DRAFT per tutti, qualsiasi stato per admin */}
-                            {(closure.status === 'DRAFT' || isAdmin) && (
-                              <DropdownMenuItem asChild>
-                                <Link
-                                  href={`/chiusura-cassa/${closure.id}/modifica`}
-                                >
-                                  <Pencil className="mr-2 h-4 w-4" />
-                                  Modifica
-                                </Link>
-                              </DropdownMenuItem>
-                            )}
-
-                            {/* Invia: solo DRAFT */}
-                            {closure.status === 'DRAFT' && (
-                              <DropdownMenuItem
-                                onClick={() => handleSubmit(closure.id)}
-                              >
-                                <Send className="mr-2 h-4 w-4" />
-                                Invia per validazione
-                              </DropdownMenuItem>
-                            )}
-
-                            {/* Elimina DRAFT: conferma semplice */}
-                            {closure.status === 'DRAFT' && (
-                              <DropdownMenuItem
-                                onClick={() => handleDelete(closure.id)}
-                                className="text-destructive"
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Elimina
-                              </DropdownMenuItem>
-                            )}
-
-                            {/* Elimina non-DRAFT: solo admin con doppia conferma */}
-                            {closure.status !== 'DRAFT' && isAdmin && (
-                              <DeleteClosureDialog
-                                closureId={closure.id}
-                                closureDate={closure.date}
-                                closureStatus={closure.status}
-                                onDeleted={() => {
-                                  fetchClosures()
-                                  router.refresh()
-                                }}
-                                trigger={
-                                  <DropdownMenuItem
-                                    onSelect={(e) => e.preventDefault()}
-                                    className="text-destructive"
-                                  >
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    Elimina
-                                  </DropdownMenuItem>
-                                }
-                              />
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        {(closure.status === 'DRAFT' || isAdmin) && (
+                          <Button variant="ghost" size="icon" asChild className="h-8 w-8">
+                            <Link href={`/chiusura-cassa/${closure.id}/modifica`}>
+                              <Pencil className="h-4 w-4" />
+                            </Link>
+                          </Button>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {getStatusIcon(closure.status)}
                       </TableCell>
                     </TableRow>
                   ))}

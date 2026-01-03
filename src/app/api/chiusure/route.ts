@@ -139,6 +139,8 @@ export async function GET(request: NextRequest) {
           },
           stations: {
             select: {
+              id: true,
+              name: true,
               totalAmount: true,
             },
           },
@@ -197,6 +199,11 @@ export async function GET(request: NextRequest) {
         createdAt: c.createdAt,
         stationsCount: c._count.stations,
         expensesCount: c._count.expenses,
+        stations: c.stations.map(s => ({
+          id: s.id,
+          name: s.name,
+          totalAmount: Number(s.totalAmount),
+        })),
       }
     })
 

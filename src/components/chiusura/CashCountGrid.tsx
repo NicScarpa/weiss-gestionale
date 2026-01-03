@@ -70,10 +70,10 @@ interface CashCountGridProps {
   className?: string
 }
 
-// Formatta etichetta denominazione
+// Formatta etichetta denominazione con spazio dopo €
 const formatDenomination = (denom: number) => {
-  if (denom >= 1) return `€${denom}`
-  return `€${denom.toFixed(2).replace('.', ',')}`
+  if (denom >= 1) return `€ ${denom}`
+  return `€ ${denom.toFixed(2).replace('.', ',')}`
 }
 
 // Componente riga singola - DEVE essere fuori dal componente principale
@@ -81,7 +81,6 @@ const formatDenomination = (denom: number) => {
 interface DenominationRowProps {
   denomination: number
   count: number
-  isCoin?: boolean
   disabled?: boolean
   onIncrement: (denomination: number, delta: number) => void
   onChange: (denomination: number, value: string) => void
@@ -90,7 +89,6 @@ interface DenominationRowProps {
 const DenominationRow = memo(function DenominationRow({
   denomination,
   count,
-  isCoin = false,
   disabled = false,
   onIncrement,
   onChange,
@@ -100,12 +98,7 @@ const DenominationRow = memo(function DenominationRow({
   return (
     <div className="grid grid-cols-[80px_1fr_100px] items-center gap-2 py-1">
       {/* Etichetta denominazione */}
-      <Label
-        className={cn(
-          'font-medium text-sm',
-          isCoin ? 'text-amber-700' : 'text-emerald-700'
-        )}
-      >
+      <Label className="font-bold text-sm text-foreground">
         {formatDenomination(denomination)}
       </Label>
 
@@ -209,45 +202,19 @@ export function CashCountGrid({
     [values, onChange]
   )
 
+  // Tutte le denominazioni ordinate dal più grande al più piccolo
+  const allDenominations = [...BILL_DENOMINATIONS, ...COIN_DENOMINATIONS]
+
   return (
     <div className={cn('space-y-4', className)}>
-      {/* Sezione Banconote */}
-      <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
-        <div className="flex items-center justify-between mb-2">
-          <h4 className="font-semibold text-emerald-800">Banconote</h4>
-          <span className="font-mono font-semibold text-emerald-700">
-            {formatCurrency(billsTotal)}
-          </span>
-        </div>
+      {/* Sezione unica conteggio */}
+      <div className="rounded-lg border bg-muted/30 p-3">
         <div className="space-y-1">
-          {BILL_DENOMINATIONS.map((denom) => (
+          {allDenominations.map((denom) => (
             <DenominationRow
-              key={`bill-${denom}`}
+              key={`denom-${denom}`}
               denomination={denom}
               count={values[denominationToKey[denom]] || 0}
-              disabled={disabled}
-              onIncrement={handleIncrement}
-              onChange={handleChange}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Sezione Monete */}
-      <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3">
-        <div className="flex items-center justify-between mb-2">
-          <h4 className="font-semibold text-amber-800">Monete</h4>
-          <span className="font-mono font-semibold text-amber-700">
-            {formatCurrency(coinsTotal)}
-          </span>
-        </div>
-        <div className="space-y-1">
-          {COIN_DENOMINATIONS.map((denom) => (
-            <DenominationRow
-              key={`coin-${denom}`}
-              denomination={denom}
-              count={values[denominationToKey[denom]] || 0}
-              isCoin
               disabled={disabled}
               onIncrement={handleIncrement}
               onChange={handleChange}

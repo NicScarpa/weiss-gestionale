@@ -59,6 +59,33 @@ export async function GET(request: NextRequest) {
       where.accountId = filters.accountId
     }
 
+    // Filtro per tipo movimento (basato su dare/avere)
+    const movementType = searchParams.get('movementType')
+    if (movementType) {
+      switch (movementType) {
+        case 'INCASSO':
+          // Entrate in cassa
+          where.registerType = 'CASH'
+          where.debitAmount = { not: null }
+          break
+        case 'USCITA':
+          // Uscite da cassa
+          where.registerType = 'CASH'
+          where.creditAmount = { not: null }
+          break
+        case 'VERSAMENTO':
+          // Trasferimento cassa -> banca
+          where.registerType = 'BANK'
+          where.debitAmount = { not: null }
+          break
+        case 'PRELIEVO':
+          // Prelievo da banca
+          where.registerType = 'BANK'
+          where.creditAmount = { not: null }
+          break
+      }
+    }
+
     if (filters.search) {
       where.description = {
         contains: filters.search,

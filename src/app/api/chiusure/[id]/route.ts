@@ -5,6 +5,7 @@ import { z } from 'zod'
 
 // Schema per aggiornamento chiusura
 const updateClosureSchema = z.object({
+  date: z.string().transform((s) => new Date(s)).optional(),
   isEvent: z.boolean().optional(),
   eventName: z.string().optional(),
   weatherMorning: z.string().optional(),

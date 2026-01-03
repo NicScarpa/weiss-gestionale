@@ -4,6 +4,7 @@ import { StaffManagement } from '@/components/settings/StaffManagement'
 import { VenueManagement } from '@/components/settings/VenueManagement'
 import { SupplierManagement } from '@/components/settings/SupplierManagement'
 import { AccountManagement } from '@/components/settings/AccountManagement'
+import { PrimaNotaSettings } from '@/components/settings/PrimaNotaSettings'
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 
@@ -38,6 +39,7 @@ export default async function ImpostazioniPage() {
           <TabsTrigger value="sedi">Sedi</TabsTrigger>
           <TabsTrigger value="fornitori">Fornitori</TabsTrigger>
           <TabsTrigger value="conti">Piano Conti</TabsTrigger>
+          <TabsTrigger value="prima-nota">Prima Nota</TabsTrigger>
         </TabsList>
 
         <TabsContent value="dipendenti">
@@ -54,6 +56,10 @@ export default async function ImpostazioniPage() {
 
         <TabsContent value="conti">
           <AccountManagement />
+        </TabsContent>
+
+        <TabsContent value="prima-nota">
+          <PrimaNotaSettings />
         </TabsContent>
       </Tabs>
     </div>

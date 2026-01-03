@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, Fragment } from 'react'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 import {
@@ -9,9 +9,14 @@ import {
   Trash2,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   ArrowUpRight,
   ArrowDownLeft,
   Link as LinkIcon,
+  FileText,
+  User,
+  Calendar,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -64,6 +69,11 @@ export function JournalEntryTable({
   showVenue = false,
 }: JournalEntryTableProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+
+  const toggleExpand = (entryId: string) => {
+    setExpandedId((prev) => (prev === entryId ? null : entryId))
+  }
 
   const handleDelete = async (entry: JournalEntry) => {
     if (!onDelete) return
@@ -183,111 +193,207 @@ export function JournalEntryTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {entries.map((entry) => (
-              <TableRow
-                key={entry.id}
-                className={cn(
-                  entry.closureId && 'bg-muted/30',
-                  deletingId === entry.id && 'opacity-50'
-                )}
-              >
-                <TableCell className="font-medium">
-                  {format(new Date(entry.date), 'dd/MM/yy', { locale: it })}
-                </TableCell>
+            {entries.map((entry) => {
+              const isExpanded = expandedId === entry.id
+              return (
+                <Fragment key={entry.id}>
+                  <TableRow
+                    className={cn(
+                      'cursor-pointer hover:bg-muted/50 transition-colors',
+                      entry.closureId && 'bg-muted/30',
+                      deletingId === entry.id && 'opacity-50',
+                      isExpanded && 'bg-muted/50'
+                    )}
+                    onClick={() => toggleExpand(entry.id)}
+                  >
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-1">
+                        {isExpanded ? (
+                          <ChevronUp className="h-3 w-3 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                        )}
+                        {format(new Date(entry.date), 'dd/MM/yy', { locale: it })}
+                      </div>
+                    </TableCell>
 
-                {showVenue && (
-                  <TableCell>
-                    <Badge variant="secondary" className="text-xs">
-                      {entry.venue?.code || '-'}
-                    </Badge>
-                  </TableCell>
-                )}
-
-                <TableCell>{getRegisterBadge(entry.registerType)}</TableCell>
-
-                <TableCell>
-                  <div className="flex flex-col gap-0.5">
-                    <span className="font-medium">{entry.description}</span>
-                    <div className="flex gap-2 text-xs text-muted-foreground">
-                      {entry.documentRef && (
-                        <span className="flex items-center gap-1">
-                          <LinkIcon className="h-3 w-3" />
-                          {entry.documentRef}
-                        </span>
-                      )}
-                      {entry.closureId && (
-                        <Badge variant="outline" className="text-xs py-0">
-                          da chiusura
+                    {showVenue && (
+                      <TableCell>
+                        <Badge variant="secondary" className="text-xs">
+                          {entry.venue?.code || '-'}
                         </Badge>
-                      )}
-                      {entry.account && (
-                        <span className="text-muted-foreground">
-                          {entry.account.code}
+                      </TableCell>
+                    )}
+
+                    <TableCell>{getRegisterBadge(entry.registerType)}</TableCell>
+
+                    <TableCell>
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-medium">{entry.description}</span>
+                        {!isExpanded && (
+                          <div className="flex gap-2 text-xs text-muted-foreground">
+                            {entry.documentRef && (
+                              <span className="flex items-center gap-1">
+                                <LinkIcon className="h-3 w-3" />
+                                {entry.documentRef}
+                              </span>
+                            )}
+                            {entry.closureId && (
+                              <Badge variant="outline" className="text-xs py-0">
+                                da chiusura
+                              </Badge>
+                            )}
+                            {entry.account && (
+                              <span className="text-muted-foreground">
+                                {entry.account.code}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </TableCell>
+
+                    <TableCell className="text-right font-mono">
+                      {entry.debitAmount && entry.debitAmount > 0 ? (
+                        <span className="text-green-600">
+                          {formatCurrency(entry.debitAmount)}
                         </span>
+                      ) : (
+                        <span className="text-muted-foreground/30">-</span>
                       )}
-                    </div>
-                  </div>
-                </TableCell>
+                    </TableCell>
 
-                <TableCell className="text-right font-mono">
-                  {entry.debitAmount && entry.debitAmount > 0 ? (
-                    <span className="text-green-600">
-                      {formatCurrency(entry.debitAmount)}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground/30">-</span>
+                    <TableCell className="text-right font-mono">
+                      {entry.creditAmount && entry.creditAmount > 0 ? (
+                        <span className="text-red-600">
+                          {formatCurrency(entry.creditAmount)}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/30">-</span>
+                      )}
+                    </TableCell>
+
+                    <TableCell className="text-right">
+                      {formatBalance(entry.runningBalance)}
+                    </TableCell>
+
+                    <TableCell>
+                      {isEditable(entry) && (onEdit || onDelete) && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              disabled={deletingId === entry.id}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {onEdit && (
+                              <DropdownMenuItem onClick={() => onEdit(entry)}>
+                                <Pencil className="h-4 w-4 mr-2" />
+                                Modifica
+                              </DropdownMenuItem>
+                            )}
+                            {onDelete && (
+                              <DropdownMenuItem
+                                onClick={() => handleDelete(entry)}
+                                className="text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Elimina
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </TableCell>
+                  </TableRow>
+
+                  {/* Riga espansa con dettagli */}
+                  {isExpanded && (
+                    <TableRow key={`${entry.id}-details`} className="bg-muted/30 hover:bg-muted/30">
+                      <TableCell colSpan={showVenue ? 8 : 7} className="py-3 px-4">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                          {/* Documento */}
+                          {entry.documentRef && (
+                            <div>
+                              <span className="text-muted-foreground flex items-center gap-1">
+                                <FileText className="h-3 w-3" />
+                                Documento
+                              </span>
+                              <span className="font-medium">{entry.documentRef}</span>
+                              {entry.documentType && (
+                                <span className="text-muted-foreground ml-1">
+                                  ({entry.documentType})
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Conto */}
+                          {entry.account && (
+                            <div>
+                              <span className="text-muted-foreground">Conto</span>
+                              <div className="font-medium">
+                                {entry.account.code} - {entry.account.name}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* IVA */}
+                          {entry.vatAmount && entry.vatAmount > 0 && (
+                            <div>
+                              <span className="text-muted-foreground">IVA</span>
+                              <div className="font-mono font-medium">
+                                {formatCurrency(entry.vatAmount)}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Chiusura di riferimento */}
+                          {entry.closureId && entry.closure && (
+                            <div>
+                              <span className="text-muted-foreground">Chiusura</span>
+                              <div className="font-medium">
+                                {format(new Date(entry.closure.date), 'dd/MM/yyyy', { locale: it })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Creato da */}
+                          {entry.createdBy && (
+                            <div>
+                              <span className="text-muted-foreground flex items-center gap-1">
+                                <User className="h-3 w-3" />
+                                Creato da
+                              </span>
+                              <span className="font-medium">
+                                {entry.createdBy.firstName} {entry.createdBy.lastName}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Data creazione */}
+                          <div>
+                            <span className="text-muted-foreground flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              Registrato il
+                            </span>
+                            <span className="font-medium">
+                              {format(new Date(entry.createdAt), 'dd/MM/yyyy HH:mm', { locale: it })}
+                            </span>
+                          </div>
+                        </div>
+                      </TableCell>
+                    </TableRow>
                   )}
-                </TableCell>
-
-                <TableCell className="text-right font-mono">
-                  {entry.creditAmount && entry.creditAmount > 0 ? (
-                    <span className="text-red-600">
-                      {formatCurrency(entry.creditAmount)}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground/30">-</span>
-                  )}
-                </TableCell>
-
-                <TableCell className="text-right">
-                  {formatBalance(entry.runningBalance)}
-                </TableCell>
-
-                <TableCell>
-                  {isEditable(entry) && (onEdit || onDelete) && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          disabled={deletingId === entry.id}
-                        >
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        {onEdit && (
-                          <DropdownMenuItem onClick={() => onEdit(entry)}>
-                            <Pencil className="h-4 w-4 mr-2" />
-                            Modifica
-                          </DropdownMenuItem>
-                        )}
-                        {onDelete && (
-                          <DropdownMenuItem
-                            onClick={() => handleDelete(entry)}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Elimina
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
+                </Fragment>
+              )
+            })}
           </TableBody>
         </Table>
       </div>

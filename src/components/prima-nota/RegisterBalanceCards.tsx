@@ -51,7 +51,7 @@ export function RegisterBalanceCards({
     <div className={cn('grid grid-cols-1 md:grid-cols-3 gap-4', className)}>
       {/* Card Cassa */}
       <RegisterCard
-        title="Saldo Cassa"
+        title="CASSA"
         icon={<Wallet className="h-5 w-5" />}
         iconColor="text-green-600"
         bgColor="bg-green-50"
@@ -60,7 +60,7 @@ export function RegisterBalanceCards({
 
       {/* Card Banca */}
       <RegisterCard
-        title="Saldo Banca"
+        title="BANCA"
         icon={<Building2 className="h-5 w-5" />}
         iconColor="text-blue-600"
         bgColor="bg-blue-50"
@@ -74,7 +74,7 @@ export function RegisterBalanceCards({
             <div className="p-1.5 rounded-lg bg-primary/10">
               <ArrowRightLeft className="h-5 w-5 text-primary" />
             </div>
-            Totale Disponibile
+            LIQUIDITÀ TOTALE
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -86,9 +86,6 @@ export function RegisterBalanceCards({
           >
             {formatCurrency(totalAvailable)}
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            Cassa + Banca
-          </p>
         </CardContent>
       </Card>
     </div>
@@ -177,7 +174,7 @@ export function SingleRegisterCard({
 }: SingleRegisterCardProps) {
   const config = {
     CASH: {
-      title: 'Saldo Cassa',
+      title: 'CASSA',
       icon: <Wallet className="h-6 w-6" />,
       iconColor: 'text-green-600',
       bgColor: 'bg-green-50',
@@ -185,7 +182,7 @@ export function SingleRegisterCard({
       gradientTo: 'to-green-600/5',
     },
     BANK: {
-      title: 'Saldo Banca',
+      title: 'BANCA',
       icon: <Building2 className="h-6 w-6" />,
       iconColor: 'text-blue-600',
       bgColor: 'bg-blue-50',

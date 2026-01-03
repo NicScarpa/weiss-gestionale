@@ -86,7 +86,7 @@ export function PrimaNotaClient({
     dateFrom: '',
     dateTo: '',
     search: '',
-    accountId: '',
+    movementType: '',
   })
 
   const [pagination, setPagination] = useState({
@@ -115,7 +115,7 @@ export function PrimaNotaClient({
       if (filters.dateFrom) params.set('dateFrom', filters.dateFrom)
       if (filters.dateTo) params.set('dateTo', filters.dateTo)
       if (filters.search) params.set('search', filters.search)
-      if (filters.accountId) params.set('accountId', filters.accountId)
+      if (filters.movementType) params.set('movementType', filters.movementType)
       params.set('page', pagination.page.toString())
       params.set('limit', pagination.limit.toString())
 
@@ -260,7 +260,7 @@ export function PrimaNotaClient({
       dateFrom: '',
       dateTo: '',
       search: '',
-      accountId: '',
+      movementType: '',
     })
     setPagination((prev) => ({ ...prev, page: 1 }))
   }
@@ -407,26 +407,23 @@ export function PrimaNotaClient({
                   className="pl-10"
                 />
               </div>
-              {accounts.length > 0 && (
-                <Select
-                  value={filters.accountId || 'all'}
-                  onValueChange={(v) =>
-                    setFilters((prev) => ({ ...prev, accountId: v === 'all' ? '' : v }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Tutti i conti" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Tutti i conti</SelectItem>
-                    {accounts.map((acc) => (
-                      <SelectItem key={acc.id} value={acc.id}>
-                        {acc.code} - {acc.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+              <Select
+                value={filters.movementType || 'all'}
+                onValueChange={(v) =>
+                  setFilters((prev) => ({ ...prev, movementType: v === 'all' ? '' : v }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Tutti i tipi" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tutti i tipi</SelectItem>
+                  <SelectItem value="INCASSO">Incasso</SelectItem>
+                  <SelectItem value="USCITA">Uscita</SelectItem>
+                  <SelectItem value="VERSAMENTO">Versamento</SelectItem>
+                  <SelectItem value="PRELIEVO">Prelievo</SelectItem>
+                </SelectContent>
+              </Select>
               <Button variant="outline" onClick={clearFilters}>
                 Pulisci
               </Button>

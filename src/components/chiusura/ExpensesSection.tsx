@@ -117,7 +117,7 @@ export function ExpensesSection({
         <div className="flex items-center gap-2">
           <CardTitle className="text-lg flex items-center gap-2">
             <Receipt className="h-5 w-5" />
-            Uscite Giornaliere
+            Uscite di cassa
           </CardTitle>
           {total > 0 && (
             <span className="text-sm font-mono text-muted-foreground">

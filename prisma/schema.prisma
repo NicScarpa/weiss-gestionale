@@ -90,6 +90,7 @@ model Venue {
   journalEntries   JournalEntry[]
   stationTemplates CashStationTemplate[]
   registerBalances RegisterBalance[]
+  initialBalances  InitialBalance[]
   budgets          Budget[]
 
   @@map("venues")
@@ -499,4 +500,21 @@ enum AlertStatus {
   ACTIVE
   ACKNOWLEDGED
   RESOLVED
+}
+
+// ==================== SALDI INIZIALI ====================
+
+model InitialBalance {
+  id          String   @id @default(cuid())
+  venue       Venue    @relation(fields: [venueId], references: [id])
+  venueId     String   @map("venue_id")
+  year        Int
+  cashBalance Decimal  @default(0) @map("cash_balance") @db.Decimal(12, 2)
+  bankBalance Decimal  @default(0) @map("bank_balance") @db.Decimal(12, 2)
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([venueId, year])
+  @@map("initial_balances")
 }
