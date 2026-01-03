@@ -293,6 +293,30 @@ export function ClosureForm({
       return
     }
 
+    // Verifica che almeno una stazione abbia incassi
+    const hasAnyActivity = formData.stations.some(
+      (s) => (s.cashAmount || 0) > 0 || (s.posAmount || 0) > 0
+    )
+    if (!hasAnyActivity) {
+      toast.error('Inserisci almeno un incasso (Contanti o POS) in una postazione')
+      return
+    }
+
+    // Verifica POS per postazioni con contanti
+    const stationsWithCashButNoPos = formData.stations.filter(
+      (s) => (s.cashAmount || 0) > 0 && (s.posAmount || 0) === 0
+    )
+    if (stationsWithCashButNoPos.length > 0) {
+      const names = stationsWithCashButNoPos.map((s) => s.name).join(', ')
+      const confirmNoPos = window.confirm(
+        `Le seguenti postazioni hanno incasso contanti ma POS a €0:\n${names}\n\nConfermi che non ci sono stati pagamenti POS?`
+      )
+      if (!confirmNoPos) {
+        toast.error('Inserisci l\'importo POS per completare la chiusura')
+        return
+      }
+    }
+
     if (totals.hasSignificantDifference) {
       const confirm = window.confirm(
         `Attenzione: c'è una differenza cassa di ${formatCurrency(totals.cashDifference)}. Vuoi procedere comunque?`

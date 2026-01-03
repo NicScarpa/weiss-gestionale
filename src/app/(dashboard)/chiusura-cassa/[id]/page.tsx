@@ -332,58 +332,65 @@ export default async function DettaglioChiusuraPage({ params }: Props) {
         </CardContent>
       </Card>
 
-      {/* Postazioni */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            Postazioni Cassa ({closure.stations.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {closure.stations.map((station) => {
-              const counted = calculateCashCounted(station.cashCount)
-              const diff = counted - Number(station.cashAmount || 0)
-              const hasDiff =
-                counted > 0 && Math.abs(diff) > CASH_DIFFERENCE_THRESHOLD
+      {/* Postazioni - mostra solo quelle con movimenti */}
+      {(() => {
+        const activeStations = closure.stations.filter(
+          (s) => Number(s.totalAmount || 0) > 0
+        )
+        return activeStations.length > 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">
+                Postazioni Cassa ({activeStations.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {activeStations.map((station) => {
+                  const counted = calculateCashCounted(station.cashCount)
+                  const diff = counted - Number(station.cashAmount || 0)
+                  const hasDiff =
+                    counted > 0 && Math.abs(diff) > CASH_DIFFERENCE_THRESHOLD
 
-              return (
-                <div
-                  key={station.id}
-                  className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
-                >
-                  <div>
-                    <span className="font-medium">{station.name}</span>
-                    {hasDiff && (
-                      <Badge variant="destructive" className="ml-2 text-xs">
-                        Diff: {diff >= 0 ? '+' : ''}
-                        {formatCurrency(diff)}
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex gap-6 text-sm">
-                    <span>
-                      <span className="text-muted-foreground">Contanti:</span>{' '}
-                      <span className="font-mono">
-                        {formatCurrency(Number(station.cashAmount))}
-                      </span>
-                    </span>
-                    <span>
-                      <span className="text-muted-foreground">POS:</span>{' '}
-                      <span className="font-mono">
-                        {formatCurrency(Number(station.posAmount))}
-                      </span>
-                    </span>
-                    <span className="font-semibold">
-                      {formatCurrency(Number(station.totalAmount))}
-                    </span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </CardContent>
-      </Card>
+                  return (
+                    <div
+                      key={station.id}
+                      className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
+                    >
+                      <div>
+                        <span className="font-medium">{station.name}</span>
+                        {hasDiff && (
+                          <Badge variant="destructive" className="ml-2 text-xs">
+                            Diff: {diff >= 0 ? '+' : ''}
+                            {formatCurrency(diff)}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex gap-6 text-sm">
+                        <span>
+                          <span className="text-muted-foreground">Contanti:</span>{' '}
+                          <span className="font-mono">
+                            {formatCurrency(Number(station.cashAmount))}
+                          </span>
+                        </span>
+                        <span>
+                          <span className="text-muted-foreground">POS:</span>{' '}
+                          <span className="font-mono">
+                            {formatCurrency(Number(station.posAmount))}
+                          </span>
+                        </span>
+                        <span className="font-semibold">
+                          {formatCurrency(Number(station.totalAmount))}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        ) : null
+      })()}
 
       {/* Uscite */}
       {closure.expenses.length > 0 && (
