@@ -49,6 +49,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { formatCurrency } from '@/lib/constants'
 import { toast } from 'sonner'
+import { useRouter } from 'next/navigation'
+import { DeleteClosureDialog } from '@/components/chiusura/DeleteClosureDialog'
 
 interface Closure {
   id: string
@@ -77,6 +79,7 @@ interface ClosureListProps {
 }
 
 export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
+  const router = useRouter()
   const [closures, setClosures] = useState<Closure[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState({
@@ -336,30 +339,60 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
                                 Visualizza
                               </Link>
                             </DropdownMenuItem>
+
+                            {/* Modifica: DRAFT per tutti, qualsiasi stato per admin */}
+                            {(closure.status === 'DRAFT' || isAdmin) && (
+                              <DropdownMenuItem asChild>
+                                <Link
+                                  href={`/chiusura-cassa/${closure.id}/modifica`}
+                                >
+                                  <Pencil className="mr-2 h-4 w-4" />
+                                  Modifica
+                                </Link>
+                              </DropdownMenuItem>
+                            )}
+
+                            {/* Invia: solo DRAFT */}
                             {closure.status === 'DRAFT' && (
-                              <>
-                                <DropdownMenuItem asChild>
-                                  <Link
-                                    href={`/chiusura-cassa/${closure.id}/modifica`}
+                              <DropdownMenuItem
+                                onClick={() => handleSubmit(closure.id)}
+                              >
+                                <Send className="mr-2 h-4 w-4" />
+                                Invia per validazione
+                              </DropdownMenuItem>
+                            )}
+
+                            {/* Elimina DRAFT: conferma semplice */}
+                            {closure.status === 'DRAFT' && (
+                              <DropdownMenuItem
+                                onClick={() => handleDelete(closure.id)}
+                                className="text-destructive"
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Elimina
+                              </DropdownMenuItem>
+                            )}
+
+                            {/* Elimina non-DRAFT: solo admin con doppia conferma */}
+                            {closure.status !== 'DRAFT' && isAdmin && (
+                              <DeleteClosureDialog
+                                closureId={closure.id}
+                                closureDate={closure.date}
+                                closureStatus={closure.status}
+                                onDeleted={() => {
+                                  fetchClosures()
+                                  router.refresh()
+                                }}
+                                trigger={
+                                  <DropdownMenuItem
+                                    onSelect={(e) => e.preventDefault()}
+                                    className="text-destructive"
                                   >
-                                    <Pencil className="mr-2 h-4 w-4" />
-                                    Modifica
-                                  </Link>
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => handleSubmit(closure.id)}
-                                >
-                                  <Send className="mr-2 h-4 w-4" />
-                                  Invia per validazione
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => handleDelete(closure.id)}
-                                  className="text-destructive"
-                                >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Elimina
-                                </DropdownMenuItem>
-                              </>
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Elimina
+                                  </DropdownMenuItem>
+                                }
+                              />
                             )}
                           </DropdownMenuContent>
                         </DropdownMenu>

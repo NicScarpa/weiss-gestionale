@@ -16,6 +16,7 @@ import {
   CloudSun,
   Banknote,
   CreditCard,
+  Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -23,6 +24,7 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { formatCurrency, CASH_DIFFERENCE_THRESHOLD } from '@/lib/constants'
 import { ValidateActions } from './ValidateActions'
+import { AdminClosureActions } from './AdminClosureActions'
 
 export const metadata = {
   title: 'Dettaglio Chiusura'
@@ -213,13 +215,23 @@ export default async function DettaglioChiusuraPage({ params }: Props) {
         </div>
 
         <div className="flex gap-2">
-          {closure.status === 'DRAFT' && (
+          {/* Modifica: DRAFT per tutti, qualsiasi stato per admin */}
+          {(closure.status === 'DRAFT' || session.user.role === 'admin') && (
             <Button variant="outline" asChild>
               <Link href={`/chiusura-cassa/${id}/modifica`}>
                 <Pencil className="mr-2 h-4 w-4" />
                 Modifica
               </Link>
             </Button>
+          )}
+
+          {/* Elimina: solo admin */}
+          {session.user.role === 'admin' && (
+            <AdminClosureActions
+              closureId={id}
+              closureDate={closure.date}
+              closureStatus={closure.status}
+            />
           )}
         </div>
       </div>

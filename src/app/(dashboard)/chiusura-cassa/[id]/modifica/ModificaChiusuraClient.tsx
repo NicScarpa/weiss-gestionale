@@ -3,6 +3,8 @@
 import { useRouter } from 'next/navigation'
 import { ClosureForm, ClosureFormData } from '@/components/chiusura'
 import { toast } from 'sonner'
+import { AlertTriangle } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
 
 interface ModificaChiusuraClientProps {
   closureId: string
@@ -15,6 +17,7 @@ interface ModificaChiusuraClientProps {
   cashStationTemplates: { id: string; name: string; position: number }[]
   staffMembers: { id: string; firstName: string; lastName: string }[]
   accounts: { id: string; code: string; name: string }[]
+  isEditingValidated?: boolean
 }
 
 export function ModificaChiusuraClient({
@@ -24,6 +27,7 @@ export function ModificaChiusuraClient({
   cashStationTemplates,
   staffMembers,
   accounts,
+  isEditingValidated = false,
 }: ModificaChiusuraClientProps) {
   const router = useRouter()
 
@@ -74,18 +78,32 @@ export function ModificaChiusuraClient({
   }
 
   return (
-    <ClosureForm
-      closureId={closureId}
-      initialData={initialData}
-      venueId={venue.id}
-      venueName={venue.name}
-      vatRate={venue.vatRate}
-      cashStationTemplates={cashStationTemplates}
-      staffMembers={staffMembers}
-      accounts={accounts}
-      status="DRAFT"
-      onSave={handleSave}
-      onSubmit={handleSubmit}
-    />
+    <div className="space-y-4">
+      {isEditingValidated && (
+        <Card className="border-amber-500 bg-amber-50 dark:bg-amber-950/20">
+          <CardContent className="flex items-center gap-3 py-4">
+            <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0" />
+            <p className="text-sm text-amber-800 dark:text-amber-200">
+              <strong>Attenzione:</strong> Stai modificando una chiusura già validata.
+              Le modifiche potrebbero influire sulle scritture contabili generate.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      <ClosureForm
+        closureId={closureId}
+        initialData={initialData}
+        venueId={venue.id}
+        venueName={venue.name}
+        vatRate={venue.vatRate}
+        cashStationTemplates={cashStationTemplates}
+        staffMembers={staffMembers}
+        accounts={accounts}
+        status={isEditingValidated ? 'VALIDATED' : 'DRAFT'}
+        onSave={handleSave}
+        onSubmit={handleSubmit}
+      />
+    </div>
   )
 }

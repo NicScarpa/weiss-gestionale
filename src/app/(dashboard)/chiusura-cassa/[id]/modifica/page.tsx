@@ -79,10 +79,13 @@ export default async function ModificaChiusuraPage({ params }: Props) {
     redirect('/chiusura-cassa?error=unauthorized')
   }
 
-  // Solo DRAFT può essere modificata
-  if (closure.status !== 'DRAFT') {
+  // Solo DRAFT può essere modificata (admin può modificare qualsiasi stato)
+  if (closure.status !== 'DRAFT' && session.user.role !== 'admin') {
     redirect(`/chiusura-cassa/${id}?error=not-editable`)
   }
+
+  // Flag per indicare che si sta modificando una chiusura validata
+  const isEditingValidated = closure.status === 'VALIDATED'
 
   // Recupera dati aggiuntivi
   const [staffMembers, accounts] = await Promise.all([
@@ -218,6 +221,7 @@ export default async function ModificaChiusuraPage({ params }: Props) {
       }))}
       staffMembers={staffMembers}
       accounts={accounts}
+      isEditingValidated={isEditingValidated}
     />
   )
 }

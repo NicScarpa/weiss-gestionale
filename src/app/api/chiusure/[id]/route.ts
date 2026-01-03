@@ -285,8 +285,8 @@ export async function PUT(
       )
     }
 
-    // Solo DRAFT può essere modificata
-    if (existingClosure.status !== 'DRAFT') {
+    // Solo DRAFT può essere modificata (admin può modificare qualsiasi stato)
+    if (existingClosure.status !== 'DRAFT' && session.user.role !== 'admin') {
       return NextResponse.json(
         { error: 'Solo le chiusure in bozza possono essere modificate' },
         { status: 400 }
@@ -365,12 +365,19 @@ export async function DELETE(
       )
     }
 
-    // Solo DRAFT può essere eliminata
-    if (existingClosure.status !== 'DRAFT') {
+    // Solo DRAFT può essere eliminata (admin può eliminare qualsiasi stato)
+    if (existingClosure.status !== 'DRAFT' && session.user.role !== 'admin') {
       return NextResponse.json(
         { error: 'Solo le chiusure in bozza possono essere eliminate' },
         { status: 400 }
       )
+    }
+
+    // Per chiusure VALIDATED, elimina anche le scritture contabili generate
+    if (existingClosure.status === 'VALIDATED') {
+      await prisma.journalEntry.deleteMany({
+        where: { closureId: id },
+      })
     }
 
     // Elimina (cascade elimina anche stazioni, parziali, uscite, presenze)
