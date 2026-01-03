@@ -299,6 +299,21 @@ export function PrimaNotaClient({
               if (venueId) params.set('venueId', venueId)
               if (filters.dateFrom) params.set('dateFrom', filters.dateFrom)
               if (filters.dateTo) params.set('dateTo', filters.dateTo)
+              params.set('format', 'xlsx')
+              window.open(`/api/prima-nota/export?${params.toString()}`, '_blank')
+            }}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Excel
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              const params = new URLSearchParams()
+              params.set('registerType', currentRegister)
+              if (venueId) params.set('venueId', venueId)
+              if (filters.dateFrom) params.set('dateFrom', filters.dateFrom)
+              if (filters.dateTo) params.set('dateTo', filters.dateTo)
               params.set('format', 'csv')
               window.open(`/api/prima-nota/export?${params.toString()}`, '_blank')
             }}

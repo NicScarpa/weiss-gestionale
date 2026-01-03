@@ -232,6 +232,14 @@ export default async function DettaglioChiusuraPage({ params }: Props) {
             </a>
           </Button>
 
+          {/* Scarica Excel */}
+          <Button variant="outline" asChild>
+            <a href={`/api/chiusure/${id}/excel`} download>
+              <Download className="mr-2 h-4 w-4" />
+              Excel
+            </a>
+          </Button>
+
           {/* Modifica: DRAFT per tutti, qualsiasi stato per admin */}
           {(closure.status === 'DRAFT' || session.user.role === 'admin') && (
             <Button variant="outline" asChild>

@@ -6,12 +6,13 @@ import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { PrimaNotaPdfDocument } from '@/lib/pdf/PrimaNotaPdfTemplate'
+import * as XLSX from 'xlsx'
 
 const exportFiltersSchema = z.object({
   registerType: z.enum(['CASH', 'BANK']).optional(),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
-  format: z.enum(['csv', 'json', 'pdf']).default('csv'),
+  format: z.enum(['csv', 'json', 'pdf', 'xlsx']).default('csv'),
 })
 
 // GET /api/prima-nota/export - Esporta movimenti
@@ -132,6 +133,73 @@ export async function GET(request: NextRequest) {
       return new NextResponse(new Uint8Array(pdfBuffer), {
         headers: {
           'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="${filename}"`,
+        },
+      })
+    }
+
+    // Genera Excel
+    if (filters.format === 'xlsx') {
+      const wb = XLSX.utils.book_new()
+
+      // Calcola totali
+      const totaleDebiti = entries.reduce((sum, e) => sum + (e.debitAmount ? Number(e.debitAmount) : 0), 0)
+      const totaleCrediti = entries.reduce((sum, e) => sum + (e.creditAmount ? Number(e.creditAmount) : 0), 0)
+      const saldoPeriodo = totaleDebiti - totaleCrediti
+
+      // Header informazioni
+      const registerLabel = filters.registerType === 'CASH' ? 'Cassa' : filters.registerType === 'BANK' ? 'Banca' : 'Tutti'
+      const infoRows = [
+        ['PRIMA NOTA'],
+        [],
+        ['Registro', registerLabel],
+        ['Periodo', `${filters.dateFrom ? format(new Date(filters.dateFrom), 'dd/MM/yyyy') : 'Inizio'} - ${filters.dateTo ? format(new Date(filters.dateTo), 'dd/MM/yyyy') : 'Oggi'}`],
+        ['Movimenti', entries.length],
+        [],
+        ['RIEPILOGO'],
+        ['Totale Dare', totaleDebiti],
+        ['Totale Avere', totaleCrediti],
+        ['Saldo Periodo', saldoPeriodo],
+        [],
+      ]
+
+      // Tabella movimenti
+      const tableHeader = ['Data', 'Registro', 'Sede', 'Descrizione', 'Rif. Documento', 'Dare', 'Avere', 'IVA', 'Conto', 'Da Chiusura']
+      const tableRows = entries.map((e) => [
+        format(new Date(e.date), 'dd/MM/yyyy'),
+        e.registerType === 'CASH' ? 'Cassa' : 'Banca',
+        e.venue?.code || '',
+        e.description,
+        e.documentRef || '',
+        e.debitAmount ? Number(e.debitAmount) : '',
+        e.creditAmount ? Number(e.creditAmount) : '',
+        e.vatAmount ? Number(e.vatAmount) : '',
+        e.account ? `${e.account.code} - ${e.account.name}` : '',
+        e.closure ? 'Sì' : 'No',
+      ])
+
+      // Riga totali
+      tableRows.push([])
+      tableRows.push(['TOTALE', '', '', '', '', totaleDebiti, totaleCrediti, '', '', ''])
+
+      // Combina info + tabella
+      const allRows = [...infoRows, tableHeader, ...tableRows]
+      const ws = XLSX.utils.aoa_to_sheet(allRows)
+
+      // Larghezza colonne
+      ws['!cols'] = [
+        { wch: 12 }, { wch: 10 }, { wch: 8 }, { wch: 35 }, { wch: 15 },
+        { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 25 }, { wch: 12 }
+      ]
+
+      XLSX.utils.book_append_sheet(wb, ws, 'Prima Nota')
+
+      const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
+      const filename = `prima-nota-${filters.registerType?.toLowerCase() || 'tutti'}-${format(new Date(), 'yyyy-MM-dd')}.xlsx`
+
+      return new NextResponse(excelBuffer, {
+        headers: {
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           'Content-Disposition': `attachment; filename="${filename}"`,
         },
       })
