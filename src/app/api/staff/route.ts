@@ -53,14 +53,12 @@ export async function GET(request: NextRequest) {
     }
 
     // Filtro per stato attivo/inattivo
-    if (showInactive) {
-      // Mostra solo inattivi
-      where.isActive = false
-    } else if (!includeInactive) {
-      // Default: mostra solo attivi
+    // showInactive=true → mostra TUTTI (attivi + inattivi)
+    // showInactive=false/undefined → mostra solo attivi
+    if (!showInactive && !includeInactive) {
       where.isActive = true
     }
-    // Se includeInactive=true, non filtra per isActive (mostra tutti)
+    // Se showInactive=true o includeInactive=true, non filtra per isActive (mostra tutti)
 
     if (venueId) {
       where.venueId = venueId

@@ -106,12 +106,21 @@ export function calculateTotals(entries: JournalEntry[]): {
 }
 
 /**
+ * Dettaglio uscita per generare descrizione
+ */
+interface ExpenseDetail {
+  payee?: string
+  description?: string
+  documentRef?: string
+}
+
+/**
  * Genera descrizione automatica per movimento da chiusura
  */
 export function generateClosureDescription(
   type: 'revenue' | 'expense' | 'deposit',
   closureDate: Date,
-  detail?: string
+  detail?: string | ExpenseDetail
 ): string {
   const dateStr = closureDate.toLocaleDateString('it-IT', {
     day: '2-digit',
@@ -123,7 +132,22 @@ export function generateClosureDescription(
     case 'revenue':
       return `Incasso giornaliero ${dateStr}`
     case 'expense':
-      return detail ? `Uscita: ${detail} (${dateStr})` : `Uscita ${dateStr}`
+      // Se detail è un oggetto ExpenseDetail
+      if (detail && typeof detail === 'object') {
+        const parts: string[] = []
+        if (detail.payee) parts.push(detail.payee)
+        if (detail.description) parts.push(detail.description)
+        if (detail.documentRef) parts.push(`Rif. ${detail.documentRef}`)
+
+        if (parts.length > 0) {
+          return `${parts.join(' - ')} (${dateStr})`
+        }
+      }
+      // Se detail è stringa (backward compatibility)
+      if (typeof detail === 'string') {
+        return `Uscita: ${detail} (${dateStr})`
+      }
+      return `Uscita ${dateStr}`
     case 'deposit':
       return `Versamento in banca ${dateStr}`
   }

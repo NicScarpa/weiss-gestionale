@@ -9,7 +9,9 @@ interface CashStation {
 
 interface Expense {
   amount: number
+  payee: string | null
   description: string | null
+  documentRef: string | null
   accountId: string | null
 }
 
@@ -77,7 +79,12 @@ export async function generateJournalEntriesFromClosure(
         venueId: closure.venueId,
         date: closure.date,
         registerType: 'CASH',
-        description: generateClosureDescription('expense', closure.date, expense.description || undefined),
+        description: generateClosureDescription('expense', closure.date, {
+          payee: expense.payee || undefined,
+          description: expense.description || undefined,
+          documentRef: expense.documentRef || undefined,
+        }),
+        documentRef: expense.documentRef,
         debitAmount: null,
         creditAmount: expense.amount,
         accountId: expense.accountId,

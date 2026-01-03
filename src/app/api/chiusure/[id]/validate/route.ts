@@ -157,7 +157,9 @@ export async function POST(
         })),
         expenses: closure.expenses.map((e) => ({
           amount: Number(e.amount),
+          payee: e.payee,
           description: e.description,
+          documentRef: e.documentRef,
           accountId: e.accountId,
         })),
       },
