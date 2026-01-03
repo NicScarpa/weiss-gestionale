@@ -115,11 +115,11 @@ export default async function DettaglioChiusuraPage({ params }: Props) {
   }
 
   // Calcoli
-  const grossTotal = closure.stations.reduce(
+  const salesTotal = closure.stations.reduce(
     (sum, s) => sum + Number(s.totalAmount || 0),
     0
   )
-  const cashTotal = closure.stations.reduce(
+  const cashSales = closure.stations.reduce(
     (sum, s) => sum + Number(s.cashAmount || 0),
     0
   )
@@ -131,6 +131,13 @@ export default async function DettaglioChiusuraPage({ params }: Props) {
     (sum, e) => sum + Number(e.amount || 0),
     0
   )
+
+  // Totale Lordo = Vendite + Uscite (tutto il movimento del giorno)
+  const grossTotal = salesTotal + expensesTotal
+
+  // Contanti = Vendite contanti + Uscite pagate (tutto il contante movimentato)
+  // Se ho 550€ in cassa e ho pagato 37,90€ di uscite, l'incasso contanti era 587,90€
+  const cashTotal = cashSales + expensesTotal
 
   // Calcola differenza cassa per ogni stazione
   const calculateCashCounted = (cashCount: any): number => {
@@ -158,7 +165,8 @@ export default async function DettaglioChiusuraPage({ params }: Props) {
     (sum, s) => sum + calculateCashCounted(s.cashCount),
     0
   )
-  const cashDifference = countedTotal - cashTotal
+  // La differenza cassa confronta il contato con le vendite contanti (non include le uscite)
+  const cashDifference = countedTotal - cashSales
   const hasSignificantDifference =
     countedTotal > 0 && Math.abs(cashDifference) > CASH_DIFFERENCE_THRESHOLD
 

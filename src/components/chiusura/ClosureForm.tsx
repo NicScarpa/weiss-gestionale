@@ -174,6 +174,11 @@ export function ClosureForm({
     // Totale movimentazione = vendite + uscite (tutto il denaro movimentato)
     const grossTotal = salesTotal + expensesTotal
 
+    // Incasso contanti totale = vendite contanti + uscite pagate
+    // Perché: se ho 550€ in cassa e ho pagato 37,90€ di uscite,
+    // significa che l'incasso contanti totale era 587,90€
+    const cashIncomeTotal = cashTotal + expensesTotal
+
     // IVA stimata (solo sulle vendite)
     const estimatedVat = salesTotal * vatRate
 
@@ -190,6 +195,7 @@ export function ClosureForm({
       posTotal,
       countedTotal,
       expensesTotal,
+      cashIncomeTotal,
       cashDifference,
       estimatedVat,
       netTotal,
@@ -537,7 +543,7 @@ export function ClosureForm({
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4 text-sm">
-            {/* Colonna sinistra: Vendite e IVA */}
+            {/* Colonna sinistra: Movimentazione */}
             <div className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Vendite Contanti:</span>
@@ -551,13 +557,19 @@ export function ClosureForm({
                   {formatCurrency(totals.posTotal)}
                 </span>
               </div>
-              <div className="flex justify-between font-semibold">
-                <span>Totale Vendite:</span>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Uscite Pagate:</span>
                 <span className="font-mono">
-                  {formatCurrency(totals.salesTotal)}
+                  {formatCurrency(totals.expensesTotal)}
                 </span>
               </div>
               <Separator />
+              <div className="flex justify-between font-semibold">
+                <span>Totale Lordo:</span>
+                <span className="font-mono">
+                  {formatCurrency(totals.grossTotal)}
+                </span>
+              </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">
                   IVA stimata ({(vatRate * 100).toFixed(0)}%):
@@ -566,8 +578,8 @@ export function ClosureForm({
                   {formatCurrency(totals.estimatedVat)}
                 </span>
               </div>
-              <div className="flex justify-between font-semibold">
-                <span>Netto Vendite:</span>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Netto Vendite:</span>
                 <span className="font-mono">
                   {formatCurrency(totals.netTotal)}
                 </span>
@@ -600,28 +612,19 @@ export function ClosureForm({
                   {formatCurrency(totals.cashDifference)}
                 </span>
               </div>
-              <Separator />
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Uscite Pagate:</span>
-                <span className="font-mono">
-                  {formatCurrency(totals.expensesTotal)}
-                </span>
-              </div>
             </div>
           </div>
 
-          {/* Riga Totale Movimentazione */}
+          {/* Riepilogo Contanti */}
           <Separator />
           <div className="flex justify-between">
             <span className="text-muted-foreground">
-              Totale Movimentazione (Vendite + Uscite):
+              Incasso Contanti (Vendite + Uscite):
             </span>
             <span className="font-mono font-semibold">
-              {formatCurrency(totals.grossTotal)}
+              {formatCurrency(totals.cashIncomeTotal)}
             </span>
           </div>
-
-          {/* Righe Contanti e Banca */}
           <div className="flex justify-between">
             <span className="text-muted-foreground">Contanti in Cassa:</span>
             <span className="font-mono">

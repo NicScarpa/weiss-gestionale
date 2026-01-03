@@ -44,19 +44,30 @@ export async function generateJournalEntriesFromClosure(
   )
   const totalRevenue = totalCash + totalPos
 
-  // 1. Movimento INCASSO su CASSA per totale incassi contanti
-  if (totalCash > 0) {
+  // Calcola totale uscite pagate in contanti
+  const totalExpenses = closure.expenses.reduce(
+    (sum, e) => sum + (Number(e.amount) || 0),
+    0
+  )
+
+  // L'incasso contanti per prima nota = vendite contanti + uscite pagate
+  // Perché: se ho 550€ in cassa e ho pagato 37,90€ di uscite,
+  // significa che l'incasso totale era 587,90€
+  const cashIncome = totalCash + totalExpenses
+
+  // 1. Movimento INCASSO su CASSA per totale incassi contanti (vendite + uscite)
+  if (cashIncome > 0) {
     entries.push({
       venueId: closure.venueId,
       date: closure.date,
       registerType: 'CASH',
       description: generateClosureDescription('revenue', closure.date),
-      debitAmount: totalCash,
+      debitAmount: cashIncome,
       creditAmount: null,
       closureId: closure.id,
       createdById: userId,
     })
-    totalDebits += totalCash
+    totalDebits += cashIncome
   }
 
   // 2. Movimenti USCITA su CASSA per ogni spesa
