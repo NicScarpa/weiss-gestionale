@@ -142,6 +142,11 @@ export async function GET(request: NextRequest) {
               totalAmount: true,
             },
           },
+          expenses: {
+            select: {
+              amount: true,
+            },
+          },
           _count: {
             select: {
               stations: true,
@@ -160,11 +165,18 @@ export async function GET(request: NextRequest) {
 
     // Formatta risposta
     const formattedChiusure = chiusure.map((c) => {
-      // Calcola totale lordo sommando le stazioni
-      const grossTotal = c.stations.reduce(
+      // Calcola totale vendite sommando le stazioni
+      const salesTotal = c.stations.reduce(
         (sum, s) => sum + Number(s.totalAmount || 0),
         0
       )
+      // Calcola totale uscite
+      const expensesTotal = c.expenses.reduce(
+        (sum, e) => sum + Number(e.amount || 0),
+        0
+      )
+      // Totale Lordo = Vendite + Uscite
+      const grossTotal = salesTotal + expensesTotal
 
       return {
         id: c.id,
