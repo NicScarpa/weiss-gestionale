@@ -12,34 +12,40 @@ import {
 } from '@/components/ui/select'
 import { Receipt, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/constants'
 
 // Tipo per uscita
 export interface ExpenseData {
   id?: string
   payee: string
-  description?: string
   documentRef?: string
   documentType: 'NONE' | 'FATTURA' | 'DDT' | 'RICEVUTA' | 'PERSONALE'
   amount: number
   vatAmount?: number
   accountId?: string
-  isPaid: boolean
   paidBy?: string
 }
 
 // Valore iniziale
 export const emptyExpense: Omit<ExpenseData, 'position'> = {
   payee: '',
-  description: '',
   documentRef: '',
   documentType: 'NONE',
   amount: 0,
   vatAmount: 0,
-  isPaid: true,
   paidBy: '',
 }
+
+// Opzioni postazioni per paidBy
+const STATION_OPTIONS = [
+  { value: 'BAR', label: 'BAR' },
+  { value: 'CASSA1', label: 'CASSA 1' },
+  { value: 'CASSA2', label: 'CASSA 2' },
+  { value: 'CASSA3', label: 'CASSA 3' },
+  { value: 'TAVOLI', label: 'TAVOLI' },
+  { value: 'MARSUPIO', label: 'MARSUPIO' },
+  { value: 'ESTERNO', label: 'ESTERNO' },
+]
 
 // Opzioni tipo documento
 const DOCUMENT_TYPE_OPTIONS = [
@@ -142,8 +148,8 @@ export function ExpensesSection({
               key={index}
               className="border rounded-lg p-3 space-y-3"
             >
-              {/* Prima riga: Beneficiario e Descrizione */}
-              <div className="grid grid-cols-[1fr_1fr_40px] gap-2 items-end">
+              {/* Prima riga: Beneficiario */}
+              <div className="grid grid-cols-[1fr_40px] gap-2 items-end">
                 <div className="space-y-1">
                   <Label className="text-xs">Beneficiario *</Label>
                   <Input
@@ -153,18 +159,6 @@ export function ExpensesSection({
                     }
                     disabled={disabled}
                     placeholder="es. Fornitore XYZ"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">Descrizione</Label>
-                  <Input
-                    value={expense.description || ''}
-                    onChange={(e) =>
-                      handleFieldChange(index, 'description', e.target.value)
-                    }
-                    disabled={disabled}
-                    placeholder="es. Acquisto merce"
                   />
                 </div>
 
@@ -249,8 +243,8 @@ export function ExpensesSection({
                 </div>
               </div>
 
-              {/* Terza riga: Conto e Pagamento */}
-              <div className="grid grid-cols-3 gap-2 items-end">
+              {/* Terza riga: Conto e Postazione */}
+              <div className="grid grid-cols-2 gap-2 items-end">
                 <div className="space-y-1">
                   <Label className="text-xs">Conto Contabile</Label>
                   <Select
@@ -275,30 +269,24 @@ export function ExpensesSection({
 
                 <div className="space-y-1">
                   <Label className="text-xs">Pagato da</Label>
-                  <Input
+                  <Select
                     value={expense.paidBy || ''}
-                    onChange={(e) =>
-                      handleFieldChange(index, 'paidBy', e.target.value)
+                    onValueChange={(value) =>
+                      handleFieldChange(index, 'paidBy', value)
                     }
                     disabled={disabled}
-                    placeholder="es. Cassa Bar"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2 pt-5">
-                  <input
-                    type="checkbox"
-                    id={`paid-${index}`}
-                    checked={expense.isPaid}
-                    onChange={(e) =>
-                      handleFieldChange(index, 'isPaid', e.target.checked)
-                    }
-                    disabled={disabled}
-                    className="h-4 w-4"
-                  />
-                  <Label htmlFor={`paid-${index}`} className="text-sm">
-                    Pagato
-                  </Label>
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleziona postazione..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STATION_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             </div>

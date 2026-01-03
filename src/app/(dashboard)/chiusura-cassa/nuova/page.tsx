@@ -102,7 +102,6 @@ export default async function NuovaChiusuraPage() {
         id: venue.id,
         name: venue.name,
         vatRate: (Number(venue.vatRate) / 100) || 0.1,
-        defaultFloat: Number(venue.defaultFloat) || 114,
       }}
       cashStationTemplates={stations}
       staffMembers={formattedStaff}

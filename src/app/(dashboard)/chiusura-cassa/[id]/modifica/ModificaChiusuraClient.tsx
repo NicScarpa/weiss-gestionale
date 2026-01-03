@@ -11,7 +11,6 @@ interface ModificaChiusuraClientProps {
     id: string
     name: string
     vatRate: number
-    defaultFloat: number
   }
   cashStationTemplates: { id: string; name: string; position: number }[]
   staffMembers: { id: string; firstName: string; lastName: string }[]
@@ -81,7 +80,6 @@ export function ModificaChiusuraClient({
       venueId={venue.id}
       venueName={venue.name}
       vatRate={venue.vatRate}
-      defaultFloat={venue.defaultFloat}
       cashStationTemplates={cashStationTemplates}
       staffMembers={staffMembers}
       accounts={accounts}

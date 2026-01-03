@@ -11,7 +11,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
-import { formatCurrency, DEFAULT_CASH_FLOAT } from '@/lib/constants'
+import { formatCurrency } from '@/lib/constants'
 import {
   CashCountGrid,
   CashCountValues,
@@ -44,7 +44,7 @@ export const emptyCashStation: Omit<CashStationData, 'name' | 'position'> = {
   suspendedAmount: 0,
   cashAmount: 0,
   posAmount: 0,
-  floatAmount: DEFAULT_CASH_FLOAT,
+  floatAmount: 0, // Non più usato ma mantenuto per compatibilità DB
   cashCount: emptyCashCount,
 }
 
@@ -117,11 +117,13 @@ export function CashStationCard({
     })
   }
 
-  // Handler per cambio conteggio
+  // Handler per cambio conteggio - auto-popola cashAmount
   const handleCashCountChange = (values: CashCountValues) => {
+    const total = calculateCashCountTotal(values)
     onChange({
       ...station,
       cashCount: values,
+      cashAmount: total, // Auto-popola contanti con totale liquidità
     })
   }
 
@@ -337,33 +339,13 @@ export function CashStationCard({
                     placeholder="0,00"
                   />
                 </div>
-
-                {/* Fondo Cassa */}
-                <div className="space-y-2 col-span-2">
-                  <Label htmlFor={`float-${station.position}`}>
-                    Fondo Cassa (€)
-                  </Label>
-                  <Input
-                    id={`float-${station.position}`}
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={station.floatAmount || ''}
-                    onChange={(e) =>
-                      handleFieldChange('floatAmount', e.target.value)
-                    }
-                    disabled={disabled}
-                    className="font-mono"
-                    placeholder="114,00"
-                  />
-                </div>
               </div>
             </div>
 
-            {/* Conteggio Contanti */}
+            {/* Liquidità (Distinta Contanti) */}
             <div className="space-y-4">
               <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
-                Conteggio Contanti
+                Liquidità
               </h4>
               <CashCountGrid
                 values={station.cashCount}
@@ -371,31 +353,6 @@ export function CashStationCard({
                 disabled={disabled}
               />
             </div>
-
-            {/* Riepilogo Conteggio */}
-            {cashCounted > 0 && (
-              <div className="rounded-lg p-4 space-y-2 bg-muted/50">
-                <div className="flex justify-between text-sm">
-                  <span>Fondo cassa:</span>
-                  <span className="font-mono">
-                    {formatCurrency(station.floatAmount)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Incasso contanti:</span>
-                  <span className="font-mono">
-                    {formatCurrency(station.cashAmount)}
-                  </span>
-                </div>
-                <div className="border-t pt-2 flex justify-between text-sm">
-                  <span>Contanti contati:</span>
-                  <span className="font-mono font-semibold">{formatCurrency(cashCounted)}</span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  La quadratura completa (con uscite) è nel riepilogo finale.
-                </p>
-              </div>
-            )}
 
             {/* Totale Postazione con dettaglio non battuto */}
             <div className="rounded-lg bg-primary/10 border-2 border-primary p-4 space-y-2">

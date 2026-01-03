@@ -3,16 +3,8 @@
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Clock, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
 import { DEFAULT_PARTIAL_HOURS } from '@/lib/constants'
 
 // Tipo per parziale orario
@@ -22,23 +14,13 @@ export interface HourlyPartialData {
   receiptProgressive: number
   posProgressive: number
   coffeeCounter?: number
-  coffeeDelta?: number
-  weather?: string
+  coffeeDelta?: number // Calcolato automaticamente rispetto al giorno precedente
 }
-
-// Opzioni meteo
-const WEATHER_OPTIONS = [
-  { value: 'sunny', label: '☀️ Sole' },
-  { value: 'cloudy', label: '☁️ Nuvoloso' },
-  { value: 'rainy', label: '🌧️ Pioggia' },
-  { value: 'stormy', label: '⛈️ Temporale' },
-  { value: 'snowy', label: '❄️ Neve' },
-  { value: 'foggy', label: '🌫️ Nebbia' },
-]
 
 interface HourlyPartialsSectionProps {
   partials: HourlyPartialData[]
   onChange: (partials: HourlyPartialData[]) => void
+  previousCoffeeCount?: number | null // Contatore caffè del giorno precedente
   disabled?: boolean
   className?: string
 }
@@ -46,9 +28,26 @@ interface HourlyPartialsSectionProps {
 export function HourlyPartialsSection({
   partials,
   onChange,
+  previousCoffeeCount,
   disabled = false,
   className,
 }: HourlyPartialsSectionProps) {
+  // Calcola il delta caffè per ogni parziale
+  // Il delta è rispetto al valore precedente (parziale precedente o giorno precedente)
+  const calculateCoffeeDelta = (index: number, currentCount?: number): number | null => {
+    if (currentCount === undefined || currentCount === null) return null
+
+    if (index === 0) {
+      // Primo parziale: delta rispetto al giorno precedente
+      if (previousCoffeeCount === undefined || previousCoffeeCount === null) return null
+      return currentCount - previousCoffeeCount
+    } else {
+      // Parziali successivi: delta rispetto al parziale precedente
+      const prevPartial = partials[index - 1]
+      if (prevPartial.coffeeCounter === undefined || prevPartial.coffeeCounter === null) return null
+      return currentCount - prevPartial.coffeeCounter
+    }
+  }
   // Aggiungi nuovo parziale
   const handleAdd = () => {
     // Trova il prossimo orario disponibile
@@ -80,7 +79,7 @@ export function HourlyPartialsSection({
     const updated = [...partials]
     updated[index] = {
       ...updated[index],
-      [field]: typeof value === 'string' && field !== 'timeSlot' && field !== 'weather'
+      [field]: typeof value === 'string' && field !== 'timeSlot'
         ? parseFloat(value) || 0
         : value,
     }
@@ -115,7 +114,7 @@ export function HourlyPartialsSection({
           partials.map((partial, index) => (
             <div
               key={index}
-              className="grid grid-cols-[100px_1fr_1fr_1fr_1fr_40px] gap-2 items-end border-b pb-3 last:border-0"
+              className="grid grid-cols-[100px_1fr_1fr_1fr_40px] gap-2 items-end border-b pb-3 last:border-0"
             >
               {/* Orario */}
               <div className="space-y-1">
@@ -131,9 +130,9 @@ export function HourlyPartialsSection({
                 />
               </div>
 
-              {/* Progressivo Scontrini */}
+              {/* Totale (ex Progressivo Scontrini) */}
               <div className="space-y-1">
-                <Label className="text-xs">Progr. Scontrini</Label>
+                <Label className="text-xs">Totale</Label>
                 <Input
                   type="number"
                   min="0"
@@ -148,9 +147,9 @@ export function HourlyPartialsSection({
                 />
               </div>
 
-              {/* Progressivo POS */}
+              {/* POS (ex Progressivo POS) */}
               <div className="space-y-1">
-                <Label className="text-xs">Progr. POS</Label>
+                <Label className="text-xs">POS</Label>
                 <Input
                   type="number"
                   min="0"
@@ -165,43 +164,37 @@ export function HourlyPartialsSection({
                 />
               </div>
 
-              {/* Contatore Caffè */}
+              {/* Contatore Caffè (totale, delta calcolato automaticamente) */}
               <div className="space-y-1">
-                <Label className="text-xs">Caffè (delta)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={partial.coffeeDelta ?? ''}
-                  onChange={(e) =>
-                    handleFieldChange(index, 'coffeeDelta', e.target.value)
-                  }
-                  disabled={disabled}
-                  className="font-mono"
-                  placeholder="0"
-                />
-              </div>
-
-              {/* Meteo */}
-              <div className="space-y-1">
-                <Label className="text-xs">Meteo</Label>
-                <Select
-                  value={partial.weather || ''}
-                  onValueChange={(value) =>
-                    handleFieldChange(index, 'weather', value)
-                  }
-                  disabled={disabled}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="--" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {WEATHER_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label className="text-xs">Caffè</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min="0"
+                    value={partial.coffeeCounter ?? ''}
+                    onChange={(e) =>
+                      handleFieldChange(index, 'coffeeCounter', e.target.value)
+                    }
+                    disabled={disabled}
+                    className="font-mono flex-1"
+                    placeholder="0"
+                  />
+                  {(() => {
+                    const delta = calculateCoffeeDelta(index, partial.coffeeCounter)
+                    if (delta !== null) {
+                      return (
+                        <span
+                          className={`text-xs font-mono whitespace-nowrap ${
+                            delta >= 0 ? 'text-green-600' : 'text-red-600'
+                          }`}
+                        >
+                          {delta >= 0 ? '+' : ''}{delta}
+                        </span>
+                      )
+                    }
+                    return null
+                  })()}
+                </div>
               </div>
 
               {/* Rimuovi */}

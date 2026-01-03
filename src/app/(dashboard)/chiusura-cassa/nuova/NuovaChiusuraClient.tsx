@@ -9,7 +9,6 @@ interface NuovaChiusuraClientProps {
     id: string
     name: string
     vatRate: number
-    defaultFloat: number
   }
   cashStationTemplates: { id: string; name: string; position: number; isEventOnly: boolean }[]
   staffMembers: { id: string; firstName: string; lastName: string; isFixedStaff: boolean; hourlyRate: number | null }[]
@@ -57,17 +56,14 @@ export function NuovaChiusuraClient({
           posProgressive: p.posProgressive,
           coffeeCounter: p.coffeeCounter,
           coffeeDelta: p.coffeeDelta,
-          weather: p.weather,
         })),
         expenses: data.expenses.map((e) => ({
           payee: e.payee,
-          description: e.description,
           documentRef: e.documentRef,
           documentType: e.documentType,
           amount: e.amount,
           vatAmount: e.vatAmount,
           accountId: e.accountId,
-          isPaid: e.isPaid,
           paidBy: e.paidBy,
         })),
         attendance: data.attendance.map((a) => ({
@@ -130,17 +126,14 @@ export function NuovaChiusuraClient({
           posProgressive: p.posProgressive,
           coffeeCounter: p.coffeeCounter,
           coffeeDelta: p.coffeeDelta,
-          weather: p.weather,
         })),
         expenses: data.expenses.map((e) => ({
           payee: e.payee,
-          description: e.description,
           documentRef: e.documentRef,
           documentType: e.documentType,
           amount: e.amount,
           vatAmount: e.vatAmount,
           accountId: e.accountId,
-          isPaid: e.isPaid,
           paidBy: e.paidBy,
         })),
         attendance: data.attendance.map((a) => ({
@@ -179,7 +172,6 @@ export function NuovaChiusuraClient({
       venueId={venue.id}
       venueName={venue.name}
       vatRate={venue.vatRate}
-      defaultFloat={venue.defaultFloat}
       cashStationTemplates={cashStationTemplates}
       staffMembers={staffMembers}
       accounts={accounts}

@@ -177,18 +177,15 @@ export default async function ModificaChiusuraPage({ params }: Props) {
       posProgressive: Number(p.posProgressive) || 0,
       coffeeCounter: p.coffeeCounter || undefined,
       coffeeDelta: p.coffeeDelta || undefined,
-      weather: p.weather || undefined,
     })),
     expenses: closure.expenses.map((e) => ({
       id: e.id,
       payee: e.payee,
-      description: e.description || undefined,
       documentRef: e.documentRef || undefined,
-      documentType: e.documentType as 'NONE' | 'RECEIPT' | 'INVOICE' | 'OTHER',
+      documentType: e.documentType as 'NONE' | 'FATTURA' | 'DDT' | 'RICEVUTA' | 'PERSONALE',
       amount: Number(e.amount) || 0,
       vatAmount: Number(e.vatAmount) || undefined,
       accountId: e.accountId || undefined,
-      isPaid: e.isPaid,
       paidBy: e.paidBy || undefined,
     })),
     attendance: closure.attendance.map((a) => ({
@@ -213,7 +210,6 @@ export default async function ModificaChiusuraPage({ params }: Props) {
         id: closure.venue.id,
         name: closure.venue.name,
         vatRate: (Number(closure.venue.vatRate) / 100) || 0.1,
-        defaultFloat: Number(closure.venue.defaultFloat) || 114,
       }}
       cashStationTemplates={closure.stations.map((s) => ({
         id: s.id,

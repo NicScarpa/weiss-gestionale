@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
@@ -31,7 +31,6 @@ import {
   formatCurrency,
   formatDate,
   DEFAULT_VAT_RATE,
-  DEFAULT_CASH_FLOAT,
   CASH_DIFFERENCE_THRESHOLD,
 } from '@/lib/constants'
 import { CashStationCard, CashStationData, emptyCashStation } from './CashStationCard'
@@ -73,7 +72,6 @@ interface ClosureFormProps {
   venueId: string
   venueName: string
   vatRate?: number
-  defaultFloat?: number
   cashStationTemplates: { id: string; name: string; position: number; isEventOnly?: boolean }[]
   staffMembers: { id: string; firstName: string; lastName: string; isFixedStaff?: boolean; hourlyRate?: number | null }[]
   accounts: { id: string; code: string; name: string }[]
@@ -88,7 +86,6 @@ export function ClosureForm({
   venueId,
   venueName,
   vatRate = DEFAULT_VAT_RATE,
-  defaultFloat = DEFAULT_CASH_FLOAT,
   cashStationTemplates,
   staffMembers,
   accounts,
@@ -100,6 +97,7 @@ export function ClosureForm({
   const router = useRouter()
   const [isSaving, setIsSaving] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [previousCoffeeCount, setPreviousCoffeeCount] = useState<number | null>(null)
 
   // Inizializza stazioni da template (include tutte, verranno filtrate in visualizzazione)
   const initializeStations = useCallback((): (CashStationData & { isEventOnly?: boolean })[] => {
@@ -118,10 +116,9 @@ export function ClosureForm({
       position: template.position,
       isEventOnly: template.isEventOnly || false,
       ...emptyCashStation,
-      floatAmount: defaultFloat,
       cashCount: { ...emptyCashCount },
     }))
-  }, [initialData?.stations, cashStationTemplates, defaultFloat])
+  }, [initialData?.stations, cashStationTemplates])
 
   // State form
   const [formData, setFormData] = useState<ClosureFormData>({
@@ -165,27 +162,15 @@ export function ClosureForm({
       0
     )
 
-    // Totale fondi cassa
-    const floatsTotal = formData.stations.reduce(
-      (sum, s) => sum + (s.floatAmount || 0),
-      0
-    )
-
-    // Totale uscite (tutte)
+    // Totale uscite (tutte le uscite impattano la cassa)
     const expensesTotal = formData.expenses.reduce(
       (sum, e) => sum + (e.amount || 0),
       0
     )
 
-    // Uscite pagate in contanti dalla cassa (isPaid=true E paidBy vuoto)
-    // Le uscite anticipate da qualcuno (paidBy valorizzato) NON impattano la cassa
-    const cashExpensesTotal = formData.expenses
-      .filter(e => e.isPaid && (!e.paidBy || e.paidBy.trim() === ''))
-      .reduce((sum, e) => sum + (e.amount || 0), 0)
-
-    // QUADRATURA CASSA (formula corretta):
-    // CASSA ATTESA = Fondo cassa + Incassi contanti - Uscite pagate in contanti
-    const expectedCash = floatsTotal + cashTotal - cashExpensesTotal
+    // QUADRATURA CASSA (formula semplificata senza fondo cassa):
+    // CASSA ATTESA = Incassi contanti - Uscite
+    const expectedCash = cashTotal - expensesTotal
 
     // DIFFERENZA = Cassa contata - Cassa attesa
     const cashDifference = countedTotal - expectedCash
@@ -196,18 +181,15 @@ export function ClosureForm({
     // Totale netto
     const netTotal = grossTotal - estimatedVat
 
-    // Versamento banca = Contato - Fondo da lasciare in cassa
-    // (il versamento tiene conto che le uscite sono già state sottratte dalla cassa fisica)
-    const bankDeposit = Math.max(0, countedTotal - floatsTotal)
+    // Versamento banca = totale contato (tutto va in banca)
+    const bankDeposit = Math.max(0, countedTotal)
 
     return {
       grossTotal,
       cashTotal,
       posTotal,
       countedTotal,
-      floatsTotal,
       expensesTotal,
-      cashExpensesTotal,
       expectedCash,
       cashDifference,
       estimatedVat,
@@ -218,6 +200,26 @@ export function ClosureForm({
         Math.abs(cashDifference) > CASH_DIFFERENCE_THRESHOLD,
     }
   }, [formData.stations, formData.expenses, vatRate])
+
+  // Fetch contatore caffè del giorno precedente
+  useEffect(() => {
+    const fetchPreviousCoffee = async () => {
+      try {
+        const dateStr = format(formData.date, 'yyyy-MM-dd')
+        const res = await fetch(
+          `/api/chiusure/previous-coffee?date=${dateStr}&venueId=${venueId}`
+        )
+        if (res.ok) {
+          const data = await res.json()
+          setPreviousCoffeeCount(data.previousCoffeeCount ?? null)
+        }
+      } catch (error) {
+        console.error('Errore nel recupero caffè precedente:', error)
+      }
+    }
+
+    fetchPreviousCoffee()
+  }, [formData.date, venueId])
 
   // Handlers
   const handleFieldChange = (field: keyof ClosureFormData, value: any) => {
@@ -481,6 +483,7 @@ export function ClosureForm({
       <HourlyPartialsSection
         partials={formData.partials}
         onChange={(partials) => handleFieldChange('partials', partials)}
+        previousCoffeeCount={previousCoffeeCount}
         disabled={isReadOnly}
       />
 
@@ -575,21 +578,15 @@ export function ClosureForm({
             {/* Colonna destra: Quadratura Cassa */}
             <div className="space-y-2">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Fondi Cassa:</span>
-                <span className="font-mono">
-                  {formatCurrency(totals.floatsTotal)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">+ Incassi Contanti:</span>
+                <span className="text-muted-foreground">Incassi Contanti:</span>
                 <span className="font-mono">
                   {formatCurrency(totals.cashTotal)}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">- Uscite Contanti:</span>
+                <span className="text-muted-foreground">- Uscite:</span>
                 <span className="font-mono">
-                  {formatCurrency(totals.cashExpensesTotal)}
+                  {formatCurrency(totals.expensesTotal)}
                 </span>
               </div>
               <Separator />
@@ -620,26 +617,13 @@ export function ClosureForm({
             </div>
           </div>
 
-          {/* Riga inferiore: Uscite e Versamento */}
+          {/* Riga inferiore: Versamento */}
           <Separator />
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div className="space-y-1">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Totale Uscite:</span>
-                <span className="font-mono">{formatCurrency(totals.expensesTotal)}</span>
-              </div>
-              {totals.expensesTotal !== totals.cashExpensesTotal && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">(di cui anticipate: {formatCurrency(totals.expensesTotal - totals.cashExpensesTotal)})</span>
-                </div>
-              )}
-            </div>
-            <div className="flex justify-between font-semibold text-primary">
-              <span>Versamento Banca:</span>
-              <span className="font-mono">
-                {formatCurrency(totals.bankDeposit)}
-              </span>
-            </div>
+          <div className="flex justify-between font-semibold text-primary">
+            <span>Versamento Banca:</span>
+            <span className="font-mono">
+              {formatCurrency(totals.bankDeposit)}
+            </span>
           </div>
         </CardContent>
       </Card>

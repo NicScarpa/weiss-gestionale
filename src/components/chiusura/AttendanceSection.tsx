@@ -11,7 +11,6 @@ import {
 } from '@/components/ui/select'
 import { Users, UserPlus, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { formatCurrency } from '@/lib/constants'
 
 // Tipo per presenza
 export interface AttendanceData {
@@ -74,10 +73,9 @@ export function AttendanceSection({
   const fixedAttendance = attendance.filter((a) => !a.isExtra)
   const extraAttendance = attendance.filter((a) => a.isExtra)
 
-  // Calcola totali
+  // Calcola totali ore
   const fixedTotalHours = fixedAttendance.reduce((sum, a) => sum + (a.hours || 0), 0)
   const extraTotalHours = extraAttendance.reduce((sum, a) => sum + (a.hours || 0), 0)
-  const extraTotalPay = extraAttendance.reduce((sum, a) => sum + (a.totalPay || 0), 0)
 
   // Aggiungi nuova presenza
   const handleAddFixed = () => {
@@ -326,7 +324,7 @@ export function AttendanceSection({
             </CardTitle>
             {extraTotalHours > 0 && (
               <span className="text-sm text-muted-foreground">
-                ({extraTotalHours}h - {formatCurrency(extraTotalPay)})
+                ({extraTotalHours}h)
               </span>
             )}
           </div>
@@ -350,13 +348,10 @@ export function AttendanceSection({
           ) : (
             <>
               {/* Header */}
-              <div className="grid grid-cols-[1fr_100px_80px_100px_100px_80px_40px] gap-2 text-xs font-medium text-muted-foreground border-b pb-2">
+              <div className="grid grid-cols-[1fr_120px_80px_40px] gap-2 text-xs font-medium text-muted-foreground border-b pb-2">
                 <span>Nome</span>
                 <span>Turno</span>
                 <span>Ore</span>
-                <span>Tariffa/h</span>
-                <span>Totale</span>
-                <span>Pagato</span>
                 <span></span>
               </div>
 
@@ -365,7 +360,7 @@ export function AttendanceSection({
                 return (
                   <div
                     key={realIndex}
-                    className="grid grid-cols-[1fr_100px_80px_100px_100px_80px_40px] gap-2 items-center"
+                    className="grid grid-cols-[1fr_120px_80px_40px] gap-2 items-center"
                   >
                     {/* Nome (da lista extra o testo libero) */}
                     {extraStaff.length > 0 ? (
@@ -433,38 +428,6 @@ export function AttendanceSection({
                       placeholder="0"
                     />
 
-                    {/* Tariffa oraria */}
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={att.hourlyRate ?? ''}
-                      onChange={(e) =>
-                        handleFieldChange(realIndex, 'hourlyRate', e.target.value)
-                      }
-                      disabled={disabled}
-                      className="font-mono"
-                      placeholder="0,00"
-                    />
-
-                    {/* Totale */}
-                    <span className="font-mono text-sm">
-                      {formatCurrency(att.totalPay || 0)}
-                    </span>
-
-                    {/* Checkbox Pagato */}
-                    <div className="flex items-center justify-center">
-                      <input
-                        type="checkbox"
-                        checked={att.isPaid || false}
-                        onChange={(e) =>
-                          handleFieldChange(realIndex, 'isPaid', e.target.checked)
-                        }
-                        disabled={disabled}
-                        className="h-4 w-4"
-                      />
-                    </div>
-
                     {/* Rimuovi */}
                     <Button
                       type="button"
@@ -480,14 +443,10 @@ export function AttendanceSection({
                 )
               })}
 
-              {/* Totale */}
-              <div className="flex justify-between pt-2 border-t text-sm">
+              {/* Totale Ore */}
+              <div className="flex justify-end pt-2 border-t text-sm">
                 <span className="text-muted-foreground">
-                  Totale: <strong>{extraTotalHours}h</strong>
-                </span>
-                <span>
-                  <span className="text-muted-foreground">Compenso: </span>
-                  <strong className="font-mono">{formatCurrency(extraTotalPay)}</strong>
+                  Totale ore: <strong>{extraTotalHours}h</strong>
                 </span>
               </div>
             </>
