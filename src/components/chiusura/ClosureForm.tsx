@@ -156,44 +156,40 @@ export function ClosureForm({
       0
     )
 
-    // Totale uscite (tutte le uscite impattano la cassa)
+    // Totale uscite
     const expensesTotal = formData.expenses.reduce(
       (sum, e) => sum + (e.amount || 0),
       0
     )
 
-    // QUADRATURA CASSA (logica corretta):
-    // L'incasso contanti EFFETTIVO = cassa contata + uscite pagate
-    // (perché le uscite sono soldi che sarebbero rimasti in cassa)
-    const cashIncomeEffective = countedTotal + expensesTotal
+    // QUADRATURA CASSA:
+    // Confronto diretto tra cassa contata e vendite contanti da scontrino
+    // Le uscite sono mostrate separatamente ma NON influenzano la quadratura
+    // (potrebbero essere pagate da varie fonti, non solo dalla cassa)
+    const cashDifference = countedTotal - cashTotal
 
-    // DIFFERENZA = Incasso contanti effettivo - Incasso contanti da scontrino
-    // Se positiva: abbiamo più soldi di quanto indicato dagli scontrini
-    // Se negativa: mancano soldi rispetto agli scontrini
-    const cashDifference = cashIncomeEffective - cashTotal
-
-    // Totale lordo = vendite + uscite (tutto il denaro movimentato)
-    // Le uscite si sommano perché erano soldi che sono transitati in cassa
-    const grossTotal = cashTotal + posTotal + expensesTotal
-
-    // IVA stimata (solo sulle vendite, non sulle uscite)
+    // Totale vendite (solo incassi, senza uscite)
     const salesTotal = cashTotal + posTotal
+
+    // Totale movimentazione = vendite + uscite (tutto il denaro movimentato)
+    const grossTotal = salesTotal + expensesTotal
+
+    // IVA stimata (solo sulle vendite)
     const estimatedVat = salesTotal * vatRate
 
-    // Totale netto (solo vendite meno IVA)
+    // Totale netto (vendite meno IVA)
     const netTotal = salesTotal - estimatedVat
 
-    // Versamento banca = totale contato (tutto va in banca)
-    const bankDeposit = Math.max(0, countedTotal)
+    // Versamento banca = totale POS (i contanti restano in cassa)
+    const bankDeposit = posTotal
 
     return {
       grossTotal,
-      salesTotal, // Nuovo: solo vendite (senza uscite)
+      salesTotal,
       cashTotal,
       posTotal,
       countedTotal,
       expensesTotal,
-      cashIncomeEffective, // Nuovo: contanti effettivi (contati + uscite)
       cashDifference,
       estimatedVat,
       netTotal,
@@ -581,28 +577,15 @@ export function ClosureForm({
             {/* Colonna destra: Quadratura Cassa */}
             <div className="space-y-2">
               <div className="flex justify-between">
+                <span className="text-muted-foreground">Vendite Contanti:</span>
+                <span className="font-mono">
+                  {formatCurrency(totals.cashTotal)}
+                </span>
+              </div>
+              <div className="flex justify-between">
                 <span className="text-muted-foreground">Cassa Contata:</span>
                 <span className="font-mono">
                   {formatCurrency(totals.countedTotal)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">+ Uscite Pagate:</span>
-                <span className="font-mono">
-                  {formatCurrency(totals.expensesTotal)}
-                </span>
-              </div>
-              <Separator />
-              <div className="flex justify-between font-semibold">
-                <span>= Incasso Contanti:</span>
-                <span className="font-mono">
-                  {formatCurrency(totals.cashIncomeEffective)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">vs Scontrino:</span>
-                <span className="font-mono">
-                  {formatCurrency(totals.cashTotal)}
                 </span>
               </div>
               <div
@@ -615,6 +598,13 @@ export function ClosureForm({
                 <span className="font-mono">
                   {totals.cashDifference >= 0 ? '+' : ''}
                   {formatCurrency(totals.cashDifference)}
+                </span>
+              </div>
+              <Separator />
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Uscite Pagate:</span>
+                <span className="font-mono">
+                  {formatCurrency(totals.expensesTotal)}
                 </span>
               </div>
             </div>
@@ -631,9 +621,15 @@ export function ClosureForm({
             </span>
           </div>
 
-          {/* Riga Versamento Banca */}
+          {/* Righe Contanti e Banca */}
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Contanti in Cassa:</span>
+            <span className="font-mono">
+              {formatCurrency(totals.countedTotal)}
+            </span>
+          </div>
           <div className="flex justify-between font-semibold text-primary">
-            <span>Versamento Banca:</span>
+            <span>Versamento Banca (POS):</span>
             <span className="font-mono">
               {formatCurrency(totals.bankDeposit)}
             </span>
