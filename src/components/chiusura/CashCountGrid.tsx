@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, memo } from 'react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
@@ -70,20 +70,100 @@ interface CashCountGridProps {
   className?: string
 }
 
+// Formatta etichetta denominazione
+const formatDenomination = (denom: number) => {
+  if (denom >= 1) return `€${denom}`
+  return `€${denom.toFixed(2).replace('.', ',')}`
+}
+
+// Componente riga singola - DEVE essere fuori dal componente principale
+// per evitare che venga ricreato ad ogni render (causa perdita focus)
+interface DenominationRowProps {
+  denomination: number
+  count: number
+  isCoin?: boolean
+  disabled?: boolean
+  onIncrement: (denomination: number, delta: number) => void
+  onChange: (denomination: number, value: string) => void
+}
+
+const DenominationRow = memo(function DenominationRow({
+  denomination,
+  count,
+  isCoin = false,
+  disabled = false,
+  onIncrement,
+  onChange,
+}: DenominationRowProps) {
+  const total = denomination * count
+
+  return (
+    <div className="grid grid-cols-[80px_1fr_100px] items-center gap-2 py-1">
+      {/* Etichetta denominazione */}
+      <Label
+        className={cn(
+          'font-medium text-sm',
+          isCoin ? 'text-amber-700' : 'text-emerald-700'
+        )}
+      >
+        {formatDenomination(denomination)}
+      </Label>
+
+      {/* Input con bottoni +/- */}
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onIncrement(denomination, -1)}
+          disabled={disabled || count === 0}
+          className={cn(
+            'w-11 h-11 rounded-lg font-bold text-lg',
+            'bg-gray-100 hover:bg-gray-200 active:bg-gray-300',
+            'disabled:opacity-50 disabled:cursor-not-allowed',
+            'touch-manipulation select-none'
+          )}
+        >
+          −
+        </button>
+        <Input
+          type="number"
+          min="0"
+          value={count}
+          onChange={(e) => onChange(denomination, e.target.value)}
+          disabled={disabled}
+          className={cn(
+            'w-16 h-11 text-center font-mono text-lg',
+            '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
+          )}
+        />
+        <button
+          type="button"
+          onClick={() => onIncrement(denomination, 1)}
+          disabled={disabled}
+          className={cn(
+            'w-11 h-11 rounded-lg font-bold text-lg',
+            'bg-gray-100 hover:bg-gray-200 active:bg-gray-300',
+            'disabled:opacity-50 disabled:cursor-not-allowed',
+            'touch-manipulation select-none'
+          )}
+        >
+          +
+        </button>
+      </div>
+
+      {/* Totale riga */}
+      <span className="text-right font-mono text-sm text-muted-foreground">
+        {formatCurrency(total)}
+      </span>
+    </div>
+  )
+})
+
 export function CashCountGrid({
   values,
   onChange,
   disabled = false,
   className,
 }: CashCountGridProps) {
-  // Calcola totale per singola denominazione
-  const calculateDenominationTotal = useCallback(
-    (denomination: number, count: number) => {
-      return denomination * count
-    },
-    []
-  )
-
   // Calcola totale banconote
   const billsTotal = useMemo(() => {
     return BILL_DENOMINATIONS.reduce((sum, denom) => {
@@ -129,85 +209,6 @@ export function CashCountGrid({
     [values, onChange]
   )
 
-  // Formatta etichetta denominazione
-  const formatDenomination = (denom: number) => {
-    if (denom >= 1) return `€${denom}`
-    return `€${denom.toFixed(2).replace('.', ',')}`
-  }
-
-  // Componente riga singola
-  const DenominationRow = ({
-    denomination,
-    isCoin = false,
-  }: {
-    denomination: number
-    isCoin?: boolean
-  }) => {
-    const key = denominationToKey[denomination]
-    const count = values[key] || 0
-    const total = calculateDenominationTotal(denomination, count)
-
-    return (
-      <div className="grid grid-cols-[80px_1fr_100px] items-center gap-2 py-1">
-        {/* Etichetta denominazione */}
-        <Label
-          className={cn(
-            'font-medium text-sm',
-            isCoin ? 'text-amber-700' : 'text-emerald-700'
-          )}
-        >
-          {formatDenomination(denomination)}
-        </Label>
-
-        {/* Input con bottoni +/- */}
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => handleIncrement(denomination, -1)}
-            disabled={disabled || count === 0}
-            className={cn(
-              'w-11 h-11 rounded-lg font-bold text-lg',
-              'bg-gray-100 hover:bg-gray-200 active:bg-gray-300',
-              'disabled:opacity-50 disabled:cursor-not-allowed',
-              'touch-manipulation select-none'
-            )}
-          >
-            −
-          </button>
-          <Input
-            type="number"
-            min="0"
-            value={count}
-            onChange={(e) => handleChange(denomination, e.target.value)}
-            disabled={disabled}
-            className={cn(
-              'w-16 h-11 text-center font-mono text-lg',
-              '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
-            )}
-          />
-          <button
-            type="button"
-            onClick={() => handleIncrement(denomination, 1)}
-            disabled={disabled}
-            className={cn(
-              'w-11 h-11 rounded-lg font-bold text-lg',
-              'bg-gray-100 hover:bg-gray-200 active:bg-gray-300',
-              'disabled:opacity-50 disabled:cursor-not-allowed',
-              'touch-manipulation select-none'
-            )}
-          >
-            +
-          </button>
-        </div>
-
-        {/* Totale riga */}
-        <span className="text-right font-mono text-sm text-muted-foreground">
-          {formatCurrency(total)}
-        </span>
-      </div>
-    )
-  }
-
   return (
     <div className={cn('space-y-4', className)}>
       {/* Sezione Banconote */}
@@ -220,7 +221,14 @@ export function CashCountGrid({
         </div>
         <div className="space-y-1">
           {BILL_DENOMINATIONS.map((denom) => (
-            <DenominationRow key={`bill-${denom}`} denomination={denom} />
+            <DenominationRow
+              key={`bill-${denom}`}
+              denomination={denom}
+              count={values[denominationToKey[denom]] || 0}
+              disabled={disabled}
+              onIncrement={handleIncrement}
+              onChange={handleChange}
+            />
           ))}
         </div>
       </div>
@@ -235,7 +243,15 @@ export function CashCountGrid({
         </div>
         <div className="space-y-1">
           {COIN_DENOMINATIONS.map((denom) => (
-            <DenominationRow key={`coin-${denom}`} denomination={denom} isCoin />
+            <DenominationRow
+              key={`coin-${denom}`}
+              denomination={denom}
+              count={values[denominationToKey[denom]] || 0}
+              isCoin
+              disabled={disabled}
+              onIncrement={handleIncrement}
+              onChange={handleChange}
+            />
           ))}
         </div>
       </div>
