@@ -146,6 +146,7 @@ model Venue {
   registerBalances RegisterBalance[]
   initialBalances  InitialBalance[]
   budgets          Budget[]
+  budgetCategories BudgetCategory[]
 
   // Relazioni Fase 4
   employeeConstraints     EmployeeConstraint[]
@@ -385,9 +386,10 @@ model Account {
 
   expenses           DailyExpense[]
   journalEntries     JournalEntry[]
-  counterpartEntries JournalEntry[] @relation("Counterpart")
+  counterpartEntries JournalEntry[]        @relation("Counterpart")
   suppliers          Supplier[]
   budgetLines        BudgetLine[]
+  budgetMapping      AccountBudgetMapping?
 
   @@map("accounts")
 }
@@ -497,6 +499,89 @@ model Budget {
   @@map("budgets")
 }
 
+// === CATEGORIE BUDGET PERSONALIZZABILI ===
+
+model BudgetCategory {
+  id      String @id @default(cuid())
+  venue   Venue  @relation(fields: [venueId], references: [id])
+  venueId String @map("venue_id")
+
+  code String // Es: "COSTI_PERSONALE", "FOOD_COST", "RICAVI_BAR"
+  name String // Nome visualizzato
+
+  // Gerarchia (categorie raggruppabili)
+  parent   BudgetCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  parentId String?          @map("parent_id")
+  children BudgetCategory[] @relation("CategoryHierarchy")
+
+  displayOrder Int @default(0) @map("display_order")
+
+  // Tipo categoria per calcoli e visualizzazione
+  categoryType BudgetCategoryType @default(COST) @map("category_type")
+
+  // Aspetto visivo
+  color String? // Colore HEX (#3B82F6)
+  icon  String? // Icona emoji o classe icona
+
+  // Benchmark (% target su ricavi)
+  benchmarkPercentage   Decimal?            @map("benchmark_percentage") @db.Decimal(5, 2)
+  benchmarkComparison   BenchmarkComparison @default(LESS_THAN) @map("benchmark_comparison")
+  alertThresholdPercent Decimal?            @map("alert_threshold_percent") @db.Decimal(5, 2) // Soglia alert (default 10%)
+
+  description String? @db.Text
+
+  // Categorie di sistema (non eliminabili)
+  isSystem Boolean @default(false) @map("is_system")
+  isActive Boolean @default(true) @map("is_active")
+
+  createdBy String?  @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relazioni
+  accountMappings AccountBudgetMapping[]
+  budgetLines     BudgetLine[]
+
+  @@unique([venueId, code])
+  @@index([venueId, categoryType])
+  @@map("budget_categories")
+}
+
+enum BudgetCategoryType {
+  REVENUE // Ricavi
+  COST // Costi
+  KPI // Indicatori calcolati (margini, %)
+  TAX // Imposte e contributi
+  INVESTMENT // Investimenti/ammortamenti
+  VAT // IVA
+}
+
+enum BenchmarkComparison {
+  LESS_THAN // Il valore deve essere < benchmark (es. costi)
+  GREATER_THAN // Il valore deve essere > benchmark (es. margine)
+  EQUAL // Il valore deve essere = benchmark
+}
+
+// Mapping tra conti del piano dei conti e categorie budget
+model AccountBudgetMapping {
+  id String @id @default(cuid())
+
+  account   Account @relation(fields: [accountId], references: [id])
+  accountId String  @unique @map("account_id") // Un conto può appartenere a una sola categoria
+
+  budgetCategory   BudgetCategory @relation(fields: [budgetCategoryId], references: [id], onDelete: Cascade)
+  budgetCategoryId String         @map("budget_category_id")
+
+  // Per override del tipo movimento (in casi particolari)
+  includeInBudget Boolean @default(true) @map("include_in_budget")
+
+  createdBy String?  @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([budgetCategoryId])
+  @@map("account_budget_mappings")
+}
+
 enum BudgetStatus {
   DRAFT
   ACTIVE
@@ -509,6 +594,10 @@ model BudgetLine {
   budgetId  String  @map("budget_id")
   account   Account @relation(fields: [accountId], references: [id])
   accountId String  @map("account_id")
+
+  // Categoria budget (opzionale, per raggruppamento)
+  budgetCategory   BudgetCategory? @relation(fields: [budgetCategoryId], references: [id])
+  budgetCategoryId String?         @map("budget_category_id")
 
   // Valori mensili
   jan Decimal @default(0) @db.Decimal(12, 2)
@@ -531,6 +620,7 @@ model BudgetLine {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@unique([budgetId, accountId])
+  @@index([budgetCategoryId])
   @@map("budget_lines")
 }
 

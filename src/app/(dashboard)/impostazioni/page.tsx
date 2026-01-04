@@ -5,6 +5,7 @@ import { VenueManagement } from '@/components/settings/VenueManagement'
 import { SupplierManagement } from '@/components/settings/SupplierManagement'
 import { AccountManagement } from '@/components/settings/AccountManagement'
 import { PrimaNotaSettings } from '@/components/settings/PrimaNotaSettings'
+import { BudgetCategoryManagement } from '@/components/settings/BudgetCategoryManagement'
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 
@@ -39,6 +40,7 @@ export default async function ImpostazioniPage() {
           <TabsTrigger value="sedi">Sedi</TabsTrigger>
           <TabsTrigger value="fornitori">Fornitori</TabsTrigger>
           <TabsTrigger value="conti">Piano Conti</TabsTrigger>
+          <TabsTrigger value="budget">Budget</TabsTrigger>
           <TabsTrigger value="prima-nota">Prima Nota</TabsTrigger>
         </TabsList>
 
@@ -56,6 +58,10 @@ export default async function ImpostazioniPage() {
 
         <TabsContent value="conti">
           <AccountManagement />
+        </TabsContent>
+
+        <TabsContent value="budget">
+          <BudgetCategoryManagement />
         </TabsContent>
 
         <TabsContent value="prima-nota">
