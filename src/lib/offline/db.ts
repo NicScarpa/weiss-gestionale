@@ -161,8 +161,14 @@ export async function deletePendingClosure(id: string) {
 // Cache operations
 export async function cacheData<T extends 'cachedClosures' | 'cachedVenues' | 'cachedStaff' | 'cachedAccounts' | 'cachedSuppliers'>(
   store: T,
-  items: Array<{ id: string; [key: string]: any }>
+  items: Array<{ id: string; [key: string]: any }> | undefined | null
 ) {
+  // Guard against undefined/null items
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    console.warn(`[Offline] No items to cache for store: ${store}`)
+    return
+  }
+
   const db = await getDB()
   const tx = db.transaction(store, 'readwrite')
 

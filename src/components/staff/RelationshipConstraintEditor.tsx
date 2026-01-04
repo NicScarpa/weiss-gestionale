@@ -456,16 +456,17 @@ export function RelationshipConstraintEditor({ venueId }: RelationshipConstraint
                     Nessun dipendente disponibile
                   </div>
                 ) : (
-                  staffList.map(user => (
+                  staffList.map(user => {
+                    const isSelected = formData.userIds.includes(user.id)
+                    return (
                     <div
                       key={user.id}
                       className="flex items-center gap-3 p-3 hover:bg-muted cursor-pointer border-b last:border-0"
                       onClick={() => toggleUser(user.id)}
                     >
-                      <Checkbox
-                        checked={formData.userIds.includes(user.id)}
-                        onCheckedChange={() => toggleUser(user.id)}
-                      />
+                      <div className={`h-4 w-4 rounded border-2 flex items-center justify-center ${isSelected ? 'bg-primary border-primary' : 'border-muted-foreground'}`}>
+                        {isSelected && <span className="text-primary-foreground text-xs">✓</span>}
+                      </div>
                       <Avatar className="h-8 w-8">
                         <AvatarFallback>
                           {getInitials(user.firstName, user.lastName)}
@@ -478,7 +479,7 @@ export function RelationshipConstraintEditor({ venueId }: RelationshipConstraint
                         <div className="text-xs text-muted-foreground">{user.email}</div>
                       </div>
                     </div>
-                  ))
+                  )})
                 )}
               </div>
               {formData.userIds.length < 2 && formData.userIds.length > 0 && (
