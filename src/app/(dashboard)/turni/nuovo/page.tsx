@@ -51,7 +51,7 @@ export default function NuovoPianificazionePage() {
     },
   })
 
-  const venues: Venue[] = venuesData?.data || []
+  const venues: Venue[] = venuesData?.venues || []
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {

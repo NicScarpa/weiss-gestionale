@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { ShiftCalendar } from '@/components/shifts/ShiftCalendar'
 import { GenerationParamsForm } from '@/components/shifts/GenerationParamsForm'
 import { ScheduleWarnings } from '@/components/shifts/ScheduleWarnings'
+import { AssignmentDialog } from '@/components/shifts/AssignmentDialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   ArrowLeft,
@@ -28,10 +29,46 @@ interface PageProps {
   params: Promise<{ id: string }>
 }
 
+interface Assignment {
+  id: string
+  userId: string
+  shiftDefinitionId: string | null
+  date: string
+  startTime: string
+  endTime: string
+  breakMinutes: number
+  notes: string | null
+  user: {
+    id: string
+    firstName: string
+    lastName: string
+  }
+  shiftDefinition?: {
+    id: string
+    name: string
+    code: string
+    color: string | null
+    startTime: string
+    endTime: string
+  } | null
+}
+
+interface DialogState {
+  open: boolean
+  mode: 'add' | 'edit'
+  date?: Date
+  shiftDefId?: string
+  assignment?: Assignment
+}
+
 export default function ScheduleDetailPage({ params }: PageProps) {
   const resolvedParams = use(params)
   const queryClient = useQueryClient()
   const [isGenerating, setIsGenerating] = useState(false)
+  const [dialogState, setDialogState] = useState<DialogState>({
+    open: false,
+    mode: 'add',
+  })
 
   const { data: schedule, isLoading, error } = useQuery({
     queryKey: ['schedule', resolvedParams.id],
@@ -282,13 +319,20 @@ export default function ScheduleDetailPage({ params }: PageProps) {
                   assignments={schedule.assignments || []}
                   shiftDefinitions={shiftDefinitions}
                   onAssignmentClick={(assignment) => {
-                    // TODO: Open assignment edit dialog
-                    console.log('Edit assignment', assignment)
+                    setDialogState({
+                      open: true,
+                      mode: 'edit',
+                      assignment: assignment as Assignment,
+                    })
                   }}
                   onSlotClick={(date, shiftDefId) => {
                     if (schedule.status === 'PUBLISHED') return
-                    // TODO: Open add assignment dialog
-                    console.log('Add assignment', date, shiftDefId)
+                    setDialogState({
+                      open: true,
+                      mode: 'add',
+                      date,
+                      shiftDefId,
+                    })
                   }}
                 />
               )}
@@ -296,6 +340,19 @@ export default function ScheduleDetailPage({ params }: PageProps) {
           </Card>
         </div>
       </div>
+
+      {/* Dialog per aggiungere/modificare assegnazioni */}
+      <AssignmentDialog
+        open={dialogState.open}
+        onOpenChange={(open) => setDialogState(prev => ({ ...prev, open }))}
+        scheduleId={resolvedParams.id}
+        venueId={schedule.venueId}
+        shiftDefinitions={shiftDefinitions}
+        date={dialogState.date}
+        shiftDefId={dialogState.shiftDefId}
+        assignment={dialogState.assignment}
+        isReadOnly={schedule.status === 'PUBLISHED'}
+      />
     </div>
   )
 }

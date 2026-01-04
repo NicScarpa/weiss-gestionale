@@ -80,7 +80,7 @@ export default function StaffPage() {
   })
 
   const staffList: StaffMember[] = staffData?.data || []
-  const venues = venuesData?.data || []
+  const venues = venuesData?.venues || []
 
   // Filtra staff
   const filteredStaff = staffList.filter(staff => {

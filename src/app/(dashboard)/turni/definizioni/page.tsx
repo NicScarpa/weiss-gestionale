@@ -114,7 +114,7 @@ export default function ShiftDefinitionsPage() {
     },
   })
 
-  const venues: Venue[] = venuesData?.data || []
+  const venues: Venue[] = venuesData?.venues || []
   const shifts: ShiftDefinition[] = shiftsData?.data || []
 
   const createMutation = useMutation({
