@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { notifyLeaveRejected } from '@/lib/notifications'
 
 const rejectSchema = z.object({
   rejectionReason: z.string().min(1, 'Il motivo del rifiuto è obbligatorio'),
@@ -99,7 +100,10 @@ export async function POST(
       })
     }
 
-    // TODO: Inviare notifica al dipendente
+    // Invia notifica al dipendente (async)
+    notifyLeaveRejected(id, rejectionReason).catch((err) =>
+      console.error('Errore invio notifica ferie rifiutate:', err)
+    )
 
     return NextResponse.json({
       ...updated,

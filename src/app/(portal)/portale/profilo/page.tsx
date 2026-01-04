@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
+import { NotificationSettings } from '@/components/portal/NotificationSettings'
 
 export default function PortalProfiloPage() {
   const { data: session, status } = useSession()
@@ -91,6 +92,9 @@ export default function PortalProfiloPage() {
 
         </CardContent>
       </Card>
+
+      {/* Notifiche */}
+      <NotificationSettings />
 
       {/* Azioni */}
       <Card>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { notifyLeaveApproved } from '@/lib/notifications'
 
 const approveSchema = z.object({
   managerNotes: z.string().optional(),
@@ -100,7 +101,10 @@ export async function POST(
       })
     }
 
-    // TODO: Inviare notifica al dipendente
+    // Invia notifica al dipendente (async)
+    notifyLeaveApproved(id).catch((err) =>
+      console.error('Errore invio notifica ferie approvate:', err)
+    )
 
     return NextResponse.json({
       ...updated,

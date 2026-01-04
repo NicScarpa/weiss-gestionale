@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { validateSchedule } from '@/lib/shift-generation'
+import { notifyShiftPublished } from '@/lib/notifications'
 
 // POST /api/schedules/[id]/publish - Pubblica pianificazione
 export async function POST(
@@ -84,7 +85,10 @@ export async function POST(
       },
     })
 
-    // TODO: Inviare notifiche ai dipendenti
+    // Invia notifiche ai dipendenti (async, non blocca la risposta)
+    notifyShiftPublished(id, { excludeUserId: session.user.id }).catch((err) =>
+      console.error('Errore invio notifiche turni:', err)
+    )
 
     return NextResponse.json({
       success: true,

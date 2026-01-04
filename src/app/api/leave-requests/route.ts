@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { notifyNewLeaveRequest } from '@/lib/notifications'
 
 // Schema per creazione richiesta ferie
 const createLeaveRequestSchema = z.object({
@@ -229,6 +230,11 @@ export async function POST(request: NextRequest) {
         validatedData.leaveTypeId,
         daysRequested,
         'pending'
+      )
+
+      // Notifica ai manager della nuova richiesta (async)
+      notifyNewLeaveRequest(leaveRequest.id).catch((err) =>
+        console.error('Errore invio notifica nuova richiesta ferie:', err)
       )
     }
 

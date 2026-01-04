@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { notifyAnomalyResolved } from '@/lib/notifications'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -89,6 +90,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         },
       },
     })
+
+    // Notifica al dipendente che l'anomalia è stata risolta (async)
+    notifyAnomalyResolved(id).catch((err) =>
+      console.error('Errore invio notifica anomalia risolta:', err)
+    )
 
     return NextResponse.json({
       success: true,

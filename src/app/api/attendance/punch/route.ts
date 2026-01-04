@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { PunchType, PunchMethod } from '@prisma/client'
 import { calculateDistance } from '@/lib/geolocation'
+import { notifyAnomalyCreated } from '@/lib/notifications'
 
 // Schema validazione input
 const punchSchema = z.object({
@@ -184,7 +185,7 @@ export async function POST(request: NextRequest) {
 
     // Crea anomalia se fuori sede
     if (!isWithinRadius && distanceFromVenue !== null) {
-      await prisma.attendanceAnomaly.create({
+      const anomaly = await prisma.attendanceAnomaly.create({
         data: {
           userId: session.user.id,
           venueId: validatedData.venueId,
@@ -198,6 +199,11 @@ export async function POST(request: NextRequest) {
           expectedValue: `<${venue.attendancePolicy?.geoFenceRadius ?? 100}m`,
         },
       })
+
+      // Notifica anomalia creata (async)
+      notifyAnomalyCreated(anomaly.id).catch((err) =>
+        console.error('Errore invio notifica anomalia creata:', err)
+      )
     }
 
     return NextResponse.json({

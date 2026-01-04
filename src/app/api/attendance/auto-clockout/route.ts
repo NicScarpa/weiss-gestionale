@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { notifyAnomalyCreated } from '@/lib/notifications'
 
 // Header segreto per autorizzare il cron job
 const CRON_SECRET = process.env.CRON_SECRET || 'default-cron-secret'
@@ -95,7 +96,7 @@ export async function POST(request: NextRequest) {
           const dateForAnomaly = new Date(clockIn.punchedAt)
           dateForAnomaly.setHours(0, 0, 0, 0)
 
-          await prisma.attendanceAnomaly.create({
+          const anomaly = await prisma.attendanceAnomaly.create({
             data: {
               userId: clockIn.userId,
               venueId: venue.id,
@@ -110,6 +111,11 @@ export async function POST(request: NextRequest) {
               hoursAffected: maxHours,
             },
           })
+
+          // Notifica anomalia creata (async)
+          notifyAnomalyCreated(anomaly.id).catch((err) =>
+            console.error('Errore invio notifica anomalia auto-clockout:', err)
+          )
 
           venueAutoClockouts++
           totalAutoClockouts++
