@@ -35,6 +35,9 @@ self.addEventListener('sync', (event: any) => {
   if (event.tag === 'sync-closures') {
     event.waitUntil(syncPendingClosures())
   }
+  if (event.tag === 'sync-punches') {
+    event.waitUntil(syncPendingPunches())
+  }
 })
 
 async function syncPendingClosures() {
@@ -43,6 +46,14 @@ async function syncPendingClosures() {
   const clients = await self.clients.matchAll()
   clients.forEach((client) => {
     client.postMessage({ type: 'SYNC_CLOSURES' })
+  })
+}
+
+async function syncPendingPunches() {
+  // Notify clients to sync pending punches
+  const clients = await self.clients.matchAll()
+  clients.forEach((client) => {
+    client.postMessage({ type: 'SYNC_PUNCHES' })
   })
 }
 

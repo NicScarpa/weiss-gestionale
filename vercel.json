@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/attendance/auto-clockout",
+      "schedule": "0 * * * *"
+    }
+  ]
+}

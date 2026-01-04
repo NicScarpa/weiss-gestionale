@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { getCurrentPosition, VenueLocation } from '@/lib/geolocation'
-import { LogIn, LogOut, Coffee, Loader2 } from 'lucide-react'
+import { savePunchOffline, syncAllPendingPunches, getPendingPunchCount } from '@/lib/offline'
+import { LogIn, LogOut, Coffee, Loader2, WifiOff, CloudUpload } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { AttendanceStatus } from './PunchStatus'
@@ -66,6 +67,85 @@ export function PunchButton({
 }: PunchButtonProps) {
   const queryClient = useQueryClient()
   const [isGettingLocation, setIsGettingLocation] = useState(false)
+  const [isOnline, setIsOnline] = useState(true)
+  const [pendingCount, setPendingCount] = useState(0)
+  const [isSyncing, setIsSyncing] = useState(false)
+
+  // Rileva stato online/offline
+  useEffect(() => {
+    const updateOnlineStatus = () => setIsOnline(navigator.onLine)
+
+    // Stato iniziale
+    setIsOnline(navigator.onLine)
+
+    window.addEventListener('online', updateOnlineStatus)
+    window.addEventListener('offline', updateOnlineStatus)
+
+    return () => {
+      window.removeEventListener('online', updateOnlineStatus)
+      window.removeEventListener('offline', updateOnlineStatus)
+    }
+  }, [])
+
+  // Carica conteggio timbrature pendenti
+  useEffect(() => {
+    const loadPendingCount = async () => {
+      try {
+        const count = await getPendingPunchCount()
+        setPendingCount(count)
+      } catch (error) {
+        console.error('Errore caricamento pendenti:', error)
+      }
+    }
+
+    loadPendingCount()
+  }, [])
+
+  // Funzione per sincronizzare
+  const performSync = async () => {
+    if (pendingCount > 0 && !isSyncing) {
+      setIsSyncing(true)
+      try {
+        const result = await syncAllPendingPunches()
+        if (result.synced > 0) {
+          toast.success(`${result.synced} timbrature sincronizzate`)
+          queryClient.invalidateQueries({ queryKey: ['attendance-current'] })
+          queryClient.invalidateQueries({ queryKey: ['attendance-today'] })
+        }
+        if (result.failed > 0) {
+          toast.warning(`${result.failed} timbrature non sincronizzate`)
+        }
+        const newCount = await getPendingPunchCount()
+        setPendingCount(newCount)
+      } catch (error) {
+        console.error('Errore sync:', error)
+      } finally {
+        setIsSyncing(false)
+      }
+    }
+  }
+
+  // Sincronizza quando torna online
+  useEffect(() => {
+    if (isOnline) {
+      performSync()
+    }
+  }, [isOnline])
+
+  // Ascolta messaggi dal service worker per Background Sync
+  useEffect(() => {
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'SYNC_PUNCHES') {
+        performSync()
+      }
+    }
+
+    navigator.serviceWorker?.addEventListener('message', handleServiceWorkerMessage)
+
+    return () => {
+      navigator.serviceWorker?.removeEventListener('message', handleServiceWorkerMessage)
+    }
+  }, [pendingCount, isSyncing])
 
   const config = buttonConfig[status]
   const Icon = config.icon
@@ -124,9 +204,53 @@ export function PunchButton({
 
     try {
       // Ottieni posizione GPS
-      const position = await getCurrentPosition()
+      let position: { latitude?: number; longitude?: number; accuracy?: number } = {}
+      try {
+        position = await getCurrentPosition()
+      } catch (gpsError) {
+        console.warn('GPS error:', gpsError)
+        // Continua senza GPS
+      }
 
-      // Invia timbratura
+      // Se offline, salva localmente
+      if (!isOnline) {
+        await savePunchOffline({
+          punchType: config.punchType,
+          venueId: venue.id,
+          venueName: venue.name,
+          timestamp: new Date().toISOString(),
+          latitude: position.latitude,
+          longitude: position.longitude,
+          accuracy: position.accuracy,
+        })
+
+        const typeLabels: Record<PunchType, string> = {
+          IN: 'Entrata',
+          OUT: 'Uscita',
+          BREAK_START: 'Inizio pausa',
+          BREAK_END: 'Fine pausa',
+        }
+
+        toast.success(`${typeLabels[config.punchType]} salvata offline`, {
+          description: 'Verrà sincronizzata quando tornerai online',
+          icon: <WifiOff className="h-4 w-4" />,
+        })
+
+        // Registra Background Sync per sincronizzare quando torna online
+        if ('serviceWorker' in navigator && 'sync' in ServiceWorkerRegistration.prototype) {
+          try {
+            const registration = await navigator.serviceWorker.ready
+            await (registration as any).sync.register('sync-punches')
+          } catch (err) {
+            console.warn('Background Sync non disponibile:', err)
+          }
+        }
+
+        setPendingCount(prev => prev + 1)
+        return
+      }
+
+      // Invia timbratura online
       await punchMutation.mutateAsync({
         punchType: config.punchType,
         venueId: venue.id,
@@ -135,27 +259,48 @@ export function PunchButton({
         accuracy: position.accuracy,
       })
     } catch (error) {
-      // Se errore GPS, prova comunque a timbrare senza coordinate
-      if (
-        error &&
-        typeof error === 'object' &&
-        'code' in error &&
-        (error as { code: string }).code !== 'NOT_SUPPORTED'
-      ) {
-        console.warn('GPS error, attempting punch without location:', error)
-
+      // Se fallisce la rete, salva offline
+      if (!isOnline || (error instanceof Error && error.message.includes('fetch'))) {
         try {
-          await punchMutation.mutateAsync({
+          let position: { latitude?: number; longitude?: number; accuracy?: number } = {}
+          try {
+            position = await getCurrentPosition()
+          } catch {
+            // Continua senza GPS
+          }
+
+          await savePunchOffline({
             punchType: config.punchType,
             venueId: venue.id,
+            venueName: venue.name,
+            timestamp: new Date().toISOString(),
+            latitude: position.latitude,
+            longitude: position.longitude,
+            accuracy: position.accuracy,
           })
-        } catch {
-          // L'errore viene già gestito da onError
+
+          toast.success('Timbratura salvata offline', {
+            description: 'Verrà sincronizzata quando tornerai online',
+          })
+
+          // Registra Background Sync
+          if ('serviceWorker' in navigator && 'sync' in ServiceWorkerRegistration.prototype) {
+            try {
+              const registration = await navigator.serviceWorker.ready
+              await (registration as any).sync.register('sync-punches')
+            } catch (err) {
+              console.warn('Background Sync non disponibile:', err)
+            }
+          }
+
+          setPendingCount(prev => prev + 1)
+        } catch (offlineError) {
+          toast.error('Errore nel salvataggio offline')
         }
       } else {
         toast.error(
           (error as { message?: string })?.message ||
-            'Errore nel recupero della posizione'
+            'Errore nella timbratura'
         )
       }
     } finally {
@@ -166,30 +311,61 @@ export function PunchButton({
   const isLoading = isGettingLocation || punchMutation.isPending
 
   return (
-    <Button
-      onClick={handlePunch}
-      disabled={disabled || isLoading || !venue}
-      className={cn(
-        'w-full h-24 text-xl font-bold text-white shadow-lg',
-        config.bgColor,
-        config.hoverColor,
-        'transition-all duration-200',
-        'active:scale-[0.98]',
-        className
+    <div className="space-y-2">
+      {/* Indicatore offline */}
+      {!isOnline && (
+        <div className="flex items-center justify-center gap-2 text-amber-600 bg-amber-50 rounded-lg py-2 px-3">
+          <WifiOff className="h-4 w-4" />
+          <span className="text-sm font-medium">Modalità offline</span>
+        </div>
       )}
-    >
-      {isLoading ? (
-        <>
-          <Loader2 className="mr-3 h-8 w-8 animate-spin" />
-          {isGettingLocation ? 'Rilevamento GPS...' : 'Timbratura...'}
-        </>
-      ) : (
-        <>
-          <Icon className="mr-3 h-8 w-8" />
-          {config.label}
-        </>
+
+      {/* Badge timbrature pendenti */}
+      {pendingCount > 0 && (
+        <div className="flex items-center justify-center gap-2 text-blue-600 bg-blue-50 rounded-lg py-2 px-3">
+          {isSyncing ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm font-medium">Sincronizzazione in corso...</span>
+            </>
+          ) : (
+            <>
+              <CloudUpload className="h-4 w-4" />
+              <span className="text-sm font-medium">
+                {pendingCount} timbratur{pendingCount === 1 ? 'a' : 'e'} da sincronizzare
+              </span>
+            </>
+          )}
+        </div>
       )}
-    </Button>
+
+      <Button
+        onClick={handlePunch}
+        disabled={disabled || isLoading || !venue}
+        className={cn(
+          'w-full h-24 text-xl font-bold text-white shadow-lg',
+          !isOnline ? 'bg-amber-600 hover:bg-amber-700' : config.bgColor,
+          !isOnline ? '' : config.hoverColor,
+          'transition-all duration-200',
+          'active:scale-[0.98]',
+          className
+        )}
+      >
+        {isLoading ? (
+          <>
+            <Loader2 className="mr-3 h-8 w-8 animate-spin" />
+            {isGettingLocation ? 'Rilevamento GPS...' : 'Timbratura...'}
+          </>
+        ) : (
+          <>
+            {!isOnline && <WifiOff className="mr-2 h-6 w-6" />}
+            <Icon className="mr-3 h-8 w-8" />
+            {config.label}
+            {!isOnline && ' (Offline)'}
+          </>
+        )}
+      </Button>
+    </div>
   )
 }
 
