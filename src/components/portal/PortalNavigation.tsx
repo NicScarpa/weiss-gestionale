@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Clock, Calendar, Palmtree, User } from 'lucide-react'
+import { Home, Clock, Calendar, Palmtree, ArrowLeftRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -25,6 +25,11 @@ const navItems = [
     href: '/portale/ferie',
     label: 'Ferie',
     icon: Palmtree,
+  },
+  {
+    href: '/portale/scambi',
+    label: 'Scambi',
+    icon: ArrowLeftRight,
   },
 ]
 

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useSession } from 'next-auth/react'
 import {
   format,
   startOfMonth,
@@ -12,17 +13,18 @@ import {
   addMonths,
   subMonths,
   isSameMonth,
-  isSameDay,
   parseISO,
   isToday,
+  isBefore,
 } from 'date-fns'
 import { it } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ArrowLeftRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { ShiftSwapDialog } from '@/components/portal/ShiftSwapDialog'
 
 interface ShiftAssignment {
   id: string
@@ -30,12 +32,14 @@ interface ShiftAssignment {
   startTime: string
   endTime: string
   status: string
+  swapStatus?: 'PENDING' | 'APPROVED' | 'REJECTED' | null
   shiftDefinition?: {
     name: string
     code: string
     color: string
   } | null
   venue?: {
+    id: string
     name: string
     code: string
   } | null
@@ -57,6 +61,9 @@ function formatTime(timeStr: string): string {
 
 export function ShiftCalendarView() {
   const [currentMonth, setCurrentMonth] = useState(new Date())
+  const [selectedShift, setSelectedShift] = useState<ShiftAssignment | null>(null)
+  const [swapDialogOpen, setSwapDialogOpen] = useState(false)
+  const { data: session } = useSession()
 
   const monthStart = startOfMonth(currentMonth)
   const monthEnd = endOfMonth(currentMonth)
@@ -167,27 +174,48 @@ export function ShiftCalendarView() {
                       {format(d, 'd')}
                     </div>
 
-                    {dayShifts.map((shift) => (
-                      <div
-                        key={shift.id}
-                        className="text-xs p-1 rounded mb-0.5 truncate"
-                        style={{
-                          backgroundColor: shift.shiftDefinition?.color
-                            ? `${shift.shiftDefinition.color}20`
-                            : '#f1f5f9',
-                          borderLeft: `3px solid ${
-                            shift.shiftDefinition?.color || '#6B7280'
-                          }`,
-                        }}
-                      >
-                        <span className="font-medium">
-                          {shift.shiftDefinition?.code || 'T'}
-                        </span>{' '}
-                        <span className="text-slate-600">
-                          {formatTime(shift.startTime)}
-                        </span>
-                      </div>
-                    ))}
+                    {dayShifts.map((shift) => {
+                      const shiftDate = parseISO(shift.date)
+                      const isPast = isBefore(shiftDate, new Date())
+                      const canSwap = !isPast && shift.status !== 'SWAPPED' && !shift.swapStatus
+
+                      return (
+                        <button
+                          key={shift.id}
+                          onClick={() => {
+                            if (canSwap) {
+                              setSelectedShift(shift)
+                              setSwapDialogOpen(true)
+                            }
+                          }}
+                          disabled={!canSwap}
+                          className={cn(
+                            "w-full text-left text-xs p-1 rounded mb-0.5 truncate transition-all",
+                            canSwap && "hover:ring-2 hover:ring-amber-400 cursor-pointer",
+                            !canSwap && "opacity-60 cursor-not-allowed",
+                            shift.swapStatus === 'PENDING' && "ring-2 ring-amber-300"
+                          )}
+                          style={{
+                            backgroundColor: shift.shiftDefinition?.color
+                              ? `${shift.shiftDefinition.color}20`
+                              : '#f1f5f9',
+                            borderLeft: `3px solid ${
+                              shift.shiftDefinition?.color || '#6B7280'
+                            }`,
+                          }}
+                        >
+                          <span className="font-medium">
+                            {shift.shiftDefinition?.code || 'T'}
+                          </span>{' '}
+                          <span className="text-slate-600">
+                            {formatTime(shift.startTime)}
+                          </span>
+                          {shift.swapStatus === 'PENDING' && (
+                            <ArrowLeftRight className="inline-block w-3 h-3 ml-1 text-amber-500" />
+                          )}
+                        </button>
+                      )
+                    })}
                   </div>
                 )
               })}
@@ -221,6 +249,21 @@ export function ShiftCalendarView() {
             )
           })}
         </div>
+      )}
+
+      {/* Hint per lo scambio */}
+      <p className="text-xs text-slate-500 text-center">
+        Clicca su un turno futuro per richiedere uno scambio
+      </p>
+
+      {/* Dialog scambio turno */}
+      {session?.user && (
+        <ShiftSwapDialog
+          open={swapDialogOpen}
+          onOpenChange={setSwapDialogOpen}
+          shift={selectedShift}
+          currentUserId={session.user.id}
+        />
       )}
     </div>
   )
