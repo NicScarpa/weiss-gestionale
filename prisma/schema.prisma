@@ -71,6 +71,10 @@ model User {
   leaveBalances             LeaveBalance[]
   approvedLeaveRequests     LeaveRequest[]     @relation("ApprovedBy")
 
+  // Relazioni Fase 4.4 - Timbratura
+  attendancePunches         AttendanceRecord[]
+  attendanceAnomalies       AttendanceAnomaly[]
+
   @@map("users")
 }
 
@@ -146,6 +150,11 @@ model Venue {
   shiftDefinitions        ShiftDefinition[]
   shiftSchedules          ShiftSchedule[]
   shiftAssignments        ShiftAssignment[]
+
+  // Relazioni Fase 4.4 - Timbratura
+  attendancePolicy        AttendancePolicy?
+  attendanceRecords       AttendanceRecord[]
+  attendanceAnomalies     AttendanceAnomaly[]
 
   @@map("venues")
 }
@@ -766,6 +775,10 @@ model ShiftAssignment {
   createdAt           DateTime        @default(now()) @map("created_at")
   updatedAt           DateTime        @updatedAt @map("updated_at")
 
+  // Relazioni Fase 4.4 - Timbratura
+  attendanceRecords   AttendanceRecord[]
+  attendanceAnomalies AttendanceAnomaly[]
+
   @@unique([scheduleId, userId, date, startTime])
   @@index([date])
   @@index([userId])
@@ -876,4 +889,159 @@ model LeaveBalance {
 
   @@unique([userId, leaveTypeId, year])
   @@map("leave_balances")
+}
+
+// ==================== FASE 4.4: TIMBRATURA ====================
+
+enum PunchType {
+  IN           // Ingresso
+  OUT          // Uscita
+  BREAK_START  // Inizio pausa
+  BREAK_END    // Fine pausa
+}
+
+enum PunchMethod {
+  APP          // Timbratura da app mobile con GPS
+  WEB          // Timbratura da dashboard web
+  QR_CODE      // Scansione QR code (futuro)
+  MANUAL       // Inserimento manuale manager
+}
+
+enum AnomalyType {
+  EARLY_CLOCK_IN      // Timbrato troppo presto
+  LATE_CLOCK_IN       // Timbrato in ritardo
+  EARLY_CLOCK_OUT     // Uscito troppo presto
+  LATE_CLOCK_OUT      // Uscito tardi (straordinario)
+  OUTSIDE_LOCATION    // Fuori dal raggio GPS
+  MISSING_CLOCK_OUT   // Manca uscita
+  OVERTIME            // Ore extra non autorizzate
+  MISSING_BREAK       // Pausa non registrata
+  SHORT_BREAK         // Pausa troppo corta
+}
+
+enum AnomalyStatus {
+  PENDING      // Da verificare
+  APPROVED     // Approvata dal manager
+  REJECTED     // Rifiutata
+  AUTO_FIXED   // Corretta automaticamente
+}
+
+model AttendanceRecord {
+  id                String      @id @default(cuid())
+
+  // Relazioni
+  user              User        @relation(fields: [userId], references: [id])
+  userId            String      @map("user_id")
+  venue             Venue       @relation(fields: [venueId], references: [id])
+  venueId           String      @map("venue_id")
+  assignment        ShiftAssignment? @relation(fields: [assignmentId], references: [id])
+  assignmentId      String?     @map("assignment_id")
+
+  // Dati timbratura
+  punchType         PunchType   @map("punch_type")
+  punchMethod       PunchMethod @default(APP) @map("punch_method")
+  punchedAt         DateTime    @default(now()) @map("punched_at")
+
+  // Geolocalizzazione
+  latitude          Decimal?    @db.Decimal(9, 6)
+  longitude         Decimal?    @db.Decimal(9, 6)
+  accuracy          Decimal?    @db.Decimal(6, 2)  // Precisione GPS in metri
+  distanceFromVenue Decimal?    @map("distance_from_venue") @db.Decimal(8, 2)
+  isWithinRadius    Boolean     @default(true) @map("is_within_radius")
+
+  // Metadata
+  deviceInfo        String?     @map("device_info")
+  ipAddress         String?     @map("ip_address")
+  notes             String?
+
+  // Inserimento manuale
+  isManual          Boolean     @default(false) @map("is_manual")
+  manualEntryBy     String?     @map("manual_entry_by")
+  manualEntryReason String?     @map("manual_entry_reason")
+
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+
+  // Relazioni inverse
+  anomalies         AttendanceAnomaly[]
+
+  @@index([userId, punchedAt])
+  @@index([venueId, punchedAt])
+  @@index([assignmentId])
+  @@map("attendance_records")
+}
+
+model AttendancePolicy {
+  id                    String   @id @default(cuid())
+  venue                 Venue    @relation(fields: [venueId], references: [id])
+  venueId               String   @unique @map("venue_id")
+
+  // Raggio geolocalizzazione
+  geoFenceRadius        Int      @default(100) @map("geo_fence_radius")  // Metri
+  requireGeolocation    Boolean  @default(true) @map("require_geolocation")
+  blockOutsideLocation  Boolean  @default(false) @map("block_outside_location")
+
+  // Tolleranze temporali (minuti)
+  earlyClockInMinutes   Int      @default(15) @map("early_clock_in_minutes")
+  lateClockInMinutes    Int      @default(10) @map("late_clock_in_minutes")
+  earlyClockOutMinutes  Int      @default(5) @map("early_clock_out_minutes")
+  lateClockOutMinutes   Int      @default(30) @map("late_clock_out_minutes")
+
+  // Auto clock-out
+  autoClockOutEnabled   Boolean  @default(true) @map("auto_clock_out_enabled")
+  autoClockOutHours     Int      @default(12) @map("auto_clock_out_hours")
+
+  // Pause
+  requireBreakPunch     Boolean  @default(false) @map("require_break_punch")
+  minBreakMinutes       Int      @default(30) @map("min_break_minutes")
+
+  // Notifiche
+  notifyOnAnomaly       Boolean  @default(true) @map("notify_on_anomaly")
+  notifyManagerEmail    String?  @map("notify_manager_email")
+
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@map("attendance_policies")
+}
+
+model AttendanceAnomaly {
+  id                String          @id @default(cuid())
+
+  // Relazioni
+  user              User            @relation(fields: [userId], references: [id])
+  userId            String          @map("user_id")
+  venue             Venue           @relation(fields: [venueId], references: [id])
+  venueId           String          @map("venue_id")
+  record            AttendanceRecord? @relation(fields: [recordId], references: [id])
+  recordId          String?         @map("record_id")
+  assignment        ShiftAssignment? @relation(fields: [assignmentId], references: [id])
+  assignmentId      String?         @map("assignment_id")
+
+  // Dati anomalia
+  anomalyType       AnomalyType     @map("anomaly_type")
+  status            AnomalyStatus   @default(PENDING)
+  date              DateTime        @db.Date
+  description       String?
+
+  // Valori
+  expectedValue     String?         @map("expected_value")    // Es: "09:00"
+  actualValue       String?         @map("actual_value")      // Es: "09:25"
+  differenceMinutes Int?            @map("difference_minutes")
+
+  // Risoluzione
+  resolvedBy        String?         @map("resolved_by")
+  resolvedAt        DateTime?       @map("resolved_at")
+  resolutionNotes   String?         @map("resolution_notes")
+
+  // Impatto economico
+  hoursAffected     Decimal?        @map("hours_affected") @db.Decimal(4, 2)
+  costImpact        Decimal?        @map("cost_impact") @db.Decimal(10, 2)
+
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  @@index([userId, date])
+  @@index([venueId, status])
+  @@map("attendance_anomalies")
 }

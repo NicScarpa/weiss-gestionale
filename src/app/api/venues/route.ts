@@ -11,6 +11,8 @@ const venueSchema = z.object({
   defaultFloat: z.number().min(0).default(114),
   vatRate: z.number().min(0).max(100).default(10),
   isActive: z.boolean().default(true),
+  latitude: z.number().min(-90).max(90).optional().nullable(),
+  longitude: z.number().min(-180).max(180).optional().nullable(),
 })
 
 // GET /api/venues - Lista sedi
@@ -181,6 +183,8 @@ export async function PUT(request: NextRequest) {
         ...(validatedData.defaultFloat !== undefined && { defaultFloat: validatedData.defaultFloat }),
         ...(validatedData.vatRate !== undefined && { vatRate: validatedData.vatRate }),
         ...(validatedData.isActive !== undefined && { isActive: validatedData.isActive }),
+        ...(validatedData.latitude !== undefined && { latitude: validatedData.latitude }),
+        ...(validatedData.longitude !== undefined && { longitude: validatedData.longitude }),
       },
     })
 

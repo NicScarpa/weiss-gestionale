@@ -60,6 +60,17 @@ interface ScheduledShift {
   status: string
 }
 
+// Tipo per presenze effettive (dalla timbratura)
+interface ActualAttendance {
+  assignmentId: string
+  userId: string
+  userName: string
+  clockIn: string | null
+  clockOut: string | null
+  hoursWorked: number
+  status: 'SCHEDULED' | 'CLOCKED_IN' | 'ON_BREAK' | 'CLOCKED_OUT' | 'ABSENT'
+}
+
 // Opzioni turno
 const SHIFT_OPTIONS = [
   { value: 'MORNING', label: 'Mattina' },
@@ -108,6 +119,30 @@ async function fetchScheduledShifts(date: string, venueId?: string): Promise<Sch
   return data.data || []
 }
 
+// Fetch presenze effettive per data
+async function fetchActualAttendance(date: string, venueId?: string): Promise<ActualAttendance[]> {
+  const params = new URLSearchParams({ date })
+  if (venueId) params.append('venueId', venueId)
+
+  const res = await fetch(`/api/attendance/daily-summary?${params}`)
+  if (!res.ok) return []
+  const data = await res.json()
+
+  // Trasforma il formato API nel nostro tipo
+  return (data.data || []).map((item: {
+    assignment: { id: string; user: { id: string; firstName: string; lastName: string } }
+    attendance: { clockIn: string | null; clockOut: string | null; hoursWorked: number; status: string }
+  }) => ({
+    assignmentId: item.assignment.id,
+    userId: item.assignment.user.id,
+    userName: `${item.assignment.user.firstName} ${item.assignment.user.lastName}`,
+    clockIn: item.attendance.clockIn,
+    clockOut: item.attendance.clockOut,
+    hoursWorked: item.attendance.hoursWorked,
+    status: item.attendance.status as ActualAttendance['status'],
+  }))
+}
+
 export function AttendanceSection({
   attendance,
   onChange,
@@ -126,6 +161,13 @@ export function AttendanceSection({
     enabled: !!closureDate && !hasLoadedFromSchedule,
   })
 
+  // Query per presenze effettive (timbrature)
+  const { data: actualAttendance } = useQuery({
+    queryKey: ['actual-attendance', closureDate, venueId],
+    queryFn: () => fetchActualAttendance(closureDate!, venueId),
+    enabled: !!closureDate && !hasLoadedFromSchedule,
+  })
+
   // Pre-popola da turni schedulati se non ci sono presenze e ci sono turni
   useEffect(() => {
     if (
@@ -138,7 +180,7 @@ export function AttendanceSection({
     }
   }, [scheduledShifts])
 
-  // Carica presenze da turni schedulati
+  // Carica presenze da turni schedulati e timbrature effettive
   const loadFromSchedule = () => {
     if (!scheduledShifts || scheduledShifts.length === 0) return
 
@@ -147,12 +189,30 @@ export function AttendanceSection({
       const startHour = new Date(shift.startTime).getHours()
       const shiftType: 'MORNING' | 'EVENING' = startHour < 14 ? 'MORNING' : 'EVENING'
 
+      // Cerca dati timbratura effettiva per questo utente
+      const actual = actualAttendance?.find((a) => a.userId === shift.userId)
+
+      // Determina ore effettive: usa timbrature se disponibili, altrimenti schedulate
+      let effectiveHours = shift.scheduledHours
+      let statusCode = 'P'
+
+      if (actual) {
+        if (actual.status === 'CLOCKED_OUT' && actual.hoursWorked > 0) {
+          // Ha timbrato uscita: usa ore effettive
+          effectiveHours = actual.hoursWorked
+        } else if (actual.status === 'ABSENT') {
+          // Assente
+          statusCode = 'R' // Riposo come default per assenza
+          effectiveHours = 0
+        }
+      }
+
       return {
         userId: shift.userId,
         userName: shift.userName,
         shift: shiftType,
-        hours: shift.scheduledHours,
-        statusCode: 'P', // Default: presente
+        hours: effectiveHours,
+        statusCode,
         hourlyRate: shift.hourlyRate || undefined,
         isExtra: !shift.isFixedStaff,
         scheduledHours: shift.scheduledHours,
@@ -277,6 +337,11 @@ export function AttendanceSection({
           <div className="flex-1">
             <p className="text-sm text-blue-800">
               Trovati <strong>{scheduledShifts.length}</strong> turni schedulati per questa data.
+              {actualAttendance && actualAttendance.filter(a => a.status === 'CLOCKED_OUT').length > 0 && (
+                <span className="ml-1">
+                  (<strong>{actualAttendance.filter(a => a.status === 'CLOCKED_OUT').length}</strong> con ore effettive da timbratura)
+                </span>
+              )}
             </p>
           </div>
           <Button
