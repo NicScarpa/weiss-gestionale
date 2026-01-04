@@ -42,7 +42,7 @@ import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 
-// Tipi di vincolo relazionale
+// Tipi di vincolo relazionale (devono corrispondere all'enum Prisma RelConstraintType)
 const REL_CONSTRAINT_TYPES = {
   SAME_DAY_OFF: {
     label: 'Stesso giorno libero',
@@ -62,15 +62,15 @@ const REL_CONSTRAINT_TYPES = {
     icon: Users,
     color: 'bg-green-100 text-green-700',
   },
-  PREFER_TOGETHER: {
-    label: 'Preferibilmente insieme',
+  MIN_OVERLAP: {
+    label: 'Sovrapposizione minima',
     description: 'Preferenza per lavorare insieme (soft constraint)',
     icon: Heart,
     color: 'bg-pink-100 text-pink-700',
   },
-  PREFER_APART: {
-    label: 'Preferibilmente separati',
-    description: 'Preferenza per non lavorare insieme (soft constraint)',
+  MAX_TOGETHER: {
+    label: 'Massimo tempo insieme',
+    description: 'Limite massimo di turni insieme (soft constraint)',
     icon: Users,
     color: 'bg-amber-100 text-amber-700',
   },
