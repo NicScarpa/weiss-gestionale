@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
+import { format, subMonths } from 'date-fns'
 import { it } from 'date-fns/locale'
 import {
   Card,
@@ -12,12 +12,6 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Calendar } from '@/components/ui/calendar'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
 import {
   Select,
   SelectContent,
@@ -25,6 +19,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
 import {
   Table,
   TableBody,
@@ -33,8 +31,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { CalendarIcon, ChevronLeft, Download, FileSpreadsheet } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import {
+  ChevronLeft,
+  Download,
+  FileSpreadsheet,
+  AlertTriangle,
+  Users,
+  Clock,
+  Calendar,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
 
@@ -44,31 +49,49 @@ interface Venue {
   code: string
 }
 
-interface AttendanceRecord {
-  id: string
-  user: {
-    id: string
-    firstName: string
-    lastName: string
-    email: string
-  }
-  venue: {
-    id: string
-    name: string
-    code: string
-  }
-  punchType: string
-  punchMethod: string
-  punchedAt: string
-  isWithinRadius: boolean
-  isManual: boolean
+interface PayrollPreview {
+  totalUsers: number
+  totalHours: number
+  totalLeaveDays: number
+  estimatedCost: number
+  hasWarnings: boolean
+  warningsCount: number
+}
+
+const MONTHS = [
+  { value: 1, label: 'Gennaio' },
+  { value: 2, label: 'Febbraio' },
+  { value: 3, label: 'Marzo' },
+  { value: 4, label: 'Aprile' },
+  { value: 5, label: 'Maggio' },
+  { value: 6, label: 'Giugno' },
+  { value: 7, label: 'Luglio' },
+  { value: 8, label: 'Agosto' },
+  { value: 9, label: 'Settembre' },
+  { value: 10, label: 'Ottobre' },
+  { value: 11, label: 'Novembre' },
+  { value: 12, label: 'Dicembre' },
+]
+
+// Genera anni (ultimi 3 + anno corrente)
+function getYears() {
+  const currentYear = new Date().getFullYear()
+  return [currentYear, currentYear - 1, currentYear - 2]
 }
 
 export default function ExportPage() {
   const lastMonth = subMonths(new Date(), 1)
-  const [dateFrom, setDateFrom] = useState<Date>(startOfMonth(lastMonth))
-  const [dateTo, setDateTo] = useState<Date>(endOfMonth(lastMonth))
+  const [selectedMonth, setSelectedMonth] = useState<number>(
+    lastMonth.getMonth() + 1
+  )
+  const [selectedYear, setSelectedYear] = useState<number>(
+    lastMonth.getFullYear()
+  )
   const [selectedVenueId, setSelectedVenueId] = useState<string>('all')
+  const [includeLeaves, setIncludeLeaves] = useState<boolean>(true)
+  const [includeSummary, setIncludeSummary] = useState<boolean>(true)
+  const [exportFormat, setExportFormat] = useState<'xlsx' | 'csv'>('xlsx')
+  const [isExporting, setIsExporting] = useState(false)
 
   // Fetch venues
   const { data: venues } = useQuery<Venue[]>({
@@ -81,217 +104,94 @@ export default function ExportPage() {
     },
   })
 
-  // Fetch records for preview
-  const { data: recordsData, isLoading } = useQuery<{
-    data: AttendanceRecord[]
-    pagination: { total: number }
-  }>({
-    queryKey: ['attendance-export-preview', dateFrom, dateTo, selectedVenueId],
-    queryFn: async () => {
-      const params = new URLSearchParams({
-        from: format(dateFrom, 'yyyy-MM-dd'),
-        to: format(dateTo, 'yyyy-MM-dd'),
-        limit: '20',
-      })
-      if (selectedVenueId !== 'all') {
-        params.append('venueId', selectedVenueId)
-      }
-      const response = await fetch(`/api/attendance/records?${params}`)
-      if (!response.ok) throw new Error('Errore caricamento')
-      return response.json()
-    },
-    enabled: !!dateFrom && !!dateTo,
-  })
-
-  const handleExportCSV = async () => {
-    try {
-      const params = new URLSearchParams({
-        from: format(dateFrom, 'yyyy-MM-dd'),
-        to: format(dateTo, 'yyyy-MM-dd'),
-        limit: '10000',
-      })
-      if (selectedVenueId !== 'all') {
-        params.append('venueId', selectedVenueId)
-      }
-
-      const response = await fetch(`/api/attendance/records?${params}`)
-      if (!response.ok) throw new Error('Errore export')
-
-      const data = await response.json()
-      const records: AttendanceRecord[] = data.data || []
-
-      // Generate CSV
-      const headers = [
-        'Data',
-        'Ora',
-        'Dipendente',
-        'Email',
-        'Sede',
-        'Tipo',
-        'Metodo',
-        'Valida GPS',
-        'Manuale',
-      ]
-      const rows = records.map((r) => [
-        format(new Date(r.punchedAt), 'dd/MM/yyyy'),
-        format(new Date(r.punchedAt), 'HH:mm:ss'),
-        `${r.user.firstName} ${r.user.lastName}`,
-        r.user.email,
-        r.venue.name,
-        r.punchType,
-        r.punchMethod,
-        r.isWithinRadius ? 'Sì' : 'No',
-        r.isManual ? 'Sì' : 'No',
-      ])
-
-      const csvContent = [headers, ...rows]
-        .map((row) => row.map((cell) => `"${cell}"`).join(','))
-        .join('\n')
-
-      // Download
-      const blob = new Blob(['\ufeff' + csvContent], {
-        type: 'text/csv;charset=utf-8;',
-      })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `timbrature_${format(dateFrom, 'yyyyMMdd')}_${format(dateTo, 'yyyyMMdd')}.csv`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
-
-      toast.success(`Esportate ${records.length} timbrature`)
-    } catch {
-      toast.error('Errore durante l\'export')
-    }
-  }
-
-  const handleExportPayroll = async () => {
-    try {
-      const params = new URLSearchParams({
-        from: format(dateFrom, 'yyyy-MM-dd'),
-        to: format(dateTo, 'yyyy-MM-dd'),
-        limit: '10000',
-      })
-      if (selectedVenueId !== 'all') {
-        params.append('venueId', selectedVenueId)
-      }
-
-      const response = await fetch(`/api/attendance/records?${params}`)
-      if (!response.ok) throw new Error('Errore export')
-
-      const data = await response.json()
-      const records: AttendanceRecord[] = data.data || []
-
-      // Group by user and calculate hours
-      const userHours: Record<
-        string,
-        {
-          user: AttendanceRecord['user']
-          venue: AttendanceRecord['venue']
-          entries: { date: string; in: Date | null; out: Date | null }[]
-        }
-      > = {}
-
-      records.forEach((r) => {
-        if (!userHours[r.user.id]) {
-          userHours[r.user.id] = {
-            user: r.user,
-            venue: r.venue,
-            entries: [],
-          }
-        }
-
-        const date = format(new Date(r.punchedAt), 'yyyy-MM-dd')
-        let entry = userHours[r.user.id].entries.find((e) => e.date === date)
-        if (!entry) {
-          entry = { date, in: null, out: null }
-          userHours[r.user.id].entries.push(entry)
-        }
-
-        if (r.punchType === 'IN' && !entry.in) {
-          entry.in = new Date(r.punchedAt)
-        } else if (r.punchType === 'OUT') {
-          entry.out = new Date(r.punchedAt)
-        }
-      })
-
-      // Calculate totals
-      const payrollData = Object.values(userHours).map((uh) => {
-        let totalMinutes = 0
-        uh.entries.forEach((e) => {
-          if (e.in && e.out) {
-            totalMinutes += Math.round(
-              (e.out.getTime() - e.in.getTime()) / (1000 * 60)
-            )
-          }
+  // Fetch preview data (simple count/stats)
+  const { data: previewData, isLoading: isPreviewLoading } =
+    useQuery<PayrollPreview>({
+      queryKey: [
+        'payroll-preview',
+        selectedMonth,
+        selectedYear,
+        selectedVenueId,
+      ],
+      queryFn: async () => {
+        // Per ora restituisce dati mock - in futuro si può creare un endpoint preview
+        // Questo serve solo per mostrare un'anteprima rapida
+        const params = new URLSearchParams({
+          month: selectedMonth.toString(),
+          year: selectedYear.toString(),
+          format: 'xlsx', // non importa, non scarica
         })
-        return {
-          ...uh,
-          totalHours: Math.round((totalMinutes / 60) * 100) / 100,
-          daysWorked: uh.entries.filter((e) => e.in && e.out).length,
+        if (selectedVenueId !== 'all') {
+          params.append('venueId', selectedVenueId)
         }
+
+        // Per semplicità, facciamo una chiamata per contare i record
+        const countResponse = await fetch(
+          `/api/attendance/records?month=${selectedMonth}&year=${selectedYear}${selectedVenueId !== 'all' ? `&venueId=${selectedVenueId}` : ''}&limit=1`
+        )
+        if (!countResponse.ok) throw new Error('Errore')
+        const countData = await countResponse.json()
+
+        return {
+          totalUsers: 0, // Lo calcoleremo quando avremo endpoint dedicato
+          totalHours: 0,
+          totalLeaveDays: 0,
+          estimatedCost: 0,
+          hasWarnings: false,
+          warningsCount: 0,
+        }
+      },
+      enabled: true,
+    })
+
+  const handleExport = async () => {
+    setIsExporting(true)
+    try {
+      const params = new URLSearchParams({
+        month: selectedMonth.toString(),
+        year: selectedYear.toString(),
+        format: exportFormat,
+        includeLeaves: includeLeaves.toString(),
+        includeSummary: includeSummary.toString(),
       })
+      if (selectedVenueId !== 'all') {
+        params.append('venueId', selectedVenueId)
+      }
 
-      // Generate CSV
-      const headers = [
-        'Cognome',
-        'Nome',
-        'Email',
-        'Sede',
-        'Giorni Lavorati',
-        'Ore Totali',
-      ]
-      const rows = payrollData.map((p) => [
-        p.user.lastName,
-        p.user.firstName,
-        p.user.email,
-        p.venue.name,
-        p.daysWorked.toString(),
-        p.totalHours.toString().replace('.', ','),
-      ])
+      const response = await fetch(`/api/attendance/export/payroll?${params}`)
 
-      const csvContent = [headers, ...rows]
-        .map((row) => row.map((cell) => `"${cell}"`).join(','))
-        .join('\n')
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Errore export')
+      }
 
-      // Download
-      const blob = new Blob(['\ufeff' + csvContent], {
-        type: 'text/csv;charset=utf-8;',
-      })
+      // Download file
+      const blob = await response.blob()
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `riepilogo_paghe_${format(dateFrom, 'yyyyMMdd')}_${format(dateTo, 'yyyyMMdd')}.csv`
+
+      const monthName = MONTHS.find((m) => m.value === selectedMonth)?.label || ''
+      link.download = `presenze-${monthName.toLowerCase()}-${selectedYear}.${exportFormat}`
+
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
 
-      toast.success('Riepilogo paghe esportato')
-    } catch {
-      toast.error('Errore durante l\'export')
+      toast.success('Export completato', {
+        description: `File ${exportFormat.toUpperCase()} scaricato`,
+      })
+    } catch (error) {
+      toast.error('Errore durante l\'export', {
+        description: (error as Error).message,
+      })
+    } finally {
+      setIsExporting(false)
     }
   }
 
-  const quickDateRanges = [
-    {
-      label: 'Mese scorso',
-      from: startOfMonth(subMonths(new Date(), 1)),
-      to: endOfMonth(subMonths(new Date(), 1)),
-    },
-    {
-      label: 'Mese corrente',
-      from: startOfMonth(new Date()),
-      to: new Date(),
-    },
-    {
-      label: 'Ultimi 2 mesi',
-      from: startOfMonth(subMonths(new Date(), 2)),
-      to: new Date(),
-    },
-  ]
+  const selectedMonthName = MONTHS.find((m) => m.value === selectedMonth)?.label
 
   return (
     <div className="container mx-auto py-6 space-y-6">
@@ -303,215 +203,341 @@ export default function ExportPage() {
           </Link>
         </Button>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Export Presenze</h1>
+          <h1 className="text-3xl font-bold tracking-tight">
+            Export Presenze per Paghe
+          </h1>
           <p className="text-muted-foreground">
-            Esporta le timbrature per l'elaborazione paghe
+            Genera il file mensile per l'elaborazione delle buste paga
           </p>
         </div>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Seleziona Periodo</CardTitle>
-          <CardDescription>
-            Scegli l'intervallo di date per l'export
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Quick Ranges */}
-          <div className="flex flex-wrap gap-2">
-            {quickDateRanges.map((range) => (
+      <div className="grid lg:grid-cols-3 gap-6">
+        {/* Selezione parametri */}
+        <div className="lg:col-span-2 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="h-5 w-5" />
+                Periodo
+              </CardTitle>
+              <CardDescription>
+                Seleziona il mese da esportare
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid sm:grid-cols-3 gap-4">
+                {/* Mese */}
+                <div className="space-y-2">
+                  <Label htmlFor="month">Mese</Label>
+                  <Select
+                    value={selectedMonth.toString()}
+                    onValueChange={(v) => setSelectedMonth(parseInt(v))}
+                  >
+                    <SelectTrigger id="month">
+                      <SelectValue placeholder="Seleziona mese" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MONTHS.map((month) => (
+                        <SelectItem
+                          key={month.value}
+                          value={month.value.toString()}
+                        >
+                          {month.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Anno */}
+                <div className="space-y-2">
+                  <Label htmlFor="year">Anno</Label>
+                  <Select
+                    value={selectedYear.toString()}
+                    onValueChange={(v) => setSelectedYear(parseInt(v))}
+                  >
+                    <SelectTrigger id="year">
+                      <SelectValue placeholder="Seleziona anno" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getYears().map((year) => (
+                        <SelectItem key={year} value={year.toString()}>
+                          {year}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Sede */}
+                <div className="space-y-2">
+                  <Label htmlFor="venue">Sede</Label>
+                  <Select
+                    value={selectedVenueId}
+                    onValueChange={setSelectedVenueId}
+                  >
+                    <SelectTrigger id="venue">
+                      <SelectValue placeholder="Tutte le sedi" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tutte le sedi</SelectItem>
+                      {venues?.map((venue) => (
+                        <SelectItem key={venue.id} value={venue.id}>
+                          {venue.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Opzioni export */}
+              <div className="space-y-4">
+                <Label>Opzioni Export</Label>
+
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="includeLeaves"
+                      checked={includeLeaves}
+                      onCheckedChange={(checked) =>
+                        setIncludeLeaves(checked === true)
+                      }
+                    />
+                    <Label
+                      htmlFor="includeLeaves"
+                      className="text-sm font-normal cursor-pointer"
+                    >
+                      Includi assenze (ferie, malattie, permessi)
+                    </Label>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="includeSummary"
+                      checked={includeSummary}
+                      onCheckedChange={(checked) =>
+                        setIncludeSummary(checked === true)
+                      }
+                    />
+                    <Label
+                      htmlFor="includeSummary"
+                      className="text-sm font-normal cursor-pointer"
+                    >
+                      Includi foglio riepilogo mensile
+                    </Label>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Formato file</Label>
+                  <div className="flex gap-2">
+                    <Button
+                      variant={exportFormat === 'xlsx' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setExportFormat('xlsx')}
+                    >
+                      <FileSpreadsheet className="h-4 w-4 mr-2" />
+                      Excel (.xlsx)
+                    </Button>
+                    <Button
+                      variant={exportFormat === 'csv' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setExportFormat('csv')}
+                    >
+                      <FileSpreadsheet className="h-4 w-4 mr-2" />
+                      CSV
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Info formato */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Informazioni Export</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4 text-sm">
+                <div>
+                  <h4 className="font-medium mb-1">Contenuto del file</h4>
+                  <ul className="list-disc list-inside text-muted-foreground space-y-1">
+                    <li>Matricola, cognome, nome dipendente</li>
+                    <li>Data, ora entrata, ora uscita</li>
+                    <li>Ore ordinarie, straordinario, notturne, festive</li>
+                    <li>Codici assenza (FE, MA, ROL, etc.)</li>
+                    <li>Note e anomalie</li>
+                  </ul>
+                </div>
+
+                {exportFormat === 'xlsx' && includeSummary && (
+                  <div>
+                    <h4 className="font-medium mb-1">Fogli Excel</h4>
+                    <ul className="list-disc list-inside text-muted-foreground space-y-1">
+                      <li>
+                        <strong>Dettaglio:</strong> Tutte le giornate lavorate
+                      </li>
+                      <li>
+                        <strong>Riepilogo:</strong> Totali mensili per
+                        dipendente
+                      </li>
+                      <li>
+                        <strong>Avvisi:</strong> Anomalie non risolte (se
+                        presenti)
+                      </li>
+                    </ul>
+                  </div>
+                )}
+
+                <div>
+                  <h4 className="font-medium mb-1">Calcolo ore</h4>
+                  <ul className="list-disc list-inside text-muted-foreground space-y-1">
+                    <li>
+                      <strong>Ordinarie:</strong> Fino al monte ore contratto
+                    </li>
+                    <li>
+                      <strong>Straordinario:</strong> Oltre monte ore
+                    </li>
+                    <li>
+                      <strong>Notturne:</strong> Fascia 22:00-06:00
+                    </li>
+                    <li>
+                      <strong>Festive:</strong> Domeniche e festività italiane
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Riepilogo e azione */}
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Riepilogo Export</CardTitle>
+              <CardDescription>
+                {selectedMonthName} {selectedYear}
+                {selectedVenueId !== 'all' &&
+                  venues &&
+                  ` - ${venues.find((v) => v.id === selectedVenueId)?.name}`}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-lg bg-muted p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground flex items-center gap-2">
+                    <Calendar className="h-4 w-4" />
+                    Periodo
+                  </span>
+                  <span className="font-medium">
+                    {selectedMonthName} {selectedYear}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground flex items-center gap-2">
+                    <FileSpreadsheet className="h-4 w-4" />
+                    Formato
+                  </span>
+                  <Badge variant="secondary">
+                    {exportFormat.toUpperCase()}
+                  </Badge>
+                </div>
+
+                {includeLeaves && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">
+                      Assenze
+                    </span>
+                    <Badge variant="outline">Incluse</Badge>
+                  </div>
+                )}
+
+                {includeSummary && exportFormat === 'xlsx' && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">
+                      Riepilogo
+                    </span>
+                    <Badge variant="outline">Incluso</Badge>
+                  </div>
+                )}
+              </div>
+
               <Button
-                key={range.label}
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setDateFrom(range.from)
-                  setDateTo(range.to)
-                }}
+                className="w-full"
+                size="lg"
+                onClick={handleExport}
+                disabled={isExporting}
               >
-                {range.label}
+                {isExporting ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                    Generazione in corso...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4 mr-2" />
+                    Scarica {exportFormat.toUpperCase()}
+                  </>
+                )}
               </Button>
-            ))}
-          </div>
 
-          <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
-            {/* Date From */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Da:</span>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      'w-[180px] justify-start text-left font-normal',
-                      !dateFrom && 'text-muted-foreground'
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dateFrom
-                      ? format(dateFrom, 'dd/MM/yyyy')
-                      : 'Seleziona'}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={dateFrom}
-                    onSelect={(date) => date && setDateFrom(date)}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
+              <p className="text-xs text-muted-foreground text-center">
+                Il file verrà generato con i dati aggiornati al momento del
+                download
+              </p>
+            </CardContent>
+          </Card>
 
-            {/* Date To */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">A:</span>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      'w-[180px] justify-start text-left font-normal',
-                      !dateTo && 'text-muted-foreground'
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dateTo ? format(dateTo, 'dd/MM/yyyy') : 'Seleziona'}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={dateTo}
-                    onSelect={(date) => date && setDateTo(date)}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-
-            {/* Venue Filter */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Sede:</span>
-              <Select value={selectedVenueId} onValueChange={setSelectedVenueId}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Tutte le sedi" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tutte le sedi</SelectItem>
-                  {venues?.map((venue) => (
-                    <SelectItem key={venue.id} value={venue.id}>
-                      {venue.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Export Actions */}
-      <div className="grid md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Download className="h-5 w-5" />
-              Export Timbrature
-            </CardTitle>
-            <CardDescription>
-              Esporta tutte le timbrature del periodo selezionato in formato CSV
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button onClick={handleExportCSV} className="w-full">
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Scarica CSV Timbrature
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileSpreadsheet className="h-5 w-5" />
-              Riepilogo Paghe
-            </CardTitle>
-            <CardDescription>
-              Esporta un riepilogo delle ore lavorate per dipendente
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button onClick={handleExportPayroll} variant="outline" className="w-full">
-              <Download className="h-4 w-4 mr-2" />
-              Scarica Riepilogo Paghe
-            </Button>
-          </CardContent>
-        </Card>
+          {/* Quick actions */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Accesso rapido</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                size="sm"
+                asChild
+              >
+                <Link href="/presenze">
+                  <Clock className="h-4 w-4 mr-2" />
+                  Gestione Presenze
+                </Link>
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                size="sm"
+                asChild
+              >
+                <Link href="/presenze/anomalie">
+                  <AlertTriangle className="h-4 w-4 mr-2" />
+                  Anomalie
+                </Link>
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                size="sm"
+                asChild
+              >
+                <Link href="/staff">
+                  <Users className="h-4 w-4 mr-2" />
+                  Anagrafica Staff
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
       </div>
-
-      {/* Preview */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Anteprima Dati</CardTitle>
-          <CardDescription>
-            {recordsData?.pagination?.total || 0} timbrature nel periodo selezionato
-            (visualizzate le prime 20)
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-            </div>
-          ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Data/Ora</TableHead>
-                    <TableHead>Dipendente</TableHead>
-                    <TableHead>Sede</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead>Metodo</TableHead>
-                    <TableHead>GPS</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recordsData?.data?.map((record) => (
-                    <TableRow key={record.id}>
-                      <TableCell>
-                        {format(new Date(record.punchedAt), 'dd/MM/yyyy HH:mm')}
-                      </TableCell>
-                      <TableCell>
-                        {record.user.firstName} {record.user.lastName}
-                      </TableCell>
-                      <TableCell>{record.venue.name}</TableCell>
-                      <TableCell>{record.punchType}</TableCell>
-                      <TableCell>
-                        {record.isManual ? 'Manuale' : record.punchMethod}
-                      </TableCell>
-                      <TableCell>
-                        {record.isWithinRadius ? '✓' : '✗'}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {(!recordsData?.data || recordsData.data.length === 0) && (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                        Nessuna timbratura nel periodo selezionato
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
     </div>
   )
 }

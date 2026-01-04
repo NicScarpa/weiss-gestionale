@@ -12,68 +12,71 @@ datasource db {
 // ==================== UTENTI E AUTENTICAZIONE ====================
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  passwordHash  String    @map("password_hash")
-  firstName     String    @map("first_name")
-  lastName      String    @map("last_name")
-  role          Role      @relation(fields: [roleId], references: [id])
-  roleId        String    @map("role_id")
-  venue         Venue?    @relation(fields: [venueId], references: [id])
-  venueId       String?   @map("venue_id")
-  hourlyRate    Decimal?  @map("hourly_rate") @db.Decimal(10, 2)
-  isFixedStaff  Boolean   @default(false) @map("is_fixed_staff")
-  defaultShift  Shift?    @map("default_shift") // Turno di default per presenze
-  isActive      Boolean   @default(true) @map("is_active")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  firstName    String   @map("first_name")
+  lastName     String   @map("last_name")
+  role         Role     @relation(fields: [roleId], references: [id])
+  roleId       String   @map("role_id")
+  venue        Venue?   @relation(fields: [venueId], references: [id])
+  venueId      String?  @map("venue_id")
+  hourlyRate   Decimal? @map("hourly_rate") @db.Decimal(10, 2)
+  isFixedStaff Boolean  @default(false) @map("is_fixed_staff")
+  defaultShift Shift?   @map("default_shift") // Turno di default per presenze
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   // === FASE 4: Dati contrattuali estesi ===
-  contractType        ContractType?  @map("contract_type")
-  contractHoursWeek   Decimal?       @map("contract_hours_week") @db.Decimal(4, 1)
-  hireDate            DateTime?      @map("hire_date") @db.Date
-  terminationDate     DateTime?      @map("termination_date") @db.Date
+  contractType      ContractType? @map("contract_type")
+  contractHoursWeek Decimal?      @map("contract_hours_week") @db.Decimal(4, 1)
+  hireDate          DateTime?     @map("hire_date") @db.Date
+  terminationDate   DateTime?     @map("termination_date") @db.Date
 
   // Tariffe orarie estese
-  hourlyRateBase      Decimal?       @map("hourly_rate_base") @db.Decimal(10, 2)
-  hourlyRateExtra     Decimal?       @map("hourly_rate_extra") @db.Decimal(10, 2)
-  hourlyRateHoliday   Decimal?       @map("hourly_rate_holiday") @db.Decimal(10, 2)
-  hourlyRateNight     Decimal?       @map("hourly_rate_night") @db.Decimal(10, 2)
+  hourlyRateBase    Decimal? @map("hourly_rate_base") @db.Decimal(10, 2)
+  hourlyRateExtra   Decimal? @map("hourly_rate_extra") @db.Decimal(10, 2)
+  hourlyRateHoliday Decimal? @map("hourly_rate_holiday") @db.Decimal(10, 2)
+  hourlyRateNight   Decimal? @map("hourly_rate_night") @db.Decimal(10, 2)
 
   // Accesso portale dipendente
-  portalEnabled       Boolean        @default(false) @map("portal_enabled")
-  portalPin           String?        @map("portal_pin")
-  appToken            String?        @map("app_token")
+  portalEnabled Boolean @default(false) @map("portal_enabled")
+  portalPin     String? @map("portal_pin")
+  appToken      String? @map("app_token")
 
   // Preferenze notifiche
-  notifyEmail         Boolean        @default(true) @map("notify_email")
-  notifyPush          Boolean        @default(true) @map("notify_push")
-  notifyWhatsapp      Boolean        @default(false) @map("notify_whatsapp")
-  whatsappNumber      String?        @map("whatsapp_number")
+  notifyEmail    Boolean @default(true) @map("notify_email")
+  notifyPush     Boolean @default(true) @map("notify_push")
+  notifyWhatsapp Boolean @default(false) @map("notify_whatsapp")
+  whatsappNumber String? @map("whatsapp_number")
 
   // Skills e competenze
-  skills              String[]       @default([])
-  canWorkAlone        Boolean        @default(false) @map("can_work_alone")
-  canHandleCash       Boolean        @default(true) @map("can_handle_cash")
+  skills        String[] @default([])
+  canWorkAlone  Boolean  @default(false) @map("can_work_alone")
+  canHandleCash Boolean  @default(true) @map("can_handle_cash")
 
   // Relazioni esistenti
-  submittedClosures   DailyClosure[] @relation("SubmittedBy")
-  validatedClosures   DailyClosure[] @relation("ValidatedBy")
-  journalEntries      JournalEntry[]
-  attendanceRecords   DailyAttendance[]
-  budgetsCreated      Budget[]
+  submittedClosures DailyClosure[]    @relation("SubmittedBy")
+  validatedClosures DailyClosure[]    @relation("ValidatedBy")
+  journalEntries    JournalEntry[]
+  attendanceRecords DailyAttendance[]
+  budgetsCreated    Budget[]
 
   // Relazioni Fase 4
-  constraints               EmployeeConstraint[]
-  relationshipConstraints   RelationshipConstraintUser[]
-  shiftAssignments          ShiftAssignment[]
-  leaveRequests             LeaveRequest[]
-  leaveBalances             LeaveBalance[]
-  approvedLeaveRequests     LeaveRequest[]     @relation("ApprovedBy")
+  constraints             EmployeeConstraint[]
+  relationshipConstraints RelationshipConstraintUser[]
+  shiftAssignments        ShiftAssignment[]
+  leaveRequests           LeaveRequest[]
+  leaveBalances           LeaveBalance[]
+  approvedLeaveRequests   LeaveRequest[]               @relation("ApprovedBy")
 
   // Relazioni Fase 4.4 - Timbratura
-  attendancePunches         AttendanceRecord[]
-  attendanceAnomalies       AttendanceAnomaly[]
+  attendancePunches   AttendanceRecord[]
+  attendanceAnomalies AttendanceAnomaly[]
+
+  // Relazioni Fase 5.2 - Notifiche
+  notificationPreferences NotificationPreference?
 
   @@map("users")
 }
@@ -87,7 +90,7 @@ enum ContractType {
 
 model Role {
   id          String   @id @default(cuid())
-  name        String   @unique  // "admin", "manager", "staff"
+  name        String   @unique // "admin", "manager", "staff"
   description String?
   isCustom    Boolean  @default(false) @map("is_custom")
   createdAt   DateTime @default(now()) @map("created_at")
@@ -99,12 +102,12 @@ model Role {
 }
 
 model Permission {
-  id          String   @id @default(cuid())
-  code        String   @unique  // "closure.create", "closure.validate", etc.
+  id          String  @id @default(cuid())
+  code        String  @unique // "closure.create", "closure.validate", etc.
   description String?
-  module      String   // "cash", "bank", "reports", "admin"
+  module      String // "cash", "bank", "reports", "admin"
 
-  roles       RolePermission[]
+  roles RolePermission[]
 
   @@map("permissions")
 }
@@ -123,8 +126,8 @@ model RolePermission {
 
 model Venue {
   id           String   @id @default(cuid())
-  name         String   // "Weiss Cafè", "Villa Varda", "Casette"
-  code         String   @unique  // "WEISS", "VV", "CAS"
+  name         String // "Weiss Cafè", "Villa Varda", "Casette"
+  code         String   @unique // "WEISS", "VV", "CAS"
   address      String?
   defaultFloat Decimal  @default(114.00) @map("default_float") @db.Decimal(10, 2)
   vatRate      Decimal  @default(10.00) @map("vat_rate") @db.Decimal(5, 2)
@@ -133,8 +136,8 @@ model Venue {
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   // Coordinate per geolocalizzazione (Fase 4.4)
-  latitude     Decimal? @db.Decimal(10, 8)
-  longitude    Decimal? @db.Decimal(11, 8)
+  latitude  Decimal? @db.Decimal(10, 8)
+  longitude Decimal? @db.Decimal(11, 8)
 
   users            User[]
   closures         DailyClosure[]
@@ -152,9 +155,9 @@ model Venue {
   shiftAssignments        ShiftAssignment[]
 
   // Relazioni Fase 4.4 - Timbratura
-  attendancePolicy        AttendancePolicy?
-  attendanceRecords       AttendanceRecord[]
-  attendanceAnomalies     AttendanceAnomaly[]
+  attendancePolicy    AttendancePolicy?
+  attendanceRecords   AttendanceRecord[]
+  attendanceAnomalies AttendanceAnomaly[]
 
   @@map("venues")
 }
@@ -163,7 +166,7 @@ model CashStationTemplate {
   id          String  @id @default(cuid())
   venue       Venue   @relation(fields: [venueId], references: [id])
   venueId     String  @map("venue_id")
-  name        String  // "BAR", "CASSA 1", "TAVOLI", etc.
+  name        String // "BAR", "CASSA 1", "TAVOLI", etc.
   position    Int     @default(0)
   isActive    Boolean @default(true) @map("is_active")
   isEventOnly Boolean @default(false) @map("is_event_only") // Solo per eventi (es. CASSA 2, CASSA 3)
@@ -174,42 +177,42 @@ model CashStationTemplate {
 // ==================== CHIUSURA CASSA ====================
 
 model DailyClosure {
-  id                  String   @id @default(cuid())
-  venue               Venue    @relation(fields: [venueId], references: [id])
-  venueId             String   @map("venue_id")
-  date                DateTime @db.Date
+  id      String   @id @default(cuid())
+  venue   Venue    @relation(fields: [venueId], references: [id])
+  venueId String   @map("venue_id")
+  date    DateTime @db.Date
 
   // Meteo (opzionale)
-  weatherMorning      String?  @map("weather_morning")
-  weatherAfternoon    String?  @map("weather_afternoon")
-  weatherEvening      String?  @map("weather_evening")
+  weatherMorning   String? @map("weather_morning")
+  weatherAfternoon String? @map("weather_afternoon")
+  weatherEvening   String? @map("weather_evening")
 
   // Note
-  notes               String?  @db.Text
+  notes String? @db.Text
 
   // Evento
-  isEvent             Boolean  @default(false) @map("is_event")
-  eventName           String?  @map("event_name")
+  isEvent   Boolean @default(false) @map("is_event")
+  eventName String? @map("event_name")
 
   // Workflow
-  status              ClosureStatus @default(DRAFT)
-  submittedBy         User?    @relation("SubmittedBy", fields: [submittedById], references: [id])
-  submittedById       String?  @map("submitted_by")
-  submittedAt         DateTime? @map("submitted_at")
-  validatedBy         User?    @relation("ValidatedBy", fields: [validatedById], references: [id])
-  validatedById       String?  @map("validated_by")
-  validatedAt         DateTime? @map("validated_at")
-  rejectionNotes      String?  @map("rejection_notes") @db.Text
+  status         ClosureStatus @default(DRAFT)
+  submittedBy    User?         @relation("SubmittedBy", fields: [submittedById], references: [id])
+  submittedById  String?       @map("submitted_by")
+  submittedAt    DateTime?     @map("submitted_at")
+  validatedBy    User?         @relation("ValidatedBy", fields: [validatedById], references: [id])
+  validatedById  String?       @map("validated_by")
+  validatedAt    DateTime?     @map("validated_at")
+  rejectionNotes String?       @map("rejection_notes") @db.Text
 
-  createdAt           DateTime @default(now()) @map("created_at")
-  updatedAt           DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relazioni
-  stations            CashStation[]
-  partials            HourlyPartial[]
-  expenses            DailyExpense[]
-  attendance          DailyAttendance[]
-  journalEntries      JournalEntry[]
+  stations       CashStation[]
+  partials       HourlyPartial[]
+  expenses       DailyExpense[]
+  attendance     DailyAttendance[]
+  journalEntries JournalEntry[]
 
   @@unique([venueId, date])
   @@map("daily_closures")
@@ -223,82 +226,82 @@ enum ClosureStatus {
 }
 
 model CashStation {
-  id              String       @id @default(cuid())
-  closure         DailyClosure @relation(fields: [closureId], references: [id], onDelete: Cascade)
-  closureId       String       @map("closure_id")
-  name            String       // "BAR", "CASSA 1", etc.
-  position        Int          @default(0)
+  id        String       @id @default(cuid())
+  closure   DailyClosure @relation(fields: [closureId], references: [id], onDelete: Cascade)
+  closureId String       @map("closure_id")
+  name      String // "BAR", "CASSA 1", etc.
+  position  Int          @default(0)
 
   // Incassi
-  receiptAmount   Decimal      @default(0) @map("receipt_amount") @db.Decimal(10, 2)    // Corrispettivo
-  receiptVat      Decimal      @default(0) @map("receipt_vat") @db.Decimal(10, 2)       // IVA scorporata
-  invoiceAmount   Decimal      @default(0) @map("invoice_amount") @db.Decimal(10, 2)   // Fatture
-  invoiceVat      Decimal      @default(0) @map("invoice_vat") @db.Decimal(10, 2)
-  suspendedAmount Decimal      @default(0) @map("suspended_amount") @db.Decimal(10, 2) // Sospesi
-  cashAmount      Decimal      @default(0) @map("cash_amount") @db.Decimal(10, 2)      // Contanti
-  posAmount       Decimal      @default(0) @map("pos_amount") @db.Decimal(10, 2)       // POS
+  receiptAmount   Decimal @default(0) @map("receipt_amount") @db.Decimal(10, 2) // Corrispettivo
+  receiptVat      Decimal @default(0) @map("receipt_vat") @db.Decimal(10, 2) // IVA scorporata
+  invoiceAmount   Decimal @default(0) @map("invoice_amount") @db.Decimal(10, 2) // Fatture
+  invoiceVat      Decimal @default(0) @map("invoice_vat") @db.Decimal(10, 2)
+  suspendedAmount Decimal @default(0) @map("suspended_amount") @db.Decimal(10, 2) // Sospesi
+  cashAmount      Decimal @default(0) @map("cash_amount") @db.Decimal(10, 2) // Contanti
+  posAmount       Decimal @default(0) @map("pos_amount") @db.Decimal(10, 2) // POS
 
   // Calcolati (possono essere stored per performance)
-  totalAmount     Decimal      @default(0) @map("total_amount") @db.Decimal(10, 2)     // cash + pos
-  nonReceiptAmount Decimal     @default(0) @map("non_receipt_amount") @db.Decimal(10, 2) // totale - corrispettivo
+  totalAmount      Decimal @default(0) @map("total_amount") @db.Decimal(10, 2) // cash + pos
+  nonReceiptAmount Decimal @default(0) @map("non_receipt_amount") @db.Decimal(10, 2) // totale - corrispettivo
 
   // Fondo cassa
-  floatAmount     Decimal      @default(114.00) @map("float_amount") @db.Decimal(10, 2)
+  floatAmount Decimal @default(114.00) @map("float_amount") @db.Decimal(10, 2)
 
-  createdAt       DateTime     @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
-  cashCount       CashCount?
+  cashCount CashCount?
 
   @@map("cash_stations")
 }
 
 model CashCount {
-  id              String      @id @default(cuid())
-  station         CashStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
-  stationId       String      @unique @map("station_id")
+  id        String      @id @default(cuid())
+  station   CashStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  stationId String      @unique @map("station_id")
 
   // Banconote
-  bills500        Int         @default(0) @map("bills_500")
-  bills200        Int         @default(0) @map("bills_200")
-  bills100        Int         @default(0) @map("bills_100")
-  bills50         Int         @default(0) @map("bills_50")
-  bills20         Int         @default(0) @map("bills_20")
-  bills10         Int         @default(0) @map("bills_10")
-  bills5          Int         @default(0) @map("bills_5")
+  bills500 Int @default(0) @map("bills_500")
+  bills200 Int @default(0) @map("bills_200")
+  bills100 Int @default(0) @map("bills_100")
+  bills50  Int @default(0) @map("bills_50")
+  bills20  Int @default(0) @map("bills_20")
+  bills10  Int @default(0) @map("bills_10")
+  bills5   Int @default(0) @map("bills_5")
 
   // Monete
-  coins2          Int         @default(0) @map("coins_2")
-  coins1          Int         @default(0) @map("coins_1")
-  coins050        Int         @default(0) @map("coins_050")
-  coins020        Int         @default(0) @map("coins_020")
-  coins010        Int         @default(0) @map("coins_010")
-  coins005        Int         @default(0) @map("coins_005")
-  coins002        Int         @default(0) @map("coins_002")
-  coins001        Int         @default(0) @map("coins_001")
+  coins2   Int @default(0) @map("coins_2")
+  coins1   Int @default(0) @map("coins_1")
+  coins050 Int @default(0) @map("coins_050")
+  coins020 Int @default(0) @map("coins_020")
+  coins010 Int @default(0) @map("coins_010")
+  coins005 Int @default(0) @map("coins_005")
+  coins002 Int @default(0) @map("coins_002")
+  coins001 Int @default(0) @map("coins_001")
 
   // Totali calcolati
-  totalCounted    Decimal     @default(0) @map("total_counted") @db.Decimal(10, 2)
-  expectedTotal   Decimal     @default(0) @map("expected_total") @db.Decimal(10, 2)
-  difference      Decimal     @default(0) @db.Decimal(10, 2)
+  totalCounted  Decimal @default(0) @map("total_counted") @db.Decimal(10, 2)
+  expectedTotal Decimal @default(0) @map("expected_total") @db.Decimal(10, 2)
+  difference    Decimal @default(0) @db.Decimal(10, 2)
 
-  createdAt       DateTime    @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@map("cash_counts")
 }
 
 model HourlyPartial {
-  id                String       @id @default(cuid())
-  closure           DailyClosure @relation(fields: [closureId], references: [id], onDelete: Cascade)
-  closureId         String       @map("closure_id")
-  timeSlot          String       // "16:00", "21:00"
+  id        String       @id @default(cuid())
+  closure   DailyClosure @relation(fields: [closureId], references: [id], onDelete: Cascade)
+  closureId String       @map("closure_id")
+  timeSlot  String // "16:00", "21:00"
 
-  receiptProgressive Decimal     @default(0) @map("receipt_progressive") @db.Decimal(10, 2)
-  posProgressive     Decimal     @default(0) @map("pos_progressive") @db.Decimal(10, 2)
-  coffeeCounter      Int?        @map("coffee_counter")
-  coffeeDelta        Int?        @map("coffee_delta")
+  receiptProgressive Decimal @default(0) @map("receipt_progressive") @db.Decimal(10, 2)
+  posProgressive     Decimal @default(0) @map("pos_progressive") @db.Decimal(10, 2)
+  coffeeCounter      Int?    @map("coffee_counter")
+  coffeeDelta        Int?    @map("coffee_delta")
   weather            String?
 
-  createdAt         DateTime     @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@unique([closureId, timeSlot])
   @@map("hourly_partials")
@@ -307,25 +310,25 @@ model HourlyPartial {
 // ==================== USCITE E SPESE ====================
 
 model DailyExpense {
-  id              String       @id @default(cuid())
-  closure         DailyClosure @relation(fields: [closureId], references: [id], onDelete: Cascade)
-  closureId       String       @map("closure_id")
+  id        String       @id @default(cuid())
+  closure   DailyClosure @relation(fields: [closureId], references: [id], onDelete: Cascade)
+  closureId String       @map("closure_id")
 
-  payee           String       // Beneficiario
-  description     String?      // Causale
-  documentRef     String?      @map("document_ref")
-  documentType    DocumentType @default(NONE) @map("document_type")
-  amount          Decimal      @db.Decimal(10, 2)
-  vatAmount       Decimal?     @map("vat_amount") @db.Decimal(10, 2)
+  payee        String // Beneficiario
+  description  String? // Causale
+  documentRef  String?      @map("document_ref")
+  documentType DocumentType @default(NONE) @map("document_type")
+  amount       Decimal      @db.Decimal(10, 2)
+  vatAmount    Decimal?     @map("vat_amount") @db.Decimal(10, 2)
 
-  account         Account?     @relation(fields: [accountId], references: [id])
-  accountId       String?      @map("account_id")
+  account   Account? @relation(fields: [accountId], references: [id])
+  accountId String?  @map("account_id")
 
-  isPaid          Boolean      @default(true) @map("is_paid")
-  paidBy          String?      @map("paid_by")  // Chi ha anticipato (es. "LUCA")
+  isPaid Boolean @default(true) @map("is_paid")
+  paidBy String? @map("paid_by") // Chi ha anticipato (es. "LUCA")
 
-  position        Int          @default(0)
-  createdAt       DateTime     @default(now()) @map("created_at")
+  position  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@map("daily_expenses")
 }
@@ -341,21 +344,21 @@ enum DocumentType {
 // ==================== PRESENZE ====================
 
 model DailyAttendance {
-  id          String       @id @default(cuid())
-  closure     DailyClosure @relation(fields: [closureId], references: [id], onDelete: Cascade)
-  closureId   String       @map("closure_id")
-  user        User         @relation(fields: [userId], references: [id])
-  userId      String       @map("user_id")
+  id        String       @id @default(cuid())
+  closure   DailyClosure @relation(fields: [closureId], references: [id], onDelete: Cascade)
+  closureId String       @map("closure_id")
+  user      User         @relation(fields: [userId], references: [id])
+  userId    String       @map("user_id")
 
-  shift       Shift
-  hours       Decimal?     @db.Decimal(4, 1)  // NULL se codice
-  statusCode  String?      @map("status_code") // "FE", "R", "Z", "C"
-  hourlyRate  Decimal?     @map("hourly_rate") @db.Decimal(10, 2)
-  totalPay    Decimal?     @map("total_pay") @db.Decimal(10, 2)
-  isPaid      Boolean      @default(false) @map("is_paid")
-  notes       String?
+  shift      Shift
+  hours      Decimal? @db.Decimal(4, 1) // NULL se codice
+  statusCode String?  @map("status_code") // "FE", "R", "Z", "C"
+  hourlyRate Decimal? @map("hourly_rate") @db.Decimal(10, 2)
+  totalPay   Decimal? @map("total_pay") @db.Decimal(10, 2)
+  isPaid     Boolean  @default(false) @map("is_paid")
+  notes      String?
 
-  createdAt   DateTime     @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@unique([closureId, userId, shift])
   @@map("daily_attendance")
@@ -369,16 +372,16 @@ enum Shift {
 // ==================== PIANO DEI CONTI ====================
 
 model Account {
-  id          String    @id @default(cuid())
-  code        String    @unique
-  name        String
-  type        AccountType
-  category    String?
-  parent      Account?  @relation("AccountHierarchy", fields: [parentId], references: [id])
-  parentId    String?   @map("parent_id")
-  children    Account[] @relation("AccountHierarchy")
-  isActive    Boolean   @default(true) @map("is_active")
-  createdAt   DateTime  @default(now()) @map("created_at")
+  id        String      @id @default(cuid())
+  code      String      @unique
+  name      String
+  type      AccountType
+  category  String?
+  parent    Account?    @relation("AccountHierarchy", fields: [parentId], references: [id])
+  parentId  String?     @map("parent_id")
+  children  Account[]   @relation("AccountHierarchy")
+  isActive  Boolean     @default(true) @map("is_active")
+  createdAt DateTime    @default(now()) @map("created_at")
 
   expenses           DailyExpense[]
   journalEntries     JournalEntry[]
@@ -399,36 +402,36 @@ enum AccountType {
 // ==================== PRIMA NOTA ====================
 
 model JournalEntry {
-  id              String       @id @default(cuid())
-  venue           Venue        @relation(fields: [venueId], references: [id])
-  venueId         String       @map("venue_id")
-  date            DateTime     @db.Date
+  id      String   @id @default(cuid())
+  venue   Venue    @relation(fields: [venueId], references: [id])
+  venueId String   @map("venue_id")
+  date    DateTime @db.Date
 
-  registerType    RegisterType @map("register_type")
-  documentRef     String?      @map("document_ref")
-  documentType    String?      @map("document_type")
-  description     String
+  registerType RegisterType @map("register_type")
+  documentRef  String?      @map("document_ref")
+  documentType String?      @map("document_type")
+  description  String
 
-  debitAmount     Decimal?     @map("debit_amount") @db.Decimal(10, 2)   // Dare
-  creditAmount    Decimal?     @map("credit_amount") @db.Decimal(10, 2)  // Avere
-  vatAmount       Decimal?     @map("vat_amount") @db.Decimal(10, 2)
+  debitAmount  Decimal? @map("debit_amount") @db.Decimal(10, 2) // Dare
+  creditAmount Decimal? @map("credit_amount") @db.Decimal(10, 2) // Avere
+  vatAmount    Decimal? @map("vat_amount") @db.Decimal(10, 2)
 
-  account         Account?     @relation(fields: [accountId], references: [id])
-  accountId       String?      @map("account_id")
-  counterpart     Account?     @relation("Counterpart", fields: [counterpartId], references: [id])
-  counterpartId   String?      @map("counterpart_id")
+  account       Account? @relation(fields: [accountId], references: [id])
+  accountId     String?  @map("account_id")
+  counterpart   Account? @relation("Counterpart", fields: [counterpartId], references: [id])
+  counterpartId String?  @map("counterpart_id")
 
   // Collegamenti
-  closure         DailyClosure? @relation(fields: [closureId], references: [id])
-  closureId       String?      @map("closure_id")
+  closure   DailyClosure? @relation(fields: [closureId], references: [id])
+  closureId String?       @map("closure_id")
 
   // Saldo progressivo (calcolato)
-  runningBalance  Decimal?     @map("running_balance") @db.Decimal(12, 2)
+  runningBalance Decimal? @map("running_balance") @db.Decimal(12, 2)
 
-  createdBy       User?        @relation(fields: [createdById], references: [id])
-  createdById     String?      @map("created_by")
-  createdAt       DateTime     @default(now()) @map("created_at")
-  updatedAt       DateTime     @updatedAt @map("updated_at")
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  createdById String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@map("journal_entries")
 }
@@ -441,16 +444,16 @@ enum RegisterType {
 // ==================== SALDI ====================
 
 model RegisterBalance {
-  id             String       @id @default(cuid())
-  venue          Venue        @relation(fields: [venueId], references: [id])
-  venueId        String       @map("venue_id")
-  registerType   RegisterType @map("register_type")
-  date           DateTime     @db.Date
+  id           String       @id @default(cuid())
+  venue        Venue        @relation(fields: [venueId], references: [id])
+  venueId      String       @map("venue_id")
+  registerType RegisterType @map("register_type")
+  date         DateTime     @db.Date
 
-  openingBalance Decimal      @map("opening_balance") @db.Decimal(12, 2)
-  totalDebits    Decimal      @map("total_debits") @db.Decimal(12, 2)
-  totalCredits   Decimal      @map("total_credits") @db.Decimal(12, 2)
-  closingBalance Decimal      @map("closing_balance") @db.Decimal(12, 2)
+  openingBalance Decimal @map("opening_balance") @db.Decimal(12, 2)
+  totalDebits    Decimal @map("total_debits") @db.Decimal(12, 2)
+  totalCredits   Decimal @map("total_credits") @db.Decimal(12, 2)
+  closingBalance Decimal @map("closing_balance") @db.Decimal(12, 2)
 
   @@unique([venueId, registerType, date])
   @@map("register_balances")
@@ -459,14 +462,14 @@ model RegisterBalance {
 // ==================== FORNITORI (per autocompletamento) ====================
 
 model Supplier {
-  id              String    @id @default(cuid())
-  name            String
-  vatNumber       String?   @map("vat_number")
-  address         String?
-  defaultAccount  Account?  @relation(fields: [defaultAccountId], references: [id])
+  id               String   @id @default(cuid())
+  name             String
+  vatNumber        String?  @map("vat_number")
+  address          String?
+  defaultAccount   Account? @relation(fields: [defaultAccountId], references: [id])
   defaultAccountId String?  @map("default_account_id")
-  isActive        Boolean   @default(true) @map("is_active")
-  createdAt       DateTime  @default(now()) @map("created_at")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
 
   @@map("suppliers")
 }
@@ -474,21 +477,21 @@ model Supplier {
 // ==================== BUDGET MODULE ====================
 
 model Budget {
-  id          String       @id @default(cuid())
-  venue       Venue        @relation(fields: [venueId], references: [id])
-  venueId     String       @map("venue_id")
-  year        Int
-  name        String?
-  status      BudgetStatus @default(DRAFT)
-  notes       String?      @db.Text
+  id      String       @id @default(cuid())
+  venue   Venue        @relation(fields: [venueId], references: [id])
+  venueId String       @map("venue_id")
+  year    Int
+  name    String?
+  status  BudgetStatus @default(DRAFT)
+  notes   String?      @db.Text
 
-  createdBy   User?        @relation(fields: [createdById], references: [id])
-  createdById String?      @map("created_by")
-  createdAt   DateTime     @default(now()) @map("created_at")
-  updatedAt   DateTime     @updatedAt @map("updated_at")
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  createdById String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
-  lines       BudgetLine[]
-  alerts      BudgetAlert[]
+  lines  BudgetLine[]
+  alerts BudgetAlert[]
 
   @@unique([venueId, year])
   @@map("budgets")
@@ -501,42 +504,42 @@ enum BudgetStatus {
 }
 
 model BudgetLine {
-  id          String   @id @default(cuid())
-  budget      Budget   @relation(fields: [budgetId], references: [id], onDelete: Cascade)
-  budgetId    String   @map("budget_id")
-  account     Account  @relation(fields: [accountId], references: [id])
-  accountId   String   @map("account_id")
+  id        String  @id @default(cuid())
+  budget    Budget  @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  budgetId  String  @map("budget_id")
+  account   Account @relation(fields: [accountId], references: [id])
+  accountId String  @map("account_id")
 
   // Valori mensili
-  jan         Decimal  @default(0) @db.Decimal(12, 2)
-  feb         Decimal  @default(0) @db.Decimal(12, 2)
-  mar         Decimal  @default(0) @db.Decimal(12, 2)
-  apr         Decimal  @default(0) @db.Decimal(12, 2)
-  may         Decimal  @default(0) @db.Decimal(12, 2)
-  jun         Decimal  @default(0) @db.Decimal(12, 2)
-  jul         Decimal  @default(0) @db.Decimal(12, 2)
-  aug         Decimal  @default(0) @db.Decimal(12, 2)
-  sep         Decimal  @default(0) @db.Decimal(12, 2)
-  oct         Decimal  @default(0) @db.Decimal(12, 2)
-  nov         Decimal  @default(0) @db.Decimal(12, 2)
-  dec         Decimal  @default(0) @db.Decimal(12, 2)
+  jan Decimal @default(0) @db.Decimal(12, 2)
+  feb Decimal @default(0) @db.Decimal(12, 2)
+  mar Decimal @default(0) @db.Decimal(12, 2)
+  apr Decimal @default(0) @db.Decimal(12, 2)
+  may Decimal @default(0) @db.Decimal(12, 2)
+  jun Decimal @default(0) @db.Decimal(12, 2)
+  jul Decimal @default(0) @db.Decimal(12, 2)
+  aug Decimal @default(0) @db.Decimal(12, 2)
+  sep Decimal @default(0) @db.Decimal(12, 2)
+  oct Decimal @default(0) @db.Decimal(12, 2)
+  nov Decimal @default(0) @db.Decimal(12, 2)
+  dec Decimal @default(0) @db.Decimal(12, 2)
 
-  annualTotal Decimal  @default(0) @map("annual_total") @db.Decimal(12, 2)
+  annualTotal Decimal @default(0) @map("annual_total") @db.Decimal(12, 2)
   notes       String?
 
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@unique([budgetId, accountId])
   @@map("budget_lines")
 }
 
 model BudgetAlert {
-  id              String          @id @default(cuid())
-  budget          Budget          @relation(fields: [budgetId], references: [id], onDelete: Cascade)
-  budgetId        String          @map("budget_id")
-  accountId       String?         @map("account_id")
-  month           Int?
+  id        String  @id @default(cuid())
+  budget    Budget  @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  budgetId  String  @map("budget_id")
+  accountId String? @map("account_id")
+  month     Int?
 
   alertType       BudgetAlertType @map("alert_type")
   budgetAmount    Decimal         @map("budget_amount") @db.Decimal(12, 2)
@@ -544,12 +547,12 @@ model BudgetAlert {
   varianceAmount  Decimal         @map("variance_amount") @db.Decimal(12, 2)
   variancePercent Decimal         @map("variance_percent") @db.Decimal(5, 2)
 
-  status          AlertStatus     @default(ACTIVE)
-  acknowledgedBy  String?         @map("acknowledged_by")
-  acknowledgedAt  DateTime?       @map("acknowledged_at")
-  message         String?
+  status         AlertStatus @default(ACTIVE)
+  acknowledgedBy String?     @map("acknowledged_by")
+  acknowledgedAt DateTime?   @map("acknowledged_at")
+  message        String?
 
-  createdAt       DateTime        @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@map("budget_alerts")
 }
@@ -585,25 +588,25 @@ model InitialBalance {
 // ==================== FASE 4: VINCOLI DIPENDENTI ====================
 
 model EmployeeConstraint {
-  id               String         @id @default(cuid())
-  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId           String         @map("user_id")
-  venue            Venue?         @relation(fields: [venueId], references: [id])
-  venueId          String?        @map("venue_id")
+  id      String  @id @default(cuid())
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId  String  @map("user_id")
+  venue   Venue?  @relation(fields: [venueId], references: [id])
+  venueId String? @map("venue_id")
 
-  constraintType   ConstraintType @map("constraint_type")
-  config           Json           // Configurazione flessibile del vincolo
+  constraintType ConstraintType @map("constraint_type")
+  config         Json // Configurazione flessibile del vincolo
 
-  validFrom        DateTime?      @map("valid_from") @db.Date
-  validTo          DateTime?      @map("valid_to") @db.Date
+  validFrom DateTime? @map("valid_from") @db.Date
+  validTo   DateTime? @map("valid_to") @db.Date
 
-  priority         Int            @default(5)  // 1-10
-  isHardConstraint Boolean        @default(true) @map("is_hard_constraint")
+  priority         Int     @default(5) // 1-10
+  isHardConstraint Boolean @default(true) @map("is_hard_constraint")
 
-  createdById      String?        @map("created_by")
-  createdAt        DateTime       @default(now()) @map("created_at")
-  updatedAt        DateTime       @updatedAt @map("updated_at")
-  notes            String?
+  createdById String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  notes       String?
 
   @@index([userId])
   @@index([constraintType])
@@ -611,51 +614,51 @@ model EmployeeConstraint {
 }
 
 enum ConstraintType {
-  AVAILABILITY       // Disponibilità turni/giorni
-  MAX_HOURS          // Max ore settimanali/giornaliere
-  MIN_REST           // Riposo minimo tra turni
-  PREFERRED_SHIFT    // Turno preferito (soft)
-  BLOCKED_DAY        // Giorno bloccato fisso
-  SKILL_REQUIRED     // Competenze richieste
-  CONSECUTIVE_DAYS   // Max giorni consecutivi
+  AVAILABILITY // Disponibilità turni/giorni
+  MAX_HOURS // Max ore settimanali/giornaliere
+  MIN_REST // Riposo minimo tra turni
+  PREFERRED_SHIFT // Turno preferito (soft)
+  BLOCKED_DAY // Giorno bloccato fisso
+  SKILL_REQUIRED // Competenze richieste
+  CONSECUTIVE_DAYS // Max giorni consecutivi
 }
 
 model RelationshipConstraint {
-  id               String            @id @default(cuid())
-  venue            Venue?            @relation(fields: [venueId], references: [id])
-  venueId          String?           @map("venue_id")
+  id      String  @id @default(cuid())
+  venue   Venue?  @relation(fields: [venueId], references: [id])
+  venueId String? @map("venue_id")
 
-  constraintType   RelConstraintType @map("constraint_type")
-  config           Json              // Configurazione del vincolo
+  constraintType RelConstraintType @map("constraint_type")
+  config         Json // Configurazione del vincolo
 
-  validFrom        DateTime?         @map("valid_from") @db.Date
-  validTo          DateTime?         @map("valid_to") @db.Date
+  validFrom DateTime? @map("valid_from") @db.Date
+  validTo   DateTime? @map("valid_to") @db.Date
 
-  priority         Int               @default(5)
-  isHardConstraint Boolean           @default(true) @map("is_hard_constraint")
+  priority         Int     @default(5)
+  isHardConstraint Boolean @default(true) @map("is_hard_constraint")
 
-  createdById      String?           @map("created_by")
-  createdAt        DateTime          @default(now()) @map("created_at")
-  notes            String?
+  createdById String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  notes       String?
 
-  users            RelationshipConstraintUser[]
+  users RelationshipConstraintUser[]
 
   @@map("relationship_constraints")
 }
 
 enum RelConstraintType {
-  SAME_DAY_OFF      // Giorno libero comune (es. coppia)
-  NEVER_TOGETHER    // Mai stesso turno
-  ALWAYS_TOGETHER   // Sempre insieme (es. senior con junior)
-  MIN_OVERLAP       // Minimo overlap per passaggio consegne
-  MAX_TOGETHER      // Massimo ore insieme a settimana
+  SAME_DAY_OFF // Giorno libero comune (es. coppia)
+  NEVER_TOGETHER // Mai stesso turno
+  ALWAYS_TOGETHER // Sempre insieme (es. senior con junior)
+  MIN_OVERLAP // Minimo overlap per passaggio consegne
+  MAX_TOGETHER // Massimo ore insieme a settimana
 }
 
 model RelationshipConstraintUser {
-  constraint       RelationshipConstraint @relation(fields: [constraintId], references: [id], onDelete: Cascade)
-  constraintId     String                 @map("constraint_id")
-  user             User                   @relation(fields: [userId], references: [id])
-  userId           String                 @map("user_id")
+  constraint   RelationshipConstraint @relation(fields: [constraintId], references: [id], onDelete: Cascade)
+  constraintId String                 @map("constraint_id")
+  user         User                   @relation(fields: [userId], references: [id])
+  userId       String                 @map("user_id")
 
   @@id([constraintId, userId])
   @@map("relationship_constraint_users")
@@ -664,30 +667,30 @@ model RelationshipConstraintUser {
 // ==================== FASE 4: DEFINIZIONI TURNI ====================
 
 model ShiftDefinition {
-  id               String   @id @default(cuid())
-  venue            Venue    @relation(fields: [venueId], references: [id])
-  venueId          String   @map("venue_id")
+  id      String @id @default(cuid())
+  venue   Venue  @relation(fields: [venueId], references: [id])
+  venueId String @map("venue_id")
 
-  name             String   // "Mattina", "Aperitivo", "Sera"
-  code             String   // "M", "A", "S"
-  color            String?  // HEX color (#FCD34D)
+  name  String // "Mattina", "Aperitivo", "Sera"
+  code  String // "M", "A", "S"
+  color String? // HEX color (#FCD34D)
 
-  startTime        DateTime @map("start_time") @db.Time()
-  endTime          DateTime @map("end_time") @db.Time()
-  breakMinutes     Int      @default(0) @map("break_minutes")
+  startTime    DateTime @map("start_time") @db.Time()
+  endTime      DateTime @map("end_time") @db.Time()
+  breakMinutes Int      @default(0) @map("break_minutes")
 
-  minStaff         Int      @default(1) @map("min_staff")
-  maxStaff         Int?     @map("max_staff")
-  requiredSkills   String[] @default([]) @map("required_skills")
+  minStaff       Int      @default(1) @map("min_staff")
+  maxStaff       Int?     @map("max_staff")
+  requiredSkills String[] @default([]) @map("required_skills")
 
-  rateMultiplier   Decimal  @default(1.0) @map("rate_multiplier") @db.Decimal(3, 2)
+  rateMultiplier Decimal @default(1.0) @map("rate_multiplier") @db.Decimal(3, 2)
 
-  isActive         Boolean  @default(true) @map("is_active")
-  position         Int      @default(0)
+  isActive Boolean @default(true) @map("is_active")
+  position Int     @default(0)
 
-  createdAt        DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
-  assignments      ShiftAssignment[]
+  assignments ShiftAssignment[]
 
   @@unique([venueId, code])
   @@map("shift_definitions")
@@ -696,30 +699,30 @@ model ShiftDefinition {
 // ==================== FASE 4: PIANIFICAZIONE TURNI ====================
 
 model ShiftSchedule {
-  id               String         @id @default(cuid())
-  venue            Venue          @relation(fields: [venueId], references: [id])
-  venueId          String         @map("venue_id")
+  id      String @id @default(cuid())
+  venue   Venue  @relation(fields: [venueId], references: [id])
+  venueId String @map("venue_id")
 
-  name             String?        // "Settimana 6-12 Gen 2026"
-  startDate        DateTime       @map("start_date") @db.Date
-  endDate          DateTime       @map("end_date") @db.Date
+  name      String? // "Settimana 6-12 Gen 2026"
+  startDate DateTime @map("start_date") @db.Date
+  endDate   DateTime @map("end_date") @db.Date
 
-  status           ScheduleStatus @default(DRAFT)
+  status ScheduleStatus @default(DRAFT)
 
   // Generazione AI
-  generationParams Json?          @map("generation_params")
-  generationLog    Json?          @map("generation_log")
-  generationScore  Decimal?       @map("generation_score") @db.Decimal(5, 2)
+  generationParams Json?    @map("generation_params")
+  generationLog    Json?    @map("generation_log")
+  generationScore  Decimal? @map("generation_score") @db.Decimal(5, 2)
 
   // Workflow
-  createdById      String?        @map("created_by")
-  createdAt        DateTime       @default(now()) @map("created_at")
-  publishedById    String?        @map("published_by")
-  publishedAt      DateTime?      @map("published_at")
+  createdById   String?   @map("created_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  publishedById String?   @map("published_by")
+  publishedAt   DateTime? @map("published_at")
 
-  notes            String?
+  notes String?
 
-  assignments      ShiftAssignment[]
+  assignments ShiftAssignment[]
 
   @@unique([venueId, startDate, endDate])
   @@map("shift_schedules")
@@ -734,46 +737,46 @@ enum ScheduleStatus {
 }
 
 model ShiftAssignment {
-  id                  String          @id @default(cuid())
-  schedule            ShiftSchedule   @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
-  scheduleId          String          @map("schedule_id")
+  id         String        @id @default(cuid())
+  schedule   ShiftSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  scheduleId String        @map("schedule_id")
 
-  user                User            @relation(fields: [userId], references: [id])
-  userId              String          @map("user_id")
-  shiftDefinition     ShiftDefinition? @relation(fields: [shiftDefinitionId], references: [id])
-  shiftDefinitionId   String?         @map("shift_definition_id")
+  user              User             @relation(fields: [userId], references: [id])
+  userId            String           @map("user_id")
+  shiftDefinition   ShiftDefinition? @relation(fields: [shiftDefinitionId], references: [id])
+  shiftDefinitionId String?          @map("shift_definition_id")
 
-  date                DateTime        @db.Date
-  startTime           DateTime        @map("start_time") @db.Time()
-  endTime             DateTime        @map("end_time") @db.Time()
-  breakMinutes        Int             @default(0) @map("break_minutes")
+  date         DateTime @db.Date
+  startTime    DateTime @map("start_time") @db.Time()
+  endTime      DateTime @map("end_time") @db.Time()
+  breakMinutes Int      @default(0) @map("break_minutes")
 
-  venue               Venue           @relation(fields: [venueId], references: [id])
-  venueId             String          @map("venue_id")
-  workStation         String?         @map("work_station")
+  venue       Venue   @relation(fields: [venueId], references: [id])
+  venueId     String  @map("venue_id")
+  workStation String? @map("work_station")
 
-  status              AssignmentStatus @default(SCHEDULED)
+  status AssignmentStatus @default(SCHEDULED)
 
   // Per scambi turno (futuro)
-  swapRequestedById   String?         @map("swap_requested_by")
-  swapWithUserId      String?         @map("swap_with_user_id")
-  swapStatus          SwapStatus?     @map("swap_status")
+  swapRequestedById String?     @map("swap_requested_by")
+  swapWithUserId    String?     @map("swap_with_user_id")
+  swapStatus        SwapStatus? @map("swap_status")
 
   // Calcolo costi
-  hoursScheduled      Decimal?        @map("hours_scheduled") @db.Decimal(4, 2)
-  hourlyRateApplied   Decimal?        @map("hourly_rate_applied") @db.Decimal(10, 2)
-  costEstimated       Decimal?        @map("cost_estimated") @db.Decimal(10, 2)
+  hoursScheduled    Decimal? @map("hours_scheduled") @db.Decimal(4, 2)
+  hourlyRateApplied Decimal? @map("hourly_rate_applied") @db.Decimal(10, 2)
+  costEstimated     Decimal? @map("cost_estimated") @db.Decimal(10, 2)
 
   // Effettivo (da presenze)
-  actualStart         DateTime?       @map("actual_start") @db.Time()
-  actualEnd           DateTime?       @map("actual_end") @db.Time()
-  hoursWorked         Decimal?        @map("hours_worked") @db.Decimal(4, 2)
-  costActual          Decimal?        @map("cost_actual") @db.Decimal(10, 2)
+  actualStart DateTime? @map("actual_start") @db.Time()
+  actualEnd   DateTime? @map("actual_end") @db.Time()
+  hoursWorked Decimal?  @map("hours_worked") @db.Decimal(4, 2)
+  costActual  Decimal?  @map("cost_actual") @db.Decimal(10, 2)
 
-  notes               String?
+  notes String?
 
-  createdAt           DateTime        @default(now()) @map("created_at")
-  updatedAt           DateTime        @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relazioni Fase 4.4 - Timbratura
   attendanceRecords   AttendanceRecord[]
@@ -786,78 +789,78 @@ model ShiftAssignment {
 }
 
 enum AssignmentStatus {
-  SCHEDULED    // Pianificato
-  CONFIRMED    // Confermato dal dipendente
-  SWAPPED      // Scambiato
-  ABSENT       // Assente
-  WORKED       // Lavorato
+  SCHEDULED // Pianificato
+  CONFIRMED // Confermato dal dipendente
+  SWAPPED // Scambiato
+  ABSENT // Assente
+  WORKED // Lavorato
 }
 
 enum SwapStatus {
-  PENDING      // In attesa conferma collega
-  APPROVED     // Approvato
-  REJECTED     // Rifiutato
+  PENDING // In attesa conferma collega
+  APPROVED // Approvato
+  REJECTED // Rifiutato
 }
 
 // ==================== FASE 4: FERIE E PERMESSI ====================
 
 model LeaveType {
-  id               String   @id @default(cuid())
-  code             String   @unique  // "FE", "ROL", "MA", etc.
-  name             String   // "Ferie", "Permesso ROL", "Malattia"
-  color            String?
-  icon             String?
+  id    String  @id @default(cuid())
+  code  String  @unique // "FE", "ROL", "MA", etc.
+  name  String // "Ferie", "Permesso ROL", "Malattia"
+  color String?
+  icon  String?
 
-  requiresApproval Boolean  @default(true) @map("requires_approval")
-  requiresDocument Boolean  @default(false) @map("requires_document")
-  maxDaysAdvance   Int?     @map("max_days_advance")
-  minDaysAdvance   Int?     @map("min_days_advance")
+  requiresApproval Boolean @default(true) @map("requires_approval")
+  requiresDocument Boolean @default(false) @map("requires_document")
+  maxDaysAdvance   Int?    @map("max_days_advance")
+  minDaysAdvance   Int?    @map("min_days_advance")
 
-  affectsAccrual   Boolean  @default(true) @map("affects_accrual")
-  paid             Boolean  @default(true)
+  affectsAccrual Boolean @default(true) @map("affects_accrual")
+  paid           Boolean @default(true)
 
-  isActive         Boolean  @default(true) @map("is_active")
+  isActive Boolean @default(true) @map("is_active")
 
-  requests         LeaveRequest[]
-  balances         LeaveBalance[]
+  requests LeaveRequest[]
+  balances LeaveBalance[]
 
   @@map("leave_types")
 }
 
 model LeaveRequest {
-  id               String      @id @default(cuid())
-  user             User        @relation(fields: [userId], references: [id])
-  userId           String      @map("user_id")
-  leaveType        LeaveType   @relation(fields: [leaveTypeId], references: [id])
-  leaveTypeId      String      @map("leave_type_id")
+  id          String    @id @default(cuid())
+  user        User      @relation(fields: [userId], references: [id])
+  userId      String    @map("user_id")
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id])
+  leaveTypeId String    @map("leave_type_id")
 
-  startDate        DateTime    @map("start_date") @db.Date
-  endDate          DateTime    @map("end_date") @db.Date
+  startDate DateTime @map("start_date") @db.Date
+  endDate   DateTime @map("end_date") @db.Date
 
-  isPartialDay     Boolean     @default(false) @map("is_partial_day")
-  startTime        DateTime?   @map("start_time") @db.Time()
-  endTime          DateTime?   @map("end_time") @db.Time()
+  isPartialDay Boolean   @default(false) @map("is_partial_day")
+  startTime    DateTime? @map("start_time") @db.Time()
+  endTime      DateTime? @map("end_time") @db.Time()
 
-  daysRequested    Decimal?    @map("days_requested") @db.Decimal(4, 2)
-  hoursRequested   Decimal?    @map("hours_requested") @db.Decimal(5, 2)
+  daysRequested  Decimal? @map("days_requested") @db.Decimal(4, 2)
+  hoursRequested Decimal? @map("hours_requested") @db.Decimal(5, 2)
 
-  status           LeaveStatus @default(PENDING)
+  status LeaveStatus @default(PENDING)
 
-  requestedAt      DateTime    @default(now()) @map("requested_at")
+  requestedAt DateTime @default(now()) @map("requested_at")
 
-  approvedBy       User?       @relation("ApprovedBy", fields: [approvedById], references: [id])
-  approvedById     String?     @map("approved_by")
-  approvedAt       DateTime?   @map("approved_at")
-  rejectionReason  String?     @map("rejection_reason")
+  approvedBy      User?     @relation("ApprovedBy", fields: [approvedById], references: [id])
+  approvedById    String?   @map("approved_by")
+  approvedAt      DateTime? @map("approved_at")
+  rejectionReason String?   @map("rejection_reason")
 
-  documentUrl      String?     @map("document_url")
+  documentUrl        String?   @map("document_url")
   documentUploadedAt DateTime? @map("document_uploaded_at")
 
-  notes            String?
-  managerNotes     String?     @map("manager_notes")
+  notes        String?
+  managerNotes String? @map("manager_notes")
 
-  createdAt        DateTime    @default(now()) @map("created_at")
-  updatedAt        DateTime    @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([userId])
   @@index([startDate, endDate])
@@ -873,19 +876,19 @@ enum LeaveStatus {
 }
 
 model LeaveBalance {
-  id               String    @id @default(cuid())
-  user             User      @relation(fields: [userId], references: [id])
-  userId           String    @map("user_id")
-  leaveType        LeaveType @relation(fields: [leaveTypeId], references: [id])
-  leaveTypeId      String    @map("leave_type_id")
-  year             Int
+  id          String    @id @default(cuid())
+  user        User      @relation(fields: [userId], references: [id])
+  userId      String    @map("user_id")
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id])
+  leaveTypeId String    @map("leave_type_id")
+  year        Int
 
-  accrued          Decimal   @default(0) @db.Decimal(6, 2)  // Maturato
-  used             Decimal   @default(0) @db.Decimal(6, 2)  // Usato
-  pending          Decimal   @default(0) @db.Decimal(6, 2)  // In attesa approvazione
-  carriedOver      Decimal   @default(0) @map("carried_over") @db.Decimal(6, 2)  // Riporto anno precedente
+  accrued     Decimal @default(0) @db.Decimal(6, 2) // Maturato
+  used        Decimal @default(0) @db.Decimal(6, 2) // Usato
+  pending     Decimal @default(0) @db.Decimal(6, 2) // In attesa approvazione
+  carriedOver Decimal @default(0) @map("carried_over") @db.Decimal(6, 2) // Riporto anno precedente
 
-  updatedAt        DateTime  @updatedAt @map("updated_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@unique([userId, leaveTypeId, year])
   @@map("leave_balances")
@@ -894,76 +897,76 @@ model LeaveBalance {
 // ==================== FASE 4.4: TIMBRATURA ====================
 
 enum PunchType {
-  IN           // Ingresso
-  OUT          // Uscita
-  BREAK_START  // Inizio pausa
-  BREAK_END    // Fine pausa
+  IN // Ingresso
+  OUT // Uscita
+  BREAK_START // Inizio pausa
+  BREAK_END // Fine pausa
 }
 
 enum PunchMethod {
-  APP          // Timbratura da app mobile con GPS
-  WEB          // Timbratura da dashboard web
-  QR_CODE      // Scansione QR code (futuro)
-  MANUAL       // Inserimento manuale manager
+  APP // Timbratura da app mobile con GPS
+  WEB // Timbratura da dashboard web
+  QR_CODE // Scansione QR code (futuro)
+  MANUAL // Inserimento manuale manager
 }
 
 enum AnomalyType {
-  EARLY_CLOCK_IN      // Timbrato troppo presto
-  LATE_CLOCK_IN       // Timbrato in ritardo
-  EARLY_CLOCK_OUT     // Uscito troppo presto
-  LATE_CLOCK_OUT      // Uscito tardi (straordinario)
-  OUTSIDE_LOCATION    // Fuori dal raggio GPS
-  MISSING_CLOCK_OUT   // Manca uscita
-  OVERTIME            // Ore extra non autorizzate
-  MISSING_BREAK       // Pausa non registrata
-  SHORT_BREAK         // Pausa troppo corta
+  EARLY_CLOCK_IN // Timbrato troppo presto
+  LATE_CLOCK_IN // Timbrato in ritardo
+  EARLY_CLOCK_OUT // Uscito troppo presto
+  LATE_CLOCK_OUT // Uscito tardi (straordinario)
+  OUTSIDE_LOCATION // Fuori dal raggio GPS
+  MISSING_CLOCK_OUT // Manca uscita
+  OVERTIME // Ore extra non autorizzate
+  MISSING_BREAK // Pausa non registrata
+  SHORT_BREAK // Pausa troppo corta
 }
 
 enum AnomalyStatus {
-  PENDING      // Da verificare
-  APPROVED     // Approvata dal manager
-  REJECTED     // Rifiutata
-  AUTO_FIXED   // Corretta automaticamente
+  PENDING // Da verificare
+  APPROVED // Approvata dal manager
+  REJECTED // Rifiutata
+  AUTO_FIXED // Corretta automaticamente
 }
 
 model AttendanceRecord {
-  id                String      @id @default(cuid())
+  id String @id @default(cuid())
 
   // Relazioni
-  user              User        @relation(fields: [userId], references: [id])
-  userId            String      @map("user_id")
-  venue             Venue       @relation(fields: [venueId], references: [id])
-  venueId           String      @map("venue_id")
-  assignment        ShiftAssignment? @relation(fields: [assignmentId], references: [id])
-  assignmentId      String?     @map("assignment_id")
+  user         User             @relation(fields: [userId], references: [id])
+  userId       String           @map("user_id")
+  venue        Venue            @relation(fields: [venueId], references: [id])
+  venueId      String           @map("venue_id")
+  assignment   ShiftAssignment? @relation(fields: [assignmentId], references: [id])
+  assignmentId String?          @map("assignment_id")
 
   // Dati timbratura
-  punchType         PunchType   @map("punch_type")
-  punchMethod       PunchMethod @default(APP) @map("punch_method")
-  punchedAt         DateTime    @default(now()) @map("punched_at")
+  punchType   PunchType   @map("punch_type")
+  punchMethod PunchMethod @default(APP) @map("punch_method")
+  punchedAt   DateTime    @default(now()) @map("punched_at")
 
   // Geolocalizzazione
-  latitude          Decimal?    @db.Decimal(9, 6)
-  longitude         Decimal?    @db.Decimal(9, 6)
-  accuracy          Decimal?    @db.Decimal(6, 2)  // Precisione GPS in metri
-  distanceFromVenue Decimal?    @map("distance_from_venue") @db.Decimal(8, 2)
-  isWithinRadius    Boolean     @default(true) @map("is_within_radius")
+  latitude          Decimal? @db.Decimal(9, 6)
+  longitude         Decimal? @db.Decimal(9, 6)
+  accuracy          Decimal? @db.Decimal(6, 2) // Precisione GPS in metri
+  distanceFromVenue Decimal? @map("distance_from_venue") @db.Decimal(8, 2)
+  isWithinRadius    Boolean  @default(true) @map("is_within_radius")
 
   // Metadata
-  deviceInfo        String?     @map("device_info")
-  ipAddress         String?     @map("ip_address")
-  notes             String?
+  deviceInfo String? @map("device_info")
+  ipAddress  String? @map("ip_address")
+  notes      String?
 
   // Inserimento manuale
-  isManual          Boolean     @default(false) @map("is_manual")
-  manualEntryBy     String?     @map("manual_entry_by")
-  manualEntryReason String?     @map("manual_entry_reason")
+  isManual          Boolean @default(false) @map("is_manual")
+  manualEntryBy     String? @map("manual_entry_by")
+  manualEntryReason String? @map("manual_entry_reason")
 
-  createdAt         DateTime    @default(now()) @map("created_at")
-  updatedAt         DateTime    @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relazioni inverse
-  anomalies         AttendanceAnomaly[]
+  anomalies AttendanceAnomaly[]
 
   @@index([userId, punchedAt])
   @@index([venueId, punchedAt])
@@ -972,76 +975,191 @@ model AttendanceRecord {
 }
 
 model AttendancePolicy {
-  id                    String   @id @default(cuid())
-  venue                 Venue    @relation(fields: [venueId], references: [id])
-  venueId               String   @unique @map("venue_id")
+  id      String @id @default(cuid())
+  venue   Venue  @relation(fields: [venueId], references: [id])
+  venueId String @unique @map("venue_id")
 
   // Raggio geolocalizzazione
-  geoFenceRadius        Int      @default(100) @map("geo_fence_radius")  // Metri
-  requireGeolocation    Boolean  @default(true) @map("require_geolocation")
-  blockOutsideLocation  Boolean  @default(false) @map("block_outside_location")
+  geoFenceRadius       Int     @default(100) @map("geo_fence_radius") // Metri
+  requireGeolocation   Boolean @default(true) @map("require_geolocation")
+  blockOutsideLocation Boolean @default(false) @map("block_outside_location")
 
   // Tolleranze temporali (minuti)
-  earlyClockInMinutes   Int      @default(15) @map("early_clock_in_minutes")
-  lateClockInMinutes    Int      @default(10) @map("late_clock_in_minutes")
-  earlyClockOutMinutes  Int      @default(5) @map("early_clock_out_minutes")
-  lateClockOutMinutes   Int      @default(30) @map("late_clock_out_minutes")
+  earlyClockInMinutes  Int @default(15) @map("early_clock_in_minutes")
+  lateClockInMinutes   Int @default(10) @map("late_clock_in_minutes")
+  earlyClockOutMinutes Int @default(5) @map("early_clock_out_minutes")
+  lateClockOutMinutes  Int @default(30) @map("late_clock_out_minutes")
 
   // Auto clock-out
-  autoClockOutEnabled   Boolean  @default(true) @map("auto_clock_out_enabled")
-  autoClockOutHours     Int      @default(12) @map("auto_clock_out_hours")
+  autoClockOutEnabled Boolean @default(true) @map("auto_clock_out_enabled")
+  autoClockOutHours   Int     @default(12) @map("auto_clock_out_hours")
 
   // Pause
-  requireBreakPunch     Boolean  @default(false) @map("require_break_punch")
-  minBreakMinutes       Int      @default(30) @map("min_break_minutes")
+  requireBreakPunch Boolean @default(false) @map("require_break_punch")
+  minBreakMinutes   Int     @default(30) @map("min_break_minutes")
 
   // Notifiche
-  notifyOnAnomaly       Boolean  @default(true) @map("notify_on_anomaly")
-  notifyManagerEmail    String?  @map("notify_manager_email")
+  notifyOnAnomaly    Boolean @default(true) @map("notify_on_anomaly")
+  notifyManagerEmail String? @map("notify_manager_email")
 
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("attendance_policies")
 }
 
 model AttendanceAnomaly {
-  id                String          @id @default(cuid())
+  id String @id @default(cuid())
 
   // Relazioni
-  user              User            @relation(fields: [userId], references: [id])
-  userId            String          @map("user_id")
-  venue             Venue           @relation(fields: [venueId], references: [id])
-  venueId           String          @map("venue_id")
-  record            AttendanceRecord? @relation(fields: [recordId], references: [id])
-  recordId          String?         @map("record_id")
-  assignment        ShiftAssignment? @relation(fields: [assignmentId], references: [id])
-  assignmentId      String?         @map("assignment_id")
+  user         User              @relation(fields: [userId], references: [id])
+  userId       String            @map("user_id")
+  venue        Venue             @relation(fields: [venueId], references: [id])
+  venueId      String            @map("venue_id")
+  record       AttendanceRecord? @relation(fields: [recordId], references: [id])
+  recordId     String?           @map("record_id")
+  assignment   ShiftAssignment?  @relation(fields: [assignmentId], references: [id])
+  assignmentId String?           @map("assignment_id")
 
   // Dati anomalia
-  anomalyType       AnomalyType     @map("anomaly_type")
-  status            AnomalyStatus   @default(PENDING)
-  date              DateTime        @db.Date
-  description       String?
+  anomalyType AnomalyType   @map("anomaly_type")
+  status      AnomalyStatus @default(PENDING)
+  date        DateTime      @db.Date
+  description String?
 
   // Valori
-  expectedValue     String?         @map("expected_value")    // Es: "09:00"
-  actualValue       String?         @map("actual_value")      // Es: "09:25"
-  differenceMinutes Int?            @map("difference_minutes")
+  expectedValue     String? @map("expected_value") // Es: "09:00"
+  actualValue       String? @map("actual_value") // Es: "09:25"
+  differenceMinutes Int?    @map("difference_minutes")
 
   // Risoluzione
-  resolvedBy        String?         @map("resolved_by")
-  resolvedAt        DateTime?       @map("resolved_at")
-  resolutionNotes   String?         @map("resolution_notes")
+  resolvedBy      String?   @map("resolved_by")
+  resolvedAt      DateTime? @map("resolved_at")
+  resolutionNotes String?   @map("resolution_notes")
 
   // Impatto economico
-  hoursAffected     Decimal?        @map("hours_affected") @db.Decimal(4, 2)
-  costImpact        Decimal?        @map("cost_impact") @db.Decimal(10, 2)
+  hoursAffected Decimal? @map("hours_affected") @db.Decimal(4, 2)
+  costImpact    Decimal? @map("cost_impact") @db.Decimal(10, 2)
 
-  createdAt         DateTime        @default(now()) @map("created_at")
-  updatedAt         DateTime        @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([userId, date])
   @@index([venueId, status])
   @@map("attendance_anomalies")
+}
+
+// ==================== FASE 5.2: NOTIFICHE PUSH ====================
+
+model NotificationPreference {
+  id     String @id @default(cuid())
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @unique @map("user_id")
+
+  // Canali
+  pushEnabled  Boolean @default(true) @map("push_enabled")
+  emailEnabled Boolean @default(false) @map("email_enabled")
+
+  // Tipi notifica - Turni
+  newShiftPublished    Boolean @default(true) @map("new_shift_published")
+  shiftReminder        Boolean @default(true) @map("shift_reminder")
+  shiftReminderMinutes Int     @default(60) @map("shift_reminder_minutes") // Minuti prima
+  shiftSwapRequest     Boolean @default(true) @map("shift_swap_request")
+
+  // Tipi notifica - Presenze
+  anomalyCreated  Boolean @default(true) @map("anomaly_created")
+  anomalyResolved Boolean @default(true) @map("anomaly_resolved")
+
+  // Tipi notifica - Ferie
+  leaveApproved Boolean @default(true) @map("leave_approved")
+  leaveRejected Boolean @default(true) @map("leave_rejected")
+  leaveReminder Boolean @default(true) @map("leave_reminder")
+
+  // Tipi notifica - Manager
+  newLeaveRequest Boolean @default(true) @map("new_leave_request")
+  staffAnomaly    Boolean @default(true) @map("staff_anomaly")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("notification_preferences")
+}
+
+model NotificationLog {
+  id     String @id @default(cuid())
+  userId String @map("user_id")
+
+  type  NotificationType
+  title String
+  body  String
+  data  Json? // Payload aggiuntivo
+
+  channel NotificationChannel @default(PUSH)
+  status  NotificationStatus  @default(SENT)
+
+  sentAt      DateTime  @default(now()) @map("sent_at")
+  deliveredAt DateTime? @map("delivered_at")
+  readAt      DateTime? @map("read_at")
+
+  errorMsg String? @map("error_msg")
+
+  // Riferimenti opzionali
+  referenceId   String? @map("reference_id") // ID dell'entità correlata
+  referenceType String? @map("reference_type") // "LeaveRequest", "ShiftSchedule", etc.
+
+  @@index([userId, sentAt])
+  @@index([type, status])
+  @@map("notification_logs")
+}
+
+enum NotificationType {
+  SHIFT_PUBLISHED // Nuovi turni pubblicati
+  SHIFT_REMINDER // Promemoria turno
+  SHIFT_SWAP_REQUEST // Richiesta scambio turno
+  SHIFT_SWAP_APPROVED // Scambio approvato
+  SHIFT_SWAP_REJECTED // Scambio rifiutato
+  ANOMALY_CREATED // Nuova anomalia presenze
+  ANOMALY_RESOLVED // Anomalia risolta
+  LEAVE_APPROVED // Ferie approvate
+  LEAVE_REJECTED // Ferie rifiutate
+  LEAVE_REMINDER // Promemoria ferie imminenti
+  NEW_LEAVE_REQUEST // Nuova richiesta ferie (manager)
+  STAFF_ANOMALY // Anomalia staff (manager)
+  GENERAL // Notifica generica
+}
+
+enum NotificationChannel {
+  PUSH
+  EMAIL
+  IN_APP
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+  READ
+}
+
+model PushSubscription {
+  id     String @id @default(cuid())
+  userId String @map("user_id")
+
+  // FCM Token
+  fcmToken String @unique @map("fcm_token")
+
+  // Metadata dispositivo
+  deviceName  String? @map("device_name")
+  deviceType  String? @map("device_type") // "ios", "android", "web"
+  browserName String? @map("browser_name")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  lastUsedAt DateTime? @map("last_used_at")
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }

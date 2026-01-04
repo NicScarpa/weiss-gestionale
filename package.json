@@ -45,6 +45,7 @@
     "decimal.js": "^10.6.0",
     "dotenv": "^17.2.3",
     "exceljs": "^4.4.0",
+    "firebase-admin": "^13.6.0",
     "idb": "^8.0.3",
     "jspdf": "^3.0.4",
     "jspdf-autotable": "^5.0.2",
