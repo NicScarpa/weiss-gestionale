@@ -622,6 +622,75 @@ export function AttendanceSection({
           )}
         </CardContent>
       </Card>
+
+      {/* RIEPILOGO COSTI PERSONALE */}
+      {(fixedAttendance.length > 0 || extraAttendance.length > 0) && (
+        <Card className="bg-muted/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Riepilogo Costi Personale</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2 text-sm">
+              {/* Staff Fisso */}
+              {fixedAttendance.filter(a => a.statusCode === 'P').length > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    Dipendenti ({fixedAttendance.filter(a => a.statusCode === 'P').length} presenti):
+                  </span>
+                  <span className="font-mono">
+                    {fixedAttendance
+                      .filter(a => a.statusCode === 'P')
+                      .reduce((sum, a) => sum + (a.hours || 0), 0)
+                      .toFixed(1)}h
+                    {fixedAttendance.some(a => a.hourlyRate) && (
+                      <span className="ml-2 text-muted-foreground">
+                        ≈ €{fixedAttendance
+                          .filter(a => a.statusCode === 'P')
+                          .reduce((sum, a) => sum + ((a.hours || 0) * (a.hourlyRate || 0)), 0)
+                          .toFixed(2)}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              )}
+
+              {/* Extra */}
+              {extraAttendance.length > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    Extra ({extraAttendance.length}):
+                  </span>
+                  <span className="font-mono">
+                    {extraAttendance.reduce((sum, a) => sum + (a.hours || 0), 0).toFixed(1)}h
+                    {extraAttendance.some(a => a.totalPay) && (
+                      <span className="ml-2">
+                        = €{extraAttendance.reduce((sum, a) => sum + (a.totalPay || 0), 0).toFixed(2)}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              )}
+
+              {/* Totale */}
+              {(fixedAttendance.some(a => a.hourlyRate && a.statusCode === 'P') || extraAttendance.some(a => a.totalPay)) && (
+                <>
+                  <div className="border-t pt-2 flex justify-between font-medium">
+                    <span>Costo Totale Stimato:</span>
+                    <span className="font-mono">
+                      €{(
+                        fixedAttendance
+                          .filter(a => a.statusCode === 'P')
+                          .reduce((sum, a) => sum + ((a.hours || 0) * (a.hourlyRate || 0)), 0) +
+                        extraAttendance.reduce((sum, a) => sum + (a.totalPay || 0), 0)
+                      ).toFixed(2)}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
     </TooltipProvider>
   )

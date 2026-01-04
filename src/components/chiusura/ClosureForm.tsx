@@ -530,6 +530,8 @@ export function ClosureForm({
         onChange={handleAttendanceChange}
         staffMembers={staffMembers}
         disabled={isReadOnly}
+        closureDate={format(formData.date, 'yyyy-MM-dd')}
+        venueId={venueId}
       />
 
       {/* Note */}

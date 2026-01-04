@@ -20,6 +20,8 @@ import {
   Clock,
   Euro,
   RefreshCw,
+  FileDown,
+  FileSpreadsheet,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
@@ -228,19 +230,48 @@ export default function ScheduleDetailPage({ params }: PageProps) {
           </div>
         </div>
 
-        {schedule.status !== 'PUBLISHED' && schedule.status !== 'ARCHIVED' && (
-          <div className="flex gap-2">
-            {schedule.status === 'GENERATED' || schedule.status === 'REVIEW' ? (
+        <div className="flex gap-2">
+          {/* Export buttons - always visible when there are assignments */}
+          {totalAssignments > 0 && (
+            <>
               <Button
-                onClick={() => publishMutation.mutate()}
-                disabled={publishMutation.isPending}
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  window.open(`/api/schedules/${resolvedParams.id}/export/pdf`, '_blank')
+                }}
               >
-                <Send className="h-4 w-4 mr-2" />
-                Pubblica
+                <FileDown className="h-4 w-4 mr-2" />
+                PDF
               </Button>
-            ) : null}
-          </div>
-        )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  window.open(`/api/schedules/${resolvedParams.id}/export/excel`, '_blank')
+                }}
+              >
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                Excel
+              </Button>
+            </>
+          )}
+
+          {/* Publish button - only for unpublished schedules */}
+          {schedule.status !== 'PUBLISHED' && schedule.status !== 'ARCHIVED' && (
+            <>
+              {(schedule.status === 'GENERATED' || schedule.status === 'REVIEW') && (
+                <Button
+                  onClick={() => publishMutation.mutate()}
+                  disabled={publishMutation.isPending}
+                >
+                  <Send className="h-4 w-4 mr-2" />
+                  Pubblica
+                </Button>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Stats Cards */}
