@@ -97,10 +97,14 @@ export async function getUnsyncedPunches(): Promise<OfflinePunch[]> {
   return new Promise((resolve, reject) => {
     const transaction = database.transaction([STORE_NAME], 'readonly')
     const store = transaction.objectStore(STORE_NAME)
-    const index = store.index('synced')
-    const request = index.getAll(IDBKeyRange.only(false))
+    const request = store.getAll()
 
-    request.onsuccess = () => resolve(request.result)
+    request.onsuccess = () => {
+      // Filtra manualmente le timbrature non sincronizzate
+      const allPunches = request.result as OfflinePunch[]
+      const unsynced = allPunches.filter(punch => !punch.synced)
+      resolve(unsynced)
+    }
     request.onerror = () => reject(new Error('Errore lettura punch offline'))
   })
 }

@@ -101,33 +101,35 @@ export function PunchButton({
     loadPendingCount()
   }, [])
 
-  // Funzione per sincronizzare
+  // Funzione per sincronizzare - usa useCallback per avere sempre i valori aggiornati
   const performSync = async () => {
-    if (pendingCount > 0 && !isSyncing) {
-      setIsSyncing(true)
-      try {
-        const result = await syncAllPendingPunches()
-        if (result.synced > 0) {
-          toast.success(`${result.synced} timbrature sincronizzate`)
-          queryClient.invalidateQueries({ queryKey: ['attendance-current'] })
-          queryClient.invalidateQueries({ queryKey: ['attendance-today'] })
-        }
-        if (result.failed > 0) {
-          toast.warning(`${result.failed} timbrature non sincronizzate`)
-        }
-        const newCount = await getPendingPunchCount()
-        setPendingCount(newCount)
-      } catch (error) {
-        console.error('Errore sync:', error)
-      } finally {
-        setIsSyncing(false)
+    // Controlla direttamente da IndexedDB per evitare stale closures
+    const currentPending = await getPendingPunchCount()
+    if (currentPending === 0) return
+
+    setIsSyncing(true)
+    try {
+      const result = await syncAllPendingPunches()
+      if (result.synced > 0) {
+        toast.success(`${result.synced} timbrature sincronizzate`)
+        queryClient.invalidateQueries({ queryKey: ['attendance-current'] })
+        queryClient.invalidateQueries({ queryKey: ['attendance-today'] })
       }
+      if (result.failed > 0) {
+        toast.warning(`${result.failed} timbrature non sincronizzate`)
+      }
+      const newCount = await getPendingPunchCount()
+      setPendingCount(newCount)
+    } catch (error) {
+      console.error('Errore sync:', error)
+    } finally {
+      setIsSyncing(false)
     }
   }
 
   // Sincronizza quando torna online
   useEffect(() => {
-    if (isOnline) {
+    if (isOnline && !isSyncing) {
       performSync()
     }
   }, [isOnline])
@@ -145,7 +147,7 @@ export function PunchButton({
     return () => {
       navigator.serviceWorker?.removeEventListener('message', handleServiceWorkerMessage)
     }
-  }, [pendingCount, isSyncing])
+  }, [])
 
   const config = buttonConfig[status]
   const Icon = config.icon
