@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -9,8 +11,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Users, UserPlus, Plus, Trash2 } from 'lucide-react'
+import { Users, UserPlus, Plus, Trash2, Calendar, RefreshCw, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 
 // Tipo per presenza
 export interface AttendanceData {
@@ -25,6 +35,29 @@ export interface AttendanceData {
   isPaid?: boolean
   notes?: string
   isExtra?: boolean // Flag per distinguere staff fisso da extra
+  // Nuovi campi per integrazione turni
+  scheduledHours?: number
+  shiftCode?: string
+  shiftName?: string
+  shiftColor?: string
+}
+
+// Tipo per turno schedulato
+interface ScheduledShift {
+  id: string
+  userId: string
+  userName: string
+  shiftCode: string
+  shiftName: string
+  shiftColor: string
+  startTime: string
+  endTime: string
+  scheduledHours: number
+  isFixedStaff: boolean
+  hourlyRate: number | null
+  venueId: string
+  venueName: string
+  status: string
 }
 
 // Opzioni turno
@@ -60,6 +93,19 @@ interface AttendanceSectionProps {
   staffMembers?: StaffMember[]
   disabled?: boolean
   className?: string
+  closureDate?: string // Data della chiusura per caricare turni schedulati
+  venueId?: string
+}
+
+// Fetch turni schedulati per data
+async function fetchScheduledShifts(date: string, venueId?: string): Promise<ScheduledShift[]> {
+  const url = venueId
+    ? `/api/schedules/daily?date=${date}&venueId=${venueId}`
+    : `/api/schedules/daily?date=${date}`
+  const res = await fetch(url)
+  if (!res.ok) return []
+  const data = await res.json()
+  return data.data || []
 }
 
 export function AttendanceSection({
@@ -68,7 +114,57 @@ export function AttendanceSection({
   staffMembers = [],
   disabled = false,
   className,
+  closureDate,
+  venueId,
 }: AttendanceSectionProps) {
+  const [hasLoadedFromSchedule, setHasLoadedFromSchedule] = useState(false)
+
+  // Query per turni schedulati
+  const { data: scheduledShifts, refetch: refetchShifts, isLoading: loadingShifts } = useQuery({
+    queryKey: ['scheduled-shifts', closureDate, venueId],
+    queryFn: () => fetchScheduledShifts(closureDate!, venueId),
+    enabled: !!closureDate && !hasLoadedFromSchedule,
+  })
+
+  // Pre-popola da turni schedulati se non ci sono presenze e ci sono turni
+  useEffect(() => {
+    if (
+      scheduledShifts &&
+      scheduledShifts.length > 0 &&
+      attendance.length === 0 &&
+      !hasLoadedFromSchedule
+    ) {
+      loadFromSchedule()
+    }
+  }, [scheduledShifts])
+
+  // Carica presenze da turni schedulati
+  const loadFromSchedule = () => {
+    if (!scheduledShifts || scheduledShifts.length === 0) return
+
+    const newAttendance: AttendanceData[] = scheduledShifts.map((shift) => {
+      // Determina turno MORNING/EVENING basato sull'orario
+      const startHour = new Date(shift.startTime).getHours()
+      const shiftType: 'MORNING' | 'EVENING' = startHour < 14 ? 'MORNING' : 'EVENING'
+
+      return {
+        userId: shift.userId,
+        userName: shift.userName,
+        shift: shiftType,
+        hours: shift.scheduledHours,
+        statusCode: 'P', // Default: presente
+        hourlyRate: shift.hourlyRate || undefined,
+        isExtra: !shift.isFixedStaff,
+        scheduledHours: shift.scheduledHours,
+        shiftCode: shift.shiftCode,
+        shiftName: shift.shiftName,
+        shiftColor: shift.shiftColor,
+      }
+    })
+
+    onChange(newAttendance)
+    setHasLoadedFromSchedule(true)
+  }
   // Separa staff fisso da extra
   const fixedStaff = staffMembers.filter((s) => s.isFixedStaff)
   const extraStaff = staffMembers.filter((s) => !s.isFixedStaff)
@@ -164,14 +260,51 @@ export function AttendanceSection({
     return attendance.findIndex((a) => a === att)
   }
 
+  // Calcola differenza ore
+  const getHoursDifference = (att: AttendanceData): number | null => {
+    if (att.statusCode !== 'P' || !att.scheduledHours) return null
+    const actualHours = att.hours || 0
+    return actualHours - att.scheduledHours
+  }
+
   return (
+    <TooltipProvider>
     <div className={`space-y-4 ${className || ''}`}>
+      {/* Banner turni schedulati */}
+      {closureDate && scheduledShifts && scheduledShifts.length > 0 && !hasLoadedFromSchedule && (
+        <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <Calendar className="h-5 w-5 text-blue-600" />
+          <div className="flex-1">
+            <p className="text-sm text-blue-800">
+              Trovati <strong>{scheduledShifts.length}</strong> turni schedulati per questa data.
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={loadFromSchedule}
+            disabled={disabled}
+            className="gap-1 border-blue-300 text-blue-700 hover:bg-blue-100"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Carica da turni
+          </Button>
+        </div>
+      )}
+
       {/* SEZIONE DIPENDENTI */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <CardTitle className="text-lg flex items-center gap-2">
             <Users className="h-5 w-5" />
             Dipendenti
+            {hasLoadedFromSchedule && (
+              <Badge variant="secondary" className="text-xs gap-1">
+                <Calendar className="h-3 w-3" />
+                Da turni
+              </Badge>
+            )}
           </CardTitle>
           <Button
             type="button"
@@ -193,20 +326,23 @@ export function AttendanceSection({
           ) : (
             <>
               {/* Header */}
-              <div className="grid grid-cols-[1fr_100px_70px_60px_40px] gap-3 text-xs font-medium text-muted-foreground border-b pb-2">
+              <div className="grid grid-cols-[1fr_80px_100px_70px_60px_50px_40px] gap-2 text-xs font-medium text-muted-foreground border-b pb-2">
                 <span>Dipendente</span>
+                <span>Turno Sch.</span>
                 <span>Turno</span>
                 <span className="text-center">Codice</span>
-                <span className="text-center">Ore</span>
+                <span className="text-center">Ore Sch.</span>
+                <span className="text-center">Ore Eff.</span>
                 <span></span>
               </div>
 
               {fixedAttendance.map((att) => {
                 const realIndex = getRealIndex(att)
+                const hoursDiff = getHoursDifference(att)
                 return (
                   <div
                     key={realIndex}
-                    className="grid grid-cols-[1fr_100px_70px_60px_40px] gap-3 items-center"
+                    className="grid grid-cols-[1fr_80px_100px_70px_60px_50px_40px] gap-2 items-center"
                   >
                     {/* Dipendente */}
                     <Select
@@ -228,7 +364,32 @@ export function AttendanceSection({
                       </SelectContent>
                     </Select>
 
-                    {/* Turno */}
+                    {/* Turno Schedulato (badge) */}
+                    <div className="flex justify-center">
+                      {att.shiftCode ? (
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Badge
+                              variant="outline"
+                              className="text-xs"
+                              style={{
+                                borderColor: att.shiftColor || '#6B7280',
+                                backgroundColor: `${att.shiftColor}20` || undefined,
+                              }}
+                            >
+                              {att.shiftCode}
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {att.shiftName}
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </div>
+
+                    {/* Turno Effettivo */}
                     <Select
                       value={att.shift}
                       onValueChange={(value) =>
@@ -268,20 +429,49 @@ export function AttendanceSection({
                       </SelectContent>
                     </Select>
 
-                    {/* Ore - solo se codice = P */}
-                    <Input
-                      type="number"
-                      min="0"
-                      max="24"
-                      step="0.5"
-                      value={att.statusCode === 'P' ? (att.hours ?? '') : ''}
-                      onChange={(e) =>
-                        handleFieldChange(realIndex, 'hours', e.target.value)
-                      }
-                      disabled={disabled || att.statusCode !== 'P'}
-                      className="font-mono"
-                      placeholder={att.statusCode === 'P' ? '0' : '-'}
-                    />
+                    {/* Ore Schedulate */}
+                    <div className="text-center text-sm text-muted-foreground font-mono">
+                      {att.scheduledHours?.toFixed(1) || '-'}
+                    </div>
+
+                    {/* Ore Effettive - con indicatore differenza */}
+                    <div className="relative">
+                      <Input
+                        type="number"
+                        min="0"
+                        max="24"
+                        step="0.5"
+                        value={att.statusCode === 'P' ? (att.hours ?? '') : ''}
+                        onChange={(e) =>
+                          handleFieldChange(realIndex, 'hours', e.target.value)
+                        }
+                        disabled={disabled || att.statusCode !== 'P'}
+                        className={cn(
+                          'font-mono text-center',
+                          hoursDiff && hoursDiff !== 0 && 'pr-6',
+                          hoursDiff && hoursDiff > 0 && 'border-amber-400',
+                          hoursDiff && hoursDiff < 0 && 'border-red-400'
+                        )}
+                        placeholder={att.statusCode === 'P' ? '0' : '-'}
+                      />
+                      {hoursDiff !== null && hoursDiff !== 0 && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="absolute right-1 top-1/2 -translate-y-1/2">
+                              <AlertTriangle
+                                className={cn(
+                                  'h-4 w-4',
+                                  hoursDiff > 0 ? 'text-amber-500' : 'text-red-500'
+                                )}
+                              />
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {hoursDiff > 0 ? '+' : ''}{hoursDiff.toFixed(1)}h rispetto allo schedulato
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
 
                     {/* Rimuovi */}
                     <Button
@@ -433,5 +623,6 @@ export function AttendanceSection({
         </CardContent>
       </Card>
     </div>
+    </TooltipProvider>
   )
 }

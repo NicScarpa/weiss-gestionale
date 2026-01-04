@@ -28,14 +28,57 @@ model User {
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
-  // Relazioni
+  // === FASE 4: Dati contrattuali estesi ===
+  contractType        ContractType?  @map("contract_type")
+  contractHoursWeek   Decimal?       @map("contract_hours_week") @db.Decimal(4, 1)
+  hireDate            DateTime?      @map("hire_date") @db.Date
+  terminationDate     DateTime?      @map("termination_date") @db.Date
+
+  // Tariffe orarie estese
+  hourlyRateBase      Decimal?       @map("hourly_rate_base") @db.Decimal(10, 2)
+  hourlyRateExtra     Decimal?       @map("hourly_rate_extra") @db.Decimal(10, 2)
+  hourlyRateHoliday   Decimal?       @map("hourly_rate_holiday") @db.Decimal(10, 2)
+  hourlyRateNight     Decimal?       @map("hourly_rate_night") @db.Decimal(10, 2)
+
+  // Accesso portale dipendente
+  portalEnabled       Boolean        @default(false) @map("portal_enabled")
+  portalPin           String?        @map("portal_pin")
+  appToken            String?        @map("app_token")
+
+  // Preferenze notifiche
+  notifyEmail         Boolean        @default(true) @map("notify_email")
+  notifyPush          Boolean        @default(true) @map("notify_push")
+  notifyWhatsapp      Boolean        @default(false) @map("notify_whatsapp")
+  whatsappNumber      String?        @map("whatsapp_number")
+
+  // Skills e competenze
+  skills              String[]       @default([])
+  canWorkAlone        Boolean        @default(false) @map("can_work_alone")
+  canHandleCash       Boolean        @default(true) @map("can_handle_cash")
+
+  // Relazioni esistenti
   submittedClosures   DailyClosure[] @relation("SubmittedBy")
   validatedClosures   DailyClosure[] @relation("ValidatedBy")
   journalEntries      JournalEntry[]
   attendanceRecords   DailyAttendance[]
   budgetsCreated      Budget[]
 
+  // Relazioni Fase 4
+  constraints               EmployeeConstraint[]
+  relationshipConstraints   RelationshipConstraintUser[]
+  shiftAssignments          ShiftAssignment[]
+  leaveRequests             LeaveRequest[]
+  leaveBalances             LeaveBalance[]
+  approvedLeaveRequests     LeaveRequest[]     @relation("ApprovedBy")
+
   @@map("users")
+}
+
+// === FASE 4: TIPO CONTRATTO ===
+enum ContractType {
+  FISSO
+  EXTRA
+  INTERMITTENTE
 }
 
 model Role {
@@ -85,6 +128,10 @@ model Venue {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
+  // Coordinate per geolocalizzazione (Fase 4.4)
+  latitude     Decimal? @db.Decimal(10, 8)
+  longitude    Decimal? @db.Decimal(11, 8)
+
   users            User[]
   closures         DailyClosure[]
   journalEntries   JournalEntry[]
@@ -92,6 +139,13 @@ model Venue {
   registerBalances RegisterBalance[]
   initialBalances  InitialBalance[]
   budgets          Budget[]
+
+  // Relazioni Fase 4
+  employeeConstraints     EmployeeConstraint[]
+  relationshipConstraints RelationshipConstraint[]
+  shiftDefinitions        ShiftDefinition[]
+  shiftSchedules          ShiftSchedule[]
+  shiftAssignments        ShiftAssignment[]
 
   @@map("venues")
 }
@@ -517,4 +571,309 @@ model InitialBalance {
 
   @@unique([venueId, year])
   @@map("initial_balances")
+}
+
+// ==================== FASE 4: VINCOLI DIPENDENTI ====================
+
+model EmployeeConstraint {
+  id               String         @id @default(cuid())
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId           String         @map("user_id")
+  venue            Venue?         @relation(fields: [venueId], references: [id])
+  venueId          String?        @map("venue_id")
+
+  constraintType   ConstraintType @map("constraint_type")
+  config           Json           // Configurazione flessibile del vincolo
+
+  validFrom        DateTime?      @map("valid_from") @db.Date
+  validTo          DateTime?      @map("valid_to") @db.Date
+
+  priority         Int            @default(5)  // 1-10
+  isHardConstraint Boolean        @default(true) @map("is_hard_constraint")
+
+  createdById      String?        @map("created_by")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+  notes            String?
+
+  @@index([userId])
+  @@index([constraintType])
+  @@map("employee_constraints")
+}
+
+enum ConstraintType {
+  AVAILABILITY       // Disponibilità turni/giorni
+  MAX_HOURS          // Max ore settimanali/giornaliere
+  MIN_REST           // Riposo minimo tra turni
+  PREFERRED_SHIFT    // Turno preferito (soft)
+  BLOCKED_DAY        // Giorno bloccato fisso
+  SKILL_REQUIRED     // Competenze richieste
+  CONSECUTIVE_DAYS   // Max giorni consecutivi
+}
+
+model RelationshipConstraint {
+  id               String            @id @default(cuid())
+  venue            Venue?            @relation(fields: [venueId], references: [id])
+  venueId          String?           @map("venue_id")
+
+  constraintType   RelConstraintType @map("constraint_type")
+  config           Json              // Configurazione del vincolo
+
+  validFrom        DateTime?         @map("valid_from") @db.Date
+  validTo          DateTime?         @map("valid_to") @db.Date
+
+  priority         Int               @default(5)
+  isHardConstraint Boolean           @default(true) @map("is_hard_constraint")
+
+  createdById      String?           @map("created_by")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  notes            String?
+
+  users            RelationshipConstraintUser[]
+
+  @@map("relationship_constraints")
+}
+
+enum RelConstraintType {
+  SAME_DAY_OFF      // Giorno libero comune (es. coppia)
+  NEVER_TOGETHER    // Mai stesso turno
+  ALWAYS_TOGETHER   // Sempre insieme (es. senior con junior)
+  MIN_OVERLAP       // Minimo overlap per passaggio consegne
+  MAX_TOGETHER      // Massimo ore insieme a settimana
+}
+
+model RelationshipConstraintUser {
+  constraint       RelationshipConstraint @relation(fields: [constraintId], references: [id], onDelete: Cascade)
+  constraintId     String                 @map("constraint_id")
+  user             User                   @relation(fields: [userId], references: [id])
+  userId           String                 @map("user_id")
+
+  @@id([constraintId, userId])
+  @@map("relationship_constraint_users")
+}
+
+// ==================== FASE 4: DEFINIZIONI TURNI ====================
+
+model ShiftDefinition {
+  id               String   @id @default(cuid())
+  venue            Venue    @relation(fields: [venueId], references: [id])
+  venueId          String   @map("venue_id")
+
+  name             String   // "Mattina", "Aperitivo", "Sera"
+  code             String   // "M", "A", "S"
+  color            String?  // HEX color (#FCD34D)
+
+  startTime        DateTime @map("start_time") @db.Time()
+  endTime          DateTime @map("end_time") @db.Time()
+  breakMinutes     Int      @default(0) @map("break_minutes")
+
+  minStaff         Int      @default(1) @map("min_staff")
+  maxStaff         Int?     @map("max_staff")
+  requiredSkills   String[] @default([]) @map("required_skills")
+
+  rateMultiplier   Decimal  @default(1.0) @map("rate_multiplier") @db.Decimal(3, 2)
+
+  isActive         Boolean  @default(true) @map("is_active")
+  position         Int      @default(0)
+
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  assignments      ShiftAssignment[]
+
+  @@unique([venueId, code])
+  @@map("shift_definitions")
+}
+
+// ==================== FASE 4: PIANIFICAZIONE TURNI ====================
+
+model ShiftSchedule {
+  id               String         @id @default(cuid())
+  venue            Venue          @relation(fields: [venueId], references: [id])
+  venueId          String         @map("venue_id")
+
+  name             String?        // "Settimana 6-12 Gen 2026"
+  startDate        DateTime       @map("start_date") @db.Date
+  endDate          DateTime       @map("end_date") @db.Date
+
+  status           ScheduleStatus @default(DRAFT)
+
+  // Generazione AI
+  generationParams Json?          @map("generation_params")
+  generationLog    Json?          @map("generation_log")
+  generationScore  Decimal?       @map("generation_score") @db.Decimal(5, 2)
+
+  // Workflow
+  createdById      String?        @map("created_by")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  publishedById    String?        @map("published_by")
+  publishedAt      DateTime?      @map("published_at")
+
+  notes            String?
+
+  assignments      ShiftAssignment[]
+
+  @@unique([venueId, startDate, endDate])
+  @@map("shift_schedules")
+}
+
+enum ScheduleStatus {
+  DRAFT
+  GENERATED
+  REVIEW
+  PUBLISHED
+  ARCHIVED
+}
+
+model ShiftAssignment {
+  id                  String          @id @default(cuid())
+  schedule            ShiftSchedule   @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  scheduleId          String          @map("schedule_id")
+
+  user                User            @relation(fields: [userId], references: [id])
+  userId              String          @map("user_id")
+  shiftDefinition     ShiftDefinition? @relation(fields: [shiftDefinitionId], references: [id])
+  shiftDefinitionId   String?         @map("shift_definition_id")
+
+  date                DateTime        @db.Date
+  startTime           DateTime        @map("start_time") @db.Time()
+  endTime             DateTime        @map("end_time") @db.Time()
+  breakMinutes        Int             @default(0) @map("break_minutes")
+
+  venue               Venue           @relation(fields: [venueId], references: [id])
+  venueId             String          @map("venue_id")
+  workStation         String?         @map("work_station")
+
+  status              AssignmentStatus @default(SCHEDULED)
+
+  // Per scambi turno (futuro)
+  swapRequestedById   String?         @map("swap_requested_by")
+  swapWithUserId      String?         @map("swap_with_user_id")
+  swapStatus          SwapStatus?     @map("swap_status")
+
+  // Calcolo costi
+  hoursScheduled      Decimal?        @map("hours_scheduled") @db.Decimal(4, 2)
+  hourlyRateApplied   Decimal?        @map("hourly_rate_applied") @db.Decimal(10, 2)
+  costEstimated       Decimal?        @map("cost_estimated") @db.Decimal(10, 2)
+
+  // Effettivo (da presenze)
+  actualStart         DateTime?       @map("actual_start") @db.Time()
+  actualEnd           DateTime?       @map("actual_end") @db.Time()
+  hoursWorked         Decimal?        @map("hours_worked") @db.Decimal(4, 2)
+  costActual          Decimal?        @map("cost_actual") @db.Decimal(10, 2)
+
+  notes               String?
+
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+
+  @@unique([scheduleId, userId, date, startTime])
+  @@index([date])
+  @@index([userId])
+  @@map("shift_assignments")
+}
+
+enum AssignmentStatus {
+  SCHEDULED    // Pianificato
+  CONFIRMED    // Confermato dal dipendente
+  SWAPPED      // Scambiato
+  ABSENT       // Assente
+  WORKED       // Lavorato
+}
+
+enum SwapStatus {
+  PENDING      // In attesa conferma collega
+  APPROVED     // Approvato
+  REJECTED     // Rifiutato
+}
+
+// ==================== FASE 4: FERIE E PERMESSI ====================
+
+model LeaveType {
+  id               String   @id @default(cuid())
+  code             String   @unique  // "FE", "ROL", "MA", etc.
+  name             String   // "Ferie", "Permesso ROL", "Malattia"
+  color            String?
+  icon             String?
+
+  requiresApproval Boolean  @default(true) @map("requires_approval")
+  requiresDocument Boolean  @default(false) @map("requires_document")
+  maxDaysAdvance   Int?     @map("max_days_advance")
+  minDaysAdvance   Int?     @map("min_days_advance")
+
+  affectsAccrual   Boolean  @default(true) @map("affects_accrual")
+  paid             Boolean  @default(true)
+
+  isActive         Boolean  @default(true) @map("is_active")
+
+  requests         LeaveRequest[]
+  balances         LeaveBalance[]
+
+  @@map("leave_types")
+}
+
+model LeaveRequest {
+  id               String      @id @default(cuid())
+  user             User        @relation(fields: [userId], references: [id])
+  userId           String      @map("user_id")
+  leaveType        LeaveType   @relation(fields: [leaveTypeId], references: [id])
+  leaveTypeId      String      @map("leave_type_id")
+
+  startDate        DateTime    @map("start_date") @db.Date
+  endDate          DateTime    @map("end_date") @db.Date
+
+  isPartialDay     Boolean     @default(false) @map("is_partial_day")
+  startTime        DateTime?   @map("start_time") @db.Time()
+  endTime          DateTime?   @map("end_time") @db.Time()
+
+  daysRequested    Decimal?    @map("days_requested") @db.Decimal(4, 2)
+  hoursRequested   Decimal?    @map("hours_requested") @db.Decimal(5, 2)
+
+  status           LeaveStatus @default(PENDING)
+
+  requestedAt      DateTime    @default(now()) @map("requested_at")
+
+  approvedBy       User?       @relation("ApprovedBy", fields: [approvedById], references: [id])
+  approvedById     String?     @map("approved_by")
+  approvedAt       DateTime?   @map("approved_at")
+  rejectionReason  String?     @map("rejection_reason")
+
+  documentUrl      String?     @map("document_url")
+  documentUploadedAt DateTime? @map("document_uploaded_at")
+
+  notes            String?
+  managerNotes     String?     @map("manager_notes")
+
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([startDate, endDate])
+  @@index([status])
+  @@map("leave_requests")
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model LeaveBalance {
+  id               String    @id @default(cuid())
+  user             User      @relation(fields: [userId], references: [id])
+  userId           String    @map("user_id")
+  leaveType        LeaveType @relation(fields: [leaveTypeId], references: [id])
+  leaveTypeId      String    @map("leave_type_id")
+  year             Int
+
+  accrued          Decimal   @default(0) @db.Decimal(6, 2)  // Maturato
+  used             Decimal   @default(0) @db.Decimal(6, 2)  // Usato
+  pending          Decimal   @default(0) @db.Decimal(6, 2)  // In attesa approvazione
+  carriedOver      Decimal   @default(0) @map("carried_over") @db.Decimal(6, 2)  // Riporto anno precedente
+
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@unique([userId, leaveTypeId, year])
+  @@map("leave_balances")
 }

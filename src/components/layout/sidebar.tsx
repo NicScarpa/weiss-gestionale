@@ -11,7 +11,10 @@ import {
   BarChart3,
   Settings,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Users,
+  Calendar,
+  Palmtree,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'
@@ -22,6 +25,9 @@ const navigation = [
   { name: 'Prima Nota', href: '/prima-nota', icon: BookOpen },
   { name: 'Budget', href: '/budget', icon: Calculator },
   { name: 'Report', href: '/report', icon: BarChart3 },
+  { name: 'Staff', href: '/staff', icon: Users },
+  { name: 'Turni', href: '/turni', icon: Calendar },
+  { name: 'Ferie/Permessi', href: '/ferie-permessi', icon: Palmtree },
   { name: 'Impostazioni', href: '/impostazioni', icon: Settings },
 ]
 
