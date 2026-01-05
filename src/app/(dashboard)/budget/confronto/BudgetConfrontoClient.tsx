@@ -9,6 +9,8 @@ import {
   AlertTriangle,
   BarChart3,
   RefreshCw,
+  List,
+  FolderTree,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -34,6 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
 import { formatCurrency } from '@/lib/constants'
 import { toast } from 'sonner'
@@ -47,6 +50,7 @@ import {
   formatVariancePercent,
   getVarianceColor,
 } from '@/lib/budget-utils'
+import { BudgetCategoryRow } from '@/components/budget/BudgetCategoryRow'
 
 interface Venue {
   id: string
@@ -80,6 +84,49 @@ interface Summary {
   alertsCount: { active: number; acknowledged: number; resolved: number }
 }
 
+interface MonthlyWithAnnual {
+  jan: number
+  feb: number
+  mar: number
+  apr: number
+  may: number
+  jun: number
+  jul: number
+  aug: number
+  sep: number
+  oct: number
+  nov: number
+  dec: number
+  annual: number
+}
+
+interface CategoryData {
+  id: string
+  code: string
+  name: string
+  categoryType: 'REVENUE' | 'COST' | 'KPI' | 'TAX' | 'INVESTMENT' | 'VAT'
+  benchmarkPercentage: number | null
+  alertThresholdPercent: number
+  color: string | null
+  icon: string | null
+  level: number
+  parentId: string | null
+  displayOrder: number
+  budget: MonthlyWithAnnual
+  actual: MonthlyWithAnnual
+  variance: MonthlyWithAnnual
+  percentOfRevenue: MonthlyWithAnnual
+  status: 'ok' | 'warning' | 'alert'
+  children: CategoryData[]
+}
+
+interface CategoryAggregation {
+  budgetId: string
+  year: number
+  venue: { id: string; name: string; code: string }
+  categories: CategoryData[]
+}
+
 interface BudgetConfrontoClientProps {
   venues: Venue[]
   availableYears: number[]
@@ -95,7 +142,9 @@ export function BudgetConfrontoClient({
 }: BudgetConfrontoClientProps) {
   const [comparisons, setComparisons] = useState<Comparison[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
+  const [categoryData, setCategoryData] = useState<CategoryAggregation | null>(null)
   const [loading, setLoading] = useState(true)
+  const [viewMode, setViewMode] = useState<'categories' | 'accounts'>('categories')
 
   const [filters, setFilters] = useState({
     venueId: defaultVenueId || venues[0]?.id || '',
@@ -124,11 +173,27 @@ export function BudgetConfrontoClient({
       const data = await res.json()
       setComparisons(data.comparisons)
       setSummary(data.summary)
-    } catch (error: any) {
+
+      // Se abbiamo un budgetId, carichiamo anche le categorie
+      if (data.summary?.budgetId) {
+        try {
+          const catRes = await fetch(`/api/budget/${data.summary.budgetId}/categories`)
+          if (catRes.ok) {
+            const catData = await catRes.json()
+            setCategoryData(catData)
+          }
+        } catch {
+          console.warn('Impossibile caricare categorie budget')
+        }
+      }
+    } catch (error: unknown) {
       console.error('Errore fetch confronto:', error)
-      toast.error(error.message)
+      if (error instanceof Error) {
+        toast.error(error.message)
+      }
       setComparisons([])
       setSummary(null)
+      setCategoryData(null)
     } finally {
       setLoading(false)
     }
@@ -411,70 +476,170 @@ export function BudgetConfrontoClient({
             </Card>
           </div>
 
-          {/* Comparison Table */}
+          {/* Comparison Table with Tabs */}
           <Card>
             <CardHeader>
-              <CardTitle>Dettaglio per Conto</CardTitle>
-              <CardDescription>
-                Confronto budget vs consuntivo per ogni conto
-              </CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Dettaglio Confronto</CardTitle>
+                  <CardDescription>
+                    Confronto budget vs consuntivo
+                  </CardDescription>
+                </div>
+                <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'categories' | 'accounts')}>
+                  <TabsList>
+                    <TabsTrigger value="categories" className="flex items-center gap-2">
+                      <FolderTree className="h-4 w-4" />
+                      Categorie
+                    </TabsTrigger>
+                    <TabsTrigger value="accounts" className="flex items-center gap-2">
+                      <List className="h-4 w-4" />
+                      Conti
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="sticky left-0 bg-background z-10 min-w-[200px]">
-                        Conto
-                      </TableHead>
-                      <TableHead className="text-center">Tipo</TableHead>
-                      <TableHead className="text-right">Budget</TableHead>
-                      <TableHead className="text-right">Consuntivo</TableHead>
-                      <TableHead className="text-right">Scostamento</TableHead>
-                      <TableHead className="text-center">%</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {comparisons.length === 0 ? (
+              {viewMode === 'categories' ? (
+                /* Categories View */
+                categoryData && categoryData.categories.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b bg-muted/50">
+                          <th className="p-2 text-left font-medium text-sm sticky left-0 bg-muted/50 z-10 min-w-[200px]">
+                            Categoria
+                          </th>
+                          <th className="p-2 text-right font-medium text-sm min-w-[100px]">
+                            Budget
+                          </th>
+                          <th className="p-2 text-right font-medium text-sm min-w-[100px]">
+                            Actual
+                          </th>
+                          <th className="p-2 text-right font-medium text-sm min-w-[100px]">
+                            Varianza
+                          </th>
+                          <th className="p-2 text-right font-medium text-sm min-w-[80px]">
+                            % Ric.
+                          </th>
+                          <th className="p-2 text-right font-medium text-sm min-w-[80px]">
+                            Bench.
+                          </th>
+                          <th className="p-2 text-center font-medium text-sm min-w-[50px]">
+                            St.
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {/* Ricavi */}
+                        {categoryData.categories.filter(c => c.categoryType === 'REVENUE').length > 0 && (
+                          <>
+                            <tr className="bg-green-50/50">
+                              <td colSpan={7} className="p-2 font-semibold text-green-700 text-sm">
+                                RICAVI
+                              </td>
+                            </tr>
+                            {categoryData.categories
+                              .filter(c => c.categoryType === 'REVENUE')
+                              .map((cat) => (
+                                <BudgetCategoryRow
+                                  key={cat.id}
+                                  category={cat}
+                                  selectedMonth={null}
+                                />
+                              ))}
+                          </>
+                        )}
+                        {/* Costi */}
+                        {categoryData.categories.filter(c => c.categoryType !== 'REVENUE').length > 0 && (
+                          <>
+                            <tr className="bg-red-50/50">
+                              <td colSpan={7} className="p-2 font-semibold text-red-700 text-sm">
+                                COSTI
+                              </td>
+                            </tr>
+                            {categoryData.categories
+                              .filter(c => c.categoryType !== 'REVENUE')
+                              .map((cat) => (
+                                <BudgetCategoryRow
+                                  key={cat.id}
+                                  category={cat}
+                                  selectedMonth={null}
+                                />
+                              ))}
+                          </>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="py-8 text-center text-muted-foreground">
+                    <FolderTree className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>Nessuna categoria configurata</p>
+                    <p className="text-sm mt-1">
+                      Vai a Impostazioni &gt; Categorie Budget per configurare le categorie
+                    </p>
+                  </div>
+                )
+              ) : (
+                /* Accounts View */
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                          Nessun dato disponibile
-                        </TableCell>
+                        <TableHead className="sticky left-0 bg-background z-10 min-w-[200px]">
+                          Conto
+                        </TableHead>
+                        <TableHead className="text-center">Tipo</TableHead>
+                        <TableHead className="text-right">Budget</TableHead>
+                        <TableHead className="text-right">Consuntivo</TableHead>
+                        <TableHead className="text-right">Scostamento</TableHead>
+                        <TableHead className="text-center">%</TableHead>
                       </TableRow>
-                    ) : (
-                      comparisons.map((comp) => (
-                        <TableRow key={comp.accountId}>
-                          <TableCell className="sticky left-0 bg-background z-10 font-medium">
-                            <div className="flex flex-col">
-                              <span>{comp.accountCode}</span>
-                              <span className="text-xs text-muted-foreground">
-                                {comp.accountName}
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <Badge variant={comp.accountType === 'RICAVO' ? 'default' : 'secondary'}>
-                              {comp.accountType === 'RICAVO' ? 'R' : 'C'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {formatCurrency(comp.budget.annual)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {formatCurrency(comp.actual.annual)}
-                          </TableCell>
-                          <TableCell className={`text-right font-medium ${comp.variance.annual >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {comp.variance.annual >= 0 ? '+' : ''}{formatCurrency(comp.variance.annual)}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {getVarianceBadge(comp.variancePercent.annual, comp.accountType)}
+                    </TableHeader>
+                    <TableBody>
+                      {comparisons.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                            Nessun dato disponibile
                           </TableCell>
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+                      ) : (
+                        comparisons.map((comp) => (
+                          <TableRow key={comp.accountId}>
+                            <TableCell className="sticky left-0 bg-background z-10 font-medium">
+                              <div className="flex flex-col">
+                                <span>{comp.accountCode}</span>
+                                <span className="text-xs text-muted-foreground">
+                                  {comp.accountName}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Badge variant={comp.accountType === 'RICAVO' ? 'default' : 'secondary'}>
+                                {comp.accountType === 'RICAVO' ? 'R' : 'C'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {formatCurrency(comp.budget.annual)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {formatCurrency(comp.actual.annual)}
+                            </TableCell>
+                            <TableCell className={`text-right font-medium ${comp.variance.annual >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {comp.variance.annual >= 0 ? '+' : ''}{formatCurrency(comp.variance.annual)}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {getVarianceBadge(comp.variancePercent.annual, comp.accountType)}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </>

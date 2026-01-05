@@ -163,6 +163,9 @@ model Venue {
   // Relazione con fatture elettroniche
   electronicInvoices ElectronicInvoice[]
 
+  // Relazione con target budget mensili
+  budgetTargets BudgetTarget[]
+
   @@map("venues")
 }
 
@@ -558,6 +561,7 @@ model BudgetCategory {
   // Relazioni
   accountMappings AccountBudgetMapping[]
   budgetLines     BudgetLine[]
+  alerts          BudgetAlert[]
 
   @@unique([venueId, code])
   @@index([venueId, categoryType])
@@ -646,6 +650,11 @@ model BudgetAlert {
   budget    Budget  @relation(fields: [budgetId], references: [id], onDelete: Cascade)
   budgetId  String  @map("budget_id")
   accountId String? @map("account_id")
+
+  // Relazione con categoria budget (per alert a livello categoria)
+  category   BudgetCategory? @relation(fields: [categoryId], references: [id])
+  categoryId String?         @map("category_id")
+
   month     Int?
 
   alertType       BudgetAlertType @map("alert_type")
@@ -661,6 +670,7 @@ model BudgetAlert {
 
   createdAt DateTime @default(now()) @map("created_at")
 
+  @@index([categoryId])
   @@map("budget_alerts")
 }
 
@@ -673,6 +683,25 @@ enum AlertStatus {
   ACTIVE
   ACKNOWLEDGED
   RESOLVED
+}
+
+// ==================== TARGET BUDGET MENSILI ====================
+
+model BudgetTarget {
+  id      String @id @default(cuid())
+  venue   Venue  @relation(fields: [venueId], references: [id])
+  venueId String @map("venue_id")
+
+  year  Int
+  month Int // 1-12
+
+  targetRevenue Decimal @map("target_revenue") @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([venueId, year, month])
+  @@map("budget_targets")
 }
 
 // ==================== SALDI INIZIALI ====================

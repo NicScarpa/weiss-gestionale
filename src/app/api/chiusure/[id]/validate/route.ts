@@ -6,6 +6,7 @@ import {
   generateJournalEntriesFromClosure,
   deleteJournalEntriesForClosure,
 } from '@/lib/closure-journal-entries'
+import { generateAlertsForVenue } from '@/lib/budget/alert-generator'
 
 // Schema per validazione/rifiuto
 const validateSchema = z.object({
@@ -166,9 +167,19 @@ export async function POST(
       session.user.id
     )
 
+    // Genera alert budget per la venue (async, non blocca la risposta)
+    let alertsResult = null
+    try {
+      alertsResult = await generateAlertsForVenue(closure.venueId)
+    } catch (alertError) {
+      // Log ma non blocca la validazione
+      console.error('Errore generazione alert budget:', alertError)
+    }
+
     return NextResponse.json({
       ...updated,
       journalEntries: journalResult,
+      budgetAlerts: alertsResult,
       message: 'Chiusura validata con successo',
     })
   } catch (error) {

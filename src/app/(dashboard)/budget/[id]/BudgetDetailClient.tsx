@@ -11,6 +11,8 @@ import {
   Pencil,
   Eye,
   AlertTriangle,
+  LayoutDashboard,
+  Table as TableIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -46,6 +48,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { formatCurrency } from '@/lib/constants'
 import { toast } from 'sonner'
 import {
@@ -58,6 +61,7 @@ import {
   type BudgetStatus,
 } from '@/types/budget'
 import { calculateAnnualTotal, emptyMonthlyValues } from '@/lib/budget-utils'
+import { BudgetDashboard } from '@/components/budget'
 
 interface Account {
   id: string
@@ -92,6 +96,7 @@ export function BudgetDetailClient({
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [isEditing, setIsEditing] = useState(initialEditing)
+  const [activeTab, setActiveTab] = useState<string>('dashboard')
 
   // Dialog per aggiungere riga
   const [addDialogOpen, setAddDialogOpen] = useState(false)
@@ -366,7 +371,7 @@ export function BudgetDetailClient({
           </div>
         </div>
         <div className="flex gap-2">
-          {canEdit && (
+          {canEdit && activeTab === 'editor' && (
             <>
               {isEditing ? (
                 <>
@@ -404,8 +409,28 @@ export function BudgetDetailClient({
         </div>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="dashboard" className="flex items-center gap-2">
+            <LayoutDashboard className="h-4 w-4" />
+            Dashboard
+          </TabsTrigger>
+          <TabsTrigger value="editor" className="flex items-center gap-2">
+            <TableIcon className="h-4 w-4" />
+            Editor Righe
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Dashboard Tab */}
+        <TabsContent value="dashboard" className="mt-6">
+          <BudgetDashboard budgetId={budgetId} venueName={venue.name} />
+        </TabsContent>
+
+        {/* Editor Tab */}
+        <TabsContent value="editor" className="mt-6 space-y-6">
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -517,6 +542,8 @@ export function BudgetDetailClient({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
