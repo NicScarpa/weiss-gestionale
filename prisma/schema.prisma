@@ -166,6 +166,10 @@ model Venue {
   // Relazione con target budget mensili
   budgetTargets BudgetTarget[]
 
+  // Relazioni riconciliazione bancaria
+  bankTransactions BankTransaction[]
+  importBatches    ImportBatch[]
+
   @@map("venues")
 }
 
@@ -446,6 +450,9 @@ model JournalEntry {
 
   // Relazione con fattura elettronica (opzionale)
   electronicInvoice ElectronicInvoice?
+
+  // Relazione con transazione bancaria (riconciliazione)
+  bankTransaction BankTransaction?
 
   @@map("journal_entries")
 }
@@ -1384,4 +1391,84 @@ model InvoiceDeadline {
   @@index([dueDate])
   @@index([isPaid])
   @@map("invoice_deadlines")
+}
+
+// ==================== RICONCILIAZIONE BANCARIA ====================
+
+model BankTransaction {
+  id      String @id @default(cuid())
+  venue   Venue  @relation(fields: [venueId], references: [id])
+  venueId String @map("venue_id")
+
+  // Dati da estratto conto
+  transactionDate DateTime  @map("transaction_date") @db.Date
+  valueDate       DateTime? @map("value_date") @db.Date
+  description     String    @db.VarChar(500)
+  amount          Decimal   @db.Decimal(12, 2) // + entrata, - uscita
+  balanceAfter    Decimal?  @map("balance_after") @db.Decimal(12, 2)
+
+  // Metadati import
+  bankReference String?      @map("bank_reference") @db.VarChar(100)
+  importBatch   ImportBatch? @relation(fields: [importBatchId], references: [id])
+  importBatchId String?      @map("import_batch_id")
+  importedAt    DateTime     @default(now()) @map("imported_at")
+  importSource  ImportSource @default(CSV) @map("import_source")
+
+  // Riconciliazione
+  status          ReconciliationStatus @default(PENDING)
+  matchedEntry    JournalEntry?        @relation(fields: [matchedEntryId], references: [id])
+  matchedEntryId  String?              @unique @map("matched_entry_id")
+  matchConfidence Decimal?             @map("match_confidence") @db.Decimal(3, 2) // 0.00-1.00
+  reconciledBy    String?              @map("reconciled_by")
+  reconciledAt    DateTime?            @map("reconciled_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([venueId, bankReference])
+  @@index([venueId, status])
+  @@index([transactionDate])
+  @@index([importBatchId])
+  @@map("bank_transactions")
+}
+
+model ImportBatch {
+  id      String @id @default(cuid())
+  venue   Venue  @relation(fields: [venueId], references: [id])
+  venueId String @map("venue_id")
+
+  filename    String?
+  source      ImportSource
+  recordCount Int          @map("record_count")
+
+  // Statistiche import
+  duplicatesSkipped Int @default(0) @map("duplicates_skipped")
+  errorsCount       Int @default(0) @map("errors_count")
+
+  importedBy String   @map("imported_by")
+  importedAt DateTime @default(now()) @map("imported_at")
+
+  transactions BankTransaction[]
+
+  @@index([venueId])
+  @@index([importedAt])
+  @@map("import_batches")
+}
+
+enum ImportSource {
+  CSV
+  XLSX
+  CBI_XML    // ISO 20022 XML format (CAMT.053)
+  CBI_TXT    // CBI fixed-position TXT format
+  PSD2_FABRICK
+  PSD2_TINK
+  MANUAL
+}
+
+enum ReconciliationStatus {
+  PENDING   // Non ancora processato
+  MATCHED   // Match automatico confermato
+  TO_REVIEW // Match con confidence < 90%
+  MANUAL    // Assegnato manualmente
+  IGNORED   // Ignorato dall'utente
+  UNMATCHED // Nessun match trovato
 }

@@ -1,0 +1,283 @@
+================================================================================
+           ANALISI PRD vs IMPLEMENTAZIONE - WEISS GESTIONALE
+================================================================================
+
+Data Analisi: 4 Gennaio 2026
+PRD Analizzati: PRD_v1_1.md, PRD_Modulo_Gestione_Personale_v1.0.md,
+                Budget_Section_Specifications.md
+
+================================================================================
+                           RIEPILOGO ESECUTIVO
+================================================================================
+
++---------------------------+-----------------+------------------------+
+| Fase                      | Completamento   | Stato                  |
++---------------------------+-----------------+------------------------+
+| Fase 1 - MVP              | ~85%            | Quasi completa         |
+| Fase 2 - Consolidamento   | ~20%            | In ritardo             |
+| Fase 3 - Integrazioni     | ~0%             | Non iniziata           |
+| Fase 4 - Modulo Personale | ~75%            | In corso               |
+| Fase 5 - Miglioramenti    | ~90%            | Quasi completa         |
++---------------------------+-----------------+------------------------+
+
+================================================================================
+                        FASE 1: MVP (~85% Completato)
+================================================================================
+
+1.1 AUTENTICAZIONE E RBAC [100%]
+--------------------------------------------------------------------------------
+[X] Login email/password (NextAuth.js v5)
+[X] Ruoli (admin, manager, staff)
+[X] Permessi granulari (Sistema JSON)
+[X] Multi-sede (venueId su User)
+
+1.2 CHIUSURA CASSA [95%]
+--------------------------------------------------------------------------------
+[X] Form conteggio banconote/monete
+[X] Calcolo differenza (soglia 5 EUR)
+[X] Workflow (draft -> submitted -> validated)
+[X] Presenze staff (AttendanceSection)
+[X] Spese giornaliere (ExpensesSection)
+[X] PWA offline-first (Service Worker + IndexedDB)
+[X] Export PDF/Excel
+[ ] Auto-generazione Prima Nota (PARZIALE)
+
+1.3 PRIMA NOTA [90%]
+--------------------------------------------------------------------------------
+[X] Registro CASSA/BANCA
+[X] Movimenti manuali
+[X] Filtri data/tipo/conto
+[X] Saldi progressivi
+[X] Versamento/Prelievo
+[X] Export PDF/Excel
+[ ] Riconciliazione bancaria (Fase 3)
+
+1.4 ANAGRAFICHE BASE [95%]
+--------------------------------------------------------------------------------
+[X] Sedi, Utenti, Fornitori
+[X] Piano dei conti gerarchico
+[X] Postazioni cassa
+[X] Codici presenze
+
+1.5 DASHBOARD E REPORT [85%]
+--------------------------------------------------------------------------------
+[X] KPI giornalieri
+[X] Grafico settimanale
+[X] Confronto YoY
+[ ] Forecast cash flow
+
+================================================================================
+                   FASE 2: CONSOLIDAMENTO (~20% Completato)
+================================================================================
+
+2.1 BUDGET [40%]
+--------------------------------------------------------------------------------
+[X] Schema Budget mensile
+[X] CRUD righe budget
+[ ] Categorie personalizzate **CRITICO**
+[ ] Wizard configurazione
+[ ] Drag & drop mapping conti
+[ ] Alert sforamento 10%
+
+2.2 AUTOMAZIONI [30%]
+--------------------------------------------------------------------------------
+[X] Cron job reminder turni
+[X] Cron job auto clock-out
+[ ] Auto journal entries da chiusura (PARZIALE)
+[ ] Email recap giornaliero
+[ ] Alert soglie budget
+
+2.3 IMPORT/EXPORT [20%]
+--------------------------------------------------------------------------------
+[X] Export presenze paghe
+[ ] Import fatture XML (SDI)
+[ ] Import estratto conto
+
+================================================================================
+                    FASE 3: INTEGRAZIONI (~0% Completato)
+================================================================================
+
+3.1 SDI FATTURAZIONE [0%]
+--------------------------------------------------------------------------------
+[ ] Import XML fatture (solo schema DB presente)
+[ ] Parsing automatico
+[ ] Matching fornitori
+
+3.2 TRACKING PREZZI [0%]
+--------------------------------------------------------------------------------
+[ ] Storico prezzi articolo
+[ ] Alert variazione >5%
+
+3.3 OPEN BANKING [0%]
+--------------------------------------------------------------------------------
+[ ] Connessione API bancaria
+[ ] Riconciliazione automatica
+
+================================================================================
+                  FASE 4: MODULO PERSONALE (~75% Completato)
+================================================================================
+
+4.1 ANAGRAFICA DIPENDENTI [95%]
+--------------------------------------------------------------------------------
+[X] Dati completi + contratto
+[X] Ore settimanali/costo orario
+[X] Abilitazione portale
+[ ] Foto profilo
+
+4.2 VINCOLI DIPENDENTE [70%]
+--------------------------------------------------------------------------------
+[X] Schema Constraint
+[X] API GET
+[ ] API POST
+[ ] UI gestione (PARZIALE)
+
+4.3 VINCOLI RELAZIONALI [75%]
+--------------------------------------------------------------------------------
+[X] Schema
+[X] API CRUD
+[ ] UI gestione
+
+4.4 GENERAZIONE TURNI [80%]
+--------------------------------------------------------------------------------
+[X] Algoritmo greedy
+[X] Rispetto vincoli
+[X] Workflow DRAFT -> PUBLISHED
+[ ] Scambio turni
+[ ] UI completa (PARZIALE)
+
+4.5 PORTALE DIPENDENTE [90%]
+--------------------------------------------------------------------------------
+[X] Login dedicato
+[X] Visualizzazione turni
+[X] Timbratura GPS
+[X] PWA offline-first
+[X] Richiesta ferie
+[ ] Scambio turni
+
+4.6 RILEVAZIONE PRESENZE [85%]
+--------------------------------------------------------------------------------
+[X] Timbratura IN/OUT/BREAK
+[X] Validazione GPS
+[X] Anomalie automatiche
+[X] Auto clock-out
+[ ] QR Code/NFC
+
+4.7 RICHIESTE FERIE [85%]
+--------------------------------------------------------------------------------
+[X] Workflow approvazione
+[X] Calendario ferie
+[ ] Operazioni bulk
+
+4.8 NOTIFICHE PUSH [50%]
+--------------------------------------------------------------------------------
+[X] Schema DB
+[X] API preferenze
+[X] UI preferenze
+[ ] Trigger invio **MANCA COLLEGAMENTO**
+
+================================================================================
+                    FASE 5: MIGLIORAMENTI (~90% Completato)
+================================================================================
+
+5.1 Testing E2E              [100%]
+5.2 Notifiche Push           [50%] (mancano trigger)
+5.3 Export Presenze Paghe    [100%]
+5.4 QR Code                  [0%] (opzionale)
+
+================================================================================
+                          PRIORITA' INTERVENTI
+================================================================================
+
+ALTA PRIORITA'
+--------------------------------------------------------------------------------
+
+1. TRIGGER NOTIFICHE (~2-3 ore)
+   - Collegare notifyShiftPublished() a publish schedule
+   - Collegare notifyLeaveApproved/Rejected()
+   - Collegare notifyAnomalyCreated()
+
+2. AUTO JOURNAL ENTRIES (~4-6 ore)
+   - Trigger su validazione chiusura
+   - Generare movimenti automatici
+
+3. BUDGET CATEGORIES (~2-3 giorni)
+   - Tabelle BudgetCategory, AccountBudgetMapping
+   - Wizard + drag & drop
+
+MEDIA PRIORITA'
+--------------------------------------------------------------------------------
+
+4. API POST Vincoli (~2 ore)
+5. UI Vincoli Relazionali (~4 ore)
+6. Scambio Turni (~1 giorno)
+
+BASSA PRIORITA' (Fase successiva)
+--------------------------------------------------------------------------------
+
+7. SDI Import
+8. Open Banking
+9. QR Code Timbratura
+10. Tracking Prezzi
+
+================================================================================
+                        TRIGGER NOTIFICHE MANCANTI
+================================================================================
+
+I trigger sono stati creati in src/lib/notifications/triggers.ts ma NON sono
+ancora chiamati dalle API:
+
++-----------------------------------------------+--------------------------------+
+| API Route                                     | Trigger da aggiungere          |
++-----------------------------------------------+--------------------------------+
+| api/schedules/[id]/publish/route.ts           | notifyShiftPublished()         |
+| api/leave-requests/[id]/approve/route.ts      | notifyLeaveApproved()          |
+| api/leave-requests/[id]/reject/route.ts       | notifyLeaveRejected()          |
+| api/leave-requests/route.ts (POST)            | notifyNewLeaveRequest()        |
+| api/attendance/anomalies/route.ts             | notifyAnomalyCreated()         |
+| api/attendance/anomalies/[id]/resolve/route.ts| notifyAnomalyResolved()        |
++-----------------------------------------------+--------------------------------+
+
+================================================================================
+                         FUNZIONALITA' COMPLETATE
+================================================================================
+
+- Autenticazione RBAC multi-sede
+- Chiusura cassa PWA offline-first con export PDF/Excel
+- Prima nota CASSA/BANCA con filtri e export
+- Anagrafiche complete (staff, fornitori, conti, sedi)
+- Portale dipendente con timbratura GPS e geofencing
+- Gestione ferie con workflow approvazione
+- Test E2E Playwright per flussi critici
+- Export presenze per elaborazione paghe
+- Cron job per reminder turni e auto clock-out
+- Rilevazione anomalie presenze automatica
+
+================================================================================
+                              FILE CRITICI
+================================================================================
+
+CHIUSURA CASSA:
+- src/components/chiusura/ClosureForm.tsx
+- src/components/chiusura/CashCountGrid.tsx
+- src/app/api/chiusure/route.ts
+
+PRIMA NOTA:
+- src/app/(dashboard)/prima-nota/PrimaNotaClient.tsx
+- src/components/prima-nota/JournalEntryTable.tsx
+- src/app/api/prima-nota/route.ts
+
+PORTALE DIPENDENTE:
+- src/app/(portal)/portale/
+- src/components/portal/
+
+NOTIFICHE:
+- src/lib/notifications/triggers.ts
+- src/components/portal/NotificationSettings.tsx
+- src/app/api/notifications/preferences/route.ts
+
+================================================================================
+                           FINE DOCUMENTO
+================================================================================
+
+Generato il: 4 Gennaio 2026
+Weiss Gestionale - Sistema di Gestione Contabile
