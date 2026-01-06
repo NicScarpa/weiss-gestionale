@@ -156,7 +156,7 @@ export default function StaffPage() {
               Vincoli Relazionali
             </Button>
           </Link>
-          <Link href="/impostazioni">
+          <Link href="/staff/nuovo">
             <Button>
               <UserPlus className="h-4 w-4 mr-2" />
               Nuovo Dipendente

@@ -1,6 +1,4 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { StaffManagement } from '@/components/settings/StaffManagement'
 import { VenueManagement } from '@/components/settings/VenueManagement'
 import { SupplierManagement } from '@/components/settings/SupplierManagement'
 import { AccountManagement } from '@/components/settings/AccountManagement'
@@ -34,19 +32,14 @@ export default async function ImpostazioniPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="dipendenti" className="space-y-4">
+      <Tabs defaultValue="sedi" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="dipendenti">Dipendenti</TabsTrigger>
           <TabsTrigger value="sedi">Sedi</TabsTrigger>
           <TabsTrigger value="fornitori">Fornitori</TabsTrigger>
           <TabsTrigger value="conti">Piano Conti</TabsTrigger>
           <TabsTrigger value="budget">Budget</TabsTrigger>
           <TabsTrigger value="prima-nota">Prima Nota</TabsTrigger>
         </TabsList>
-
-        <TabsContent value="dipendenti">
-          <StaffManagement />
-        </TabsContent>
 
         <TabsContent value="sedi">
           <VenueManagement />
