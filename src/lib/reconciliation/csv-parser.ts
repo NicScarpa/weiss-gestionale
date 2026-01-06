@@ -684,9 +684,25 @@ export function parseCBITXT(content: string): ParseResult {
             continue
           }
 
-          // Descrizione iniziale (dal carattere 88 in poi, dopo CBI code e riferimenti)
-          // Se non c'è descrizione qui, verrà aggiunta dai record 63
-          const description = line.length > 88 ? line.substring(88).trim() : ''
+          // Descrizione iniziale - cerchiamo la descrizione dopo il riferimento bancario
+          // Il riferimento è di 15 caratteri e inizia dopo gli spazi che seguono il CBI code
+          // La descrizione inizia dopo il riferimento e altri spazi
+          // Formato: ...CBI(4)...SPACES...REF(15)...SPACES...DESCRIZIONE
+          // Cerchiamo la descrizione partendo dalla fine del riferimento (circa pos 79-80+)
+          let description = ''
+
+          // Trova la posizione della descrizione cercando il pattern:
+          // dopo pos 40 ci sono spaces, poi 15 chars di riferimento, poi spaces, poi descrizione
+          // La descrizione inizia tipicamente intorno alla posizione 79-80
+          if (line.length > 79) {
+            // Prendi tutto da posizione 79 in poi e trova il primo carattere non-spazio
+            const descriptionPart = line.substring(79)
+            const trimmed = descriptionPart.trimStart()
+            // Se c'è contenuto dopo aver rimosso gli spazi iniziali, quella è la descrizione
+            if (trimmed.length > 0) {
+              description = trimmed.trim()
+            }
+          }
 
           currentTransaction = {
             transactionDate,
