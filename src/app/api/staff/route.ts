@@ -108,6 +108,7 @@ export async function GET(request: NextRequest) {
         hourlyRate: true,
         defaultShift: true,
         isActive: true,
+        contractType: true,
         venue: {
           select: {
             id: true,
