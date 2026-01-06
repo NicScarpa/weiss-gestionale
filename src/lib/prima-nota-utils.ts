@@ -118,7 +118,7 @@ interface ExpenseDetail {
  * Genera descrizione automatica per movimento da chiusura
  */
 export function generateClosureDescription(
-  type: 'revenue' | 'expense' | 'deposit',
+  type: 'revenue' | 'expense' | 'deposit' | 'pos',
   closureDate: Date,
   detail?: string | ExpenseDetail
 ): string {
@@ -130,7 +130,9 @@ export function generateClosureDescription(
 
   switch (type) {
     case 'revenue':
-      return `Incasso giornaliero ${dateStr}`
+      return `Incasso giornaliero contanti ${dateStr}`
+    case 'pos':
+      return `Incasso giornaliero POS ${dateStr}`
     case 'expense':
       // Se detail è un oggetto ExpenseDetail
       if (detail && typeof detail === 'object') {

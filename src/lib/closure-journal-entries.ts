@@ -95,7 +95,22 @@ export async function generateJournalEntriesFromClosure(
     }
   }
 
-  // 3. Movimento VERSAMENTO se presente (coppia cassa → banca)
+  // 3. Movimento INCASSO POS su BANCA (gli incassi POS arrivano direttamente in banca)
+  if (totalPos > 0) {
+    entries.push({
+      venueId: closure.venueId,
+      date: closure.date,
+      registerType: 'BANK',
+      description: generateClosureDescription('pos', closure.date),
+      debitAmount: totalPos,
+      creditAmount: null,
+      closureId: closure.id,
+      createdById: userId,
+    })
+    totalDebits += totalPos
+  }
+
+  // 4. Movimento VERSAMENTO se presente (coppia cassa → banca)
   const bankDeposit = Number(closure.bankDeposit) || 0
   if (bankDeposit > 0) {
     // Uscita da cassa
