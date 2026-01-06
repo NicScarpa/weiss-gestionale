@@ -48,3 +48,6 @@ next-env.d.ts
 
 /src/generated/prisma
 .playwright-mcp/
+
+# Video/media files
+PRD/UI/
