@@ -555,10 +555,12 @@ export function parseCBITXT(content: string): ParseResult {
 
   try {
     // Normalizza line endings e split
+    // IMPORTANTE: trim ogni linea perché il formato CBI può avere spazi iniziali
     const lines = content
       .replace(/\r\n/g, '\n')
       .replace(/\r/g, '\n')
       .split('\n')
+      .map((line) => line.trimStart()) // Rimuovi spazi iniziali
       .filter((line) => line.trim() !== '')
 
     if (lines.length === 0) {
@@ -599,9 +601,17 @@ export function parseCBITXT(content: string): ParseResult {
         }
 
         // Parsa nuova transazione
+        // Formato CBI RelaxBanking (Banca della Marca):
+        // Pos 0-1: "62" (record type)
+        // Pos 2-8: account sequence (7 chars)
+        // Pos 9-11: line number (3 chars)
+        // Pos 12-17: value date DDMMYY (6 chars)
+        // Pos 18-23: booking date DDMMYY (6 chars)
+        // Pos 24: sign C/D
+        // Pos 25-40: amount with comma (15 chars)
         try {
-          // Data valuta (DDMMYY) - posizione 9-15
-          const valueDateStr = line.substring(9, 15)
+          // Data valuta (DDMMYY) - posizione 12-18
+          const valueDateStr = line.substring(12, 18)
           let valueDate: Date | null = null
           if (valueDateStr && valueDateStr.length === 6) {
             const vDay = parseInt(valueDateStr.substring(0, 2), 10)
@@ -612,8 +622,8 @@ export function parseCBITXT(content: string): ParseResult {
             if (isNaN(valueDate.getTime())) valueDate = null
           }
 
-          // Data contabile (DDMMYY) - posizione 15-21
-          const bookingDateStr = line.substring(15, 21)
+          // Data contabile (DDMMYY) - posizione 18-24
+          const bookingDateStr = line.substring(18, 24)
           let transactionDate: Date | null = null
           if (bookingDateStr && bookingDateStr.length === 6) {
             const bDay = parseInt(bookingDateStr.substring(0, 2), 10)
@@ -641,11 +651,11 @@ export function parseCBITXT(content: string): ParseResult {
             continue
           }
 
-          // Segno C/D - posizione 21
-          const sign = line.charAt(21).toUpperCase()
+          // Segno C/D - posizione 24
+          const sign = line.charAt(24).toUpperCase()
 
-          // Importo - posizione 22-35 (formato: 0000000026280 per 262.80)
-          const amountStr = line.substring(22, 35)
+          // Importo - posizione 25-40 (formato: 000000000033,86)
+          const amountStr = line.substring(25, 40)
           let amount: number | null = null
           if (amountStr) {
             // Rimuovi zeri iniziali e converti
@@ -674,8 +684,9 @@ export function parseCBITXT(content: string): ParseResult {
             continue
           }
 
-          // Descrizione iniziale (dal carattere 39 in poi)
-          const description = line.substring(39).trim()
+          // Descrizione iniziale (dal carattere 88 in poi, dopo CBI code e riferimenti)
+          // Se non c'è descrizione qui, verrà aggiunta dai record 63
+          const description = line.length > 88 ? line.substring(88).trim() : ''
 
           currentTransaction = {
             transactionDate,
@@ -694,7 +705,8 @@ export function parseCBITXT(content: string): ParseResult {
         }
       } else if (recordType === '63' && currentTransaction) {
         // Continuazione descrizione
-        const continuationText = line.substring(2).trim()
+        // Formato: 63 + account seq (7) + line num (3) + descrizione (da pos 12)
+        const continuationText = line.length > 12 ? line.substring(12).trim() : line.substring(2).trim()
         if (continuationText) {
           currentTransaction.description += ' ' + continuationText
         }
