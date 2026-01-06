@@ -174,6 +174,9 @@ model Venue {
   recurringExpenses RecurringExpense[]
   cashFlowSetting   CashFlowSetting?
 
+  // Relazioni tracking prezzi
+  products Product[]
+
   @@map("venues")
 }
 
@@ -506,6 +509,10 @@ model Supplier {
 
   // Relazione con fatture elettroniche
   electronicInvoices ElectronicInvoice[]
+
+  // Relazioni tracking prezzi
+  priceHistory PriceHistory[]
+  priceAlerts  PriceAlert[]
 
   @@map("suppliers")
 }
@@ -1398,6 +1405,118 @@ model InvoiceDeadline {
   @@index([dueDate])
   @@index([isPaid])
   @@map("invoice_deadlines")
+}
+
+// ==================== TRACKING PREZZI ====================
+
+// Catalogo prodotti/articoli normalizzato
+model Product {
+  id      String  @id @default(cuid())
+  venue   Venue?  @relation(fields: [venueId], references: [id])
+  venueId String? @map("venue_id")
+
+  // Identificazione prodotto
+  name           String // Nome normalizzato dell'articolo
+  originalName   String  @map("original_name") // Nome originale da fattura
+  code           String? // Codice articolo (se disponibile)
+  category       String? // Categoria merceologica
+  unit           String? // Unità di misura (kg, l, pz, etc.)
+
+  // Dati ultimi aggiornamenti
+  lastPrice      Decimal?  @map("last_price") @db.Decimal(10, 4)
+  lastPriceDate  DateTime? @map("last_price_date") @db.Date
+  lastSupplierId String?   @map("last_supplier_id")
+
+  // Stato
+  isActive  Boolean @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relazioni
+  priceHistory PriceHistory[]
+  priceAlerts  PriceAlert[]
+
+  @@unique([venueId, name])
+  @@index([category])
+  @@index([isActive])
+  @@map("products")
+}
+
+// Storico prezzi per articolo
+model PriceHistory {
+  id        String  @id @default(cuid())
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String  @map("product_id")
+
+  // Dettagli prezzo
+  price      Decimal @db.Decimal(10, 4) // Prezzo unitario
+  quantity   Decimal? @db.Decimal(10, 3) // Quantità acquistata
+  totalPrice Decimal? @map("total_price") @db.Decimal(10, 2) // Prezzo totale linea
+
+  // Fonte del prezzo
+  supplier   Supplier? @relation(fields: [supplierId], references: [id])
+  supplierId String?   @map("supplier_id")
+  invoiceId  String?   @map("invoice_id") // ID fattura elettronica
+  invoiceNumber String? @map("invoice_number")
+  invoiceDate DateTime @map("invoice_date") @db.Date
+
+  // Variazione rispetto al prezzo precedente
+  previousPrice   Decimal? @map("previous_price") @db.Decimal(10, 4)
+  priceChange     Decimal? @map("price_change") @db.Decimal(10, 4) // Variazione assoluta
+  priceChangePct  Decimal? @map("price_change_pct") @db.Decimal(5, 2) // Variazione %
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([productId, invoiceDate])
+  @@index([supplierId])
+  @@index([invoiceDate])
+  @@map("price_history")
+}
+
+// Alert variazioni prezzo significative
+model PriceAlert {
+  id        String  @id @default(cuid())
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String  @map("product_id")
+
+  // Dettagli alert
+  alertType   PriceAlertType @map("alert_type")
+  oldPrice    Decimal @map("old_price") @db.Decimal(10, 4)
+  newPrice    Decimal @map("new_price") @db.Decimal(10, 4)
+  changePercent Decimal @map("change_percent") @db.Decimal(5, 2)
+
+  // Contesto
+  supplier   Supplier? @relation(fields: [supplierId], references: [id])
+  supplierId String?   @map("supplier_id")
+  invoiceId  String?   @map("invoice_id")
+  invoiceDate DateTime @map("invoice_date") @db.Date
+
+  // Stato alert
+  status     PriceAlertStatus @default(PENDING)
+  reviewedAt DateTime?   @map("reviewed_at")
+  reviewedBy String?     @map("reviewed_by")
+  notes      String?     @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([productId])
+  @@map("price_alerts")
+}
+
+enum PriceAlertType {
+  INCREASE // Aumento prezzo
+  DECREASE // Diminuzione prezzo
+  NEW_PRODUCT // Nuovo prodotto
+  NEW_SUPPLIER // Nuovo fornitore per prodotto esistente
+}
+
+enum PriceAlertStatus {
+  PENDING // Da verificare
+  ACKNOWLEDGED // Preso visione
+  APPROVED // Variazione approvata
+  DISPUTED // Contestata al fornitore
 }
 
 // ==================== RICONCILIAZIONE BANCARIA ====================

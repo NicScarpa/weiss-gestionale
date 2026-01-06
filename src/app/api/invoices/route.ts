@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { parseFatturaPA, calcolaImporti, estraiScadenze } from '@/lib/sdi/parser'
 import { matchSupplier, createSupplierFromData } from '@/lib/sdi/matcher'
+import { trackPricesFromInvoice } from '@/lib/price-tracking'
 import { Prisma, InvoiceStatus } from '@prisma/client'
 import { z } from 'zod'
 
@@ -280,7 +281,38 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json(invoice, { status: 201 })
+    // Track prezzi articoli dalla fattura (se c'è un fornitore associato)
+    let priceTrackingResult = null
+    if (supplierId && fattura.dettaglioLinee.length > 0) {
+      try {
+        priceTrackingResult = await trackPricesFromInvoice({
+          venueId: validatedData.venueId,
+          supplierId,
+          invoiceId: invoice.id,
+          invoiceNumber: fattura.numero,
+          invoiceDate: new Date(fattura.data),
+          lineItems: fattura.dettaglioLinee.map((line) => ({
+            description: line.descrizione,
+            code: null, // FatturaPA non ha sempre un codice articolo
+            quantity: line.quantita || 1,
+            unitPrice: line.prezzoUnitario,
+            totalPrice: line.prezzoTotale,
+            unit: line.unitaMisura || null,
+          })),
+        })
+      } catch (priceError) {
+        console.error('Errore tracking prezzi:', priceError)
+        // Non blocchiamo l'import se il tracking fallisce
+      }
+    }
+
+    return NextResponse.json(
+      {
+        ...invoice,
+        priceTracking: priceTrackingResult,
+      },
+      { status: 201 }
+    )
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

@@ -17,6 +17,7 @@ import {
   Calendar,
   Palmtree,
   Landmark,
+  Package,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'
@@ -27,6 +28,7 @@ const navigation = [
   { name: 'Prima Nota', href: '/prima-nota', icon: BookOpen },
   { name: 'Riconciliazione', href: '/riconciliazione', icon: Landmark },
   { name: 'Fatture', href: '/fatture', icon: FileText },
+  { name: 'Prodotti', href: '/prodotti', icon: Package },
   { name: 'Budget', href: '/budget', icon: Calculator },
   { name: 'Report', href: '/report', icon: BarChart3 },
   { name: 'Staff', href: '/staff', icon: Users },
