@@ -19,6 +19,7 @@ import {
   CalendarDays,
 } from 'lucide-react'
 import Link from 'next/link'
+import { CashFlowForecast } from '@/components/dashboard/CashFlowForecast'
 
 interface DashboardData {
   stats: {
@@ -328,10 +329,14 @@ export function DashboardClient({ userName }: { userName?: string }) {
         </Card>
       </div>
 
-      {/* Alerts & Actions */}
+      {/* Cash Flow Forecast */}
       <div className="grid gap-4 md:grid-cols-2">
-        {/* Cash Differences Alert */}
-        {!isLoading && data?.hasCashIssues && (
+        <CashFlowForecast />
+
+        {/* Alerts Section */}
+        <div className="space-y-4">
+          {/* Cash Differences Alert */}
+          {!isLoading && data?.hasCashIssues && (
           <Card className="border-amber-200 bg-amber-50">
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2 text-amber-800">
@@ -408,6 +413,7 @@ export function DashboardClient({ userName }: { userName?: string }) {
             </CardContent>
           </Card>
         )}
+        </div>
       </div>
 
       {/* Quick Actions & Recent */}

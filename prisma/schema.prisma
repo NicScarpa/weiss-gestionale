@@ -170,6 +170,10 @@ model Venue {
   bankTransactions BankTransaction[]
   importBatches    ImportBatch[]
 
+  // Relazioni cash flow previsionale
+  recurringExpenses RecurringExpense[]
+  cashFlowSetting   CashFlowSetting?
+
   @@map("venues")
 }
 
@@ -403,6 +407,9 @@ model Account {
 
   // Relazione con fatture elettroniche
   electronicInvoices ElectronicInvoice[]
+
+  // Relazione cash flow previsionale
+  recurringExpenses RecurringExpense[]
 
   @@map("accounts")
 }
@@ -1471,4 +1478,71 @@ enum ReconciliationStatus {
   MANUAL    // Assegnato manualmente
   IGNORED   // Ignorato dall'utente
   UNMATCHED // Nessun match trovato
+}
+
+// ==================== CASH FLOW PREVISIONALE ====================
+
+model RecurringExpense {
+  id      String @id @default(cuid())
+  venue   Venue  @relation(fields: [venueId], references: [id])
+  venueId String @map("venue_id")
+
+  name        String             // "Affitto", "Utenze", "Stipendi"
+  description String?
+  amount      Decimal            @db.Decimal(12, 2)
+  frequency   ExpenseFrequency
+  dayOfMonth  Int?               @map("day_of_month") // 1-31 per mensile
+  dayOfWeek   Int?               @map("day_of_week") // 0-6 per settimanale
+  startDate   DateTime?          @map("start_date") @db.Date
+  endDate     DateTime?          @map("end_date") @db.Date
+  isActive    Boolean            @default(true) @map("is_active")
+
+  // Collegamento opzionale a conto contabile
+  account   Account? @relation(fields: [accountId], references: [id])
+  accountId String?  @map("account_id")
+
+  // Metadati
+  category  String? // "Personale", "Utenze", "Affitto", "Fornitori", "Tasse"
+  createdBy String  @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([venueId, isActive])
+  @@index([frequency])
+  @@map("recurring_expenses")
+}
+
+enum ExpenseFrequency {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+model CashFlowSetting {
+  id      String @id @default(cuid())
+  venue   Venue  @relation(fields: [venueId], references: [id])
+  venueId String @unique @map("venue_id")
+
+  // Soglia alert liquidità
+  lowBalanceThreshold Decimal @default(5000) @map("low_balance_threshold") @db.Decimal(12, 2)
+
+  // Metodo previsione entrate
+  forecastMethod ForecastMethod @default(HYBRID) @map("forecast_method")
+
+  // Giorni di storico per media mobile
+  movingAverageDays Int @default(30) @map("moving_average_days")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("cash_flow_settings")
+}
+
+enum ForecastMethod {
+  HISTORICAL      // Solo storico anno precedente
+  MOVING_AVERAGE  // Solo media mobile
+  HYBRID          // Combinazione ponderata
 }
