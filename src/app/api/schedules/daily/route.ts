@@ -40,6 +40,7 @@ export async function GET(request: NextRequest) {
             id: true,
             firstName: true,
             lastName: true,
+            isFixedStaff: true,
             contractType: true,
             hourlyRateBase: true,
             hourlyRateExtra: true,
@@ -77,11 +78,11 @@ export async function GET(request: NextRequest) {
       let scheduledHours = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60)
       scheduledHours -= (a.breakMinutes || 0) / 60
 
-      // Determina se è staff fisso o extra
-      const isFixedStaff = a.user.contractType === 'FISSO'
-      const hourlyRate = isFixedStaff
-        ? a.user.hourlyRateBase
-        : a.user.hourlyRateExtra || a.user.hourlyRateBase
+      // Determina tariffa: isFixedStaff=true significa EXTRA (logica invertita nello switch UI)
+      // Staff fisso (isFixedStaff=false) usa tariffa base, EXTRA (isFixedStaff=true) usa tariffa extra
+      const hourlyRate = a.user.isFixedStaff
+        ? a.user.hourlyRateExtra || a.user.hourlyRateBase
+        : a.user.hourlyRateBase
 
       return {
         id: a.id,
@@ -93,7 +94,7 @@ export async function GET(request: NextRequest) {
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
         scheduledHours: Math.round(scheduledHours * 100) / 100,
-        isFixedStaff,
+        isFixedStaff: a.user.isFixedStaff,
         hourlyRate: hourlyRate ? Number(hourlyRate) : null,
         venueId: a.venueId,
         venueName: a.venue?.name,

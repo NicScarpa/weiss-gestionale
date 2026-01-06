@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmployeeProfileForm } from '@/components/staff/EmployeeProfileForm'
 import { ConstraintEditor } from '@/components/staff/ConstraintEditor'
-import { ArrowLeft, Settings } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -30,6 +30,28 @@ export default function StaffDetailPage({ params }: PageProps) {
       return res.json()
     },
   })
+
+  // Carica venues e roles per i dropdown
+  const { data: venuesData } = useQuery({
+    queryKey: ['venues'],
+    queryFn: async () => {
+      const res = await fetch('/api/venues')
+      if (!res.ok) return { venues: [] }
+      return res.json()
+    },
+  })
+
+  const { data: rolesData } = useQuery({
+    queryKey: ['roles'],
+    queryFn: async () => {
+      const res = await fetch('/api/roles')
+      if (!res.ok) return { data: [] }
+      return res.json()
+    },
+  })
+
+  const venues = venuesData?.venues || []
+  const roles = rolesData?.data || []
 
   if (isLoading) {
     return (
@@ -62,32 +84,29 @@ export default function StaffDetailPage({ params }: PageProps) {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Link href="/staff">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold">
-              {staffData.firstName} {staffData.lastName}
-            </h1>
-            <p className="text-muted-foreground">{staffData.email}</p>
-          </div>
-        </div>
-        <Link href={`/staff/${resolvedParams.id}/vincoli`}>
-          <Button variant="outline">
-            <Settings className="h-4 w-4 mr-2" />
-            Gestisci Vincoli
+      <div className="flex items-center gap-4">
+        <Link href="/staff">
+          <Button variant="ghost" size="icon">
+            <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
+        <div>
+          <h1 className="text-2xl font-bold">
+            {staffData.firstName} {staffData.lastName}
+          </h1>
+          <p className="text-muted-foreground">{staffData.email}</p>
+        </div>
       </div>
 
       {/* Profilo */}
-      <EmployeeProfileForm employee={staffData} isAdmin={isAdmin} />
+      <EmployeeProfileForm
+        employee={staffData}
+        isAdmin={isAdmin}
+        venues={venues}
+        roles={roles}
+      />
 
-      {/* Preview vincoli (solo per admin/manager) */}
+      {/* Vincoli (solo per admin/manager) */}
       {(session?.user?.role === 'admin' || session?.user?.role === 'manager') && (
         <ConstraintEditor
           userId={resolvedParams.id}

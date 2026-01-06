@@ -31,8 +31,20 @@ model User {
   // === FASE 4: Dati contrattuali estesi ===
   contractType      ContractType? @map("contract_type")
   contractHoursWeek Decimal?      @map("contract_hours_week") @db.Decimal(4, 1)
+  workDaysPerWeek   Int?          @map("work_days_per_week") // 1-7 giorni lavorativi
   hireDate          DateTime?     @map("hire_date") @db.Date
   terminationDate   DateTime?     @map("termination_date") @db.Date
+
+  // Contatti aggiuntivi
+  phoneNumber       String?       @map("phone_number")
+
+  // Dati fiscali (per occasionali/freelance)
+  vatNumber         String?       @map("vat_number")      // P.IVA
+  fiscalCode        String?       @map("fiscal_code")     // Codice Fiscale
+
+  // Disponibilità EXTRA (giorni: 0=LUN, 1=MAR, ..., 6=DOM)
+  availableDays     Int[]         @default([]) @map("available_days")
+  availableHolidays Boolean       @default(false) @map("available_holidays")
 
   // Tariffe orarie estese
   hourlyRateBase    Decimal? @map("hourly_rate_base") @db.Decimal(10, 2)
@@ -83,9 +95,11 @@ model User {
 
 // === FASE 4: TIPO CONTRATTO ===
 enum ContractType {
-  FISSO
-  EXTRA
-  INTERMITTENTE
+  TEMPO_DETERMINATO        // Data assunzione + cessazione obbligatorie
+  TEMPO_INDETERMINATO      // Solo data assunzione obbligatoria
+  LAVORO_INTERMITTENTE     // Data assunzione + cessazione obbligatorie
+  LAVORATORE_OCCASIONALE   // Date non richieste
+  LIBERO_PROFESSIONISTA    // Date non richieste
 }
 
 model Role {

@@ -19,19 +19,27 @@ import { SkillsSelector } from './SkillsSelector'
 import { Save, User, Briefcase, Euro, Bell, Shield, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
+type ContractType = 'TEMPO_DETERMINATO' | 'TEMPO_INDETERMINATO' | 'LAVORO_INTERMITTENTE' | 'LAVORATORE_OCCASIONALE' | 'LIBERO_PROFESSIONISTA' | null
+
 interface StaffMember {
   id: string
   firstName: string
   lastName: string
   email: string
+  phoneNumber: string | null
   isFixedStaff: boolean
   hourlyRate: number | null
   defaultShift: 'MORNING' | 'EVENING' | null
   isActive: boolean
-  contractType: 'FISSO' | 'EXTRA' | 'INTERMITTENTE' | null
+  contractType: ContractType
   contractHoursWeek: number | null
+  workDaysPerWeek: number | null
   hireDate: string | null
   terminationDate: string | null
+  vatNumber: string | null
+  fiscalCode: string | null
+  availableDays: number[]
+  availableHolidays: boolean
   hourlyRateBase: number | null
   hourlyRateExtra: number | null
   hourlyRateHoliday: number | null
@@ -56,25 +64,58 @@ interface StaffMember {
   }
 }
 
+interface Venue {
+  id: string
+  name: string
+  code: string
+}
+
+interface Role {
+  id: string
+  name: string
+}
+
 interface EmployeeProfileFormProps {
   employee: StaffMember
   isAdmin?: boolean
+  venues?: Venue[]
+  roles?: Role[]
 }
 
-export function EmployeeProfileForm({ employee, isAdmin = false }: EmployeeProfileFormProps) {
+// Costanti per i giorni della settimana
+const WEEKDAYS = [
+  { value: 0, label: 'LUN' },
+  { value: 1, label: 'MAR' },
+  { value: 2, label: 'MER' },
+  { value: 3, label: 'GIO' },
+  { value: 4, label: 'VEN' },
+  { value: 5, label: 'SAB' },
+  { value: 6, label: 'DOM' },
+]
+
+export function EmployeeProfileForm({ employee, isAdmin = false, venues = [], roles = [] }: EmployeeProfileFormProps) {
   const queryClient = useQueryClient()
 
   const [formData, setFormData] = useState({
     firstName: employee.firstName,
     lastName: employee.lastName,
+    email: employee.email,
+    phoneNumber: employee.phoneNumber || '',
+    venueId: employee.venue?.id || '',
+    roleId: employee.role?.id || '',
     isFixedStaff: employee.isFixedStaff,
     hourlyRate: employee.hourlyRate,
     defaultShift: employee.defaultShift,
     isActive: employee.isActive,
     contractType: employee.contractType,
     contractHoursWeek: employee.contractHoursWeek,
+    workDaysPerWeek: employee.workDaysPerWeek,
     hireDate: employee.hireDate?.split('T')[0] || '',
     terminationDate: employee.terminationDate?.split('T')[0] || '',
+    vatNumber: employee.vatNumber || '',
+    fiscalCode: employee.fiscalCode || '',
+    availableDays: employee.availableDays || [],
+    availableHolidays: employee.availableHolidays || false,
     hourlyRateBase: employee.hourlyRateBase,
     hourlyRateExtra: employee.hourlyRateExtra,
     hourlyRateHoliday: employee.hourlyRateHoliday,
@@ -95,14 +136,23 @@ export function EmployeeProfileForm({ employee, isAdmin = false }: EmployeeProfi
     setFormData({
       firstName: employee.firstName,
       lastName: employee.lastName,
+      email: employee.email,
+      phoneNumber: employee.phoneNumber || '',
+      venueId: employee.venue?.id || '',
+      roleId: employee.role?.id || '',
       isFixedStaff: employee.isFixedStaff,
       hourlyRate: employee.hourlyRate,
       defaultShift: employee.defaultShift,
       isActive: employee.isActive,
       contractType: employee.contractType,
       contractHoursWeek: employee.contractHoursWeek,
+      workDaysPerWeek: employee.workDaysPerWeek,
       hireDate: employee.hireDate?.split('T')[0] || '',
       terminationDate: employee.terminationDate?.split('T')[0] || '',
+      vatNumber: employee.vatNumber || '',
+      fiscalCode: employee.fiscalCode || '',
+      availableDays: employee.availableDays || [],
+      availableHolidays: employee.availableHolidays || false,
       hourlyRateBase: employee.hourlyRateBase,
       hourlyRateExtra: employee.hourlyRateExtra,
       hourlyRateHoliday: employee.hourlyRateHoliday,
@@ -119,6 +169,28 @@ export function EmployeeProfileForm({ employee, isAdmin = false }: EmployeeProfi
     })
   }, [employee])
 
+  // Determina se mostrare campi date in base al tipo contratto
+  const showDates = formData.contractType === 'TEMPO_DETERMINATO' ||
+    formData.contractType === 'TEMPO_INDETERMINATO' ||
+    formData.contractType === 'LAVORO_INTERMITTENTE'
+
+  const showEndDate = formData.contractType === 'TEMPO_DETERMINATO' ||
+    formData.contractType === 'LAVORO_INTERMITTENTE'
+
+  // Determina se mostrare campi fiscali
+  const showFiscalFields = formData.contractType === 'LAVORATORE_OCCASIONALE' ||
+    formData.contractType === 'LIBERO_PROFESSIONISTA'
+
+  // Helper per toggle disponibilità giorni
+  const toggleAvailableDay = (day: number) => {
+    setFormData(prev => ({
+      ...prev,
+      availableDays: prev.availableDays.includes(day)
+        ? prev.availableDays.filter(d => d !== day)
+        : [...prev.availableDays, day].sort((a, b) => a - b)
+    }))
+  }
+
   const updateMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
       const res = await fetch(`/api/staff/${employee.id}`, {
@@ -126,8 +198,13 @@ export function EmployeeProfileForm({ employee, isAdmin = false }: EmployeeProfi
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...data,
+          phoneNumber: data.phoneNumber || null,
+          venueId: data.venueId || null,
+          roleId: data.roleId || undefined,
           hireDate: data.hireDate || null,
           terminationDate: data.terminationDate || null,
+          vatNumber: data.vatNumber || null,
+          fiscalCode: data.fiscalCode || null,
           portalPin: data.portalPin || null,
           whatsappNumber: data.whatsappNumber || null,
         }),
@@ -190,7 +267,7 @@ export function EmployeeProfileForm({ employee, isAdmin = false }: EmployeeProfi
               </TabsTrigger>
               <TabsTrigger value="rates" className="flex items-center gap-1">
                 <Euro className="h-4 w-4" />
-                <span className="hidden sm:inline">Tariffe</span>
+                <span className="hidden sm:inline">Compensi</span>
               </TabsTrigger>
               <TabsTrigger value="notify" className="flex items-center gap-1">
                 <Bell className="h-4 w-4" />
@@ -223,25 +300,68 @@ export function EmployeeProfileForm({ employee, isAdmin = false }: EmployeeProfi
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label>Email</Label>
-                <Input value={employee.email} disabled />
-                <p className="text-xs text-muted-foreground">L&apos;email non può essere modificata</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Email</Label>
+                  <Input
+                    type="email"
+                    value={formData.email}
+                    onChange={e => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                    disabled={!isAdmin}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Telefono</Label>
+                  <Input
+                    type="tel"
+                    value={formData.phoneNumber}
+                    onChange={e => setFormData(prev => ({ ...prev, phoneNumber: e.target.value }))}
+                    placeholder="+39 123 456 7890"
+                    disabled={!isAdmin}
+                  />
+                </div>
               </div>
 
-              {employee.venue && (
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Sede</Label>
-                  <Input value={`${employee.venue.name} (${employee.venue.code})`} disabled />
+                  <Select
+                    value={formData.venueId}
+                    onValueChange={v => setFormData(prev => ({ ...prev, venueId: v }))}
+                    disabled={!isAdmin}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleziona sede" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {venues.map(venue => (
+                        <SelectItem key={venue.id} value={venue.id}>
+                          {venue.name} ({venue.code})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              )}
-
-              {employee.role && (
                 <div className="space-y-2">
                   <Label>Ruolo</Label>
-                  <Input value={employee.role.name} disabled />
+                  <Select
+                    value={formData.roleId}
+                    onValueChange={v => setFormData(prev => ({ ...prev, roleId: v }))}
+                    disabled={!isAdmin}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleziona ruolo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {roles.map(role => (
+                        <SelectItem key={role.id} value={role.id}>
+                          {role.name.charAt(0).toUpperCase() + role.name.slice(1)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              )}
+              </div>
 
               <div className="flex items-center gap-2">
                 <Switch
@@ -255,26 +375,70 @@ export function EmployeeProfileForm({ employee, isAdmin = false }: EmployeeProfi
 
             {/* Tab Contratto */}
             <TabsContent value="contract" className="space-y-4">
+              <div className="space-y-2">
+                <Label>Tipo contratto</Label>
+                <Select
+                  value={formData.contractType || ''}
+                  onValueChange={v => setFormData(prev => ({
+                    ...prev,
+                    contractType: v as ContractType,
+                    // Reset date fields when contract type changes
+                    hireDate: ['LAVORATORE_OCCASIONALE', 'LIBERO_PROFESSIONISTA'].includes(v) ? '' : prev.hireDate,
+                    terminationDate: ['LAVORATORE_OCCASIONALE', 'LIBERO_PROFESSIONISTA', 'TEMPO_INDETERMINATO'].includes(v) ? '' : prev.terminationDate,
+                  }))}
+                  disabled={!isAdmin}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleziona tipo contratto" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="TEMPO_DETERMINATO">Tempo Determinato</SelectItem>
+                    <SelectItem value="TEMPO_INDETERMINATO">Tempo Indeterminato</SelectItem>
+                    <SelectItem value="LAVORO_INTERMITTENTE">Lavoro Intermittente</SelectItem>
+                    <SelectItem value="LAVORATORE_OCCASIONALE">Lavoratore Occasionale</SelectItem>
+                    <SelectItem value="LIBERO_PROFESSIONISTA">Libero Professionista</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {showDates && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Data assunzione</Label>
+                    <Input
+                      type="date"
+                      value={formData.hireDate}
+                      onChange={e => setFormData(prev => ({ ...prev, hireDate: e.target.value }))}
+                      disabled={!isAdmin}
+                    />
+                  </div>
+                  {showEndDate && (
+                    <div className="space-y-2">
+                      <Label>Data cessazione</Label>
+                      <Input
+                        type="date"
+                        value={formData.terminationDate}
+                        onChange={e => setFormData(prev => ({ ...prev, terminationDate: e.target.value }))}
+                        disabled={!isAdmin}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Tipo contratto</Label>
-                  <Select
-                    value={formData.contractType || ''}
-                    onValueChange={v => setFormData(prev => ({
-                      ...prev,
-                      contractType: v as 'FISSO' | 'EXTRA' | 'INTERMITTENTE' | null,
-                    }))}
+                  <Label>Giorni lavorativi / settimana</Label>
+                  <Input
+                    type="number"
+                    step="1"
+                    min="1"
+                    max="7"
+                    value={formData.workDaysPerWeek ?? ''}
+                    onChange={e => handleNumberChange('workDaysPerWeek', e.target.value)}
                     disabled={!isAdmin}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleziona" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="FISSO">Fisso</SelectItem>
-                      <SelectItem value="EXTRA">Extra</SelectItem>
-                      <SelectItem value="INTERMITTENTE">Intermittente</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    placeholder="1-7"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Ore settimanali</Label>
@@ -290,35 +454,34 @@ export function EmployeeProfileForm({ employee, isAdmin = false }: EmployeeProfi
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Data assunzione</Label>
-                  <Input
-                    type="date"
-                    value={formData.hireDate}
-                    onChange={e => setFormData(prev => ({ ...prev, hireDate: e.target.value }))}
-                    disabled={!isAdmin}
-                  />
+              {showFiscalFields && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>P.IVA</Label>
+                    <Input
+                      type="text"
+                      maxLength={11}
+                      value={formData.vatNumber}
+                      onChange={e => setFormData(prev => ({ ...prev, vatNumber: e.target.value.replace(/\D/g, '') }))}
+                      disabled={!isAdmin}
+                      placeholder="12345678901"
+                    />
+                    <p className="text-xs text-muted-foreground">11 cifre</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Codice Fiscale</Label>
+                    <Input
+                      type="text"
+                      maxLength={16}
+                      value={formData.fiscalCode}
+                      onChange={e => setFormData(prev => ({ ...prev, fiscalCode: e.target.value.toUpperCase() }))}
+                      disabled={!isAdmin}
+                      placeholder="RSSMRA85M01H501A"
+                    />
+                    <p className="text-xs text-muted-foreground">16 caratteri alfanumerici</p>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Data cessazione</Label>
-                  <Input
-                    type="date"
-                    value={formData.terminationDate}
-                    onChange={e => setFormData(prev => ({ ...prev, terminationDate: e.target.value }))}
-                    disabled={!isAdmin}
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={formData.isFixedStaff}
-                  onCheckedChange={v => setFormData(prev => ({ ...prev, isFixedStaff: v }))}
-                  disabled={!isAdmin}
-                />
-                <Label>Staff fisso (vs extra)</Label>
-              </div>
+              )}
 
               <div className="space-y-2">
                 <Label>Turno predefinito</Label>
@@ -341,11 +504,65 @@ export function EmployeeProfileForm({ employee, isAdmin = false }: EmployeeProfi
               </div>
             </TabsContent>
 
-            {/* Tab Tariffe */}
+            {/* Tab Compensi (ex Tariffe) */}
             <TabsContent value="rates" className="space-y-4">
+              {/* Switch EXTRA - invertito: OFF = fisso, ON = extra */}
+              <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+                <Switch
+                  checked={formData.isFixedStaff}
+                  onCheckedChange={v => setFormData(prev => ({ ...prev, isFixedStaff: v }))}
+                  disabled={!isAdmin}
+                />
+                <div>
+                  <Label className="font-medium">EXTRA</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {formData.isFixedStaff ? 'Lavoratore extra a chiamata' : 'Staff fisso con turni regolari'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Disponibilità per EXTRA */}
+              {formData.isFixedStaff && (
+                <div className="space-y-3 p-3 border rounded-lg">
+                  <Label className="font-medium">Disponibilità settimanale</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {WEEKDAYS.map(day => (
+                      <button
+                        key={day.value}
+                        type="button"
+                        onClick={() => isAdmin && toggleAvailableDay(day.value)}
+                        disabled={!isAdmin}
+                        className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                          formData.availableDays.includes(day.value)
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-muted hover:bg-muted/80'
+                        } ${!isAdmin ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                      >
+                        {day.label}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => isAdmin && setFormData(prev => ({ ...prev, availableHolidays: !prev.availableHolidays }))}
+                      disabled={!isAdmin}
+                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                        formData.availableHolidays
+                          ? 'bg-orange-500 text-white'
+                          : 'bg-muted hover:bg-muted/80'
+                      } ${!isAdmin ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                    >
+                      FESTIVI
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Seleziona i giorni in cui il lavoratore è disponibile
+                  </p>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Tariffa oraria base (€)</Label>
+                  <Label>Compenso orario base (€)</Label>
                   <Input
                     type="number"
                     step="0.01"
@@ -356,7 +573,7 @@ export function EmployeeProfileForm({ employee, isAdmin = false }: EmployeeProfi
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Tariffa straordinario (€)</Label>
+                  <Label>Compenso straordinario (€)</Label>
                   <Input
                     type="number"
                     step="0.01"
@@ -370,7 +587,7 @@ export function EmployeeProfileForm({ employee, isAdmin = false }: EmployeeProfi
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Tariffa festivo (€)</Label>
+                  <Label>Compenso festivo (€)</Label>
                   <Input
                     type="number"
                     step="0.01"
@@ -381,7 +598,7 @@ export function EmployeeProfileForm({ employee, isAdmin = false }: EmployeeProfi
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Tariffa notturno (€)</Label>
+                  <Label>Compenso notturno (€)</Label>
                   <Input
                     type="number"
                     step="0.01"
@@ -394,7 +611,7 @@ export function EmployeeProfileForm({ employee, isAdmin = false }: EmployeeProfi
               </div>
 
               <div className="space-y-2">
-                <Label>Tariffa oraria legacy (€)</Label>
+                <Label>Compenso orario legacy (€)</Label>
                 <Input
                   type="number"
                   step="0.01"
@@ -404,7 +621,7 @@ export function EmployeeProfileForm({ employee, isAdmin = false }: EmployeeProfi
                   disabled={!isAdmin}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Campo legacy, usare le tariffe specifiche sopra
+                  Campo legacy, usare i compensi specifici sopra
                 </p>
               </div>
             </TabsContent>

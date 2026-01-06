@@ -7,16 +7,35 @@ import { z } from 'zod'
 const updateStaffSchema = z.object({
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
+  email: z.string().email().optional(), // Ora editabile
+  phoneNumber: z.string().nullable().optional(),
+  venueId: z.string().nullable().optional(),
+  roleId: z.string().optional(),
   isFixedStaff: z.boolean().optional(),
   hourlyRate: z.number().min(0).nullable().optional(),
   defaultShift: z.enum(['MORNING', 'EVENING']).nullable().optional(),
   isActive: z.boolean().optional(),
 
-  // Nuovi campi Fase 4
-  contractType: z.enum(['FISSO', 'EXTRA', 'INTERMITTENTE']).nullable().optional(),
+  // Campi contratto con nuovi tipi
+  contractType: z.enum([
+    'TEMPO_DETERMINATO',
+    'TEMPO_INDETERMINATO',
+    'LAVORO_INTERMITTENTE',
+    'LAVORATORE_OCCASIONALE',
+    'LIBERO_PROFESSIONISTA'
+  ]).nullable().optional(),
   contractHoursWeek: z.number().min(0).max(60).nullable().optional(),
+  workDaysPerWeek: z.number().min(1).max(7).nullable().optional(),
   hireDate: z.string().nullable().optional(),
   terminationDate: z.string().nullable().optional(),
+
+  // Dati fiscali (per occasionali/freelance)
+  vatNumber: z.string().max(11).nullable().optional(),
+  fiscalCode: z.string().max(16).nullable().optional(),
+
+  // Disponibilità EXTRA
+  availableDays: z.array(z.number().min(0).max(6)).optional(),
+  availableHolidays: z.boolean().optional(),
 
   // Tariffe estese
   hourlyRateBase: z.number().min(0).nullable().optional(),
@@ -66,29 +85,48 @@ export async function GET(
         firstName: true,
         lastName: true,
         email: true,
+        phoneNumber: true,
         isFixedStaff: true,
         hourlyRate: true,
         defaultShift: true,
         isActive: true,
 
-        // Campi Fase 4
+        // Campi contratto
         contractType: true,
         contractHoursWeek: true,
+        workDaysPerWeek: true,
         hireDate: true,
         terminationDate: true,
+
+        // Dati fiscali
+        vatNumber: true,
+        fiscalCode: true,
+
+        // Disponibilità EXTRA
+        availableDays: true,
+        availableHolidays: true,
+
+        // Tariffe
         hourlyRateBase: true,
         hourlyRateExtra: true,
         hourlyRateHoliday: true,
         hourlyRateNight: true,
+
+        // Portale
         portalEnabled: true,
         portalPin: session.user.role === 'admin' ? true : false, // Solo admin vede PIN
+
+        // Notifiche
         notifyEmail: true,
         notifyPush: true,
         notifyWhatsapp: true,
         whatsappNumber: true,
+
+        // Skills
         skills: true,
         canWorkAlone: true,
         canHandleCash: true,
+
         createdAt: true,
         updatedAt: true,
 
@@ -176,20 +214,37 @@ export async function PUT(
     // Campi base
     if (validatedData.firstName !== undefined) updateData.firstName = validatedData.firstName
     if (validatedData.lastName !== undefined) updateData.lastName = validatedData.lastName
+    if (validatedData.email !== undefined) updateData.email = validatedData.email
+    if (validatedData.phoneNumber !== undefined) updateData.phoneNumber = validatedData.phoneNumber
     if (validatedData.isFixedStaff !== undefined) updateData.isFixedStaff = validatedData.isFixedStaff
     if (validatedData.hourlyRate !== undefined) updateData.hourlyRate = validatedData.hourlyRate
     if (validatedData.defaultShift !== undefined) updateData.defaultShift = validatedData.defaultShift
     if (validatedData.isActive !== undefined) updateData.isActive = validatedData.isActive
 
-    // Campi Fase 4
+    // Sede e Ruolo (solo admin)
+    if (session.user.role === 'admin') {
+      if (validatedData.venueId !== undefined) updateData.venueId = validatedData.venueId
+      if (validatedData.roleId !== undefined) updateData.roleId = validatedData.roleId
+    }
+
+    // Campi contratto
     if (validatedData.contractType !== undefined) updateData.contractType = validatedData.contractType
     if (validatedData.contractHoursWeek !== undefined) updateData.contractHoursWeek = validatedData.contractHoursWeek
+    if (validatedData.workDaysPerWeek !== undefined) updateData.workDaysPerWeek = validatedData.workDaysPerWeek
     if (validatedData.hireDate !== undefined) {
       updateData.hireDate = validatedData.hireDate ? new Date(validatedData.hireDate) : null
     }
     if (validatedData.terminationDate !== undefined) {
       updateData.terminationDate = validatedData.terminationDate ? new Date(validatedData.terminationDate) : null
     }
+
+    // Dati fiscali
+    if (validatedData.vatNumber !== undefined) updateData.vatNumber = validatedData.vatNumber
+    if (validatedData.fiscalCode !== undefined) updateData.fiscalCode = validatedData.fiscalCode
+
+    // Disponibilità EXTRA
+    if (validatedData.availableDays !== undefined) updateData.availableDays = validatedData.availableDays
+    if (validatedData.availableHolidays !== undefined) updateData.availableHolidays = validatedData.availableHolidays
 
     // Tariffe estese
     if (validatedData.hourlyRateBase !== undefined) updateData.hourlyRateBase = validatedData.hourlyRateBase
@@ -224,14 +279,20 @@ export async function PUT(
         firstName: true,
         lastName: true,
         email: true,
+        phoneNumber: true,
         isFixedStaff: true,
         hourlyRate: true,
         defaultShift: true,
         isActive: true,
         contractType: true,
         contractHoursWeek: true,
+        workDaysPerWeek: true,
         hireDate: true,
         terminationDate: true,
+        vatNumber: true,
+        fiscalCode: true,
+        availableDays: true,
+        availableHolidays: true,
         hourlyRateBase: true,
         hourlyRateExtra: true,
         hourlyRateHoliday: true,
@@ -249,6 +310,12 @@ export async function PUT(
             id: true,
             name: true,
             code: true,
+          },
+        },
+        role: {
+          select: {
+            id: true,
+            name: true,
           },
         },
       },

@@ -8,10 +8,39 @@ const createStaffSchema = z.object({
   firstName: z.string().min(1, 'Nome richiesto'),
   lastName: z.string().min(1, 'Cognome richiesto'),
   email: z.string().email('Email non valida'),
-  isFixedStaff: z.boolean().default(true),
+  phoneNumber: z.string().nullable().optional(),
+  isFixedStaff: z.boolean().default(false), // Default: staff fisso (switch OFF)
   hourlyRate: z.number().min(0).nullable().optional(),
   defaultShift: z.enum(['MORNING', 'EVENING']).nullable().optional(),
   venueId: z.string().optional(),
+  roleId: z.string().optional(),
+
+  // Campi contratto
+  contractType: z.enum([
+    'TEMPO_DETERMINATO',
+    'TEMPO_INDETERMINATO',
+    'LAVORO_INTERMITTENTE',
+    'LAVORATORE_OCCASIONALE',
+    'LIBERO_PROFESSIONISTA'
+  ]).nullable().optional(),
+  contractHoursWeek: z.number().min(0).max(60).nullable().optional(),
+  workDaysPerWeek: z.number().min(1).max(7).nullable().optional(),
+  hireDate: z.string().nullable().optional(),
+  terminationDate: z.string().nullable().optional(),
+
+  // Dati fiscali
+  vatNumber: z.string().max(11).nullable().optional(),
+  fiscalCode: z.string().max(16).nullable().optional(),
+
+  // Disponibilità EXTRA
+  availableDays: z.array(z.number().min(0).max(6)).optional(),
+  availableHolidays: z.boolean().optional(),
+
+  // Tariffe
+  hourlyRateBase: z.number().min(0).nullable().optional(),
+  hourlyRateExtra: z.number().min(0).nullable().optional(),
+  hourlyRateHoliday: z.number().min(0).nullable().optional(),
+  hourlyRateNight: z.number().min(0).nullable().optional(),
 })
 
 // Schema per aggiornamento staff
@@ -241,12 +270,30 @@ export async function POST(request: NextRequest) {
         firstName: validatedData.firstName,
         lastName: validatedData.lastName,
         email: validatedData.email,
+        phoneNumber: validatedData.phoneNumber ?? null,
         isFixedStaff: validatedData.isFixedStaff,
         hourlyRate: validatedData.hourlyRate ?? null,
         defaultShift: validatedData.defaultShift ?? null,
         venueId: validatedData.venueId || session.user.venueId || null,
-        roleId: staffRole.id,
+        roleId: validatedData.roleId || staffRole.id,
         isActive: true,
+        // Campi contratto
+        contractType: validatedData.contractType ?? null,
+        contractHoursWeek: validatedData.contractHoursWeek ?? null,
+        workDaysPerWeek: validatedData.workDaysPerWeek ?? null,
+        hireDate: validatedData.hireDate ? new Date(validatedData.hireDate) : null,
+        terminationDate: validatedData.terminationDate ? new Date(validatedData.terminationDate) : null,
+        // Dati fiscali
+        vatNumber: validatedData.vatNumber ?? null,
+        fiscalCode: validatedData.fiscalCode ?? null,
+        // Disponibilità EXTRA
+        availableDays: validatedData.availableDays ?? [],
+        availableHolidays: validatedData.availableHolidays ?? false,
+        // Tariffe
+        hourlyRateBase: validatedData.hourlyRateBase ?? null,
+        hourlyRateExtra: validatedData.hourlyRateExtra ?? null,
+        hourlyRateHoliday: validatedData.hourlyRateHoliday ?? null,
+        hourlyRateNight: validatedData.hourlyRateNight ?? null,
         // Password temporanea (utente dovrà cambiarla al primo accesso)
         passwordHash: '',
       },
@@ -255,10 +302,24 @@ export async function POST(request: NextRequest) {
         firstName: true,
         lastName: true,
         email: true,
+        phoneNumber: true,
         isFixedStaff: true,
         hourlyRate: true,
         defaultShift: true,
         isActive: true,
+        contractType: true,
+        contractHoursWeek: true,
+        workDaysPerWeek: true,
+        hireDate: true,
+        terminationDate: true,
+        vatNumber: true,
+        fiscalCode: true,
+        availableDays: true,
+        availableHolidays: true,
+        hourlyRateBase: true,
+        hourlyRateExtra: true,
+        hourlyRateHoliday: true,
+        hourlyRateNight: true,
         venue: {
           select: {
             id: true,

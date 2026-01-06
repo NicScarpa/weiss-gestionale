@@ -7,7 +7,7 @@ export interface Employee {
   firstName: string
   lastName: string
   isFixedStaff: boolean
-  contractType: 'FISSO' | 'EXTRA' | 'INTERMITTENTE' | null
+  contractType: 'TEMPO_DETERMINATO' | 'TEMPO_INDETERMINATO' | 'LAVORO_INTERMITTENTE' | 'LAVORATORE_OCCASIONALE' | 'LIBERO_PROFESSIONISTA' | null
   contractHoursWeek: number | null
   venueId: string | null
   skills: string[]

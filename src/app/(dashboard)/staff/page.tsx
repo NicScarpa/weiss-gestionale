@@ -28,7 +28,6 @@ import { Label } from '@/components/ui/label'
 import {
   Users,
   Search,
-  Eye,
   Settings,
   UserPlus,
   Filter,
@@ -39,11 +38,12 @@ interface StaffMember {
   firstName: string
   lastName: string
   email: string
+  phoneNumber: string | null
   isFixedStaff: boolean
   hourlyRate: number | null
   defaultShift: 'MORNING' | 'EVENING' | null
   isActive: boolean
-  contractType: 'FISSO' | 'EXTRA' | 'INTERMITTENTE' | null
+  contractType: 'TEMPO_DETERMINATO' | 'TEMPO_INDETERMINATO' | 'LAVORO_INTERMITTENTE' | 'LAVORATORE_OCCASIONALE' | 'LIBERO_PROFESSIONISTA' | null
   venue?: {
     id: string
     name: string
@@ -110,12 +110,16 @@ export default function StaffPage() {
 
   const getContractBadge = (type: string | null) => {
     switch (type) {
-      case 'FISSO':
-        return <Badge variant="default">Fisso</Badge>
-      case 'EXTRA':
-        return <Badge variant="secondary">Extra</Badge>
-      case 'INTERMITTENTE':
-        return <Badge variant="outline">Intermittente</Badge>
+      case 'TEMPO_DETERMINATO':
+        return <Badge variant="default">T. Determinato</Badge>
+      case 'TEMPO_INDETERMINATO':
+        return <Badge className="bg-green-100 text-green-700">T. Indeterminato</Badge>
+      case 'LAVORO_INTERMITTENTE':
+        return <Badge variant="secondary">Intermittente</Badge>
+      case 'LAVORATORE_OCCASIONALE':
+        return <Badge variant="outline">Occasionale</Badge>
+      case 'LIBERO_PROFESSIONISTA':
+        return <Badge className="bg-blue-100 text-blue-700">Libero Prof.</Badge>
       default:
         return <Badge variant="outline">N/D</Badge>
     }
@@ -201,9 +205,11 @@ export default function StaffPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Tutti i contratti</SelectItem>
-                <SelectItem value="FISSO">Fisso</SelectItem>
-                <SelectItem value="EXTRA">Extra</SelectItem>
-                <SelectItem value="INTERMITTENTE">Intermittente</SelectItem>
+                <SelectItem value="TEMPO_DETERMINATO">T. Determinato</SelectItem>
+                <SelectItem value="TEMPO_INDETERMINATO">T. Indeterminato</SelectItem>
+                <SelectItem value="LAVORO_INTERMITTENTE">Intermittente</SelectItem>
+                <SelectItem value="LAVORATORE_OCCASIONALE">Occasionale</SelectItem>
+                <SelectItem value="LIBERO_PROFESSIONISTA">Libero Prof.</SelectItem>
               </SelectContent>
             </Select>
 
@@ -294,18 +300,11 @@ export default function StaffPage() {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Link href={`/staff/${staff.id}`}>
-                          <Button variant="ghost" size="icon">
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                        </Link>
-                        <Link href={`/staff/${staff.id}/vincoli`}>
-                          <Button variant="ghost" size="icon">
-                            <Settings className="h-4 w-4" />
-                          </Button>
-                        </Link>
-                      </div>
+                      <Link href={`/staff/${staff.id}`}>
+                        <Button variant="ghost" size="icon" title="Gestisci dipendente">
+                          <Settings className="h-4 w-4" />
+                        </Button>
+                      </Link>
                     </TableCell>
                   </TableRow>
                 ))}
