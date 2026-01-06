@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { notifySwapRequest } from '@/lib/notifications/triggers'
 
 // Schema per richiesta scambio turno
 const createSwapRequestSchema = z.object({
@@ -267,8 +268,10 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // TODO: Inviare notifica push all'utente target
-    // await notifySwapRequest(updatedAssignment.id)
+    // Invia notifica push all'utente target
+    notifySwapRequest(updatedAssignment.id).catch((err) => {
+      console.error('Errore invio notifica swap request:', err)
+    })
 
     return NextResponse.json({
       message: 'Richiesta di scambio inviata',

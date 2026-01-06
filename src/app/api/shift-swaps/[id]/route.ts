@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { notifySwapApproved, notifySwapRejected } from '@/lib/notifications/triggers'
 
 // Schema per risposta a scambio
 const respondSwapSchema = z.object({
@@ -227,14 +228,19 @@ export async function PUT(
         }
       })
 
-      // TODO: Notifica entrambi gli utenti
-      // await notifySwapApproved(assignment.id)
+      // Notifica chi ha richiesto lo scambio
+      notifySwapApproved(assignment.id).catch((err) => {
+        console.error('Errore invio notifica swap approved:', err)
+      })
 
       return NextResponse.json({
         message: 'Scambio turno completato con successo',
         ...result,
       })
     } else {
+      // Salva i dati per la notifica prima di resettarli
+      const requesterId = assignment.swapRequestedById
+
       // Rifiuta lo scambio
       await prisma.shiftAssignment.update({
         where: { id },
@@ -245,8 +251,12 @@ export async function PUT(
         },
       })
 
-      // TODO: Notifica l'utente che ha richiesto lo scambio
-      // await notifySwapRejected(assignment.id)
+      // Notifica chi ha richiesto lo scambio
+      if (requesterId) {
+        notifySwapRejected(id, session.user.id, requesterId).catch((err) => {
+          console.error('Errore invio notifica swap rejected:', err)
+        })
+      }
 
       return NextResponse.json({
         message: 'Richiesta di scambio rifiutata',

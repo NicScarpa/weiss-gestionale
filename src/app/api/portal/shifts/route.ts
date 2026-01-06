@@ -40,7 +40,17 @@ export async function GET(request: NextRequest) {
 
     const assignments = await prisma.shiftAssignment.findMany({
       where: whereClause,
-      include: {
+      select: {
+        id: true,
+        date: true,
+        startTime: true,
+        endTime: true,
+        breakMinutes: true,
+        status: true,
+        swapStatus: true,
+        swapRequestedById: true,
+        swapWithUserId: true,
+        notes: true,
         shiftDefinition: {
           select: {
             id: true,

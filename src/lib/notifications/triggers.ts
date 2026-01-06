@@ -355,3 +355,154 @@ export async function notifyNewLeaveRequest(
     },
   })
 }
+
+/**
+ * Invia notifica richiesta scambio turno (al collega destinatario)
+ */
+export async function notifySwapRequest(
+  assignmentId: string
+): Promise<void> {
+  const assignment = await prisma.shiftAssignment.findUnique({
+    where: { id: assignmentId },
+    include: {
+      user: true,
+      venue: true,
+      shiftDefinition: true,
+    },
+  })
+
+  if (!assignment || !assignment.swapWithUserId) return
+
+  // Ottieni info su chi ha richiesto lo scambio
+  const requester = assignment.swapRequestedById
+    ? await prisma.user.findUnique({
+        where: { id: assignment.swapRequestedById },
+        select: { firstName: true, lastName: true },
+      })
+    : null
+
+  const date = format(assignment.date, 'd MMMM', { locale: it })
+  const shiftName = assignment.shiftDefinition?.name || 'Turno'
+  const requesterName = requester
+    ? `${requester.firstName} ${requester.lastName}`
+    : 'Un collega'
+
+  await sendNotification({
+    userId: assignment.swapWithUserId,
+    payload: {
+      type: 'SHIFT_SWAP_REQUEST',
+      title: 'Richiesta Scambio Turno',
+      body: `${requesterName} ti chiede di scambiare il turno "${shiftName}" del ${date}`,
+      url: '/portale/scambi',
+      referenceId: assignmentId,
+      referenceType: 'ShiftAssignment',
+      data: {
+        assignmentId,
+        shiftName,
+        date: assignment.date.toISOString(),
+        requesterName,
+        venueName: assignment.venue.name,
+      },
+    },
+  })
+}
+
+/**
+ * Invia notifica scambio turno approvato (a chi ha richiesto lo scambio)
+ */
+export async function notifySwapApproved(
+  assignmentId: string
+): Promise<void> {
+  const assignment = await prisma.shiftAssignment.findUnique({
+    where: { id: assignmentId },
+    include: {
+      venue: true,
+      shiftDefinition: true,
+    },
+  })
+
+  if (!assignment || !assignment.swapRequestedById) return
+
+  // Ottieni info su chi ha accettato lo scambio
+  const accepter = assignment.swapWithUserId
+    ? await prisma.user.findUnique({
+        where: { id: assignment.swapWithUserId },
+        select: { firstName: true, lastName: true },
+      })
+    : null
+
+  const date = format(assignment.date, 'd MMMM', { locale: it })
+  const shiftName = assignment.shiftDefinition?.name || 'Turno'
+  const accepterName = accepter
+    ? `${accepter.firstName} ${accepter.lastName}`
+    : 'Il collega'
+
+  await sendNotification({
+    userId: assignment.swapRequestedById,
+    payload: {
+      type: 'SHIFT_SWAP_APPROVED',
+      title: 'Scambio Turno Accettato',
+      body: `${accepterName} ha accettato lo scambio del turno "${shiftName}" del ${date}`,
+      url: '/portale/scambi',
+      referenceId: assignmentId,
+      referenceType: 'ShiftAssignment',
+      data: {
+        assignmentId,
+        shiftName,
+        date: assignment.date.toISOString(),
+        accepterName,
+        venueName: assignment.venue.name,
+      },
+    },
+  })
+}
+
+/**
+ * Invia notifica scambio turno rifiutato (a chi ha richiesto lo scambio)
+ */
+export async function notifySwapRejected(
+  assignmentId: string,
+  rejecterId: string,
+  requesterId: string
+): Promise<void> {
+  const assignment = await prisma.shiftAssignment.findUnique({
+    where: { id: assignmentId },
+    include: {
+      venue: true,
+      shiftDefinition: true,
+    },
+  })
+
+  if (!assignment) return
+
+  // Ottieni info su chi ha rifiutato
+  const rejecter = await prisma.user.findUnique({
+    where: { id: rejecterId },
+    select: { firstName: true, lastName: true },
+  })
+
+  const date = format(assignment.date, 'd MMMM', { locale: it })
+  const shiftName = assignment.shiftDefinition?.name || 'Turno'
+  const rejecterName = rejecter
+    ? `${rejecter.firstName} ${rejecter.lastName}`
+    : 'Il collega'
+
+  await sendNotification({
+    userId: requesterId,
+    payload: {
+      type: 'SHIFT_SWAP_REJECTED',
+      title: 'Scambio Turno Rifiutato',
+      body: `${rejecterName} ha rifiutato lo scambio del turno "${shiftName}" del ${date}`,
+      url: '/portale/scambi',
+      referenceId: assignmentId,
+      referenceType: 'ShiftAssignment',
+      data: {
+        assignmentId,
+        shiftName,
+        date: assignment.date.toISOString(),
+        rejecterName,
+        venueName: assignment.venue.name,
+      },
+    },
+  })
+}
