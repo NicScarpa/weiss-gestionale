@@ -15,6 +15,7 @@ import {
   BankTransactionTable,
   ImportDialog,
   MatchDialog,
+  TransactionDetailsDialog,
 } from '@/components/reconciliation'
 import { toast } from 'sonner'
 import { Upload, RefreshCw, Play } from 'lucide-react'
@@ -40,6 +41,7 @@ export function RiconciliazioneClient({ venues }: { venues: Venue[] }) {
   const [loading, setLoading] = useState(true)
   const [importOpen, setImportOpen] = useState(false)
   const [matchTransactionId, setMatchTransactionId] = useState<string | null>(null)
+  const [detailsTransactionId, setDetailsTransactionId] = useState<string | null>(null)
   const [reconciling, setReconciling] = useState(false)
 
   const loadData = useCallback(async () => {
@@ -225,7 +227,7 @@ export function RiconciliazioneClient({ venues }: { venues: Venue[] }) {
         onIgnore={handleIgnore}
         onUnmatch={handleUnmatch}
         onMatch={(id) => setMatchTransactionId(id)}
-        onViewDetails={(id) => setMatchTransactionId(id)}
+        onViewDetails={(id) => setDetailsTransactionId(id)}
       />
 
       {/* Dialogs */}
@@ -241,6 +243,12 @@ export function RiconciliazioneClient({ venues }: { venues: Venue[] }) {
         onOpenChange={(open) => !open && setMatchTransactionId(null)}
         transactionId={matchTransactionId}
         onSuccess={loadData}
+      />
+
+      <TransactionDetailsDialog
+        open={detailsTransactionId !== null}
+        onOpenChange={(open) => !open && setDetailsTransactionId(null)}
+        transactionId={detailsTransactionId}
       />
     </div>
   )
