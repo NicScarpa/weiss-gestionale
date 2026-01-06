@@ -48,20 +48,28 @@ export function formatCurrency(amount: number): string {
 }
 
 // Formattazione data in italiano
-export function formatDate(date: Date): string {
+export function formatDate(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date
+  if (isNaN(d.getTime())) {
+    return '-'
+  }
   return new Intl.DateTimeFormat('it-IT', {
     weekday: 'long',
     year: 'numeric',
     month: 'long',
     day: 'numeric',
-  }).format(date)
+  }).format(d)
 }
 
 // Formattazione data breve
-export function formatDateShort(date: Date): string {
+export function formatDateShort(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date
+  if (isNaN(d.getTime())) {
+    return '-'
+  }
   return new Intl.DateTimeFormat('it-IT', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
-  }).format(date)
+  }).format(d)
 }
