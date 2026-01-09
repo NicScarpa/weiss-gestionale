@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { parseFatturaPA, calcolaImporti, estraiScadenze, estraiDatiEstesi } from '@/lib/sdi/parser'
+import { parseFatturaPASafe, calcolaImporti, estraiScadenze, estraiDatiEstesi } from '@/lib/sdi/parser'
+import type { ParseWarning } from '@/lib/sdi/types'
 import { matchSupplier, createSupplierFromData } from '@/lib/sdi/matcher'
 import { trackPricesFromInvoice } from '@/lib/price-tracking'
 import { Prisma, InvoiceStatus } from '@prisma/client'
@@ -263,18 +264,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Sede non trovata' }, { status: 404 })
     }
 
-    // Parse XML
-    let fattura
-    try {
-      fattura = parseFatturaPA(validatedData.xmlContent, validatedData.fileName)
-    } catch (parseError) {
-      const message =
-        parseError instanceof Error ? parseError.message : 'Errore parsing XML'
+    // Parse XML con error handling strutturato
+    const parseResult = parseFatturaPASafe(validatedData.xmlContent, validatedData.fileName)
+
+    if (!parseResult.success || !parseResult.data) {
+      // Restituisci errori strutturati
+      const errorMessages = parseResult.errors
+        .map(e => `[${e.code}] ${e.field}: ${e.message}`)
+        .join('; ')
       return NextResponse.json(
-        { error: `Errore nel parsing della fattura: ${message}` },
+        {
+          error: `Errore nel parsing della fattura: ${errorMessages}`,
+          parseErrors: parseResult.errors,
+        },
         { status: 400 }
       )
     }
+
+    const fattura = parseResult.data
+    const parseWarnings: ParseWarning[] = parseResult.warnings
 
     // Verifica se la fattura esiste già
     // Usa varianti P.IVA per retrocompatibilità con dati esistenti non normalizzati
@@ -440,6 +448,8 @@ export async function POST(request: NextRequest) {
       {
         ...invoice,
         priceTracking: priceTrackingResult,
+        // Warning dal parsing (tipo documento non riconosciuto, P.IVA non standard, etc.)
+        parseWarnings: parseWarnings.length > 0 ? parseWarnings : undefined,
       },
       { status: 201 }
     )

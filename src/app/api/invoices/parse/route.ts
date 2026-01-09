@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { parseFatturaPA, calcolaImporti, estraiScadenze } from '@/lib/sdi/parser'
+import { parseFatturaPASafe, calcolaImporti, estraiScadenze } from '@/lib/sdi/parser'
 import { matchSupplier, suggestAccountForSupplier } from '@/lib/sdi/matcher'
 import { TIPI_DOCUMENTO, MODALITA_PAGAMENTO } from '@/lib/sdi/types'
 import { z } from 'zod'
@@ -28,18 +28,24 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const validatedData = parseRequestSchema.parse(body)
 
-    // Parse XML
-    let fattura
-    try {
-      fattura = parseFatturaPA(validatedData.xmlContent, validatedData.fileName)
-    } catch (parseError) {
-      const message =
-        parseError instanceof Error ? parseError.message : 'Errore parsing XML'
+    // Parse XML con error handling strutturato
+    const parseResult = parseFatturaPASafe(validatedData.xmlContent, validatedData.fileName)
+
+    if (!parseResult.success || !parseResult.data) {
+      // Restituisci errori strutturati
+      const errorMessages = parseResult.errors
+        .map(e => `[${e.code}] ${e.field}: ${e.message}`)
+        .join('; ')
       return NextResponse.json(
-        { error: `Errore nel parsing della fattura: ${message}` },
+        {
+          error: `Errore nel parsing della fattura: ${errorMessages}`,
+          parseErrors: parseResult.errors,
+        },
         { status: 400 }
       )
     }
+
+    const fattura = parseResult.data
 
     // Calcola importi
     const importi = calcolaImporti(fattura)
@@ -148,6 +154,9 @@ export async function POST(request: NextRequest) {
             importedAt: existingInvoice.importedAt,
           }
         : null,
+
+      // Warning dal parsing (tipo documento non riconosciuto, P.IVA non standard, etc.)
+      parseWarnings: parseResult.warnings.length > 0 ? parseResult.warnings : undefined,
     })
   } catch (error) {
     if (error instanceof z.ZodError) {

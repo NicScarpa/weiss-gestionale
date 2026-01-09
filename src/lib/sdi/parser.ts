@@ -18,10 +18,15 @@ import type {
   DatoRiferimento,
   CodiceArticolo,
   DettaglioLineaEsteso,
+  ParseResult,
+  ParseError,
+  ParseWarning,
 } from './types'
 
 // Re-export types and constants for convenience
 export { TIPI_DOCUMENTO, MODALITA_PAGAMENTO, NATURA_OPERAZIONE } from './types'
+// Import per uso interno
+import { TIPI_DOCUMENTO, MODALITA_PAGAMENTO } from './types'
 
 // Parser options
 const parserOptions = {
@@ -628,4 +633,254 @@ export function formatDDTRiferimenti(datiDDT: DatoDDT[]): string {
       return `DDT ${ddt.numeroDDT}${data ? ` del ${data}` : ''}`
     })
     .join(', ')
+}
+
+// ============================================================================
+// Parsing Sicuro con Error Handling Strutturato
+// ============================================================================
+
+/**
+ * Parser sicuro per FatturaPA XML
+ * Restituisce un ParseResult strutturato con errori e warning
+ * invece di lanciare eccezioni
+ *
+ * @param xmlContent - Contenuto XML della fattura
+ * @param fileName - Nome del file (opzionale, per logging)
+ * @returns ParseResult con success, data, errors e warnings
+ */
+export function parseFatturaPASafe(xmlContent: string, fileName?: string): ParseResult {
+  const errors: ParseError[] = []
+  const warnings: ParseWarning[] = []
+
+  try {
+    const parser = new XMLParser(parserOptions)
+    let parsed: Record<string, unknown>
+
+    // Step 1: Parse XML
+    try {
+      parsed = parser.parse(xmlContent) as Record<string, unknown>
+    } catch (xmlError) {
+      errors.push({
+        code: 'INVALID_XML',
+        field: 'root',
+        message: `XML malformato: ${xmlError instanceof Error ? xmlError.message : 'Errore sconosciuto'}`,
+        value: xmlContent.substring(0, 200),
+      })
+      return { success: false, errors, warnings }
+    }
+
+    // Step 2: Trova il root element
+    const fattura = findFatturaBody(parsed)
+    if (!fattura) {
+      errors.push({
+        code: 'MISSING_ROOT',
+        field: 'FatturaElettronica',
+        message: 'Root element FatturaElettronica non trovato nel documento',
+      })
+      return { success: false, errors, warnings }
+    }
+
+    // Verifica se sono stati rimossi namespace
+    const keys = Object.keys(parsed)
+    if (keys.some((k) => k.includes(':'))) {
+      warnings.push({
+        code: 'NAMESPACE_REMOVED',
+        field: 'root',
+        message: `Namespace XML presente e rimosso: ${keys[0]}`,
+        value: keys[0],
+      })
+    }
+
+    // Step 3: Estrai header
+    const header = (fattura.FatturaElettronicaHeader || {}) as Record<string, unknown>
+    if (!fattura.FatturaElettronicaHeader) {
+      errors.push({
+        code: 'MISSING_HEADER',
+        field: 'FatturaElettronicaHeader',
+        message: 'Header fattura mancante',
+      })
+      return { success: false, errors, warnings }
+    }
+
+    const datiTrasmissione = (header.DatiTrasmissione || {}) as Record<string, unknown>
+
+    // Step 4: Estrai body
+    const bodyArray = toArray(fattura.FatturaElettronicaBody)
+    if (bodyArray.length === 0) {
+      errors.push({
+        code: 'MISSING_BODY',
+        field: 'FatturaElettronicaBody',
+        message: 'Nessun body fattura trovato nel documento',
+      })
+      return { success: false, errors, warnings }
+    }
+
+    if (bodyArray.length > 1) {
+      warnings.push({
+        code: 'MULTIPLE_BODIES',
+        field: 'FatturaElettronicaBody',
+        message: `Il file contiene ${bodyArray.length} fatture, viene parsata solo la prima`,
+        value: bodyArray.length,
+      })
+    }
+
+    // Step 5: Parse cedente/cessionario
+    const cedente = (header.CedentePrestatore || {}) as Record<string, unknown>
+    const cessionario = (header.CessionarioCommittente || {}) as Record<string, unknown>
+
+    const cedenteParsed = parseCedentePrestatore(cedente)
+    const cessionarioParsed = parseCessionarioCommittente(cessionario)
+
+    // Validazione P.IVA con warning per casi speciali
+    if (!cedenteParsed.partitaIva && !cedenteParsed.codiceFiscale) {
+      errors.push({
+        code: 'MISSING_VAT',
+        field: 'CedentePrestatore/IdFiscaleIVA',
+        message: 'Partita IVA o Codice Fiscale del fornitore non trovati',
+      })
+      return { success: false, errors, warnings }
+    }
+
+    // Warning per P.IVA non standard
+    if (cedenteParsed.partitaIva) {
+      const rawVat = getText((cedente.DatiAnagrafici as Record<string, unknown>)?.IdFiscaleIVA as Record<string, unknown> || {})
+      if (cedenteParsed.partitaIva.length !== 11) {
+        warnings.push({
+          code: 'VAT_NON_STANDARD_LENGTH',
+          field: 'CedentePrestatore/IdFiscaleIVA/IdCodice',
+          message: `P.IVA con lunghezza non standard: ${cedenteParsed.partitaIva.length} cifre`,
+          value: cedenteParsed.partitaIva,
+        })
+      }
+    }
+
+    // Step 6: Parse dati generali documento
+    const body = bodyArray[0] as Record<string, unknown>
+    const datiGenerali = (body.DatiGenerali || {}) as Record<string, unknown>
+    const datiGeneraliDocumento = (datiGenerali.DatiGeneraliDocumento || {}) as Record<
+      string,
+      unknown
+    >
+    const datiBeniServizi = (body.DatiBeniServizi || {}) as Record<string, unknown>
+
+    const numero = getText(datiGeneraliDocumento.Numero)
+    const data = getText(datiGeneraliDocumento.Data)
+    const tipoDocumento = getText(datiGeneraliDocumento.TipoDocumento)
+
+    // Validazioni campi obbligatori
+    if (!numero) {
+      errors.push({
+        code: 'MISSING_INVOICE_NUM',
+        field: 'DatiGeneraliDocumento/Numero',
+        message: 'Numero fattura non trovato',
+      })
+      return { success: false, errors, warnings }
+    }
+
+    if (!data) {
+      errors.push({
+        code: 'MISSING_INVOICE_DATE',
+        field: 'DatiGeneraliDocumento/Data',
+        message: 'Data fattura non trovata',
+      })
+      return { success: false, errors, warnings }
+    }
+
+    // Validazione formato data
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) {
+      warnings.push({
+        code: 'UNKNOWN_DOCUMENT_TYPE', // Riutilizzo per semplicità
+        field: 'DatiGeneraliDocumento/Data',
+        message: `Formato data non standard: ${data} (atteso YYYY-MM-DD)`,
+        value: data,
+      })
+    }
+
+    // Warning per tipo documento non riconosciuto
+    if (tipoDocumento && !TIPI_DOCUMENTO[tipoDocumento]) {
+      warnings.push({
+        code: 'UNKNOWN_DOCUMENT_TYPE',
+        field: 'DatiGeneraliDocumento/TipoDocumento',
+        message: `Tipo documento non riconosciuto: ${tipoDocumento}`,
+        value: tipoDocumento,
+      })
+    }
+
+    // Warning per linee dettaglio vuote
+    const linee = toArray(datiBeniServizi.DettaglioLinee)
+    if (linee.length === 0) {
+      warnings.push({
+        code: 'EMPTY_LINE_ITEMS',
+        field: 'DatiBeniServizi/DettaglioLinee',
+        message: 'Nessuna linea di dettaglio presente nella fattura',
+      })
+    }
+
+    // Warning per importo totale mancante
+    const importoTotale = parseDecimal(datiGeneraliDocumento.ImportoTotaleDocumento)
+    if (importoTotale === 0) {
+      warnings.push({
+        code: 'MISSING_TOTAL_AMOUNT',
+        field: 'DatiGeneraliDocumento/ImportoTotaleDocumento',
+        message: 'ImportoTotaleDocumento mancante o zero, verrà calcolato dai riepiloghi',
+      })
+    }
+
+    // Step 7: Parse causale
+    const causaleRaw = datiGeneraliDocumento.Causale
+    const causale = causaleRaw ? toArray(causaleRaw).map((c) => getText(c)) : undefined
+
+    // Step 8: Costruisci risultato
+    const result: FatturaParsata = {
+      progressivoInvio: getText(datiTrasmissione.ProgressivoInvio),
+      formatoTrasmissione: getText(datiTrasmissione.FormatoTrasmissione),
+      codiceDestinatario: getText(datiTrasmissione.CodiceDestinatario) || undefined,
+      pecDestinatario: getText(datiTrasmissione.PECDestinatario) || undefined,
+      cedentePrestatore: cedenteParsed,
+      cessionarioCommittente: cessionarioParsed,
+      tipoDocumento,
+      divisa: getText(datiGeneraliDocumento.Divisa) || 'EUR',
+      data,
+      numero,
+      causale,
+      importoTotaleDocumento: importoTotale,
+      arrotondamento: datiGeneraliDocumento.Arrotondamento
+        ? parseDecimal(datiGeneraliDocumento.Arrotondamento)
+        : undefined,
+      dettaglioLinee: parseDettaglioLinee(datiBeniServizi),
+      datiRiepilogo: parseDatiRiepilogo(datiBeniServizi),
+      datiPagamento: parseDatiPagamento(body.DatiPagamento),
+      datiBollo: parseDatiBollo(datiGeneraliDocumento),
+      xmlOriginale: xmlContent,
+      nomeFile: fileName,
+    }
+
+    // Verifica modalità pagamento
+    if (result.datiPagamento) {
+      for (const dettaglio of result.datiPagamento.dettagliPagamento) {
+        if (dettaglio.modalitaPagamento && !MODALITA_PAGAMENTO[dettaglio.modalitaPagamento]) {
+          warnings.push({
+            code: 'UNKNOWN_PAYMENT_METHOD',
+            field: 'DatiPagamento/DettaglioPagamento/ModalitaPagamento',
+            message: `Modalità pagamento non riconosciuta: ${dettaglio.modalitaPagamento}`,
+            value: dettaglio.modalitaPagamento,
+          })
+        }
+      }
+    }
+
+    return {
+      success: true,
+      data: result,
+      errors,
+      warnings,
+    }
+  } catch (error) {
+    errors.push({
+      code: 'INVALID_XML',
+      field: 'root',
+      message: `Errore imprevisto durante il parsing: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`,
+    })
+    return { success: false, errors, warnings }
+  }
 }
