@@ -97,7 +97,7 @@ export default function ScheduleDetailPage({ params }: PageProps) {
   const shiftDefinitions = shiftDefsData?.data || []
 
   const generateMutation = useMutation({
-    mutationFn: async (params: { preferFixedStaff: boolean; balanceHours: boolean; minimizeCost: boolean }) => {
+    mutationFn: async (params: { preferFixedStaff: boolean; balanceHours: boolean; minimizeCost: boolean; staffingRequirements?: Record<string, number> }) => {
       const res = await fetch(`/api/schedules/${resolvedParams.id}/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -138,7 +138,7 @@ export default function ScheduleDetailPage({ params }: PageProps) {
     },
   })
 
-  const handleGenerate = async (params: { preferFixedStaff: boolean; balanceHours: boolean; minimizeCost: boolean }) => {
+  const handleGenerate = async (params: { preferFixedStaff: boolean; balanceHours: boolean; minimizeCost: boolean; staffingRequirements?: Record<string, number> }) => {
     setIsGenerating(true)
     try {
       await generateMutation.mutateAsync(params)
@@ -314,6 +314,9 @@ export default function ScheduleDetailPage({ params }: PageProps) {
             <GenerationParamsForm
               onGenerate={handleGenerate}
               isGenerating={isGenerating}
+              startDate={new Date(schedule.startDate)}
+              endDate={new Date(schedule.endDate)}
+              shiftDefinitions={shiftDefinitions}
             />
           )}
 

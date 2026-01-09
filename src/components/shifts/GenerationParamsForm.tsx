@@ -5,28 +5,59 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Wand2, Loader2 } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+import { Wand2, Loader2, Users } from 'lucide-react'
+import { StaffingConfiguration } from './StaffingConfiguration'
+
+interface ShiftDefinition {
+  id: string
+  name: string
+  code: string
+  minStaff: number
+}
 
 interface GenerationParams {
   preferFixedStaff: boolean
   balanceHours: boolean
   minimizeCost: boolean
+  staffingRequirements?: Record<string, number>
 }
 
 interface GenerationParamsFormProps {
   onGenerate: (params: GenerationParams) => Promise<void>
   isGenerating?: boolean
+  startDate: Date
+  endDate: Date
+  shiftDefinitions: ShiftDefinition[]
 }
 
-export function GenerationParamsForm({ onGenerate, isGenerating }: GenerationParamsFormProps) {
+export function GenerationParamsForm({ 
+  onGenerate, 
+  isGenerating,
+  startDate,
+  endDate,
+  shiftDefinitions 
+}: GenerationParamsFormProps) {
   const [params, setParams] = useState<GenerationParams>({
     preferFixedStaff: true,
     balanceHours: true,
     minimizeCost: false,
   })
+  const [staffingRequirements, setStaffingRequirements] = useState<Record<string, number>>({})
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
 
   const handleGenerate = async () => {
-    await onGenerate(params)
+    await onGenerate({
+      ...params,
+      staffingRequirements,
+    })
   }
 
   return (
@@ -80,23 +111,43 @@ export function GenerationParamsForm({ onGenerate, isGenerating }: GenerationPar
           />
         </div>
 
-        <Button
-          className="w-full"
-          onClick={handleGenerate}
-          disabled={isGenerating}
-        >
-          {isGenerating ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Generazione in corso...
-            </>
-          ) : (
-            <>
-              <Wand2 className="h-4 w-4 mr-2" />
-              Genera Turni
-            </>
-          )}
-        </Button>
+        <div className="pt-2">
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="w-full mb-2">
+                <Users className="h-4 w-4 mr-2" />
+                Configura Fabbisogno Staff
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+              <StaffingConfiguration
+                startDate={startDate}
+                endDate={endDate}
+                shiftDefinitions={shiftDefinitions}
+                onRequirementsChange={setStaffingRequirements}
+                initialRequirements={staffingRequirements}
+              />
+            </DialogContent>
+          </Dialog>
+
+          <Button
+            className="w-full"
+            onClick={handleGenerate}
+            disabled={isGenerating}
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Generazione in corso...
+              </>
+            ) : (
+              <>
+                <Wand2 className="h-4 w-4 mr-2" />
+                Genera Turni
+              </>
+            )}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   )

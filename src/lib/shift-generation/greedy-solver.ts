@@ -114,7 +114,12 @@ function assignEmployeesToShift(
   const assignments: ShiftAssignment[] = []
   const warnings: GenerationWarning[] = []
 
-  const minStaff = shift.minStaff
+  // Check for staffing override
+  const dateKey = date.toISOString().split('T')[0]
+  const reqKey = `${dateKey}_${shift.id}`
+  const overrideMinStaff = params.staffingRequirements?.[reqKey]
+
+  const minStaff = overrideMinStaff !== undefined ? overrideMinStaff : shift.minStaff
   const maxStaff = shift.maxStaff || minStaff + 2
 
   // Filter and score available employees
