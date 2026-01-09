@@ -17,9 +17,9 @@ async function backfillInvoices() {
       xmlContent: { not: null },
       OR: [
         { documentType: null },
-        { lineItems: null },
-        { references: null },
-        { vatSummary: null },
+        { lineItems: { equals: Prisma.DbNull } },
+        { references: { equals: Prisma.DbNull } },
+        { vatSummary: { equals: Prisma.DbNull } },
       ],
     },
     select: {
