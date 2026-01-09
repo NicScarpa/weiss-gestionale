@@ -57,7 +57,7 @@ interface StaffMember {
 
 export default function StaffPage() {
   const [search, setSearch] = useState('')
-  const [filterActive, setFilterActive] = useState<boolean | null>(true)
+  const [showInactive, setShowInactive] = useState(false)
   const [filterVenue, setFilterVenue] = useState<string>('all')
   const [filterContract, setFilterContract] = useState<string>('all')
   const [page, setPage] = useState(1)
@@ -94,8 +94,9 @@ export default function StaffPage() {
       staff.lastName.toLowerCase().includes(searchLower) ||
       staff.email.toLowerCase().includes(searchLower)
 
-    // Filtro attivo
-    const matchesActive = filterActive === null || staff.isActive === filterActive
+    // Filtro attivo/inattivo
+    // Di default mostra solo attivi, se showInactive è true mostra solo inattivi
+    const matchesActive = showInactive ? !staff.isActive : staff.isActive
 
     // Filtro sede
     const matchesVenue = filterVenue === 'all' || staff.venue?.id === filterVenue
@@ -230,14 +231,14 @@ export default function StaffPage() {
 
             <div className="flex items-center gap-2">
               <Switch
-                id="filter-active"
-                checked={filterActive === true}
+                id="filter-inactive"
+                checked={showInactive}
                 onCheckedChange={v => {
-                  setFilterActive(v ? true : null)
+                  setShowInactive(v)
                   setPage(1)
                 }}
               />
-              <Label htmlFor="filter-active">Solo attivi</Label>
+              <Label htmlFor="filter-inactive">Inattivi</Label>
             </div>
           </div>
         </CardContent>
