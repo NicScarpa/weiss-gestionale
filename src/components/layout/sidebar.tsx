@@ -51,7 +51,6 @@ const settingsNavigation = [
   { name: 'Fornitori', href: '/impostazioni/fornitori', icon: Truck },
   { name: 'Piano Conti', href: '/impostazioni/conti', icon: BookOpen },
   { name: 'Budget', href: '/impostazioni/budget', icon: Calculator },
-  { name: 'Prima Nota', href: '/impostazioni/prima-nota', icon: FileText },
 ]
 
 export function Sidebar() {
