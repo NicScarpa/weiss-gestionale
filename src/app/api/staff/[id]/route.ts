@@ -3,6 +3,90 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+// Mappatura nomi campi per messaggi di errore leggibili
+const fieldLabels: Record<string, string> = {
+  firstName: 'Nome',
+  lastName: 'Cognome',
+  email: 'Email',
+  phoneNumber: 'Telefono',
+  venueId: 'Sede',
+  roleId: 'Ruolo',
+  isFixedStaff: 'Tipo lavoratore (EXTRA)',
+  hourlyRate: 'Compenso orario',
+  defaultShift: 'Turno predefinito',
+  isActive: 'Stato attivo',
+  contractType: 'Tipo contratto',
+  contractHoursWeek: 'Ore settimanali',
+  workDaysPerWeek: 'Giorni lavorativi',
+  hireDate: 'Data assunzione',
+  terminationDate: 'Data cessazione',
+  vatNumber: 'Partita IVA',
+  fiscalCode: 'Codice Fiscale',
+  birthDate: 'Data di nascita',
+  address: 'Indirizzo',
+  availableDays: 'Giorni disponibilità',
+  availableHolidays: 'Disponibilità festivi',
+  hourlyRateBase: 'Compenso base',
+  hourlyRateExtra: 'Compenso straordinario',
+  hourlyRateHoliday: 'Compenso festivo',
+  hourlyRateNight: 'Compenso notturno',
+  portalEnabled: 'Accesso portale',
+  portalPin: 'PIN portale',
+  notifyEmail: 'Notifiche email',
+  notifyPush: 'Notifiche push',
+  notifyWhatsapp: 'Notifiche WhatsApp',
+  whatsappNumber: 'Numero WhatsApp',
+  skills: 'Competenze',
+  canWorkAlone: 'Può lavorare da solo',
+  canHandleCash: 'Può gestire cassa',
+}
+
+// Formatta errori Zod in messaggi leggibili
+function formatZodErrors(error: z.ZodError): string {
+  const messages = error.issues.map(issue => {
+    const fieldPath = issue.path.join('.')
+    const fieldName = fieldLabels[fieldPath] || fieldPath
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const issueAny = issue as any
+    const code = issue.code as string
+
+    // Gestione per tipo di errore
+    if (code === 'invalid_type') {
+      if (issueAny.received === 'undefined' || issueAny.received === 'null') {
+        return `"${fieldName}" è obbligatorio`
+      }
+      return `"${fieldName}" ha un formato non valido`
+    }
+
+    if (code === 'too_small') {
+      if (issueAny.type === 'string' && issueAny.minimum === 1) {
+        return `"${fieldName}" è obbligatorio`
+      }
+      return `"${fieldName}" deve essere almeno ${issueAny.minimum}`
+    }
+
+    if (code === 'too_big') {
+      return `"${fieldName}" supera il limite massimo`
+    }
+
+    if (code === 'invalid_enum_value' || code === 'invalid_value') {
+      return `"${fieldName}" ha un valore non valido`
+    }
+
+    if (code === 'invalid_string' || code === 'invalid_format') {
+      if (issueAny.validation === 'email' || issueAny.format === 'email') {
+        return `"${fieldName}" non è un indirizzo email valido`
+      }
+      return `"${fieldName}" ha un formato non valido`
+    }
+
+    // Fallback
+    return `"${fieldName}": ${issue.message}`
+  })
+
+  return messages.join('. ')
+}
+
 // Schema per aggiornamento dipendente esteso
 const updateStaffSchema = z.object({
   firstName: z.string().min(1).optional(),
@@ -343,8 +427,9 @@ export async function PUT(
     return NextResponse.json(updatedStaff)
   } catch (error) {
     if (error instanceof z.ZodError) {
+      const errorMessage = formatZodErrors(error)
       return NextResponse.json(
-        { error: 'Dati non validi', details: error.issues },
+        { error: errorMessage, details: error.issues },
         { status: 400 }
       )
     }
