@@ -137,6 +137,7 @@ function tryUtf8Extraction(buffer: Buffer | ArrayBuffer): string | null {
 /**
  * Clean extracted XML content
  * - Remove null bytes and control characters
+ * - Repair corrupted XML tags from P7M signature
  * - Normalize whitespace issues
  * - Ensure proper encoding
  */
@@ -148,6 +149,41 @@ function cleanExtractedXml(xml: string): string {
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
     // Fix potential encoding issues with common Italian characters
     .replace(/\ufffd/g, '')
+    // Remove high surrogate characters that can corrupt tags
+    .replace(/[\uD800-\uDFFF]/g, '')
+    // Remove other problematic Unicode characters
+    .replace(/[\uFFF0-\uFFFF]/g, '')
+    //
+    // RIPARA TAG XML CORROTTI DA FIRMA DIGITALE P7M
+    // I file P7M possono avere byte della firma mescolati nel contenuto XML
+    //
+    // Tag Anagrafica (es. "Ana��grafica" -> "Anagrafica")
+    .replace(/<Ana[^a-zA-Z<>]*grafica>/gi, '<Anagrafica>')
+    .replace(/<\/Ana[^a-zA-Z<>]*grafica>/gi, '</Anagrafica>')
+    // Tag Denominazione
+    .replace(/<Denominazi[^a-zA-Z<>]*one>/gi, '<Denominazione>')
+    .replace(/<\/Denominazi[^a-zA-Z<>]*one>/gi, '</Denominazione>')
+    // Tag IdFiscaleIVA
+    .replace(/<IdFiscale[^a-zA-Z<>]*IVA>/gi, '<IdFiscaleIVA>')
+    .replace(/<\/IdFiscale[^a-zA-Z<>]*IVA>/gi, '</IdFiscaleIVA>')
+    // Tag CodiceFiscale
+    .replace(/<Codice[^a-zA-Z<>]*Fiscale>/gi, '<CodiceFiscale>')
+    .replace(/<\/Codice[^a-zA-Z<>]*Fiscale>/gi, '</CodiceFiscale>')
+    // Tag CedentePrestatore
+    .replace(/<Cedente[^a-zA-Z<>]*Prestatore>/gi, '<CedentePrestatore>')
+    .replace(/<\/Cedente[^a-zA-Z<>]*Prestatore>/gi, '</CedentePrestatore>')
+    // Tag CessionarioCommittente
+    .replace(/<Cessionario[^a-zA-Z<>]*Committente>/gi, '<CessionarioCommittente>')
+    .replace(/<\/Cessionario[^a-zA-Z<>]*Committente>/gi, '</CessionarioCommittente>')
+    // Tag DatiAnagrafici
+    .replace(/<Dati[^a-zA-Z<>]*Anagrafici>/gi, '<DatiAnagrafici>')
+    .replace(/<\/Dati[^a-zA-Z<>]*Anagrafici>/gi, '</DatiAnagrafici>')
+    // Tag IdCodice (per P.IVA)
+    .replace(/<Id[^a-zA-Z<>]*Codice>/gi, '<IdCodice>')
+    .replace(/<\/Id[^a-zA-Z<>]*Codice>/gi, '</IdCodice>')
+    // Tag ImportoTotaleDocumento
+    .replace(/<Importo[^a-zA-Z<>]*Totale[^a-zA-Z<>]*Documento>/gi, '<ImportoTotaleDocumento>')
+    .replace(/<\/Importo[^a-zA-Z<>]*Totale[^a-zA-Z<>]*Documento>/gi, '</ImportoTotaleDocumento>')
     // Trim whitespace
     .trim()
 }
