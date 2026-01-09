@@ -267,11 +267,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Verifica se la fattura esiste già
+    // Usa varianti P.IVA per retrocompatibilità con dati esistenti non normalizzati
+    const normalizedSupplierVat = fattura.cedentePrestatore.partitaIva
+    const vatWithoutLeadingZeros = normalizedSupplierVat.replace(/^0+/, '')
+
     const existingInvoice = await prisma.electronicInvoice.findFirst({
       where: {
         invoiceNumber: fattura.numero,
-        supplierVat: fattura.cedentePrestatore.partitaIva,
         invoiceDate: new Date(fattura.data),
+        OR: [
+          // Match esatto con P.IVA normalizzata (nuove fatture)
+          { supplierVat: normalizedSupplierVat },
+          // Match senza zeri iniziali (fatture pre-fix)
+          { supplierVat: vatWithoutLeadingZeros },
+        ],
       },
     })
 
