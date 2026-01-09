@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { parseFatturaPA, calcolaImporti, estraiScadenze } from '@/lib/sdi/parser'
+import { parseFatturaPA, calcolaImporti, estraiScadenze, estraiDatiEstesi } from '@/lib/sdi/parser'
 import { matchSupplier, createSupplierFromData } from '@/lib/sdi/matcher'
 import { trackPricesFromInvoice } from '@/lib/price-tracking'
 import { Prisma, InvoiceStatus } from '@prisma/client'
@@ -53,10 +53,11 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '50')
 
-    // Nuovi parametri per ricerca, filtro anno/mese e ordinamento
+    // Nuovi parametri per ricerca, filtro anno/mese, tipo documento e ordinamento
     const search = searchParams.get('search')
     const year = searchParams.get('year')
     const month = searchParams.get('month')
+    const documentType = searchParams.get('documentType')
     const sortBy = searchParams.get('sortBy') || 'invoiceDate'
     const sortOrder = (searchParams.get('sortOrder') || 'desc') as 'asc' | 'desc'
 
@@ -78,15 +79,21 @@ export async function GET(request: NextRequest) {
       where.supplierId = supplierId
     }
 
-    // Ricerca globale su nome fornitore e numero fattura
+    // Filtro per tipo documento
+    if (documentType) {
+      where.documentType = documentType
+    }
+
+    // Ricerca globale su nome fornitore, numero fattura e P.IVA
     if (search && search.length >= 2) {
       where.OR = [
         { supplierName: { contains: search, mode: 'insensitive' } },
         { invoiceNumber: { contains: search, mode: 'insensitive' } },
+        { supplierVat: { contains: search, mode: 'insensitive' } },
       ]
     }
 
-    // Filtro per anno e mese
+    // Filtro per anno e mese (priorità su from/to)
     if (year && year !== 'all') {
       const yearNum = parseInt(year)
       if (month && month !== 'all') {
@@ -119,18 +126,39 @@ export async function GET(request: NextRequest) {
     }
 
     // Costruisci ordinamento dinamico
-    const validSortFields = ['documentType', 'invoiceDate', 'invoiceNumber', 'supplierName', 'totalAmount', 'status']
-    const orderByField = validSortFields.includes(sortBy) ? sortBy : 'invoiceDate'
+    const validSortFields = ['documentType', 'invoiceDate', 'invoiceNumber', 'supplierName', 'totalAmount', 'status', 'importedAt']
+    const sortField = validSortFields.includes(sortBy) ? sortBy : 'invoiceDate'
     const orderBy: Prisma.ElectronicInvoiceOrderByWithRelationInput[] = [
-      { [orderByField]: sortOrder },
-      { importedAt: 'desc' }, // Ordinamento secondario
+      { [sortField]: sortOrder },
     ]
+    // Aggiungi ordinamento secondario se non è già invoiceDate
+    if (sortField !== 'invoiceDate') {
+      orderBy.push({ invoiceDate: 'desc' })
+    }
 
     // Query con paginazione
     const [invoices, total] = await Promise.all([
       prisma.electronicInvoice.findMany({
         where,
-        include: {
+        select: {
+          id: true,
+          invoiceNumber: true,
+          invoiceDate: true,
+          supplierVat: true,
+          supplierName: true,
+          totalAmount: true,
+          vatAmount: true,
+          netAmount: true,
+          status: true,
+          fileName: true,
+          importedAt: true,
+          // Nuovi campi (PRD Phase 1)
+          documentType: true,
+          lineItems: true,
+          references: true,
+          vatSummary: true,
+          causale: true,
+          // Relazioni
           supplier: {
             select: {
               id: true,
@@ -170,6 +198,14 @@ export async function GET(request: NextRequest) {
         limit,
         total,
         totalPages: Math.ceil(total / limit),
+      },
+      filters: {
+        search,
+        year,
+        month,
+        documentType,
+        sortBy: sortField,
+        sortOrder,
       },
     })
   } catch (error) {
@@ -302,12 +338,21 @@ export async function POST(request: NextRequest) {
       return null
     }
 
+    // Estrai dati estesi per salvataggio JSON
+    let datiEstesi
+    try {
+      datiEstesi = estraiDatiEstesi(validatedData.xmlContent)
+    } catch (extendedError) {
+      console.warn('Errore estrazione dati estesi:', extendedError)
+      // Non blocchiamo l'import se l'estrazione estesa fallisce
+      datiEstesi = null
+    }
+
     // Crea la fattura con le scadenze
     const invoice = await prisma.electronicInvoice.create({
       data: {
         invoiceNumber: fattura.numero,
         invoiceDate: new Date(fattura.data),
-        documentType: fattura.tipoDocumento || null,
         supplierVat: fattura.cedentePrestatore.partitaIva,
         supplierName: fattura.cedentePrestatore.denominazione,
         totalAmount: new Prisma.Decimal(importi.totalAmount.toFixed(2)),
@@ -320,6 +365,12 @@ export async function POST(request: NextRequest) {
         fileName: validatedData.fileName || null,
         venueId: validatedData.venueId,
         createdBy: session.user.id,
+        // Nuovi campi estesi (Phase 1 PRD)
+        documentType: datiEstesi?.documentType || fattura.tipoDocumento || 'TD01',
+        lineItems: datiEstesi?.lineItems || null,
+        references: datiEstesi?.references || null,
+        vatSummary: datiEstesi?.vatSummary || null,
+        causale: datiEstesi?.causale || null,
         deadlines: {
           create: scadenze.map((s, index) => ({
             dueDate: s.dueDate,

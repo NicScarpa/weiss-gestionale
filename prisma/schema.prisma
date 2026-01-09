@@ -1365,6 +1365,13 @@ model ElectronicInvoice {
   vatAmount   Decimal @map("vat_amount") @db.Decimal(10, 2) // Totale IVA
   netAmount   Decimal @map("net_amount") @db.Decimal(10, 2) // Imponibile
 
+  // Tipo documento e dati estratti
+  documentType String?  @default("TD01") @map("document_type") // TD01, TD04, TD24, ecc.
+  lineItems    Json?    @map("line_items")    // Dettaglio linee fattura
+  references   Json?    @map("references")    // Riferimenti DDT, ordini, contratti
+  vatSummary   Json?    @map("vat_summary")   // Riepilogo IVA per aliquota
+  causale      String?  @map("causale") @db.Text // Causale documento
+
   // Stato elaborazione
   status InvoiceStatus @default(IMPORTED)
 
@@ -1400,6 +1407,7 @@ model ElectronicInvoice {
   @@index([supplierId])
   @@index([status])
   @@index([venueId])
+  @@index([documentType])
   @@map("electronic_invoices")
 }
 
