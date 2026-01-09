@@ -371,8 +371,7 @@ export function InvoiceImportDialog({
     
     // Refresh queries
     queryClient.invalidateQueries({ queryKey: ['invoices'] })
-    onSuccess() // Notify parent list to refresh
-
+    
     // Move to next step
     if (needsReviewCount > 0) {
       // Find first index needing review
@@ -448,6 +447,8 @@ export function InvoiceImportDialog({
       setFiles(updatedFiles)
       toast.success('Fattura importata')
       
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+
       // Move to next review item
       const nextIndex = updatedFiles.findIndex((f, idx) => idx > currentReviewIndex && f.status === 'needs_review')
       if (nextIndex !== -1) {
