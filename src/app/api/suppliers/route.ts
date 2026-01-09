@@ -196,6 +196,17 @@ export async function PUT(request: NextRequest) {
       },
     })
 
+    // Propaga le modifiche alle fatture collegate
+    if (validatedData.name || validatedData.vatNumber) {
+      await prisma.electronicInvoice.updateMany({
+        where: { supplierId: id },
+        data: {
+          ...(validatedData.name && { supplierName: validatedData.name }),
+          ...(validatedData.vatNumber && { supplierVat: validatedData.vatNumber }),
+        },
+      })
+    }
+
     return NextResponse.json({ supplier })
   } catch (error) {
     console.error('Errore PUT /api/suppliers:', error)
