@@ -60,6 +60,8 @@ export default function StaffPage() {
   const [filterActive, setFilterActive] = useState<boolean | null>(true)
   const [filterVenue, setFilterVenue] = useState<string>('all')
   const [filterContract, setFilterContract] = useState<string>('all')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
 
   const { data: staffData, isLoading } = useQuery({
     queryKey: ['staff-list'],
@@ -103,6 +105,10 @@ export default function StaffPage() {
 
     return matchesSearch && matchesActive && matchesVenue && matchesContract
   })
+
+  // Paginazione
+  const totalPages = Math.ceil(filteredStaff.length / pageSize)
+  const paginatedStaff = filteredStaff.slice((page - 1) * pageSize, page * pageSize)
 
   const getInitials = (firstName: string, lastName: string) => {
     return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase()
@@ -180,12 +186,18 @@ export default function StaffPage() {
               <Input
                 placeholder="Cerca dipendente..."
                 value={search}
-                onChange={e => setSearch(e.target.value)}
+                onChange={e => {
+                  setSearch(e.target.value)
+                  setPage(1)
+                }}
                 className="pl-9"
               />
             </div>
 
-            <Select value={filterVenue} onValueChange={setFilterVenue}>
+            <Select value={filterVenue} onValueChange={(v) => {
+              setFilterVenue(v)
+              setPage(1)
+            }}>
               <SelectTrigger>
                 <SelectValue placeholder="Tutte le sedi" />
               </SelectTrigger>
@@ -199,7 +211,10 @@ export default function StaffPage() {
               </SelectContent>
             </Select>
 
-            <Select value={filterContract} onValueChange={setFilterContract}>
+            <Select value={filterContract} onValueChange={(v) => {
+              setFilterContract(v)
+              setPage(1)
+            }}>
               <SelectTrigger>
                 <SelectValue placeholder="Tutti i contratti" />
               </SelectTrigger>
@@ -217,7 +232,10 @@ export default function StaffPage() {
               <Switch
                 id="filter-active"
                 checked={filterActive === true}
-                onCheckedChange={v => setFilterActive(v ? true : null)}
+                onCheckedChange={v => {
+                  setFilterActive(v ? true : null)
+                  setPage(1)
+                }}
               />
               <Label htmlFor="filter-active">Solo attivi</Label>
             </div>
@@ -248,68 +266,121 @@ export default function StaffPage() {
               Nessun dipendente trovato
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Dipendente</TableHead>
-                  <TableHead>Sede</TableHead>
-                  <TableHead>Contratto</TableHead>
-                  <TableHead>Turno</TableHead>
-                  <TableHead>Stato</TableHead>
-                  <TableHead className="text-right">Azioni</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredStaff.map(staff => (
-                  <TableRow key={staff.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <Avatar>
-                          <AvatarFallback>
-                            {getInitials(staff.firstName, staff.lastName)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <div className="font-medium">
-                            {staff.firstName} {staff.lastName}
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            {staff.email}
+            <div className="space-y-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Dipendente</TableHead>
+                    <TableHead>Sede</TableHead>
+                    <TableHead>Contratto</TableHead>
+                    <TableHead>Turno</TableHead>
+                    <TableHead>Stato</TableHead>
+                    <TableHead className="text-right">Azioni</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paginatedStaff.map(staff => (
+                    <TableRow key={staff.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Avatar>
+                            <AvatarFallback>
+                              {getInitials(staff.firstName, staff.lastName)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <div className="font-medium">
+                              {staff.firstName} {staff.lastName}
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              {staff.email}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {staff.venue ? (
-                        <Badge variant="outline">{staff.venue.code}</Badge>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>{getContractBadge(staff.contractType)}</TableCell>
-                    <TableCell>
-                      {getShiftBadge(staff.defaultShift) || (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {staff.isActive ? (
-                        <Badge className="bg-green-100 text-green-700">Attivo</Badge>
-                      ) : (
-                        <Badge variant="secondary">Inattivo</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Link href={`/staff/${staff.id}`}>
-                        <Button variant="ghost" size="icon" title="Gestisci dipendente">
-                          <Settings className="h-4 w-4" />
-                        </Button>
-                      </Link>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                      </TableCell>
+                      <TableCell>
+                        {staff.venue ? (
+                          <Badge variant="outline">{staff.venue.code}</Badge>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>{getContractBadge(staff.contractType)}</TableCell>
+                      <TableCell>
+                        {getShiftBadge(staff.defaultShift) || (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {staff.isActive ? (
+                          <Badge className="bg-green-100 text-green-700">Attivo</Badge>
+                        ) : (
+                          <Badge variant="secondary">Inattivo</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Link href={`/staff/${staff.id}`}>
+                          <Button variant="ghost" size="icon" title="Gestisci dipendente">
+                            <Settings className="h-4 w-4" />
+                          </Button>
+                        </Link>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              {/* Paginazione */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Mostra</span>
+                  <Select
+                    value={pageSize.toString()}
+                    onValueChange={(v) => {
+                      setPageSize(parseInt(v))
+                      setPage(1)
+                    }}
+                  >
+                    <SelectTrigger className="w-[80px] h-8">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="25">25</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                      <SelectItem value="500">500</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <span className="text-sm text-muted-foreground">
+                    per pagina ({filteredStaff.length} totali)
+                  </span>
+                </div>
+
+                {totalPages > 1 && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      disabled={page === 1}
+                    >
+                      Precedente
+                    </Button>
+                    <span className="text-sm text-muted-foreground">
+                      Pagina {page} di {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                      disabled={page === totalPages}
+                    >
+                      Successiva
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>
