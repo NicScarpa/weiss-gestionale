@@ -34,6 +34,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/constants'
 import type { JournalEntry } from '@/types/prima-nota'
@@ -52,6 +59,7 @@ interface JournalEntryTableProps {
     netMovement: number
   }
   onPageChange?: (page: number) => void
+  onPageSizeChange?: (pageSize: number) => void
   onEdit?: (entry: JournalEntry) => void
   onDelete?: (entry: JournalEntry) => void
   isLoading?: boolean
@@ -63,6 +71,7 @@ export function JournalEntryTable({
   pagination,
   summary,
   onPageChange,
+  onPageSizeChange,
   onEdit,
   onDelete,
   isLoading = false,
@@ -431,32 +440,56 @@ export function JournalEntryTable({
       )}
 
       {/* Paginazione */}
-      {pagination && pagination.totalPages > 1 && (
+      {pagination && (
         <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            Pagina {pagination.page} di {pagination.totalPages} ({pagination.total}{' '}
-            movimenti)
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onPageChange?.(pagination.page - 1)}
-              disabled={pagination.page <= 1}
+          {/* Selettore dimensione pagina */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Mostra</span>
+            <Select
+              value={pagination.limit.toString()}
+              onValueChange={(v) => onPageSizeChange?.(parseInt(v))}
             >
-              <ChevronLeft className="h-4 w-4" />
-              Precedente
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onPageChange?.(pagination.page + 1)}
-              disabled={pagination.page >= pagination.totalPages}
-            >
-              Successivo
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+              <SelectTrigger className="w-[80px] h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="25">25</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
+                <SelectItem value="500">500</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="text-sm text-muted-foreground">
+              per pagina ({pagination.total} totali)
+            </span>
           </div>
+
+          {/* Navigazione pagine */}
+          {pagination.totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onPageChange?.(pagination.page - 1)}
+                disabled={pagination.page <= 1}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Precedente
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                Pagina {pagination.page} di {pagination.totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onPageChange?.(pagination.page + 1)}
+                disabled={pagination.page >= pagination.totalPages}
+              >
+                Successivo
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>
