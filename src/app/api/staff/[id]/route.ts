@@ -13,7 +13,7 @@ const updateStaffSchema = z.object({
   roleId: z.string().optional(),
   isFixedStaff: z.boolean().optional(),
   hourlyRate: z.number().min(0).nullable().optional(),
-  defaultShift: z.enum(['MORNING', 'EVENING']).nullable().optional(),
+  defaultShift: z.enum(['MORNING', 'EVENING', '']).nullable().optional().transform(val => val === '' ? null : val),
   isActive: z.boolean().optional(),
 
   // Campi contratto con nuovi tipi
@@ -22,8 +22,9 @@ const updateStaffSchema = z.object({
     'TEMPO_INDETERMINATO',
     'LAVORO_INTERMITTENTE',
     'LAVORATORE_OCCASIONALE',
-    'LIBERO_PROFESSIONISTA'
-  ]).nullable().optional(),
+    'LIBERO_PROFESSIONISTA',
+    ''
+  ]).nullable().optional().transform(val => val === '' ? null : val),
   contractHoursWeek: z.number().min(0).max(60).nullable().optional(),
   workDaysPerWeek: z.number().min(1).max(7).nullable().optional(),
   hireDate: z.string().nullable().optional(),
@@ -49,7 +50,9 @@ const updateStaffSchema = z.object({
 
   // Accesso portale
   portalEnabled: z.boolean().optional(),
-  portalPin: z.string().length(6).nullable().optional(),
+  portalPin: z.string().refine(val => val === '' || val === null || val.length === 6, {
+    message: 'Il PIN deve essere di 6 caratteri'
+  }).nullable().optional(),
 
   // Notifiche
   notifyEmail: z.boolean().optional(),
