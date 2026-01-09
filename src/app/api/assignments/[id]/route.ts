@@ -159,16 +159,8 @@ export async function PUT(
       )
     }
 
-    // Verifica stato pianificazione (solo admin può modificare se pubblicata)
-    if (
-      assignment.schedule.status === 'PUBLISHED' &&
-      session.user.role !== 'admin'
-    ) {
-      return NextResponse.json(
-        { error: 'Non puoi modificare assegnazioni di una pianificazione pubblicata' },
-        { status: 400 }
-      )
-    }
+    // Nota: permettiamo la modifica anche su pianificazioni pubblicate
+    // per consentire correzioni last-minute ai manager
 
     const updateData: Record<string, unknown> = {}
 
@@ -317,13 +309,8 @@ export async function DELETE(
       )
     }
 
-    // Verifica stato pianificazione
-    if (assignment.schedule.status === 'PUBLISHED') {
-      return NextResponse.json(
-        { error: 'Non puoi eliminare assegnazioni da una pianificazione pubblicata' },
-        { status: 400 }
-      )
-    }
+    // Nota: permettiamo la cancellazione anche su pianificazioni pubblicate
+    // per consentire correzioni last-minute ai manager
 
     await prisma.shiftAssignment.delete({
       where: { id },
