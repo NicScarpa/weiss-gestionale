@@ -38,6 +38,8 @@ interface StaffMember {
   terminationDate: string | null
   vatNumber: string | null
   fiscalCode: string | null
+  birthDate: string | null
+  address: string | null
   availableDays: number[]
   availableHolidays: boolean
   hourlyRateBase: number | null
@@ -114,6 +116,8 @@ export function EmployeeProfileForm({ employee, isAdmin = false, venues = [], ro
     terminationDate: employee.terminationDate?.split('T')[0] || '',
     vatNumber: employee.vatNumber || '',
     fiscalCode: employee.fiscalCode || '',
+    birthDate: employee.birthDate?.split('T')[0] || '',
+    address: employee.address || '',
     availableDays: employee.availableDays || [],
     availableHolidays: employee.availableHolidays || false,
     hourlyRateBase: employee.hourlyRateBase,
@@ -151,6 +155,8 @@ export function EmployeeProfileForm({ employee, isAdmin = false, venues = [], ro
       terminationDate: employee.terminationDate?.split('T')[0] || '',
       vatNumber: employee.vatNumber || '',
       fiscalCode: employee.fiscalCode || '',
+      birthDate: employee.birthDate?.split('T')[0] || '',
+      address: employee.address || '',
       availableDays: employee.availableDays || [],
       availableHolidays: employee.availableHolidays || false,
       hourlyRateBase: employee.hourlyRateBase,
@@ -205,6 +211,8 @@ export function EmployeeProfileForm({ employee, isAdmin = false, venues = [], ro
           terminationDate: data.terminationDate || null,
           vatNumber: data.vatNumber || null,
           fiscalCode: data.fiscalCode || null,
+          birthDate: data.birthDate || null,
+          address: data.address || null,
           portalPin: data.portalPin || null,
           whatsappNumber: data.whatsappNumber || null,
         }),
@@ -320,6 +328,40 @@ export function EmployeeProfileForm({ employee, isAdmin = false, venues = [], ro
                     disabled={!isAdmin}
                   />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Codice Fiscale</Label>
+                  <Input
+                    type="text"
+                    maxLength={16}
+                    value={formData.fiscalCode}
+                    onChange={e => setFormData(prev => ({ ...prev, fiscalCode: e.target.value.toUpperCase() }))}
+                    disabled={!isAdmin}
+                    placeholder="RSSMRA85M01H501A"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Data di nascita</Label>
+                  <Input
+                    type="date"
+                    value={formData.birthDate}
+                    onChange={e => setFormData(prev => ({ ...prev, birthDate: e.target.value }))}
+                    disabled={!isAdmin}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Indirizzo di residenza</Label>
+                <Input
+                  type="text"
+                  value={formData.address}
+                  onChange={e => setFormData(prev => ({ ...prev, address: e.target.value }))}
+                  disabled={!isAdmin}
+                  placeholder="Via Roma 1, 33077 Sacile (PN)"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -502,11 +544,8 @@ export function EmployeeProfileForm({ employee, isAdmin = false, venues = [], ro
                   </SelectContent>
                 </Select>
               </div>
-            </TabsContent>
 
-            {/* Tab Compensi (ex Tariffe) */}
-            <TabsContent value="rates" className="space-y-4">
-              {/* Switch EXTRA - invertito: OFF = fisso, ON = extra */}
+              {/* Switch EXTRA */}
               <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
                 <Switch
                   checked={formData.isFixedStaff}
@@ -559,7 +598,10 @@ export function EmployeeProfileForm({ employee, isAdmin = false, venues = [], ro
                   </p>
                 </div>
               )}
+            </TabsContent>
 
+            {/* Tab Compensi (ex Tariffe) */}
+            <TabsContent value="rates" className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Compenso orario base (€)</Label>

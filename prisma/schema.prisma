@@ -42,6 +42,10 @@ model User {
   vatNumber         String?       @map("vat_number")      // P.IVA
   fiscalCode        String?       @map("fiscal_code")     // Codice Fiscale
 
+  // Dati anagrafici aggiuntivi
+  birthDate         DateTime?     @map("birth_date") @db.Date
+  address           String?       // Indirizzo di residenza
+
   // Disponibilità EXTRA (giorni: 0=LUN, 1=MAR, ..., 6=DOM)
   availableDays     Int[]         @default([]) @map("available_days")
   availableHolidays Boolean       @default(false) @map("available_holidays")
