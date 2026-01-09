@@ -1,6 +1,11 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+/**
+ * Invoice Import Dialog - Upload and import FatturaPA XML files
+ * Supports P7M signed files and allows editing new supplier data
+ */
+
+import { useState, useCallback, useEffect } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { useSession } from 'next-auth/react'
 import { format } from 'date-fns'
@@ -11,12 +16,14 @@ import {
   Check,
   AlertCircle,
   Building2,
-  Receipt,
   CreditCard,
   Loader2,
   X,
   Plus,
   ShieldCheck,
+  ChevronDown,
+  ChevronUp,
+  Pencil,
 } from 'lucide-react'
 import { extractXmlFromP7m, isP7mFile } from '@/lib/p7m-utils'
 import {
@@ -38,6 +45,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import { toast } from 'sonner'
 
 interface InvoiceImportDialogProps {
@@ -113,6 +125,17 @@ interface Account {
   type: string
 }
 
+// Editable supplier data structure
+interface EditableSupplierData {
+  name: string
+  vatNumber: string
+  fiscalCode: string
+  address: string
+  city: string
+  province: string
+  postalCode: string
+}
+
 async function parseInvoice(
   xmlContent: string,
   fileName?: string
@@ -179,6 +202,34 @@ export function InvoiceImportDialog({
   const [selectedAccountId, setSelectedAccountId] = useState<string>('_none')
   const [createNewSupplier, setCreateNewSupplier] = useState(false)
 
+  // Editable supplier data state
+  const [supplierFormOpen, setSupplierFormOpen] = useState(false)
+  const [editableSupplier, setEditableSupplier] = useState<EditableSupplierData>({
+    name: '',
+    vatNumber: '',
+    fiscalCode: '',
+    address: '',
+    city: '',
+    province: '',
+    postalCode: '',
+  })
+
+  // Initialize editable supplier data when parsedData changes
+  useEffect(() => {
+    if (parsedData?.supplierMatch.suggestedData) {
+      const suggested = parsedData.supplierMatch.suggestedData
+      setEditableSupplier({
+        name: suggested.name || '',
+        vatNumber: suggested.vatNumber || '',
+        fiscalCode: suggested.fiscalCode || '',
+        address: suggested.address || '',
+        city: suggested.city || '',
+        province: suggested.province || '',
+        postalCode: suggested.postalCode || '',
+      })
+    }
+  }, [parsedData])
+
   // Query per sedi e conti
   const { data: venues } = useQuery({
     queryKey: ['venues'],
@@ -220,7 +271,7 @@ export function InvoiceImportDialog({
     },
   })
 
-  // Mutation per import
+  // Mutation per import - uses editableSupplier when creating new supplier
   const importMutation = useMutation({
     mutationFn: () =>
       importInvoice({
@@ -230,7 +281,15 @@ export function InvoiceImportDialog({
         supplierId: parsedData?.supplierMatch.supplier?.id,
         createSupplier: createNewSupplier,
         supplierData: createNewSupplier
-          ? parsedData?.supplierMatch.suggestedData
+          ? {
+              name: editableSupplier.name,
+              vatNumber: editableSupplier.vatNumber || null,
+              fiscalCode: editableSupplier.fiscalCode || null,
+              address: editableSupplier.address || null,
+              city: editableSupplier.city || null,
+              province: editableSupplier.province || null,
+              postalCode: editableSupplier.postalCode || null,
+            }
           : undefined,
         accountId: selectedAccountId && selectedAccountId !== '_none' ? selectedAccountId : undefined,
       }),
@@ -253,6 +312,16 @@ export function InvoiceImportDialog({
     setSelectedVenueId('')
     setSelectedAccountId('_none')
     setCreateNewSupplier(false)
+    setSupplierFormOpen(false)
+    setEditableSupplier({
+      name: '',
+      vatNumber: '',
+      fiscalCode: '',
+      address: '',
+      city: '',
+      province: '',
+      postalCode: '',
+    })
   }, [])
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -334,6 +403,11 @@ export function InvoiceImportDialog({
       style: 'currency',
       currency: 'EUR',
     }).format(value)
+  }
+
+  // Handler for supplier field changes
+  const handleSupplierFieldChange = (field: keyof EditableSupplierData, value: string) => {
+    setEditableSupplier((prev) => ({ ...prev, [field]: value }))
   }
 
   return (
@@ -446,7 +520,7 @@ export function InvoiceImportDialog({
 
             <Separator />
 
-            {/* Fornitore */}
+            {/* Fornitore Section - With editable form for new suppliers */}
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <Building2 className="h-5 w-5 text-slate-500" />
@@ -464,17 +538,126 @@ export function InvoiceImportDialog({
                 )}
               </div>
 
+              {/* Supplier info card */}
               <div className="p-3 bg-slate-50 rounded-lg">
                 <p className="font-medium">
-                  {parsedData.parsed.fornitore.denominazione}
+                  {createNewSupplier ? editableSupplier.name : parsedData.parsed.fornitore.denominazione}
                 </p>
                 <p className="text-sm text-slate-500">
-                  P.IVA: {parsedData.parsed.fornitore.partitaIva}
+                  P.IVA: {createNewSupplier ? editableSupplier.vatNumber : parsedData.parsed.fornitore.partitaIva}
                 </p>
-                <p className="text-sm text-slate-500">
-                  {parsedData.parsed.fornitore.indirizzo}
-                </p>
+                {(createNewSupplier ? editableSupplier.address : parsedData.parsed.fornitore.indirizzo) && (
+                  <p className="text-sm text-slate-500">
+                    {createNewSupplier
+                      ? `${editableSupplier.address}${editableSupplier.city ? `, ${editableSupplier.city}` : ''}${editableSupplier.province ? ` (${editableSupplier.province})` : ''}`
+                      : parsedData.parsed.fornitore.indirizzo}
+                  </p>
+                )}
               </div>
+
+              {/* Collapsible form for new suppliers */}
+              {createNewSupplier && (
+                <Collapsible open={supplierFormOpen} onOpenChange={setSupplierFormOpen}>
+                  <CollapsibleTrigger asChild>
+                    <Button variant="outline" size="sm" className="w-full justify-between">
+                      <span className="flex items-center gap-2">
+                        <Pencil className="h-3 w-3" />
+                        Modifica dati fornitore
+                      </span>
+                      {supplierFormOpen ? (
+                        <ChevronUp className="h-4 w-4" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="mt-3">
+                    <div className="space-y-4 p-4 border rounded-lg bg-white">
+                      {/* Ragione Sociale */}
+                      <div className="space-y-2">
+                        <Label htmlFor="supplier-name">
+                          Ragione Sociale <span className="text-red-500">*</span>
+                        </Label>
+                        <Input
+                          id="supplier-name"
+                          value={editableSupplier.name}
+                          onChange={(e) => handleSupplierFieldChange('name', e.target.value)}
+                          placeholder="Nome azienda"
+                        />
+                      </div>
+
+                      {/* P.IVA e C.F. in row */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="supplier-vat">Partita IVA</Label>
+                          <Input
+                            id="supplier-vat"
+                            value={editableSupplier.vatNumber}
+                            onChange={(e) => handleSupplierFieldChange('vatNumber', e.target.value)}
+                            placeholder="IT00000000000"
+                            maxLength={16}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="supplier-cf">Codice Fiscale</Label>
+                          <Input
+                            id="supplier-cf"
+                            value={editableSupplier.fiscalCode}
+                            onChange={(e) => handleSupplierFieldChange('fiscalCode', e.target.value)}
+                            placeholder="00000000000"
+                            maxLength={16}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Indirizzo */}
+                      <div className="space-y-2">
+                        <Label htmlFor="supplier-address">Indirizzo</Label>
+                        <Input
+                          id="supplier-address"
+                          value={editableSupplier.address}
+                          onChange={(e) => handleSupplierFieldChange('address', e.target.value)}
+                          placeholder="Via Roma, 1"
+                        />
+                      </div>
+
+                      {/* Città, Provincia, CAP in row */}
+                      <div className="grid grid-cols-5 gap-4">
+                        <div className="col-span-2 space-y-2">
+                          <Label htmlFor="supplier-city">Città</Label>
+                          <Input
+                            id="supplier-city"
+                            value={editableSupplier.city}
+                            onChange={(e) => handleSupplierFieldChange('city', e.target.value)}
+                            placeholder="Milano"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="supplier-province">Prov.</Label>
+                          <Input
+                            id="supplier-province"
+                            value={editableSupplier.province}
+                            onChange={(e) => handleSupplierFieldChange('province', e.target.value.toUpperCase())}
+                            placeholder="MI"
+                            maxLength={2}
+                            className="uppercase"
+                          />
+                        </div>
+                        <div className="col-span-2 space-y-2">
+                          <Label htmlFor="supplier-postalcode">CAP</Label>
+                          <Input
+                            id="supplier-postalcode"
+                            value={editableSupplier.postalCode}
+                            onChange={(e) => handleSupplierFieldChange('postalCode', e.target.value)}
+                            placeholder="20100"
+                            maxLength={5}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
             </div>
 
             <Separator />
@@ -600,7 +783,8 @@ export function InvoiceImportDialog({
                 disabled={
                   !selectedVenueId ||
                   importMutation.isPending ||
-                  !!parsedData?.existingInvoice
+                  !!parsedData?.existingInvoice ||
+                  (createNewSupplier && !editableSupplier.name.trim())
                 }
               >
                 {importMutation.isPending ? (

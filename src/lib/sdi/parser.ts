@@ -14,6 +14,9 @@ import type {
   DettaglioPagamento,
 } from './types'
 
+// Re-export types and constants for convenience
+export { TIPI_DOCUMENTO, MODALITA_PAGAMENTO, NATURA_OPERAZIONE } from './types'
+
 // Parser options
 const parserOptions = {
   ignoreAttributes: false,

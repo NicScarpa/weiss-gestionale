@@ -53,6 +53,13 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '50')
 
+    // Nuovi parametri per ricerca, filtro anno/mese e ordinamento
+    const search = searchParams.get('search')
+    const year = searchParams.get('year')
+    const month = searchParams.get('month')
+    const sortBy = searchParams.get('sortBy') || 'invoiceDate'
+    const sortOrder = (searchParams.get('sortOrder') || 'desc') as 'asc' | 'desc'
+
     // Costruisci filtri
     const where: Prisma.ElectronicInvoiceWhereInput = {}
 
@@ -71,7 +78,37 @@ export async function GET(request: NextRequest) {
       where.supplierId = supplierId
     }
 
-    if (fromDate || toDate) {
+    // Ricerca globale su nome fornitore e numero fattura
+    if (search && search.length >= 2) {
+      where.OR = [
+        { supplierName: { contains: search, mode: 'insensitive' } },
+        { invoiceNumber: { contains: search, mode: 'insensitive' } },
+      ]
+    }
+
+    // Filtro per anno e mese
+    if (year && year !== 'all') {
+      const yearNum = parseInt(year)
+      if (month && month !== 'all') {
+        const monthNum = parseInt(month)
+        // Filtro per anno e mese specifico
+        const startDate = new Date(yearNum, monthNum - 1, 1)
+        const endDate = new Date(yearNum, monthNum, 0, 23, 59, 59, 999)
+        where.invoiceDate = {
+          gte: startDate,
+          lte: endDate,
+        }
+      } else {
+        // Solo anno
+        const startDate = new Date(yearNum, 0, 1)
+        const endDate = new Date(yearNum, 11, 31, 23, 59, 59, 999)
+        where.invoiceDate = {
+          gte: startDate,
+          lte: endDate,
+        }
+      }
+    } else if (fromDate || toDate) {
+      // Fallback ai filtri from/to esistenti
       where.invoiceDate = {}
       if (fromDate) {
         where.invoiceDate.gte = new Date(fromDate)
@@ -80,6 +117,14 @@ export async function GET(request: NextRequest) {
         where.invoiceDate.lte = new Date(toDate)
       }
     }
+
+    // Costruisci ordinamento dinamico
+    const validSortFields = ['documentType', 'invoiceDate', 'invoiceNumber', 'supplierName', 'totalAmount', 'status']
+    const orderByField = validSortFields.includes(sortBy) ? sortBy : 'invoiceDate'
+    const orderBy: Prisma.ElectronicInvoiceOrderByWithRelationInput[] = [
+      { [orderByField]: sortOrder },
+      { importedAt: 'desc' }, // Ordinamento secondario
+    ]
 
     // Query con paginazione
     const [invoices, total] = await Promise.all([
@@ -111,7 +156,7 @@ export async function GET(request: NextRequest) {
             orderBy: { dueDate: 'asc' },
           },
         },
-        orderBy: [{ invoiceDate: 'desc' }, { importedAt: 'desc' }],
+        orderBy,
         skip: (page - 1) * limit,
         take: limit,
       }),
@@ -248,11 +293,21 @@ export async function POST(request: NextRequest) {
     // Estrai scadenze
     const scadenze = estraiScadenze(fattura)
 
+    // Estrai IBAN dai dati pagamento (se disponibile)
+    const extractIban = (index: number): string | null => {
+      const dettagli = fattura.datiPagamento?.dettagliPagamento
+      if (dettagli && dettagli[index]) {
+        return dettagli[index].iban || null
+      }
+      return null
+    }
+
     // Crea la fattura con le scadenze
     const invoice = await prisma.electronicInvoice.create({
       data: {
         invoiceNumber: fattura.numero,
         invoiceDate: new Date(fattura.data),
+        documentType: fattura.tipoDocumento || null,
         supplierVat: fattura.cedentePrestatore.partitaIva,
         supplierName: fattura.cedentePrestatore.denominazione,
         totalAmount: new Prisma.Decimal(importi.totalAmount.toFixed(2)),
@@ -266,10 +321,11 @@ export async function POST(request: NextRequest) {
         venueId: validatedData.venueId,
         createdBy: session.user.id,
         deadlines: {
-          create: scadenze.map((s) => ({
+          create: scadenze.map((s, index) => ({
             dueDate: s.dueDate,
             amount: new Prisma.Decimal(s.amount.toFixed(2)),
             paymentMethod: s.paymentMethod,
+            iban: extractIban(index),
           })),
         },
       },
