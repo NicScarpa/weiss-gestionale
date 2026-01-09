@@ -20,16 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
+import { DeleteSupplierDialog } from './DeleteSupplierDialog'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Truck, Plus, Pencil, Trash2, Loader2, Search } from 'lucide-react'
@@ -199,31 +190,12 @@ export function SupplierManagement() {
     }
   }
 
-  // Elimina fornitore
-  const handleDelete = async () => {
-    if (!supplierToDelete) return
-
-    try {
-      setSaving(true)
-      const res = await fetch(`/api/suppliers?id=${supplierToDelete.id}`, {
-        method: 'DELETE',
-      })
-
-      if (!res.ok) {
-        const error = await res.json()
-        throw new Error(error.error || 'Errore nell\'eliminazione')
-      }
-
-      toast.success('Fornitore disattivato')
-      setIsDeleteDialogOpen(false)
-      setSupplierToDelete(null)
-      fetchSuppliers()
-    } catch (error: any) {
-      console.error('Errore:', error)
-      toast.error(error.message || 'Errore nell\'eliminazione')
-    } finally {
-      setSaving(false)
-    }
+  // Callback dopo eliminazione fornitore
+  const handleSupplierDeleted = () => {
+    toast.success('Fornitore disattivato')
+    setIsDeleteDialogOpen(false)
+    setSupplierToDelete(null)
+    fetchSuppliers()
   }
 
   if (loading) {
@@ -533,35 +505,12 @@ export function SupplierManagement() {
       </Dialog>
 
       {/* Dialog Conferma Eliminazione */}
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Disattiva Fornitore</AlertDialogTitle>
-            <AlertDialogDescription>
-              Sei sicuro di voler disattivare il fornitore{' '}
-              <strong>{supplierToDelete?.name}</strong>?
-              Il fornitore non sara piu visibile nelle selezioni.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={saving}>Annulla</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              disabled={saving}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Disattivazione...
-                </>
-              ) : (
-                'Disattiva'
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteSupplierDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        supplier={supplierToDelete}
+        onDeleted={handleSupplierDeleted}
+      />
     </div>
   )
 }
