@@ -28,11 +28,54 @@ const parserOptions = {
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   textNodeName: '#text',
-  parseTagValue: true,
-  parseAttributeValue: true,
+  // IMPORTANTE: parseTagValue deve essere false per preservare zeri iniziali nelle P.IVA
+  // Altrimenti "00713150266" diventa il numero 713150266 e perde lo 0
+  parseTagValue: false,
+  parseAttributeValue: false,
   trimValues: true,
   // Gestisce namespace XML
   removeNSPrefix: true,
+}
+
+/**
+ * Normalizza una Partita IVA italiana
+ * - Rimuove prefisso paese (IT)
+ * - Rimuove caratteri non numerici
+ * - Padding a 11 cifre con zeri a sinistra
+ */
+function normalizeVatNumber(value: unknown): string {
+  let vatStr = ''
+
+  if (typeof value === 'number') {
+    vatStr = String(value)
+  } else if (typeof value === 'string') {
+    vatStr = value.trim()
+  } else {
+    return ''
+  }
+
+  // Rimuovi prefisso paese se presente (es. IT)
+  vatStr = vatStr.replace(/^IT/i, '')
+
+  // Rimuovi caratteri non numerici
+  vatStr = vatStr.replace(/\D/g, '')
+
+  // Se vuota, ritorna stringa vuota
+  if (!vatStr) {
+    return ''
+  }
+
+  // Padding a 11 cifre con zeri a sinistra (solo se meno di 11 cifre)
+  if (vatStr.length > 0 && vatStr.length < 11) {
+    vatStr = vatStr.padStart(11, '0')
+  }
+
+  // Avvisa se la P.IVA non ha 11 cifre
+  if (vatStr.length !== 11) {
+    console.warn(`P.IVA con lunghezza non standard (${vatStr.length} cifre): ${vatStr}`)
+  }
+
+  return vatStr
 }
 
 /**
@@ -119,7 +162,8 @@ function parseCedentePrestatore(data: Record<string, unknown>): CedentePrestator
 
   return {
     denominazione,
-    partitaIva: getText(idFiscaleIVA.IdCodice) || '',
+    // Normalizza P.IVA: rimuovi prefisso IT, padding a 11 cifre
+    partitaIva: normalizeVatNumber(idFiscaleIVA.IdCodice),
     codiceFiscale: getText(datiAnagrafici.CodiceFiscale),
     sede: {
       indirizzo: getText(sede.Indirizzo),
@@ -149,7 +193,8 @@ function parseCessionarioCommittente(data: Record<string, unknown>): Cessionario
 
   return {
     denominazione,
-    partitaIva: getText(idFiscaleIVA.IdCodice),
+    // Normalizza P.IVA: rimuovi prefisso IT, padding a 11 cifre
+    partitaIva: normalizeVatNumber(idFiscaleIVA.IdCodice),
     codiceFiscale: getText(datiAnagrafici.CodiceFiscale),
     sede: {
       indirizzo: getText(sede.Indirizzo),
