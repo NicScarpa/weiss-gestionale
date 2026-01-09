@@ -255,6 +255,10 @@ export function PrimaNotaClient({
     setPagination((prev) => ({ ...prev, page }))
   }
 
+  const handlePageSizeChange = (limit: number) => {
+    setPagination((prev) => ({ ...prev, limit, page: 1 }))
+  }
+
   const clearFilters = () => {
     setFilters({
       dateFrom: '',
@@ -442,6 +446,7 @@ export function PrimaNotaClient({
             pagination={pagination}
             summary={summary}
             onPageChange={handlePageChange}
+            onPageSizeChange={handlePageSizeChange}
             onEdit={handleEdit}
             onDelete={handleDelete}
             isLoading={loading}
@@ -460,6 +465,7 @@ export function PrimaNotaClient({
             pagination={pagination}
             summary={summary}
             onPageChange={handlePageChange}
+            onPageSizeChange={handlePageSizeChange}
             onEdit={handleEdit}
             onDelete={handleDelete}
             isLoading={loading}
