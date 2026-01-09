@@ -2,15 +2,22 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { notifyShiftReminder } from '@/lib/notifications'
 
-// Header segreto per autorizzare il cron job
-const CRON_SECRET = process.env.CRON_SECRET || 'default-cron-secret'
-
 // POST /api/shifts/reminder - Job per promemoria turni (1h prima)
 export async function POST(request: NextRequest) {
   try {
+    // Verifica che CRON_SECRET sia configurato
+    const cronSecret = process.env.CRON_SECRET
+    if (!cronSecret) {
+      console.error('CRON_SECRET environment variable is not set')
+      return NextResponse.json(
+        { error: 'Errore di configurazione server' },
+        { status: 500 }
+      )
+    }
+
     // Verifica autorizzazione cron
     const authHeader = request.headers.get('authorization')
-    if (authHeader !== `Bearer ${CRON_SECRET}`) {
+    if (authHeader !== `Bearer ${cronSecret}`) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 

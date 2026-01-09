@@ -71,7 +71,70 @@ const createClosureSchema = z.object({
   })).optional(),
 })
 
-// GET /api/chiusure - Lista chiusure con filtri
+/**
+ * @swagger
+ * /api/chiusure:
+ *   get:
+ *     summary: Lista chiusure cassa
+ *     description: Restituisce l'elenco delle chiusure cassa con filtri opzionali e paginazione
+ *     tags:
+ *       - Chiusure
+ *     parameters:
+ *       - in: query
+ *         name: venueId
+ *         schema:
+ *           type: string
+ *         description: Filtra per sede (UUID)
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [DRAFT, SUBMITTED, VALIDATED]
+ *         description: Filtra per stato
+ *       - in: query
+ *         name: dateFrom
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Data inizio (YYYY-MM-DD)
+ *       - in: query
+ *         name: dateTo
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Data fine (YYYY-MM-DD)
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Numero pagina
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *           maximum: 100
+ *         description: Elementi per pagina
+ *     responses:
+ *       200:
+ *         description: Lista chiusure con paginazione
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Closure'
+ *                 pagination:
+ *                   $ref: '#/components/schemas/Pagination'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       500:
+ *         description: Errore interno
+ */
 export async function GET(request: NextRequest) {
   try {
     const session = await auth()
@@ -225,7 +288,52 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/chiusure - Crea nuova chiusura (DRAFT)
+/**
+ * @swagger
+ * /api/chiusure:
+ *   post:
+ *     summary: Crea nuova chiusura
+ *     description: |
+ *       Crea una nuova chiusura cassa in stato DRAFT.
+ *       La chiusura può includere postazioni cassa, parziali orari, uscite e presenze.
+ *       Non è possibile creare due chiusure per la stessa data/sede.
+ *     tags:
+ *       - Chiusure
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ClosureCreate'
+ *     responses:
+ *       201:
+ *         description: Chiusura creata con successo
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Closure'
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         $ref: '#/components/responses/Forbidden'
+ *       409:
+ *         description: Chiusura già esistente per questa data/sede
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: Esiste già una chiusura per questa data
+ *                 existingId:
+ *                   type: string
+ *                   format: uuid
+ *       500:
+ *         description: Errore interno
+ */
 export async function POST(request: NextRequest) {
   try {
     const session = await auth()

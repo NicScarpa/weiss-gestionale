@@ -16,3 +16,10 @@ export type { AttendanceData } from './AttendanceSection'
 
 export { ClosureForm } from './ClosureForm'
 export type { ClosureFormData } from './ClosureForm'
+
+export { ClosureMetadataSection } from './ClosureMetadataSection'
+export { ClosureSummaryCard } from './ClosureSummaryCard'
+export { ClosureActions } from './ClosureActions'
+
+export { useClosureCalculations } from './hooks/useClosureCalculations'
+export type { ClosureTotals } from './hooks/useClosureCalculations'

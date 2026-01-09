@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { ClosureForm, ClosureFormData } from '@/components/chiusura'
-import { toast } from 'sonner'
+import { useClosureMutation } from '@/hooks/useClosureMutation'
 
 interface NuovaChiusuraClientProps {
   venue: {
@@ -23,148 +23,19 @@ export function NuovaChiusuraClient({
 }: NuovaChiusuraClientProps) {
   const router = useRouter()
 
-  // Salva bozza
+  const { saveDraft, submitForValidation } = useClosureMutation({
+    venueId: venue.id,
+    onSuccess: (closureId) => {
+      router.push(`/chiusura-cassa/${closureId}`)
+    },
+  })
+
+  // Wrapper for save that navigates on success
   const handleSave = async (data: ClosureFormData) => {
-    const res = await fetch('/api/chiusure', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        date: data.date.toISOString(),
-        venueId: venue.id,
-        isEvent: data.isEvent,
-        eventName: data.eventName,
-        weatherMorning: data.weatherMorning,
-        weatherAfternoon: data.weatherAfternoon,
-        weatherEvening: data.weatherEvening,
-        notes: data.notes,
-        stations: data.stations.map((s) => ({
-          name: s.name,
-          position: s.position,
-          receiptAmount: s.receiptAmount,
-          receiptVat: s.receiptVat,
-          invoiceAmount: s.invoiceAmount,
-          invoiceVat: s.invoiceVat,
-          suspendedAmount: s.suspendedAmount,
-          cashAmount: s.cashAmount,
-          posAmount: s.posAmount,
-          floatAmount: s.floatAmount,
-          cashCount: s.cashCount,
-        })),
-        partials: data.partials.map((p) => ({
-          timeSlot: p.timeSlot,
-          receiptProgressive: p.receiptProgressive,
-          posProgressive: p.posProgressive,
-          coffeeCounter: p.coffeeCounter,
-          coffeeDelta: p.coffeeDelta,
-        })),
-        expenses: data.expenses.map((e) => ({
-          payee: e.payee,
-          documentRef: e.documentRef,
-          documentType: e.documentType,
-          amount: e.amount,
-          vatAmount: e.vatAmount,
-          accountId: e.accountId,
-          paidBy: e.paidBy,
-        })),
-        attendance: data.attendance.map((a) => ({
-          userId: a.userId,
-          shift: a.shift,
-          hours: a.hours,
-          statusCode: a.statusCode,
-          hourlyRate: a.hourlyRate,
-          notes: a.notes,
-        })),
-      }),
-    })
-
-    if (!res.ok) {
-      const errorData = await res.json()
-      if (res.status === 409 && errorData.existingId) {
-        // Già esiste una chiusura per questa data
-        toast.error('Esiste già una chiusura per questa data')
-        router.push(`/chiusura-cassa/${errorData.existingId}/modifica`)
-        return
-      }
-      throw new Error(errorData.error || 'Errore nel salvataggio')
+    const closureId = await saveDraft(data)
+    if (closureId) {
+      router.push(`/chiusura-cassa/${closureId}`)
     }
-
-    const result = await res.json()
-    router.push(`/chiusura-cassa/${result.id}`)
-  }
-
-  // Invia per validazione
-  const handleSubmit = async (data: ClosureFormData) => {
-    // Prima salva
-    const saveRes = await fetch('/api/chiusure', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        date: data.date.toISOString(),
-        venueId: venue.id,
-        isEvent: data.isEvent,
-        eventName: data.eventName,
-        weatherMorning: data.weatherMorning,
-        weatherAfternoon: data.weatherAfternoon,
-        weatherEvening: data.weatherEvening,
-        notes: data.notes,
-        stations: data.stations.map((s) => ({
-          name: s.name,
-          position: s.position,
-          receiptAmount: s.receiptAmount,
-          receiptVat: s.receiptVat,
-          invoiceAmount: s.invoiceAmount,
-          invoiceVat: s.invoiceVat,
-          suspendedAmount: s.suspendedAmount,
-          cashAmount: s.cashAmount,
-          posAmount: s.posAmount,
-          floatAmount: s.floatAmount,
-          cashCount: s.cashCount,
-        })),
-        partials: data.partials.map((p) => ({
-          timeSlot: p.timeSlot,
-          receiptProgressive: p.receiptProgressive,
-          posProgressive: p.posProgressive,
-          coffeeCounter: p.coffeeCounter,
-          coffeeDelta: p.coffeeDelta,
-        })),
-        expenses: data.expenses.map((e) => ({
-          payee: e.payee,
-          documentRef: e.documentRef,
-          documentType: e.documentType,
-          amount: e.amount,
-          vatAmount: e.vatAmount,
-          accountId: e.accountId,
-          paidBy: e.paidBy,
-        })),
-        attendance: data.attendance.map((a) => ({
-          userId: a.userId,
-          shift: a.shift,
-          hours: a.hours,
-          statusCode: a.statusCode,
-          hourlyRate: a.hourlyRate,
-          notes: a.notes,
-        })),
-      }),
-    })
-
-    if (!saveRes.ok) {
-      const errorData = await saveRes.json()
-      throw new Error(errorData.error || 'Errore nel salvataggio')
-    }
-
-    const saveResult = await saveRes.json()
-
-    // Poi invia per validazione
-    const submitRes = await fetch(`/api/chiusure/${saveResult.id}/submit`, {
-      method: 'POST',
-    })
-
-    if (!submitRes.ok) {
-      const errorData = await submitRes.json()
-      throw new Error(errorData.error || 'Errore nell\'invio')
-    }
-
-    router.push('/chiusura-cassa')
   }
 
   return (
@@ -176,7 +47,7 @@ export function NuovaChiusuraClient({
       staffMembers={staffMembers}
       accounts={accounts}
       onSave={handleSave}
-      onSubmit={handleSubmit}
+      onSubmit={submitForValidation}
     />
   )
 }

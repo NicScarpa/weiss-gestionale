@@ -1,9 +1,8 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { format } from 'date-fns'
 import { ClosureForm, ClosureFormData } from '@/components/chiusura'
-import { toast } from 'sonner'
+import { useClosureMutation } from '@/hooks/useClosureMutation'
 import { AlertTriangle } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 
@@ -32,39 +31,24 @@ export function ModificaChiusuraClient({
 }: ModificaChiusuraClientProps) {
   const router = useRouter()
 
+  const { updateClosure } = useClosureMutation({
+    venueId: venue.id,
+    closureId,
+    onSuccess: () => {
+      router.push(`/chiusura-cassa/${closureId}`)
+    },
+  })
+
   // Salva modifiche
   const handleSave = async (data: ClosureFormData) => {
-    // Aggiorna i metadati base
-    const updateRes = await fetch(`/api/chiusure/${closureId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        date: format(data.date, 'yyyy-MM-dd'),
-        isEvent: data.isEvent,
-        eventName: data.eventName,
-        weatherMorning: data.weatherMorning,
-        weatherAfternoon: data.weatherAfternoon,
-        weatherEvening: data.weatherEvening,
-        notes: data.notes,
-      }),
-    })
-
-    if (!updateRes.ok) {
-      const errorData = await updateRes.json()
-      throw new Error(errorData.error || 'Errore nell\'aggiornamento')
-    }
-
-    // TODO: Aggiornare anche stazioni, parziali, uscite, presenze
-    // Per ora è necessario eliminare e ricreare, oppure implementare
-    // endpoint specifici per aggiornare le relazioni
-
+    await updateClosure(data)
     router.push(`/chiusura-cassa/${closureId}`)
   }
 
   // Invia per validazione
   const handleSubmit = async (data: ClosureFormData) => {
     // Prima salva
-    await handleSave(data)
+    await updateClosure(data)
 
     // Poi invia per validazione
     const submitRes = await fetch(`/api/chiusure/${closureId}/submit`, {
@@ -73,7 +57,7 @@ export function ModificaChiusuraClient({
 
     if (!submitRes.ok) {
       const errorData = await submitRes.json()
-      throw new Error(errorData.error || 'Errore nell\'invio')
+      throw new Error(errorData.error || "Errore nell'invio")
     }
 
     router.push('/chiusura-cassa')

@@ -1,54 +1,22 @@
 'use client'
 
-import { useState, useCallback, useMemo, useEffect } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
-import { it } from 'date-fns/locale'
-import {
-  Calendar as CalendarIcon,
-  Save,
-  Send,
-  CloudSun,
-  PartyPopper,
-  AlertTriangle,
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { cn } from '@/lib/utils'
-import {
-  formatCurrency,
-  formatDate,
-  DEFAULT_VAT_RATE,
-  CASH_DIFFERENCE_THRESHOLD,
-} from '@/lib/constants'
+import { formatCurrency, formatDate, DEFAULT_VAT_RATE } from '@/lib/constants'
 import { CashStationCard, CashStationData, emptyCashStation } from './CashStationCard'
 import { HourlyPartialsSection, HourlyPartialData } from './HourlyPartialsSection'
 import { ExpensesSection, ExpenseData } from './ExpensesSection'
 import { AttendanceSection, AttendanceData } from './AttendanceSection'
-import { calculateCashCountTotal, emptyCashCount } from './CashCountGrid'
+import { emptyCashCount } from './CashCountGrid'
+import { ClosureMetadataSection } from './ClosureMetadataSection'
+import { ClosureSummaryCard } from './ClosureSummaryCard'
+import { ClosureActions } from './ClosureActions'
+import { useClosureCalculations } from './hooks/useClosureCalculations'
 import { toast } from 'sonner'
-
-// Opzioni meteo
-const WEATHER_OPTIONS = [
-  { value: 'sunny', label: '☀️ Sole' },
-  { value: 'cloudy', label: '☁️ Nuvoloso' },
-  { value: 'rainy', label: '🌧️ Pioggia' },
-  { value: 'stormy', label: '⛈️ Temporale' },
-  { value: 'snowy', label: '❄️ Neve' },
-  { value: 'foggy', label: '🌫️ Nebbia' },
-]
 
 // Tipo dati form
 export interface ClosureFormData {
@@ -136,75 +104,12 @@ export function ClosureForm({
     attendance: initialData?.attendance || [],
   })
 
-  // Calcoli totali
-  const totals = useMemo(() => {
-    // Totale contanti incassati (da scontrino)
-    const cashTotal = formData.stations.reduce(
-      (sum, s) => sum + (s.cashAmount || 0),
-      0
-    )
-
-    // Totale POS
-    const posTotal = formData.stations.reduce(
-      (sum, s) => sum + (s.posAmount || 0),
-      0
-    )
-
-    // Totale contato (somma conteggio fisico banconote/monete)
-    const countedTotal = formData.stations.reduce(
-      (sum, s) => sum + calculateCashCountTotal(s.cashCount),
-      0
-    )
-
-    // Totale uscite
-    const expensesTotal = formData.expenses.reduce(
-      (sum, e) => sum + (e.amount || 0),
-      0
-    )
-
-    // QUADRATURA CASSA:
-    // Confronto diretto tra cassa contata e vendite contanti da scontrino
-    // Le uscite sono mostrate separatamente ma NON influenzano la quadratura
-    // (potrebbero essere pagate da varie fonti, non solo dalla cassa)
-    const cashDifference = countedTotal - cashTotal
-
-    // Totale vendite (solo incassi, senza uscite)
-    const salesTotal = cashTotal + posTotal
-
-    // Totale movimentazione = vendite + uscite (tutto il denaro movimentato)
-    const grossTotal = salesTotal + expensesTotal
-
-    // Incasso contanti totale = vendite contanti + uscite pagate
-    // Perché: se ho 550€ in cassa e ho pagato 37,90€ di uscite,
-    // significa che l'incasso contanti totale era 587,90€
-    const cashIncomeTotal = cashTotal + expensesTotal
-
-    // IVA stimata (solo sulle vendite)
-    const estimatedVat = salesTotal * vatRate
-
-    // Totale netto (vendite meno IVA)
-    const netTotal = salesTotal - estimatedVat
-
-    // Versamento banca = totale POS (i contanti restano in cassa)
-    const bankDeposit = posTotal
-
-    return {
-      grossTotal,
-      salesTotal,
-      cashTotal,
-      posTotal,
-      countedTotal,
-      expensesTotal,
-      cashIncomeTotal,
-      cashDifference,
-      estimatedVat,
-      netTotal,
-      bankDeposit,
-      hasSignificantDifference:
-        countedTotal > 0 &&
-        Math.abs(cashDifference) > CASH_DIFFERENCE_THRESHOLD,
-    }
-  }, [formData.stations, formData.expenses, vatRate])
+  // Calcoli totali (extracted to hook)
+  const totals = useClosureCalculations({
+    stations: formData.stations,
+    expenses: formData.expenses,
+    vatRate,
+  })
 
   // Fetch contatore caffè del giorno precedente
   useEffect(() => {
@@ -370,117 +275,21 @@ export function ClosureForm({
       </div>
 
       {/* Sezione Metadati */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <CalendarIcon className="h-5 w-5" />
-            Informazioni Giornata
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Data e Evento */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="date">Data</Label>
-              <Input
-                id="date"
-                type="date"
-                value={format(formData.date, 'yyyy-MM-dd')}
-                onChange={(e) =>
-                  handleFieldChange('date', new Date(e.target.value))
-                }
-                disabled={isReadOnly}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={formData.isEvent}
-                  onChange={(e) =>
-                    handleFieldChange('isEvent', e.target.checked)
-                  }
-                  disabled={isReadOnly}
-                  className="h-4 w-4"
-                />
-                <PartyPopper className="h-4 w-4" />
-                Evento speciale
-              </Label>
-              {formData.isEvent && (
-                <Input
-                  value={formData.eventName || ''}
-                  onChange={(e) =>
-                    handleFieldChange('eventName', e.target.value)
-                  }
-                  disabled={isReadOnly}
-                  placeholder="Nome evento..."
-                />
-              )}
-            </div>
-          </div>
-
-          {/* Meteo */}
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2">
-              <CloudSun className="h-4 w-4" />
-              Condizioni Meteo
-            </Label>
-            <div className="grid grid-cols-3 gap-4">
-              <Select
-                value={formData.weatherMorning || ''}
-                onValueChange={(v) => handleFieldChange('weatherMorning', v)}
-                disabled={isReadOnly}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Mattina" />
-                </SelectTrigger>
-                <SelectContent>
-                  {WEATHER_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select
-                value={formData.weatherAfternoon || ''}
-                onValueChange={(v) => handleFieldChange('weatherAfternoon', v)}
-                disabled={isReadOnly}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Pomeriggio" />
-                </SelectTrigger>
-                <SelectContent>
-                  {WEATHER_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select
-                value={formData.weatherEvening || ''}
-                onValueChange={(v) => handleFieldChange('weatherEvening', v)}
-                disabled={isReadOnly}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Sera" />
-                </SelectTrigger>
-                <SelectContent>
-                  {WEATHER_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <ClosureMetadataSection
+        date={formData.date}
+        isEvent={formData.isEvent}
+        eventName={formData.eventName}
+        weatherMorning={formData.weatherMorning}
+        weatherAfternoon={formData.weatherAfternoon}
+        weatherEvening={formData.weatherEvening}
+        onDateChange={(date) => handleFieldChange('date', date)}
+        onIsEventChange={(isEvent) => handleFieldChange('isEvent', isEvent)}
+        onEventNameChange={(name) => handleFieldChange('eventName', name)}
+        onWeatherMorningChange={(w) => handleFieldChange('weatherMorning', w)}
+        onWeatherAfternoonChange={(w) => handleFieldChange('weatherAfternoon', w)}
+        onWeatherEveningChange={(w) => handleFieldChange('weatherEvening', w)}
+        disabled={isReadOnly}
+      />
 
       {/* Sezione Postazioni Cassa */}
       <div className="space-y-4">
@@ -551,140 +360,16 @@ export function ClosureForm({
       </Card>
 
       {/* Riepilogo */}
-      <Card
-        className={cn(
-          totals.hasSignificantDifference && 'border-destructive border-2'
-        )}
-      >
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            Riepilogo
-            {totals.hasSignificantDifference && (
-              <Badge variant="destructive" className="gap-1">
-                <AlertTriangle className="h-3 w-3" />
-                Differenza Cassa
-              </Badge>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            {/* Colonna sinistra: Movimentazione */}
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Vendite Contanti:</span>
-                <span className="font-mono">
-                  {formatCurrency(totals.cashTotal)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Vendite POS:</span>
-                <span className="font-mono">
-                  {formatCurrency(totals.posTotal)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Uscite Pagate:</span>
-                <span className="font-mono">
-                  {formatCurrency(totals.expensesTotal)}
-                </span>
-              </div>
-              <Separator />
-              <div className="flex justify-between font-semibold">
-                <span>Totale Lordo:</span>
-                <span className="font-mono">
-                  {formatCurrency(totals.grossTotal)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">
-                  IVA stimata ({(vatRate * 100).toFixed(0)}%):
-                </span>
-                <span className="font-mono">
-                  {formatCurrency(totals.estimatedVat)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Netto Vendite:</span>
-                <span className="font-mono">
-                  {formatCurrency(totals.netTotal)}
-                </span>
-              </div>
-            </div>
-
-            {/* Colonna destra: Quadratura Cassa */}
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Vendite Contanti:</span>
-                <span className="font-mono">
-                  {formatCurrency(totals.cashTotal)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Cassa Contata:</span>
-                <span className="font-mono">
-                  {formatCurrency(totals.countedTotal)}
-                </span>
-              </div>
-              <div
-                className={cn(
-                  'flex justify-between font-semibold',
-                  totals.hasSignificantDifference && 'text-destructive'
-                )}
-              >
-                <span>Differenza:</span>
-                <span className="font-mono">
-                  {totals.cashDifference >= 0 ? '+' : ''}
-                  {formatCurrency(totals.cashDifference)}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Riepilogo Contanti */}
-          <Separator />
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">
-              Incasso Contanti (Vendite + Uscite):
-            </span>
-            <span className="font-mono font-semibold">
-              {formatCurrency(totals.cashIncomeTotal)}
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Contanti in Cassa:</span>
-            <span className="font-mono">
-              {formatCurrency(totals.countedTotal)}
-            </span>
-          </div>
-          <div className="flex justify-between font-semibold text-primary">
-            <span>Versamento Banca (POS):</span>
-            <span className="font-mono">
-              {formatCurrency(totals.bankDeposit)}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
+      <ClosureSummaryCard totals={totals} vatRate={vatRate} />
 
       {/* Azioni */}
       {!isReadOnly && (
-        <div className="flex justify-end gap-3 sticky bottom-4 bg-background/95 backdrop-blur py-4 -mx-4 px-4 border-t">
-          <Button
-            variant="outline"
-            onClick={handleSave}
-            disabled={isSaving || isSubmitting}
-          >
-            <Save className="h-4 w-4 mr-2" />
-            {isSaving ? 'Salvataggio...' : 'Salva Bozza'}
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={isSaving || isSubmitting}
-          >
-            <Send className="h-4 w-4 mr-2" />
-            {isSubmitting ? 'Invio...' : 'Invia per Validazione'}
-          </Button>
-        </div>
+        <ClosureActions
+          onSave={handleSave}
+          onSubmit={handleSubmit}
+          isSaving={isSaving}
+          isSubmitting={isSubmitting}
+        />
       )}
     </div>
   )

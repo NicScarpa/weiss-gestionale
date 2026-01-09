@@ -8,7 +8,87 @@ import {
 } from '@/lib/validations/prima-nota'
 import { toDebitCredit, calculateTotals } from '@/lib/prima-nota-utils'
 
-// GET /api/prima-nota - Lista movimenti con filtri
+/**
+ * @swagger
+ * /api/prima-nota:
+ *   get:
+ *     summary: Lista movimenti contabili
+ *     description: |
+ *       Restituisce l'elenco dei movimenti di prima nota (cassa e banca)
+ *       con filtri opzionali e paginazione. Include totali aggregati.
+ *     tags:
+ *       - Prima Nota
+ *     parameters:
+ *       - in: query
+ *         name: registerType
+ *         schema:
+ *           type: string
+ *           enum: [CASH, BANK]
+ *         description: Filtra per tipo registro
+ *       - in: query
+ *         name: dateFrom
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Data inizio
+ *       - in: query
+ *         name: dateTo
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Data fine
+ *       - in: query
+ *         name: movementType
+ *         schema:
+ *           type: string
+ *           enum: [INCASSO, USCITA, VERSAMENTO, PRELIEVO]
+ *         description: Filtra per tipo movimento
+ *       - in: query
+ *         name: accountId
+ *         schema:
+ *           type: string
+ *         description: Filtra per conto contabile
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Ricerca nella descrizione
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *     responses:
+ *       200:
+ *         description: Lista movimenti con totali
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/JournalEntry'
+ *                 pagination:
+ *                   $ref: '#/components/schemas/Pagination'
+ *                 summary:
+ *                   type: object
+ *                   properties:
+ *                     totalDebit:
+ *                       type: number
+ *                     totalCredit:
+ *                       type: number
+ *                     balance:
+ *                       type: number
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ */
 export async function GET(request: NextRequest) {
   try {
     const session = await auth()
@@ -199,7 +279,35 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/prima-nota - Crea nuovo movimento
+/**
+ * @swagger
+ * /api/prima-nota:
+ *   post:
+ *     summary: Crea movimento contabile
+ *     description: |
+ *       Crea un nuovo movimento di prima nota (cassa o banca).
+ *       Il movimento viene automaticamente convertito in dare/avere
+ *       in base al tipo di registro e tipo movimento.
+ *     tags:
+ *       - Prima Nota
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/JournalEntryCreate'
+ *     responses:
+ *       201:
+ *         description: Movimento creato con successo
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/JournalEntry'
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ */
 export async function POST(request: NextRequest) {
   try {
     const session = await auth()
