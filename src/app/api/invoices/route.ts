@@ -287,6 +287,7 @@ export async function POST(request: NextRequest) {
 
     // Gestione fornitore
     let supplierId: string | null = null
+    let supplierNameForInvoice = fattura.cedentePrestatore.denominazione // Default name from XML
     let status: InvoiceStatus = 'IMPORTED'
 
     if (validatedData.supplierId) {
@@ -296,18 +297,21 @@ export async function POST(request: NextRequest) {
       })
       if (supplier) {
         supplierId = supplier.id
+        supplierNameForInvoice = supplier.name // Use DB name
         status = 'MATCHED'
       }
     } else if (validatedData.createSupplier && validatedData.supplierData) {
       // Crea nuovo fornitore
       const newSupplier = await createSupplierFromData(validatedData.supplierData)
       supplierId = newSupplier.id
+      supplierNameForInvoice = newSupplier.name // Use new supplier name
       status = 'MATCHED'
     } else {
       // Cerca match automatico
       const match = await matchSupplier(fattura)
       if (match.matched && match.supplier) {
         supplierId = match.supplier.id
+        supplierNameForInvoice = match.supplier.name // Use matched DB name
         status = 'MATCHED'
       }
     }
@@ -354,7 +358,7 @@ export async function POST(request: NextRequest) {
         invoiceNumber: fattura.numero,
         invoiceDate: new Date(fattura.data),
         supplierVat: fattura.cedentePrestatore.partitaIva,
-        supplierName: fattura.cedentePrestatore.denominazione,
+        supplierName: supplierNameForInvoice, // Use normalized name
         totalAmount: new Prisma.Decimal(importi.totalAmount.toFixed(2)),
         vatAmount: new Prisma.Decimal(importi.vatAmount.toFixed(2)),
         netAmount: new Prisma.Decimal(importi.netAmount.toFixed(2)),
