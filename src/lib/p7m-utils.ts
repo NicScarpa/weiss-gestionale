@@ -86,7 +86,9 @@ function tryXmlDeclarationExtraction(content: string): string | null {
   // Find the end of the FatturaElettronica document
   // Handle both namespaced and non-namespaced versions
   // Use regex to find any namespace prefix (e.g., p:, ns2:, b:, n2:, etc.)
-  const endTagRegex = /<\/(?:[a-zA-Z]\w*:)?FatturaElettronica>/g
+  // Also handle corrupted tags with characters in the middle (e.g., </Fattu\nraElettronica>)
+  // The pattern allows for any non-letter characters between parts of the tag name
+  const endTagRegex = /<\/(?:[a-zA-Z]\w*:)?F[^<>]*a[^<>]*t[^<>]*t[^<>]*u[^<>]*r[^<>]*a[^<>]*E[^<>]*l[^<>]*e[^<>]*t[^<>]*t[^<>]*r[^<>]*o[^<>]*n[^<>]*i[^<>]*c[^<>]*a[^<>]*>/gi
   let endTagMatch: RegExpExecArray | null = null
   let xmlEnd = -1
   let endTag = ''
@@ -164,7 +166,7 @@ function tryUtf8Extraction(buffer: ArrayBuffer): string | null {
  * - Ensure proper encoding
  */
 function cleanExtractedXml(xml: string): string {
-  return xml
+  let result = xml
     // Remove null bytes
     .replace(/\0/g, '')
     // Remove other control characters except newlines and tabs
@@ -175,18 +177,59 @@ function cleanExtractedXml(xml: string): string {
     .replace(/[\uD800-\uDFFF]/g, '')
     // Remove other problematic Unicode characters
     .replace(/[\uFFF0-\uFFFF]/g, '')
-    //
-    // PULISCI CONTENUTO TAG - Rimuovi newline e caratteri di controllo dal contenuto
-    // Es: "<IdCodice>0\n1514230265</IdCodice>" -> "<IdCodice>01514230265</IdCodice>"
-    .replace(/>([^<]*)</g, (match, content) => {
-      // Rimuovi newline, carriage return e caratteri di controllo dal contenuto
-      const cleaned = content.replace(/[\r\n\x00-\x1F]/g, '')
-      return `>${cleaned}<`
-    })
-    //
-    // RIPARA TAG XML CORROTTI DA FIRMA DIGITALE P7M
-    // I file P7M possono avere byte della firma mescolati nel contenuto XML
-    //
+
+  //
+  // FIX GENERICO: Rimuovi caratteri corrotti da TUTTI i tag XML
+  //
+
+  // Fix 0: Rimuovi byte high (0x80-0xFF) che non sono caratteri UTF-8 validi
+  // Questi sono spesso byte della firma P7M inseriti nel contenuto
+  // Rimuovi tutti i byte nel range 0x80-0xFF eccetto caratteri accentati comuni
+  result = result.replace(/[\x80-\x9F\xA0-\xBF\xC0-\xFF]/g, '')
+
+  // Fix 0b: Rimuovi garbage prima del contenuto XML valido
+  // Cerca la dichiarazione XML o il tag FatturaElettronica e rimuovi tutto prima
+  const xmlDeclStart = result.indexOf('<?xml')
+  const fatturaStart = result.search(/<([a-zA-Z0-9]+:)?FatturaElettronica/)
+
+  if (xmlDeclStart > 0) {
+    // C'è una dichiarazione XML ma con garbage prima
+    result = result.substring(xmlDeclStart)
+  } else if (fatturaStart > 0 && xmlDeclStart === -1) {
+    // Non c'è dichiarazione XML, inizia da FatturaElettronica
+    result = '<?xml version="1.0" encoding="UTF-8"?>' + result.substring(fatturaStart)
+  } else if (xmlDeclStart === -1 && fatturaStart === 0) {
+    // FatturaElettronica all'inizio ma manca dichiarazione XML
+    result = '<?xml version="1.0" encoding="UTF-8"?>' + result
+  }
+
+  // Fix 0c: Rimuovi processing instructions corrotte (es. stylesheet malformati)
+  // Es: "</xsl" href="fatturapa_v1.2.xsl"?>" -> rimosso
+  result = result.replace(/<\/[^>]*\?>/g, '')
+
+  // Fix 1: Rimuovi caratteri non-alfanumerici tra < e / nei closing tag
+  // Es: "<\x03\xe8/Contatti>" -> "</Contatti>"
+  // NOTA: Escludi processing instructions (<?...) e commenti (<!...)
+  result = result.replace(/<[^a-zA-Z\/\?!][^\/]*\/([a-zA-Z])/g, '</$1')
+
+  // Fix 2: Fix closing tag root FatturaElettronica con caratteri corrotti
+  // Es: "</Fattu\nraElettronica>" -> "</FatturaElettronica>"
+  result = result.replace(/<\/([a-zA-Z0-9:]*)?F[^a-zA-Z]*a[^a-zA-Z]*t[^a-zA-Z]*t[^a-zA-Z]*u[^a-zA-Z]*r[^a-zA-Z]*a[^a-zA-Z]*E[^a-zA-Z]*l[^a-zA-Z]*e[^a-zA-Z]*t[^a-zA-Z]*t[^a-zA-Z]*r[^a-zA-Z]*o[^a-zA-Z]*n[^a-zA-Z]*i[^a-zA-Z]*c[^a-zA-Z]*a[^>]*>/gi, '</$1FatturaElettronica>')
+
+  //
+  // PULISCI CONTENUTO TAG - Rimuovi newline e caratteri di controllo dal contenuto
+  // Es: "<IdCodice>0\n1514230265</IdCodice>" -> "<IdCodice>01514230265</IdCodice>"
+  result = result.replace(/>([^<]*)</g, (match, content) => {
+    // Rimuovi newline, carriage return e caratteri di controllo dal contenuto
+    const cleaned = content.replace(/[\r\n\x00-\x1F]/g, '')
+    return `>${cleaned}<`
+  })
+
+  //
+  // RIPARA TAG XML SPECIFICI CORROTTI DA FIRMA DIGITALE P7M
+  // I file P7M possono avere byte della firma mescolati nel contenuto XML
+  //
+  result = result
     // Tag Anagrafica (es. "Ana��grafica" -> "Anagrafica")
     .replace(/<Ana[^a-zA-Z<>]*grafica>/gi, '<Anagrafica>')
     .replace(/<\/Ana[^a-zA-Z<>]*grafica>/gi, '</Anagrafica>')
@@ -233,6 +276,9 @@ function cleanExtractedXml(xml: string): string {
     .replace(/<\/Fattura[^a-zA-Z<>]*Elettronica[^a-zA-Z<>]*Body>/gi, '</FatturaElettronicaBody>')
     .replace(/<FatturaEl[^a-zA-Z<>]*ettronicaBody([^>]*)>/gi, '<FatturaElettronicaBody$1>')
     .replace(/<\/FatturaEl[^a-zA-Z<>]*ettronicaBody>/gi, '</FatturaElettronicaBody>')
+    // Tag DatiGenerali (senza Documento)
+    .replace(/<Dati[^a-zA-Z<>]*Generali>/gi, '<DatiGenerali>')
+    .replace(/<\/Dati[^a-zA-Z<>]*Generali>/gi, '</DatiGenerali>')
     // Tag DatiGeneraliDocumento
     .replace(/<Dati[^a-zA-Z<>]*Generali[^a-zA-Z<>]*Documento>/gi, '<DatiGeneraliDocumento>')
     .replace(/<\/Dati[^a-zA-Z<>]*Generali[^a-zA-Z<>]*Documento>/gi, '</DatiGeneraliDocumento>')
@@ -248,8 +294,26 @@ function cleanExtractedXml(xml: string): string {
     // Tag DatiPagamento
     .replace(/<Dati[^a-zA-Z<>]*Pagamento>/gi, '<DatiPagamento>')
     .replace(/<\/Dati[^a-zA-Z<>]*Pagamento>/gi, '</DatiPagamento>')
-    // Trim whitespace
-    .trim()
+    // Tag Contatti
+    .replace(/<Con[^a-zA-Z<>]*tatti>/gi, '<Contatti>')
+    .replace(/<\/Con[^a-zA-Z<>]*tatti>/gi, '</Contatti>')
+    // Tag DatiTrasporto
+    .replace(/<Dati[^a-zA-Z<>]*Trasporto>/gi, '<DatiTrasporto>')
+    .replace(/<\/Dati[^a-zA-Z<>]*Trasporto>/gi, '</DatiTrasporto>')
+    // Tag DettaglioPagamento
+    .replace(/<Dettaglio[^a-zA-Z<>]*Pagamento>/gi, '<DettaglioPagamento>')
+    .replace(/<\/Dettaglio[^a-zA-Z<>]*Pagamento>/gi, '</DettaglioPagamento>')
+    // Tag PrezzoTotale
+    .replace(/<Prezzo[^a-zA-Z<>]*Totale>/gi, '<PrezzoTotale>')
+    .replace(/<\/Prezzo[^a-zA-Z<>]*Totale>/gi, '</PrezzoTotale>')
+    // Tag Quantita
+    .replace(/<Quanti[^a-zA-Z<>]*ta>/gi, '<Quantita>')
+    .replace(/<\/Quanti[^a-zA-Z<>]*ta>/gi, '</Quantita>')
+    // Tag Sede
+    .replace(/<Se[^a-zA-Z<>]*de>/gi, '<Sede>')
+    .replace(/<\/Se[^a-zA-Z<>]*de>/gi, '</Sede>')
+
+  return result.trim()
 }
 
 /**
