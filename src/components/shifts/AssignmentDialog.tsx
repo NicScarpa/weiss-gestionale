@@ -321,7 +321,7 @@ export function AssignmentDialog({
             </div>
 
             {/* Info dipendente selezionato */}
-            {selectedStaff && selectedStaff.skills.length > 0 && (
+            {selectedStaff?.skills?.length > 0 && (
               <div className="flex flex-wrap gap-1">
                 {selectedStaff.skills.map(skill => (
                   <Badge key={skill} variant="secondary" className="text-xs">
