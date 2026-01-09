@@ -515,6 +515,9 @@ model Supplier {
   city             String?
   province         String?
   postalCode       String?  @map("postal_code")
+  country          String?  @default("IT")
+  email            String?
+  iban             String?
   defaultAccount   Account? @relation(fields: [defaultAccountId], references: [id])
   defaultAccountId String?  @map("default_account_id")
   isActive         Boolean  @default(true) @map("is_active")
