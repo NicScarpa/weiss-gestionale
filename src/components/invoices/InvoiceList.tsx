@@ -446,7 +446,7 @@ export function InvoiceList() {
 
                     {/* Fornitore - SOLO NOME */}
                     <TableCell>
-                      {invoice.supplierName}
+                      {invoice.supplier?.name || invoice.supplierName}
                     </TableCell>
 
                     {/* Importo */}
