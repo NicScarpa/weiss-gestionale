@@ -105,6 +105,7 @@ export interface GenerationParams {
   preferFixedStaff: boolean
   balanceHours: boolean
   minimizeCost: boolean
+  staffingRequirements?: Record<string, number> // key: `${dateString}_${shiftDefId}`, value: minStaff
 }
 
 export interface GenerationResult {
