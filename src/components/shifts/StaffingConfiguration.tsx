@@ -1,9 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Users } from 'lucide-react'
 import { format, eachDayOfInterval } from 'date-fns'
 import { it } from 'date-fns/locale'
@@ -21,6 +20,7 @@ interface StaffingConfigurationProps {
   shiftDefinitions: ShiftDefinition[]
   onRequirementsChange: (reqs: Record<string, number>) => void
   initialRequirements?: Record<string, number>
+  hideHeader?: boolean
 }
 
 export function StaffingConfiguration({
@@ -29,6 +29,7 @@ export function StaffingConfiguration({
   shiftDefinitions,
   onRequirementsChange,
   initialRequirements = {},
+  hideHeader = false,
 }: StaffingConfigurationProps) {
   const [requirements, setRequirements] = useState<Record<string, number>>(initialRequirements)
 
@@ -50,6 +51,54 @@ export function StaffingConfiguration({
     return requirements[key] !== undefined ? requirements[key] : defaultVal
   }
 
+  const tableContent = (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr>
+            <th className="text-left font-medium p-2 w-[150px]">Giorno</th>
+            {shiftDefinitions.map(shift => (
+              <th key={shift.id} className="text-center font-medium p-2">
+                {shift.name}
+                <span className="block text-xs text-muted-foreground font-normal">
+                  (Default: {shift.minStaff})
+                </span>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {dates.map(date => (
+            <tr key={date.toString()} className="border-t">
+              <td className="p-2 font-medium capitalize">
+                {format(date, 'EEEE d', { locale: it })}
+              </td>
+              {shiftDefinitions.map(shift => (
+                <td key={shift.id} className="p-2">
+                  <div className="flex justify-center">
+                    <Input
+                      type="number"
+                      min="0"
+                      className="w-16 text-center h-8"
+                      value={getRequirement(date, shift.id, shift.minStaff)}
+                      onChange={(e) => handleRequirementChange(date, shift.id, e.target.value)}
+                    />
+                  </div>
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+
+  // When used inside a dialog, return just the table without Card wrapper
+  if (hideHeader) {
+    return tableContent
+  }
+
+  // When used standalone, return full Card
   return (
     <Card>
       <CardHeader>
@@ -62,45 +111,7 @@ export function StaffingConfiguration({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr>
-                <th className="text-left font-medium p-2 w-[150px]">Giorno</th>
-                {shiftDefinitions.map(shift => (
-                  <th key={shift.id} className="text-center font-medium p-2">
-                    {shift.name}
-                    <span className="block text-xs text-muted-foreground font-normal">
-                      (Default: {shift.minStaff})
-                    </span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {dates.map(date => (
-                <tr key={date.toString()} className="border-t">
-                  <td className="p-2 font-medium capitalize">
-                    {format(date, 'EEEE d', { locale: it })}
-                  </td>
-                  {shiftDefinitions.map(shift => (
-                    <td key={shift.id} className="p-2">
-                      <div className="flex justify-center">
-                        <Input
-                          type="number"
-                          min="0"
-                          className="w-16 text-center h-8"
-                          value={getRequirement(date, shift.id, shift.minStaff)}
-                          onChange={(e) => handleRequirementChange(date, shift.id, e.target.value)}
-                        />
-                      </div>
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {tableContent}
       </CardContent>
     </Card>
   )

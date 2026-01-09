@@ -9,6 +9,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -120,13 +121,28 @@ export function GenerationParamsForm({
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  Fabbisogno Staff
+                </DialogTitle>
+                <DialogDescription>
+                  Personalizza il numero di persone richieste per ogni turno giornaliero
+                </DialogDescription>
+              </DialogHeader>
               <StaffingConfiguration
                 startDate={startDate}
                 endDate={endDate}
                 shiftDefinitions={shiftDefinitions}
                 onRequirementsChange={setStaffingRequirements}
                 initialRequirements={staffingRequirements}
+                hideHeader
               />
+              <DialogFooter>
+                <Button onClick={() => setIsDialogOpen(false)}>
+                  Conferma
+                </Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
 
