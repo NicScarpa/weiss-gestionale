@@ -51,22 +51,17 @@ function tryXmlDeclarationExtraction(content: string): string | null {
 
   // Find the end of the FatturaElettronica document
   // Handle both namespaced and non-namespaced versions
-  const endPatterns = [
-    '</p:FatturaElettronica>',
-    '</FatturaElettronica>',
-    '</ns0:FatturaElettronica>',
-    '</ns1:FatturaElettronica>',
-    '</ns2:FatturaElettronica>',
-  ]
-
+  // Use regex to find any namespace prefix (e.g., p:, ns2:, b:, n2:, etc.)
+  const endTagRegex = /<\/(?:[a-zA-Z]\w*:)?FatturaElettronica>/g
+  let endTagMatch: RegExpExecArray | null = null
   let xmlEnd = -1
   let endTag = ''
 
-  for (const pattern of endPatterns) {
-    const pos = content.indexOf(pattern, xmlStart)
-    if (pos !== -1 && (xmlEnd === -1 || pos < xmlEnd)) {
-      xmlEnd = pos
-      endTag = pattern
+  // Find the last occurrence of the end tag after xmlStart
+  while ((endTagMatch = endTagRegex.exec(content)) !== null) {
+    if (endTagMatch.index >= xmlStart) {
+      xmlEnd = endTagMatch.index
+      endTag = endTagMatch[0]
     }
   }
 
@@ -82,36 +77,30 @@ function tryXmlDeclarationExtraction(content: string): string | null {
  */
 function tryFatturaTagExtraction(content: string): string | null {
   // Look for FatturaElettronica opening tag (with or without namespace)
-  const patterns = [
-    /<(?:p:|ns\d:|)FatturaElettronica[^>]*>/,
-  ]
+  // Support any namespace prefix: p:, ns0-9:, b:, n2:, etc.
+  const openTagRegex = /<([a-zA-Z]\w*:)?FatturaElettronica[^>]*>/
+  const match = content.match(openTagRegex)
 
-  for (const pattern of patterns) {
-    const match = content.match(pattern)
-    if (match) {
-      const tagStart = content.indexOf(match[0])
-      if (tagStart === -1) continue
+  if (!match) return null
 
-      // Determine the namespace prefix used
-      const prefixMatch = match[0].match(/<((?:p:|ns\d:|)?)FatturaElettronica/)
-      const prefix = prefixMatch ? prefixMatch[1] : ''
-      const endTag = `</${prefix}FatturaElettronica>`
+  const tagStart = content.indexOf(match[0])
+  if (tagStart === -1) return null
 
-      const tagEnd = content.indexOf(endTag, tagStart)
-      if (tagEnd === -1) continue
+  // Extract the namespace prefix used (group 1 from regex)
+  const prefix = match[1] || ''
+  const endTag = `</${prefix}FatturaElettronica>`
 
-      // Add XML declaration if not present
-      const rawXml = content.substring(tagStart, tagEnd + endTag.length)
-      const cleanedXml = cleanExtractedXml(rawXml)
+  const tagEnd = content.indexOf(endTag, tagStart)
+  if (tagEnd === -1) return null
 
-      if (!cleanedXml.startsWith('<?xml')) {
-        return `<?xml version="1.0" encoding="UTF-8"?>${cleanedXml}`
-      }
-      return cleanedXml
-    }
+  // Add XML declaration if not present
+  const rawXml = content.substring(tagStart, tagEnd + endTag.length)
+  const cleanedXml = cleanExtractedXml(rawXml)
+
+  if (!cleanedXml.startsWith('<?xml')) {
+    return `<?xml version="1.0" encoding="UTF-8"?>${cleanedXml}`
   }
-
-  return null
+  return cleanedXml
 }
 
 /**
@@ -124,7 +113,8 @@ function tryUtf8Extraction(buffer: Buffer | ArrayBuffer): string | null {
       : Buffer.from(buffer).toString('utf8')
 
     // Look for XML content in UTF-8 decoded string
-    const xmlMatch = content.match(/<\?xml[\s\S]*?<\/(?:p:|ns\d:|)?FatturaElettronica>/)
+    // Support any namespace prefix: p:, ns0-9:, b:, n2:, etc.
+    const xmlMatch = content.match(/<\?xml[\s\S]*?<\/(?:[a-zA-Z]\w*:)?FatturaElettronica>/)
     if (xmlMatch) {
       return cleanExtractedXml(xmlMatch[0])
     }
@@ -184,6 +174,40 @@ function cleanExtractedXml(xml: string): string {
     // Tag ImportoTotaleDocumento
     .replace(/<Importo[^a-zA-Z<>]*Totale[^a-zA-Z<>]*Documento>/gi, '<ImportoTotaleDocumento>')
     .replace(/<\/Importo[^a-zA-Z<>]*Totale[^a-zA-Z<>]*Documento>/gi, '</ImportoTotaleDocumento>')
+    // Tag DataScadenzaPagamento
+    .replace(/<Data[^a-zA-Z<>]*Scadenza[^a-zA-Z<>]*Pagamento>/gi, '<DataScadenzaPagamento>')
+    .replace(/<\/Data[^a-zA-Z<>]*Scadenza[^a-zA-Z<>]*Pagamento>/gi, '</DataScadenzaPagamento>')
+    // Tag CodiceValore
+    .replace(/<Codice[^a-zA-Z<>]*Valore>/gi, '<CodiceValore>')
+    .replace(/<\/Codice[^a-zA-Z<>]*Valore>/gi, '</CodiceValore>')
+    // Tag RegimeFiscale
+    .replace(/<Regime[^a-zA-Z<>]*Fiscale>/gi, '<RegimeFiscale>')
+    .replace(/<\/Regime[^a-zA-Z<>]*Fiscale>/gi, '</RegimeFiscale>')
+    // Tag FatturaElettronicaHeader (gestisce anche caratteri corrotti come "FatturaElèettronicaHeader")
+    .replace(/<Fattura[^a-zA-Z<>]*Elettronica[^a-zA-Z<>]*Header([^>]*)>/gi, '<FatturaElettronicaHeader$1>')
+    .replace(/<\/Fattura[^a-zA-Z<>]*Elettronica[^a-zA-Z<>]*Header>/gi, '</FatturaElettronicaHeader>')
+    .replace(/<FatturaEl[^a-zA-Z<>]*ettronicaHeader([^>]*)>/gi, '<FatturaElettronicaHeader$1>')
+    .replace(/<\/FatturaEl[^a-zA-Z<>]*ettronicaHeader>/gi, '</FatturaElettronicaHeader>')
+    // Tag FatturaElettronicaBody (gestisce anche caratteri corrotti come "FatturaElèettronicaBody")
+    .replace(/<Fattura[^a-zA-Z<>]*Elettronica[^a-zA-Z<>]*Body([^>]*)>/gi, '<FatturaElettronicaBody$1>')
+    .replace(/<\/Fattura[^a-zA-Z<>]*Elettronica[^a-zA-Z<>]*Body>/gi, '</FatturaElettronicaBody>')
+    .replace(/<FatturaEl[^a-zA-Z<>]*ettronicaBody([^>]*)>/gi, '<FatturaElettronicaBody$1>')
+    .replace(/<\/FatturaEl[^a-zA-Z<>]*ettronicaBody>/gi, '</FatturaElettronicaBody>')
+    // Tag DatiGeneraliDocumento
+    .replace(/<Dati[^a-zA-Z<>]*Generali[^a-zA-Z<>]*Documento>/gi, '<DatiGeneraliDocumento>')
+    .replace(/<\/Dati[^a-zA-Z<>]*Generali[^a-zA-Z<>]*Documento>/gi, '</DatiGeneraliDocumento>')
+    // Tag DatiBeniServizi
+    .replace(/<Dati[^a-zA-Z<>]*Beni[^a-zA-Z<>]*Servizi>/gi, '<DatiBeniServizi>')
+    .replace(/<\/Dati[^a-zA-Z<>]*Beni[^a-zA-Z<>]*Servizi>/gi, '</DatiBeniServizi>')
+    // Tag DettaglioLinee
+    .replace(/<Dettaglio[^a-zA-Z<>]*Linee>/gi, '<DettaglioLinee>')
+    .replace(/<\/Dettaglio[^a-zA-Z<>]*Linee>/gi, '</DettaglioLinee>')
+    // Tag DatiRiepilogo
+    .replace(/<Dati[^a-zA-Z<>]*Riepilogo>/gi, '<DatiRiepilogo>')
+    .replace(/<\/Dati[^a-zA-Z<>]*Riepilogo>/gi, '</DatiRiepilogo>')
+    // Tag DatiPagamento
+    .replace(/<Dati[^a-zA-Z<>]*Pagamento>/gi, '<DatiPagamento>')
+    .replace(/<\/Dati[^a-zA-Z<>]*Pagamento>/gi, '</DatiPagamento>')
     // Trim whitespace
     .trim()
 }
