@@ -1352,6 +1352,7 @@ model ElectronicInvoice {
   sdiId         String? @unique @map("sdi_id") // Identificativo SDI
   invoiceNumber String  @map("invoice_number") // Numero fattura
   invoiceDate   DateTime @map("invoice_date") @db.Date // Data fattura
+  documentType  String?  @map("document_type") // TD01, TD04, TD24, etc.
 
   // Fornitore
   supplier    Supplier? @relation(fields: [supplierId], references: [id])
@@ -1413,6 +1414,7 @@ model InvoiceDeadline {
   isPaid        Boolean  @default(false) @map("is_paid")
   paidAt        DateTime? @map("paid_at")
   paymentMethod String?  @map("payment_method") // Bonifico, RiBa, etc.
+  iban          String?  // IBAN estratto da XML pagamento
 
   createdAt DateTime @default(now()) @map("created_at")
 

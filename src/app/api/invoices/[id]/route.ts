@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { InvoiceStatus } from '@prisma/client'
 import { z } from 'zod'
+import { parseFatturaPA, TIPI_DOCUMENTO } from '@/lib/sdi/parser'
 
 // Schema per aggiornamento fattura
 const updateInvoiceSchema = z.object({
@@ -90,7 +91,35 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
-    return NextResponse.json(invoice)
+    // Parse XML per dati completi (causale, linee, riepilogo, pagamenti, etc.)
+    let parsedData = null
+    if (invoice.xmlContent) {
+      try {
+        const fattura = parseFatturaPA(invoice.xmlContent)
+        parsedData = {
+          tipoDocumento: fattura.tipoDocumento,
+          tipoDocumentoDesc: TIPI_DOCUMENTO[fattura.tipoDocumento] || fattura.tipoDocumento,
+          causale: fattura.causale || [],
+          cedentePrestatore: fattura.cedentePrestatore,
+          cessionarioCommittente: fattura.cessionarioCommittente,
+          dettaglioLinee: fattura.dettaglioLinee || [],
+          datiRiepilogo: fattura.datiRiepilogo || [],
+          datiPagamento: fattura.datiPagamento,
+          datiBollo: fattura.datiBollo,
+          progressivoInvio: fattura.progressivoInvio,
+          formatoTrasmissione: fattura.formatoTrasmissione,
+          pecDestinatario: fattura.pecDestinatario,
+          codiceDestinatario: fattura.codiceDestinatario,
+          importoTotaleDocumento: fattura.importoTotaleDocumento,
+          arrotondamento: fattura.arrotondamento,
+        }
+      } catch (parseError) {
+        console.error('Errore parsing XML per dettaglio:', parseError)
+        // Non blocchiamo la risposta se il parsing fallisce
+      }
+    }
+
+    return NextResponse.json({ ...invoice, parsedData })
   } catch (error) {
     console.error('Errore GET /api/invoices/[id]:', error)
     return NextResponse.json(
