@@ -161,10 +161,24 @@ export function extractXmlFromP7mWithDiagnostics(
 
     // Strategia 3: UTF-8 extraction
     log('debug', 'strategy-3', 'Tentativo estrazione con UTF-8 decoding')
-    const xml = tryUtf8Extraction(arrayBuffer)
+    let xml = tryUtf8Extraction(arrayBuffer)
     if (xml) {
       diagnostics.extractionStrategy = 'utf8'
       log('info', 'strategy-3', 'Estrazione completata con successo via UTF-8')
+      return {
+        success: true,
+        xml: cleanExtractedXmlWithLogging(xml, log, cleaningApplied),
+        logs,
+        diagnostics: { ...diagnostics, cleaningApplied },
+      }
+    }
+
+    // Strategia 4: Base64 decoding (P7M in formato testo Base64)
+    log('debug', 'strategy-4', 'Tentativo estrazione con decodifica Base64')
+    xml = tryBase64Extraction(bytes)
+    if (xml) {
+      diagnostics.extractionStrategy = 'base64'
+      log('info', 'strategy-4', 'Estrazione completata con successo via Base64 decoding')
       return {
         success: true,
         xml: cleanExtractedXmlWithLogging(xml, log, cleaningApplied),
@@ -271,14 +285,17 @@ export function extractXmlFromP7m(buffer: Buffer | ArrayBuffer): string {
   // Convert to binary string, handling both Node.js Buffer and browser ArrayBuffer
   let content: string
   let arrayBuffer: ArrayBuffer
+  let originalBuffer: Buffer
 
   if (typeof Buffer !== 'undefined' && Buffer.isBuffer(buffer)) {
     // Node.js environment
+    originalBuffer = buffer
     content = buffer.toString('binary')
     arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer
   } else {
     // Browser environment - use ArrayBuffer directly
     arrayBuffer = buffer as ArrayBuffer
+    originalBuffer = Buffer.from(buffer)
     content = arrayBufferToBinaryString(arrayBuffer)
   }
 
@@ -290,6 +307,10 @@ export function extractXmlFromP7m(buffer: Buffer | ArrayBuffer): string {
   if (xml) return xml
 
   xml = tryUtf8Extraction(arrayBuffer)
+  if (xml) return xml
+
+  // Strategy 4: Try Base64 decoding (some P7M files are Base64 encoded)
+  xml = tryBase64Extraction(originalBuffer)
   if (xml) return xml
 
   throw new Error('Impossibile estrarre il contenuto XML dal file P7M. Il file potrebbe essere corrotto o in un formato non supportato.')
@@ -379,6 +400,55 @@ function tryUtf8Extraction(buffer: ArrayBuffer): string | null {
     // UTF-8 decoding failed, that's okay
   }
   return null
+}
+
+/**
+ * Strategy 4: Try Base64 decoding
+ * Some P7M files are encoded in Base64 format (ASCII text containing Base64 data)
+ * This is common when P7M files are transmitted via email or web services
+ */
+function tryBase64Extraction(buffer: Buffer): string | null {
+  try {
+    // Check if content looks like Base64 (starts with typical PKCS#7 Base64 header)
+    const asciiContent = buffer.toString('ascii')
+
+    // Base64 P7M typically starts with "MIA" or "MII" (ASN.1 SEQUENCE in Base64)
+    if (!asciiContent.match(/^MI[AIQ]/)) {
+      return null
+    }
+
+    // Verify it's valid Base64 (only Base64 characters)
+    if (!/^[A-Za-z0-9+/=\s]+$/.test(asciiContent)) {
+      return null
+    }
+
+    // Decode Base64 to binary
+    const decodedBuffer = Buffer.from(asciiContent, 'base64')
+
+    // Now try to extract XML from the decoded binary P7M
+    const decodedContent = decodedBuffer.toString('binary')
+
+    // Try XML declaration extraction on decoded content
+    let xml = tryXmlDeclarationExtraction(decodedContent)
+    if (xml) return xml
+
+    // Try FatturaElettronica tag extraction on decoded content
+    xml = tryFatturaTagExtraction(decodedContent)
+    if (xml) return xml
+
+    // Try UTF-8 extraction on decoded content
+    const decodedArrayBuffer = decodedBuffer.buffer.slice(
+      decodedBuffer.byteOffset,
+      decodedBuffer.byteOffset + decodedBuffer.byteLength
+    ) as ArrayBuffer
+    xml = tryUtf8Extraction(decodedArrayBuffer)
+    if (xml) return xml
+
+    return null
+  } catch {
+    // Base64 decoding failed, that's okay
+    return null
+  }
 }
 
 /**
