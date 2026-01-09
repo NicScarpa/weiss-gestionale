@@ -33,6 +33,10 @@ const updateStaffSchema = z.object({
   vatNumber: z.string().max(11).nullable().optional(),
   fiscalCode: z.string().max(16).nullable().optional(),
 
+  // Dati anagrafici aggiuntivi
+  birthDate: z.string().nullable().optional(),
+  address: z.string().nullable().optional(),
+
   // Disponibilità EXTRA
   availableDays: z.array(z.number().min(0).max(6)).optional(),
   availableHolidays: z.boolean().optional(),
@@ -101,6 +105,10 @@ export async function GET(
         // Dati fiscali
         vatNumber: true,
         fiscalCode: true,
+
+        // Dati anagrafici aggiuntivi
+        birthDate: true,
+        address: true,
 
         // Disponibilità EXTRA
         availableDays: true,
@@ -242,6 +250,12 @@ export async function PUT(
     if (validatedData.vatNumber !== undefined) updateData.vatNumber = validatedData.vatNumber
     if (validatedData.fiscalCode !== undefined) updateData.fiscalCode = validatedData.fiscalCode
 
+    // Dati anagrafici aggiuntivi
+    if (validatedData.birthDate !== undefined) {
+      updateData.birthDate = validatedData.birthDate ? new Date(validatedData.birthDate) : null
+    }
+    if (validatedData.address !== undefined) updateData.address = validatedData.address
+
     // Disponibilità EXTRA
     if (validatedData.availableDays !== undefined) updateData.availableDays = validatedData.availableDays
     if (validatedData.availableHolidays !== undefined) updateData.availableHolidays = validatedData.availableHolidays
@@ -291,6 +305,8 @@ export async function PUT(
         terminationDate: true,
         vatNumber: true,
         fiscalCode: true,
+        birthDate: true,
+        address: true,
         availableDays: true,
         availableHolidays: true,
         hourlyRateBase: true,
