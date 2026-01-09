@@ -64,6 +64,43 @@ export interface DettaglioPagamento {
   iban?: string
 }
 
+// Riferimenti DDT
+export interface DatoDDT {
+  numeroDDT: string
+  dataDDT: string
+  riferimentoNumeroLinea?: number[]
+}
+
+// Riferimenti Ordine/Contratto/Convenzione
+export interface DatoRiferimento {
+  idDocumento: string
+  data?: string
+  numItem?: string
+  codiceCommessaConvenzione?: string
+  codiceCUP?: string
+  codiceCIG?: string
+}
+
+// Contenitore riferimenti documento
+export interface DatiRiferimenti {
+  datiDDT: DatoDDT[]
+  datiOrdineAcquisto: DatoRiferimento[]
+  datiContratto: DatoRiferimento[]
+  datiConvenzione: DatoRiferimento[]
+  datiFattureCollegate: DatoRiferimento[]
+}
+
+// Codice articolo fornitore
+export interface CodiceArticolo {
+  codiceTipo: string
+  codiceValore: string
+}
+
+// Linea dettaglio fattura estesa (con codice articolo)
+export interface DettaglioLineaEsteso extends DettaglioLinea {
+  codiceArticolo?: CodiceArticolo
+}
+
 // Fattura parsata
 export interface FatturaParsata {
   // Header

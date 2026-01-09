@@ -13,6 +13,11 @@ import type {
   DatiPagamento,
   DettaglioPagamento,
   DatiBollo,
+  DatiRiferimenti,
+  DatoDDT,
+  DatoRiferimento,
+  CodiceArticolo,
+  DettaglioLineaEsteso,
 } from './types'
 
 // Re-export types and constants for convenience
@@ -236,6 +241,100 @@ function parseDatiBollo(datiGeneraliDocumento: Record<string, unknown>): DatiBol
 }
 
 /**
+ * Estrae un singolo riferimento documento (Ordine, Contratto, Convenzione, Fattura Collegata)
+ */
+function parseRiferimentoDocumento(data: Record<string, unknown>): DatoRiferimento {
+  return {
+    idDocumento: getText(data.IdDocumento),
+    data: getText(data.Data) || undefined,
+    numItem: getText(data.NumItem) || undefined,
+    codiceCommessaConvenzione: getText(data.CodiceCommessaConvenzione) || undefined,
+    codiceCUP: getText(data.CodiceCUP) || undefined,
+    codiceCIG: getText(data.CodiceCIG) || undefined,
+  }
+}
+
+/**
+ * Estrae i dati DDT (Documento di Trasporto)
+ */
+function parseDatiDDT(data: Record<string, unknown>): DatoDDT {
+  const riferimentoLinea = data.RiferimentoNumeroLinea
+  let riferimentoNumeroLinea: number[] | undefined
+
+  if (riferimentoLinea) {
+    const linee = toArray(riferimentoLinea)
+    riferimentoNumeroLinea = linee.map((l) => parseInt(getText(l)) || 0).filter((n) => n > 0)
+  }
+
+  return {
+    numeroDDT: getText(data.NumeroDDT),
+    dataDDT: getText(data.DataDDT),
+    riferimentoNumeroLinea,
+  }
+}
+
+/**
+ * Estrae tutti i riferimenti documento dalla sezione DatiGenerali
+ * Include DDT, Ordini di Acquisto, Contratti, Convenzioni e Fatture Collegate
+ */
+export function estraiRiferimenti(datiGenerali: Record<string, unknown>): DatiRiferimenti {
+  return {
+    datiDDT: toArray(datiGenerali.DatiDDT).map((d) =>
+      parseDatiDDT(d as Record<string, unknown>)
+    ),
+    datiOrdineAcquisto: toArray(datiGenerali.DatiOrdineAcquisto).map((d) =>
+      parseRiferimentoDocumento(d as Record<string, unknown>)
+    ),
+    datiContratto: toArray(datiGenerali.DatiContratto).map((d) =>
+      parseRiferimentoDocumento(d as Record<string, unknown>)
+    ),
+    datiConvenzione: toArray(datiGenerali.DatiConvenzione).map((d) =>
+      parseRiferimentoDocumento(d as Record<string, unknown>)
+    ),
+    datiFattureCollegate: toArray(datiGenerali.DatiFattureCollegate).map((d) =>
+      parseRiferimentoDocumento(d as Record<string, unknown>)
+    ),
+  }
+}
+
+/**
+ * Estrae il codice articolo da una linea di dettaglio
+ */
+function parseCodiceArticolo(data: unknown): CodiceArticolo | undefined {
+  if (!data) return undefined
+  const codici = toArray(data)
+  if (codici.length === 0) return undefined
+
+  // Prendi il primo codice articolo
+  const codice = codici[0] as Record<string, unknown>
+  return {
+    codiceTipo: getText(codice.CodiceTipo),
+    codiceValore: getText(codice.CodiceValore),
+  }
+}
+
+/**
+ * Estrae le linee di dettaglio estese (con codice articolo)
+ */
+function parseDettaglioLineeEsteso(datiBeniServizi: Record<string, unknown>): DettaglioLineaEsteso[] {
+  const linee = toArray(datiBeniServizi.DettaglioLinee)
+
+  return linee.map((linea) => {
+    const l = linea as Record<string, unknown>
+    return {
+      numeroLinea: parseInt(getText(l.NumeroLinea)) || 0,
+      descrizione: getText(l.Descrizione),
+      quantita: l.Quantita ? parseDecimal(l.Quantita) : undefined,
+      unitaMisura: getText(l.UnitaMisura) || undefined,
+      prezzoUnitario: parseDecimal(l.PrezzoUnitario),
+      prezzoTotale: parseDecimal(l.PrezzoTotale),
+      aliquotaIVA: parseDecimal(l.AliquotaIVA),
+      codiceArticolo: parseCodiceArticolo(l.CodiceArticolo),
+    }
+  })
+}
+
+/**
  * Parser principale per FatturaPA XML
  */
 export function parseFatturaPA(xmlContent: string, fileName?: string): FatturaParsata {
@@ -388,4 +487,84 @@ export function estraiScadenze(fattura: FatturaParsata): Array<{
     amount: d.importoPagamento,
     paymentMethod: d.modalitaPagamento,
   }))
+}
+
+/**
+ * Dati estesi per salvataggio in database (JSON columns)
+ */
+export interface DatiEstesiFattura {
+  documentType: string
+  lineItems: DettaglioLineaEsteso[]
+  references: DatiRiferimenti
+  vatSummary: DatiRiepilogo[]
+  causale: string | null
+}
+
+/**
+ * Estrae tutti i dati estesi dalla fattura per il salvataggio in database
+ * Questa funzione restituisce i dati extra che vanno nelle colonne JSON
+ */
+export function estraiDatiEstesi(xmlContent: string): DatiEstesiFattura {
+  const parser = new XMLParser(parserOptions)
+  const parsed = parser.parse(xmlContent) as Record<string, unknown>
+
+  const fattura = findFatturaBody(parsed)
+  if (!fattura) {
+    throw new Error('Formato XML non riconosciuto')
+  }
+
+  const bodyArray = toArray(fattura.FatturaElettronicaBody)
+  if (bodyArray.length === 0) {
+    throw new Error('Nessun body fattura trovato')
+  }
+
+  const body = bodyArray[0] as Record<string, unknown>
+  const datiGenerali = (body.DatiGenerali || {}) as Record<string, unknown>
+  const datiGeneraliDocumento = (datiGenerali.DatiGeneraliDocumento || {}) as Record<string, unknown>
+  const datiBeniServizi = (body.DatiBeniServizi || {}) as Record<string, unknown>
+
+  // Estrai causale (può essere array)
+  const causaleRaw = datiGeneraliDocumento.Causale
+  let causale: string | null = null
+  if (causaleRaw) {
+    const causaleArray = toArray(causaleRaw).map((c) => getText(c))
+    causale = causaleArray.join(' | ')
+  }
+
+  return {
+    documentType: getText(datiGeneraliDocumento.TipoDocumento) || 'TD01',
+    lineItems: parseDettaglioLineeEsteso(datiBeniServizi),
+    references: estraiRiferimenti(datiGenerali),
+    vatSummary: parseDatiRiepilogo(datiBeniServizi),
+    causale,
+  }
+}
+
+/**
+ * Verifica se ci sono riferimenti significativi nella fattura
+ */
+export function hasRiferimenti(references: DatiRiferimenti): boolean {
+  return (
+    references.datiDDT.length > 0 ||
+    references.datiOrdineAcquisto.length > 0 ||
+    references.datiContratto.length > 0 ||
+    references.datiConvenzione.length > 0 ||
+    references.datiFattureCollegate.length > 0
+  )
+}
+
+/**
+ * Formatta i riferimenti DDT in stringa leggibile
+ */
+export function formatDDTRiferimenti(datiDDT: DatoDDT[]): string {
+  if (datiDDT.length === 0) return ''
+
+  return datiDDT
+    .map((ddt) => {
+      const data = ddt.dataDDT
+        ? new Date(ddt.dataDDT).toLocaleDateString('it-IT')
+        : ''
+      return `DDT ${ddt.numeroDDT}${data ? ` del ${data}` : ''}`
+    })
+    .join(', ')
 }
