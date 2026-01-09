@@ -199,9 +199,9 @@ export async function DELETE(
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
-    // Solo admin può eliminare
-    if (session.user.role !== 'admin') {
-      return NextResponse.json({ error: 'Solo gli admin possono eliminare pianificazioni' }, { status: 403 })
+    // Solo admin e manager possono eliminare
+    if (session.user.role !== 'admin' && session.user.role !== 'manager') {
+      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
     const { id } = await params

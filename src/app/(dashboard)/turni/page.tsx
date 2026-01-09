@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -28,7 +28,20 @@ import {
   Settings,
   Users,
   CalendarDays,
+  Trash2,
+  Loader2,
 } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 
@@ -55,7 +68,9 @@ interface Schedule {
 }
 
 export default function TurniPage() {
+  const queryClient = useQueryClient()
   const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [scheduleToDelete, setScheduleToDelete] = useState<Schedule | null>(null)
 
   const { data: schedulesData, isLoading } = useQuery({
     queryKey: ['schedules', filterStatus],
@@ -72,6 +87,32 @@ export default function TurniPage() {
   })
 
   const schedules: Schedule[] = schedulesData?.data || []
+
+  // Mutation per eliminare pianificazione
+  const deleteMutation = useMutation({
+    mutationFn: async (scheduleId: string) => {
+      const res = await fetch(`/api/schedules/${scheduleId}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Errore nell\'eliminazione')
+      }
+      return res.json()
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['schedules'] })
+      if (data.archived) {
+        toast.success('Pianificazione archiviata')
+      } else {
+        toast.success('Pianificazione eliminata')
+      }
+      setScheduleToDelete(null)
+    },
+    onError: (error: Error) => {
+      toast.error(error.message)
+    },
+  })
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -204,11 +245,21 @@ export default function TurniPage() {
                         : '-'}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Link href={`/turni/${schedule.id}`}>
-                        <Button variant="ghost" size="icon">
-                          <Eye className="h-4 w-4" />
+                      <div className="flex items-center justify-end gap-1">
+                        <Link href={`/turni/${schedule.id}`}>
+                          <Button variant="ghost" size="icon">
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </Link>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => setScheduleToDelete(schedule)}
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </Button>
-                      </Link>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -217,6 +268,49 @@ export default function TurniPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Dialog conferma eliminazione */}
+      <AlertDialog open={!!scheduleToDelete} onOpenChange={(open) => !open && setScheduleToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Conferma eliminazione</AlertDialogTitle>
+            <AlertDialogDescription>
+              {scheduleToDelete?.status === 'PUBLISHED' ? (
+                <>
+                  La pianificazione <strong>{scheduleToDelete?.name}</strong> è pubblicata e verrà <strong>archiviata</strong>.
+                  <br />
+                  I turni assegnati rimarranno nel sistema.
+                </>
+              ) : (
+                <>
+                  Sei sicuro di voler eliminare la pianificazione <strong>{scheduleToDelete?.name}</strong>?
+                  <br />
+                  Verranno eliminati anche tutti i {scheduleToDelete?._count.assignments || 0} turni assegnati.
+                  <br />
+                  <span className="text-destructive font-medium">Questa operazione non può essere annullata.</span>
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>Annulla</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => scheduleToDelete && deleteMutation.mutate(scheduleToDelete.id)}
+              disabled={deleteMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {scheduleToDelete?.status === 'PUBLISHED' ? 'Archiviazione...' : 'Eliminazione...'}
+                </>
+              ) : (
+                scheduleToDelete?.status === 'PUBLISHED' ? 'Archivia' : 'Elimina'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
