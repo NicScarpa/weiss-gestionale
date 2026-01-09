@@ -5,6 +5,229 @@
  * commonly used for Italian electronic invoices (FatturaPA)
  */
 
+// ============================================================================
+// Logging Diagnostico per Debug Estrazione P7M
+// ============================================================================
+
+/**
+ * Livello di log per diagnostica P7M
+ */
+export type P7mLogLevel = 'debug' | 'info' | 'warn' | 'error'
+
+/**
+ * Entry di log per estrazione P7M
+ */
+export interface P7mLogEntry {
+  timestamp: string
+  level: P7mLogLevel
+  phase: string
+  message: string
+  data?: Record<string, unknown>
+}
+
+/**
+ * Risultato estrazione P7M con diagnostica
+ */
+export interface P7mExtractionResult {
+  success: boolean
+  xml?: string
+  error?: string
+  logs: P7mLogEntry[]
+  diagnostics: {
+    fileSize: number
+    extractionStrategy: string | null
+    xmlDeclFound: boolean
+    fatturaTagFound: boolean
+    cleaningApplied: string[]
+  }
+}
+
+// Logger interno
+const createLogEntry = (
+  level: P7mLogLevel,
+  phase: string,
+  message: string,
+  data?: Record<string, unknown>
+): P7mLogEntry => ({
+  timestamp: new Date().toISOString(),
+  level,
+  phase,
+  message,
+  data,
+})
+
+/**
+ * Estrae XML da P7M con logging diagnostico completo
+ *
+ * @param buffer - Il contenuto del file P7M
+ * @param fileName - Nome file per logging (opzionale)
+ * @returns Risultato con XML, errori e log diagnostici
+ */
+export function extractXmlFromP7mWithDiagnostics(
+  buffer: Buffer | ArrayBuffer,
+  fileName?: string
+): P7mExtractionResult {
+  const logs: P7mLogEntry[] = []
+  const cleaningApplied: string[] = []
+
+  const log = (level: P7mLogLevel, phase: string, message: string, data?: Record<string, unknown>) => {
+    logs.push(createLogEntry(level, phase, message, data))
+    // In development, also log to console
+    if (process.env.NODE_ENV === 'development') {
+      const prefix = `[P7M:${phase}]`
+      if (level === 'error') console.error(prefix, message, data || '')
+      else if (level === 'warn') console.warn(prefix, message, data || '')
+      else if (level === 'debug') console.debug(prefix, message, data || '')
+      else console.log(prefix, message, data || '')
+    }
+  }
+
+  const diagnostics: P7mExtractionResult['diagnostics'] = {
+    fileSize: 0,
+    extractionStrategy: null,
+    xmlDeclFound: false,
+    fatturaTagFound: false,
+    cleaningApplied: [],
+  }
+
+  try {
+    log('info', 'init', `Inizio estrazione XML da P7M${fileName ? `: ${fileName}` : ''}`)
+
+    // Converti buffer
+    let content: string
+    let arrayBuffer: ArrayBuffer
+
+    if (typeof Buffer !== 'undefined' && Buffer.isBuffer(buffer)) {
+      content = buffer.toString('binary')
+      arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer
+      diagnostics.fileSize = buffer.length
+    } else {
+      arrayBuffer = buffer as ArrayBuffer
+      content = arrayBufferToBinaryString(arrayBuffer)
+      diagnostics.fileSize = arrayBuffer.byteLength
+    }
+
+    log('debug', 'buffer', `File size: ${diagnostics.fileSize} bytes`)
+
+    // Check struttura P7M
+    const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer)
+    if (bytes[0] === 0x30) {
+      log('debug', 'p7m-check', 'P7M signature detected (0x30 SEQUENCE tag)')
+    }
+
+    // Strategia 1: XML Declaration
+    log('debug', 'strategy-1', 'Tentativo estrazione con XML declaration')
+    diagnostics.xmlDeclFound = content.includes('<?xml')
+
+    if (diagnostics.xmlDeclFound) {
+      log('debug', 'strategy-1', 'XML declaration trovata', {
+        position: content.indexOf('<?xml'),
+      })
+
+      const xml = tryXmlDeclarationExtraction(content)
+      if (xml) {
+        diagnostics.extractionStrategy = 'xml-declaration'
+        log('info', 'strategy-1', 'Estrazione completata con successo via XML declaration')
+        return {
+          success: true,
+          xml: cleanExtractedXmlWithLogging(xml, log, cleaningApplied),
+          logs,
+          diagnostics: { ...diagnostics, cleaningApplied },
+        }
+      }
+      log('debug', 'strategy-1', 'Strategia XML declaration fallita, provo prossima')
+    }
+
+    // Strategia 2: FatturaElettronica tag
+    log('debug', 'strategy-2', 'Tentativo estrazione con FatturaElettronica tag')
+    diagnostics.fatturaTagFound = /<([a-zA-Z]\w*:)?FatturaElettronica/.test(content)
+
+    if (diagnostics.fatturaTagFound) {
+      log('debug', 'strategy-2', 'Tag FatturaElettronica trovato')
+
+      const xml = tryFatturaTagExtraction(content)
+      if (xml) {
+        diagnostics.extractionStrategy = 'fattura-tag'
+        log('info', 'strategy-2', 'Estrazione completata con successo via FatturaElettronica tag')
+        return {
+          success: true,
+          xml: cleanExtractedXmlWithLogging(xml, log, cleaningApplied),
+          logs,
+          diagnostics: { ...diagnostics, cleaningApplied },
+        }
+      }
+      log('debug', 'strategy-2', 'Strategia FatturaElettronica tag fallita, provo prossima')
+    }
+
+    // Strategia 3: UTF-8 extraction
+    log('debug', 'strategy-3', 'Tentativo estrazione con UTF-8 decoding')
+    const xml = tryUtf8Extraction(arrayBuffer)
+    if (xml) {
+      diagnostics.extractionStrategy = 'utf8'
+      log('info', 'strategy-3', 'Estrazione completata con successo via UTF-8')
+      return {
+        success: true,
+        xml: cleanExtractedXmlWithLogging(xml, log, cleaningApplied),
+        logs,
+        diagnostics: { ...diagnostics, cleaningApplied },
+      }
+    }
+
+    // Nessuna strategia ha funzionato
+    log('error', 'extraction', 'Tutte le strategie di estrazione fallite')
+    return {
+      success: false,
+      error: 'Impossibile estrarre il contenuto XML dal file P7M',
+      logs,
+      diagnostics: { ...diagnostics, cleaningApplied },
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Errore sconosciuto'
+    log('error', 'exception', `Eccezione durante estrazione: ${errorMessage}`)
+    return {
+      success: false,
+      error: errorMessage,
+      logs,
+      diagnostics: { ...diagnostics, cleaningApplied },
+    }
+  }
+}
+
+/**
+ * Versione di cleanExtractedXml che registra le pulizie applicate
+ */
+function cleanExtractedXmlWithLogging(
+  xml: string,
+  log: (level: P7mLogLevel, phase: string, message: string, data?: Record<string, unknown>) => void,
+  cleaningApplied: string[]
+): string {
+  let result = xml
+
+  // Track lunghezza originale
+  const originalLength = result.length
+
+  // Fix 0: Rimuovi byte high
+  const beforeHighBytes = result.length
+  result = result.replace(/[\x80-\x9F\xA0-\xBF\xC0-\xFF]/g, '')
+  if (result.length !== beforeHighBytes) {
+    cleaningApplied.push('high-bytes-removed')
+    log('debug', 'cleaning', `Rimossi ${beforeHighBytes - result.length} high bytes`)
+  }
+
+  // Applica il resto della pulizia standard
+  result = cleanExtractedXml(xml)
+
+  // Log riepilogo
+  const finalLength = result.length
+  if (finalLength !== originalLength) {
+    log('debug', 'cleaning', `Pulizia completata: ${originalLength} -> ${finalLength} bytes`, {
+      bytesRemoved: originalLength - finalLength,
+    })
+  }
+
+  return result
+}
+
 /**
  * Convert ArrayBuffer to binary string (browser-compatible)
  */

@@ -1,6 +1,7 @@
 /**
  * Type definitions for FatturaPA XML (Italian Electronic Invoice)
- * Basato sulla specifica FatturaPA v1.2.1
+ * Basato sulla specifica FatturaPA v1.2.3 (valida dal 1° aprile 2025)
+ * Ref: https://www.fatturapa.gov.it/it/norme-e-regole/documentazione-fattura-elettronica/formato-fatturapa/
  */
 
 // Dati Anagrafici Fornitore
@@ -149,6 +150,68 @@ export interface DatiBollo {
   importoBollo?: number
 }
 
+// ============================================================================
+// Error Handling Types per Parsing Strutturato
+// ============================================================================
+
+/**
+ * Codici errore per parsing FatturaPA
+ */
+export type ParseErrorCode =
+  | 'INVALID_XML'           // XML malformato
+  | 'MISSING_ROOT'          // Root element non trovato
+  | 'MISSING_HEADER'        // FatturaElettronicaHeader mancante
+  | 'MISSING_BODY'          // FatturaElettronicaBody mancante
+  | 'MISSING_VAT'           // P.IVA fornitore mancante
+  | 'MISSING_INVOICE_NUM'   // Numero fattura mancante
+  | 'MISSING_INVOICE_DATE'  // Data fattura mancante
+  | 'INVALID_DATE_FORMAT'   // Formato data non valido
+  | 'INVALID_AMOUNT'        // Importo non valido
+  | 'P7M_EXTRACTION_FAILED' // Estrazione P7M fallita
+
+/**
+ * Codici warning per parsing FatturaPA
+ */
+export type ParseWarningCode =
+  | 'VAT_NON_STANDARD_LENGTH' // P.IVA con lunghezza non standard
+  | 'VAT_PADDED'              // P.IVA con padding aggiunto
+  | 'MISSING_TOTAL_AMOUNT'    // ImportoTotaleDocumento mancante (calcolato)
+  | 'EMPTY_LINE_ITEMS'        // Nessuna linea di dettaglio
+  | 'UNKNOWN_DOCUMENT_TYPE'   // TipoDocumento non riconosciuto
+  | 'UNKNOWN_PAYMENT_METHOD'  // ModalitaPagamento non riconosciuto
+  | 'MULTIPLE_BODIES'         // File contiene più fatture (solo prima parsata)
+  | 'NAMESPACE_REMOVED'       // Namespace XML rimosso
+
+/**
+ * Errore di parsing strutturato
+ */
+export interface ParseError {
+  code: ParseErrorCode
+  field: string      // Campo XPath-like (es. "CedentePrestatore/IdFiscaleIVA")
+  message: string    // Messaggio leggibile
+  value?: unknown    // Valore che ha causato l'errore
+}
+
+/**
+ * Warning di parsing strutturato
+ */
+export interface ParseWarning {
+  code: ParseWarningCode
+  field: string
+  message: string
+  value?: unknown
+}
+
+/**
+ * Risultato del parsing con errori e warning
+ */
+export interface ParseResult {
+  success: boolean
+  data?: FatturaParsata
+  errors: ParseError[]
+  warnings: ParseWarning[]
+}
+
 // Tipo documento FatturaPA
 export const TIPI_DOCUMENTO: Record<string, string> = {
   TD01: 'Fattura',
@@ -169,6 +232,8 @@ export const TIPI_DOCUMENTO: Record<string, string> = {
   TD25: 'Fattura differita di cui art.21, comma 4, terzo periodo lett. b)',
   TD26: 'Cessione di beni ammortizzabili e per passaggi interni',
   TD27: 'Fattura per autoconsumo o cessioni gratuite senza rivalsa',
+  TD28: 'Acquisti da San Marino con IVA (fattura cartacea)',
+  TD29: 'Comunicazione dati versamento IVA',
 }
 
 // Modalità pagamento

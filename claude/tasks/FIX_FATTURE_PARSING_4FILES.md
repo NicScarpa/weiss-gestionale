@@ -106,6 +106,34 @@ const rootPaths = [
 **Created**: 2026-01-09
 **Completed**: 2026-01-09
 
+---
+
+# Task: Cancellazione Fornitori con Conferma Password
+
+## Obiettivo
+Implementare cancellazione fornitori duplicati/di test con doppia conferma (conferma → password).
+
+## Implementazione
+
+### File Creati/Modificati
+1. **Nuovo**: `src/components/settings/DeleteSupplierDialog.tsx`
+   - Dialog a 2 step (conferma → password)
+   - Verifica password via `/api/auth/verify-password`
+   - Soft delete che preserva tutti i movimenti correlati
+
+2. **Modificato**: `src/components/settings/SupplierManagement.tsx`
+   - Sostituito AlertDialog semplice con DeleteSupplierDialog
+   - Rimossa logica di eliminazione inline (spostata nel dialog)
+
+### Pattern Seguito
+Copiato da `DeleteClosureDialog.tsx` per coerenza UX.
+
+### Commit
+`55f0dfb` - feat: aggiungi cancellazione fornitori con conferma password
+
+**Status**: ✅ COMPLETATO
+**Completed**: 2026-01-09
+
 ## Risultati Test
 
 | File | Fornitore | Numero | Importo | Status |
