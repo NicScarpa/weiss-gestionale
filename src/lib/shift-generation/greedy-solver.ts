@@ -24,6 +24,7 @@ import {
   GenerationWarning,
   GenerationStats,
   EmployeeStats,
+  LeaveRequest,
 } from './types'
 import {
   canEmployeeWorkShift,
@@ -37,8 +38,20 @@ interface SolverContext {
   shiftDefinitions: ShiftDefinition[]
   employeeConstraints: Map<string, EmployeeConstraint[]>
   relationshipConstraints: RelationshipConstraint[]
+  leaveRequests: LeaveRequest[]
   params: GenerationParams
   scheduleId: string
+}
+
+/**
+ * Format date to YYYY-MM-DD using local timezone (not UTC)
+ * This ensures consistency with the frontend's date formatting
+ */
+function formatDateKey(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 /**
@@ -48,7 +61,7 @@ export function generateShiftsGreedy(context: SolverContext): GenerationResult {
   const assignments: ShiftAssignment[] = []
   const warnings: GenerationWarning[] = []
 
-  const { employees, shiftDefinitions, employeeConstraints, relationshipConstraints, params, scheduleId } = context
+  const { employees, shiftDefinitions, employeeConstraints, relationshipConstraints, leaveRequests, params, scheduleId } = context
 
   // Generate dates in range
   const dates: Date[] = []
@@ -73,6 +86,7 @@ export function generateShiftsGreedy(context: SolverContext): GenerationResult {
         employees,
         employeeConstraints,
         relationshipConstraints,
+        leaveRequests,
         assignments,
         params,
         scheduleId
@@ -107,6 +121,7 @@ function assignEmployeesToShift(
   employees: Employee[],
   employeeConstraints: Map<string, EmployeeConstraint[]>,
   relationshipConstraints: RelationshipConstraint[],
+  leaveRequests: LeaveRequest[],
   existingAssignments: ShiftAssignment[],
   params: GenerationParams,
   scheduleId: string
@@ -114,19 +129,20 @@ function assignEmployeesToShift(
   const assignments: ShiftAssignment[] = []
   const warnings: GenerationWarning[] = []
 
-  // Check for staffing override
-  const dateKey = date.toISOString().split('T')[0]
+  // Check for staffing override - use local timezone format to match frontend
+  const dateKey = formatDateKey(date)
   const reqKey = `${dateKey}_${shift.id}`
-  const overrideMinStaff = params.staffingRequirements?.[reqKey]
+  const overrideStaff = params.staffingRequirements?.[reqKey]
 
-  const minStaff = overrideMinStaff !== undefined ? overrideMinStaff : shift.minStaff
+  // targetStaff: numero ESATTO di persone da assegnare
+  // Se l'utente imposta un override, usa quello come target esatto
+  // Altrimenti usa minStaff del turno come default
+  const targetStaff = overrideStaff !== undefined ? overrideStaff : shift.minStaff
 
-  // If minStaff is 0, skip this shift entirely (no one should be assigned)
-  if (minStaff === 0) {
+  // If targetStaff is 0, skip this shift entirely (no one should be assigned)
+  if (targetStaff === 0) {
     return { assignments: [], warnings: [] }
   }
-
-  const maxStaff = shift.maxStaff || minStaff + 2
 
   // Filter and score available employees
   const candidatesWithScores: { employee: Employee; score: number; isPenalized: boolean }[] = []
@@ -142,7 +158,8 @@ function assignEmployeesToShift(
       shift,
       date,
       constraints,
-      [...existingAssignments, ...assignments]
+      [...existingAssignments, ...assignments],
+      leaveRequests
     )
 
     if (canWork.canWork) {
@@ -170,10 +187,11 @@ function assignEmployeesToShift(
   // Sort by score descending
   candidatesWithScores.sort((a, b) => b.score - a.score)
 
-  // Assign employees until minStaff reached (try for maxStaff if available)
+  // Assign employees until targetStaff reached
+  // targetStaff is the EXACT number requested (from override or shift.minStaff)
   let assigned = 0
   for (const candidate of candidatesWithScores) {
-    if (assigned >= maxStaff) break
+    if (assigned >= targetStaff) break
 
     // Check relationship constraints with already assigned employees
     let hasHardViolation = false
@@ -227,10 +245,10 @@ function assignEmployeesToShift(
   }
 
   // Check if we have enough staff
-  if (assigned < minStaff) {
+  if (assigned < targetStaff) {
     warnings.push({
       type: 'UNDERSTAFFED',
-      message: `Turno ${shift.name} sottorganico: ${assigned}/${minStaff} dipendenti`,
+      message: `Turno ${shift.name} sottorganico: ${assigned}/${targetStaff} dipendenti`,
       date,
       shiftDefinitionId: shift.id,
       severity: 'high',

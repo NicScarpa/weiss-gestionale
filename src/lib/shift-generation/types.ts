@@ -17,6 +17,16 @@ export interface Employee {
   hourlyRateExtra: number | null
   hourlyRateHoliday: number | null
   hourlyRateNight: number | null
+  defaultShift: 'MORNING' | 'EVENING' | null  // Turno preferito del dipendente
+  availableDays: number[]  // Giorni disponibili: 0=LUN, 1=MAR, ..., 6=DOM
+}
+
+export interface LeaveRequest {
+  id: string
+  userId: string
+  startDate: Date
+  endDate: Date
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
 }
 
 export interface ShiftDefinition {

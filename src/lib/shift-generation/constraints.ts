@@ -10,6 +10,7 @@ import {
   ShiftAssignment,
   ConstraintViolation,
   EmployeeAvailability,
+  LeaveRequest,
 } from './types'
 
 /**
@@ -137,7 +138,8 @@ export function canEmployeeWorkShift(
   shift: ShiftDefinition,
   date: Date,
   constraints: EmployeeConstraint[],
-  existingAssignments: ShiftAssignment[]
+  existingAssignments: ShiftAssignment[],
+  leaveRequests: LeaveRequest[] = []
 ): { canWork: boolean; reason?: string; isPenalized?: boolean } {
   // Check basic availability
   const availability = checkEmployeeAvailability(
@@ -151,6 +153,23 @@ export function canEmployeeWorkShift(
     return { canWork: false, reason: availability.reason }
   }
 
+  // Check if employee is on approved leave
+  for (const leave of leaveRequests) {
+    if (leave.userId === employee.id && leave.status === 'APPROVED') {
+      const leaveStart = new Date(leave.startDate)
+      const leaveEnd = new Date(leave.endDate)
+      // Normalize dates to compare just the date part
+      leaveStart.setHours(0, 0, 0, 0)
+      leaveEnd.setHours(23, 59, 59, 999)
+      const checkDate = new Date(date)
+      checkDate.setHours(12, 0, 0, 0)
+
+      if (checkDate >= leaveStart && checkDate <= leaveEnd) {
+        return { canWork: false, reason: 'In ferie/permesso' }
+      }
+    }
+  }
+
   // Check if already assigned on this date
   const sameDay = existingAssignments.find(
     a => a.userId === employee.id &&
@@ -158,6 +177,31 @@ export function canEmployeeWorkShift(
   )
   if (sameDay) {
     return { canWork: false, reason: 'Già assegnato in questo giorno' }
+  }
+
+  // Check defaultShift preference (MORNING/EVENING)
+  if (employee.defaultShift) {
+    const shiftNameUpper = shift.name.toUpperCase()
+    const isMorningShift = shiftNameUpper.includes('MATTINA') || shiftNameUpper.includes('MORNING')
+    const isEveningShift = shiftNameUpper.includes('SERA') || shiftNameUpper.includes('EVENING') || shiftNameUpper.includes('POMERIGGIO')
+
+    if (employee.defaultShift === 'MORNING' && isEveningShift) {
+      return { canWork: false, reason: 'Turno preferito: mattina' }
+    }
+    if (employee.defaultShift === 'EVENING' && isMorningShift) {
+      return { canWork: false, reason: 'Turno preferito: sera' }
+    }
+  }
+
+  // Check availableDays for extra staff (non-fixed)
+  if (!employee.isFixedStaff && employee.availableDays && employee.availableDays.length > 0) {
+    const jsDay = date.getDay() // 0=Sunday, 1=Monday, ..., 6=Saturday
+    // Convert JS day to our format: 0=Monday, 1=Tuesday, ..., 6=Sunday
+    const ourDayIndex = jsDay === 0 ? 6 : jsDay - 1
+
+    if (!employee.availableDays.includes(ourDayIndex)) {
+      return { canWork: false, reason: 'Non disponibile questo giorno' }
+    }
   }
 
   // Check skill requirements
