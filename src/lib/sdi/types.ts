@@ -98,9 +98,18 @@ export interface FatturaParsata {
   // Pagamento
   datiPagamento?: DatiPagamento
 
+  // Bollo
+  datiBollo?: DatiBollo
+
   // Metadati parsing
   xmlOriginale?: string
   nomeFile?: string
+}
+
+// Dati Bollo
+export interface DatiBollo {
+  bolloVirtuale?: string // SI/NO
+  importoBollo?: number
 }
 
 // Tipo documento FatturaPA
