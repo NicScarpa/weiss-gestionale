@@ -1,6 +1,6 @@
 'use client'
 
-import { Wallet, Building2, TrendingUp, TrendingDown, ArrowRightLeft } from 'lucide-react'
+import { Wallet, Building2, ArrowRightLeft } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/constants'
@@ -102,8 +102,6 @@ interface RegisterCardProps {
 
 function RegisterCard({ title, icon, iconColor, bgColor, data }: RegisterCardProps) {
   const balance = data?.closingBalance || 0
-  const debits = data?.totalDebits || 0
-  const credits = data?.totalCredits || 0
 
   return (
     <Card>
@@ -123,23 +121,6 @@ function RegisterCard({ title, icon, iconColor, bgColor, data }: RegisterCardPro
           )}
         >
           {formatCurrency(balance)}
-        </div>
-
-        <div className="flex gap-4 text-sm">
-          <div className="flex items-center gap-1.5">
-            <TrendingUp className="h-3.5 w-3.5 text-green-500" />
-            <span className="text-muted-foreground">Dare:</span>
-            <span className="font-mono font-medium text-green-600">
-              {formatCurrency(debits)}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <TrendingDown className="h-3.5 w-3.5 text-red-500" />
-            <span className="text-muted-foreground">Avere:</span>
-            <span className="font-mono font-medium text-red-600">
-              {formatCurrency(credits)}
-            </span>
-          </div>
         </div>
 
         {data?.lastUpdated && (
@@ -235,20 +216,6 @@ export function SingleRegisterCard({
             >
               {formatCurrency(balance)}
             </p>
-          </div>
-          <div className="text-right space-y-1">
-            <div className="flex items-center justify-end gap-1.5 text-sm">
-              <TrendingUp className="h-3.5 w-3.5 text-green-500" />
-              <span className="font-mono text-green-600">
-                +{formatCurrency(data?.totalDebits || 0)}
-              </span>
-            </div>
-            <div className="flex items-center justify-end gap-1.5 text-sm">
-              <TrendingDown className="h-3.5 w-3.5 text-red-500" />
-              <span className="font-mono text-red-600">
-                -{formatCurrency(data?.totalCredits || 0)}
-              </span>
-            </div>
           </div>
         </div>
       </CardContent>
