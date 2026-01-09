@@ -16,7 +16,9 @@ import {
   Loader2,
   X,
   Plus,
+  ShieldCheck,
 } from 'lucide-react'
+import { extractXmlFromP7m, isP7mFile } from '@/lib/p7m-utils'
 import {
   Dialog,
   DialogContent,
@@ -171,6 +173,7 @@ export function InvoiceImportDialog({
   const [step, setStep] = useState<'upload' | 'preview' | 'confirm'>('upload')
   const [xmlContent, setXmlContent] = useState<string>('')
   const [fileName, setFileName] = useState<string>('')
+  const [isSignedFile, setIsSignedFile] = useState<boolean>(false)
   const [parsedData, setParsedData] = useState<ParsedInvoice | null>(null)
   const [selectedVenueId, setSelectedVenueId] = useState<string>('')
   const [selectedAccountId, setSelectedAccountId] = useState<string>('_none')
@@ -245,6 +248,7 @@ export function InvoiceImportDialog({
     setStep('upload')
     setXmlContent('')
     setFileName('')
+    setIsSignedFile(false)
     setParsedData(null)
     setSelectedVenueId('')
     setSelectedAccountId('_none')
@@ -255,14 +259,35 @@ export function InvoiceImportDialog({
     const file = e.target.files?.[0]
     if (!file) return
 
-    if (!file.name.toLowerCase().endsWith('.xml')) {
-      toast.error('Seleziona un file XML')
+    const lowerName = file.name.toLowerCase()
+    const isXml = lowerName.endsWith('.xml')
+    const isP7m = isP7mFile(file.name)
+
+    if (!isXml && !isP7m) {
+      toast.error('Seleziona un file XML o P7M')
       return
     }
 
     setFileName(file.name)
-    const content = await file.text()
-    setXmlContent(content)
+    setIsSignedFile(isP7m)
+
+    try {
+      if (isP7m) {
+        // Extract XML from P7M envelope
+        const buffer = await file.arrayBuffer()
+        const extractedXml = extractXmlFromP7m(buffer)
+        setXmlContent(extractedXml)
+        toast.success('XML estratto dal file firmato')
+      } else {
+        const content = await file.text()
+        setXmlContent(content)
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Errore lettura file'
+      toast.error(message)
+      setFileName('')
+      setIsSignedFile(false)
+    }
   }
 
   const handleDrop = useCallback(
@@ -271,14 +296,35 @@ export function InvoiceImportDialog({
       const file = e.dataTransfer.files[0]
       if (!file) return
 
-      if (!file.name.toLowerCase().endsWith('.xml')) {
-        toast.error('Seleziona un file XML')
+      const lowerName = file.name.toLowerCase()
+      const isXml = lowerName.endsWith('.xml')
+      const isP7m = isP7mFile(file.name)
+
+      if (!isXml && !isP7m) {
+        toast.error('Seleziona un file XML o P7M')
         return
       }
 
       setFileName(file.name)
-      const content = await file.text()
-      setXmlContent(content)
+      setIsSignedFile(isP7m)
+
+      try {
+        if (isP7m) {
+          // Extract XML from P7M envelope
+          const buffer = await file.arrayBuffer()
+          const extractedXml = extractXmlFromP7m(buffer)
+          setXmlContent(extractedXml)
+          toast.success('XML estratto dal file firmato')
+        } else {
+          const content = await file.text()
+          setXmlContent(content)
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Errore lettura file'
+        toast.error(message)
+        setFileName('')
+        setIsSignedFile(false)
+      }
     },
     []
   )
@@ -319,16 +365,16 @@ export function InvoiceImportDialog({
               <input
                 id="file-input"
                 type="file"
-                accept=".xml"
+                accept=".xml,.p7m"
                 className="hidden"
                 onChange={handleFileChange}
               />
               <Upload className="h-12 w-12 mx-auto text-slate-400 mb-4" />
               <p className="font-medium">
-                Trascina qui il file XML o clicca per selezionare
+                Trascina qui il file XML o P7M o clicca per selezionare
               </p>
               <p className="text-sm text-slate-500 mt-1">
-                Supporta il formato FatturaPA
+                Supporta il formato FatturaPA (XML e P7M firmato)
               </p>
             </div>
 
@@ -336,12 +382,19 @@ export function InvoiceImportDialog({
               <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg">
                 <FileText className="h-5 w-5 text-amber-500" />
                 <span className="flex-1 font-medium">{fileName}</span>
+                {isSignedFile && (
+                  <Badge className="bg-green-100 text-green-700">
+                    <ShieldCheck className="h-3 w-3 mr-1" />
+                    Firmato
+                  </Badge>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={() => {
                     setXmlContent('')
                     setFileName('')
+                    setIsSignedFile(false)
                   }}
                 >
                   <X className="h-4 w-4" />
