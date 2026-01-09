@@ -18,11 +18,23 @@ import {
   ChevronDown,
   Calendar,
   AlertCircle,
+  AlertTriangle,
+  Lock,
 } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -137,10 +149,30 @@ async function recordInvoice(id: string): Promise<unknown> {
   return res.json()
 }
 
+async function bulkDeleteInvoices(ids: string[], password: string): Promise<{ deleted: number }> {
+  const res = await fetch('/api/invoices/bulk-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids, password }),
+  })
+  if (!res.ok) {
+    const data = await res.json()
+    throw new Error(data.error || 'Errore eliminazione multipla')
+  }
+  return res.json()
+}
+
 export function InvoiceList() {
   const { data: session } = useSession()
   const queryClient = useQueryClient()
   const [importDialogOpen, setImportDialogOpen] = useState(false)
+
+  // Selezione multipla
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [confirmDeleteDialogOpen, setConfirmDeleteDialogOpen] = useState(false)
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false)
+  const [deletePassword, setDeletePassword] = useState('')
+  const [passwordError, setPasswordError] = useState('')
 
   // Filtri
   const [searchInput, setSearchInput] = useState('')
@@ -211,9 +243,71 @@ export function InvoiceList() {
     },
   })
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: ({ ids, password }: { ids: string[]; password: string }) =>
+      bulkDeleteInvoices(ids, password),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      toast.success(`${result.deleted} fatture eliminate`)
+      setSelectedIds(new Set())
+      setPasswordDialogOpen(false)
+      setDeletePassword('')
+      setPasswordError('')
+    },
+    onError: (err: Error) => {
+      setPasswordError(err.message)
+    },
+  })
+
   const handleImportSuccess = () => {
     queryClient.invalidateQueries({ queryKey: ['invoices'] })
     setImportDialogOpen(false)
+  }
+
+  // Selezione fatture
+  const toggleSelectAll = useCallback(() => {
+    if (!data?.data) return
+    const deletableIds = data.data
+      .filter((inv) => inv.status !== 'RECORDED' && inv.status !== 'PAID')
+      .map((inv) => inv.id)
+
+    if (selectedIds.size === deletableIds.length && deletableIds.length > 0) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(deletableIds))
+    }
+  }, [data?.data, selectedIds.size])
+
+  const toggleSelectOne = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const newSet = new Set(prev)
+      if (newSet.has(id)) {
+        newSet.delete(id)
+      } else {
+        newSet.add(id)
+      }
+      return newSet
+    })
+  }, [])
+
+  const handleBulkDeleteClick = () => {
+    setConfirmDeleteDialogOpen(true)
+  }
+
+  const handleConfirmDelete = () => {
+    setConfirmDeleteDialogOpen(false)
+    setPasswordDialogOpen(true)
+  }
+
+  const handlePasswordSubmit = () => {
+    if (!deletePassword.trim()) {
+      setPasswordError('Inserisci la password')
+      return
+    }
+    bulkDeleteMutation.mutate({
+      ids: Array.from(selectedIds),
+      password: deletePassword,
+    })
   }
 
   // Handler ordinamento colonne
@@ -268,10 +362,18 @@ export function InvoiceList() {
           <h1 className="text-2xl font-bold">Fatture Elettroniche</h1>
           <p className="text-slate-500">Gestione fatture SDI</p>
         </div>
-        <Button onClick={() => setImportDialogOpen(true)}>
-          <Upload className="mr-2 h-4 w-4" />
-          Importa Fattura
-        </Button>
+        <div className="flex gap-2">
+          {selectedIds.size > 0 && session?.user?.role === 'admin' && (
+            <Button variant="destructive" onClick={handleBulkDeleteClick}>
+              <Trash2 className="mr-2 h-4 w-4" />
+              Elimina ({selectedIds.size})
+            </Button>
+          )}
+          <Button onClick={() => setImportDialogOpen(true)}>
+            <Upload className="mr-2 h-4 w-4" />
+            Importa Fattura
+          </Button>
+        </div>
       </div>
 
       {/* Filtri */}
@@ -370,6 +472,18 @@ export function InvoiceList() {
         <Table>
           <TableHeader>
             <TableRow className="bg-slate-50">
+              {session?.user?.role === 'admin' && (
+                <TableHead className="w-[50px]">
+                  <Checkbox
+                    checked={
+                      data?.data &&
+                      data.data.filter((inv) => inv.status !== 'RECORDED' && inv.status !== 'PAID').length > 0 &&
+                      selectedIds.size === data.data.filter((inv) => inv.status !== 'RECORDED' && inv.status !== 'PAID').length
+                    }
+                    onCheckedChange={toggleSelectAll}
+                  />
+                </TableHead>
+              )}
               <TableHead className="w-[80px]">
                 <SortableHeader field="documentType" label="Doc" />
               </TableHead>
@@ -395,6 +509,7 @@ export function InvoiceList() {
             {isLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
+                  {session?.user?.role === 'admin' && <TableCell><Skeleton className="h-4 w-4" /></TableCell>}
                   <TableCell><Skeleton className="h-6 w-12" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-20" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-32" /></TableCell>
@@ -406,7 +521,7 @@ export function InvoiceList() {
               ))
             ) : data?.data.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-12">
+                <TableCell colSpan={session?.user?.role === 'admin' ? 8 : 7} className="text-center py-12">
                   <FileText className="h-12 w-12 text-slate-300 mx-auto mb-4" />
                   <p className="text-slate-500">Nessuna fattura trovata</p>
                   <Button
@@ -422,9 +537,20 @@ export function InvoiceList() {
               data?.data.map((invoice) => {
                 const docType = invoice.documentType
                 const simpleStatus = getSimpleStatus(invoice.status)
+                const canDelete = invoice.status !== 'RECORDED' && invoice.status !== 'PAID'
 
                 return (
                   <TableRow key={invoice.id} className="hover:bg-slate-50">
+                    {/* Checkbox selezione */}
+                    {session?.user?.role === 'admin' && (
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedIds.has(invoice.id)}
+                          onCheckedChange={() => toggleSelectOne(invoice.id)}
+                          disabled={!canDelete}
+                        />
+                      </TableCell>
+                    )}
                     {/* Tipo Documento */}
                     <TableCell>
                       <Badge className={getDocumentTypeColor(docType)}>
@@ -549,6 +675,87 @@ export function InvoiceList() {
         onOpenChange={setImportDialogOpen}
         onSuccess={handleImportSuccess}
       />
+
+      {/* Dialog conferma eliminazione */}
+      <Dialog open={confirmDeleteDialogOpen} onOpenChange={setConfirmDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+              Conferma Eliminazione
+            </DialogTitle>
+            <DialogDescription>
+              Stai per eliminare <strong>{selectedIds.size}</strong> fatture.
+              Questa azione non può essere annullata.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-amber-800 text-sm">
+            Le fatture già registrate in prima nota o pagate non possono essere eliminate.
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDeleteDialogOpen(false)}>
+              Annulla
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmDelete}>
+              Continua
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog password */}
+      <Dialog open={passwordDialogOpen} onOpenChange={(open) => {
+        setPasswordDialogOpen(open)
+        if (!open) {
+          setDeletePassword('')
+          setPasswordError('')
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock className="h-5 w-5" />
+              Conferma con Password
+            </DialogTitle>
+            <DialogDescription>
+              Per motivi di sicurezza, inserisci la tua password per confermare l&apos;eliminazione di {selectedIds.size} fatture.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="delete-password">Password</Label>
+              <Input
+                id="delete-password"
+                type="password"
+                value={deletePassword}
+                onChange={(e) => {
+                  setDeletePassword(e.target.value)
+                  setPasswordError('')
+                }}
+                placeholder="Inserisci la tua password"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handlePasswordSubmit()
+                }}
+              />
+              {passwordError && (
+                <p className="text-sm text-red-500">{passwordError}</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPasswordDialogOpen(false)}>
+              Annulla
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handlePasswordSubmit}
+              disabled={bulkDeleteMutation.isPending}
+            >
+              {bulkDeleteMutation.isPending ? 'Eliminazione...' : 'Elimina Fatture'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
