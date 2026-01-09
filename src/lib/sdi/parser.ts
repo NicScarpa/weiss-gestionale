@@ -12,6 +12,7 @@ import type {
   DatiRiepilogo,
   DatiPagamento,
   DettaglioPagamento,
+  DatiBollo,
 } from './types'
 
 // Re-export types and constants for convenience
@@ -222,6 +223,19 @@ function parseDatiPagamento(data: unknown): DatiPagamento | undefined {
 }
 
 /**
+ * Estrae i dati del bollo virtuale
+ */
+function parseDatiBollo(datiGeneraliDocumento: Record<string, unknown>): DatiBollo | undefined {
+  const datiBollo = datiGeneraliDocumento.DatiBollo as Record<string, unknown> | undefined
+  if (!datiBollo) return undefined
+
+  return {
+    bolloVirtuale: getText(datiBollo.BolloVirtuale) || undefined,
+    importoBollo: datiBollo.ImportoBollo ? parseDecimal(datiBollo.ImportoBollo) : undefined,
+  }
+}
+
+/**
  * Parser principale per FatturaPA XML
  */
 export function parseFatturaPA(xmlContent: string, fileName?: string): FatturaParsata {
@@ -295,6 +309,9 @@ export function parseFatturaPA(xmlContent: string, fileName?: string): FatturaPa
 
     // Pagamento
     datiPagamento: parseDatiPagamento(body.DatiPagamento),
+
+    // Bollo
+    datiBollo: parseDatiBollo(datiGeneraliDocumento),
 
     // Metadati
     xmlOriginale: xmlContent,
