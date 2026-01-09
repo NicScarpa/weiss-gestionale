@@ -13,6 +13,7 @@ import {
   GenerationParams,
   GenerationResult,
   ShiftAssignment,
+  LeaveRequest,
 } from './types'
 import { generateShiftsGreedy, optimizeSchedule } from './greedy-solver'
 
@@ -51,8 +52,54 @@ export async function generateShifts(
       hourlyRateExtra: true,
       hourlyRateHoliday: true,
       hourlyRateNight: true,
+      defaultShift: true,      // Turno preferito (MORNING/EVENING)
+      availableDays: true,     // Giorni disponibili per staff extra
     },
   })
+
+  // Load approved leave requests for the period
+  const leaveRequests = await prisma.leaveRequest.findMany({
+    where: {
+      userId: { in: employees.map(e => e.id) },
+      status: 'APPROVED',
+      OR: [
+        // Leave starts during the period
+        {
+          startDate: {
+            gte: params.startDate,
+            lte: params.endDate,
+          },
+        },
+        // Leave ends during the period
+        {
+          endDate: {
+            gte: params.startDate,
+            lte: params.endDate,
+          },
+        },
+        // Leave spans the entire period
+        {
+          startDate: { lte: params.startDate },
+          endDate: { gte: params.endDate },
+        },
+      ],
+    },
+    select: {
+      id: true,
+      userId: true,
+      startDate: true,
+      endDate: true,
+      status: true,
+    },
+  })
+
+  const typedLeaveRequests: LeaveRequest[] = leaveRequests.map(lr => ({
+    id: lr.id,
+    userId: lr.userId,
+    startDate: lr.startDate,
+    endDate: lr.endDate,
+    status: lr.status as LeaveRequest['status'],
+  }))
 
   // Load shift definitions
   const shiftDefinitions = await prisma.shiftDefinition.findMany({
@@ -123,6 +170,8 @@ export async function generateShifts(
     hourlyRateExtra: e.hourlyRateExtra ? Number(e.hourlyRateExtra) : null,
     hourlyRateHoliday: e.hourlyRateHoliday ? Number(e.hourlyRateHoliday) : null,
     hourlyRateNight: e.hourlyRateNight ? Number(e.hourlyRateNight) : null,
+    defaultShift: e.defaultShift as Employee['defaultShift'],
+    availableDays: e.availableDays,
   }))
 
   const typedShiftDefinitions: ShiftDefinition[] = shiftDefinitions.map(sd => ({
@@ -147,6 +196,7 @@ export async function generateShifts(
     shiftDefinitions: typedShiftDefinitions,
     employeeConstraints,
     relationshipConstraints,
+    leaveRequests: typedLeaveRequests,
     params,
     scheduleId,
   })
@@ -157,6 +207,7 @@ export async function generateShifts(
     shiftDefinitions: typedShiftDefinitions,
     employeeConstraints,
     relationshipConstraints,
+    leaveRequests: typedLeaveRequests,
     params,
     scheduleId,
   })
