@@ -723,8 +723,19 @@ export function InvoiceImportDialog({
              </div>
              
              {stats.error > 0 && (
-                <div className="bg-red-50 p-3 rounded-lg text-sm text-red-600 mt-4">
-                   {stats.error} errori durante l'importazione
+                <div className="mt-6 text-left">
+                  <h4 className="text-sm font-semibold text-red-600 mb-2 flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4" />
+                    Errori ({stats.error})
+                  </h4>
+                  <ScrollArea className="h-32 border border-red-200 rounded-md bg-red-50 p-2">
+                    {files.filter(f => f.status === 'error').map((f) => (
+                      <div key={f.id} className="text-sm mb-2 pb-2 border-b border-red-100 last:border-0 last:mb-0 last:pb-0">
+                        <p className="font-medium text-red-700">{f.fileName}</p>
+                        <p className="text-red-600">{f.error}</p>
+                      </div>
+                    ))}
+                  </ScrollArea>
                 </div>
              )}
           </div>
