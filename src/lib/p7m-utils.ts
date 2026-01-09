@@ -6,6 +6,31 @@
  */
 
 /**
+ * Convert ArrayBuffer to binary string (browser-compatible)
+ */
+function arrayBufferToBinaryString(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return binary
+}
+
+/**
+ * Convert ArrayBuffer to UTF-8 string (browser-compatible)
+ */
+function arrayBufferToUtf8String(buffer: ArrayBuffer): string {
+  try {
+    const decoder = new TextDecoder('utf-8')
+    return decoder.decode(buffer)
+  } catch {
+    // Fallback to binary string if UTF-8 decoding fails
+    return arrayBufferToBinaryString(buffer)
+  }
+}
+
+/**
  * Extract XML content from a P7M (PKCS#7 signed) file buffer
  *
  * P7M files are PKCS#7/CMS envelopes that contain:
@@ -20,10 +45,19 @@
  * @throws Error if XML content cannot be extracted
  */
 export function extractXmlFromP7m(buffer: Buffer | ArrayBuffer): string {
-  // Convert to string, handling binary data
-  const content = Buffer.isBuffer(buffer)
-    ? buffer.toString('binary')
-    : Buffer.from(buffer).toString('binary')
+  // Convert to binary string, handling both Node.js Buffer and browser ArrayBuffer
+  let content: string
+  let arrayBuffer: ArrayBuffer
+
+  if (typeof Buffer !== 'undefined' && Buffer.isBuffer(buffer)) {
+    // Node.js environment
+    content = buffer.toString('binary')
+    arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer
+  } else {
+    // Browser environment - use ArrayBuffer directly
+    arrayBuffer = buffer as ArrayBuffer
+    content = arrayBufferToBinaryString(arrayBuffer)
+  }
 
   // Try multiple extraction strategies
   let xml = tryXmlDeclarationExtraction(content)
@@ -32,7 +66,7 @@ export function extractXmlFromP7m(buffer: Buffer | ArrayBuffer): string {
   xml = tryFatturaTagExtraction(content)
   if (xml) return xml
 
-  xml = tryUtf8Extraction(buffer)
+  xml = tryUtf8Extraction(arrayBuffer)
   if (xml) return xml
 
   throw new Error('Impossibile estrarre il contenuto XML dal file P7M. Il file potrebbe essere corrotto o in un formato non supportato.')
@@ -106,11 +140,9 @@ function tryFatturaTagExtraction(content: string): string | null {
 /**
  * Strategy 3: Try UTF-8 decoding and extraction
  */
-function tryUtf8Extraction(buffer: Buffer | ArrayBuffer): string | null {
+function tryUtf8Extraction(buffer: ArrayBuffer): string | null {
   try {
-    const content = Buffer.isBuffer(buffer)
-      ? buffer.toString('utf8')
-      : Buffer.from(buffer).toString('utf8')
+    const content = arrayBufferToUtf8String(buffer)
 
     // Look for XML content in UTF-8 decoded string
     // Support any namespace prefix: p:, ns0-9:, b:, n2:, etc.
@@ -143,6 +175,14 @@ function cleanExtractedXml(xml: string): string {
     .replace(/[\uD800-\uDFFF]/g, '')
     // Remove other problematic Unicode characters
     .replace(/[\uFFF0-\uFFFF]/g, '')
+    //
+    // PULISCI CONTENUTO TAG - Rimuovi newline e caratteri di controllo dal contenuto
+    // Es: "<IdCodice>0\n1514230265</IdCodice>" -> "<IdCodice>01514230265</IdCodice>"
+    .replace(/>([^<]*)</g, (match, content) => {
+      // Rimuovi newline, carriage return e caratteri di controllo dal contenuto
+      const cleaned = content.replace(/[\r\n\x00-\x1F]/g, '')
+      return `>${cleaned}<`
+    })
     //
     // RIPARA TAG XML CORROTTI DA FIRMA DIGITALE P7M
     // I file P7M possono avere byte della firma mescolati nel contenuto XML
