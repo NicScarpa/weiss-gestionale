@@ -1,22 +1,17 @@
 'use client'
 
+/**
+ * Invoice Detail - Complete invoice view with all XML parsed data
+ * Displays: header, supplier/customer, causale, line items, VAT summary,
+ * totals, payments with IBAN, categorization, SDI data, metadata
+ */
+
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useRouter } from 'next/navigation'
-import { format } from 'date-fns'
-import { it } from 'date-fns/locale'
-import {
-  ArrowLeft,
-  Building2,
-  FileText,
-  CreditCard,
-  BookOpen,
-  Check,
-  Loader2,
-  AlertCircle,
-} from 'lucide-react'
 import Link from 'next/link'
+import { useState, useEffect } from 'react'
+import { ArrowLeft, BookOpen, Loader2, AlertCircle } from 'lucide-react'
+
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select,
@@ -25,10 +20,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
-import { useState, useEffect } from 'react'
+
+import {
+  DocumentInfoSection,
+  SupplierSection,
+  CustomerSection,
+  CausaleSection,
+  LineItemsTable,
+  VATSummaryTable,
+  DocumentTotalsSection,
+  BolloSection,
+  PaymentSection,
+  TransmissionDataSection,
+  MetadataSection,
+  type ParsedInvoiceData,
+} from './InvoiceDetailSections'
 
 interface InvoiceDetailProps {
   invoiceId: string
@@ -38,6 +46,7 @@ interface Invoice {
   id: string
   invoiceNumber: string
   invoiceDate: string
+  documentType?: string
   supplierVat: string
   supplierName: string
   totalAmount: string
@@ -56,6 +65,7 @@ interface Invoice {
     fiscalCode?: string
     address?: string
     city?: string
+    province?: string
     defaultAccountId?: string
   } | null
   account?: {
@@ -81,7 +91,10 @@ interface Invoice {
     amount: string
     isPaid: boolean
     paymentMethod?: string
+    iban?: string
   }>
+  // Parsed XML data from API
+  parsedData?: ParsedInvoiceData
 }
 
 interface Account {
@@ -89,22 +102,6 @@ interface Account {
   code: string
   name: string
   type: string
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  IMPORTED: 'Importata',
-  MATCHED: 'Con Fornitore',
-  CATEGORIZED: 'Categorizzata',
-  RECORDED: 'Registrata',
-  PAID: 'Pagata',
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  IMPORTED: 'bg-slate-100 text-slate-700',
-  MATCHED: 'bg-amber-100 text-amber-700',
-  CATEGORIZED: 'bg-blue-100 text-blue-700',
-  RECORDED: 'bg-green-100 text-green-700',
-  PAID: 'bg-purple-100 text-purple-700',
 }
 
 async function fetchInvoice(id: string): Promise<Invoice> {
@@ -146,7 +143,6 @@ async function recordInvoice(id: string): Promise<unknown> {
 }
 
 export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
-  const router = useRouter()
   const queryClient = useQueryClient()
   const [selectedAccountId, setSelectedAccountId] = useState<string>('')
 
@@ -196,14 +192,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     updateMutation.mutate({ accountId: accountId === '_none' ? null : accountId || null })
   }
 
-  const formatCurrency = (value: string | number) => {
-    const num = typeof value === 'string' ? parseFloat(value) : value
-    return new Intl.NumberFormat('it-IT', {
-      style: 'currency',
-      currency: 'EUR',
-    }).format(num)
-  }
-
+  // Loading state
   if (isLoading) {
     return (
       <div className="container py-6 space-y-6">
@@ -212,10 +201,13 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           <Skeleton className="h-48" />
           <Skeleton className="h-48" />
         </div>
+        <Skeleton className="h-64" />
+        <Skeleton className="h-48" />
       </div>
     )
   }
 
+  // Error state
   if (error || !invoice) {
     return (
       <div className="container py-6">
@@ -235,31 +227,27 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
 
   const canEdit = invoice.status !== 'RECORDED' && invoice.status !== 'PAID'
   const canRecord = invoice.status === 'CATEGORIZED' && invoice.account
+  const parsedData = invoice.parsedData
 
   return (
     <div className="container py-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
+      {/* Header with back button and actions */}
+      <div className="flex items-start gap-4">
+        <Button variant="ghost" size="icon" className="mt-1" asChild>
           <Link href="/fatture">
             <ArrowLeft className="h-5 w-5" />
           </Link>
         </Button>
+
         <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">
-              Fattura {invoice.invoiceNumber}
-            </h1>
-            <Badge className={STATUS_COLORS[invoice.status]}>
-              {STATUS_LABELS[invoice.status]}
-            </Badge>
-          </div>
-          <p className="text-slate-500">
-            {format(new Date(invoice.invoiceDate), 'dd MMMM yyyy', {
-              locale: it,
-            })}
-          </p>
+          <DocumentInfoSection
+            invoiceNumber={invoice.invoiceNumber}
+            invoiceDate={invoice.invoiceDate}
+            documentType={invoice.documentType || parsedData?.tipoDocumento}
+            status={invoice.status}
+          />
         </div>
+
         {canRecord && (
           <Button
             onClick={() => recordMutation.mutate()}
@@ -280,183 +268,106 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         )}
       </div>
 
+      {/* Supplier and Customer cards - side by side on desktop */}
       <div className="grid gap-6 md:grid-cols-2">
-        {/* Fornitore */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Building2 className="h-5 w-5" />
-              Fornitore
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <div>
-              <p className="font-medium text-lg">{invoice.supplierName}</p>
-              <p className="text-slate-500">P.IVA: {invoice.supplierVat}</p>
-            </div>
-            {invoice.supplier && (
-              <>
-                {invoice.supplier.address && (
-                  <p className="text-sm text-slate-500">
-                    {invoice.supplier.address}
-                    {invoice.supplier.city && `, ${invoice.supplier.city}`}
-                  </p>
-                )}
-                <Badge variant="outline" className="mt-2">
-                  <Check className="h-3 w-3 mr-1" />
-                  Fornitore registrato
-                </Badge>
-              </>
-            )}
-          </CardContent>
-        </Card>
+        <SupplierSection
+          supplierName={invoice.supplierName}
+          supplierVat={invoice.supplierVat}
+          cedentePrestatore={parsedData?.cedentePrestatore}
+          isRegistered={!!invoice.supplier}
+        />
 
-        {/* Importi */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Importi
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-slate-500">Imponibile</span>
-              <span>{formatCurrency(invoice.netAmount)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">IVA</span>
-              <span>{formatCurrency(invoice.vatAmount)}</span>
-            </div>
-            <Separator />
-            <div className="flex justify-between text-lg font-medium">
-              <span>Totale</span>
-              <span>{formatCurrency(invoice.totalAmount)}</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Categorizzazione */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Categorizzazione</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Conto di spesa</label>
-              <Select
-                value={selectedAccountId}
-                onValueChange={handleAccountChange}
-                disabled={!canEdit || updateMutation.isPending}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleziona conto" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">Nessun conto</SelectItem>
-                  {accounts?.map((account) => (
-                    <SelectItem key={account.id} value={account.id}>
-                      {account.code} - {account.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {invoice.journalEntry && (
-              <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                <p className="text-sm font-medium text-green-800">
-                  Registrata in Prima Nota
-                </p>
-                <p className="text-xs text-green-600">
-                  {format(new Date(invoice.journalEntry.date), 'dd/MM/yyyy', {
-                    locale: it,
-                  })}{' '}
-                  - {invoice.journalEntry.description}
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Scadenze */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CreditCard className="h-5 w-5" />
-              Scadenze
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {invoice.deadlines.length === 0 ? (
-              <p className="text-slate-500 text-sm">Nessuna scadenza</p>
-            ) : (
-              <div className="space-y-2">
-                {invoice.deadlines.map((deadline) => (
-                  <div
-                    key={deadline.id}
-                    className="flex justify-between items-center p-2 bg-slate-50 rounded"
-                  >
-                    <div>
-                      <p className="font-medium">
-                        {format(new Date(deadline.dueDate), 'dd/MM/yyyy', {
-                          locale: it,
-                        })}
-                      </p>
-                      {deadline.paymentMethod && (
-                        <p className="text-xs text-slate-500">
-                          {deadline.paymentMethod}
-                        </p>
-                      )}
-                    </div>
-                    <div className="text-right">
-                      <p className="font-medium">
-                        {formatCurrency(deadline.amount)}
-                      </p>
-                      {deadline.isPaid ? (
-                        <Badge className="bg-green-100 text-green-700">
-                          Pagato
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline">Da pagare</Badge>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <CustomerSection
+          cessionarioCommittente={parsedData?.cessionarioCommittente}
+          codiceDestinatario={parsedData?.codiceDestinatario}
+        />
       </div>
 
-      {/* Metadata */}
+      {/* Causale (if present) */}
+      <CausaleSection causale={parsedData?.causale} />
+
+      {/* Line items table */}
+      <LineItemsTable dettaglioLinee={parsedData?.dettaglioLinee} />
+
+      {/* VAT Summary and Totals - side by side */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <VATSummaryTable datiRiepilogo={parsedData?.datiRiepilogo} />
+
+        <div className="space-y-6">
+          <DocumentTotalsSection
+            netAmount={invoice.netAmount}
+            vatAmount={invoice.vatAmount}
+            totalAmount={invoice.totalAmount}
+            datiBollo={parsedData?.datiBollo}
+            arrotondamento={parsedData?.arrotondamento}
+          />
+
+          <BolloSection datiBollo={parsedData?.datiBollo} />
+        </div>
+      </div>
+
+      {/* Payment section with IBAN */}
+      <PaymentSection
+        datiPagamento={parsedData?.datiPagamento}
+        deadlines={invoice.deadlines}
+      />
+
+      {/* Categorization card */}
       <Card>
-        <CardHeader>
-          <CardTitle>Informazioni</CardTitle>
+        <CardHeader className="py-4">
+          <CardTitle className="text-base">Categorizzazione</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-3 text-sm">
-            <div>
-              <p className="text-slate-500">Sede</p>
-              <p className="font-medium">{invoice.venue?.name}</p>
-            </div>
-            <div>
-              <p className="text-slate-500">Importata il</p>
-              <p className="font-medium">
-                {format(new Date(invoice.importedAt), 'dd/MM/yyyy HH:mm', {
-                  locale: it,
-                })}
+        <CardContent className="pt-0 space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Conto di spesa</label>
+            <Select
+              value={selectedAccountId}
+              onValueChange={handleAccountChange}
+              disabled={!canEdit || updateMutation.isPending}
+            >
+              <SelectTrigger className="max-w-md">
+                <SelectValue placeholder="Seleziona conto" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_none">Nessun conto</SelectItem>
+                {accounts?.map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    {account.code} - {account.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {invoice.journalEntry && (
+            <div className="p-3 bg-green-50 border border-green-200 rounded-lg max-w-md">
+              <p className="text-sm font-medium text-green-800">
+                ✓ Registrata in Prima Nota
+              </p>
+              <p className="text-xs text-green-600">
+                {invoice.journalEntry.description}
               </p>
             </div>
-            {invoice.fileName && (
-              <div>
-                <p className="text-slate-500">File originale</p>
-                <p className="font-medium">{invoice.fileName}</p>
-              </div>
-            )}
-          </div>
+          )}
         </CardContent>
       </Card>
+
+      {/* SDI Transmission Data */}
+      <TransmissionDataSection
+        progressivoInvio={parsedData?.progressivoInvio}
+        formatoTrasmissione={parsedData?.formatoTrasmissione}
+        pecDestinatario={parsedData?.pecDestinatario}
+        codiceDestinatario={parsedData?.codiceDestinatario}
+      />
+
+      {/* Metadata */}
+      <MetadataSection
+        venueName={invoice.venue?.name}
+        importedAt={invoice.importedAt}
+        fileName={invoice.fileName}
+        recordedAt={invoice.recordedAt}
+        journalEntryDescription={invoice.journalEntry?.description}
+      />
     </div>
   )
 }

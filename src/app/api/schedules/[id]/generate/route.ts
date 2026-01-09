@@ -10,6 +10,7 @@ const generateParamsSchema = z.object({
   preferFixedStaff: z.boolean().default(true),
   balanceHours: z.boolean().default(true),
   minimizeCost: z.boolean().default(false),
+  staffingRequirements: z.record(z.string(), z.number()).optional(),
 })
 
 // POST /api/schedules/[id]/generate - Genera turni con algoritmo

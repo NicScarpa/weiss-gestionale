@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSession } from 'next-auth/react'
 import { format } from 'date-fns'
@@ -11,11 +11,13 @@ import {
   Search,
   Filter,
   MoreVertical,
-  Check,
-  AlertCircle,
   BookOpen,
   Trash2,
   Eye,
+  ChevronUp,
+  ChevronDown,
+  Calendar,
+  AlertCircle,
 } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -46,11 +48,48 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
 import { InvoiceImportDialog } from './InvoiceImportDialog'
+import {
+  getDocumentTypeAbbrev,
+  getDocumentTypeColor,
+  getSimpleStatus,
+  formatCurrency,
+  generateYearOptions,
+  ITALIAN_MONTHS,
+} from '@/lib/invoice-utils'
+
+// Debounce hook
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value)
+
+  useState(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value)
+    }, delay)
+
+    return () => {
+      clearTimeout(handler)
+    }
+  })
+
+  // Use useCallback for proper debounce
+  const [, setTimer] = useState<NodeJS.Timeout | null>(null)
+
+  if (debouncedValue !== value) {
+    setTimer((prevTimer) => {
+      if (prevTimer) clearTimeout(prevTimer)
+      const newTimer = setTimeout(() => setDebouncedValue(value), delay)
+      return newTimer
+    })
+  }
+
+  return debouncedValue
+}
 
 interface Invoice {
   id: string
   invoiceNumber: string
   invoiceDate: string
+  documentType: string | null
   supplierVat: string
   supplierName: string
   totalAmount: string
@@ -84,21 +123,7 @@ interface InvoicesResponse {
   }
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  IMPORTED: 'Importata',
-  MATCHED: 'Fornitore',
-  CATEGORIZED: 'Categorizzata',
-  RECORDED: 'Registrata',
-  PAID: 'Pagata',
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  IMPORTED: 'bg-slate-100 text-slate-700',
-  MATCHED: 'bg-amber-100 text-amber-700',
-  CATEGORIZED: 'bg-blue-100 text-blue-700',
-  RECORDED: 'bg-green-100 text-green-700',
-  PAID: 'bg-purple-100 text-purple-700',
-}
+type SortField = 'documentType' | 'invoiceDate' | 'invoiceNumber' | 'supplierName' | 'totalAmount' | 'status'
 
 async function fetchInvoices(params: URLSearchParams): Promise<InvoicesResponse> {
   const res = await fetch(`/api/invoices?${params.toString()}`)
@@ -127,18 +152,45 @@ export function InvoiceList() {
   const { data: session } = useSession()
   const queryClient = useQueryClient()
   const [importDialogOpen, setImportDialogOpen] = useState(false)
+
+  // Filtri
+  const [searchInput, setSearchInput] = useState('')
+  const [yearFilter, setYearFilter] = useState<string>('all')
+  const [monthFilter, setMonthFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+
+  // Ordinamento
+  const [sortBy, setSortBy] = useState<SortField>('invoiceDate')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+
+  // Paginazione
   const [page, setPage] = useState(1)
 
+  // Debounce search
+  const debouncedSearch = useDebounce(searchInput, 300)
+
+  // Costruisci parametri query
   const params = new URLSearchParams()
   params.set('page', page.toString())
   params.set('limit', '25')
+  params.set('sortBy', sortBy)
+  params.set('sortOrder', sortOrder)
+
+  if (debouncedSearch.length >= 2) {
+    params.set('search', debouncedSearch)
+  }
+  if (yearFilter !== 'all') {
+    params.set('year', yearFilter)
+  }
+  if (monthFilter !== 'all') {
+    params.set('month', monthFilter)
+  }
   if (statusFilter !== 'all') {
     params.set('status', statusFilter)
   }
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['invoices', statusFilter, page],
+    queryKey: ['invoices', debouncedSearch, yearFilter, monthFilter, statusFilter, sortBy, sortOrder, page],
     queryFn: () => fetchInvoices(params),
   })
 
@@ -169,13 +221,19 @@ export function InvoiceList() {
     setImportDialogOpen(false)
   }
 
-  const formatCurrency = (value: string | number) => {
-    const num = typeof value === 'string' ? parseFloat(value) : value
-    return new Intl.NumberFormat('it-IT', {
-      style: 'currency',
-      currency: 'EUR',
-    }).format(num)
-  }
+  // Handler ordinamento colonne
+  const handleSort = useCallback((field: SortField) => {
+    if (sortBy === field) {
+      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortBy(field)
+      setSortOrder('desc')
+    }
+    setPage(1) // Reset pagina quando cambia ordinamento
+  }, [sortBy])
+
+  // Genera opzioni anni
+  const yearOptions = generateYearOptions(5)
 
   if (error) {
     return (
@@ -186,6 +244,24 @@ export function InvoiceList() {
           {error instanceof Error ? error.message : 'Errore sconosciuto'}
         </p>
       </div>
+    )
+  }
+
+  // Componente header ordinabile
+  const SortableHeader = ({ field, label, className = '' }: { field: SortField; label: string; className?: string }) => {
+    const isActive = sortBy === field
+    return (
+      <button
+        className={`flex items-center gap-1 hover:text-slate-900 transition-colors ${className}`}
+        onClick={() => handleSort(field)}
+      >
+        {label}
+        {isActive && (
+          sortOrder === 'asc'
+            ? <ChevronUp className="h-4 w-4" />
+            : <ChevronDown className="h-4 w-4" />
+        )}
+      </button>
     )
   }
 
@@ -204,40 +280,116 @@ export function InvoiceList() {
       </div>
 
       {/* Filtri */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[180px]">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center p-4 bg-slate-50 rounded-lg border">
+        {/* Ricerca */}
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Input
+            placeholder="Cerca fornitore, numero..."
+            value={searchInput}
+            onChange={(e) => {
+              setSearchInput(e.target.value)
+              setPage(1)
+            }}
+            className="pl-9 bg-white"
+          />
+        </div>
+
+        {/* Filtro Anno */}
+        <Select
+          value={yearFilter}
+          onValueChange={(v) => {
+            setYearFilter(v)
+            if (v === 'all') setMonthFilter('all')
+            setPage(1)
+          }}
+        >
+          <SelectTrigger className="w-[140px] bg-white">
+            <Calendar className="mr-2 h-4 w-4" />
+            <SelectValue placeholder="Anno" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Tutti gli anni</SelectItem>
+            {yearOptions.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Filtro Mese */}
+        <Select
+          value={monthFilter}
+          onValueChange={(v) => {
+            setMonthFilter(v)
+            setPage(1)
+          }}
+          disabled={yearFilter === 'all'}
+        >
+          <SelectTrigger className="w-[150px] bg-white">
+            <SelectValue placeholder="Mese" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Tutti i mesi</SelectItem>
+            {ITALIAN_MONTHS.map((m) => (
+              <SelectItem key={m.value} value={m.value}>
+                {m.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Filtro Stato */}
+        <Select
+          value={statusFilter}
+          onValueChange={(v) => {
+            setStatusFilter(v)
+            setPage(1)
+          }}
+        >
+          <SelectTrigger className="w-[160px] bg-white">
             <Filter className="mr-2 h-4 w-4" />
             <SelectValue placeholder="Stato" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Tutti gli stati</SelectItem>
-            <SelectItem value="IMPORTED">Importate</SelectItem>
-            <SelectItem value="MATCHED">Con fornitore</SelectItem>
-            <SelectItem value="CATEGORIZED">Categorizzate</SelectItem>
             <SelectItem value="RECORDED">Registrate</SelectItem>
-            <SelectItem value="PAID">Pagate</SelectItem>
+            <SelectItem value="not_recorded">Non registrate</SelectItem>
           </SelectContent>
         </Select>
 
+        {/* Conteggio */}
         {data?.pagination && (
           <p className="text-sm text-slate-500 ml-auto">
-            {data.pagination.total} fatture totali
+            {data.pagination.total} fatture
           </p>
         )}
       </div>
 
       {/* Tabella */}
-      <div className="rounded-lg border bg-white">
+      <div className="rounded-lg border bg-white overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>Numero</TableHead>
-              <TableHead>Data</TableHead>
-              <TableHead>Fornitore</TableHead>
-              <TableHead className="text-right">Importo</TableHead>
-              <TableHead>Stato</TableHead>
-              <TableHead>Conto</TableHead>
+            <TableRow className="bg-slate-50">
+              <TableHead className="w-[80px]">
+                <SortableHeader field="documentType" label="Doc" />
+              </TableHead>
+              <TableHead className="w-[110px]">
+                <SortableHeader field="invoiceDate" label="Data" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader field="invoiceNumber" label="Numero" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader field="supplierName" label="Fornitore" />
+              </TableHead>
+              <TableHead className="text-right w-[130px]">
+                <SortableHeader field="totalAmount" label="Importo" className="justify-end" />
+              </TableHead>
+              <TableHead className="w-[130px]">
+                <SortableHeader field="status" label="Stato" />
+              </TableHead>
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>
           </TableHeader>
@@ -245,27 +397,13 @@ export function InvoiceList() {
             {isLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  <TableCell>
-                    <Skeleton className="h-4 w-20" />
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-4 w-24" />
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-4 w-40" />
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-4 w-20" />
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-6 w-24" />
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-4 w-32" />
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-8 w-8" />
-                  </TableCell>
+                  <TableCell><Skeleton className="h-6 w-12" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                  <TableCell><Skeleton className="h-6 w-24" /></TableCell>
+                  <TableCell><Skeleton className="h-8 w-8" /></TableCell>
                 </TableRow>
               ))
             ) : data?.data.length === 0 ? (
@@ -283,93 +421,98 @@ export function InvoiceList() {
                 </TableCell>
               </TableRow>
             ) : (
-              data?.data.map((invoice) => (
-                <TableRow key={invoice.id}>
-                  <TableCell className="font-medium">
-                    {invoice.invoiceNumber}
-                  </TableCell>
-                  <TableCell>
-                    {format(new Date(invoice.invoiceDate), 'dd/MM/yyyy', {
-                      locale: it,
-                    })}
-                  </TableCell>
-                  <TableCell>
-                    <div>
-                      <div className="font-medium">{invoice.supplierName}</div>
-                      <div className="text-xs text-slate-500">
-                        P.IVA: {invoice.supplierVat}
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right font-medium">
-                    {formatCurrency(invoice.totalAmount)}
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={STATUS_COLORS[invoice.status]}>
-                      {STATUS_LABELS[invoice.status]}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {invoice.account ? (
-                      <span className="text-sm">
-                        {invoice.account.code} - {invoice.account.name}
-                      </span>
-                    ) : (
-                      <span className="text-sm text-slate-400">
-                        Non assegnato
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem asChild>
-                          <Link href={`/fatture/${invoice.id}`}>
-                            <Eye className="mr-2 h-4 w-4" />
-                            Visualizza
-                          </Link>
-                        </DropdownMenuItem>
-                        {invoice.status === 'CATEGORIZED' && (
-                          <DropdownMenuItem
-                            onClick={() => recordMutation.mutate(invoice.id)}
-                            disabled={recordMutation.isPending}
-                          >
-                            <BookOpen className="mr-2 h-4 w-4" />
-                            Registra in Prima Nota
+              data?.data.map((invoice) => {
+                const docType = invoice.documentType
+                const simpleStatus = getSimpleStatus(invoice.status)
+
+                return (
+                  <TableRow key={invoice.id} className="hover:bg-slate-50">
+                    {/* Tipo Documento */}
+                    <TableCell>
+                      <Badge className={getDocumentTypeColor(docType)}>
+                        {getDocumentTypeAbbrev(docType)}
+                      </Badge>
+                    </TableCell>
+
+                    {/* Data */}
+                    <TableCell className="text-slate-600">
+                      {format(new Date(invoice.invoiceDate), 'dd/MM/yyyy', { locale: it })}
+                    </TableCell>
+
+                    {/* Numero */}
+                    <TableCell className="font-medium">
+                      {invoice.invoiceNumber}
+                    </TableCell>
+
+                    {/* Fornitore - SOLO NOME */}
+                    <TableCell>
+                      {invoice.supplierName}
+                    </TableCell>
+
+                    {/* Importo */}
+                    <TableCell className="text-right font-medium">
+                      {formatCurrency(invoice.totalAmount)}
+                    </TableCell>
+
+                    {/* Stato Semplificato */}
+                    <TableCell>
+                      <Badge className={simpleStatus.color}>
+                        {simpleStatus.label}
+                      </Badge>
+                    </TableCell>
+
+                    {/* Azioni */}
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem asChild>
+                            <Link href={`/fatture/${invoice.id}`}>
+                              <Eye className="mr-2 h-4 w-4" />
+                              Visualizza
+                            </Link>
                           </DropdownMenuItem>
-                        )}
-                        {invoice.status !== 'RECORDED' &&
-                          invoice.status !== 'PAID' &&
-                          session?.user?.role === 'admin' && (
-                            <>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                className="text-red-600"
-                                onClick={() => {
-                                  if (
-                                    confirm(
-                                      'Sei sicuro di voler eliminare questa fattura?'
-                                    )
-                                  ) {
-                                    deleteMutation.mutate(invoice.id)
-                                  }
-                                }}
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Elimina
-                              </DropdownMenuItem>
-                            </>
+                          {invoice.status === 'CATEGORIZED' && (
+                            <DropdownMenuItem
+                              onClick={() => recordMutation.mutate(invoice.id)}
+                              disabled={recordMutation.isPending}
+                            >
+                              <BookOpen className="mr-2 h-4 w-4" />
+                              Registra in Prima Nota
+                            </DropdownMenuItem>
                           )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))
+                          {invoice.status !== 'RECORDED' &&
+                            invoice.status !== 'PAID' &&
+                            session?.user?.role === 'admin' && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="text-red-600"
+                                  onClick={() => {
+                                    if (
+                                      confirm(
+                                        'Sei sicuro di voler eliminare questa fattura?'
+                                      )
+                                    ) {
+                                      deleteMutation.mutate(invoice.id)
+                                    }
+                                  }}
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Elimina
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                )
+              })
             )}
           </TableBody>
         </Table>
