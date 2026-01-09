@@ -140,13 +140,8 @@ export async function POST(
       )
     }
 
-    // Verifica stato: non può aggiungere se pubblicata
-    if (schedule.status === 'PUBLISHED') {
-      return NextResponse.json(
-        { error: 'Non puoi modificare una pianificazione pubblicata' },
-        { status: 400 }
-      )
-    }
+    // Nota: permettiamo l'aggiunta di turni anche su pianificazioni pubblicate
+    // per consentire correzioni last-minute ai manager
 
     // Verifica che l'utente esista
     const user = await prisma.user.findUnique({

@@ -331,9 +331,7 @@ export default function ScheduleDetailPage({ params }: PageProps) {
             <CardHeader>
               <CardTitle>Calendario Turni</CardTitle>
               <CardDescription>
-                {schedule.status === 'PUBLISHED'
-                  ? 'Visualizza i turni assegnati'
-                  : 'Clicca sulle celle per aggiungere o modificare turni'}
+                Clicca sulle celle per aggiungere o modificare turni
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -360,7 +358,6 @@ export default function ScheduleDetailPage({ params }: PageProps) {
                     })
                   }}
                   onSlotClick={(date, shiftDefId) => {
-                    if (schedule.status === 'PUBLISHED') return
                     setDialogState({
                       open: true,
                       mode: 'add',
@@ -385,7 +382,7 @@ export default function ScheduleDetailPage({ params }: PageProps) {
         date={dialogState.date}
         shiftDefId={dialogState.shiftDefId}
         assignment={dialogState.assignment}
-        isReadOnly={schedule.status === 'PUBLISHED'}
+        isReadOnly={false}
       />
     </div>
   )
