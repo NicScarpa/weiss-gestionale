@@ -175,6 +175,35 @@ export function canEmployeeWorkShift(
     return { canWork: false, reason: 'Sede diversa' }
   }
 
+  // Check shift preferences (hard constraints)
+  const shiftPreferences = constraints.filter(
+    c => c.constraintType === 'PREFERRED_SHIFT' && isConstraintActive(c, date)
+  )
+
+  for (const pref of shiftPreferences) {
+    if (!pref.isHardConstraint) continue
+
+    const prefShiftType = (pref.config.shiftType as string || '').toLowerCase()
+    const shiftName = shift.name.toLowerCase()
+    const shiftCode = shift.code.toLowerCase()
+
+    const matchesShift =
+      shiftName.includes(prefShiftType) ||
+      prefShiftType.includes(shiftName) ||
+      shiftCode.includes(prefShiftType) ||
+      prefShiftType.includes(shiftCode)
+
+    if (pref.config.preference === 'PREFER' && !matchesShift) {
+      // Hard preference for a different shift - cannot assign this one
+      return { canWork: false, reason: `Solo turno ${pref.config.shiftType}` }
+    }
+
+    if (pref.config.preference === 'AVOID' && matchesShift) {
+      // Hard avoid for this shift - cannot assign
+      return { canWork: false, reason: `Non può lavorare turno ${pref.config.shiftType}` }
+    }
+  }
+
   // Check time window
   if (availability.availableFrom || availability.availableTo) {
     const shiftStart = parseTime(
@@ -379,15 +408,37 @@ export function calculateEmployeeScore(
     score += 20
   }
 
-  // Check for preferred shift
-  const preferredShift = constraints.find(
-    c => c.constraintType === 'PREFERRED_SHIFT' &&
-         isConstraintActive(c, date) &&
-         c.config.preference === 'PREFER'
+  // Check for shift preferences (PREFERRED_SHIFT constraints)
+  const shiftPreferences = constraints.filter(
+    c => c.constraintType === 'PREFERRED_SHIFT' && isConstraintActive(c, date)
   )
-  if (preferredShift) {
-    // Match shift type (simplified - you'd need to map shift names to types)
-    score += 15
+
+  for (const pref of shiftPreferences) {
+    const prefShiftType = (pref.config.shiftType as string || '').toLowerCase()
+    const shiftName = shift.name.toLowerCase()
+    const shiftCode = shift.code.toLowerCase()
+
+    // Check if this preference matches the current shift
+    const matchesShift =
+      shiftName.includes(prefShiftType) ||
+      prefShiftType.includes(shiftName) ||
+      shiftCode.includes(prefShiftType) ||
+      prefShiftType.includes(shiftCode)
+
+    if (pref.config.preference === 'PREFER') {
+      if (matchesShift) {
+        // Employee prefers this shift type - big bonus
+        score += 30
+      } else {
+        // Employee prefers a different shift - penalty
+        score -= 20
+      }
+    } else if (pref.config.preference === 'AVOID') {
+      if (matchesShift) {
+        // Employee wants to avoid this shift - big penalty
+        score -= 40
+      }
+    }
   }
 
   // Balance hours (give higher score to employees with fewer hours)

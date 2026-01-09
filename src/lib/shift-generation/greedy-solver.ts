@@ -120,6 +120,12 @@ function assignEmployeesToShift(
   const overrideMinStaff = params.staffingRequirements?.[reqKey]
 
   const minStaff = overrideMinStaff !== undefined ? overrideMinStaff : shift.minStaff
+
+  // If minStaff is 0, skip this shift entirely (no one should be assigned)
+  if (minStaff === 0) {
+    return { assignments: [], warnings: [] }
+  }
+
   const maxStaff = shift.maxStaff || minStaff + 2
 
   // Filter and score available employees
