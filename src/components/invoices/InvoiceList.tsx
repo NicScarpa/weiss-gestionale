@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSession } from 'next-auth/react'
 import { format } from 'date-fns'
@@ -61,7 +61,7 @@ import {
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState(value)
 
-  useState(() => {
+  useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedValue(value)
     }, delay)
@@ -69,18 +69,7 @@ function useDebounce<T>(value: T, delay: number): T {
     return () => {
       clearTimeout(handler)
     }
-  })
-
-  // Use useCallback for proper debounce
-  const [, setTimer] = useState<NodeJS.Timeout | null>(null)
-
-  if (debouncedValue !== value) {
-    setTimer((prevTimer) => {
-      if (prevTimer) clearTimeout(prevTimer)
-      const newTimer = setTimeout(() => setDebouncedValue(value), delay)
-      return newTimer
-    })
-  }
+  }, [value, delay])
 
   return debouncedValue
 }
@@ -182,10 +171,16 @@ export function InvoiceList() {
   if (yearFilter !== 'all') {
     params.set('year', yearFilter)
   }
-  if (monthFilter !== 'all') {
-    params.set('month', monthFilter)
+  // Gestisci i nuovi filtri mese
+  if (monthFilter !== 'all' && monthFilter !== 'all_months') {
+    if (monthFilter === 'last_3') {
+      params.set('lastMonths', '3')
+    } else {
+      params.set('month', monthFilter)
+    }
   }
-  if (statusFilter !== 'all') {
+  // Gestisci i nuovi filtri stato
+  if (statusFilter !== 'all' && statusFilter !== 'all_statuses') {
     params.set('status', statusFilter)
   }
 
@@ -309,7 +304,7 @@ export function InvoiceList() {
             <SelectValue placeholder="Anno" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tutti gli anni</SelectItem>
+            <SelectItem value="all">Anno</SelectItem>
             {yearOptions.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
                 {opt.label}
@@ -331,7 +326,9 @@ export function InvoiceList() {
             <SelectValue placeholder="Mese" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tutti i mesi</SelectItem>
+            <SelectItem value="all">Mese</SelectItem>
+            <SelectItem value="all_months">Tutti i mesi</SelectItem>
+            <SelectItem value="last_3">Ultimi 3 mesi</SelectItem>
             {ITALIAN_MONTHS.map((m) => (
               <SelectItem key={m.value} value={m.value}>
                 {m.label}
@@ -353,7 +350,8 @@ export function InvoiceList() {
             <SelectValue placeholder="Stato" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tutti gli stati</SelectItem>
+            <SelectItem value="all">Stato</SelectItem>
+            <SelectItem value="all_statuses">Tutti gli stati</SelectItem>
             <SelectItem value="RECORDED">Registrate</SelectItem>
             <SelectItem value="not_recorded">Non registrate</SelectItem>
           </SelectContent>
