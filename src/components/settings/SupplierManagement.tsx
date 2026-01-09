@@ -46,6 +46,11 @@ interface Supplier {
   name: string
   vatNumber: string | null
   address: string | null
+  city: string | null
+  province: string | null
+  postalCode: string | null
+  email: string | null
+  iban: string | null
   defaultAccountId: string | null
   defaultAccount: Account | null
   isActive: boolean
@@ -55,6 +60,11 @@ const initialFormData = {
   name: '',
   vatNumber: '',
   address: '',
+  city: '',
+  province: '',
+  postalCode: '',
+  email: '',
+  iban: '',
   defaultAccountId: 'none',
   isActive: true,
 }
@@ -125,6 +135,11 @@ export function SupplierManagement() {
       name: supplier.name,
       vatNumber: supplier.vatNumber || '',
       address: supplier.address || '',
+      city: supplier.city || '',
+      province: supplier.province || '',
+      postalCode: supplier.postalCode || '',
+      email: supplier.email || '',
+      iban: supplier.iban || '',
       defaultAccountId: supplier.defaultAccountId || 'none',
       isActive: supplier.isActive,
     })
@@ -152,6 +167,11 @@ export function SupplierManagement() {
         name: formData.name.trim(),
         vatNumber: formData.vatNumber.trim() || null,
         address: formData.address.trim() || null,
+        city: formData.city.trim() || null,
+        province: formData.province.trim() || null,
+        postalCode: formData.postalCode.trim() || null,
+        email: formData.email.trim() || null,
+        iban: formData.iban.trim() || null,
         defaultAccountId: formData.defaultAccountId === 'none' ? null : formData.defaultAccountId,
         isActive: formData.isActive,
       }
@@ -275,9 +295,16 @@ export function SupplierManagement() {
                         <Badge variant="secondary">Inattivo</Badge>
                       )}
                     </div>
-                    <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                    <div className="flex flex-col gap-1 text-sm text-muted-foreground mt-1">
                       {supplier.vatNumber && (
                         <span className="font-mono">P.IVA: {supplier.vatNumber}</span>
+                      )}
+                      {(supplier.address || supplier.city) && (
+                        <span>
+                          {[supplier.address, supplier.postalCode, supplier.city, supplier.province]
+                            .filter(Boolean)
+                            .join(', ')}
+                        </span>
                       )}
                       {supplier.defaultAccount && (
                         <span>
@@ -312,7 +339,7 @@ export function SupplierManagement() {
 
       {/* Dialog Crea/Modifica */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>
               {editingSupplier ? 'Modifica Fornitore' : 'Nuovo Fornitore'}
@@ -324,9 +351,9 @@ export function SupplierManagement() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
+          <div className="grid grid-cols-2 gap-4 py-4">
             {/* Nome */}
-            <div className="space-y-2">
+            <div className="col-span-2 space-y-2">
               <Label htmlFor="supplier-name">Nome *</Label>
               <Input
                 id="supplier-name"
@@ -352,21 +379,96 @@ export function SupplierManagement() {
               />
             </div>
 
-            {/* Indirizzo */}
+            {/* Email */}
             <div className="space-y-2">
-              <Label htmlFor="supplier-address">Indirizzo</Label>
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={formData.email}
+                onChange={(e) =>
+                  setFormData({ ...formData, email: e.target.value })
+                }
+                placeholder="amministrazione@fornitore.it"
+              />
+            </div>
+
+            {/* IBAN */}
+            <div className="col-span-2 space-y-2">
+              <Label htmlFor="iban">IBAN</Label>
+              <Input
+                id="iban"
+                value={formData.iban}
+                onChange={(e) =>
+                  setFormData({ ...formData, iban: e.target.value })
+                }
+                placeholder="IT00 X000 0000 0000 0000 0000 000"
+                className="font-mono uppercase"
+              />
+            </div>
+
+            <div className="col-span-2 border-t my-2" />
+
+            {/* Indirizzo - Via */}
+            <div className="col-span-2 space-y-2">
+              <Label htmlFor="supplier-address">Indirizzo (Via e Civico)</Label>
               <Input
                 id="supplier-address"
                 value={formData.address}
                 onChange={(e) =>
                   setFormData({ ...formData, address: e.target.value })
                 }
-                placeholder="Via Roma 1, Milano"
+                placeholder="Via Roma 1"
               />
             </div>
 
-            {/* Conto Default */}
+            {/* Città */}
             <div className="space-y-2">
+              <Label htmlFor="city">Città</Label>
+              <Input
+                id="city"
+                value={formData.city}
+                onChange={(e) =>
+                  setFormData({ ...formData, city: e.target.value })
+                }
+                placeholder="Milano"
+              />
+            </div>
+
+            {/* CAP e Provincia */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="postalCode">CAP</Label>
+                <Input
+                  id="postalCode"
+                  value={formData.postalCode}
+                  onChange={(e) =>
+                    setFormData({ ...formData, postalCode: e.target.value })
+                  }
+                  placeholder="20100"
+                  className="font-mono"
+                  maxLength={5}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="province">Provincia</Label>
+                <Input
+                  id="province"
+                  value={formData.province}
+                  onChange={(e) =>
+                    setFormData({ ...formData, province: e.target.value })
+                  }
+                  placeholder="MI"
+                  className="uppercase"
+                  maxLength={2}
+                />
+              </div>
+            </div>
+
+            <div className="col-span-2 border-t my-2" />
+
+            {/* Conto Default */}
+            <div className="col-span-2 space-y-2">
               <Label htmlFor="defaultAccount">Conto di Costo Default</Label>
               <Select
                 value={formData.defaultAccountId}
@@ -392,7 +494,7 @@ export function SupplierManagement() {
             </div>
 
             {/* Stato Attivo */}
-            <div className="flex items-center justify-between">
+            <div className="col-span-2 flex items-center justify-between pt-2">
               <div className="space-y-0.5">
                 <Label>Stato</Label>
                 <p className="text-sm text-muted-foreground">
