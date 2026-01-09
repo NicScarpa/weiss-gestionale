@@ -295,7 +295,7 @@ export function extractXmlFromP7m(buffer: Buffer | ArrayBuffer): string {
   } else {
     // Browser environment - use ArrayBuffer directly
     arrayBuffer = buffer as ArrayBuffer
-    originalBuffer = Buffer.from(buffer)
+    originalBuffer = Buffer.from(new Uint8Array(arrayBuffer))
     content = arrayBufferToBinaryString(arrayBuffer)
   }
 
