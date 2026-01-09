@@ -186,6 +186,7 @@ export function InvoiceList() {
 
   // Paginazione
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
 
   // Debounce search
   const debouncedSearch = useDebounce(searchInput, 300)
@@ -193,7 +194,7 @@ export function InvoiceList() {
   // Costruisci parametri query
   const params = new URLSearchParams()
   params.set('page', page.toString())
-  params.set('limit', '25')
+  params.set('limit', pageSize.toString())
   params.set('sortBy', sortBy)
   params.set('sortOrder', sortOrder)
 
@@ -217,7 +218,7 @@ export function InvoiceList() {
   }
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['invoices', debouncedSearch, yearFilter, monthFilter, statusFilter, sortBy, sortOrder, page],
+    queryKey: ['invoices', debouncedSearch, yearFilter, monthFilter, statusFilter, sortBy, sortOrder, page, pageSize],
     queryFn: () => fetchInvoices(params),
   })
 
@@ -643,29 +644,57 @@ export function InvoiceList() {
       </div>
 
       {/* Paginazione */}
-      {data?.pagination && data.pagination.totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page === 1}
-          >
-            Precedente
-          </Button>
-          <span className="text-sm text-slate-500">
-            Pagina {page} di {data.pagination.totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() =>
-              setPage((p) => Math.min(data.pagination.totalPages, p + 1))
-            }
-            disabled={page === data.pagination.totalPages}
-          >
-            Successiva
-          </Button>
+      {data?.pagination && (
+        <div className="flex items-center justify-between">
+          {/* Selettore dimensione pagina */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-slate-500">Mostra</span>
+            <Select
+              value={pageSize.toString()}
+              onValueChange={(v) => {
+                setPageSize(parseInt(v))
+                setPage(1)
+              }}
+            >
+              <SelectTrigger className="w-[80px] h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="25">25</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
+                <SelectItem value="500">500</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="text-sm text-slate-500">per pagina</span>
+          </div>
+
+          {/* Navigazione pagine */}
+          {data.pagination.totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+              >
+                Precedente
+              </Button>
+              <span className="text-sm text-slate-500">
+                Pagina {page} di {data.pagination.totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setPage((p) => Math.min(data.pagination.totalPages, p + 1))
+                }
+                disabled={page === data.pagination.totalPages}
+              >
+                Successiva
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
