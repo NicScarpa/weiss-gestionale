@@ -55,7 +55,7 @@ const initialFormData = {
   name: '',
   vatNumber: '',
   address: '',
-  defaultAccountId: '',
+  defaultAccountId: 'none',
   isActive: true,
 }
 
@@ -125,7 +125,7 @@ export function SupplierManagement() {
       name: supplier.name,
       vatNumber: supplier.vatNumber || '',
       address: supplier.address || '',
-      defaultAccountId: supplier.defaultAccountId || '',
+      defaultAccountId: supplier.defaultAccountId || 'none',
       isActive: supplier.isActive,
     })
     setIsDialogOpen(true)
@@ -152,7 +152,7 @@ export function SupplierManagement() {
         name: formData.name.trim(),
         vatNumber: formData.vatNumber.trim() || null,
         address: formData.address.trim() || null,
-        defaultAccountId: formData.defaultAccountId || null,
+        defaultAccountId: formData.defaultAccountId === 'none' ? null : formData.defaultAccountId,
         isActive: formData.isActive,
       }
 
@@ -378,7 +378,7 @@ export function SupplierManagement() {
                   <SelectValue placeholder="Seleziona conto..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Nessuno</SelectItem>
+                  <SelectItem value="none">Nessuno</SelectItem>
                   {accounts.map((account) => (
                     <SelectItem key={account.id} value={account.id}>
                       {account.code} - {account.name}
