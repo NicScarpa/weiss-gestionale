@@ -91,16 +91,16 @@ export default function ProdottiPage() {
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState<string>('')
   const [page, setPage] = useState(0)
-  const limit = 25
+  const [pageSize, setPageSize] = useState(25)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['products', search, category, page],
+    queryKey: ['products', search, category, page, pageSize],
     queryFn: () =>
       fetchProducts({
         search: search || undefined,
         category: category || undefined,
-        limit,
-        offset: page * limit,
+        limit: pageSize,
+        offset: page * pageSize,
       }),
   })
 
@@ -339,29 +339,53 @@ export default function ProdottiPage() {
 
               {/* Pagination */}
               <div className="flex items-center justify-between mt-4">
-                <p className="text-sm text-muted-foreground">
-                  Mostrando {page * limit + 1}-
-                  {Math.min((page + 1) * limit, pagination.total)} di{' '}
-                  {pagination.total} prodotti
-                </p>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage(page - 1)}
-                    disabled={page === 0}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Mostra</span>
+                  <Select
+                    value={pageSize.toString()}
+                    onValueChange={(v) => {
+                      setPageSize(parseInt(v))
+                      setPage(0)
+                    }}
                   >
-                    Precedente
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage(page + 1)}
-                    disabled={!pagination.hasMore}
-                  >
-                    Successivo
-                  </Button>
+                    <SelectTrigger className="w-[80px] h-8">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="25">25</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                      <SelectItem value="500">500</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <span className="text-sm text-muted-foreground">
+                    per pagina ({pagination.total} totali)
+                  </span>
                 </div>
+
+                {pagination.total > pageSize && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage(page - 1)}
+                      disabled={page === 0}
+                    >
+                      Precedente
+                    </Button>
+                    <span className="text-sm text-muted-foreground">
+                      Pagina {page + 1} di {Math.ceil(pagination.total / pageSize)}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage(page + 1)}
+                      disabled={!pagination.hasMore}
+                    >
+                      Successivo
+                    </Button>
+                  </div>
+                )}
               </div>
             </>
           )}
