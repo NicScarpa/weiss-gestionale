@@ -51,6 +51,7 @@ function normalizeFiscalCode(cf: string | null | undefined): string | null {
 
 /**
  * Cerca un fornitore esistente per Partita IVA o Codice Fiscale
+ * Gestisce varianti P.IVA per retrocompatibilità con dati non normalizzati
  */
 export async function findSupplierByVat(
   vatNumber: string | null,
@@ -63,14 +64,22 @@ export async function findSupplierByVat(
     return null
   }
 
-  // Cerca per P.IVA
+  // Cerca per P.IVA con varianti (con/senza zeri iniziali)
   if (normalizedVat) {
+    // Genera varianti P.IVA per retrocompatibilità
+    const vatWithoutLeadingZeros = normalizedVat.replace(/^0+/, '')
+    const vatVariants = [normalizedVat]
+
+    // Aggiungi variante senza zeri iniziali solo se diversa
+    if (vatWithoutLeadingZeros !== normalizedVat && vatWithoutLeadingZeros.length > 0) {
+      vatVariants.push(vatWithoutLeadingZeros)
+    }
+
     const byVat = await prisma.supplier.findFirst({
       where: {
-        vatNumber: {
-          contains: normalizedVat,
-          mode: 'insensitive',
-        },
+        OR: vatVariants.map(v => ({
+          vatNumber: { equals: v, mode: 'insensitive' as const },
+        })),
         isActive: true,
       },
     })
@@ -82,7 +91,7 @@ export async function findSupplierByVat(
     const byCf = await prisma.supplier.findFirst({
       where: {
         fiscalCode: {
-          contains: normalizedCf,
+          equals: normalizedCf,
           mode: 'insensitive',
         },
         isActive: true,
@@ -133,11 +142,23 @@ export async function matchSupplier(fattura: FatturaParsata): Promise<SupplierMa
 
 /**
  * Crea un nuovo fornitore da dati suggeriti
+ * Verifica prima se esiste già un fornitore con la stessa P.IVA
  */
 export async function createSupplierFromData(
   data: SuggestedSupplierData,
   defaultAccountId?: string
 ): Promise<Supplier> {
+  // Prima verifica se esiste già un fornitore con questa P.IVA o C.F.
+  if (data.vatNumber || data.fiscalCode) {
+    const existing = await findSupplierByVat(data.vatNumber, data.fiscalCode)
+    if (existing) {
+      // Fornitore già esiste, ritorna quello esistente
+      console.log(`Fornitore già esistente trovato: ${existing.name} (${existing.vatNumber})`)
+      return existing
+    }
+  }
+
+  // Crea nuovo solo se non esiste
   return prisma.supplier.create({
     data: {
       name: data.name,
