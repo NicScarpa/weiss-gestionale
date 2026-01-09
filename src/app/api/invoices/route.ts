@@ -57,6 +57,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search')
     const year = searchParams.get('year')
     const month = searchParams.get('month')
+    const lastMonths = searchParams.get('lastMonths')
     const documentType = searchParams.get('documentType')
     const sortBy = searchParams.get('sortBy') || 'invoiceDate'
     const sortOrder = (searchParams.get('sortOrder') || 'desc') as 'asc' | 'desc'
@@ -93,8 +94,17 @@ export async function GET(request: NextRequest) {
       ]
     }
 
+    // Filtro per ultimi N mesi (ha priorità)
+    if (lastMonths) {
+      const monthsNum = parseInt(lastMonths)
+      const now = new Date()
+      const startDate = new Date(now.getFullYear(), now.getMonth() - monthsNum + 1, 1)
+      where.invoiceDate = {
+        gte: startDate,
+      }
+    }
     // Filtro per anno e mese (priorità su from/to)
-    if (year && year !== 'all') {
+    else if (year && year !== 'all') {
       const yearNum = parseInt(year)
       if (month && month !== 'all') {
         const monthNum = parseInt(month)
