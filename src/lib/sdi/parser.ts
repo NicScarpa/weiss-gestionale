@@ -118,11 +118,17 @@ function getText(node: unknown): string {
  */
 function findFatturaBody(parsed: Record<string, unknown>): Record<string, unknown> | null {
   // Possibili root elements nella FatturaPA
+  // Nota: con removeNSPrefix: true, i prefissi dovrebbero essere rimossi
+  // ma alcuni parser potrebbero non rimuoverli correttamente in tutti i casi
   const rootPaths = [
     'FatturaElettronica',
     'p:FatturaElettronica',
+    'ns0:FatturaElettronica',
+    'ns1:FatturaElettronica',
     'ns2:FatturaElettronica',
+    'ns3:FatturaElettronica',
     'n2:FatturaElettronica',
+    'b:FatturaElettronica',
   ]
 
   for (const path of rootPaths) {
@@ -131,8 +137,18 @@ function findFatturaBody(parsed: Record<string, unknown>): Record<string, unknow
     }
   }
 
-  // Se c'è un solo elemento root, usalo
+  // Fallback: cerca qualsiasi chiave che contiene "FatturaElettronica"
   const keys = Object.keys(parsed)
+  for (const key of keys) {
+    if (key.includes('FatturaElettronica')) {
+      const root = parsed[key]
+      if (root && typeof root === 'object') {
+        return root as Record<string, unknown>
+      }
+    }
+  }
+
+  // Se c'è un solo elemento root, usalo
   if (keys.length === 1) {
     const root = parsed[keys[0]]
     if (root && typeof root === 'object') {
