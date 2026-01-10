@@ -253,10 +253,13 @@ export default function ScheduleDetailPage({ params }: PageProps) {
     {}
   )
 
-  // Ordina per nome
-  const sortedEmployeeSummary = Object.values(employeeShiftSummary).sort((a, b) =>
-    a.name.localeCompare(b.name)
-  )
+  // Separa fissi ed extra, ordinati per nome
+  const fixedEmployees = Object.values(employeeShiftSummary)
+    .filter(e => e.isFixed)
+    .sort((a, b) => a.name.localeCompare(b.name))
+  const extraEmployees = Object.values(employeeShiftSummary)
+    .filter(e => !e.isFixed)
+    .sort((a, b) => a.name.localeCompare(b.name))
 
   return (
     <div className="space-y-6">
@@ -425,7 +428,7 @@ export default function ScheduleDetailPage({ params }: PageProps) {
       </Card>
 
       {/* Riepilogo turni per dipendente */}
-      {sortedEmployeeSummary.length > 0 && (
+      {(fixedEmployees.length > 0 || extraEmployees.length > 0) && (
         <Card>
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
@@ -433,30 +436,56 @@ export default function ScheduleDetailPage({ params }: PageProps) {
               Riepilogo Turni per Dipendente
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-              {sortedEmployeeSummary.map((employee) => {
-                // Per i fissi: giallo se < 5 turni, rosso se > 5 turni
-                const getBgColor = () => {
-                  if (!employee.isFixed) return 'bg-muted/50'
-                  if (employee.shifts < 5) return 'bg-yellow-100 border-yellow-300'
-                  if (employee.shifts > 5) return 'bg-red-100 border-red-300'
-                  return 'bg-muted/50'
-                }
-                return (
-                  <div
-                    key={employee.name}
-                    className={`flex items-center justify-between p-3 rounded-lg border ${getBgColor()}`}
-                  >
-                    <span className="font-medium text-sm truncate">{employee.name}</span>
-                    <span className="flex items-center gap-1 text-sm text-muted-foreground ml-2">
-                      <Calendar className="h-3.5 w-3.5" />
-                      {employee.shifts}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
+          <CardContent className="space-y-6">
+            {/* Dipendenti Fissi */}
+            {fixedEmployees.length > 0 && (
+              <div>
+                <h4 className="text-sm font-medium text-muted-foreground mb-3">Dipendenti Fissi</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                  {fixedEmployees.map((employee) => {
+                    // Giallo se < 5 turni, rosso se > 5 turni
+                    const getBgColor = () => {
+                      if (employee.shifts < 5) return 'bg-yellow-100 border-yellow-300'
+                      if (employee.shifts > 5) return 'bg-red-100 border-red-300'
+                      return 'bg-muted/50'
+                    }
+                    return (
+                      <div
+                        key={employee.name}
+                        className={`flex items-center justify-between p-3 rounded-lg border ${getBgColor()}`}
+                      >
+                        <span className="font-medium text-sm truncate">{employee.name}</span>
+                        <span className="flex items-center gap-1 text-sm text-muted-foreground ml-2">
+                          <Calendar className="h-3.5 w-3.5" />
+                          {employee.shifts}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Dipendenti Extra */}
+            {extraEmployees.length > 0 && (
+              <div>
+                <h4 className="text-sm font-medium text-muted-foreground mb-3">Dipendenti Extra</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                  {extraEmployees.map((employee) => (
+                    <div
+                      key={employee.name}
+                      className="flex items-center justify-between p-3 rounded-lg border bg-muted/50"
+                    >
+                      <span className="font-medium text-sm truncate">{employee.name}</span>
+                      <span className="flex items-center gap-1 text-sm text-muted-foreground ml-2">
+                        <Calendar className="h-3.5 w-3.5" />
+                        {employee.shifts}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
