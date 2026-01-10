@@ -115,7 +115,6 @@ export default function ScheduleDetailPage({ params }: PageProps) {
   // Inizializza staffingRequirements quando schedule viene caricato
   useEffect(() => {
     if (schedule && schedule.staffingRequirements !== undefined) {
-      // Usa i dati dal server, o oggetto vuoto se null
       const requirements = schedule.staffingRequirements as Record<string, number> | null
       setStaffingRequirements(requirements ?? {})
     }
