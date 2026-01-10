@@ -1,6 +1,6 @@
 'use client'
 
-import { use, useState, useEffect, useRef } from 'react'
+import { use, useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -113,13 +113,13 @@ export default function ScheduleDetailPage({ params }: PageProps) {
   const allStaff = staffData?.staff || []
 
   // Inizializza staffingRequirements quando schedule viene caricato
-  const staffingInitialized = useRef(false)
   useEffect(() => {
-    if (schedule?.staffingRequirements && !staffingInitialized.current) {
-      setStaffingRequirements(schedule.staffingRequirements as Record<string, number>)
-      staffingInitialized.current = true
+    if (schedule && schedule.staffingRequirements !== undefined) {
+      // Usa i dati dal server, o oggetto vuoto se null
+      const requirements = schedule.staffingRequirements as Record<string, number> | null
+      setStaffingRequirements(requirements ?? {})
     }
-  }, [schedule?.staffingRequirements])
+  }, [schedule])
 
   // Mutation per salvare staffingRequirements
   const saveStaffingMutation = useMutation({
@@ -134,6 +134,9 @@ export default function ScheduleDetailPage({ params }: PageProps) {
         throw new Error(err.error || 'Errore nel salvataggio')
       }
       return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['schedule', resolvedParams.id] })
     },
   })
 
