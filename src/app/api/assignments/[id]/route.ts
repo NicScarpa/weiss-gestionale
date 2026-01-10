@@ -142,6 +142,12 @@ export async function PUT(
             venueId: true,
           },
         },
+        user: {
+          select: {
+            firstName: true,
+            lastName: true,
+          },
+        },
       },
     })
 
@@ -170,6 +176,50 @@ export async function PUT(
     if (validatedData.date !== undefined) {
       targetDate = new Date(validatedData.date)
       updateData.date = targetDate
+    }
+
+    // Se cambia data o shiftDefinition, verifica che non ci sia già un turno per lo stesso dipendente
+    if (validatedData.date !== undefined || validatedData.shiftDefinitionId !== undefined) {
+      const targetShiftDefId = validatedData.shiftDefinitionId !== undefined
+        ? validatedData.shiftDefinitionId
+        : assignment.shiftDefinitionId
+
+      // Determina l'orario di inizio
+      let targetStartTime = assignment.startTime
+      if (targetShiftDefId && targetShiftDefId !== assignment.shiftDefinitionId) {
+        const newShiftDef = await prisma.shiftDefinition.findUnique({
+          where: { id: targetShiftDefId },
+        })
+        if (newShiftDef) {
+          targetStartTime = parseTimeToDate(
+            newShiftDef.startTime.toTimeString().substring(0, 5),
+            targetDate
+          )
+        }
+      }
+
+      // Verifica conflitto (escludendo l'assignment corrente)
+      const existingAssignment = await prisma.shiftAssignment.findFirst({
+        where: {
+          id: { not: id },
+          scheduleId: assignment.scheduleId,
+          userId: assignment.userId,
+          date: targetDate,
+        },
+        include: {
+          shiftDefinition: {
+            select: { name: true },
+          },
+        },
+      })
+
+      if (existingAssignment) {
+        const shiftName = existingAssignment.shiftDefinition?.name || 'turno'
+        return NextResponse.json(
+          { error: `${assignment.user?.firstName || 'Il dipendente'} ha già un ${shiftName} assegnato in questa data` },
+          { status: 400 }
+        )
+      }
     }
 
     if (validatedData.userId !== undefined) {
