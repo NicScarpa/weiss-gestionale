@@ -75,19 +75,6 @@ export function GenerationParamsForm({
       <CardContent className="space-y-4">
         <div className="flex items-center justify-between">
           <div className="space-y-0.5">
-            <Label>Preferisci staff fisso</Label>
-            <p className="text-xs text-muted-foreground">
-              Assegna priorità ai dipendenti con contratto fisso
-            </p>
-          </div>
-          <Switch
-            checked={params.preferFixedStaff}
-            onCheckedChange={v => setParams(p => ({ ...p, preferFixedStaff: v }))}
-          />
-        </div>
-
-        <div className="flex items-center justify-between">
-          <div className="space-y-0.5">
             <Label>Bilancia ore</Label>
             <p className="text-xs text-muted-foreground">
               Distribuisci equamente le ore tra i dipendenti

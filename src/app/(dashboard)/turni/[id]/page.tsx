@@ -307,70 +307,65 @@ export default function ScheduleDetailPage({ params }: PageProps) {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Sidebar */}
-        <div className="space-y-4">
-          {schedule.status !== 'PUBLISHED' && (
-            <GenerationParamsForm
-              onGenerate={handleGenerate}
-              isGenerating={isGenerating}
+      {/* Generation Form - Full Width Above Calendar */}
+      {schedule.status !== 'PUBLISHED' && (
+        <GenerationParamsForm
+          onGenerate={handleGenerate}
+          isGenerating={isGenerating}
+          startDate={new Date(schedule.startDate)}
+          endDate={new Date(schedule.endDate)}
+          shiftDefinitions={shiftDefinitions}
+        />
+      )}
+
+      {/* Warnings */}
+      {warnings.length > 0 && (
+        <ScheduleWarnings warnings={warnings} />
+      )}
+
+      {/* Calendar - Full Width */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Calendario Turni</CardTitle>
+          <CardDescription>
+            Clicca sulle celle per aggiungere o modificare turni
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {shiftDefinitions.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <p>Nessuna definizione turno configurata per questa sede.</p>
+              <Link href="/turni/definizioni">
+                <Button className="mt-4">
+                  Configura Definizioni Turno
+                </Button>
+              </Link>
+            </div>
+          ) : (
+            <ShiftCalendar
               startDate={new Date(schedule.startDate)}
               endDate={new Date(schedule.endDate)}
+              assignments={schedule.assignments || []}
               shiftDefinitions={shiftDefinitions}
+              onAssignmentClick={(assignment) => {
+                setDialogState({
+                  open: true,
+                  mode: 'edit',
+                  assignment: assignment as Assignment,
+                })
+              }}
+              onSlotClick={(date, shiftDefId) => {
+                setDialogState({
+                  open: true,
+                  mode: 'add',
+                  date,
+                  shiftDefId,
+                })
+              }}
             />
           )}
-
-          {warnings.length > 0 && (
-            <ScheduleWarnings warnings={warnings} />
-          )}
-        </div>
-
-        {/* Calendar */}
-        <div className="lg:col-span-3">
-          <Card>
-            <CardHeader>
-              <CardTitle>Calendario Turni</CardTitle>
-              <CardDescription>
-                Clicca sulle celle per aggiungere o modificare turni
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {shiftDefinitions.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <p>Nessuna definizione turno configurata per questa sede.</p>
-                  <Link href="/turni/definizioni">
-                    <Button className="mt-4">
-                      Configura Definizioni Turno
-                    </Button>
-                  </Link>
-                </div>
-              ) : (
-                <ShiftCalendar
-                  startDate={new Date(schedule.startDate)}
-                  endDate={new Date(schedule.endDate)}
-                  assignments={schedule.assignments || []}
-                  shiftDefinitions={shiftDefinitions}
-                  onAssignmentClick={(assignment) => {
-                    setDialogState({
-                      open: true,
-                      mode: 'edit',
-                      assignment: assignment as Assignment,
-                    })
-                  }}
-                  onSlotClick={(date, shiftDefId) => {
-                    setDialogState({
-                      open: true,
-                      mode: 'add',
-                      date,
-                      shiftDefId,
-                    })
-                  }}
-                />
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Dialog per aggiungere/modificare assegnazioni */}
       <AssignmentDialog
