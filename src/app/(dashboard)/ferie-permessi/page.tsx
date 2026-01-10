@@ -12,6 +12,7 @@ import {
   User,
   MapPin,
   CalendarDays,
+  CalendarIcon,
   Plus,
   Loader2,
   Pencil,
@@ -53,6 +54,12 @@ import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { useSession } from 'next-auth/react'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { Calendar } from '@/components/ui/calendar'
 
 interface LeaveRequest {
   id: string
@@ -796,19 +803,60 @@ export default function FeriePermessiPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Data Inizio *</Label>
-                <Input
-                  type="date"
-                  value={createForm.startDate}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, startDate: e.target.value }))}
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        'w-full justify-start text-left font-normal',
+                        !createForm.startDate && 'text-muted-foreground'
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {createForm.startDate
+                        ? format(parseISO(createForm.startDate), 'dd/MM/yyyy')
+                        : 'Seleziona...'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={createForm.startDate ? parseISO(createForm.startDate) : undefined}
+                      onSelect={(date) => date && setCreateForm(prev => ({ ...prev, startDate: format(date, 'yyyy-MM-dd') }))}
+                      locale={it}
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
               <div className="space-y-2">
                 <Label>Data Fine *</Label>
-                <Input
-                  type="date"
-                  value={createForm.endDate}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, endDate: e.target.value }))}
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        'w-full justify-start text-left font-normal',
+                        !createForm.endDate && 'text-muted-foreground'
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {createForm.endDate
+                        ? format(parseISO(createForm.endDate), 'dd/MM/yyyy')
+                        : 'Seleziona...'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={createForm.endDate ? parseISO(createForm.endDate) : undefined}
+                      onSelect={(date) => date && setCreateForm(prev => ({ ...prev, endDate: format(date, 'yyyy-MM-dd') }))}
+                      locale={it}
+                      disabled={(date) =>
+                        createForm.startDate ? date < parseISO(createForm.startDate) : false
+                      }
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
 
@@ -887,19 +935,60 @@ export default function FeriePermessiPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Data inizio</Label>
-                <Input
-                  type="date"
-                  value={editForm.startDate}
-                  onChange={(e) => setEditForm({ ...editForm, startDate: e.target.value })}
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        'w-full justify-start text-left font-normal',
+                        !editForm.startDate && 'text-muted-foreground'
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {editForm.startDate
+                        ? format(parseISO(editForm.startDate), 'dd/MM/yyyy')
+                        : 'Seleziona...'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={editForm.startDate ? parseISO(editForm.startDate) : undefined}
+                      onSelect={(date) => date && setEditForm({ ...editForm, startDate: format(date, 'yyyy-MM-dd') })}
+                      locale={it}
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
               <div className="space-y-2">
                 <Label>Data fine</Label>
-                <Input
-                  type="date"
-                  value={editForm.endDate}
-                  onChange={(e) => setEditForm({ ...editForm, endDate: e.target.value })}
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        'w-full justify-start text-left font-normal',
+                        !editForm.endDate && 'text-muted-foreground'
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {editForm.endDate
+                        ? format(parseISO(editForm.endDate), 'dd/MM/yyyy')
+                        : 'Seleziona...'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={editForm.endDate ? parseISO(editForm.endDate) : undefined}
+                      onSelect={(date) => date && setEditForm({ ...editForm, endDate: format(date, 'yyyy-MM-dd') })}
+                      locale={it}
+                      disabled={(date) =>
+                        editForm.startDate ? date < parseISO(editForm.startDate) : false
+                      }
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
 
