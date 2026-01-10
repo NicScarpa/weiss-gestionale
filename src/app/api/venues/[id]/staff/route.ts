@@ -35,6 +35,7 @@ export async function GET(
         firstName: true,
         lastName: true,
         email: true,
+        isFixedStaff: true,
         role: {
           select: {
             name: true,
@@ -46,9 +47,12 @@ export async function GET(
 
     const formattedStaff = staff.map((user) => ({
       id: user.id,
+      firstName: user.firstName,
+      lastName: user.lastName,
       name: `${user.firstName} ${user.lastName}`,
       email: user.email,
       role: user.role.name,
+      isFixedStaff: user.isFixedStaff,
     }))
 
     return NextResponse.json({ staff: formattedStaff })
