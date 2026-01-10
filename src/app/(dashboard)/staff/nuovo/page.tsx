@@ -19,6 +19,7 @@ import {
 import { toast } from 'sonner'
 import { UserPlus, ArrowLeft, Loader2, User, Briefcase, Euro, Calendar } from 'lucide-react'
 import Link from 'next/link'
+import { AddressAutocomplete } from '@/components/ui/address-autocomplete'
 
 interface Venue {
   id: string
@@ -289,10 +290,9 @@ export default function NuovoDipendentePage() {
 
             <div className="space-y-2">
               <Label htmlFor="address">Indirizzo</Label>
-              <Input
-                id="address"
+              <AddressAutocomplete
                 value={address}
-                onChange={(e) => setAddress(e.target.value)}
+                onChange={setAddress}
                 placeholder="Via Roma 1, 33077 Sacile PN"
               />
             </div>
