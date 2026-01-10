@@ -14,6 +14,8 @@ import {
   CalendarDays,
   Plus,
   Loader2,
+  Pencil,
+  Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -34,6 +36,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -193,6 +205,17 @@ export default function FeriePermessiPage() {
     notes: '',
   })
 
+  // Stati per modifica e cancellazione (solo admin)
+  const [showEditDialog, setShowEditDialog] = useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [editingRequest, setEditingRequest] = useState<LeaveRequest | null>(null)
+  const [editForm, setEditForm] = useState({
+    startDate: '',
+    endDate: '',
+    leaveTypeId: '',
+    notes: '',
+  })
+
   const { data: requests, isLoading, error } = useQuery({
     queryKey: ['leave-requests-manager', statusFilter],
     queryFn: () => fetchLeaveRequests(statusFilter === 'ALL' ? undefined : statusFilter),
@@ -245,6 +268,58 @@ export default function FeriePermessiPage() {
       queryClient.invalidateQueries({ queryKey: ['leave-requests-manager'] })
       toast.success('Ferie aggiunte con successo')
       closeCreateDialog()
+    },
+    onError: (error: Error) => {
+      toast.error(error.message)
+    },
+  })
+
+  // Mutation per modificare richiesta (admin)
+  const editMutation = useMutation({
+    mutationFn: async (data: { id: string; startDate?: string; endDate?: string; leaveTypeId?: string; notes?: string }) => {
+      const res = await fetch(`/api/leave-requests/${data.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          startDate: data.startDate,
+          endDate: data.endDate,
+          leaveTypeId: data.leaveTypeId,
+          notes: data.notes,
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Errore nella modifica')
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leave-requests-manager'] })
+      toast.success('Richiesta modificata con successo')
+      closeEditDialog()
+    },
+    onError: (error: Error) => {
+      toast.error(error.message)
+    },
+  })
+
+  // Mutation per cancellare richiesta (admin)
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/leave-requests/${id}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Errore nella cancellazione')
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leave-requests-manager'] })
+      toast.success('Richiesta annullata')
+      setShowDeleteDialog(false)
+      setEditingRequest(null)
     },
     onError: (error: Error) => {
       toast.error(error.message)
@@ -346,6 +421,55 @@ export default function FeriePermessiPage() {
       endTime: createForm.isPartialDay ? createForm.endTime : undefined,
       notes: createForm.notes || undefined,
     })
+  }
+
+  // Funzioni per dialog modifica (admin)
+  const openEditDialog = (req: LeaveRequest) => {
+    setEditingRequest(req)
+    setEditForm({
+      startDate: req.startDate.split('T')[0],
+      endDate: req.endDate.split('T')[0],
+      leaveTypeId: req.leaveType.id,
+      notes: req.notes || '',
+    })
+    setShowEditDialog(true)
+  }
+
+  const closeEditDialog = () => {
+    setShowEditDialog(false)
+    setEditingRequest(null)
+    setEditForm({
+      startDate: '',
+      endDate: '',
+      leaveTypeId: '',
+      notes: '',
+    })
+  }
+
+  const handleEditSubmit = () => {
+    if (!editingRequest) return
+    if (!editForm.startDate || !editForm.endDate) {
+      toast.error('Inserisci le date')
+      return
+    }
+    editMutation.mutate({
+      id: editingRequest.id,
+      startDate: editForm.startDate,
+      endDate: editForm.endDate,
+      leaveTypeId: editForm.leaveTypeId,
+      notes: editForm.notes || undefined,
+    })
+  }
+
+  // Funzioni per dialog cancellazione (admin)
+  const openDeleteDialog = (req: LeaveRequest) => {
+    setEditingRequest(req)
+    setShowDeleteDialog(true)
+  }
+
+  const handleDeleteConfirm = () => {
+    if (!editingRequest) return
+    deleteMutation.mutate(editingRequest.id)
   }
 
   const pendingCount = requests?.filter((r) => r.status === 'PENDING').length || 0
@@ -483,42 +607,66 @@ export default function FeriePermessiPage() {
                   </div>
 
                   {/* Azioni */}
-                  {req.status === 'PENDING' && (
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-                        onClick={() => openApproveDialog(req)}
-                      >
-                        <CheckCircle2 className="h-4 w-4 mr-1" />
-                        Approva
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        onClick={() => openRejectDialog(req)}
-                      >
-                        <XCircle className="h-4 w-4 mr-1" />
-                        Rifiuta
-                      </Button>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {req.status === 'PENDING' && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                          onClick={() => openApproveDialog(req)}
+                        >
+                          <CheckCircle2 className="h-4 w-4 mr-1" />
+                          Approva
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => openRejectDialog(req)}
+                        >
+                          <XCircle className="h-4 w-4 mr-1" />
+                          Rifiuta
+                        </Button>
+                      </>
+                    )}
 
-                  {req.status !== 'PENDING' && (
-                    <Badge
-                      className={cn(
-                        req.status === 'APPROVED' && 'bg-emerald-100 text-emerald-700',
-                        req.status === 'REJECTED' && 'bg-red-100 text-red-700',
-                        req.status === 'CANCELLED' && 'bg-slate-100 text-slate-600'
-                      )}
-                    >
-                      {req.status === 'APPROVED' && 'Approvata'}
-                      {req.status === 'REJECTED' && 'Rifiutata'}
-                      {req.status === 'CANCELLED' && 'Annullata'}
-                    </Badge>
-                  )}
+                    {req.status !== 'PENDING' && (
+                      <Badge
+                        className={cn(
+                          req.status === 'APPROVED' && 'bg-emerald-100 text-emerald-700',
+                          req.status === 'REJECTED' && 'bg-red-100 text-red-700',
+                          req.status === 'CANCELLED' && 'bg-slate-100 text-slate-600'
+                        )}
+                      >
+                        {req.status === 'APPROVED' && 'Approvata'}
+                        {req.status === 'REJECTED' && 'Rifiutata'}
+                        {req.status === 'CANCELLED' && 'Annullata'}
+                      </Badge>
+                    )}
+
+                    {/* Pulsanti modifica/cancella (solo admin) */}
+                    {isAdmin && req.status !== 'CANCELLED' && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-slate-500 hover:text-blue-600"
+                          onClick={() => openEditDialog(req)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-slate-500 hover:text-red-600"
+                          onClick={() => openDeleteDialog(req)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -720,6 +868,121 @@ export default function FeriePermessiPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog modifica richiesta (admin) */}
+      <Dialog open={showEditDialog} onOpenChange={(open) => !open && closeEditDialog()}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Modifica Richiesta</DialogTitle>
+            <DialogDescription>
+              {editingRequest && (
+                <>
+                  Modifica la richiesta di {editingRequest.user.firstName} {editingRequest.user.lastName}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Data inizio</Label>
+                <Input
+                  type="date"
+                  value={editForm.startDate}
+                  onChange={(e) => setEditForm({ ...editForm, startDate: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Data fine</Label>
+                <Input
+                  type="date"
+                  value={editForm.endDate}
+                  onChange={(e) => setEditForm({ ...editForm, endDate: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Tipo assenza</Label>
+              <Select
+                value={editForm.leaveTypeId}
+                onValueChange={(value) => setEditForm({ ...editForm, leaveTypeId: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleziona tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  {leaveTypes?.map((type) => (
+                    <SelectItem key={type.id} value={type.id}>
+                      {type.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Note</Label>
+              <Textarea
+                value={editForm.notes}
+                onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                placeholder="Note opzionali..."
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeEditDialog}>
+              Annulla
+            </Button>
+            <Button onClick={handleEditSubmit} disabled={editMutation.isPending}>
+              {editMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Salva modifiche
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog conferma cancellazione (admin) */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Annullare questa richiesta?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {editingRequest && (
+                <>
+                  Stai per annullare la richiesta di{' '}
+                  <strong>{editingRequest.user.firstName} {editingRequest.user.lastName}</strong>
+                  {' per '}
+                  <strong>{editingRequest.leaveType.name}</strong>
+                  {' dal '}
+                  {formatDateRange(editingRequest.startDate, editingRequest.endDate)}.
+                  {editingRequest.status === 'APPROVED' && (
+                    <span className="block mt-2 text-amber-600">
+                      Attenzione: questa richiesta è già stata approvata.
+                      Il saldo ferie del dipendente verrà ripristinato.
+                    </span>
+                  )}
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setEditingRequest(null)}>
+              Annulla
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Conferma annullamento
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
