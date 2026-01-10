@@ -4,17 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { format, eachDayOfInterval } from 'date-fns'
 import { it } from 'date-fns/locale'
 import { jsPDF } from 'jspdf'
-import 'jspdf-autotable'
-
-// Extend jsPDF type
-declare module 'jspdf' {
-  interface jsPDF {
-    autoTable: (options: unknown) => void
-    lastAutoTable: {
-      finalY: number
-    }
-  }
-}
+import autoTable from 'jspdf-autotable'
 
 // GET /api/schedules/[id]/export/pdf - Export PDF turni
 export async function GET(
@@ -160,7 +150,7 @@ export async function GET(
     })
 
     // Genera tabella
-    doc.autoTable({
+    autoTable(doc, {
       startY: 28,
       head: [headers],
       body: tableData,
