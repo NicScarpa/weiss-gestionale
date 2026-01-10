@@ -101,6 +101,42 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const validatedData = supplierSchema.parse(body)
 
+    // CHECK DUPLICATI
+    // 1. Controllo Partita IVA (se presente)
+    // 2. Controllo Nome + Sede (Via/Città) per evitare omonimie
+    const duplicate = await prisma.supplier.findFirst({
+      where: {
+        OR: [
+          // Se la P.IVA è fornita, deve essere unica
+          ...(validatedData.vatNumber
+            ? [{ vatNumber: validatedData.vatNumber }]
+            : []),
+          // Altrimenti (o in aggiunta) controlliamo la combinazione Nome + Sede
+          {
+            AND: [
+              { name: { equals: validatedData.name, mode: 'insensitive' as const } },
+              // Se l'indirizzo è specificato, lo usiamo per il confronto
+              ...(validatedData.address
+                ? [{ address: { equals: validatedData.address, mode: 'insensitive' as const } }]
+                : []),
+              // Se la città è specificata, la usiamo per il confronto
+              ...(validatedData.city
+                ? [{ city: { equals: validatedData.city, mode: 'insensitive' as const } }]
+                : []),
+            ],
+          },
+        ],
+      },
+    })
+
+    if (duplicate) {
+      const field = duplicate.vatNumber === validatedData.vatNumber ? 'Partita IVA' : 'Nome/Sede'
+      return NextResponse.json(
+        { error: `Fornitore già presente in anagrafica (${field})` },
+        { status: 409 }
+      )
+    }
+
     const supplier = await prisma.supplier.create({
       data: {
         name: validatedData.name,
