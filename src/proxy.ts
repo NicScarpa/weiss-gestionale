@@ -1,9 +1,6 @@
 import { auth } from '@/lib/auth'
 import { NextResponse } from 'next/server'
 
-// Force Node.js runtime instead of Edge (required for crypto module)
-export const runtime = 'nodejs'
-
 // Routes that don't require authentication
 const publicRoutes = ['/login']
 
@@ -12,7 +9,7 @@ const roleRoutes: Record<string, string[]> = {
   '/impostazioni': ['admin', 'manager'],
 }
 
-export default auth((req) => {
+export const proxy = auth((req) => {
   const { pathname } = req.nextUrl
   const isLoggedIn = !!req.auth
   const userRole = req.auth?.user?.role
