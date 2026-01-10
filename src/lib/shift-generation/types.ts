@@ -19,6 +19,7 @@ export interface Employee {
   hourlyRateNight: number | null
   defaultShift: 'MORNING' | 'EVENING' | null  // Turno preferito del dipendente
   availableDays: number[]  // Giorni disponibili: 0=LUN, 1=MAR, ..., 6=DOM
+  workDaysPerWeek: number | null  // Giorni lavorativi settimanali (solo staff fisso)
 }
 
 export interface LeaveRequest {

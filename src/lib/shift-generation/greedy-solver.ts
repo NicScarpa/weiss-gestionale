@@ -55,6 +55,53 @@ function formatDateKey(date: Date): string {
 }
 
 /**
+ * Get the Monday of the week for a given date
+ * Used to track weekly work days for fixed staff
+ */
+function getWeekStart(date: Date): string {
+  const d = new Date(date)
+  const day = d.getDay()
+  // Calculate Monday (0=SUN, 1=MON, ..., 6=SAT)
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1)
+  d.setDate(diff)
+  d.setHours(0, 0, 0, 0)
+  return d.toISOString().split('T')[0]
+}
+
+/**
+ * Count unique days worked by an employee in a specific week
+ */
+function countDaysWorkedInWeek(
+  employeeId: string,
+  date: Date,
+  existingAssignments: ShiftAssignment[],
+  currentAssignments: ShiftAssignment[]
+): number {
+  const weekStart = getWeekStart(date)
+  const uniqueDays = new Set<string>()
+
+  // Check existing assignments
+  for (const assignment of existingAssignments) {
+    if (assignment.userId !== employeeId) continue
+    const assignmentWeek = getWeekStart(assignment.date)
+    if (assignmentWeek === weekStart) {
+      uniqueDays.add(formatDateKey(assignment.date))
+    }
+  }
+
+  // Check current iteration assignments
+  for (const assignment of currentAssignments) {
+    if (assignment.userId !== employeeId) continue
+    const assignmentWeek = getWeekStart(assignment.date)
+    if (assignmentWeek === weekStart) {
+      uniqueDays.add(formatDateKey(assignment.date))
+    }
+  }
+
+  return uniqueDays.size
+}
+
+/**
  * Generate shift assignments using greedy algorithm
  */
 export function generateShiftsGreedy(context: SolverContext): GenerationResult {
@@ -148,8 +195,39 @@ function assignEmployeesToShift(
   const candidatesWithScores: { employee: Employee; score: number; isPenalized: boolean }[] = []
 
   for (const employee of employees) {
-    if (!employee.isFixedStaff && params.preferFixedStaff) {
-      // Still consider extra staff but with lower priority
+    const todayKey = formatDateKey(date)
+    const hasShiftToday = [...existingAssignments, ...assignments].some(
+      a => a.userId === employee.id && formatDateKey(a.date) === todayKey
+    )
+
+    // Calculate days worked this week for constraint checks
+    const daysWorkedThisWeek = employee.workDaysPerWeek
+      ? countDaysWorkedInWeek(employee.id, date, existingAssignments, assignments)
+      : 0
+
+    // =============================================================
+    // LOGICA WORKDAYS PER WEEK:
+    // - STAFF FISSO: workDaysPerWeek è un MINIMO obbligatorio
+    //   -> Ha priorità finché non raggiunge il minimo
+    //   -> Una volta raggiunto il minimo, NON lavora più (si chiama l'extra)
+    // - STAFF EXTRA: workDaysPerWeek è la disponibilità MASSIMA
+    //   -> Non può superare il massimo
+    //   -> Viene chiamato solo per coprire buchi
+    // =============================================================
+
+    if (employee.workDaysPerWeek && !hasShiftToday) {
+      if (employee.isFixedStaff) {
+        // STAFF FISSO: se ha già raggiunto il minimo, ESCLUDILO
+        // Lo staff extra coprirà eventuali buchi rimanenti
+        if (daysWorkedThisWeek >= employee.workDaysPerWeek) {
+          continue
+        }
+      } else {
+        // STAFF EXTRA: se ha già raggiunto il massimo disponibilità, ESCLUDILO
+        if (daysWorkedThisWeek >= employee.workDaysPerWeek) {
+          continue
+        }
+      }
     }
 
     const constraints = employeeConstraints.get(employee.id) || []
@@ -163,7 +241,7 @@ function assignEmployeesToShift(
     )
 
     if (canWork.canWork) {
-      const score = calculateEmployeeScore(
+      let score = calculateEmployeeScore(
         employee,
         shift,
         date,
@@ -175,6 +253,22 @@ function assignEmployeesToShift(
           minimizeCost: params.minimizeCost,
         }
       )
+
+      // =============================================================
+      // SISTEMA DI PRIORITÀ:
+      // 1. Staff fisso sotto il minimo: score += 1000+ (DEVE lavorare)
+      // 2. Staff extra: score normale ~100-200 (chiamato per coprire buchi)
+      // Staff fisso sopra il minimo: già escluso sopra
+      // =============================================================
+
+      if (employee.isFixedStaff && employee.workDaysPerWeek) {
+        // Staff fisso sotto il minimo: priorità MASSIMA
+        if (!hasShiftToday && daysWorkedThisWeek < employee.workDaysPerWeek) {
+          const daysRemaining = employee.workDaysPerWeek - daysWorkedThisWeek
+          score += 1000 + (daysRemaining * 100)
+        }
+      }
+      // Staff extra: mantiene il punteggio base (priorità inferiore)
 
       candidatesWithScores.push({
         employee,
