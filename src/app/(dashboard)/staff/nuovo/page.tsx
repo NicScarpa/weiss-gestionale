@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Select,
   SelectContent,
@@ -16,7 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { UserPlus, ArrowLeft, Loader2 } from 'lucide-react'
+import { UserPlus, ArrowLeft, Loader2, User, Briefcase, Euro, Calendar } from 'lucide-react'
 import Link from 'next/link'
 
 interface Venue {
@@ -30,20 +31,50 @@ interface Role {
   name: string
 }
 
+const DAYS_OF_WEEK = [
+  { value: 0, label: 'Lunedì', short: 'Lun' },
+  { value: 1, label: 'Martedì', short: 'Mar' },
+  { value: 2, label: 'Mercoledì', short: 'Mer' },
+  { value: 3, label: 'Giovedì', short: 'Gio' },
+  { value: 4, label: 'Venerdì', short: 'Ven' },
+  { value: 5, label: 'Sabato', short: 'Sab' },
+  { value: 6, label: 'Domenica', short: 'Dom' },
+]
+
 export default function NuovoDipendentePage() {
   const router = useRouter()
   const queryClient = useQueryClient()
 
-  // Form state
+  // Form state - Anagrafica
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
   const [phoneNumber, setPhoneNumber] = useState('')
+  const [fiscalCode, setFiscalCode] = useState('')
+  const [birthDate, setBirthDate] = useState('')
+  const [address, setAddress] = useState('')
+
+  // Form state - Assegnazione
   const [venueId, setVenueId] = useState('')
   const [roleId, setRoleId] = useState('')
+
+  // Form state - Contratto
   const [contractType, setContractType] = useState('')
   const [isExtra, setIsExtra] = useState(false)
   const [defaultShift, setDefaultShift] = useState('')
+  const [workDaysPerWeek, setWorkDaysPerWeek] = useState('')
+  const [contractHoursWeek, setContractHoursWeek] = useState('')
+  const [hireDate, setHireDate] = useState('')
+
+  // Form state - Disponibilità Extra
+  const [availableDays, setAvailableDays] = useState<number[]>([])
+  const [availableHolidays, setAvailableHolidays] = useState(false)
+
+  // Form state - Compensi
+  const [hourlyRateBase, setHourlyRateBase] = useState('')
+  const [hourlyRateExtra, setHourlyRateExtra] = useState('')
+  const [hourlyRateHoliday, setHourlyRateHoliday] = useState('')
+  const [hourlyRateNight, setHourlyRateNight] = useState('')
 
   // Fetch venues
   const { data: venuesData } = useQuery({
@@ -67,6 +98,15 @@ export default function NuovoDipendentePage() {
 
   const venues: Venue[] = venuesData?.venues || []
   const roles: Role[] = rolesData?.roles || []
+
+  // Toggle giorno disponibilità
+  const toggleDay = (dayValue: number) => {
+    setAvailableDays(prev =>
+      prev.includes(dayValue)
+        ? prev.filter(d => d !== dayValue)
+        : [...prev, dayValue].sort((a, b) => a - b)
+    )
+  }
 
   // Mutation per creazione
   const createMutation = useMutation({
@@ -108,16 +148,40 @@ export default function NuovoDipendentePage() {
       return
     }
 
+    // Codice Fiscale validation (se inserito)
+    if (fiscalCode && fiscalCode.length !== 16) {
+      toast.error('Il codice fiscale deve essere di 16 caratteri')
+      return
+    }
+
+    // Validazione extra: deve avere almeno un giorno disponibile
+    if (isExtra && availableDays.length === 0) {
+      toast.error('Seleziona almeno un giorno di disponibilità per lo staff extra')
+      return
+    }
+
     createMutation.mutate({
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       email: email.trim().toLowerCase(),
       phoneNumber: phoneNumber.trim() || null,
+      fiscalCode: fiscalCode.trim().toUpperCase() || null,
+      birthDate: birthDate || null,
+      address: address.trim() || null,
       venueId,
       roleId: roleId || undefined,
       contractType: contractType || null,
-      isFixedStaff: !isExtra, // isExtra ON = staff extra (isFixedStaff = false)
-      defaultShift: !isExtra && defaultShift ? defaultShift : null,
+      isFixedStaff: !isExtra,
+      defaultShift: defaultShift || null,
+      workDaysPerWeek: workDaysPerWeek ? parseInt(workDaysPerWeek) : null,
+      contractHoursWeek: contractHoursWeek ? parseFloat(contractHoursWeek) : null,
+      hireDate: hireDate || null,
+      availableDays: isExtra ? availableDays : [],
+      availableHolidays: isExtra ? availableHolidays : false,
+      hourlyRateBase: hourlyRateBase ? parseFloat(hourlyRateBase) : null,
+      hourlyRateExtra: hourlyRateExtra ? parseFloat(hourlyRateExtra) : null,
+      hourlyRateHoliday: hourlyRateHoliday ? parseFloat(hourlyRateHoliday) : null,
+      hourlyRateNight: hourlyRateNight ? parseFloat(hourlyRateNight) : null,
     })
   }
 
@@ -141,17 +205,19 @@ export default function NuovoDipendentePage() {
         </div>
       </div>
 
-      {/* Form */}
-      <Card className="max-w-2xl">
-        <CardHeader>
-          <CardTitle>Dati Dipendente</CardTitle>
-          <CardDescription>
-            I campi contrassegnati con * sono obbligatori
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Anagrafica */}
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Sezione 1: Anagrafica */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <User className="h-5 w-5" />
+              Dati Anagrafici
+            </CardTitle>
+            <CardDescription>
+              I campi contrassegnati con * sono obbligatori
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="firstName">Nome *</Label>
@@ -199,7 +265,49 @@ export default function NuovoDipendentePage() {
               </div>
             </div>
 
-            {/* Assegnazione */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="fiscalCode">Codice Fiscale</Label>
+                <Input
+                  id="fiscalCode"
+                  value={fiscalCode}
+                  onChange={(e) => setFiscalCode(e.target.value.toUpperCase())}
+                  placeholder="RSSMRA85M01H501W"
+                  maxLength={16}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="birthDate">Data di Nascita</Label>
+                <Input
+                  id="birthDate"
+                  type="date"
+                  value={birthDate}
+                  onChange={(e) => setBirthDate(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="address">Indirizzo</Label>
+              <Input
+                id="address"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="Via Roma 1, 33077 Sacile PN"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Sezione 2: Contratto e Assegnazione */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Briefcase className="h-5 w-5" />
+              Contratto e Assegnazione
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="venue">Sede *</Label>
@@ -235,32 +343,44 @@ export default function NuovoDipendentePage() {
               </div>
             </div>
 
-            {/* Contratto */}
-            <div className="space-y-2">
-              <Label htmlFor="contractType">Tipo Contratto</Label>
-              <Select value={contractType} onValueChange={setContractType}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleziona tipo contratto" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="TEMPO_INDETERMINATO">Tempo Indeterminato</SelectItem>
-                  <SelectItem value="TEMPO_DETERMINATO">Tempo Determinato</SelectItem>
-                  <SelectItem value="LAVORO_INTERMITTENTE">Lavoro Intermittente</SelectItem>
-                  <SelectItem value="LAVORATORE_OCCASIONALE">Lavoratore Occasionale</SelectItem>
-                  <SelectItem value="LIBERO_PROFESSIONISTA">Libero Professionista</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="contractType">Tipo Contratto</Label>
+                <Select value={contractType} onValueChange={setContractType}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleziona tipo contratto" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="TEMPO_INDETERMINATO">Tempo Indeterminato</SelectItem>
+                    <SelectItem value="TEMPO_DETERMINATO">Tempo Determinato</SelectItem>
+                    <SelectItem value="LAVORO_INTERMITTENTE">Lavoro Intermittente</SelectItem>
+                    <SelectItem value="LAVORATORE_OCCASIONALE">Lavoratore Occasionale</SelectItem>
+                    <SelectItem value="LIBERO_PROFESSIONISTA">Libero Professionista</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="hireDate">Data Assunzione</Label>
+                <Input
+                  id="hireDate"
+                  type="date"
+                  value={hireDate}
+                  onChange={(e) => setHireDate(e.target.value)}
+                />
+              </div>
             </div>
 
             {/* Tipo Staff */}
-            <div className="space-y-4 p-4 border rounded-lg">
+            <div className="space-y-4 p-4 border rounded-lg bg-muted/30">
               <div className="flex items-center justify-between">
                 <div>
                   <Label htmlFor="isExtra" className="text-base font-medium">
                     Extra / Collaboratore
                   </Label>
                   <p className="text-sm text-muted-foreground">
-                    Attiva se il dipendente è uno staff extra chiamato a necessità
+                    {isExtra
+                      ? 'Lavoratore extra a chiamata'
+                      : 'Staff fisso con turni regolari'}
                   </p>
                 </div>
                 <Switch
@@ -270,40 +390,229 @@ export default function NuovoDipendentePage() {
                 />
               </div>
 
-              {/* Turno default (solo per staff fisso) */}
+              {/* Opzioni per Staff Fisso */}
               {!isExtra && (
-                <div className="space-y-2 pt-2 border-t">
-                  <Label htmlFor="defaultShift">Turno Predefinito</Label>
-                  <Select value={defaultShift} onValueChange={setDefaultShift}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Nessun turno predefinito" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="MORNING">Mattina</SelectItem>
-                      <SelectItem value="EVENING">Sera</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="space-y-4 pt-4 border-t">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="defaultShift">Turno Predefinito</Label>
+                      <Select value={defaultShift} onValueChange={setDefaultShift}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Nessuno" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="MORNING">Mattina</SelectItem>
+                          <SelectItem value="EVENING">Sera</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="workDaysPerWeek">Giorni Lav./Settimana</Label>
+                      <Select value={workDaysPerWeek} onValueChange={setWorkDaysPerWeek}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleziona" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                            <SelectItem key={n} value={n.toString()}>
+                              {n} {n === 1 ? 'giorno' : 'giorni'}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Minimo giorni obbligatori
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="contractHoursWeek">Ore/Settimana</Label>
+                      <Input
+                        id="contractHoursWeek"
+                        type="number"
+                        min="0"
+                        max="60"
+                        step="0.5"
+                        value={contractHoursWeek}
+                        onChange={(e) => setContractHoursWeek(e.target.value)}
+                        placeholder="40"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Opzioni per Staff Extra */}
+              {isExtra && (
+                <div className="space-y-4 pt-4 border-t">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="defaultShiftExtra">Turno Assegnato</Label>
+                      <Select value={defaultShift} onValueChange={setDefaultShift}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleziona turno" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="MORNING">Mattina</SelectItem>
+                          <SelectItem value="EVENING">Sera</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Turno per cui è stato assunto
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="workDaysPerWeekExtra">Max Giorni/Settimana</Label>
+                      <Select value={workDaysPerWeek} onValueChange={setWorkDaysPerWeek}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleziona" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                            <SelectItem key={n} value={n.toString()}>
+                              {n} {n === 1 ? 'giorno' : 'giorni'}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Massimo disponibilità
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Giorni Disponibilità *</Label>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Seleziona i giorni in cui è disponibile a lavorare
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {DAYS_OF_WEEK.map((day) => (
+                        <Button
+                          key={day.value}
+                          type="button"
+                          variant={availableDays.includes(day.value) ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => toggleDay(day.value)}
+                          className="min-w-[60px]"
+                        >
+                          {day.short}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="availableHolidays"
+                      checked={availableHolidays}
+                      onCheckedChange={(checked) => setAvailableHolidays(checked === true)}
+                    />
+                    <Label htmlFor="availableHolidays" className="text-sm font-normal">
+                      Disponibile anche nei giorni festivi
+                    </Label>
+                  </div>
                 </div>
               )}
             </div>
+          </CardContent>
+        </Card>
 
-            {/* Actions */}
-            <div className="flex justify-end gap-3 pt-4">
-              <Link href="/staff">
-                <Button type="button" variant="outline">
-                  Annulla
-                </Button>
-              </Link>
-              <Button type="submit" disabled={createMutation.isPending}>
-                {createMutation.isPending && (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                )}
-                Crea Dipendente
-              </Button>
+        {/* Sezione 3: Compensi */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Euro className="h-5 w-5" />
+              Compensi
+            </CardTitle>
+            <CardDescription>
+              Tariffe orarie del dipendente
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="hourlyRateBase">Tariffa Base</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">€</span>
+                  <Input
+                    id="hourlyRateBase"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={hourlyRateBase}
+                    onChange={(e) => setHourlyRateBase(e.target.value)}
+                    className="pl-7"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="hourlyRateExtra">Straordinario</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">€</span>
+                  <Input
+                    id="hourlyRateExtra"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={hourlyRateExtra}
+                    onChange={(e) => setHourlyRateExtra(e.target.value)}
+                    className="pl-7"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="hourlyRateHoliday">Festivo</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">€</span>
+                  <Input
+                    id="hourlyRateHoliday"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={hourlyRateHoliday}
+                    onChange={(e) => setHourlyRateHoliday(e.target.value)}
+                    className="pl-7"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="hourlyRateNight">Notturno</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">€</span>
+                  <Input
+                    id="hourlyRateNight"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={hourlyRateNight}
+                    onChange={(e) => setHourlyRateNight(e.target.value)}
+                    className="pl-7"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
             </div>
-          </form>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+
+        {/* Actions */}
+        <div className="flex justify-end gap-3">
+          <Link href="/staff">
+            <Button type="button" variant="outline">
+              Annulla
+            </Button>
+          </Link>
+          <Button type="submit" disabled={createMutation.isPending}>
+            {createMutation.isPending && (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            )}
+            Crea Dipendente
+          </Button>
+        </div>
+      </form>
     </div>
   )
 }

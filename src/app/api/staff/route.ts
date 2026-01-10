@@ -32,6 +32,10 @@ const createStaffSchema = z.object({
   vatNumber: z.string().max(11).nullable().optional(),
   fiscalCode: z.string().max(16).nullable().optional(),
 
+  // Dati anagrafici aggiuntivi
+  birthDate: z.string().nullable().optional(),
+  address: z.string().nullable().optional(),
+
   // Disponibilità EXTRA
   availableDays: z.array(z.number().min(0).max(6)).optional(),
   availableHolidays: z.boolean().optional(),
@@ -287,6 +291,9 @@ export async function POST(request: NextRequest) {
         // Dati fiscali
         vatNumber: validatedData.vatNumber ?? null,
         fiscalCode: validatedData.fiscalCode ?? null,
+        // Dati anagrafici aggiuntivi
+        birthDate: validatedData.birthDate ? new Date(validatedData.birthDate) : null,
+        address: validatedData.address ?? null,
         // Disponibilità EXTRA
         availableDays: validatedData.availableDays ?? [],
         availableHolidays: validatedData.availableHolidays ?? false,
@@ -315,6 +322,8 @@ export async function POST(request: NextRequest) {
         terminationDate: true,
         vatNumber: true,
         fiscalCode: true,
+        birthDate: true,
+        address: true,
         availableDays: true,
         availableHolidays: true,
         hourlyRateBase: true,
