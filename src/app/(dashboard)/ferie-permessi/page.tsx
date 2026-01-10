@@ -12,6 +12,8 @@ import {
   User,
   MapPin,
   CalendarDays,
+  Plus,
+  Loader2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -34,8 +36,11 @@ import {
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { useSession } from 'next-auth/react'
 
 interface LeaveRequest {
   id: string
@@ -66,6 +71,22 @@ interface LeaveRequest {
   }
 }
 
+interface StaffUser {
+  id: string
+  firstName: string
+  lastName: string
+  venue?: {
+    code: string
+  } | null
+}
+
+interface LeaveType {
+  id: string
+  code: string
+  name: string
+  color: string | null
+}
+
 async function fetchLeaveRequests(status?: string): Promise<LeaveRequest[]> {
   const url = status
     ? `/api/leave-requests?status=${status}`
@@ -74,6 +95,42 @@ async function fetchLeaveRequests(status?: string): Promise<LeaveRequest[]> {
   if (!res.ok) throw new Error('Errore nel caricamento richieste')
   const data = await res.json()
   return data.data || []
+}
+
+async function fetchStaffUsers(): Promise<StaffUser[]> {
+  const res = await fetch('/api/staff')
+  if (!res.ok) throw new Error('Errore nel caricamento utenti')
+  const data = await res.json()
+  return data.data || []
+}
+
+async function fetchLeaveTypes(): Promise<LeaveType[]> {
+  const res = await fetch('/api/leave-types')
+  if (!res.ok) throw new Error('Errore nel caricamento tipi assenza')
+  const data = await res.json()
+  return data.data || []
+}
+
+async function createLeaveRequestForUser(data: {
+  userId: string
+  leaveTypeId: string
+  startDate: string
+  endDate: string
+  isPartialDay: boolean
+  startTime?: string
+  endTime?: string
+  notes?: string
+}) {
+  const res = await fetch('/api/leave-requests', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const error = await res.json()
+    throw new Error(error.error || 'Errore nella creazione')
+  }
+  return res.json()
 }
 
 async function approveRequest(id: string, managerNotes?: string) {
@@ -115,14 +172,44 @@ function formatDateRange(start: string, end: string): string {
 
 export default function FeriePermessiPage() {
   const queryClient = useQueryClient()
+  const { data: session } = useSession()
+  const isAdmin = session?.user?.role === 'admin'
+
   const [statusFilter, setStatusFilter] = useState<string>('PENDING')
   const [selectedRequest, setSelectedRequest] = useState<LeaveRequest | null>(null)
   const [dialogMode, setDialogMode] = useState<'approve' | 'reject' | null>(null)
   const [notes, setNotes] = useState('')
 
+  // Stati per dialog creazione ferie (solo admin)
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [createForm, setCreateForm] = useState({
+    userId: '',
+    leaveTypeId: '',
+    startDate: '',
+    endDate: '',
+    isPartialDay: false,
+    startTime: '',
+    endTime: '',
+    notes: '',
+  })
+
   const { data: requests, isLoading, error } = useQuery({
     queryKey: ['leave-requests-manager', statusFilter],
     queryFn: () => fetchLeaveRequests(statusFilter === 'ALL' ? undefined : statusFilter),
+  })
+
+  // Query per lista utenti (solo per admin)
+  const { data: staffUsers } = useQuery({
+    queryKey: ['staff-users'],
+    queryFn: fetchStaffUsers,
+    enabled: isAdmin,
+  })
+
+  // Query per tipi assenza (solo per admin)
+  const { data: leaveTypes } = useQuery({
+    queryKey: ['leave-types'],
+    queryFn: fetchLeaveTypes,
+    enabled: isAdmin,
   })
 
   const approveMutation = useMutation({
@@ -145,6 +232,19 @@ export default function FeriePermessiPage() {
       queryClient.invalidateQueries({ queryKey: ['leave-requests-manager'] })
       toast.success('Richiesta rifiutata')
       closeDialog()
+    },
+    onError: (error: Error) => {
+      toast.error(error.message)
+    },
+  })
+
+  // Mutation per creare ferie (admin)
+  const createMutation = useMutation({
+    mutationFn: createLeaveRequestForUser,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leave-requests-manager'] })
+      toast.success('Ferie aggiunte con successo')
+      closeCreateDialog()
     },
     onError: (error: Error) => {
       toast.error(error.message)
@@ -189,6 +289,65 @@ export default function FeriePermessiPage() {
     }
   }
 
+  // Funzioni per dialog creazione ferie
+  const openCreateDialog = () => {
+    setCreateForm({
+      userId: '',
+      leaveTypeId: '',
+      startDate: '',
+      endDate: '',
+      isPartialDay: false,
+      startTime: '',
+      endTime: '',
+      notes: '',
+    })
+    setShowCreateDialog(true)
+  }
+
+  const closeCreateDialog = () => {
+    setShowCreateDialog(false)
+    setCreateForm({
+      userId: '',
+      leaveTypeId: '',
+      startDate: '',
+      endDate: '',
+      isPartialDay: false,
+      startTime: '',
+      endTime: '',
+      notes: '',
+    })
+  }
+
+  const handleCreateSubmit = () => {
+    if (!createForm.userId) {
+      toast.error('Seleziona un dipendente')
+      return
+    }
+    if (!createForm.leaveTypeId) {
+      toast.error('Seleziona un tipo di assenza')
+      return
+    }
+    if (!createForm.startDate || !createForm.endDate) {
+      toast.error('Inserisci le date')
+      return
+    }
+    if (createForm.isPartialDay && (!createForm.startTime || !createForm.endTime)) {
+      toast.error('Inserisci gli orari per la giornata parziale')
+      return
+    }
+
+    createMutation.mutate({
+      userId: createForm.userId,
+      leaveTypeId: createForm.leaveTypeId,
+      startDate: createForm.startDate,
+      endDate: createForm.endDate,
+      isPartialDay: createForm.isPartialDay,
+      startTime: createForm.isPartialDay ? createForm.startTime : undefined,
+      endTime: createForm.isPartialDay ? createForm.endTime : undefined,
+      notes: createForm.notes || undefined,
+    })
+  }
+
   const pendingCount = requests?.filter((r) => r.status === 'PENDING').length || 0
 
   return (
@@ -201,11 +360,19 @@ export default function FeriePermessiPage() {
           </p>
         </div>
 
-        {pendingCount > 0 && statusFilter !== 'PENDING' && (
-          <Badge variant="destructive" className="text-sm">
-            {pendingCount} in attesa
-          </Badge>
-        )}
+        <div className="flex items-center gap-3">
+          {pendingCount > 0 && statusFilter !== 'PENDING' && (
+            <Badge variant="destructive" className="text-sm">
+              {pendingCount} in attesa
+            </Badge>
+          )}
+          {isAdmin && (
+            <Button onClick={openCreateDialog}>
+              <Plus className="h-4 w-4 mr-2" />
+              Aggiungi Ferie
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Filtri */}
@@ -414,6 +581,141 @@ export default function FeriePermessiPage() {
               )}
             >
               {dialogMode === 'approve' ? 'Approva' : 'Rifiuta'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog creazione ferie (solo admin) */}
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Aggiungi Ferie</DialogTitle>
+            <DialogDescription>
+              Crea una richiesta di ferie per un dipendente. Sarà automaticamente approvata.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Selezione dipendente */}
+            <div className="space-y-2">
+              <Label>Dipendente *</Label>
+              <Select
+                value={createForm.userId}
+                onValueChange={(value) => setCreateForm(prev => ({ ...prev, userId: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleziona dipendente" />
+                </SelectTrigger>
+                <SelectContent>
+                  {staffUsers?.map((user) => (
+                    <SelectItem key={user.id} value={user.id}>
+                      {user.firstName} {user.lastName}
+                      {user.venue && ` (${user.venue.code})`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Selezione tipo assenza */}
+            <div className="space-y-2">
+              <Label>Tipo Assenza *</Label>
+              <Select
+                value={createForm.leaveTypeId}
+                onValueChange={(value) => setCreateForm(prev => ({ ...prev, leaveTypeId: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleziona tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  {leaveTypes?.map((type) => (
+                    <SelectItem key={type.id} value={type.id}>
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: type.color || '#6B7280' }}
+                        />
+                        {type.name} ({type.code})
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Date */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Data Inizio *</Label>
+                <Input
+                  type="date"
+                  value={createForm.startDate}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, startDate: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Data Fine *</Label>
+                <Input
+                  type="date"
+                  value={createForm.endDate}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, endDate: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            {/* Giornata parziale */}
+            <div className="flex items-center justify-between">
+              <Label>Giornata parziale</Label>
+              <Switch
+                checked={createForm.isPartialDay}
+                onCheckedChange={(checked) => setCreateForm(prev => ({ ...prev, isPartialDay: checked }))}
+              />
+            </div>
+
+            {createForm.isPartialDay && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Ora Inizio *</Label>
+                  <Input
+                    type="time"
+                    value={createForm.startTime}
+                    onChange={(e) => setCreateForm(prev => ({ ...prev, startTime: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Ora Fine *</Label>
+                  <Input
+                    type="time"
+                    value={createForm.endTime}
+                    onChange={(e) => setCreateForm(prev => ({ ...prev, endTime: e.target.value }))}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Note */}
+            <div className="space-y-2">
+              <Label>Note (opzionale)</Label>
+              <Textarea
+                value={createForm.notes}
+                onChange={(e) => setCreateForm(prev => ({ ...prev, notes: e.target.value }))}
+                placeholder="Aggiungi eventuali note..."
+                rows={2}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeCreateDialog}>
+              Annulla
+            </Button>
+            <Button
+              onClick={handleCreateSubmit}
+              disabled={createMutation.isPending}
+            >
+              {createMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Aggiungi
             </Button>
           </DialogFooter>
         </DialogContent>

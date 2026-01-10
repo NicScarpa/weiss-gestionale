@@ -13,6 +13,7 @@ const createLeaveRequestSchema = z.object({
   startTime: z.string().optional(), // HH:MM
   endTime: z.string().optional(), // HH:MM
   notes: z.string().optional(),
+  userId: z.string().optional(), // Solo admin può specificare per creare ferie per altri
 })
 
 // Calcola giorni lavorativi tra due date
@@ -130,6 +131,28 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const validatedData = createLeaveRequestSchema.parse(body)
 
+    // Solo admin può creare ferie per altri utenti
+    if (validatedData.userId && session.user.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Solo gli admin possono creare ferie per altri utenti' },
+        { status: 403 }
+      )
+    }
+
+    // Determina l'utente target
+    const isAdminCreatingForOther = session.user.role === 'admin' && validatedData.userId
+    const targetUserId = isAdminCreatingForOther ? validatedData.userId : session.user.id
+
+    // Se admin sta creando per un altro utente, verifica che esista
+    if (isAdminCreatingForOther) {
+      const targetUser = await prisma.user.findUnique({
+        where: { id: targetUserId },
+      })
+      if (!targetUser) {
+        return NextResponse.json({ error: 'Utente non trovato' }, { status: 404 })
+      }
+    }
+
     // Verifica che il tipo assenza esista
     const leaveType = await prisma.leaveType.findUnique({
       where: { id: validatedData.leaveTypeId },
@@ -152,7 +175,7 @@ export async function POST(request: NextRequest) {
     // Verifica sovrapposizioni con altre richieste
     const overlapping = await prisma.leaveRequest.findFirst({
       where: {
-        userId: session.user.id,
+        userId: targetUserId,
         status: { in: ['PENDING', 'APPROVED'] },
         OR: [
           {
@@ -185,11 +208,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Determina stato iniziale
-    const initialStatus = leaveType.requiresApproval ? 'PENDING' : 'APPROVED'
+    // Se admin crea per altri → sempre approvato
+    // Altrimenti segue la logica normale (requiresApproval)
+    const initialStatus = isAdminCreatingForOther
+      ? 'APPROVED'
+      : (leaveType.requiresApproval ? 'PENDING' : 'APPROVED')
 
     const leaveRequest = await prisma.leaveRequest.create({
       data: {
-        userId: session.user.id,
+        userId: targetUserId,
         leaveTypeId: validatedData.leaveTypeId,
         startDate,
         endDate,
@@ -204,7 +231,7 @@ export async function POST(request: NextRequest) {
         hoursRequested: hoursRequested || null,
         status: initialStatus,
         notes: validatedData.notes || null,
-        // Se non richiede approvazione, approva automaticamente
+        // Se approvato (admin crea per altri o non richiede approvazione)
         ...(initialStatus === 'APPROVED' && {
           approvedById: session.user.id,
           approvedAt: new Date(),
@@ -212,13 +239,20 @@ export async function POST(request: NextRequest) {
       },
       include: {
         leaveType: true,
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
       },
     })
 
     // Aggiorna saldo se approvato automaticamente
     if (initialStatus === 'APPROVED' && leaveType.affectsAccrual) {
       await updateLeaveBalance(
-        session.user.id,
+        targetUserId,
         validatedData.leaveTypeId,
         daysRequested,
         'used'
@@ -226,7 +260,7 @@ export async function POST(request: NextRequest) {
     } else if (initialStatus === 'PENDING') {
       // Aggiorna pending nel saldo
       await updateLeaveBalance(
-        session.user.id,
+        targetUserId,
         validatedData.leaveTypeId,
         daysRequested,
         'pending'
