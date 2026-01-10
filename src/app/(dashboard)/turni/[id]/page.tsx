@@ -99,6 +99,19 @@ export default function ScheduleDetailPage({ params }: PageProps) {
 
   const shiftDefinitions = shiftDefsData?.data || []
 
+  // Recupera tutti i dipendenti della sede
+  const { data: staffData } = useQuery({
+    queryKey: ['venue-staff', schedule?.venueId],
+    queryFn: async () => {
+      const res = await fetch(`/api/venues/${schedule?.venueId}/staff`)
+      if (!res.ok) throw new Error('Errore nel caricamento staff')
+      return res.json()
+    },
+    enabled: !!schedule?.venueId,
+  })
+
+  const allStaff = staffData?.staff || []
+
   const generateMutation = useMutation({
     mutationFn: async (params: { preferFixedStaff: boolean; balanceHours: boolean; minimizeCost: boolean; staffingRequirements?: Record<string, number> }) => {
       const res = await fetch(`/api/schedules/${resolvedParams.id}/generate`, {
@@ -236,18 +249,31 @@ export default function ScheduleDetailPage({ params }: PageProps) {
   // Get warnings from generation log
   const warnings = schedule.generationLog?.warnings || []
 
-  // Riepilogo turni per dipendente
+  // Riepilogo turni per dipendente - includi TUTTI i dipendenti (anche con 0 turni)
   type EmployeeSummary = { name: string; shifts: number; isFixed: boolean }
-  const employeeShiftSummary: Record<string, EmployeeSummary> = (schedule.assignments || []).reduce(
-    (acc: Record<string, EmployeeSummary>, assignment: Assignment) => {
-      const id = assignment.userId
-      const name = `${assignment.user.firstName} ${assignment.user.lastName}`
-      // isFixedStaff=true significa staff FISSO
-      const isFixed = assignment.user.isFixedStaff === true
-      if (!acc[id]) {
-        acc[id] = { name, shifts: 0, isFixed }
+
+  // Formatta nome come "Nome I."
+  const formatName = (firstName: string, lastName: string) => {
+    return `${firstName} ${lastName.charAt(0)}.`
+  }
+
+  // Prima conta i turni dagli assignments
+  const shiftCounts: Record<string, number> = (schedule.assignments || []).reduce(
+    (acc: Record<string, number>, assignment: Assignment) => {
+      acc[assignment.userId] = (acc[assignment.userId] || 0) + 1
+      return acc
+    },
+    {}
+  )
+
+  // Poi crea il summary da allStaff (così include anche chi ha 0 turni)
+  const employeeShiftSummary: Record<string, EmployeeSummary> = allStaff.reduce(
+    (acc: Record<string, EmployeeSummary>, staff: { id: string; firstName: string; lastName: string; isFixedStaff: boolean }) => {
+      acc[staff.id] = {
+        name: formatName(staff.firstName, staff.lastName),
+        shifts: shiftCounts[staff.id] || 0,
+        isFixed: staff.isFixedStaff === true,
       }
-      acc[id].shifts += 1
       return acc
     },
     {}
@@ -427,49 +453,46 @@ export default function ScheduleDetailPage({ params }: PageProps) {
         </CardContent>
       </Card>
 
-      {/* Riepilogo turni per dipendente */}
+      {/* Riepilogo */}
       {(fixedEmployees.length > 0 || extraEmployees.length > 0) && (
         <Card>
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Users className="h-5 w-5" />
-              Riepilogo Turni per Dipendente
+              Riepilogo
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Dipendenti Fissi */}
+            {/* Dipendenti Fissi (senza label) */}
             {fixedEmployees.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium text-muted-foreground mb-3">Dipendenti Fissi</h4>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                  {fixedEmployees.map((employee) => {
-                    // Giallo se < 5 turni, rosso se > 5 turni
-                    const getBgColor = () => {
-                      if (employee.shifts < 5) return 'bg-yellow-100 border-yellow-300'
-                      if (employee.shifts > 5) return 'bg-red-100 border-red-300'
-                      return 'bg-muted/50'
-                    }
-                    return (
-                      <div
-                        key={employee.name}
-                        className={`flex items-center justify-between p-3 rounded-lg border ${getBgColor()}`}
-                      >
-                        <span className="font-medium text-sm truncate">{employee.name}</span>
-                        <span className="flex items-center gap-1 text-sm text-muted-foreground ml-2">
-                          <Calendar className="h-3.5 w-3.5" />
-                          {employee.shifts}
-                        </span>
-                      </div>
-                    )
-                  })}
-                </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                {fixedEmployees.map((employee) => {
+                  // Giallo se < 5 turni, rosso se > 5 turni
+                  const getBgColor = () => {
+                    if (employee.shifts < 5) return 'bg-yellow-100 border-yellow-300'
+                    if (employee.shifts > 5) return 'bg-red-100 border-red-300'
+                    return 'bg-muted/50'
+                  }
+                  return (
+                    <div
+                      key={employee.name}
+                      className={`flex items-center justify-between p-3 rounded-lg border ${getBgColor()}`}
+                    >
+                      <span className="font-medium text-sm truncate">{employee.name}</span>
+                      <span className="flex items-center gap-1 text-sm text-muted-foreground ml-2">
+                        <Calendar className="h-3.5 w-3.5" />
+                        {employee.shifts}
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
             )}
 
-            {/* Dipendenti Extra */}
+            {/* EXTRA */}
             {extraEmployees.length > 0 && (
               <div>
-                <h4 className="text-sm font-medium text-muted-foreground mb-3">Dipendenti Extra</h4>
+                <h4 className="text-sm font-medium text-muted-foreground mb-3">EXTRA</h4>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
                   {extraEmployees.map((employee) => (
                     <div
