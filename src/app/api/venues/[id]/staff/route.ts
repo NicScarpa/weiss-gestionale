@@ -24,11 +24,14 @@ export async function GET(
       )
     }
 
-    // Recupera staff attivo della sede
+    // Recupera staff attivo della sede (solo utenti con ruolo 'staff')
     const staff = await prisma.user.findMany({
       where: {
         venueId: id,
         isActive: true,
+        role: {
+          name: 'staff',
+        },
       },
       select: {
         id: true,
