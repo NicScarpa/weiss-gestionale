@@ -70,7 +70,7 @@ export async function POST(
     if (!validation.isValid) {
       const highWarnings = validation.warnings.filter(w => w.severity === 'high')
       return NextResponse.json({
-        error: 'La pianificazione ha problemi critici',
+        error: 'Ci sono dei turni scoperti, impossibile pubblicare la pianificazione dei turni',
         warnings: highWarnings,
         canForcePublish: session.user.role === 'admin',
       }, { status: 400 })
