@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -38,6 +38,7 @@ interface GenerationParamsFormProps {
   endDate: Date
   shiftDefinitions: ShiftDefinition[]
   onStaffingChange?: (requirements: Record<string, number>) => void
+  initialStaffingRequirements?: Record<string, number>
 }
 
 export function GenerationParamsForm({
@@ -47,13 +48,23 @@ export function GenerationParamsForm({
   endDate,
   shiftDefinitions,
   onStaffingChange,
+  initialStaffingRequirements,
 }: GenerationParamsFormProps) {
   const [params, setParams] = useState<GenerationParams>({
     preferFixedStaff: true,
     balanceHours: true,
     minimizeCost: false,
   })
-  const [staffingRequirements, setStaffingRequirementsState] = useState<Record<string, number>>({})
+  const [staffingRequirements, setStaffingRequirementsState] = useState<Record<string, number>>(
+    initialStaffingRequirements || {}
+  )
+
+  // Sincronizza quando initialStaffingRequirements cambia (es. caricato dal database)
+  useEffect(() => {
+    if (initialStaffingRequirements && Object.keys(initialStaffingRequirements).length > 0) {
+      setStaffingRequirementsState(initialStaffingRequirements)
+    }
+  }, [initialStaffingRequirements])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
 
   // Wrapper per aggiornare sia lo state locale che notificare il parent
