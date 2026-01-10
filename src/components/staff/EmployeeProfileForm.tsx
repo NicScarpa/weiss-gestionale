@@ -184,9 +184,8 @@ export function EmployeeProfileForm({ employee, isAdmin = false, venues = [], ro
   const showEndDate = formData.contractType === 'TEMPO_DETERMINATO' ||
     formData.contractType === 'LAVORO_INTERMITTENTE'
 
-  // Determina se mostrare campi fiscali
-  const showFiscalFields = formData.contractType === 'LAVORATORE_OCCASIONALE' ||
-    formData.contractType === 'LIBERO_PROFESSIONISTA'
+  // Determina se mostrare P.IVA (solo per Libero Professionista)
+  const showVatNumber = formData.contractType === 'LIBERO_PROFESSIONISTA'
 
   // Helper per toggle disponibilità giorni
   const toggleAvailableDay = (day: number) => {
@@ -496,32 +495,18 @@ export function EmployeeProfileForm({ employee, isAdmin = false, venues = [], ro
                 </div>
               </div>
 
-              {showFiscalFields && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>P.IVA</Label>
-                    <Input
-                      type="text"
-                      maxLength={11}
-                      value={formData.vatNumber}
-                      onChange={e => setFormData(prev => ({ ...prev, vatNumber: e.target.value.replace(/\D/g, '') }))}
-                      disabled={!isAdmin}
-                      placeholder="12345678901"
-                    />
-                    <p className="text-xs text-muted-foreground">11 cifre</p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Codice Fiscale</Label>
-                    <Input
-                      type="text"
-                      maxLength={16}
-                      value={formData.fiscalCode}
-                      onChange={e => setFormData(prev => ({ ...prev, fiscalCode: e.target.value.toUpperCase() }))}
-                      disabled={!isAdmin}
-                      placeholder="RSSMRA85M01H501A"
-                    />
-                    <p className="text-xs text-muted-foreground">16 caratteri alfanumerici</p>
-                  </div>
+              {showVatNumber && (
+                <div className="space-y-2">
+                  <Label>P.IVA</Label>
+                  <Input
+                    type="text"
+                    maxLength={11}
+                    value={formData.vatNumber}
+                    onChange={e => setFormData(prev => ({ ...prev, vatNumber: e.target.value.replace(/\D/g, '') }))}
+                    disabled={!isAdmin}
+                    placeholder="12345678901"
+                  />
+                  <p className="text-xs text-muted-foreground">11 cifre</p>
                 </div>
               )}
 
