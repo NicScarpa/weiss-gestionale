@@ -54,6 +54,7 @@ export async function generateShifts(
       hourlyRateNight: true,
       defaultShift: true,      // Turno preferito (MORNING/EVENING)
       availableDays: true,     // Giorni disponibili per staff extra
+      workDaysPerWeek: true,   // Giorni lavorativi settimanali (staff fisso)
     },
   })
 
@@ -172,6 +173,7 @@ export async function generateShifts(
     hourlyRateNight: e.hourlyRateNight ? Number(e.hourlyRateNight) : null,
     defaultShift: e.defaultShift as Employee['defaultShift'],
     availableDays: e.availableDays,
+    workDaysPerWeek: e.workDaysPerWeek,
   }))
 
   const typedShiftDefinitions: ShiftDefinition[] = shiftDefinitions.map(sd => ({
