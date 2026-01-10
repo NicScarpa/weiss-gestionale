@@ -41,6 +41,7 @@ export async function GET(
                 id: true,
                 firstName: true,
                 lastName: true,
+                isFixedStaff: true,
               },
             },
             shiftDefinition: {

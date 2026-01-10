@@ -45,6 +45,7 @@ interface Assignment {
     id: string
     firstName: string
     lastName: string
+    isFixedStaff?: boolean
   }
   shiftDefinition?: {
     id: string
@@ -236,16 +237,18 @@ export default function ScheduleDetailPage({ params }: PageProps) {
   const warnings = schedule.generationLog?.warnings || []
 
   // Riepilogo turni per dipendente
-  type EmployeeSummary = { name: string; shifts: number; hours: number }
+  // Nota: isFixedStaff=true significa EXTRA, isFixedStaff=false significa FISSO
+  type EmployeeSummary = { name: string; shifts: number; isFixed: boolean }
   const employeeShiftSummary: Record<string, EmployeeSummary> = (schedule.assignments || []).reduce(
     (acc: Record<string, EmployeeSummary>, assignment: Assignment) => {
       const id = assignment.userId
       const name = `${assignment.user.firstName} ${assignment.user.lastName}`
+      // isFixedStaff=false significa staff FISSO (logica invertita nel DB)
+      const isFixed = assignment.user.isFixedStaff === false
       if (!acc[id]) {
-        acc[id] = { name, shifts: 0, hours: 0 }
+        acc[id] = { name, shifts: 0, isFixed }
       }
       acc[id].shifts += 1
-      acc[id].hours += assignment.hoursScheduled || 0
       return acc
     },
     {}
@@ -433,24 +436,27 @@ export default function ScheduleDetailPage({ params }: PageProps) {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-              {sortedEmployeeSummary.map((employee) => (
-                <div
-                  key={employee.name}
-                  className="flex flex-col p-3 rounded-lg bg-muted/50 border"
-                >
-                  <span className="font-medium text-sm truncate">{employee.name}</span>
-                  <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="h-3 w-3" />
-                      {employee.shifts} turni
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      {employee.hours.toFixed(1)}h
+              {sortedEmployeeSummary.map((employee) => {
+                // Per i fissi: giallo se < 5 turni, rosso se > 5 turni
+                const getBgColor = () => {
+                  if (!employee.isFixed) return 'bg-muted/50'
+                  if (employee.shifts < 5) return 'bg-yellow-100 border-yellow-300'
+                  if (employee.shifts > 5) return 'bg-red-100 border-red-300'
+                  return 'bg-muted/50'
+                }
+                return (
+                  <div
+                    key={employee.name}
+                    className={`flex items-center justify-between p-3 rounded-lg border ${getBgColor()}`}
+                  >
+                    <span className="font-medium text-sm truncate">{employee.name}</span>
+                    <span className="flex items-center gap-1 text-sm text-muted-foreground ml-2">
+                      <Calendar className="h-3.5 w-3.5" />
+                      {employee.shifts}
                     </span>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </CardContent>
         </Card>
