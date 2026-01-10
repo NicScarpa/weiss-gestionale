@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { SkillsSelector } from './SkillsSelector'
+import { AddressAutocomplete } from '@/components/ui/address-autocomplete'
 import { Save, User, Briefcase, Euro, Bell, Shield, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -355,10 +356,9 @@ export function EmployeeProfileForm({ employee, isAdmin = false, venues = [], ro
 
               <div className="space-y-2">
                 <Label>Indirizzo di residenza</Label>
-                <Input
-                  type="text"
+                <AddressAutocomplete
                   value={formData.address}
-                  onChange={e => setFormData(prev => ({ ...prev, address: e.target.value }))}
+                  onChange={val => setFormData(prev => ({ ...prev, address: val }))}
                   disabled={!isAdmin}
                   placeholder="Via Roma 1, 33077 Sacile (PN)"
                 />
@@ -548,20 +548,20 @@ export function EmployeeProfileForm({ employee, isAdmin = false, venues = [], ro
               {/* Switch EXTRA */}
               <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
                 <Switch
-                  checked={formData.isFixedStaff}
-                  onCheckedChange={v => setFormData(prev => ({ ...prev, isFixedStaff: v }))}
+                  checked={!formData.isFixedStaff}
+                  onCheckedChange={v => setFormData(prev => ({ ...prev, isFixedStaff: !v }))}
                   disabled={!isAdmin}
                 />
                 <div>
                   <Label className="font-medium">EXTRA</Label>
                   <p className="text-xs text-muted-foreground">
-                    {formData.isFixedStaff ? 'Lavoratore extra a chiamata' : 'Staff fisso con turni regolari'}
+                    {!formData.isFixedStaff ? 'Lavoratore extra a chiamata' : 'Staff fisso con turni regolari'}
                   </p>
                 </div>
               </div>
 
               {/* Disponibilità per EXTRA */}
-              {formData.isFixedStaff && (
+              {!formData.isFixedStaff && (
                 <div className="space-y-3 p-3 border rounded-lg">
                   <Label className="font-medium">Disponibilità settimanale</Label>
                   <div className="flex flex-wrap gap-2">
@@ -571,11 +571,10 @@ export function EmployeeProfileForm({ employee, isAdmin = false, venues = [], ro
                         type="button"
                         onClick={() => isAdmin && toggleAvailableDay(day.value)}
                         disabled={!isAdmin}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                          formData.availableDays.includes(day.value)
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted hover:bg-muted/80'
-                        } ${!isAdmin ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                        className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${formData.availableDays.includes(day.value)
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted hover:bg-muted/80'
+                          } ${!isAdmin ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                       >
                         {day.label}
                       </button>
@@ -584,11 +583,10 @@ export function EmployeeProfileForm({ employee, isAdmin = false, venues = [], ro
                       type="button"
                       onClick={() => isAdmin && setFormData(prev => ({ ...prev, availableHolidays: !prev.availableHolidays }))}
                       disabled={!isAdmin}
-                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                        formData.availableHolidays
-                          ? 'bg-orange-500 text-white'
-                          : 'bg-muted hover:bg-muted/80'
-                      } ${!isAdmin ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${formData.availableHolidays
+                        ? 'bg-orange-500 text-white'
+                        : 'bg-muted hover:bg-muted/80'
+                        } ${!isAdmin ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                     >
                       FESTIVI
                     </button>
