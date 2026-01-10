@@ -28,10 +28,13 @@ export async function generateShifts(
   scheduleId: string,
   params: GenerationParams
 ): Promise<GenerationResult> {
-  // Load employees
+  // Load employees (exclude admin users)
   const employees = await prisma.user.findMany({
     where: {
       isActive: true,
+      role: {
+        name: { not: 'admin' }, // Exclude admin users from shift generation
+      },
       OR: [
         { venueId: params.venueId },
         { venueId: null }, // Include employees without a specific venue
