@@ -140,8 +140,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Determina l'utente target
-    const isAdminCreatingForOther = session.user.role === 'admin' && validatedData.userId
-    const targetUserId = isAdminCreatingForOther ? validatedData.userId : session.user.id
+    const isAdminCreatingForOther = session.user.role === 'admin' && !!validatedData.userId
+    const targetUserId = (validatedData.userId && session.user.role === 'admin')
+      ? validatedData.userId
+      : session.user.id
 
     // Se admin sta creando per un altro utente, verifica che esista
     if (isAdminCreatingForOther) {
