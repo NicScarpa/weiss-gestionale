@@ -7,6 +7,7 @@ import { z } from 'zod'
 const updateAssignmentSchema = z.object({
   userId: z.string().optional(),
   shiftDefinitionId: z.string().nullable().optional(),
+  date: z.string().optional(), // ISO date - per spostare il turno
   startTime: z.string().optional(), // HH:MM
   endTime: z.string().optional(), // HH:MM
   breakMinutes: z.number().min(0).optional(),
@@ -164,6 +165,13 @@ export async function PUT(
 
     const updateData: Record<string, unknown> = {}
 
+    // Supporto per spostamento turno a nuova data
+    let targetDate = assignment.date
+    if (validatedData.date !== undefined) {
+      targetDate = new Date(validatedData.date)
+      updateData.date = targetDate
+    }
+
     if (validatedData.userId !== undefined) {
       // Verifica che il nuovo utente esista
       const user = await prisma.user.findUnique({
@@ -177,14 +185,32 @@ export async function PUT(
 
     if (validatedData.shiftDefinitionId !== undefined) {
       updateData.shiftDefinitionId = validatedData.shiftDefinitionId
+
+      // Se cambia la shift definition, aggiorna anche gli orari
+      if (validatedData.shiftDefinitionId) {
+        const newShiftDef = await prisma.shiftDefinition.findUnique({
+          where: { id: validatedData.shiftDefinitionId },
+        })
+        if (newShiftDef) {
+          updateData.startTime = parseTimeToDate(
+            newShiftDef.startTime.toTimeString().substring(0, 5),
+            targetDate
+          )
+          updateData.endTime = parseTimeToDate(
+            newShiftDef.endTime.toTimeString().substring(0, 5),
+            targetDate
+          )
+          updateData.breakMinutes = newShiftDef.breakMinutes
+        }
+      }
     }
 
     if (validatedData.startTime !== undefined) {
-      updateData.startTime = parseTimeToDate(validatedData.startTime, assignment.date)
+      updateData.startTime = parseTimeToDate(validatedData.startTime, targetDate)
     }
 
     if (validatedData.endTime !== undefined) {
-      updateData.endTime = parseTimeToDate(validatedData.endTime, assignment.date)
+      updateData.endTime = parseTimeToDate(validatedData.endTime, targetDate)
     }
 
     if (validatedData.breakMinutes !== undefined) {

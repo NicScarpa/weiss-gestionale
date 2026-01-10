@@ -138,6 +138,35 @@ export default function ScheduleDetailPage({ params }: PageProps) {
     },
   })
 
+  const moveAssignmentMutation = useMutation({
+    mutationFn: async ({ assignmentId, newDate, newShiftDefId }: { assignmentId: string; newDate: Date; newShiftDefId: string }) => {
+      const res = await fetch(`/api/assignments/${assignmentId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: newDate.toISOString().split('T')[0],
+          shiftDefinitionId: newShiftDefId === 'custom' ? null : newShiftDefId,
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Errore nello spostamento')
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['schedule', resolvedParams.id] })
+      toast.success('Turno spostato')
+    },
+    onError: (error: Error) => {
+      toast.error(error.message)
+    },
+  })
+
+  const handleAssignmentMove = async (assignmentId: string, newDate: Date, newShiftDefId: string) => {
+    await moveAssignmentMutation.mutateAsync({ assignmentId, newDate, newShiftDefId })
+  }
+
   const handleGenerate = async (params: { preferFixedStaff: boolean; balanceHours: boolean; minimizeCost: boolean; staffingRequirements?: Record<string, number> }) => {
     setIsGenerating(true)
     try {
@@ -362,6 +391,7 @@ export default function ScheduleDetailPage({ params }: PageProps) {
                   shiftDefId,
                 })
               }}
+              onAssignmentMove={schedule.status !== 'PUBLISHED' ? handleAssignmentMove : undefined}
             />
           )}
         </CardContent>
