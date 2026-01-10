@@ -1,11 +1,10 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Card } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-import { format, addDays, startOfWeek, isSameDay } from 'date-fns'
+import { format, addDays, isSameDay } from 'date-fns'
 import { it } from 'date-fns/locale'
 
 interface ShiftDefinition {
@@ -32,6 +31,18 @@ interface Assignment {
   shiftDefinition?: ShiftDefinition | null
 }
 
+interface DragData {
+  assignmentId: string
+  sourceDate: string
+  sourceShiftId: string
+}
+
+interface UncoveredSlot {
+  date: string
+  shiftId: string
+  originalAssignment: Assignment
+}
+
 interface ShiftCalendarProps {
   startDate: Date
   endDate: Date
@@ -39,6 +50,7 @@ interface ShiftCalendarProps {
   shiftDefinitions: ShiftDefinition[]
   onAssignmentClick?: (assignment: Assignment) => void
   onSlotClick?: (date: Date, shiftDefId: string) => void
+  onAssignmentMove?: (assignmentId: string, newDate: Date, newShiftDefId: string) => Promise<void>
 }
 
 export function ShiftCalendar({
@@ -48,7 +60,13 @@ export function ShiftCalendar({
   shiftDefinitions,
   onAssignmentClick,
   onSlotClick,
+  onAssignmentMove,
 }: ShiftCalendarProps) {
+  const [draggedAssignment, setDraggedAssignment] = useState<DragData | null>(null)
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const [uncoveredSlots, setUncoveredSlots] = useState<UncoveredSlot[]>([])
+  const [isMoving, setIsMoving] = useState(false)
+
   // Generate array of dates
   const dates = useMemo(() => {
     const result: Date[] = []
@@ -78,8 +96,9 @@ export function ShiftCalendar({
     return map
   }, [assignments])
 
-  const getInitials = (firstName: string, lastName: string) => {
-    return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase()
+  // Format name as "FirstName L."
+  const formatEmployeeName = (firstName: string, lastName: string) => {
+    return `${firstName} ${lastName.charAt(0)}.`
   }
 
   const isToday = (date: Date) => {
@@ -90,6 +109,105 @@ export function ShiftCalendar({
     const day = date.getDay()
     return day === 0 || day === 6
   }
+
+  // Check if a slot is uncovered
+  const isUncoveredSlot = useCallback((date: Date, shiftId: string) => {
+    return uncoveredSlots.some(
+      slot => slot.date === date.toDateString() && slot.shiftId === shiftId
+    )
+  }, [uncoveredSlots])
+
+  // Drag handlers
+  const handleDragStart = useCallback((
+    e: React.DragEvent,
+    assignment: Assignment,
+    date: Date,
+    shiftId: string
+  ) => {
+    e.dataTransfer.effectAllowed = 'move'
+    setDraggedAssignment({
+      assignmentId: assignment.id,
+      sourceDate: date.toDateString(),
+      sourceShiftId: shiftId,
+    })
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent, key: string) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDropTarget(key)
+  }, [])
+
+  const handleDragLeave = useCallback(() => {
+    setDropTarget(null)
+  }, [])
+
+  const handleDrop = useCallback(async (
+    e: React.DragEvent,
+    targetDate: Date,
+    targetShiftId: string
+  ) => {
+    e.preventDefault()
+    setDropTarget(null)
+
+    if (!draggedAssignment || !onAssignmentMove || isMoving) return
+
+    const sourceKey = `${draggedAssignment.sourceDate}_${draggedAssignment.sourceShiftId}`
+    const targetKey = `${targetDate.toDateString()}_${targetShiftId}`
+
+    // Don't do anything if dropping on the same slot
+    if (sourceKey === targetKey) {
+      setDraggedAssignment(null)
+      return
+    }
+
+    // Find the original assignment
+    const sourceAssignment = assignments.find(a => a.id === draggedAssignment.assignmentId)
+    if (!sourceAssignment) {
+      setDraggedAssignment(null)
+      return
+    }
+
+    // Add uncovered slot marker for the source location
+    setUncoveredSlots(prev => [
+      ...prev.filter(s => !(s.date === draggedAssignment.sourceDate && s.shiftId === draggedAssignment.sourceShiftId)),
+      {
+        date: draggedAssignment.sourceDate,
+        shiftId: draggedAssignment.sourceShiftId,
+        originalAssignment: sourceAssignment,
+      }
+    ])
+
+    setIsMoving(true)
+    try {
+      await onAssignmentMove(draggedAssignment.assignmentId, targetDate, targetShiftId)
+      // If successful, remove the uncovered slot marker since data will refresh
+      setUncoveredSlots(prev =>
+        prev.filter(s => !(s.date === draggedAssignment.sourceDate && s.shiftId === draggedAssignment.sourceShiftId))
+      )
+    } catch (error) {
+      // If failed, remove the uncovered slot marker
+      setUncoveredSlots(prev =>
+        prev.filter(s => !(s.date === draggedAssignment.sourceDate && s.shiftId === draggedAssignment.sourceShiftId))
+      )
+    } finally {
+      setIsMoving(false)
+      setDraggedAssignment(null)
+    }
+  }, [draggedAssignment, onAssignmentMove, isMoving, assignments])
+
+  const handleDragEnd = useCallback(() => {
+    setDraggedAssignment(null)
+    setDropTarget(null)
+  }, [])
+
+  // Clear uncovered slot when clicked (to add new assignment)
+  const handleUncoveredSlotClick = useCallback((date: Date, shiftId: string) => {
+    setUncoveredSlots(prev =>
+      prev.filter(s => !(s.date === date.toDateString() && s.shiftId === shiftId))
+    )
+    onSlotClick?.(date, shiftId)
+  }, [onSlotClick])
 
   return (
     <div className="overflow-x-auto">
@@ -146,18 +264,36 @@ export function ShiftCalendar({
             {dates.map(date => {
               const key = `${date.toDateString()}_${shift.id}`
               const dayAssignments = assignmentMap.get(key) || []
+              const isUncovered = isUncoveredSlot(date, shift.id)
+              const isDropTargetCell = dropTarget === key
 
               return (
                 <Card
                   key={key}
                   className={cn(
-                    'min-h-[80px] p-1 cursor-pointer transition-colors',
+                    'min-h-[80px] p-1 cursor-pointer transition-all',
                     'hover:border-primary/50',
-                    isWeekend(date) && 'bg-muted/50'
+                    isWeekend(date) && 'bg-muted/50',
+                    isDropTargetCell && 'border-primary border-2 bg-primary/10',
+                    isUncovered && 'bg-red-100 border-red-300 border-2'
                   )}
-                  onClick={() => onSlotClick?.(date, shift.id)}
+                  onClick={() => {
+                    if (isUncovered) {
+                      handleUncoveredSlotClick(date, shift.id)
+                    } else {
+                      onSlotClick?.(date, shift.id)
+                    }
+                  }}
+                  onDragOver={(e) => handleDragOver(e, key)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, date, shift.id)}
                 >
-                  {dayAssignments.length === 0 ? (
+                  {isUncovered ? (
+                    <div className="h-full flex flex-col items-center justify-center text-red-600">
+                      <span className="text-xs font-medium">Scoperto</span>
+                      <span className="text-[10px]">Clicca per coprire</span>
+                    </div>
+                  ) : dayAssignments.length === 0 ? (
                     <div className="h-full flex items-center justify-center text-muted-foreground text-xs">
                       +
                     </div>
@@ -166,9 +302,13 @@ export function ShiftCalendar({
                       {dayAssignments.map(assignment => (
                         <div
                           key={assignment.id}
+                          draggable={!!onAssignmentMove}
+                          onDragStart={(e) => handleDragStart(e, assignment, date, shift.id)}
+                          onDragEnd={handleDragEnd}
                           className={cn(
-                            'flex items-center gap-1 p-1 rounded text-xs cursor-pointer',
-                            'bg-primary/10 hover:bg-primary/20'
+                            'flex items-center gap-1 p-1.5 rounded text-xs cursor-grab active:cursor-grabbing',
+                            'bg-primary/10 hover:bg-primary/20 transition-colors',
+                            draggedAssignment?.assignmentId === assignment.id && 'opacity-50'
                           )}
                           style={{
                             borderLeft: `3px solid ${shift.color || '#6B7280'}`,
@@ -178,13 +318,8 @@ export function ShiftCalendar({
                             onAssignmentClick?.(assignment)
                           }}
                         >
-                          <Avatar className="h-5 w-5">
-                            <AvatarFallback className="text-[10px]">
-                              {getInitials(assignment.user.firstName, assignment.user.lastName)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="truncate">
-                            {assignment.user.firstName}
+                          <span className="truncate font-medium">
+                            {formatEmployeeName(assignment.user.firstName, assignment.user.lastName)}
                           </span>
                         </div>
                       ))}
@@ -219,14 +354,19 @@ export function ShiftCalendar({
                   !a.shiftDefinitionId &&
                   new Date(a.date).toDateString() === date.toDateString()
               )
+              const isDropTargetCell = dropTarget === key
 
               return (
                 <Card
                   key={key}
                   className={cn(
                     'min-h-[80px] p-1',
-                    isWeekend(date) && 'bg-muted/50'
+                    isWeekend(date) && 'bg-muted/50',
+                    isDropTargetCell && 'border-primary border-2 bg-primary/10'
                   )}
+                  onDragOver={(e) => handleDragOver(e, key)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, date, 'custom')}
                 >
                   {dayAssignments.length === 0 ? (
                     <div className="h-full" />
@@ -235,16 +375,20 @@ export function ShiftCalendar({
                       {dayAssignments.map(assignment => (
                         <div
                           key={assignment.id}
-                          className="flex items-center gap-1 p-1 rounded text-xs bg-gray-100 cursor-pointer hover:bg-gray-200"
+                          draggable={!!onAssignmentMove}
+                          onDragStart={(e) => handleDragStart(e, assignment, date, 'custom')}
+                          onDragEnd={handleDragEnd}
+                          className={cn(
+                            'flex items-center gap-1 p-1.5 rounded text-xs cursor-grab active:cursor-grabbing',
+                            'bg-gray-100 hover:bg-gray-200 transition-colors',
+                            draggedAssignment?.assignmentId === assignment.id && 'opacity-50'
+                          )}
                           onClick={() => onAssignmentClick?.(assignment)}
                         >
-                          <Avatar className="h-5 w-5">
-                            <AvatarFallback className="text-[10px]">
-                              {getInitials(assignment.user.firstName, assignment.user.lastName)}
-                            </AvatarFallback>
-                          </Avatar>
                           <div className="flex-1 min-w-0">
-                            <div className="truncate">{assignment.user.firstName}</div>
+                            <div className="truncate font-medium">
+                              {formatEmployeeName(assignment.user.firstName, assignment.user.lastName)}
+                            </div>
                             <div className="text-muted-foreground">
                               {assignment.startTime}-{assignment.endTime}
                             </div>
