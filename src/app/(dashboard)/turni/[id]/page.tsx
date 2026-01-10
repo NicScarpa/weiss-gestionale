@@ -39,6 +39,7 @@ interface Assignment {
   startTime: string
   endTime: string
   breakMinutes: number
+  hoursScheduled?: number
   notes: string | null
   user: {
     id: string
@@ -234,6 +235,27 @@ export default function ScheduleDetailPage({ params }: PageProps) {
   // Get warnings from generation log
   const warnings = schedule.generationLog?.warnings || []
 
+  // Riepilogo turni per dipendente
+  type EmployeeSummary = { name: string; shifts: number; hours: number }
+  const employeeShiftSummary: Record<string, EmployeeSummary> = (schedule.assignments || []).reduce(
+    (acc: Record<string, EmployeeSummary>, assignment: Assignment) => {
+      const id = assignment.userId
+      const name = `${assignment.user.firstName} ${assignment.user.lastName}`
+      if (!acc[id]) {
+        acc[id] = { name, shifts: 0, hours: 0 }
+      }
+      acc[id].shifts += 1
+      acc[id].hours += assignment.hoursScheduled || 0
+      return acc
+    },
+    {}
+  )
+
+  // Ordina per nome
+  const sortedEmployeeSummary = Object.values(employeeShiftSummary).sort((a, b) =>
+    a.name.localeCompare(b.name)
+  )
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -399,6 +421,40 @@ export default function ScheduleDetailPage({ params }: PageProps) {
           )}
         </CardContent>
       </Card>
+
+      {/* Riepilogo turni per dipendente */}
+      {sortedEmployeeSummary.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Riepilogo Turni per Dipendente
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+              {sortedEmployeeSummary.map((employee) => (
+                <div
+                  key={employee.name}
+                  className="flex flex-col p-3 rounded-lg bg-muted/50 border"
+                >
+                  <span className="font-medium text-sm truncate">{employee.name}</span>
+                  <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="h-3 w-3" />
+                      {employee.shifts} turni
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {employee.hours.toFixed(1)}h
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Dialog per aggiungere/modificare assegnazioni */}
       <AssignmentDialog
