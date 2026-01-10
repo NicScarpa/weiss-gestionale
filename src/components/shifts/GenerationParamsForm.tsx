@@ -37,22 +37,30 @@ interface GenerationParamsFormProps {
   startDate: Date
   endDate: Date
   shiftDefinitions: ShiftDefinition[]
+  onStaffingChange?: (requirements: Record<string, number>) => void
 }
 
-export function GenerationParamsForm({ 
-  onGenerate, 
+export function GenerationParamsForm({
+  onGenerate,
   isGenerating,
   startDate,
   endDate,
-  shiftDefinitions 
+  shiftDefinitions,
+  onStaffingChange,
 }: GenerationParamsFormProps) {
   const [params, setParams] = useState<GenerationParams>({
     preferFixedStaff: true,
     balanceHours: true,
     minimizeCost: false,
   })
-  const [staffingRequirements, setStaffingRequirements] = useState<Record<string, number>>({})
+  const [staffingRequirements, setStaffingRequirementsState] = useState<Record<string, number>>({})
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+
+  // Wrapper per aggiornare sia lo state locale che notificare il parent
+  const setStaffingRequirements = (requirements: Record<string, number>) => {
+    setStaffingRequirementsState(requirements)
+    onStaffingChange?.(requirements)
+  }
 
   const handleGenerate = async () => {
     await onGenerate({

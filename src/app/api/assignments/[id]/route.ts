@@ -214,9 +214,9 @@ export async function PUT(
       })
 
       if (existingAssignment) {
-        const shiftName = existingAssignment.shiftDefinition?.name || 'turno'
+        const shiftName = existingAssignment.shiftDefinition?.name?.toLowerCase() || 'turno'
         return NextResponse.json(
-          { error: `${assignment.user?.firstName || 'Il dipendente'} ha già un ${shiftName} assegnato in questa data` },
+          { error: `${assignment.user?.firstName || 'Il dipendente'} ha già un turno di ${shiftName} in questa data` },
           { status: 400 }
         )
       }

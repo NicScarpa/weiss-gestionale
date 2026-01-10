@@ -67,6 +67,7 @@ export default function ScheduleDetailPage({ params }: PageProps) {
   const resolvedParams = use(params)
   const queryClient = useQueryClient()
   const [isGenerating, setIsGenerating] = useState(false)
+  const [staffingRequirements, setStaffingRequirements] = useState<Record<string, number>>({})
   const [dialogState, setDialogState] = useState<DialogState>({
     open: false,
     mode: 'add',
@@ -159,7 +160,7 @@ export default function ScheduleDetailPage({ params }: PageProps) {
       toast.success('Turno spostato')
     },
     onError: (error: Error) => {
-      toast.error(error.message)
+      toast.error(error.message, { duration: Infinity })
     },
   })
 
@@ -344,6 +345,7 @@ export default function ScheduleDetailPage({ params }: PageProps) {
           startDate={new Date(schedule.startDate)}
           endDate={new Date(schedule.endDate)}
           shiftDefinitions={shiftDefinitions}
+          onStaffingChange={setStaffingRequirements}
         />
       )}
 
@@ -376,6 +378,7 @@ export default function ScheduleDetailPage({ params }: PageProps) {
               endDate={new Date(schedule.endDate)}
               assignments={schedule.assignments || []}
               shiftDefinitions={shiftDefinitions}
+              staffingRequirements={staffingRequirements}
               onAssignmentClick={(assignment) => {
                 setDialogState({
                   open: true,

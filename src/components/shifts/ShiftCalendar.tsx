@@ -14,6 +14,7 @@ interface ShiftDefinition {
   color: string | null
   startTime: string
   endTime: string
+  minStaff?: number
 }
 
 interface Assignment {
@@ -37,17 +38,12 @@ interface DragData {
   sourceShiftId: string
 }
 
-interface UncoveredSlot {
-  date: string
-  shiftId: string
-  employeeName: string
-}
-
 interface ShiftCalendarProps {
   startDate: Date
   endDate: Date
   assignments: Assignment[]
   shiftDefinitions: ShiftDefinition[]
+  staffingRequirements?: Record<string, number> // chiave: "YYYY-MM-DD_shiftId", valore: numero dipendenti richiesti
   onAssignmentClick?: (assignment: Assignment) => void
   onSlotClick?: (date: Date, shiftDefId: string) => void
   onAssignmentMove?: (assignmentId: string, newDate: Date, newShiftDefId: string) => Promise<void>
@@ -58,13 +54,13 @@ export function ShiftCalendar({
   endDate,
   assignments,
   shiftDefinitions,
+  staffingRequirements,
   onAssignmentClick,
   onSlotClick,
   onAssignmentMove,
 }: ShiftCalendarProps) {
   const [draggedAssignment, setDraggedAssignment] = useState<DragData | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
-  const [uncoveredSlots, setUncoveredSlots] = useState<UncoveredSlot[]>([])
   const [isMoving, setIsMoving] = useState(false)
 
   // Generate array of dates
@@ -110,12 +106,23 @@ export function ShiftCalendar({
     return day === 0 || day === 6
   }
 
-  // Get uncovered slots for a specific date/shift
-  const getUncoveredSlotsForCell = useCallback((date: Date, shiftId: string) => {
-    return uncoveredSlots.filter(
-      slot => slot.date === date.toDateString() && slot.shiftId === shiftId
-    )
-  }, [uncoveredSlots])
+  // Calcola quanti dipendenti mancano per raggiungere il fabbisogno
+  const getUncoveredCount = useCallback((date: Date, shiftId: string, assignedCount: number): number => {
+    // Formato chiave: "YYYY-MM-DD_shiftId" (stesso formato di StaffingConfiguration)
+    const dateKey = format(date, 'yyyy-MM-dd')
+    const requirementKey = `${dateKey}_${shiftId}`
+
+    // Prima controlla staffingRequirements specifici per data
+    if (staffingRequirements && staffingRequirements[requirementKey] !== undefined) {
+      const required = staffingRequirements[requirementKey]
+      return Math.max(0, required - assignedCount)
+    }
+
+    // Fallback: usa minStaff della shiftDefinition
+    const shiftDef = shiftDefinitions.find(s => s.id === shiftId)
+    const minStaff = shiftDef?.minStaff ?? 1
+    return Math.max(0, minStaff - assignedCount)
+  }, [staffingRequirements, shiftDefinitions])
 
   // Drag handlers
   const handleDragStart = useCallback((
@@ -161,55 +168,21 @@ export function ShiftCalendar({
       return
     }
 
-    // Find the original assignment
-    const sourceAssignment = assignments.find(a => a.id === draggedAssignment.assignmentId)
-    if (!sourceAssignment) {
-      setDraggedAssignment(null)
-      return
-    }
-
-    const employeeName = formatEmployeeName(sourceAssignment.user.firstName, sourceAssignment.user.lastName)
-
-    // Add uncovered slot marker for the source location
-    setUncoveredSlots(prev => [
-      ...prev,
-      {
-        date: draggedAssignment.sourceDate,
-        shiftId: draggedAssignment.sourceShiftId,
-        employeeName,
-      }
-    ])
-
     setIsMoving(true)
     try {
       await onAssignmentMove(draggedAssignment.assignmentId, targetDate, targetShiftId)
-      // IMPORTANTE: NON rimuoviamo l'uncovered slot dopo il successo!
-      // Rimane visibile finché l'utente non clicca per coprire
-    } catch (error) {
-      // Se fallisce, rimuovi l'indicatore
-      setUncoveredSlots(prev =>
-        prev.filter(s => !(s.date === draggedAssignment.sourceDate && s.shiftId === draggedAssignment.sourceShiftId && s.employeeName === employeeName))
-      )
+      // Il calendario si aggiornerà automaticamente con i nuovi assignments
+      // e mostrerà "Scoperto" solo se il fabbisogno non è soddisfatto
     } finally {
       setIsMoving(false)
       setDraggedAssignment(null)
     }
-  }, [draggedAssignment, onAssignmentMove, isMoving, assignments])
+  }, [draggedAssignment, onAssignmentMove, isMoving])
 
   const handleDragEnd = useCallback(() => {
     setDraggedAssignment(null)
     setDropTarget(null)
   }, [])
-
-  // Rimuovi uncovered slot quando cliccato e apri dialog
-  const handleUncoveredSlotClick = useCallback((e: React.MouseEvent, date: Date, shiftId: string, employeeName: string) => {
-    e.stopPropagation()
-    // Rimuovi questo specifico slot scoperto
-    setUncoveredSlots(prev =>
-      prev.filter(s => !(s.date === date.toDateString() && s.shiftId === shiftId && s.employeeName === employeeName))
-    )
-    onSlotClick?.(date, shiftId)
-  }, [onSlotClick])
 
   return (
     <div className="overflow-x-auto">
@@ -266,7 +239,7 @@ export function ShiftCalendar({
             {dates.map(date => {
               const key = `${date.toDateString()}_${shift.id}`
               const dayAssignments = assignmentMap.get(key) || []
-              const cellUncoveredSlots = getUncoveredSlotsForCell(date, shift.id)
+              const uncoveredCount = getUncoveredCount(date, shift.id, dayAssignments.length)
               const isDropTargetCell = dropTarget === key
 
               return (
@@ -283,18 +256,21 @@ export function ShiftCalendar({
                   onDragLeave={handleDragLeave}
                   onDrop={(e) => handleDrop(e, date, shift.id)}
                 >
-                  {dayAssignments.length === 0 && cellUncoveredSlots.length === 0 ? (
+                  {dayAssignments.length === 0 && uncoveredCount === 0 ? (
                     <div className="h-full flex items-center justify-center text-muted-foreground text-xs">
                       +
                     </div>
                   ) : (
                     <div className="space-y-1">
-                      {/* Rettangolini rossi per turni scoperti */}
-                      {cellUncoveredSlots.map((slot, idx) => (
+                      {/* Rettangolini rossi per turni scoperti (uno per ogni posto mancante) */}
+                      {Array.from({ length: uncoveredCount }).map((_, idx) => (
                         <div
                           key={`uncovered-${idx}`}
                           className="flex items-center gap-1 p-1.5 rounded text-xs cursor-pointer bg-red-100 hover:bg-red-200 border-l-[3px] border-red-500 transition-colors"
-                          onClick={(e) => handleUncoveredSlotClick(e, date, shift.id, slot.employeeName)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onSlotClick?.(date, shift.id)
+                          }}
                           title="Clicca per coprire questo turno"
                         >
                           <AlertTriangle className="h-3 w-3 text-red-600 flex-shrink-0" />
@@ -359,7 +335,6 @@ export function ShiftCalendar({
                   !a.shiftDefinitionId &&
                   new Date(a.date).toDateString() === date.toDateString()
               )
-              const cellUncoveredSlots = getUncoveredSlotsForCell(date, 'custom')
               const isDropTargetCell = dropTarget === key
 
               return (
@@ -374,24 +349,10 @@ export function ShiftCalendar({
                   onDragLeave={handleDragLeave}
                   onDrop={(e) => handleDrop(e, date, 'custom')}
                 >
-                  {dayAssignments.length === 0 && cellUncoveredSlots.length === 0 ? (
+                  {dayAssignments.length === 0 ? (
                     <div className="h-full" />
                   ) : (
                     <div className="space-y-1">
-                      {/* Rettangolini rossi per turni scoperti */}
-                      {cellUncoveredSlots.map((slot, idx) => (
-                        <div
-                          key={`uncovered-${idx}`}
-                          className="flex items-center gap-1 p-1.5 rounded text-xs cursor-pointer bg-red-100 hover:bg-red-200 border-l-[3px] border-red-500 transition-colors"
-                          onClick={(e) => handleUncoveredSlotClick(e, date, 'custom', slot.employeeName)}
-                          title="Clicca per coprire questo turno"
-                        >
-                          <AlertTriangle className="h-3 w-3 text-red-600 flex-shrink-0" />
-                          <span className="truncate font-medium text-red-700">
-                            Scoperto
-                          </span>
-                        </div>
-                      ))}
                       {dayAssignments.map(assignment => (
                         <div
                           key={assignment.id}
