@@ -15,7 +15,7 @@ export default function LoginPage() {
   const callbackUrl = searchParams.get('callbackUrl') || '/'
   const error = searchParams.get('error')
 
-  const [email, setEmail] = useState('')
+  const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [loginError, setLoginError] = useState<string | null>(null)
@@ -27,7 +27,7 @@ export default function LoginPage() {
 
     try {
       const result = await signIn('credentials', {
-        email,
+        identifier,
         password,
         redirect: false,
         callbackUrl
@@ -35,7 +35,7 @@ export default function LoginPage() {
 
       if (result?.error) {
         setLoginError(result.error === 'CredentialsSignin'
-          ? 'Email o password non validi'
+          ? 'Username/Email o password non validi'
           : result.error)
       } else if (result?.ok) {
         router.push(callbackUrl)
@@ -69,16 +69,16 @@ export default function LoginPage() {
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="identifier">Username o Email</Label>
               <Input
-                id="email"
-                type="email"
-                placeholder="nome@weisscafe.it"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="identifier"
+                type="text"
+                placeholder="username o email"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
                 required
                 disabled={isLoading}
-                autoComplete="email"
+                autoComplete="username"
               />
             </div>
 
@@ -113,8 +113,7 @@ export default function LoginPage() {
           </form>
 
           <div className="mt-6 text-center text-sm text-muted-foreground">
-            <p>Credenziali di test:</p>
-            <p className="font-mono text-xs mt-1">admin@weisscafe.it / admin123</p>
+            <p>Accedi con username o email</p>
           </div>
         </CardContent>
       </Card>

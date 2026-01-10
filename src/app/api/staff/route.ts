@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import bcrypt from 'bcryptjs'
+import { generateUniqueUsername } from '@/lib/utils/username'
+
+// Password iniziale di default
+const DEFAULT_PASSWORD = '1234567890'
 
 // Schema per creazione staff
 const createStaffSchema = z.object({
@@ -269,12 +274,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Genera username unico (NomeCognome)
+    const username = await generateUniqueUsername(prisma, validatedData.firstName, validatedData.lastName)
+
+    // Hash password iniziale
+    const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 12)
+
     // Crea il nuovo dipendente
     const newStaff = await prisma.user.create({
       data: {
         firstName: validatedData.firstName,
         lastName: validatedData.lastName,
         email: validatedData.email,
+        username,
         phoneNumber: validatedData.phoneNumber ?? null,
         isFixedStaff: validatedData.isFixedStaff,
         hourlyRate: validatedData.hourlyRate ?? null,
@@ -282,6 +294,8 @@ export async function POST(request: NextRequest) {
         venueId: validatedData.venueId || session.user.venueId || null,
         roleId: validatedData.roleId || staffRole.id,
         isActive: true,
+        mustChangePassword: true, // Obbliga cambio password al primo accesso
+        createdById: session.user.id, // Chi ha creato l'utente
         // Campi contratto
         contractType: validatedData.contractType ?? null,
         contractHoursWeek: validatedData.contractHoursWeek ?? null,
@@ -302,8 +316,7 @@ export async function POST(request: NextRequest) {
         hourlyRateExtra: validatedData.hourlyRateExtra ?? null,
         hourlyRateHoliday: validatedData.hourlyRateHoliday ?? null,
         hourlyRateNight: validatedData.hourlyRateNight ?? null,
-        // Password temporanea (utente dovrà cambiarla al primo accesso)
-        passwordHash: '',
+        passwordHash,
       },
       select: {
         id: true,

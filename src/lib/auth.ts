@@ -7,7 +7,8 @@ import { prisma } from './prisma'
 declare module 'next-auth' {
   interface User {
     id: string
-    email: string
+    email: string | null
+    username: string
     firstName: string
     lastName: string
     role: string
@@ -15,6 +16,7 @@ declare module 'next-auth' {
     venueId: string | null
     venueName: string | null
     venueCode: string | null
+    mustChangePassword: boolean
   }
 
   interface Session {
@@ -25,7 +27,8 @@ declare module 'next-auth' {
 // JWT type extension
 interface CustomJWT {
   id: string
-  email: string
+  email: string | null
+  username: string
   firstName: string
   lastName: string
   role: string
@@ -33,6 +36,7 @@ interface CustomJWT {
   venueId: string | null
   venueName: string | null
   venueCode: string | null
+  mustChangePassword: boolean
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -40,21 +44,35 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     Credentials({
       name: 'credentials',
       credentials: {
-        email: { label: 'Email', type: 'email' },
+        identifier: { label: 'Username o Email', type: 'text' },
         password: { label: 'Password', type: 'password' }
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
-          throw new Error('Email e password richiesti')
+        if (!credentials?.identifier || !credentials?.password) {
+          throw new Error('Username/Email e password richiesti')
         }
 
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email as string },
+        const identifier = credentials.identifier as string
+
+        // Cerca prima per username, poi per email
+        let user = await prisma.user.findUnique({
+          where: { username: identifier },
           include: {
             role: true,
             venue: true
           }
         })
+
+        // Se non trovato per username, cerca per email
+        if (!user) {
+          user = await prisma.user.findUnique({
+            where: { email: identifier },
+            include: {
+              role: true,
+              venue: true
+            }
+          })
+        }
 
         if (!user) {
           throw new Error('Credenziali non valide')
@@ -73,25 +91,34 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           throw new Error('Credenziali non valide')
         }
 
+        // Aggiorna lastLoginAt
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { lastLoginAt: new Date() }
+        })
+
         return {
           id: user.id,
           email: user.email,
+          username: user.username,
           firstName: user.firstName,
           lastName: user.lastName,
           role: user.role.name,
           roleId: user.roleId,
           venueId: user.venueId,
           venueName: user.venue?.name ?? null,
-          venueCode: user.venue?.code ?? null
+          venueCode: user.venue?.code ?? null,
+          mustChangePassword: user.mustChangePassword
         }
       }
     })
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.id = user.id
         token.email = user.email
+        token.username = user.username
         token.firstName = user.firstName
         token.lastName = user.lastName
         token.role = user.role
@@ -99,13 +126,26 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.venueId = user.venueId
         token.venueName = user.venueName
         token.venueCode = user.venueCode
+        token.mustChangePassword = user.mustChangePassword
+      }
+      // Aggiorna mustChangePassword dopo cambio password
+      if (trigger === 'update') {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          select: { mustChangePassword: true }
+        })
+        if (dbUser) {
+          token.mustChangePassword = dbUser.mustChangePassword
+        }
       }
       return token
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string
-        session.user.email = token.email as string
+        // Email può essere null per staff che usano solo username
+        ;(session.user as { email: string | null }).email = token.email as string | null
+        session.user.username = token.username as string
         session.user.firstName = token.firstName as string
         session.user.lastName = token.lastName as string
         session.user.role = token.role as string
@@ -113,6 +153,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.venueId = token.venueId as string | null
         session.user.venueName = token.venueName as string | null
         session.user.venueCode = token.venueCode as string | null
+        session.user.mustChangePassword = token.mustChangePassword as boolean
       }
       return session
     }

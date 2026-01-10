@@ -13,7 +13,8 @@ datasource db {
 
 model User {
   id           String   @id @default(cuid())
-  email        String   @unique
+  email        String?  @unique // Obbligatorio solo per admin/manager
+  username     String   @unique // Username per login (NomeCognome per staff, email per admin/manager)
   passwordHash String   @map("password_hash")
   firstName    String   @map("first_name")
   lastName     String   @map("last_name")
@@ -27,6 +28,13 @@ model User {
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // === Gestione Utenti: campi autenticazione ===
+  mustChangePassword Boolean   @default(true) @map("must_change_password") // Obbligo cambio password primo accesso
+  lastLoginAt        DateTime? @map("last_login_at") // Ultimo accesso
+  createdById        String?   @map("created_by_id") // Chi ha creato l'utente
+  createdBy          User?     @relation("CreatedByUser", fields: [createdById], references: [id])
+  createdUsers       User[]    @relation("CreatedByUser") // Utenti creati da questo utente
 
   // === FASE 4: Dati contrattuali estesi ===
   contractType      ContractType? @map("contract_type")

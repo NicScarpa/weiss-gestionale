@@ -48,6 +48,7 @@ const personnelNavigation = [
 // Sottovoci "Impostazioni"
 const settingsNavigation = [
   { name: 'Generali', href: '/impostazioni/generali', icon: Settings },
+  { name: 'Utenti', href: '/impostazioni/utenti', icon: Users },
   { name: 'Fornitori', href: '/impostazioni/fornitori', icon: Truck },
   { name: 'Piano Conti', href: '/impostazioni/conti', icon: BookOpen },
   { name: 'Budget', href: '/impostazioni/budget', icon: Calculator },

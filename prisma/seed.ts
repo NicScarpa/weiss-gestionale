@@ -118,12 +118,14 @@ async function main() {
   await prisma.user.create({
     data: {
       email: 'admin@weisscafe.it',
+      username: 'admin@weisscafe.it',
       passwordHash: await hash('admin123', 12),
       firstName: 'Admin',
       lastName: 'Weiss',
       roleId: adminRole.id,
       venueId: weiss.id,
-      isFixedStaff: true
+      isFixedStaff: true,
+      mustChangePassword: false // Per test
     }
   })
 
@@ -131,12 +133,14 @@ async function main() {
   await prisma.user.create({
     data: {
       email: 'manager@weisscafe.it',
+      username: 'manager@weisscafe.it',
       passwordHash: await hash('manager123', 12),
       firstName: 'Mario',
       lastName: 'Rossi',
       roleId: managerRole.id,
       venueId: weiss.id,
-      isFixedStaff: true
+      isFixedStaff: true,
+      mustChangePassword: false // Per test
     }
   })
 
@@ -151,13 +155,17 @@ async function main() {
   ]
 
   for (const staff of fixedStaff) {
+    // Genera username: NomeCognome
+    const username = `${staff.firstName}${staff.lastName}`.replace(/[^a-zA-Z]/g, '')
     await prisma.user.create({
       data: {
         ...staff,
+        username,
         passwordHash: await hash('staff123', 12),
         roleId: staffRole.id,
         venueId: weiss.id,
-        isFixedStaff: true
+        isFixedStaff: true,
+        mustChangePassword: false // Per test
       }
     })
   }
@@ -170,14 +178,20 @@ async function main() {
   ]
 
   for (const extra of extras) {
+    // Genera username: NomeCognome (rimuovi caratteri speciali)
+    const username = `${extra.firstName}${extra.lastName}`.replace(/[^a-zA-Z]/g, '')
     await prisma.user.create({
       data: {
-        ...extra,
+        firstName: extra.firstName,
+        lastName: extra.lastName,
+        email: extra.email,
+        username,
         passwordHash: await hash('extra123', 12),
         roleId: staffRole.id,
         venueId: weiss.id,
         isFixedStaff: false,
-        hourlyRate: extra.hourlyRate
+        hourlyRate: extra.hourlyRate,
+        mustChangePassword: false // Per test
       }
     })
   }
