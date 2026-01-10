@@ -141,6 +141,51 @@ export async function POST(request: NextRequest) {
     // Genera nome automatico se non fornito
     const name = validatedData.name || `Settimana ${startDate.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' })} - ${endDate.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' })}`
 
+    // Recupera l'ultima pianificazione della sede con staffingRequirements
+    const recentSchedules = await prisma.shiftSchedule.findMany({
+      where: {
+        venueId: validatedData.venueId,
+      },
+      orderBy: { startDate: 'desc' },
+      select: { staffingRequirements: true, startDate: true },
+      take: 10, // Limita per performance
+    })
+    // Trova la prima con staffingRequirements non nullo
+    const lastSchedule = recentSchedules.find(s => s.staffingRequirements !== null)
+
+    // Converti le date del fabbisogno precedente nelle date della nuova settimana
+    let mappedStaffingRequirements: Record<string, number> | undefined
+    if (lastSchedule?.staffingRequirements && typeof lastSchedule.staffingRequirements === 'object') {
+      const oldRequirements = lastSchedule.staffingRequirements as Record<string, number>
+      const oldStartDate = new Date(lastSchedule.startDate)
+      mappedStaffingRequirements = {}
+
+      for (const [key, value] of Object.entries(oldRequirements)) {
+        // Key format: "YYYY-MM-DD_shiftId"
+        const [dateStr, shiftId] = key.split('_')
+        if (!dateStr || !shiftId) continue
+
+        const oldDate = new Date(dateStr)
+        // Calcola il giorno della settimana (0 = domenica, 1 = lunedì, etc.)
+        const dayOfWeek = oldDate.getDay()
+
+        // Calcola quanti giorni dall'inizio della vecchia settimana
+        const oldStartDay = oldStartDate.getDay()
+        const daysFromStart = (dayOfWeek - oldStartDay + 7) % 7
+
+        // Applica lo stesso offset alla nuova settimana
+        const newDate = new Date(startDate)
+        newDate.setDate(startDate.getDate() + daysFromStart)
+
+        // Solo se la nuova data è nel range della nuova pianificazione
+        if (newDate >= startDate && newDate <= endDate) {
+          const newDateStr = newDate.toISOString().split('T')[0]
+          const newKey = `${newDateStr}_${shiftId}`
+          mappedStaffingRequirements[newKey] = value
+        }
+      }
+    }
+
     const schedule = await prisma.shiftSchedule.create({
       data: {
         venueId: validatedData.venueId,
@@ -150,6 +195,8 @@ export async function POST(request: NextRequest) {
         status: 'DRAFT',
         notes: validatedData.notes || null,
         createdById: session.user.id,
+        // Copia staffingRequirements mappato dalla pianificazione precedente
+        staffingRequirements: mappedStaffingRequirements,
       },
       include: {
         venue: {

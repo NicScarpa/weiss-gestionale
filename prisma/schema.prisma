@@ -888,9 +888,10 @@ model ShiftSchedule {
   status ScheduleStatus @default(DRAFT)
 
   // Generazione AI
-  generationParams Json?    @map("generation_params")
-  generationLog    Json?    @map("generation_log")
-  generationScore  Decimal? @map("generation_score") @db.Decimal(5, 2)
+  generationParams      Json?    @map("generation_params")
+  generationLog         Json?    @map("generation_log")
+  generationScore       Decimal? @map("generation_score") @db.Decimal(5, 2)
+  staffingRequirements  Json?    @map("staffing_requirements") // Fabbisogno staff per data/turno
 
   // Workflow
   createdById   String?   @map("created_by")

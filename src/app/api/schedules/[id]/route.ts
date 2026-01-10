@@ -8,6 +8,7 @@ const updateScheduleSchema = z.object({
   name: z.string().optional(),
   status: z.enum(['DRAFT', 'GENERATED', 'REVIEW', 'PUBLISHED', 'ARCHIVED']).optional(),
   notes: z.string().nullable().optional(),
+  staffingRequirements: z.record(z.string(), z.number()).optional(),
 })
 
 // GET /api/schedules/[id] - Dettaglio pianificazione
@@ -156,6 +157,7 @@ export async function PUT(
     if (validatedData.name !== undefined) updateData.name = validatedData.name
     if (validatedData.status !== undefined) updateData.status = validatedData.status
     if (validatedData.notes !== undefined) updateData.notes = validatedData.notes
+    if (validatedData.staffingRequirements !== undefined) updateData.staffingRequirements = validatedData.staffingRequirements
 
     const updated = await prisma.shiftSchedule.update({
       where: { id },

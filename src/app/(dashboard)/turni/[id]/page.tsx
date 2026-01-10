@@ -1,6 +1,6 @@
 'use client'
 
-import { use, useState } from 'react'
+import { use, useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -111,6 +111,38 @@ export default function ScheduleDetailPage({ params }: PageProps) {
   })
 
   const allStaff = staffData?.staff || []
+
+  // Inizializza staffingRequirements quando schedule viene caricato
+  const staffingInitialized = useRef(false)
+  useEffect(() => {
+    if (schedule?.staffingRequirements && !staffingInitialized.current) {
+      setStaffingRequirements(schedule.staffingRequirements as Record<string, number>)
+      staffingInitialized.current = true
+    }
+  }, [schedule?.staffingRequirements])
+
+  // Mutation per salvare staffingRequirements
+  const saveStaffingMutation = useMutation({
+    mutationFn: async (requirements: Record<string, number>) => {
+      const res = await fetch(`/api/schedules/${resolvedParams.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ staffingRequirements: requirements }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Errore nel salvataggio')
+      }
+      return res.json()
+    },
+  })
+
+  // Handler per il cambio di staffingRequirements con salvataggio automatico
+  const handleStaffingChange = (requirements: Record<string, number>) => {
+    setStaffingRequirements(requirements)
+    // Salva nel database (debounced tramite React Query)
+    saveStaffingMutation.mutate(requirements)
+  }
 
   const generateMutation = useMutation({
     mutationFn: async (params: { preferFixedStaff: boolean; balanceHours: boolean; minimizeCost: boolean; staffingRequirements?: Record<string, number> }) => {
@@ -398,7 +430,8 @@ export default function ScheduleDetailPage({ params }: PageProps) {
           startDate={new Date(schedule.startDate)}
           endDate={new Date(schedule.endDate)}
           shiftDefinitions={shiftDefinitions}
-          onStaffingChange={setStaffingRequirements}
+          onStaffingChange={handleStaffingChange}
+          initialStaffingRequirements={staffingRequirements}
         />
       )}
 
