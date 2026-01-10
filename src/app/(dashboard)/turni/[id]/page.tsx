@@ -237,14 +237,13 @@ export default function ScheduleDetailPage({ params }: PageProps) {
   const warnings = schedule.generationLog?.warnings || []
 
   // Riepilogo turni per dipendente
-  // Nota: isFixedStaff=true significa EXTRA, isFixedStaff=false significa FISSO
   type EmployeeSummary = { name: string; shifts: number; isFixed: boolean }
   const employeeShiftSummary: Record<string, EmployeeSummary> = (schedule.assignments || []).reduce(
     (acc: Record<string, EmployeeSummary>, assignment: Assignment) => {
       const id = assignment.userId
       const name = `${assignment.user.firstName} ${assignment.user.lastName}`
-      // isFixedStaff=false significa staff FISSO (logica invertita nel DB)
-      const isFixed = assignment.user.isFixedStaff === false
+      // isFixedStaff=true significa staff FISSO
+      const isFixed = assignment.user.isFixedStaff === true
       if (!acc[id]) {
         acc[id] = { name, shifts: 0, isFixed }
       }
