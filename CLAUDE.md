@@ -2,6 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Working Guidelines
+
+1. **Think first, read the codebase** - Before starting any task, think through the problem and read relevant files in the codebase.
+
+2. **Check in before major changes** - Before making any significant changes, check in with the user to verify the plan.
+
+3. **Explain changes at each step** - Provide a high-level explanation of what changes were made at every step.
+
+4. **Keep it simple** - Make every task and code change as simple as possible. Avoid massive or complex changes. Every change should impact as little code as possible. Simplicity is key.
+
+5. **Maintain architecture documentation** - Keep a documentation file that describes how the architecture of the app works inside and out.
+
+6. **Never speculate about code** - Never make claims about code you haven't opened. If a specific file is referenced, MUST read the file before answering. Investigate and read relevant files BEFORE answering questions about the codebase. Give grounded, hallucination-free answers.
+
 ## Plan and review
 Before starting work
 Before you begin write a detailed implementation plan in a file named claude/tasks/TASK_NAME.md
