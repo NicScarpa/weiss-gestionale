@@ -23,6 +23,7 @@ import type {
   ParseWarning,
 } from './types'
 
+import { logger } from '@/lib/logger'
 // Re-export types and constants for convenience
 export { TIPI_DOCUMENTO, MODALITA_PAGAMENTO, NATURA_OPERAZIONE } from './types'
 // Import per uso interno
@@ -77,7 +78,7 @@ function normalizeVatNumber(value: unknown): string {
 
   // Avvisa se la P.IVA non ha 11 cifre
   if (vatStr.length !== 11) {
-    console.warn(`P.IVA con lunghezza non standard (${vatStr.length} cifre): ${vatStr}`)
+    logger.warn(`P.IVA con lunghezza non standard (${vatStr.length} cifre): ${vatStr}`)
   }
 
   return vatStr
@@ -101,6 +102,37 @@ function parseDecimal(value: unknown): number {
     return parseFloat(value.replace(',', '.')) || 0
   }
   return 0
+}
+
+/**
+ * Normalizza una data FatturaPA
+ *
+ * Le date FatturaPA possono avere formati non standard come:
+ * - "2026-01-03+01:00" (con timezone offset senza T)
+ * - "2026-01-03-01:00" (con timezone negativo)
+ *
+ * JavaScript Date() non riesce a parsare questi formati.
+ * Questa funzione estrae solo la parte YYYY-MM-DD.
+ */
+function normalizeFatturaPADate(dateStr: string): string {
+  if (!dateStr) return ''
+
+  // Rimuovi timezone offset se presente (es. "+01:00" o "-05:00")
+  // Pattern: YYYY-MM-DD seguito opzionalmente da +/-HH:MM
+  const match = dateStr.match(/^(\d{4}-\d{2}-\d{2})([+-]\d{2}:\d{2})?$/)
+  if (match) {
+    return match[1] // Ritorna solo YYYY-MM-DD
+  }
+
+  // Se è già un formato ISO completo con T (es. 2026-01-03T00:00:00+01:00),
+  // estrai solo la data
+  const isoMatch = dateStr.match(/^(\d{4}-\d{2}-\d{2})T/)
+  if (isoMatch) {
+    return isoMatch[1]
+  }
+
+  // Altrimenti ritorna la stringa originale
+  return dateStr
 }
 
 /**
@@ -278,9 +310,10 @@ function parseDatiPagamento(data: unknown): DatiPagamento | undefined {
 
   const dettagli = toArray(datiPag.DettaglioPagamento).map((d) => {
     const det = d as Record<string, unknown>
+    const rawDate = getText(det.DataScadenzaPagamento)
     return {
       modalitaPagamento: getText(det.ModalitaPagamento),
-      dataScadenzaPagamento: getText(det.DataScadenzaPagamento) || undefined,
+      dataScadenzaPagamento: rawDate ? normalizeFatturaPADate(rawDate) : undefined,
       importoPagamento: parseDecimal(det.ImportoPagamento),
       istitutoFinanziario: getText(det.IstitutoFinanziario) || undefined,
       iban: getText(det.IBAN) || undefined,
@@ -310,9 +343,10 @@ function parseDatiBollo(datiGeneraliDocumento: Record<string, unknown>): DatiBol
  * Estrae un singolo riferimento documento (Ordine, Contratto, Convenzione, Fattura Collegata)
  */
 function parseRiferimentoDocumento(data: Record<string, unknown>): DatoRiferimento {
+  const rawDate = getText(data.Data)
   return {
     idDocumento: getText(data.IdDocumento),
-    data: getText(data.Data) || undefined,
+    data: rawDate ? normalizeFatturaPADate(rawDate) : undefined,
     numItem: getText(data.NumItem) || undefined,
     codiceCommessaConvenzione: getText(data.CodiceCommessaConvenzione) || undefined,
     codiceCUP: getText(data.CodiceCUP) || undefined,
@@ -334,7 +368,7 @@ function parseDatiDDT(data: Record<string, unknown>): DatoDDT {
 
   return {
     numeroDDT: getText(data.NumeroDDT),
-    dataDDT: getText(data.DataDDT),
+    dataDDT: normalizeFatturaPADate(getText(data.DataDDT)),
     riferimentoNumeroLinea,
   }
 }
@@ -458,7 +492,7 @@ export function parseFatturaPA(xmlContent: string, fileName?: string): FatturaPa
     // Documento
     tipoDocumento: getText(datiGeneraliDocumento.TipoDocumento),
     divisa: getText(datiGeneraliDocumento.Divisa) || 'EUR',
-    data: getText(datiGeneraliDocumento.Data),
+    data: normalizeFatturaPADate(getText(datiGeneraliDocumento.Data)),
     numero: getText(datiGeneraliDocumento.Numero),
     causale,
 
@@ -764,7 +798,7 @@ export function parseFatturaPASafe(xmlContent: string, fileName?: string): Parse
     const datiBeniServizi = (body.DatiBeniServizi || {}) as Record<string, unknown>
 
     const numero = getText(datiGeneraliDocumento.Numero)
-    const data = getText(datiGeneraliDocumento.Data)
+    const data = normalizeFatturaPADate(getText(datiGeneraliDocumento.Data))
     const tipoDocumento = getText(datiGeneraliDocumento.TipoDocumento)
 
     // Validazioni campi obbligatori

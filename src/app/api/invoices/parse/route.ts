@@ -6,6 +6,7 @@ import { matchSupplier, suggestAccountForSupplier } from '@/lib/sdi/matcher'
 import { TIPI_DOCUMENTO, MODALITA_PAGAMENTO } from '@/lib/sdi/types'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 const parseRequestSchema = z.object({
   xmlContent: z.string().min(100, 'Contenuto XML non valido'),
   fileName: z.string().optional(),
@@ -70,11 +71,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Verifica se esiste già
+    // Usa varianti P.IVA per retrocompatibilità con dati esistenti non normalizzati
+    const normalizedSupplierVat = fattura.cedentePrestatore.partitaIva
+    const vatWithoutLeadingZeros = normalizedSupplierVat.replace(/^0+/, '')
+
     const existingInvoice = await prisma.electronicInvoice.findFirst({
       where: {
         invoiceNumber: fattura.numero,
-        supplierVat: fattura.cedentePrestatore.partitaIva,
         invoiceDate: new Date(fattura.data),
+        OR: [
+          // Match esatto con P.IVA normalizzata (nuove fatture)
+          { supplierVat: normalizedSupplierVat },
+          // Match senza zeri iniziali (fatture pre-fix)
+          { supplierVat: vatWithoutLeadingZeros },
+        ],
       },
       select: { id: true, status: true, importedAt: true },
     })
@@ -166,7 +176,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Errore POST /api/invoices/parse:', error)
+    logger.error('Errore POST /api/invoices/parse', error)
     return NextResponse.json(
       { error: 'Errore nel parsing della fattura' },
       { status: 500 }
