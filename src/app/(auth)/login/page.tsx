@@ -3,11 +3,13 @@
 import { useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { AlertCircle, Loader2 } from 'lucide-react'
+import Image from 'next/image'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -49,15 +51,17 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-900 dark:to-slate-800 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-black p-4">
       <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1 text-center">
-          <CardTitle className="text-2xl font-bold tracking-tight">
-            Weiss Cafè
-          </CardTitle>
-          <CardDescription>
-            Sistema Gestionale
-          </CardDescription>
+        <CardHeader className="flex items-center justify-center py-6">
+          <Image
+            src="/images/logo.svg"
+            alt="Weiss Cafè"
+            width={200}
+            height={80}
+            priority
+            className="h-auto w-auto max-w-[200px]"
+          />
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -69,11 +73,11 @@ export default function LoginPage() {
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="identifier">Username o Email</Label>
+              <Label htmlFor="identifier">Username</Label>
               <Input
                 id="identifier"
                 type="text"
-                placeholder="username o email"
+                placeholder="username"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
                 required
@@ -112,8 +116,13 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-6 text-center text-sm text-muted-foreground">
-            <p>Accedi con username o email</p>
+          <div className="mt-6 text-center">
+            <Link
+              href="/forgot-password"
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Password dimenticata?
+            </Link>
           </div>
         </CardContent>
       </Card>
