@@ -36,6 +36,10 @@ model User {
   createdBy          User?     @relation("CreatedByUser", fields: [createdById], references: [id])
   createdUsers       User[]    @relation("CreatedByUser") // Utenti creati da questo utente
 
+  // === Recupero password ===
+  resetToken        String?   @unique @map("reset_token")
+  resetTokenExpiry  DateTime? @map("reset_token_expiry")
+
   // === FASE 4: Dati contrattuali estesi ===
   contractType      ContractType? @map("contract_type")
   contractHoursWeek Decimal?      @map("contract_hours_week") @db.Decimal(4, 1)

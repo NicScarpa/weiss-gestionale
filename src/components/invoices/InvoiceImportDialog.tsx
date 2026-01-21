@@ -25,9 +25,18 @@ import {
   ChevronUp,
   Pencil,
   ArrowRight,
-  Play
+  Play,
+  Archive,
+  Package
 } from 'lucide-react'
 import { extractXmlFromP7m, isP7mFile } from '@/lib/p7m-utils'
+import {
+  isZipFile,
+  extractInvoicesFromZip,
+  createFileFromExtracted,
+  getZipErrorMessage,
+  type ZipExtractionResult,
+} from '@/lib/zip-utils'
 import {
   Dialog,
   DialogContent,
@@ -57,6 +66,7 @@ import { Progress } from '@/components/ui/progress'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { toast } from 'sonner'
 
+import { logger } from '@/lib/logger'
 interface InvoiceImportDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -147,10 +157,21 @@ interface FileItem {
   file: File
   fileName: string
   xmlContent?: string
-  status: 'pending' | 'parsing' | 'importing' | 'completed' | 'skipped' | 'needs_review' | 'error'
+  status: 'pending' | 'parsing' | 'importing' | 'completed' | 'skipped' | 'needs_review' | 'error' | 'extracting'
   error?: string
   parsedData?: ParsedInvoice
   isSigned: boolean
+  /** Nome dello ZIP di origine (se estratto da archivio) */
+  sourceZip?: string
+}
+
+// Stato estrazione ZIP
+interface ZipExtractionState {
+  fileName: string
+  status: 'extracting' | 'completed' | 'error'
+  totalFiles: number
+  extractedCount: number
+  error?: string
 }
 
 async function parseInvoice(
@@ -221,9 +242,12 @@ export function InvoiceImportDialog({
   const queryClient = useQueryClient()
   
   // Dialog State
-  const [step, setStep] = useState<'upload' | 'processing' | 'review' | 'summary'>('upload')
+  const [step, setStep] = useState<'upload' | 'extracting' | 'processing' | 'review' | 'summary'>('upload')
   const [files, setFiles] = useState<FileItem[]>([])
   const [currentReviewIndex, setCurrentReviewIndex] = useState(0)
+
+  // ZIP Extraction State
+  const [zipExtraction, setZipExtraction] = useState<ZipExtractionState | null>(null)
   
   // Review Item State
   const [selectedVenueId, setSelectedVenueId] = useState<string>('')
@@ -263,22 +287,69 @@ export function InvoiceImportDialog({
     setStep('upload')
     setFiles([])
     setCurrentReviewIndex(0)
+    setZipExtraction(null)
     isProcessing.current = false
   }, [])
+
+  const handleClose = useCallback(() => {
+    resetDialog()
+    onOpenChange(false)
+  }, [resetDialog, onOpenChange])
 
   // 1. Handle File Selection
   const handleFiles = async (inputFiles: FileList | null) => {
     if (!inputFiles || inputFiles.length === 0) return
 
     const newFiles: FileItem[] = []
-    
+
     for (let i = 0; i < inputFiles.length; i++) {
       const file = inputFiles[i]
       const lowerName = file.name.toLowerCase()
       const isXml = lowerName.endsWith('.xml')
       const isP7m = isP7mFile(file.name)
+      const isZip = isZipFile(file.name)
 
-      if (isXml || isP7m) {
+      if (isZip) {
+        // Estrazione ZIP
+        try {
+          const buffer = await file.arrayBuffer()
+          const result = await extractInvoicesFromZip(buffer, file.name)
+
+          if (result.files.length === 0) {
+            // Mostra errori specifici
+            if (result.errors.length > 0) {
+              toast.error(getZipErrorMessage(result.errors[0]))
+            } else {
+              toast.error(`Nessun file fattura trovato in "${file.name}"`)
+            }
+            continue
+          }
+
+          // Aggiungi i file estratti
+          for (const extracted of result.files) {
+            const extractedFile = createFileFromExtracted(extracted)
+            newFiles.push({
+              id: Math.random().toString(36).substr(2, 9),
+              file: extractedFile,
+              fileName: extracted.name,
+              status: 'pending',
+              isSigned: extracted.name.toLowerCase().endsWith('.p7m'),
+              sourceZip: file.name
+            })
+          }
+
+          // Toast di successo
+          toast.success(`Estratti ${result.files.length} file da "${file.name}"`)
+
+          // Mostra eventuali errori parziali
+          if (result.errors.length > 0) {
+            toast.warning(`${result.errors.length} file non estratti da "${file.name}"`)
+          }
+        } catch (err) {
+          logger.error('Errore estrazione ZIP', err)
+          toast.error(`Errore apertura archivio "${file.name}"`)
+        }
+      } else if (isXml || isP7m) {
         newFiles.push({
           id: Math.random().toString(36).substr(2, 9),
           file,
@@ -290,7 +361,7 @@ export function InvoiceImportDialog({
     }
 
     if (newFiles.length === 0) {
-      toast.error('Nessun file XML o P7M valido selezionato')
+      toast.error('Nessun file XML, P7M o ZIP valido selezionato')
       return
     }
 
@@ -359,7 +430,7 @@ export function InvoiceImportDialog({
           needsReviewCount++
         }
       } catch (err) {
-        console.error(err)
+        logger.error('Errore import fattura', err)
         updatedFiles[i].status = 'error'
         updatedFiles[i].error = err instanceof Error ? err.message : 'Errore sconosciuto'
       }
@@ -486,7 +557,9 @@ export function InvoiceImportDialog({
     completed: files.filter(f => f.status === 'completed').length,
     skipped: files.filter(f => f.status === 'skipped').length,
     error: files.filter(f => f.status === 'error').length,
-    pending: files.filter(f => f.status === 'pending' || f.status === 'parsing' || f.status === 'importing' || f.status === 'needs_review').length
+    pending: files.filter(f => f.status === 'pending' || f.status === 'parsing' || f.status === 'importing' || f.status === 'needs_review').length,
+    fromZip: files.filter(f => f.sourceZip).length,
+    zipSources: [...new Set(files.filter(f => f.sourceZip).map(f => f.sourceZip))].length
   }
 
   const handleSupplierFieldChange = (field: keyof EditableSupplierData, value: string) => {
@@ -521,13 +594,13 @@ export function InvoiceImportDialog({
                 id="file-input"
                 type="file"
                 multiple
-                accept=".xml,.p7m"
+                accept=".xml,.p7m,.zip"
                 className="hidden"
                 onChange={(e) => handleFiles(e.target.files)}
               />
               <Upload className="h-12 w-12 mx-auto text-slate-400 mb-4" />
               <p className="font-medium">
-                Trascina qui i file XML o P7M (Multi-upload supportato)
+                Trascina qui i file XML, P7M o ZIP (Multi-upload supportato)
               </p>
               <p className="text-sm text-slate-500 mt-1">
                 Le fatture con fornitore già censito verranno importate automaticamente.
@@ -539,10 +612,21 @@ export function InvoiceImportDialog({
                 <p className="text-sm font-medium">{files.length} file selezionati</p>
                 <ScrollArea className="h-40 border rounded-md p-2">
                   {files.map((file, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm p-1">
-                      <FileText className="h-4 w-4 text-slate-400" />
-                      <span className="truncate flex-1">{file.fileName}</span>
-                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => {
+                    <div key={i} className="flex items-center gap-2 text-sm p-1 min-w-0">
+                      {file.sourceZip ? (
+                        <Package className="h-4 w-4 text-amber-500 shrink-0" />
+                      ) : (
+                        <FileText className="h-4 w-4 text-slate-400 shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="truncate" title={file.fileName}>{file.fileName}</p>
+                        {file.sourceZip && (
+                          <p className="text-xs text-slate-400 truncate" title={file.sourceZip}>
+                            da {file.sourceZip}
+                          </p>
+                        )}
+                      </div>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => {
                         const newFiles = [...files];
                         newFiles.splice(i, 1);
                         setFiles(newFiles);
@@ -721,6 +805,15 @@ export function InvoiceImportDialog({
                    <p className="text-xs text-amber-600 uppercase">Già Presenti</p>
                 </div>
              </div>
+
+             {stats.zipSources > 0 && (
+                <div className="flex items-center justify-center gap-2 text-sm text-slate-500">
+                  <Archive className="h-4 w-4" />
+                  <span>
+                    {stats.fromZip} file estratti da {stats.zipSources} archivio{stats.zipSources > 1 ? ' ZIP' : ' ZIP'}
+                  </span>
+                </div>
+             )}
              
              {stats.error > 0 && (
                 <div className="mt-6 text-left">
@@ -765,7 +858,7 @@ export function InvoiceImportDialog({
           )}
 
           {step === 'summary' && (
-             <Button onClick={() => onOpenChange(false)}>
+             <Button onClick={handleClose}>
                 Chiudi
              </Button>
           )}
