@@ -1,0 +1,11 @@
+# Pre-commit hook: Lint and Type Check
+
+echo "Running pre-commit checks..."
+
+# Lint
+npm run lint || exit 1
+
+# Type check
+npx tsc --noEmit || exit 1
+
+echo "Pre-commit checks passed!"
