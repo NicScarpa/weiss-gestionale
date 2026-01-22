@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
+import { logger } from '@/lib/logger'
 // GET /api/attendance/records - Lista timbrature (manager)
 export async function GET(request: NextRequest) {
   try {
@@ -136,7 +137,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Errore GET /api/attendance/records:', error)
+    logger.error('Errore GET /api/attendance/records', error)
     return NextResponse.json(
       { error: 'Errore nel recupero delle timbrature' },
       { status: 500 }

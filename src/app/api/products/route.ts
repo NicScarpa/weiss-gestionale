@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // GET /api/products - Lista prodotti con filtri
 export async function GET(request: NextRequest) {
   try {
@@ -128,7 +129,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Errore GET /api/products:', error)
+    logger.error('Errore GET /api/products', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dei prodotti' },
       { status: 500 }
@@ -198,7 +199,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Errore POST /api/products:', error)
+    logger.error('Errore POST /api/products', error)
     return NextResponse.json(
       { error: 'Errore nella creazione del prodotto' },
       { status: 500 }

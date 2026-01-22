@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -21,6 +21,7 @@ import { Search, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { BankTransactionWithMatch, MatchCandidate } from '@/types/reconciliation'
 
+import { logger } from '@/lib/logger'
 interface MatchDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -44,18 +45,7 @@ export function MatchDialog({
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
 
-  useEffect(() => {
-    if (open && transactionId) {
-      loadTransaction()
-    } else {
-      setTransaction(null)
-      setSelectedEntryId(null)
-      setSearchTerm('')
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, transactionId])
-
-  const loadTransaction = async () => {
+  const loadTransaction = useCallback(async () => {
     if (!transactionId) return
 
     setLoading(true)
@@ -70,12 +60,22 @@ export function MatchDialog({
         setSelectedEntryId(data.matchCandidates[0].journalEntryId)
       }
     } catch (error) {
-      console.error('Load error:', error)
+      logger.error('Load error', error)
       toast.error('Errore nel caricamento della transazione')
     } finally {
       setLoading(false)
     }
-  }
+  }, [transactionId])
+
+  useEffect(() => {
+    if (open && transactionId) {
+      loadTransaction()
+    } else {
+      setTransaction(null)
+      setSelectedEntryId(null)
+      setSearchTerm('')
+    }
+  }, [open, transactionId, loadTransaction])
 
   const handleMatch = async () => {
     if (!transactionId || !selectedEntryId) return
@@ -97,7 +97,7 @@ export function MatchDialog({
       onSuccess?.()
       onOpenChange(false)
     } catch (error) {
-      console.error('Match error:', error)
+      logger.error('Match error', error)
       toast.error(error instanceof Error ? error.message : 'Errore nel match')
     } finally {
       setSubmitting(false)

@@ -23,6 +23,7 @@ import { Upload, FileSpreadsheet, AlertCircle, CheckCircle2 } from 'lucide-react
 import { toast } from 'sonner'
 import type { ImportResult, ImportError } from '@/types/reconciliation'
 
+import { logger } from '@/lib/logger'
 interface ImportDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -102,7 +103,7 @@ export function ImportDialog({
         toast.info(`Tutte le ${data.duplicatesSkipped} transazioni erano già presenti`)
       }
     } catch (error) {
-      console.error('Import error:', error)
+      logger.error('Import error', error)
       toast.error(error instanceof Error ? error.message : 'Errore durante l\'import')
     } finally {
       setLoading(false)

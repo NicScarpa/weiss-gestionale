@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
+import { logger } from '@/lib/logger'
 // GET /api/leave-types - Lista tipi assenza
 export async function GET(request: NextRequest) {
   try {
@@ -28,7 +29,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: leaveTypes })
   } catch (error) {
-    console.error('Errore GET /api/leave-types:', error)
+    logger.error('Errore GET /api/leave-types', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dei tipi assenza' },
       { status: 500 }

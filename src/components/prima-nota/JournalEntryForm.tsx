@@ -19,6 +19,7 @@ import { formatCurrency } from '@/lib/constants'
 import { toast } from 'sonner'
 import type { RegisterType, EntryType } from '@/types/prima-nota'
 
+import { logger } from '@/lib/logger'
 // Opzioni registro
 const REGISTER_OPTIONS: { value: RegisterType; label: string }[] = [
   { value: 'CASH', label: 'Cassa' },
@@ -137,7 +138,7 @@ export function JournalEntryForm({
       }
       toast.success(isEditing ? 'Movimento aggiornato' : 'Movimento registrato')
     } catch (error: any) {
-      console.error('Errore:', error)
+      logger.error('Errore', error)
       toast.error(error.message || 'Errore nel salvataggio')
     } finally {
       setIsSubmitting(false)

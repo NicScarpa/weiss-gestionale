@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { notifyShiftReminder } from '@/lib/notifications'
 
+import { logger } from '@/lib/logger'
 // POST /api/shifts/reminder - Job per promemoria turni (1h prima)
 export async function POST(request: NextRequest) {
   try {
     // Verifica che CRON_SECRET sia configurato
     const cronSecret = process.env.CRON_SECRET
     if (!cronSecret) {
-      console.error('CRON_SECRET environment variable is not set')
+      logger.error('CRON_SECRET environment variable is not set')
       return NextResponse.json(
         { error: 'Errore di configurazione server' },
         { status: 500 }
@@ -132,7 +133,7 @@ export async function POST(request: NextRequest) {
       details: results,
     })
   } catch (error) {
-    console.error('Errore shift reminder job:', error)
+    logger.error('Errore shift reminder job', error)
     return NextResponse.json(
       { error: 'Errore nel job promemoria turni' },
       { status: 500 }

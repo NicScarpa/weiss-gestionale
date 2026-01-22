@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { startOfYear, endOfYear, subYears, format, eachMonthOfInterval, startOfMonth, endOfMonth } from 'date-fns'
 import { it } from 'date-fns/locale'
 
+import { logger } from '@/lib/logger'
 // GET /api/report/confronto-annuale - Report confronto year-over-year
 export async function GET(request: NextRequest) {
   try {
@@ -36,55 +37,61 @@ export async function GET(request: NextRequest) {
       targetVenueId = venueId
     }
 
-    // Query chiusure per anno corrente
-    const currentYearClosures = await prisma.dailyClosure.findMany({
-      where: {
-        status: 'VALIDATED',
-        date: {
-          gte: currentYearStart,
-          lte: currentYearEnd,
+    // Query parallele per entrambi gli anni (ottimizzazione performance)
+    const [currentYearClosures, previousYearClosures] = await Promise.all([
+      // Query chiusure per anno corrente
+      prisma.dailyClosure.findMany({
+        where: {
+          status: 'VALIDATED',
+          date: {
+            gte: currentYearStart,
+            lte: currentYearEnd,
+          },
+          ...(targetVenueId && { venueId: targetVenueId }),
         },
-        ...(targetVenueId && { venueId: targetVenueId }),
-      },
-      include: {
-        stations: {
-          select: {
-            cashAmount: true,
-            posAmount: true,
+        select: {
+          id: true,
+          date: true,
+          stations: {
+            select: {
+              cashAmount: true,
+              posAmount: true,
+            },
+          },
+          expenses: {
+            select: {
+              amount: true,
+            },
           },
         },
-        expenses: {
-          select: {
-            amount: true,
+      }),
+      // Query chiusure per anno precedente
+      prisma.dailyClosure.findMany({
+        where: {
+          status: 'VALIDATED',
+          date: {
+            gte: previousYearStart,
+            lte: previousYearEnd,
+          },
+          ...(targetVenueId && { venueId: targetVenueId }),
+        },
+        select: {
+          id: true,
+          date: true,
+          stations: {
+            select: {
+              cashAmount: true,
+              posAmount: true,
+            },
+          },
+          expenses: {
+            select: {
+              amount: true,
+            },
           },
         },
-      },
-    })
-
-    // Query chiusure per anno precedente
-    const previousYearClosures = await prisma.dailyClosure.findMany({
-      where: {
-        status: 'VALIDATED',
-        date: {
-          gte: previousYearStart,
-          lte: previousYearEnd,
-        },
-        ...(targetVenueId && { venueId: targetVenueId }),
-      },
-      include: {
-        stations: {
-          select: {
-            cashAmount: true,
-            posAmount: true,
-          },
-        },
-        expenses: {
-          select: {
-            amount: true,
-          },
-        },
-      },
-    })
+      }),
+    ])
 
     // Helper per calcolare totali di una chiusura
     const calculateClosureTotals = (closure: typeof currentYearClosures[0]) => {
@@ -285,7 +292,7 @@ export async function GET(request: NextRequest) {
       availableYears: years,
     })
   } catch (error) {
-    console.error('Errore GET /api/report/confronto-annuale:', error)
+    logger.error('Errore GET /api/report/confronto-annuale', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dei dati' },
       { status: 500 }

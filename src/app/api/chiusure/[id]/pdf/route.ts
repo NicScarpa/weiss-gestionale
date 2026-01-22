@@ -5,6 +5,7 @@ import { renderToBuffer } from '@react-pdf/renderer'
 import { ClosurePdfDocument } from '@/lib/pdf/ClosurePdfTemplate'
 import { format } from 'date-fns'
 
+import { logger } from '@/lib/logger'
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -82,18 +83,19 @@ export async function GET(
       return NextResponse.json({ error: 'Chiusura non trovata' }, { status: 404 })
     }
 
-    // Type assertion per accesso ai campi (Prisma include tutti i campi base)
+    // Type assertion per campi Prisma Decimal
+    type DecimalValue = { toNumber: () => number } | null
     const c = closure as typeof closure & {
-      totalRevenue: any
-      totalCash: any
-      totalPos: any
-      totalExpenses: any
-      bankDeposit: any
-      cashDifference: any
-      netCash: any
-      coffeeMachineStart: any
-      coffeeMachineEnd: any
-      coffeeSold: any
+      totalRevenue: DecimalValue
+      totalCash: DecimalValue
+      totalPos: DecimalValue
+      totalExpenses: DecimalValue
+      bankDeposit: DecimalValue
+      cashDifference: DecimalValue
+      netCash: DecimalValue
+      coffeeMachineStart: DecimalValue
+      coffeeMachineEnd: DecimalValue
+      coffeeSold: DecimalValue
     }
 
     // Filtra solo le postazioni con dati
@@ -169,7 +171,7 @@ export async function GET(
       },
     })
   } catch (error) {
-    console.error('Errore generazione PDF:', error)
+    logger.error('Errore generazione PDF', error)
     return NextResponse.json(
       { error: 'Errore nella generazione del PDF' },
       { status: 500 }

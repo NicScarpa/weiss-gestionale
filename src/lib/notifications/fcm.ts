@@ -10,6 +10,7 @@
 
 import { FCMMessage, NotificationResult } from './types'
 
+import { logger } from '@/lib/logger'
 // Firebase Admin SDK (lazy loaded)
 let firebaseApp: FirebaseApp | null = null
 let messaging: Messaging | null = null
@@ -30,7 +31,7 @@ async function initializeFirebase(): Promise<boolean> {
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL
 
   if (!projectId || !privateKey || !clientEmail) {
-    console.warn(
+    logger.warn(
       'Firebase credentials not configured. Push notifications disabled.'
     )
     return false
@@ -53,10 +54,10 @@ async function initializeFirebase(): Promise<boolean> {
     }
 
     messaging = admin.messaging()
-    console.log('Firebase Admin SDK initialized')
+    logger.info('Firebase Admin SDK initialized')
     return true
   } catch (error) {
-    console.error('Failed to initialize Firebase:', error)
+    logger.error('Failed to initialize Firebase', error)
     return false
   }
 }
@@ -72,7 +73,7 @@ export async function sendPushNotification(
   if (!initialized || !messaging) {
     // In development senza Firebase, logga e ritorna success mock
     if (process.env.NODE_ENV === 'development') {
-      console.log('[FCM Mock] Would send:', message)
+      logger.info('[FCM Mock] Would send', { message })
       return { success: true, messageId: 'mock-' + Date.now() }
     }
     return { success: false, error: 'Firebase not configured' }
@@ -96,7 +97,7 @@ export async function sendPushNotification(
 
     return { success: true, messageId }
   } catch (error: any) {
-    console.error('FCM send error:', error)
+    logger.error('FCM send error', error)
 
     // Gestisci token non valido
     if (
@@ -126,7 +127,7 @@ export async function sendPushNotificationBatch(
 
   if (!initialized || !messaging) {
     if (process.env.NODE_ENV === 'development') {
-      console.log('[FCM Mock] Would send batch:', messages.length, 'messages')
+      logger.info('[FCM Mock] Would send batch', { count: messages.length })
       return messages.map(() => ({ success: true, messageId: 'mock-' + Date.now() }))
     }
     return messages.map(() => ({ success: false, error: 'Firebase not configured' }))
@@ -161,7 +162,7 @@ export async function sendPushNotificationBatch(
       }
     })
   } catch (error: any) {
-    console.error('FCM batch send error:', error)
+    logger.error('FCM batch send error', error)
     return messages.map(() => ({
       success: false,
       error: error.message || 'Unknown error',

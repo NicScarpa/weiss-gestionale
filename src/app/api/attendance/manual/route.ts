@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { PunchType, PunchMethod } from '@prisma/client'
 
+import { logger } from '@/lib/logger'
 // Schema validazione input
 const manualPunchSchema = z.object({
   userId: z.string().min(1, 'Utente richiesto'),
@@ -186,7 +187,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Errore POST /api/attendance/manual:', error)
+    logger.error('Errore POST /api/attendance/manual', error)
     return NextResponse.json(
       { error: 'Errore nell\'inserimento della timbratura' },
       { status: 500 }

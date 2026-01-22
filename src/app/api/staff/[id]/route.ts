@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // Mappatura nomi campi per messaggi di errore leggibili
 const fieldLabels: Record<string, string> = {
   firstName: 'Nome',
@@ -41,47 +42,54 @@ const fieldLabels: Record<string, string> = {
   canHandleCash: 'Può gestire cassa',
 }
 
+// Type-safe helper per accedere a proprietà extra di ZodIssue
+function getIssueProperty<T>(issue: z.ZodIssue, key: string): T | undefined {
+  return (issue as unknown as Record<string, T>)[key]
+}
+
 // Formatta errori Zod in messaggi leggibili
 function formatZodErrors(error: z.ZodError): string {
   const messages = error.issues.map(issue => {
     const fieldPath = issue.path.join('.')
     const fieldName = fieldLabels[fieldPath] || fieldPath
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const issueAny = issue as any
-    const code = issue.code as string
+    const code = issue.code as string // Evita type narrowing eccessivo
 
     // Gestione per tipo di errore
-    if (code === 'invalid_type') {
-      if (issueAny.received === 'undefined' || issueAny.received === 'null') {
-        return `"${fieldName}" è obbligatorio`
+    switch (code) {
+      case 'invalid_type': {
+        const received = getIssueProperty<string>(issue, 'received')
+        if (received === 'undefined' || received === 'null') {
+          return `"${fieldName}" è obbligatorio`
+        }
+        return `"${fieldName}" ha un formato non valido`
       }
-      return `"${fieldName}" ha un formato non valido`
-    }
 
-    if (code === 'too_small') {
-      if (issueAny.type === 'string' && issueAny.minimum === 1) {
-        return `"${fieldName}" è obbligatorio`
+      case 'too_small': {
+        const type = getIssueProperty<string>(issue, 'type')
+        const minimum = getIssueProperty<number>(issue, 'minimum')
+        if (type === 'string' && minimum === 1) {
+          return `"${fieldName}" è obbligatorio`
+        }
+        return `"${fieldName}" deve essere almeno ${minimum}`
       }
-      return `"${fieldName}" deve essere almeno ${issueAny.minimum}`
-    }
 
-    if (code === 'too_big') {
-      return `"${fieldName}" supera il limite massimo`
-    }
+      case 'too_big':
+        return `"${fieldName}" supera il limite massimo`
 
-    if (code === 'invalid_enum_value' || code === 'invalid_value') {
-      return `"${fieldName}" ha un valore non valido`
-    }
+      case 'invalid_enum_value':
+        return `"${fieldName}" ha un valore non valido`
 
-    if (code === 'invalid_string' || code === 'invalid_format') {
-      if (issueAny.validation === 'email' || issueAny.format === 'email') {
-        return `"${fieldName}" non è un indirizzo email valido`
+      case 'invalid_string': {
+        const validation = getIssueProperty<string>(issue, 'validation')
+        if (validation === 'email') {
+          return `"${fieldName}" non è un indirizzo email valido`
+        }
+        return `"${fieldName}" ha un formato non valido`
       }
-      return `"${fieldName}" ha un formato non valido`
-    }
 
-    // Fallback
-    return `"${fieldName}": ${issue.message}`
+      default:
+        return `"${fieldName}": ${issue.message}`
+    }
   })
 
   return messages.join('. ')
@@ -260,7 +268,7 @@ export async function GET(
 
     return NextResponse.json(staff)
   } catch (error) {
-    console.error('Errore GET /api/staff/[id]:', error)
+    logger.error('Errore GET /api/staff/[id]', error)
     return NextResponse.json(
       { error: 'Errore nel recupero del dipendente' },
       { status: 500 }
@@ -434,7 +442,7 @@ export async function PUT(
       )
     }
 
-    console.error('Errore PUT /api/staff/[id]:', error)
+    logger.error('Errore PUT /api/staff/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'aggiornamento del dipendente' },
       { status: 500 }

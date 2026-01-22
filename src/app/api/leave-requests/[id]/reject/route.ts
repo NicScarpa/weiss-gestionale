@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { notifyLeaveRejected } from '@/lib/notifications'
 
+import { logger } from '@/lib/logger'
 const rejectSchema = z.object({
   rejectionReason: z.string().min(1, 'Il motivo del rifiuto è obbligatorio'),
 })
@@ -102,7 +103,7 @@ export async function POST(
 
     // Invia notifica al dipendente (async)
     notifyLeaveRejected(id, rejectionReason).catch((err) =>
-      console.error('Errore invio notifica ferie rifiutate:', err)
+      logger.error('Errore invio notifica ferie rifiutate', err)
     )
 
     return NextResponse.json({
@@ -117,7 +118,7 @@ export async function POST(
       )
     }
 
-    console.error('Errore POST /api/leave-requests/[id]/reject:', error)
+    logger.error('Errore POST /api/leave-requests/[id]/reject', error)
     return NextResponse.json(
       { error: 'Errore nel rifiuto della richiesta' },
       { status: 500 }

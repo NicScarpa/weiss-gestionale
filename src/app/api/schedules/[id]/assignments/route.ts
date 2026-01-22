@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // Schema per creazione assegnazione
 const createAssignmentSchema = z.object({
   userId: z.string(),
@@ -91,7 +92,7 @@ export async function GET(
 
     return NextResponse.json({ data: formatted })
   } catch (error) {
-    console.error('Errore GET /api/schedules/[id]/assignments:', error)
+    logger.error('Errore GET /api/schedules/[id]/assignments', error)
     return NextResponse.json(
       { error: 'Errore nel recupero delle assegnazioni' },
       { status: 500 }
@@ -243,7 +244,7 @@ export async function POST(
       )
     }
 
-    console.error('Errore POST /api/schedules/[id]/assignments:', error)
+    logger.error('Errore POST /api/schedules/[id]/assignments', error)
     return NextResponse.json(
       { error: 'Errore nella creazione dell\'assegnazione' },
       { status: 500 }

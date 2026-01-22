@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
+import { logger } from '@/lib/logger'
 // GET /api/attendance/daily-summary - Riepilogo giornaliero presenze
 export async function GET(request: NextRequest) {
   try {
@@ -192,7 +193,7 @@ export async function GET(request: NextRequest) {
       stats,
     })
   } catch (error) {
-    console.error('Errore GET /api/attendance/daily-summary:', error)
+    logger.error('Errore GET /api/attendance/daily-summary', error)
     return NextResponse.json(
       { error: 'Errore nel recupero del riepilogo' },
       { status: 500 }

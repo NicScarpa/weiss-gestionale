@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // Schema per creazione turno
 const createShiftDefSchema = z.object({
   venueId: z.string(),
@@ -79,7 +80,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: formatted })
   } catch (error) {
-    console.error('Errore GET /api/shift-definitions:', error)
+    logger.error('Errore GET /api/shift-definitions', error)
     return NextResponse.json(
       { error: 'Errore nel recupero delle definizioni turni' },
       { status: 500 }
@@ -177,7 +178,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Errore POST /api/shift-definitions:', error)
+    logger.error('Errore POST /api/shift-definitions', error)
     return NextResponse.json(
       { error: 'Errore nella creazione della definizione turno' },
       { status: 500 }

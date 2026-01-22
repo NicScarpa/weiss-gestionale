@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 interface RouteParams {
   params: Promise<{ id: string }>
 }
@@ -77,7 +78,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ data: anomaly })
   } catch (error) {
-    console.error('Errore GET /api/attendance/anomalies/[id]:', error)
+    logger.error('Errore GET /api/attendance/anomalies/[id]', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dell\'anomalia' },
       { status: 500 }
@@ -171,7 +172,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       )
     }
 
-    console.error('Errore PUT /api/attendance/anomalies/[id]:', error)
+    logger.error('Errore PUT /api/attendance/anomalies/[id]', error)
     return NextResponse.json(
       { error: 'Errore nella risoluzione dell\'anomalia' },
       { status: 500 }

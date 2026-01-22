@@ -63,6 +63,7 @@ import {
 import { calculateAnnualTotal, emptyMonthlyValues } from '@/lib/budget-utils'
 import { BudgetDashboard } from '@/components/budget'
 
+import { logger } from '@/lib/logger'
 interface Account {
   id: string
   code: string
@@ -111,7 +112,7 @@ export function BudgetDetailClient({
       const data = await res.json()
       setLines(data.data)
     } catch (error) {
-      console.error('Errore fetch lines:', error)
+      logger.error('Errore fetch lines', error)
       toast.error('Errore nel caricamento delle righe')
     } finally {
       setLoading(false)

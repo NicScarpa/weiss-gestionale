@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { notifyNewLeaveRequest } from '@/lib/notifications'
 
+import { logger } from '@/lib/logger'
 // Schema per creazione richiesta ferie
 const createLeaveRequestSchema = z.object({
   leaveTypeId: z.string(),
@@ -111,7 +112,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: leaveRequests })
   } catch (error) {
-    console.error('Errore GET /api/leave-requests:', error)
+    logger.error('Errore GET /api/leave-requests', error)
     return NextResponse.json(
       { error: 'Errore nel recupero delle richieste' },
       { status: 500 }
@@ -270,7 +271,7 @@ export async function POST(request: NextRequest) {
 
       // Notifica ai manager della nuova richiesta (async)
       notifyNewLeaveRequest(leaveRequest.id).catch((err) =>
-        console.error('Errore invio notifica nuova richiesta ferie:', err)
+        logger.error('Errore invio notifica nuova richiesta ferie', err)
       )
     }
 
@@ -283,7 +284,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Errore POST /api/leave-requests:', error)
+    logger.error('Errore POST /api/leave-requests', error)
     return NextResponse.json(
       { error: 'Errore nella creazione della richiesta' },
       { status: 500 }

@@ -25,6 +25,7 @@ import type {
   ReconciliationStatus,
 } from '@/types/reconciliation'
 
+import { logger } from '@/lib/logger'
 interface Venue {
   id: string
   name: string
@@ -71,7 +72,7 @@ export function RiconciliazioneClient({ venues }: { venues: Venue[] }) {
       setSummary(summaryData)
       setTransactions(transactionsData.data || [])
     } catch (error) {
-      console.error('Load error:', error)
+      logger.error('Load error', error)
       toast.error('Errore nel caricamento dati')
     } finally {
       setLoading(false)
@@ -103,7 +104,7 @@ export function RiconciliazioneClient({ venues }: { venues: Venue[] }) {
       )
       loadData()
     } catch (error) {
-      console.error('Reconcile error:', error)
+      logger.error('Reconcile error', error)
       toast.error('Errore nella riconciliazione automatica')
     } finally {
       setReconciling(false)

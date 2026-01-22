@@ -8,6 +8,7 @@ import { renderToBuffer } from '@react-pdf/renderer'
 import { PrimaNotaPdfDocument } from '@/lib/pdf/PrimaNotaPdfTemplate'
 import * as XLSX from 'xlsx'
 
+import { logger } from '@/lib/logger'
 const exportFiltersSchema = z.object({
   registerType: z.enum(['CASH', 'BANK']).optional(),
   dateFrom: z.string().optional(),
@@ -223,7 +224,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    console.error('Errore GET /api/prima-nota/export:', error)
+    logger.error('Errore GET /api/prima-nota/export', error)
     return NextResponse.json(
       { error: 'Errore nell\'esportazione' },
       { status: 500 }

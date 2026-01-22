@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // Schema per aggiornamento vincolo relazionale
 const updateRelConstraintSchema = z.object({
   constraintType: z.enum([
@@ -82,7 +83,7 @@ export async function GET(
 
     return NextResponse.json(constraint)
   } catch (error) {
-    console.error('Errore GET /api/relationship-constraints/[id]:', error)
+    logger.error('Errore GET /api/relationship-constraints/[id]', error)
     return NextResponse.json(
       { error: 'Errore nel recupero del vincolo' },
       { status: 500 }
@@ -238,7 +239,7 @@ export async function PUT(
       )
     }
 
-    console.error('Errore PUT /api/relationship-constraints/[id]:', error)
+    logger.error('Errore PUT /api/relationship-constraints/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'aggiornamento del vincolo' },
       { status: 500 }
@@ -298,7 +299,7 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Vincolo relazionale eliminato con successo' })
   } catch (error) {
-    console.error('Errore DELETE /api/relationship-constraints/[id]:', error)
+    logger.error('Errore DELETE /api/relationship-constraints/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'eliminazione del vincolo' },
       { status: 500 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
+import { logger } from '@/lib/logger'
 // GET /api/schedules/daily - Turni per una data specifica
 export async function GET(request: NextRequest) {
   try {
@@ -104,7 +105,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: formattedAssignments })
   } catch (error) {
-    console.error('Errore GET /api/schedules/daily:', error)
+    logger.error('Errore GET /api/schedules/daily', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dei turni' },
       { status: 500 }

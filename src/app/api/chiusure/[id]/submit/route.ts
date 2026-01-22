@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
+import { logger } from '@/lib/logger'
 // POST /api/chiusure/[id]/submit - Invia chiusura per validazione
 export async function POST(
   request: NextRequest,
@@ -78,7 +79,7 @@ export async function POST(
       message: 'Chiusura inviata per validazione',
     })
   } catch (error) {
-    console.error('Errore POST /api/chiusure/[id]/submit:', error)
+    logger.error('Errore POST /api/chiusure/[id]/submit', error)
     return NextResponse.json(
       { error: 'Errore nell\'invio della chiusura' },
       { status: 500 }

@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 const preferencesSchema = z.object({
   // Canali
   pushEnabled: z.boolean().optional(),
@@ -53,7 +54,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ preferences: prefs })
   } catch (error) {
-    console.error('Errore GET /api/notifications/preferences:', error)
+    logger.error('Errore GET /api/notifications/preferences', error)
     return NextResponse.json(
       { error: "Errore nel recupero preferenze" },
       { status: 500 }
@@ -98,7 +99,7 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    console.error('Errore PUT /api/notifications/preferences:', error)
+    logger.error('Errore PUT /api/notifications/preferences', error)
     return NextResponse.json(
       { error: "Errore nell'aggiornamento preferenze" },
       { status: 500 }

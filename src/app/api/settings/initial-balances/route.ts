@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 
+import { logger } from '@/lib/logger'
 // Schema per creazione/aggiornamento saldo iniziale
 const initialBalanceSchema = z.object({
   venueId: z.string().min(1, 'Sede richiesta'),
@@ -30,7 +32,7 @@ export async function GET(request: NextRequest) {
     const venueId = searchParams.get('venueId')
     const year = searchParams.get('year')
 
-    const where: any = {}
+    const where: Prisma.InitialBalanceWhereInput = {}
     if (venueId) where.venueId = venueId
     if (year) where.year = parseInt(year)
 
@@ -65,7 +67,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: formattedBalances })
   } catch (error) {
-    console.error('Errore GET /api/settings/initial-balances:', error)
+    logger.error('Errore GET /api/settings/initial-balances', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dei saldi iniziali' },
       { status: 500 }
@@ -138,7 +140,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Errore POST /api/settings/initial-balances:', error)
+    logger.error('Errore POST /api/settings/initial-balances', error)
     return NextResponse.json(
       { error: 'Errore nel salvataggio del saldo iniziale' },
       { status: 500 }
@@ -173,7 +175,7 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Errore DELETE /api/settings/initial-balances:', error)
+    logger.error('Errore DELETE /api/settings/initial-balances', error)
     return NextResponse.json(
       { error: 'Errore nell\'eliminazione del saldo iniziale' },
       { status: 500 }

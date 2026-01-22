@@ -52,6 +52,7 @@ import {
 } from '@/lib/budget-utils'
 import { BudgetCategoryRow } from '@/components/budget/BudgetCategoryRow'
 
+import { logger } from '@/lib/logger'
 interface Venue {
   id: string
   name: string
@@ -183,11 +184,11 @@ export function BudgetConfrontoClient({
             setCategoryData(catData)
           }
         } catch {
-          console.warn('Impossibile caricare categorie budget')
+          logger.warn('Impossibile caricare categorie budget')
         }
       }
     } catch (error: unknown) {
-      console.error('Errore fetch confronto:', error)
+      logger.error('Errore fetch confronto', error)
       if (error instanceof Error) {
         toast.error(error.message)
       }

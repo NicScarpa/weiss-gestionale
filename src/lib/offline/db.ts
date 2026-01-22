@@ -1,5 +1,6 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb'
 
+import { logger } from '@/lib/logger'
 // Database schema
 interface WeissDB extends DBSchema {
   // Pending closures to sync
@@ -165,7 +166,7 @@ export async function cacheData<T extends 'cachedClosures' | 'cachedVenues' | 'c
 ) {
   // Guard against undefined/null items
   if (!items || !Array.isArray(items) || items.length === 0) {
-    console.warn(`[Offline] No items to cache for store: ${store}`)
+    logger.warn(`[Offline] No items to cache for store: ${store}`)
     return
   }
 

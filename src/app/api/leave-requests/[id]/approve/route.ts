@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { notifyLeaveApproved } from '@/lib/notifications'
 
+import { logger } from '@/lib/logger'
 const approveSchema = z.object({
   managerNotes: z.string().optional(),
 })
@@ -103,7 +104,7 @@ export async function POST(
 
     // Invia notifica al dipendente (async)
     notifyLeaveApproved(id).catch((err) =>
-      console.error('Errore invio notifica ferie approvate:', err)
+      logger.error('Errore invio notifica ferie approvate', err)
     )
 
     return NextResponse.json({
@@ -118,7 +119,7 @@ export async function POST(
       )
     }
 
-    console.error('Errore POST /api/leave-requests/[id]/approve:', error)
+    logger.error('Errore POST /api/leave-requests/[id]/approve', error)
     return NextResponse.json(
       { error: 'Errore nell\'approvazione della richiesta' },
       { status: 500 }

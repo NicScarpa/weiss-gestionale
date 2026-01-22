@@ -7,6 +7,7 @@ import {
 } from '@/lib/validations/reconciliation'
 import type { ReconciliationStatus } from '@/types/reconciliation'
 
+import { logger } from '@/lib/logger'
 // GET /api/bank-transactions - Lista transazioni bancarie
 export async function GET(request: NextRequest) {
   try {
@@ -137,7 +138,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('GET /api/bank-transactions error:', error)
+    logger.error('GET /api/bank-transactions error', error)
     return NextResponse.json(
       { error: 'Errore nel recupero delle transazioni' },
       { status: 500 }
@@ -191,7 +192,7 @@ export async function POST(request: NextRequest) {
       balanceAfter: transaction.balanceAfter ? Number(transaction.balanceAfter) : null,
     })
   } catch (error) {
-    console.error('POST /api/bank-transactions error:', error)
+    logger.error('POST /api/bank-transactions error', error)
     return NextResponse.json(
       { error: 'Errore nella creazione della transazione' },
       { status: 500 }

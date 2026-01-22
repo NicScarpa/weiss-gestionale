@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { upsertBudgetLinesSchema } from '@/lib/validations/budget'
 import { calculateAnnualTotal, budgetLineToMonthlyValues } from '@/lib/budget-utils'
 
+import { logger } from '@/lib/logger'
 // GET /api/budget/[id]/lines - Lista righe budget
 export async function GET(
   request: NextRequest,
@@ -78,7 +79,7 @@ export async function GET(
 
     return NextResponse.json({ data: formattedLines })
   } catch (error) {
-    console.error('Errore GET /api/budget/[id]/lines:', error)
+    logger.error('Errore GET /api/budget/[id]/lines', error)
     return NextResponse.json(
       { error: 'Errore nel recupero delle righe budget' },
       { status: 500 }
@@ -233,7 +234,7 @@ export async function POST(
       )
     }
 
-    console.error('Errore POST /api/budget/[id]/lines:', error)
+    logger.error('Errore POST /api/budget/[id]/lines', error)
     return NextResponse.json(
       { error: 'Errore nel salvataggio delle righe budget' },
       { status: 500 }
@@ -314,7 +315,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Errore DELETE /api/budget/[id]/lines:', error)
+    logger.error('Errore DELETE /api/budget/[id]/lines', error)
     return NextResponse.json(
       { error: 'Errore nell\'eliminazione della riga budget' },
       { status: 500 }

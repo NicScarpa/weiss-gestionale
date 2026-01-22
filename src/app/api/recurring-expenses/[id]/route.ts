@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 const updateExpenseSchema = z.object({
   name: z.string().min(1).optional(),
   description: z.string().optional(),
@@ -60,7 +61,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json(expense)
   } catch (error) {
-    console.error('Errore GET /api/recurring-expenses/[id]:', error)
+    logger.error('Errore GET /api/recurring-expenses/[id]', error)
     return NextResponse.json(
       { error: 'Errore nel recupero della spesa' },
       { status: 500 }
@@ -156,7 +157,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       )
     }
 
-    console.error('Errore PUT /api/recurring-expenses/[id]:', error)
+    logger.error('Errore PUT /api/recurring-expenses/[id]', error)
     return NextResponse.json(
       { error: "Errore nell'aggiornamento della spesa" },
       { status: 500 }
@@ -204,7 +205,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Errore DELETE /api/recurring-expenses/[id]:', error)
+    logger.error('Errore DELETE /api/recurring-expenses/[id]', error)
     return NextResponse.json(
       { error: "Errore nell'eliminazione della spesa" },
       { status: 500 }

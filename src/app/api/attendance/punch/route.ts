@@ -6,6 +6,7 @@ import { PunchType, PunchMethod } from '@prisma/client'
 import { calculateDistance } from '@/lib/geolocation'
 import { notifyAnomalyCreated } from '@/lib/notifications'
 
+import { logger } from '@/lib/logger'
 // Schema validazione input
 const punchSchema = z.object({
   punchType: z.enum(['IN', 'OUT', 'BREAK_START', 'BREAK_END']),
@@ -202,7 +203,7 @@ export async function POST(request: NextRequest) {
 
       // Notifica anomalia creata (async)
       notifyAnomalyCreated(anomaly.id).catch((err) =>
-        console.error('Errore invio notifica anomalia creata:', err)
+        logger.error('Errore invio notifica anomalia creata', err)
       )
     }
 
@@ -225,7 +226,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Errore POST /api/attendance/punch:', error)
+    logger.error('Errore POST /api/attendance/punch', error)
     return NextResponse.json(
       { error: 'Errore nella registrazione della timbratura' },
       { status: 500 }

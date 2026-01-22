@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
+import { logger } from '@/lib/logger'
 // GET /api/venues/[id]/staff - Lista staff della sede
 export async function GET(
   request: NextRequest,
@@ -60,7 +61,7 @@ export async function GET(
 
     return NextResponse.json({ staff: formattedStaff })
   } catch (error) {
-    console.error('Errore GET /api/venues/[id]/staff:', error)
+    logger.error('Errore GET /api/venues/[id]/staff', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dello staff' },
       { status: 500 }

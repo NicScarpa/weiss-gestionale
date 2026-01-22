@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { manualMatch } from '@/lib/reconciliation'
 import { matchTransactionSchema } from '@/lib/validations/reconciliation'
 
+import { logger } from '@/lib/logger'
 // POST /api/bank-transactions/[id]/match - Match manuale con movimento
 export async function POST(
   request: NextRequest,
@@ -22,7 +23,7 @@ export async function POST(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('POST /api/bank-transactions/[id]/match error:', error)
+    logger.error('POST /api/bank-transactions/[id]/match error', error)
     const message =
       error instanceof Error ? error.message : 'Errore nel match della transazione'
     return NextResponse.json({ error: message }, { status: 500 })

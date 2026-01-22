@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { bankDepositSchema } from '@/lib/validations/prima-nota'
 
+import { logger } from '@/lib/logger'
 // POST /api/prima-nota/versamento - Versamento cassa → banca
 export async function POST(request: NextRequest) {
   try {
@@ -88,7 +89,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Errore POST /api/prima-nota/versamento:', error)
+    logger.error('Errore POST /api/prima-nota/versamento', error)
     return NextResponse.json(
       { error: 'Errore nella registrazione del versamento' },
       { status: 500 }

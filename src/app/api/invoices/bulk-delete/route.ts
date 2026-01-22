@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import bcrypt from 'bcryptjs'
 
+import { logger } from '@/lib/logger'
 const bulkDeleteSchema = z.object({
   ids: z.array(z.string()).min(1, 'Seleziona almeno una fattura'),
   password: z.string().min(1, 'Password richiesta'),
@@ -77,7 +78,7 @@ export async function POST(request: NextRequest) {
       message: `${deleteResult.count} fatture eliminate con successo`,
     })
   } catch (error) {
-    console.error('Errore eliminazione in blocco:', error)
+    logger.error('Errore eliminazione in blocco', error)
     return NextResponse.json(
       { error: 'Errore durante l\'eliminazione delle fatture' },
       { status: 500 }

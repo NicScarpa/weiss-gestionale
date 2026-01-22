@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { MONTH_NUMBER_TO_KEY, MONTH_KEYS } from '@/types/budget'
 
+import { logger } from '@/lib/logger'
 // Schema validazione
 const getTargetsSchema = z.object({
   venueId: z.string(),
@@ -105,7 +106,7 @@ export async function GET(request: NextRequest) {
       hasTargets: targets.length > 0,
     })
   } catch (error) {
-    console.error('Errore GET /api/budget/targets:', error)
+    logger.error('Errore GET /api/budget/targets', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dei target' },
       { status: 500 }
@@ -200,7 +201,7 @@ export async function PUT(request: NextRequest) {
       message: 'Target aggiornati con successo',
     })
   } catch (error) {
-    console.error('Errore PUT /api/budget/targets:', error)
+    logger.error('Errore PUT /api/budget/targets', error)
     return NextResponse.json(
       { error: 'Errore nell\'aggiornamento dei target' },
       { status: 500 }

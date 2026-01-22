@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 
+import { logger } from '@/lib/logger'
 // Schema per creazione chiusura
 const createClosureSchema = z.object({
   date: z.string().transform((s) => new Date(s)),
@@ -154,14 +156,14 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100)
 
     // Costruisci where clause
-    const where: any = {}
+    const where: Prisma.DailyClosureWhereInput = {}
 
     if (venueId) {
       where.venueId = venueId
     }
 
     if (status) {
-      where.status = status
+      where.status = status as Prisma.EnumClosureStatusFilter
     }
 
     if (dateFrom || dateTo) {
@@ -280,7 +282,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Errore GET /api/chiusure:', error)
+    logger.error('Errore GET /api/chiusure', error)
     return NextResponse.json(
       { error: 'Errore nel recupero delle chiusure' },
       { status: 500 }
@@ -499,7 +501,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Errore POST /api/chiusure:', error)
+    logger.error('Errore POST /api/chiusure', error)
     return NextResponse.json(
       { error: 'Errore nella creazione della chiusura' },
       { status: 500 }

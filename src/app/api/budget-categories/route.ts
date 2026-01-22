@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // Schema di validazione per nuova categoria
 const createCategorySchema = z.object({
   code: z.string().min(1).max(50),
@@ -84,7 +85,7 @@ export async function GET(request: NextRequest) {
       total: categories.length,
     })
   } catch (error) {
-    console.error('Errore GET budget-categories:', error)
+    logger.error('Errore GET budget-categories', error)
     return NextResponse.json(
       { error: 'Errore nel recupero delle categorie' },
       { status: 500 }
@@ -181,7 +182,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(category, { status: 201 })
   } catch (error) {
-    console.error('Errore POST budget-categories:', error)
+    logger.error('Errore POST budget-categories', error)
     return NextResponse.json(
       { error: 'Errore nella creazione della categoria' },
       { status: 500 }

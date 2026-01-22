@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { findMatchCandidates } from '@/lib/reconciliation'
 
+import { logger } from '@/lib/logger'
 // GET /api/bank-transactions/[id] - Dettaglio transazione con candidati match
 export async function GET(
   request: NextRequest,
@@ -95,7 +96,7 @@ export async function GET(
       matchCandidates,
     })
   } catch (error) {
-    console.error('GET /api/bank-transactions/[id] error:', error)
+    logger.error('GET /api/bank-transactions/[id] error', error)
     return NextResponse.json(
       { error: 'Errore nel recupero della transazione' },
       { status: 500 }
@@ -141,7 +142,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('DELETE /api/bank-transactions/[id] error:', error)
+    logger.error('DELETE /api/bank-transactions/[id] error', error)
     return NextResponse.json(
       { error: 'Errore nell\'eliminazione della transazione' },
       { status: 500 }

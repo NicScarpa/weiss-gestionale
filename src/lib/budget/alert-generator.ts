@@ -2,6 +2,7 @@
 import { prisma } from '@/lib/prisma'
 import { aggregateCategoriesForBudget, type CategoryData } from './category-aggregator'
 
+import { logger } from '@/lib/logger'
 interface AlertGeneratorResult {
   budgetId: string
   alertsCreated: number
@@ -186,7 +187,7 @@ export async function generateAlertsForAllActiveBudgets(): Promise<{
       totalCreated += result.alertsCreated
       totalResolved += result.alertsResolved
     } catch (error) {
-      console.error(`Errore generazione alert per budget ${budget.id}:`, error)
+      logger.error(`Errore generazione alert per budget ${budget.id}:`, error)
     }
   }
 

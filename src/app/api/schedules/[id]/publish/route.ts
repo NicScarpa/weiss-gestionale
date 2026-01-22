@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { validateSchedule } from '@/lib/shift-generation'
 import { notifyShiftPublished } from '@/lib/notifications'
 
+import { logger } from '@/lib/logger'
 // POST /api/schedules/[id]/publish - Pubblica pianificazione
 export async function POST(
   request: NextRequest,
@@ -87,7 +88,7 @@ export async function POST(
 
     // Invia notifiche ai dipendenti (async, non blocca la risposta)
     notifyShiftPublished(id, { excludeUserId: session.user.id }).catch((err) =>
-      console.error('Errore invio notifiche turni:', err)
+      logger.error('Errore invio notifiche turni', err)
     )
 
     return NextResponse.json({
@@ -96,7 +97,7 @@ export async function POST(
       message: 'Pianificazione pubblicata con successo',
     })
   } catch (error) {
-    console.error('Errore POST /api/schedules/[id]/publish:', error)
+    logger.error('Errore POST /api/schedules/[id]/publish', error)
     return NextResponse.json(
       { error: 'Errore nella pubblicazione della pianificazione' },
       { status: 500 }

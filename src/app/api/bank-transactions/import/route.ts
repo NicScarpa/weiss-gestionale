@@ -5,6 +5,7 @@ import { parseCSV, parseXLS, parseCBIXML, parseCBITXT, RELAXBANKING_CONFIG } fro
 import { importBatchSchema } from '@/lib/validations/reconciliation'
 import type { ImportResult, CSVParserConfig, ImportSource } from '@/types/reconciliation'
 
+import { logger } from '@/lib/logger'
 // POST /api/bank-transactions/import - Import CSV/XLS
 export async function POST(request: NextRequest) {
   try {
@@ -199,7 +200,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(result)
   } catch (error) {
-    console.error('POST /api/bank-transactions/import error:', error)
+    logger.error('POST /api/bank-transactions/import error', error)
     return NextResponse.json(
       { error: 'Errore nell\'import del file' },
       { status: 500 }

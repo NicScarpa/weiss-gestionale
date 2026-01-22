@@ -9,6 +9,7 @@ import {
   getPendingCount,
 } from './db'
 
+import { logger } from '@/lib/logger'
 // Sync status type
 type SyncStatus = 'idle' | 'syncing' | 'success' | 'error'
 
@@ -161,9 +162,9 @@ export async function prefetchDataForOffline() {
       await cacheData('cachedClosures', chiusure)
     }
 
-    console.log('[Offline] Data prefetched successfully')
+    logger.info('[Offline] Data prefetched successfully')
   } catch (error) {
-    console.error('[Offline] Error prefetching data:', error)
+    logger.error('[Offline] Error prefetching data', error)
   }
 }
 
@@ -174,7 +175,7 @@ export async function requestBackgroundSync() {
       const registration = await navigator.serviceWorker.ready
       await (registration as any).sync.register('sync-closures')
     } catch (error) {
-      console.error('[Offline] Background sync registration failed:', error)
+      logger.error('[Offline] Background sync registration failed', error)
     }
   }
 }

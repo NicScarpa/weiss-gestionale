@@ -6,6 +6,7 @@ import {
   generateAlertsForAllActiveBudgets,
 } from '@/lib/budget/alert-generator'
 
+import { logger } from '@/lib/logger'
 /**
  * POST /api/budget/alerts/generate
  * Genera alert per budget che superano le soglie benchmark
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ error: 'Parametri non validi' }, { status: 400 })
   } catch (error) {
-    console.error('Errore generazione alert:', error)
+    logger.error('Errore generazione alert', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Errore interno' },
       { status: 500 }

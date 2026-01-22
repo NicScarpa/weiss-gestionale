@@ -40,6 +40,7 @@ import { Badge } from '@/components/ui/badge'
 import { formatCurrency } from '@/lib/constants'
 import { toast } from 'sonner'
 
+import { logger } from '@/lib/logger'
 interface Venue {
   id: string
   name: string
@@ -125,7 +126,7 @@ export function DailyRevenueClient({ venueId, isAdmin, venues }: DailyRevenueCli
       const result = await res.json()
       setData(result)
     } catch (error) {
-      console.error('Errore fetch report:', error)
+      logger.error('Errore fetch report', error)
       toast.error('Errore nel caricamento del report')
     } finally {
       setLoading(false)

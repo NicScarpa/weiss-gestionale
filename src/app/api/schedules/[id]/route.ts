@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // Schema per aggiornamento pianificazione
 const updateScheduleSchema = z.object({
   name: z.string().optional(),
@@ -95,7 +96,7 @@ export async function GET(
 
     return NextResponse.json(formatted)
   } catch (error) {
-    console.error('Errore GET /api/schedules/[id]:', error)
+    logger.error('Errore GET /api/schedules/[id]', error)
     return NextResponse.json(
       { error: 'Errore nel recupero della pianificazione' },
       { status: 500 }
@@ -182,7 +183,7 @@ export async function PUT(
       )
     }
 
-    console.error('Errore PUT /api/schedules/[id]:', error)
+    logger.error('Errore PUT /api/schedules/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'aggiornamento della pianificazione' },
       { status: 500 }
@@ -242,7 +243,7 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Pianificazione eliminata con successo' })
   } catch (error) {
-    console.error('Errore DELETE /api/schedules/[id]:', error)
+    logger.error('Errore DELETE /api/schedules/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'eliminazione della pianificazione' },
       { status: 500 }

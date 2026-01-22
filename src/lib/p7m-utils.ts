@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 /**
  * P7M File Utilities
  *
@@ -74,11 +75,12 @@ export function extractXmlFromP7mWithDiagnostics(
     logs.push(createLogEntry(level, phase, message, data))
     // In development, also log to console
     if (process.env.NODE_ENV === 'development') {
-      const prefix = `[P7M:${phase}]`
-      if (level === 'error') console.error(prefix, message, data || '')
-      else if (level === 'warn') console.warn(prefix, message, data || '')
-      else if (level === 'debug') console.debug(prefix, message, data || '')
-      else console.log(prefix, message, data || '')
+      const fullMessage = `[P7M:${phase}] ${message}`
+      const logData = data ? { data } : undefined
+      if (level === 'error') logger.error(fullMessage, undefined, logData)
+      else if (level === 'warn') logger.warn(fullMessage, logData)
+      else if (level === 'debug') logger.debug(fullMessage, logData)
+      else logger.info(fullMessage, logData)
     }
   }
 

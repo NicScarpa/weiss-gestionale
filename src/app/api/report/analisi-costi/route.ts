@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { startOfMonth, endOfMonth, subMonths, format, parseISO, eachMonthOfInterval, startOfYear, endOfYear } from 'date-fns'
 import { it } from 'date-fns/locale'
 
+import { logger } from '@/lib/logger'
 // GET /api/report/analisi-costi - Report analisi costi
 export async function GET(request: NextRequest) {
   try {
@@ -294,7 +295,7 @@ export async function GET(request: NextRequest) {
       comparison,
     })
   } catch (error) {
-    console.error('Errore GET /api/report/analisi-costi:', error)
+    logger.error('Errore GET /api/report/analisi-costi', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dei dati' },
       { status: 500 }

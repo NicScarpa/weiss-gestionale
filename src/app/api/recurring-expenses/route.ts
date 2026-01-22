@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 const createExpenseSchema = z.object({
   name: z.string().min(1, 'Nome obbligatorio'),
   description: z.string().optional(),
@@ -103,7 +104,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Errore GET /api/recurring-expenses:', error)
+    logger.error('Errore GET /api/recurring-expenses', error)
     return NextResponse.json(
       { error: 'Errore nel recupero delle spese ricorrenti' },
       { status: 500 }
@@ -191,7 +192,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Errore POST /api/recurring-expenses:', error)
+    logger.error('Errore POST /api/recurring-expenses', error)
     return NextResponse.json(
       { error: 'Errore nella creazione della spesa ricorrente' },
       { status: 500 }

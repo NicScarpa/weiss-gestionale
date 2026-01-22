@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, format } from 'date-fns'
 import { it } from 'date-fns/locale'
 
+import { logger } from '@/lib/logger'
 // GET /api/dashboard - KPI e statistiche per la dashboard
 export async function GET() {
   try {
@@ -376,7 +377,7 @@ export async function GET() {
       },
     })
   } catch (error) {
-    console.error('Errore GET /api/dashboard:', error)
+    logger.error('Errore GET /api/dashboard', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dei dati dashboard' },
       { status: 500 }

@@ -11,6 +11,7 @@ import {
   PayrollSummary,
 } from '@/lib/attendance/payroll-calculator'
 
+import { logger } from '@/lib/logger'
 const exportFiltersSchema = z.object({
   month: z.coerce.number().min(1).max(12),
   year: z.coerce.number().min(2020).max(2100),
@@ -101,7 +102,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    console.error('Errore GET /api/attendance/export/payroll:', error)
+    logger.error('Errore GET /api/attendance/export/payroll', error)
     return NextResponse.json(
       { error: 'Errore nell\'esportazione' },
       { status: 500 }

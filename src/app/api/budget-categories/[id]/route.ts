@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // Schema di validazione per aggiornamento categoria
 const updateCategorySchema = z.object({
   code: z.string().min(1).max(50).optional(),
@@ -64,7 +65,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json(category)
   } catch (error) {
-    console.error('Errore GET budget-categories/[id]:', error)
+    logger.error('Errore GET budget-categories/[id]', error)
     return NextResponse.json(
       { error: 'Errore nel recupero della categoria' },
       { status: 500 }
@@ -179,7 +180,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json(category)
   } catch (error) {
-    console.error('Errore PUT budget-categories/[id]:', error)
+    logger.error('Errore PUT budget-categories/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'aggiornamento della categoria' },
       { status: 500 }
@@ -245,7 +246,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ success: true, message: 'Categoria eliminata' })
   } catch (error) {
-    console.error('Errore DELETE budget-categories/[id]:', error)
+    logger.error('Errore DELETE budget-categories/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'eliminazione della categoria' },
       { status: 500 }

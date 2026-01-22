@@ -8,6 +8,7 @@ import {
 } from '@/lib/validations/budget'
 import { calculateAnnualTotal } from '@/lib/budget-utils'
 
+import { logger } from '@/lib/logger'
 // GET /api/budget - Lista budget con filtri
 export async function GET(request: NextRequest) {
   try {
@@ -126,7 +127,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    console.error('Errore GET /api/budget:', error)
+    logger.error('Errore GET /api/budget', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dei budget' },
       { status: 500 }
@@ -249,7 +250,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Errore POST /api/budget:', error)
+    logger.error('Errore POST /api/budget', error)
     return NextResponse.json(
       { error: 'Errore nella creazione del budget' },
       { status: 500 }

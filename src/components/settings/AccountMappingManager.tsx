@@ -30,6 +30,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { GripVertical, Search, X, Save, Loader2, ArrowRight } from 'lucide-react'
 
+import { logger } from '@/lib/logger'
 interface Account {
   id: string
   code: string
@@ -203,7 +204,7 @@ export function AccountMappingManager() {
         setSelectedVenueId(venuesList[0].id)
       }
     } catch (error) {
-      console.error('Errore caricamento sedi:', error)
+      logger.error('Errore caricamento sedi', error)
       setVenues([])
     }
   }
@@ -239,7 +240,7 @@ export function AccountMappingManager() {
 
       setHasChanges(false)
     } catch (error) {
-      console.error('Errore caricamento dati:', error)
+      logger.error('Errore caricamento dati', error)
       toast.error('Impossibile caricare i dati')
     } finally {
       setLoading(false)

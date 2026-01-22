@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { reconcileVenueTransactions } from '@/lib/reconciliation'
 import { reconcileSchema } from '@/lib/validations/reconciliation'
 
+import { logger } from '@/lib/logger'
 // POST /api/reconciliation - Avvia riconciliazione automatica
 export async function POST(request: NextRequest) {
   try {
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(result)
   } catch (error) {
-    console.error('POST /api/reconciliation error:', error)
+    logger.error('POST /api/reconciliation error', error)
     return NextResponse.json(
       { error: 'Errore nella riconciliazione' },
       { status: 500 }

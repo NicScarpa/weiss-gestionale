@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 const storicoFiltersSchema = z.object({
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
@@ -93,7 +94,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    console.error('Errore GET /api/prima-nota/saldi/storico:', error)
+    logger.error('Errore GET /api/prima-nota/saldi/storico', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dello storico saldi' },
       { status: 500 }

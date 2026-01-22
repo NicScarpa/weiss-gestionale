@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
+import { logger } from '@/lib/logger'
 // GET /api/leave-balance - Saldo ferie/permessi
 export async function GET(request: NextRequest) {
   try {
@@ -90,7 +91,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: result })
   } catch (error) {
-    console.error('Errore GET /api/leave-balance:', error)
+    logger.error('Errore GET /api/leave-balance', error)
     return NextResponse.json(
       { error: 'Errore nel recupero del saldo' },
       { status: 500 }
@@ -162,7 +163,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(balance)
   } catch (error) {
-    console.error('Errore POST /api/leave-balance:', error)
+    logger.error('Errore POST /api/leave-balance', error)
     return NextResponse.json(
       { error: 'Errore nell\'aggiornamento del saldo' },
       { status: 500 }

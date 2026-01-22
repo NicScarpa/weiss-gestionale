@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // Schema per aggiornamento assegnazione
 const updateAssignmentSchema = z.object({
   userId: z.string().optional(),
@@ -103,7 +104,7 @@ export async function GET(
       } : null,
     })
   } catch (error) {
-    console.error('Errore GET /api/assignments/[id]:', error)
+    logger.error('Errore GET /api/assignments/[id]', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dell\'assegnazione' },
       { status: 500 }
@@ -330,7 +331,7 @@ export async function PUT(
       )
     }
 
-    console.error('Errore PUT /api/assignments/[id]:', error)
+    logger.error('Errore PUT /api/assignments/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'aggiornamento dell\'assegnazione' },
       { status: 500 }
@@ -394,7 +395,7 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Assegnazione eliminata con successo' })
   } catch (error) {
-    console.error('Errore DELETE /api/assignments/[id]:', error)
+    logger.error('Errore DELETE /api/assignments/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'eliminazione dell\'assegnazione' },
       { status: 500 }

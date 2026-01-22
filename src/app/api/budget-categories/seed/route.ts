@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
+import { logger } from '@/lib/logger'
 // Categorie di sistema predefinite
 const SYSTEM_CATEGORIES = [
   // Categorie root (sistema)
@@ -224,7 +225,7 @@ export async function POST(request: NextRequest) {
       if (!existing) {
         const parentId = parentIdMap[cat.parentCode!]
         if (!parentId) {
-          console.warn(`Parent ${cat.parentCode} non trovato per ${cat.code}`)
+          logger.warn(`Parent ${cat.parentCode} non trovato per ${cat.code}`)
           continue
         }
 
@@ -256,7 +257,7 @@ export async function POST(request: NextRequest) {
       total: existingCount + created.length,
     })
   } catch (error: any) {
-    console.error('Errore POST budget-categories/seed:', error)
+    logger.error('Errore POST budget-categories/seed', error)
     return NextResponse.json(
       {
         error: 'Errore nel seed delle categorie',

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { updateJournalEntrySchema } from '@/lib/validations/prima-nota'
 
+import { logger } from '@/lib/logger'
 // GET /api/prima-nota/[id] - Dettaglio singolo movimento
 export async function GET(
   request: NextRequest,
@@ -85,7 +86,7 @@ export async function GET(
       runningBalance: entry.runningBalance ? Number(entry.runningBalance) : null,
     })
   } catch (error) {
-    console.error('Errore GET /api/prima-nota/[id]:', error)
+    logger.error('Errore GET /api/prima-nota/[id]', error)
     return NextResponse.json(
       { error: 'Errore nel recupero del movimento' },
       { status: 500 }
@@ -157,7 +158,7 @@ export async function PUT(
       )
     }
 
-    console.error('Errore PUT /api/prima-nota/[id]:', error)
+    logger.error('Errore PUT /api/prima-nota/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'aggiornamento del movimento' },
       { status: 500 }
@@ -225,7 +226,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Errore DELETE /api/prima-nota/[id]:', error)
+    logger.error('Errore DELETE /api/prima-nota/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'eliminazione del movimento' },
       { status: 500 }

@@ -18,6 +18,7 @@ import { ClosureActions } from './ClosureActions'
 import { useClosureCalculations } from './hooks/useClosureCalculations'
 import { toast } from 'sonner'
 
+import { logger } from '@/lib/logger'
 // Tipo dati form
 export interface ClosureFormData {
   date: Date
@@ -124,7 +125,7 @@ export function ClosureForm({
           setPreviousCoffeeCount(data.previousCoffeeCount ?? null)
         }
       } catch (error) {
-        console.error('Errore nel recupero caffè precedente:', error)
+        logger.error('Errore nel recupero caffè precedente', error)
       }
     }
 
@@ -181,7 +182,7 @@ export function ClosureForm({
       await onSave(formData)
       toast.success('Chiusura salvata')
     } catch (error) {
-      console.error('Errore salvataggio:', error)
+      logger.error('Errore salvataggio', error)
       toast.error('Errore nel salvataggio')
     } finally {
       setIsSaving(false)
@@ -235,7 +236,7 @@ export function ClosureForm({
       toast.success('Chiusura inviata per validazione')
       router.push('/chiusura-cassa')
     } catch (error) {
-      console.error('Errore invio:', error)
+      logger.error('Errore invio', error)
       toast.error('Errore nell\'invio')
     } finally {
       setIsSubmitting(false)

@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // GET /api/price-alerts/[id] - Dettaglio alert
 export async function GET(
   request: NextRequest,
@@ -48,7 +49,7 @@ export async function GET(
 
     return NextResponse.json({ data: alert })
   } catch (error) {
-    console.error('Errore GET /api/price-alerts/[id]:', error)
+    logger.error('Errore GET /api/price-alerts/[id]', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dell\'alert' },
       { status: 500 }
@@ -116,7 +117,7 @@ export async function PATCH(
       )
     }
 
-    console.error('Errore PATCH /api/price-alerts/[id]:', error)
+    logger.error('Errore PATCH /api/price-alerts/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'aggiornamento dell\'alert' },
       { status: 500 }

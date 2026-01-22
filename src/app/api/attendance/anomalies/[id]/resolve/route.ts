@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { notifyAnomalyResolved } from '@/lib/notifications'
 
+import { logger } from '@/lib/logger'
 interface RouteParams {
   params: Promise<{ id: string }>
 }
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Notifica al dipendente che l'anomalia è stata risolta (async)
     notifyAnomalyResolved(id).catch((err) =>
-      console.error('Errore invio notifica anomalia risolta:', err)
+      logger.error('Errore invio notifica anomalia risolta', err)
     )
 
     return NextResponse.json({
@@ -108,7 +109,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       )
     }
 
-    console.error('Errore POST /api/attendance/anomalies/[id]/resolve:', error)
+    logger.error('Errore POST /api/attendance/anomalies/[id]/resolve', error)
     return NextResponse.json(
       { error: "Errore nella risoluzione dell'anomalia" },
       { status: 500 }

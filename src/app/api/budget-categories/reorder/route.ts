@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // Schema per riordinamento
 const reorderSchema = z.object({
   venueId: z.string(),
@@ -102,7 +103,7 @@ export async function PUT(request: NextRequest) {
       updatedCount: items.length,
     })
   } catch (error) {
-    console.error('Errore PUT budget-categories/reorder:', error)
+    logger.error('Errore PUT budget-categories/reorder', error)
     return NextResponse.json(
       { error: 'Errore nel riordinamento delle categorie' },
       { status: 500 }

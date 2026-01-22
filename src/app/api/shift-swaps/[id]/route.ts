@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { notifySwapApproved, notifySwapRejected } from '@/lib/notifications/triggers'
 
+import { logger } from '@/lib/logger'
 // Schema per risposta a scambio
 const respondSwapSchema = z.object({
   action: z.enum(['accept', 'reject']),
@@ -116,7 +117,7 @@ export async function GET(
       requestedByUser,
     })
   } catch (error) {
-    console.error('Errore GET /api/shift-swaps/[id]:', error)
+    logger.error('Errore GET /api/shift-swaps/[id]', error)
     return NextResponse.json(
       { error: 'Errore nel recupero della richiesta di scambio' },
       { status: 500 }
@@ -230,7 +231,7 @@ export async function PUT(
 
       // Notifica chi ha richiesto lo scambio
       notifySwapApproved(assignment.id).catch((err) => {
-        console.error('Errore invio notifica swap approved:', err)
+        logger.error('Errore invio notifica swap approved', err)
       })
 
       return NextResponse.json({
@@ -254,7 +255,7 @@ export async function PUT(
       // Notifica chi ha richiesto lo scambio
       if (requesterId) {
         notifySwapRejected(id, session.user.id, requesterId).catch((err) => {
-          console.error('Errore invio notifica swap rejected:', err)
+          logger.error('Errore invio notifica swap rejected', err)
         })
       }
 
@@ -270,7 +271,7 @@ export async function PUT(
       )
     }
 
-    console.error('Errore PUT /api/shift-swaps/[id]:', error)
+    logger.error('Errore PUT /api/shift-swaps/[id]', error)
     return NextResponse.json(
       { error: 'Errore nella gestione della richiesta di scambio' },
       { status: 500 }
@@ -335,7 +336,7 @@ export async function DELETE(
       message: 'Richiesta di scambio annullata',
     })
   } catch (error) {
-    console.error('Errore DELETE /api/shift-swaps/[id]:', error)
+    logger.error('Errore DELETE /api/shift-swaps/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'annullamento della richiesta' },
       { status: 500 }

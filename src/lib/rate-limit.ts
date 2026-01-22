@@ -1,32 +1,104 @@
 /**
- * In-memory rate limiter with sliding window algorithm
- *
- * Note: This implementation stores data in-memory, which means:
- * - Rate limits are not shared across serverless function instances
- * - Limits reset on server restart
- *
- * For production with multiple instances, consider upgrading to:
- * - @upstash/ratelimit with Redis
- * - Redis-based implementation
+ * Rate Limiting con Upstash Redis (o fallback in-memory)
+ * Protegge gli endpoint da abusi e attacchi brute force
  */
+import { Ratelimit } from '@upstash/ratelimit'
+import { Redis } from '@upstash/redis'
+import { logger } from './logger'
+
+// ========== UPSTASH REDIS RATE LIMITER ==========
+
+// Inizializza Redis solo se le env vars sono configurate
+let redis: Redis | null = null
+let isUpstashConfigured = false
+
+try {
+  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    })
+    isUpstashConfigured = true
+    logger.info('Upstash Redis configurato per rate limiting')
+  } else {
+    logger.warn('Upstash Redis non configurato - usando rate limiting in-memory')
+  }
+} catch (error) {
+  logger.error('Errore inizializzazione Redis', error)
+}
+
+/**
+ * Rate limiter generico - 100 richieste per minuto
+ */
+export const ratelimit = isUpstashConfigured && redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(100, '60 s'),
+      analytics: true,
+      prefix: 'ratelimit:api',
+    })
+  : null
+
+/**
+ * Rate limiter per autenticazione - 5 tentativi per minuto
+ * Protegge da attacchi brute force
+ */
+export const authRateLimit = isUpstashConfigured && redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(5, '60 s'),
+      analytics: true,
+      prefix: 'ratelimit:auth',
+    })
+  : null
+
+/**
+ * Rate limiter per import - 3 import per minuto
+ * Protegge da upload massivi
+ */
+export const importRateLimit = isUpstashConfigured && redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(3, '60 s'),
+      analytics: true,
+      prefix: 'ratelimit:import',
+    })
+  : null
+
+/**
+ * Rate limiter per operazioni critiche - 10 per minuto
+ * Per delete, validate, etc.
+ */
+export const criticalRateLimit = isUpstashConfigured && redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(10, '60 s'),
+      analytics: true,
+      prefix: 'ratelimit:critical',
+    })
+  : null
+
+// ========== IN-MEMORY FALLBACK ==========
 
 interface RateLimitRecord {
   count: number
   resetAt: number
 }
 
-// In-memory store (per-instance)
+// In-memory store (per-instance fallback)
 const store = new Map<string, RateLimitRecord>()
 
 // Cleanup old entries periodically
-setInterval(() => {
-  const now = Date.now()
-  for (const [key, record] of store.entries()) {
-    if (record.resetAt < now) {
-      store.delete(key)
+if (typeof setInterval !== 'undefined') {
+  setInterval(() => {
+    const now = Date.now()
+    for (const [key, record] of store.entries()) {
+      if (record.resetAt < now) {
+        store.delete(key)
+      }
     }
-  }
-}, 60000) // Cleanup every minute
+  }, 60000)
+}
 
 export interface RateLimitConfig {
   /** Maximum number of requests allowed */
@@ -56,10 +128,40 @@ export const RATE_LIMIT_CONFIGS = {
   STRICT: { limit: 10, windowMs: 60 * 1000 },
   /** Generous: 200 requests per minute (for read-heavy endpoints) */
   GENEROUS: { limit: 200, windowMs: 60 * 1000 },
+  /** Import: 3 requests per minute */
+  IMPORT: { limit: 3, windowMs: 60 * 1000 },
 } as const
 
 /**
- * Check rate limit for a given identifier
+ * Check rate limit using Upstash or fallback to in-memory
+ */
+export async function checkRateLimitAsync(
+  identifier: string,
+  limiter: Ratelimit | null,
+  fallbackConfig: RateLimitConfig = RATE_LIMIT_CONFIGS.API
+): Promise<RateLimitResult> {
+  // Try Upstash first
+  if (limiter) {
+    try {
+      const result = await limiter.limit(identifier)
+      return {
+        success: result.success,
+        remaining: result.remaining,
+        reset: result.reset,
+        limit: result.limit,
+      }
+    } catch (error) {
+      logger.error('Errore Upstash rate limit', error)
+      // Fall through to in-memory
+    }
+  }
+
+  // In-memory fallback
+  return checkRateLimit(identifier, fallbackConfig)
+}
+
+/**
+ * In-memory rate limit check (synchronous)
  */
 export function checkRateLimit(
   identifier: string,
@@ -163,4 +265,11 @@ export function getRateLimitHeaders(result: RateLimitResult): Record<string, str
     'X-RateLimit-Remaining': result.remaining.toString(),
     'X-RateLimit-Reset': result.reset.toString(),
   }
+}
+
+/**
+ * Check if Upstash is configured
+ */
+export function isUpstashEnabled(): boolean {
+  return isUpstashConfigured
 }

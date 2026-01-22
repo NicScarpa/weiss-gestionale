@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
+import { logger } from '@/lib/logger'
 // GET /api/attendance/current - Stato timbratura attuale
 export async function GET(request: NextRequest) {
   try {
@@ -156,7 +157,7 @@ export async function GET(request: NextRequest) {
       punchCount: todayPunches.length,
     })
   } catch (error) {
-    console.error('Errore GET /api/attendance/current:', error)
+    logger.error('Errore GET /api/attendance/current', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dello stato timbratura' },
       { status: 500 }

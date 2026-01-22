@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // Schema per modifica richiesta (solo admin)
 const updateLeaveRequestSchema = z.object({
   startDate: z.string().optional(),
@@ -79,7 +80,7 @@ export async function GET(
 
     return NextResponse.json(leaveRequest)
   } catch (error) {
-    console.error('Errore GET /api/leave-requests/[id]:', error)
+    logger.error('Errore GET /api/leave-requests/[id]', error)
     return NextResponse.json(
       { error: 'Errore nel recupero della richiesta' },
       { status: 500 }
@@ -243,7 +244,7 @@ export async function PUT(
         { status: 400 }
       )
     }
-    console.error('Errore PUT /api/leave-requests/[id]:', error)
+    logger.error('Errore PUT /api/leave-requests/[id]', error)
     return NextResponse.json(
       { error: 'Errore nella modifica della richiesta' },
       { status: 500 }
@@ -334,7 +335,7 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Richiesta annullata' })
   } catch (error) {
-    console.error('Errore DELETE /api/leave-requests/[id]:', error)
+    logger.error('Errore DELETE /api/leave-requests/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'annullamento della richiesta' },
       { status: 500 }

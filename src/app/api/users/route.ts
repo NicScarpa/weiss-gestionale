@@ -16,6 +16,7 @@ import {
   shouldUseEmailAsUsername,
 } from '@/lib/utils/username'
 
+import { logger } from '@/lib/logger'
 // Password iniziale di default
 const DEFAULT_PASSWORD = '1234567890'
 
@@ -124,7 +125,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: filteredUsers })
   } catch (error) {
-    console.error('Errore GET /api/users:', error)
+    logger.error('Errore GET /api/users', error)
     return NextResponse.json(
       { error: 'Errore nel recupero degli utenti' },
       { status: 500 }
@@ -274,7 +275,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Errore POST /api/users:', error)
+    logger.error('Errore POST /api/users', error)
     return NextResponse.json(
       { error: 'Errore nella creazione dell\'utente' },
       { status: 500 }

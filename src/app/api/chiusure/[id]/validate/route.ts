@@ -8,6 +8,7 @@ import {
 } from '@/lib/closure-journal-entries'
 import { generateAlertsForVenue } from '@/lib/budget/alert-generator'
 
+import { logger } from '@/lib/logger'
 // Schema per validazione/rifiuto
 const validateSchema = z.object({
   action: z.enum(['approve', 'reject']),
@@ -173,7 +174,7 @@ export async function POST(
       alertsResult = await generateAlertsForVenue(closure.venueId)
     } catch (alertError) {
       // Log ma non blocca la validazione
-      console.error('Errore generazione alert budget:', alertError)
+      logger.error('Errore generazione alert budget', alertError)
     }
 
     return NextResponse.json({
@@ -190,7 +191,7 @@ export async function POST(
       )
     }
 
-    console.error('Errore POST /api/chiusure/[id]/validate:', error)
+    logger.error('Errore POST /api/chiusure/[id]/validate', error)
     return NextResponse.json(
       { error: 'Errore nella validazione della chiusura' },
       { status: 500 }
