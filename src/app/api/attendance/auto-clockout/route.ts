@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { notifyAnomalyCreated } from '@/lib/notifications'
 
+import { logger } from '@/lib/logger'
 // POST /api/attendance/auto-clockout - Job automatico per clock-out mancanti
 export async function POST(request: NextRequest) {
   try {
     // Verifica che CRON_SECRET sia configurato
     const cronSecret = process.env.CRON_SECRET
     if (!cronSecret) {
-      console.error('CRON_SECRET environment variable is not set')
+      logger.error('CRON_SECRET environment variable is not set')
       return NextResponse.json(
         { error: 'Errore di configurazione server' },
         { status: 500 }
@@ -121,7 +122,7 @@ export async function POST(request: NextRequest) {
 
           // Notifica anomalia creata (async)
           notifyAnomalyCreated(anomaly.id).catch((err) =>
-            console.error('Errore invio notifica anomalia auto-clockout:', err)
+            logger.error('Errore invio notifica anomalia auto-clockout', err)
           )
 
           venueAutoClockouts++
@@ -153,7 +154,7 @@ export async function POST(request: NextRequest) {
       details: results,
     })
   } catch (error) {
-    console.error('Errore auto-clockout job:', error)
+    logger.error('Errore auto-clockout job', error)
     return NextResponse.json(
       { error: 'Errore nel job auto-clockout' },
       { status: 500 }

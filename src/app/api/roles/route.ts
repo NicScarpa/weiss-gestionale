@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
+import { logger } from '@/lib/logger'
 // GET /api/roles - Lista ruoli
 export async function GET(request: NextRequest) {
   try {
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: roles })
   } catch (error) {
-    console.error('Errore GET /api/roles:', error)
+    logger.error('Errore GET /api/roles', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dei ruoli' },
       { status: 500 }

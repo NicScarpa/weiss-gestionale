@@ -9,6 +9,7 @@ import {
   type UserRole,
 } from '@/lib/utils/permissions'
 
+import { logger } from '@/lib/logger'
 // Schema aggiornamento utente
 const updateUserSchema = z.object({
   firstName: z.string().min(1).optional(),
@@ -91,7 +92,7 @@ export async function GET(
 
     return NextResponse.json(filterUserFields(user as unknown as Record<string, unknown>, userRole))
   } catch (error) {
-    console.error('Errore GET /api/users/[id]:', error)
+    logger.error('Errore GET /api/users/[id]', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dell\'utente' },
       { status: 500 }
@@ -228,7 +229,7 @@ export async function PATCH(
       )
     }
 
-    console.error('Errore PATCH /api/users/[id]:', error)
+    logger.error('Errore PATCH /api/users/[id]', error)
     return NextResponse.json(
       { error: 'Errore nella modifica dell\'utente' },
       { status: 500 }
@@ -294,7 +295,7 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Utente disattivato' })
   } catch (error) {
-    console.error('Errore DELETE /api/users/[id]:', error)
+    logger.error('Errore DELETE /api/users/[id]', error)
     return NextResponse.json(
       { error: 'Errore nella disattivazione dell\'utente' },
       { status: 500 }

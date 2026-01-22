@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 /**
  * Performance Monitoring Utilities
  *
@@ -89,14 +90,15 @@ export function logSlowOperation(
 
   // Log based on severity
   if (durationMs >= verySlowThreshold) {
-    console.error(
+    logger.error(
       `[PERF] Very slow ${type}: ${name} took ${durationMs}ms`,
-      metadata || ''
+      undefined,
+      metadata
     )
   } else if (durationMs >= slowThreshold) {
-    console.warn(
+    logger.warn(
       `[PERF] Slow ${type}: ${name} took ${durationMs}ms`,
-      metadata || ''
+      metadata
     )
   }
 }

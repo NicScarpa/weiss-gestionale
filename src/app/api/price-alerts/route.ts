@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { PriceAlertStatus } from '@prisma/client'
 
+import { logger } from '@/lib/logger'
 // GET /api/price-alerts - Lista alert prezzi
 export async function GET(request: NextRequest) {
   try {
@@ -97,7 +98,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Errore GET /api/price-alerts:', error)
+    logger.error('Errore GET /api/price-alerts', error)
     return NextResponse.json(
       { error: 'Errore nel recupero degli alert prezzi' },
       { status: 500 }

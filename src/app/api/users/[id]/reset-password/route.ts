@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 import { canPerformAction, type UserRole } from '@/lib/utils/permissions'
 
+import { logger } from '@/lib/logger'
 // Password iniziale di default
 const DEFAULT_PASSWORD = '1234567890'
 
@@ -78,7 +79,7 @@ export async function POST(
       },
     })
   } catch (error) {
-    console.error('Errore POST /api/users/[id]/reset-password:', error)
+    logger.error('Errore POST /api/users/[id]/reset-password', error)
     return NextResponse.json(
       { error: 'Errore nel reset della password' },
       { status: 500 }

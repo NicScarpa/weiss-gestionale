@@ -65,6 +65,7 @@ import {
 } from '@/types/budget'
 import { getAvailableYears } from '@/lib/budget-utils'
 
+import { logger } from '@/lib/logger'
 interface Budget {
   id: string
   year: number
@@ -115,7 +116,7 @@ export function BudgetList({ venueId, isAdmin }: BudgetListProps) {
       const data = await res.json()
       setBudgets(data.data)
     } catch (error) {
-      console.error('Errore fetch budgets:', error)
+      logger.error('Errore fetch budgets', error)
       toast.error('Errore nel caricamento dei budget')
     } finally {
       setLoading(false)

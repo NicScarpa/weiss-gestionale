@@ -21,11 +21,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { DeleteSupplierDialog } from './DeleteSupplierDialog'
+import { BulkDeleteSuppliersDialog } from './BulkDeleteSuppliersDialog'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
-import { Truck, Plus, Pencil, Trash2, Loader2, Search } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Truck, Plus, Pencil, Trash2, Loader2, Search, X } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { logger } from '@/lib/logger'
 interface Account {
   id: string
   code: string
@@ -72,17 +75,19 @@ export function SupplierManagement() {
   const [showInactive, setShowInactive] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [formData, setFormData] = useState(initialFormData)
+  const [selectedSuppliers, setSelectedSuppliers] = useState<Set<string>>(new Set())
+  const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false)
 
   // Carica lista fornitori
   const fetchSuppliers = async () => {
     try {
       setLoading(true)
-      const res = await fetch(`/api/suppliers?full=true&includeInactive=${showInactive}`)
+      const res = await fetch(`/api/suppliers?full=true&showOnlyInactive=${showInactive}`)
       if (!res.ok) throw new Error('Errore nel caricamento')
       const data = await res.json()
       setSuppliers(data.suppliers || [])
     } catch (error) {
-      console.error('Errore:', error)
+      logger.error('Errore', error)
       toast.error('Errore nel caricamento dei fornitori')
     } finally {
       setLoading(false)
@@ -97,7 +102,7 @@ export function SupplierManagement() {
       const data = await res.json()
       setAccounts(data.accounts || [])
     } catch (error) {
-      console.error('Errore:', error)
+      logger.error('Errore', error)
     }
   }
 
@@ -111,6 +116,37 @@ export function SupplierManagement() {
     s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     s.vatNumber?.toLowerCase().includes(searchQuery.toLowerCase())
   )
+
+  // Selezione multipla
+  const isAllSelected = filteredSuppliers.length > 0 &&
+    filteredSuppliers.every(s => selectedSuppliers.has(s.id))
+  const isSomeSelected = filteredSuppliers.some(s => selectedSuppliers.has(s.id))
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedSuppliers(new Set())
+    } else {
+      setSelectedSuppliers(new Set(filteredSuppliers.map(s => s.id)))
+    }
+  }
+
+  const toggleSelect = (id: string) => {
+    const newSet = new Set(selectedSuppliers)
+    if (newSet.has(id)) {
+      newSet.delete(id)
+    } else {
+      newSet.add(id)
+    }
+    setSelectedSuppliers(newSet)
+  }
+
+  const clearSelection = () => {
+    setSelectedSuppliers(new Set())
+  }
+
+  const getSelectedSuppliersList = () => {
+    return suppliers.filter(s => selectedSuppliers.has(s.id))
+  }
 
   // Apri dialog per nuovo fornitore
   const handleNew = () => {
@@ -183,7 +219,7 @@ export function SupplierManagement() {
       setEditingSupplier(null)
       fetchSuppliers()
     } catch (error: any) {
-      console.error('Errore:', error)
+      logger.error('Errore', error)
       toast.error(error.message || 'Errore nel salvataggio')
     } finally {
       setSaving(false)
@@ -195,6 +231,14 @@ export function SupplierManagement() {
     toast.success('Fornitore disattivato')
     setIsDeleteDialogOpen(false)
     setSupplierToDelete(null)
+    fetchSuppliers()
+  }
+
+  // Callback dopo eliminazione multipla
+  const handleBulkDeleted = (count: number) => {
+    toast.success(`${count} fornitore${count === 1 ? '' : 'i'} disattivat${count === 1 ? 'o' : 'i'}`)
+    setIsBulkDeleteDialogOpen(false)
+    setSelectedSuppliers(new Set())
     fetchSuppliers()
   }
 
@@ -237,16 +281,61 @@ export function SupplierManagement() {
         </Button>
       </div>
 
+      {/* Barra Selezione */}
+      {selectedSuppliers.size > 0 && (
+        <div className="flex items-center justify-between p-3 rounded-lg bg-primary/10 border border-primary/20">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium">
+              {selectedSuppliers.size} fornitore{selectedSuppliers.size === 1 ? '' : 'i'} selezionat{selectedSuppliers.size === 1 ? 'o' : 'i'}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearSelection}
+              className="h-8 px-2"
+            >
+              <X className="h-4 w-4 mr-1" />
+              Deseleziona
+            </Button>
+          </div>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => setIsBulkDeleteDialogOpen(true)}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Elimina Selezionati
+          </Button>
+        </div>
+      )}
+
       {/* Lista Fornitori */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Truck className="h-5 w-5" />
-            Fornitori ({filteredSuppliers.length})
-          </CardTitle>
-          <CardDescription>
-            Anagrafica fornitori per uscite e fatture
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Truck className="h-5 w-5" />
+                Fornitori ({filteredSuppliers.length})
+              </CardTitle>
+              <CardDescription>
+                Anagrafica fornitori per uscite e fatture
+              </CardDescription>
+            </div>
+            {filteredSuppliers.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="select-all-suppliers"
+                  checked={isAllSelected}
+                  onCheckedChange={toggleSelectAll}
+                  className={isSomeSelected && !isAllSelected ? 'data-[state=checked]:bg-primary/50' : ''}
+                />
+                <Label htmlFor="select-all-suppliers" className="text-sm cursor-pointer">
+                  Seleziona tutti
+                </Label>
+              </div>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {filteredSuppliers.length === 0 ? (
@@ -258,31 +347,42 @@ export function SupplierManagement() {
               {filteredSuppliers.map((supplier) => (
                 <div
                   key={supplier.id}
-                  className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                  className={`flex items-center justify-between p-3 rounded-lg transition-colors ${
+                    selectedSuppliers.has(supplier.id)
+                      ? 'bg-primary/10 border border-primary/20'
+                      : 'bg-muted/50 hover:bg-muted'
+                  }`}
                 >
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{supplier.name}</span>
-                      {!supplier.isActive && (
-                        <Badge variant="secondary">Inattivo</Badge>
-                      )}
-                    </div>
-                    <div className="flex flex-col gap-1 text-sm text-muted-foreground mt-1">
-                      {supplier.vatNumber && (
-                        <span className="font-mono">P.IVA: {supplier.vatNumber}</span>
-                      )}
-                      {(supplier.address || supplier.city) && (
-                        <span>
-                          {[supplier.address, supplier.postalCode, supplier.city, supplier.province]
-                            .filter(Boolean)
-                            .join(', ')}
-                        </span>
-                      )}
-                      {supplier.defaultAccount && (
-                        <span>
-                          Conto: {supplier.defaultAccount.code} - {supplier.defaultAccount.name}
-                        </span>
-                      )}
+                  <div className="flex items-center gap-3">
+                    <Checkbox
+                      checked={selectedSuppliers.has(supplier.id)}
+                      onCheckedChange={() => toggleSelect(supplier.id)}
+                      aria-label={`Seleziona ${supplier.name}`}
+                    />
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{supplier.name}</span>
+                        {!supplier.isActive && (
+                          <Badge variant="secondary">Inattivo</Badge>
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-1 text-sm text-muted-foreground mt-1">
+                        {supplier.vatNumber && (
+                          <span className="font-mono">P.IVA: {supplier.vatNumber}</span>
+                        )}
+                        {(supplier.address || supplier.city) && (
+                          <span>
+                            {[supplier.address, supplier.postalCode, supplier.city, supplier.province]
+                              .filter(Boolean)
+                              .join(', ')}
+                          </span>
+                        )}
+                        {supplier.defaultAccount && (
+                          <span>
+                            Conto: {supplier.defaultAccount.code} - {supplier.defaultAccount.name}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
@@ -510,6 +610,14 @@ export function SupplierManagement() {
         onOpenChange={setIsDeleteDialogOpen}
         supplier={supplierToDelete}
         onDeleted={handleSupplierDeleted}
+      />
+
+      {/* Dialog Eliminazione Multipla */}
+      <BulkDeleteSuppliersDialog
+        open={isBulkDeleteDialogOpen}
+        onOpenChange={setIsBulkDeleteDialogOpen}
+        suppliers={getSelectedSuppliersList()}
+        onDeleted={handleBulkDeleted}
       />
     </div>
   )

@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // Schema per aggiornamento turno
 const updateShiftDefSchema = z.object({
   name: z.string().min(1).optional(),
@@ -73,7 +74,7 @@ export async function GET(
       rateMultiplier: Number(shiftDefinition.rateMultiplier),
     })
   } catch (error) {
-    console.error('Errore GET /api/shift-definitions/[id]:', error)
+    logger.error('Errore GET /api/shift-definitions/[id]', error)
     return NextResponse.json(
       { error: 'Errore nel recupero della definizione turno' },
       { status: 500 }
@@ -184,7 +185,7 @@ export async function PUT(
       )
     }
 
-    console.error('Errore PUT /api/shift-definitions/[id]:', error)
+    logger.error('Errore PUT /api/shift-definitions/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'aggiornamento della definizione turno' },
       { status: 500 }
@@ -248,7 +249,7 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Definizione turno eliminata con successo' })
   } catch (error) {
-    console.error('Errore DELETE /api/shift-definitions/[id]:', error)
+    logger.error('Errore DELETE /api/shift-definitions/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'eliminazione della definizione turno' },
       { status: 500 }

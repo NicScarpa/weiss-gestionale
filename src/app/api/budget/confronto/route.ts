@@ -17,6 +17,7 @@ import {
   budgetLineToMonthlyValues,
 } from '@/lib/budget-utils'
 
+import { logger } from '@/lib/logger'
 // GET /api/budget/confronto - Confronto budget vs actual
 export async function GET(request: NextRequest) {
   try {
@@ -276,7 +277,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    console.error('Errore GET /api/budget/confronto:', error)
+    logger.error('Errore GET /api/budget/confronto', error)
     return NextResponse.json(
       { error: 'Errore nel calcolo del confronto budget' },
       { status: 500 }

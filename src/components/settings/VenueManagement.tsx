@@ -28,6 +28,7 @@ import { Badge } from '@/components/ui/badge'
 import { Building2, Plus, Pencil, Trash2, Loader2, Users, Receipt } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { logger } from '@/lib/logger'
 interface Venue {
   id: string
   name: string
@@ -71,7 +72,7 @@ export function VenueManagement() {
       const data = await res.json()
       setVenues(data.venues || [])
     } catch (error) {
-      console.error('Errore:', error)
+      logger.error('Errore', error)
       toast.error('Errore nel caricamento delle sedi')
     } finally {
       setLoading(false)
@@ -145,7 +146,7 @@ export function VenueManagement() {
       setEditingVenue(null)
       fetchVenues()
     } catch (error: any) {
-      console.error('Errore:', error)
+      logger.error('Errore', error)
       toast.error(error.message || 'Errore nel salvataggio')
     } finally {
       setSaving(false)
@@ -173,7 +174,7 @@ export function VenueManagement() {
       setVenueToDelete(null)
       fetchVenues()
     } catch (error: any) {
-      console.error('Errore:', error)
+      logger.error('Errore', error)
       toast.error(error.message || 'Errore nell\'eliminazione')
     } finally {
       setSaving(false)

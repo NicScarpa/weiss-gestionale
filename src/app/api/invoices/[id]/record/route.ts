@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { format } from 'date-fns'
 
+import { logger } from '@/lib/logger'
 interface RouteContext {
   params: Promise<{ id: string }>
 }
@@ -122,7 +123,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       message: 'Fattura registrata in prima nota con successo',
     })
   } catch (error) {
-    console.error('Errore POST /api/invoices/[id]/record:', error)
+    logger.error('Errore POST /api/invoices/[id]/record', error)
     return NextResponse.json(
       { error: 'Errore nella registrazione della fattura' },
       { status: 500 }

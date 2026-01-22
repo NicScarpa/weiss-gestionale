@@ -5,6 +5,7 @@ import ExcelJS from 'exceljs'
 import { format, eachDayOfInterval, parseISO } from 'date-fns'
 import { it } from 'date-fns/locale'
 
+import { logger } from '@/lib/logger'
 // GET /api/schedules/[id]/export/excel - Export Excel turni
 export async function GET(
   request: NextRequest,
@@ -188,7 +189,7 @@ export async function GET(
       },
     })
   } catch (error) {
-    console.error('Errore export Excel turni:', error)
+    logger.error('Errore export Excel turni', error)
     return NextResponse.json(
       { error: 'Errore nell\'export Excel' },
       { status: 500 }

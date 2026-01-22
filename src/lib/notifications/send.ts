@@ -18,6 +18,7 @@ import {
   NotificationStatus,
 } from './types'
 
+import { logger } from '@/lib/logger'
 /**
  * Invia una notifica a un singolo utente
  */
@@ -54,7 +55,7 @@ export async function sendNotification(
 
     if (channel === 'EMAIL' && preferences?.emailEnabled) {
       // TODO: Implementare invio email
-      console.log('[Email] Would send to user:', userId, payload.title)
+      logger.info('[Email] Would send to user', { userId, title: payload.title })
     }
   }
 
@@ -292,7 +293,7 @@ async function logNotification(params: {
       },
     })
   } catch (error) {
-    console.error('Failed to log notification:', error)
+    logger.error('Failed to log notification', error)
   }
 }
 

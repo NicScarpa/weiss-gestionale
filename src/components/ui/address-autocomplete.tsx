@@ -24,6 +24,7 @@ import {
 import { Button } from '@/components/ui/button'
 import Script from 'next/script'
 
+import { logger } from '@/lib/logger'
 type Google = {
     maps: {
         places: unknown
@@ -96,9 +97,9 @@ export function AddressAutocomplete({
         try {
             const results = await getGeocode({ address })
             // const { lat, lng } = await getLatLng(results[0])
-            // console.log('📍 Coordinates: ', { lat, lng })
+            // logger.info('📍 Coordinates: ', { lat, lng })
         } catch (error) {
-            console.error('Error: ', error)
+            logger.error('Error: ', error)
         }
     }
 

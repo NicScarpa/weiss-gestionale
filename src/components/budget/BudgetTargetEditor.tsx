@@ -16,6 +16,7 @@ import { formatCurrency } from '@/lib/constants'
 import { toast } from 'sonner'
 import { MONTH_LABELS_FULL, MONTH_KEYS, type MonthKey } from '@/types/budget'
 
+import { logger } from '@/lib/logger'
 interface BudgetTargetEditorProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -56,7 +57,7 @@ export function BudgetTargetEditor({
           }
         }
       } catch (error) {
-        console.error('Errore fetch targets:', error)
+        logger.error('Errore fetch targets', error)
       } finally {
         setLoading(false)
       }

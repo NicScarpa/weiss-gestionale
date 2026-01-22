@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // Schema per creazione vincolo dipendente
 const createConstraintSchema = z.object({
   constraintType: z.enum([
@@ -72,7 +73,7 @@ export async function GET(
 
     return NextResponse.json({ data: constraints })
   } catch (error) {
-    console.error('Errore GET /api/staff/[id]/constraints:', error)
+    logger.error('Errore GET /api/staff/[id]/constraints', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dei vincoli' },
       { status: 500 }
@@ -152,7 +153,7 @@ export async function POST(
       )
     }
 
-    console.error('Errore POST /api/staff/[id]/constraints:', error)
+    logger.error('Errore POST /api/staff/[id]/constraints', error)
     return NextResponse.json(
       { error: 'Errore nella creazione del vincolo' },
       { status: 500 }

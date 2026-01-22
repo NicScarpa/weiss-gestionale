@@ -10,6 +10,7 @@ import {
 } from '@/types/budget'
 import { monthNumberToKey } from '@/lib/budget-utils'
 
+import { logger } from '@/lib/logger'
 // GET /api/budget/alerts - Lista alert budget
 export async function GET(request: NextRequest) {
   try {
@@ -131,7 +132,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    console.error('Errore GET /api/budget/alerts:', error)
+    logger.error('Errore GET /api/budget/alerts', error)
     return NextResponse.json(
       { error: 'Errore nel recupero degli alert' },
       { status: 500 }
@@ -194,7 +195,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Errore POST /api/budget/alerts:', error)
+    logger.error('Errore POST /api/budget/alerts', error)
     return NextResponse.json(
       { error: 'Errore nell\'aggiornamento dell\'alert' },
       { status: 500 }

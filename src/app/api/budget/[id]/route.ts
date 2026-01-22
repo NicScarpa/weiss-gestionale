@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { updateBudgetSchema } from '@/lib/validations/budget'
 
+import { logger } from '@/lib/logger'
 // GET /api/budget/[id] - Dettaglio budget con righe
 export async function GET(
   request: NextRequest,
@@ -133,7 +134,7 @@ export async function GET(
       lineCount: formattedLines.length,
     })
   } catch (error) {
-    console.error('Errore GET /api/budget/[id]:', error)
+    logger.error('Errore GET /api/budget/[id]', error)
     return NextResponse.json(
       { error: 'Errore nel recupero del budget' },
       { status: 500 }
@@ -206,7 +207,7 @@ export async function PUT(
       )
     }
 
-    console.error('Errore PUT /api/budget/[id]:', error)
+    logger.error('Errore PUT /api/budget/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'aggiornamento del budget' },
       { status: 500 }
@@ -259,7 +260,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Errore DELETE /api/budget/[id]:', error)
+    logger.error('Errore DELETE /api/budget/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'eliminazione del budget' },
       { status: 500 }

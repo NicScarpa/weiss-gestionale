@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // Schema per creazione vincolo
 const createConstraintSchema = z.object({
   userId: z.string().min(1, 'userId richiesto'),
@@ -92,7 +93,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ constraints })
   } catch (error) {
-    console.error('Errore GET /api/constraints:', error)
+    logger.error('Errore GET /api/constraints', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dei vincoli' },
       { status: 500 }
@@ -178,7 +179,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Errore POST /api/constraints:', error)
+    logger.error('Errore POST /api/constraints', error)
     return NextResponse.json(
       { error: 'Errore nella creazione del vincolo' },
       { status: 500 }

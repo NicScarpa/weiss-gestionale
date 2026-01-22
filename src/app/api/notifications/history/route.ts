@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 const historyQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).optional().default(20),
   offset: z.coerce.number().min(0).optional().default(0),
@@ -88,7 +89,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    console.error('Errore GET /api/notifications/history:', error)
+    logger.error('Errore GET /api/notifications/history', error)
     return NextResponse.json(
       { error: "Errore nel recupero storico" },
       { status: 500 }
@@ -152,7 +153,7 @@ export async function PATCH(request: NextRequest) {
       { status: 400 }
     )
   } catch (error) {
-    console.error('Errore PATCH /api/notifications/history:', error)
+    logger.error('Errore PATCH /api/notifications/history', error)
     return NextResponse.json(
       { error: "Errore nell'aggiornamento" },
       { status: 500 }
@@ -189,7 +190,7 @@ export async function DELETE(request: NextRequest) {
       deleted: result.count,
     })
   } catch (error) {
-    console.error('Errore DELETE /api/notifications/history:', error)
+    logger.error('Errore DELETE /api/notifications/history', error)
     return NextResponse.json(
       { error: "Errore nell'eliminazione" },
       { status: 500 }

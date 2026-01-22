@@ -6,6 +6,7 @@ import { it } from 'date-fns/locale'
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
+import { logger } from '@/lib/logger'
 // GET /api/schedules/[id]/export/pdf - Export PDF turni
 export async function GET(
   request: NextRequest,
@@ -209,7 +210,7 @@ export async function GET(
       },
     })
   } catch (error) {
-    console.error('Errore export PDF turni:', error)
+    logger.error('Errore export PDF turni', error)
     return NextResponse.json(
       { error: 'Errore nell\'export PDF' },
       { status: 500 }

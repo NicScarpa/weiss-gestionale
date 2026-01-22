@@ -36,6 +36,7 @@ import { Badge } from '@/components/ui/badge'
 import { Calculator, Plus, Pencil, Trash2, Loader2, Search, TrendingUp, TrendingDown, Wallet, CreditCard } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { logger } from '@/lib/logger'
 type AccountType = 'RICAVO' | 'COSTO' | 'ATTIVO' | 'PASSIVO'
 
 interface Account {
@@ -95,7 +96,7 @@ export function AccountManagement() {
       const data = await res.json()
       setAccounts(data.accounts || [])
     } catch (error) {
-      console.error('Errore:', error)
+      logger.error('Errore', error)
       toast.error('Errore nel caricamento dei conti')
     } finally {
       setLoading(false)
@@ -186,7 +187,7 @@ export function AccountManagement() {
       setEditingAccount(null)
       fetchAccounts()
     } catch (error: any) {
-      console.error('Errore:', error)
+      logger.error('Errore', error)
       toast.error(error.message || 'Errore nel salvataggio')
     } finally {
       setSaving(false)
@@ -214,7 +215,7 @@ export function AccountManagement() {
       setAccountToDelete(null)
       fetchAccounts()
     } catch (error: any) {
-      console.error('Errore:', error)
+      logger.error('Errore', error)
       toast.error(error.message || 'Errore nell\'eliminazione')
     } finally {
       setSaving(false)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -27,6 +27,7 @@ import {
 import { toast } from 'sonner'
 import type { BankTransactionWithMatch, ReconciliationStatus, ImportSource } from '@/types/reconciliation'
 
+import { logger } from '@/lib/logger'
 interface TransactionDetailsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -79,16 +80,7 @@ export function TransactionDetailsDialog({
   const [transaction, setTransaction] = useState<BankTransactionWithMatch | null>(null)
   const [loading, setLoading] = useState(false)
 
-  useEffect(() => {
-    if (open && transactionId) {
-      loadTransaction()
-    } else {
-      setTransaction(null)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, transactionId])
-
-  const loadTransaction = async () => {
+  const loadTransaction = useCallback(async () => {
     if (!transactionId) return
 
     setLoading(true)
@@ -98,13 +90,21 @@ export function TransactionDetailsDialog({
       const data = await res.json()
       setTransaction(data)
     } catch (error) {
-      console.error('Load error:', error)
+      logger.error('Load error', error)
       toast.error('Errore nel caricamento della transazione')
       onOpenChange(false)
     } finally {
       setLoading(false)
     }
-  }
+  }, [transactionId, onOpenChange])
+
+  useEffect(() => {
+    if (open && transactionId) {
+      loadTransaction()
+    } else {
+      setTransaction(null)
+    }
+  }, [open, transactionId, loadTransaction])
 
   const status = transaction?.status ? statusConfig[transaction.status] : null
 

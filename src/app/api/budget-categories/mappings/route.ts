@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // Schema per singolo mapping
 const mappingSchema = z.object({
   accountId: z.string(),
@@ -100,7 +101,7 @@ export async function GET(request: NextRequest) {
       total: mappings.length,
     })
   } catch (error) {
-    console.error('Errore GET budget-categories/mappings:', error)
+    logger.error('Errore GET budget-categories/mappings', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dei mapping' },
       { status: 500 }
@@ -238,7 +239,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(mapping, { status: 201 })
     }
   } catch (error) {
-    console.error('Errore POST budget-categories/mappings:', error)
+    logger.error('Errore POST budget-categories/mappings', error)
     return NextResponse.json(
       { error: 'Errore nella creazione del mapping' },
       { status: 500 }
@@ -291,7 +292,7 @@ export async function DELETE(request: NextRequest) {
       )
     }
   } catch (error) {
-    console.error('Errore DELETE budget-categories/mappings:', error)
+    logger.error('Errore DELETE budget-categories/mappings', error)
     return NextResponse.json(
       { error: 'Errore nella rimozione del mapping' },
       { status: 500 }

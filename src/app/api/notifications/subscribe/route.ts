@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { validateFCMToken } from '@/lib/notifications/fcm'
 
+import { logger } from '@/lib/logger'
 const subscribeSchema = z.object({
   fcmToken: z.string().min(1),
   deviceName: z.string().optional(),
@@ -92,7 +93,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Errore POST /api/notifications/subscribe:', error)
+    logger.error('Errore POST /api/notifications/subscribe', error)
     return NextResponse.json(
       { error: "Errore nella registrazione" },
       { status: 500 }
@@ -139,7 +140,7 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
-    console.error('Errore DELETE /api/notifications/subscribe:', error)
+    logger.error('Errore DELETE /api/notifications/subscribe', error)
     return NextResponse.json(
       { error: "Errore nella rimozione" },
       { status: 500 }
@@ -174,7 +175,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ subscriptions })
   } catch (error) {
-    console.error('Errore GET /api/notifications/subscribe:', error)
+    logger.error('Errore GET /api/notifications/subscribe', error)
     return NextResponse.json(
       { error: "Errore nel recupero" },
       { status: 500 }

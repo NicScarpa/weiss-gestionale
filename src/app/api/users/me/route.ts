@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // Campi che l'utente può modificare del proprio profilo
 const updateProfileSchema = z.object({
   phoneNumber: z.string().optional().nullable(),
@@ -40,7 +41,7 @@ export async function GET() {
 
     return NextResponse.json(userWithoutPassword)
   } catch (error) {
-    console.error('Errore GET /api/users/me:', error)
+    logger.error('Errore GET /api/users/me', error)
     return NextResponse.json(
       { error: 'Errore nel recupero del profilo' },
       { status: 500 }
@@ -106,7 +107,7 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    console.error('Errore PATCH /api/users/me:', error)
+    logger.error('Errore PATCH /api/users/me', error)
     return NextResponse.json(
       { error: 'Errore nella modifica del profilo' },
       { status: 500 }

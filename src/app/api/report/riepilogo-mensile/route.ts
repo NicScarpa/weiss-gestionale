@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { startOfYear, endOfYear, format, eachMonthOfInterval, startOfMonth, endOfMonth } from 'date-fns'
 import { it } from 'date-fns/locale'
 
+import { logger } from '@/lib/logger'
 // GET /api/report/riepilogo-mensile - Report riepilogo mensile
 export async function GET(request: NextRequest) {
   try {
@@ -260,7 +261,7 @@ export async function GET(request: NextRequest) {
       availableYears: years,
     })
   } catch (error) {
-    console.error('Errore GET /api/report/riepilogo-mensile:', error)
+    logger.error('Errore GET /api/report/riepilogo-mensile', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dei dati' },
       { status: 500 }

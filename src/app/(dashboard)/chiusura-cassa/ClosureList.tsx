@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import {
   Plus,
@@ -9,9 +9,12 @@ import {
   CheckCircle2,
   Clock,
   FileText,
+  Trash2,
+  X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Card,
   CardContent,
@@ -38,7 +41,10 @@ import {
 import { formatCurrency } from '@/lib/constants'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
+import { DeleteClosureDialog } from '@/components/chiusura/DeleteClosureDialog'
+import { BulkDeleteClosuresDialog } from '@/components/chiusura/BulkDeleteClosuresDialog'
 
+import { logger } from '@/lib/logger'
 interface Station {
   id: string
   name: string
@@ -107,8 +113,12 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
     totalPages: 0,
   })
 
-  // Fetch closures
-  const fetchClosures = async () => {
+  // Selezione multipla
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+
+  // Fetch closures - useCallback per evitare loop infiniti
+  const fetchClosures = useCallback(async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams()
@@ -129,17 +139,49 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
         total: data.pagination.total,
         totalPages: data.pagination.totalPages,
       }))
+      // Reset selezioni quando cambiano i dati
+      setSelectedIds(new Set())
     } catch (error) {
-      console.error('Errore fetch chiusure:', error)
+      logger.error('Errore fetch chiusure', error)
       toast.error('Errore nel caricamento delle chiusure')
     } finally {
       setLoading(false)
     }
-  }
+  }, [venueId, filter.status, filter.dateFrom, filter.dateTo, pagination.page, pagination.limit])
 
   useEffect(() => {
     fetchClosures()
-  }, [venueId, filter.status, filter.dateFrom, filter.dateTo, pagination.page])
+  }, [fetchClosures])
+
+  // Gestione selezione
+  const toggleSelection = (id: string) => {
+    setSelectedIds((prev) => {
+      const newSet = new Set(prev)
+      if (newSet.has(id)) {
+        newSet.delete(id)
+      } else {
+        newSet.add(id)
+      }
+      return newSet
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === closures.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(closures.map((c) => c.id)))
+    }
+  }
+
+  const clearSelection = () => {
+    setSelectedIds(new Set())
+  }
+
+  // Verifica se ci sono chiusure validate tra le selezionate
+  const hasValidatedSelected = closures
+    .filter((c) => selectedIds.has(c.id))
+    .some((c) => c.status === 'VALIDATED')
 
   // Status icon (solo icona senza testo)
   const getStatusIcon = (status: Closure['status']) => {
@@ -182,6 +224,34 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
           </Link>
         </Button>
       </div>
+
+      {/* Barra azioni selezione */}
+      {selectedIds.size > 0 && isAdmin && (
+        <div className="flex items-center justify-between p-4 bg-muted rounded-lg border">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium">
+              {selectedIds.size} {selectedIds.size === 1 ? 'chiusura selezionata' : 'chiusure selezionate'}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearSelection}
+              className="h-8"
+            >
+              <X className="h-4 w-4 mr-1" />
+              Deseleziona
+            </Button>
+          </div>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => setBulkDeleteOpen(true)}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Elimina selezionate
+          </Button>
+        </div>
+      )}
 
       {/* Filters */}
       <Card>
@@ -267,6 +337,15 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    {isAdmin && (
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={selectedIds.size === closures.length && closures.length > 0}
+                          onCheckedChange={toggleSelectAll}
+                          aria-label="Seleziona tutto"
+                        />
+                      </TableHead>
+                    )}
                     <TableHead>Data</TableHead>
                     {isAdmin && <TableHead>Sede</TableHead>}
                     <TableHead className="text-right">Incasso</TableHead>
@@ -274,15 +353,27 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
                     <TableHead>Evento</TableHead>
                     <TableHead className="w-10"></TableHead>
                     <TableHead className="w-10"></TableHead>
+                    {isAdmin && <TableHead className="w-10"></TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {closures.map((closure) => (
                     <TableRow
                       key={closure.id}
-                      className="cursor-pointer hover:bg-muted/50"
+                      className={`cursor-pointer hover:bg-muted/50 ${
+                        selectedIds.has(closure.id) ? 'bg-muted/30' : ''
+                      }`}
                       onClick={() => router.push(`/chiusura-cassa/${closure.id}`)}
                     >
+                      {isAdmin && (
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={selectedIds.has(closure.id)}
+                            onCheckedChange={() => toggleSelection(closure.id)}
+                            aria-label={`Seleziona chiusura ${formatDateCompact(closure.date)}`}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell className="font-medium">
                         {formatDateCompact(closure.date)}
                       </TableCell>
@@ -316,6 +407,28 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
                       <TableCell>
                         {getStatusIcon(closure.status)}
                       </TableCell>
+                      {isAdmin && (
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <DeleteClosureDialog
+                            closureId={closure.id}
+                            closureDate={closure.date}
+                            closureStatus={closure.status}
+                            onDeleted={() => {
+                              toast.success('Chiusura eliminata')
+                              fetchClosures()
+                            }}
+                            trigger={
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            }
+                          />
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -355,6 +468,19 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
           )}
         </CardContent>
       </Card>
+
+      {/* Dialog eliminazione multipla */}
+      <BulkDeleteClosuresDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        selectedIds={Array.from(selectedIds)}
+        hasValidated={hasValidatedSelected}
+        onDeleted={() => {
+          toast.success(`${selectedIds.size} chiusure eliminate`)
+          setSelectedIds(new Set())
+          fetchClosures()
+        }}
+      />
     </>
   )
 }

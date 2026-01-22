@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 
+import { logger } from '@/lib/logger'
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -82,18 +83,19 @@ export async function GET(
       return NextResponse.json({ error: 'Chiusura non trovata' }, { status: 404 })
     }
 
-    // Type assertion per campi Prisma
+    // Type assertion per campi Prisma Decimal
+    type DecimalValue = { toNumber: () => number } | null
     const c = closure as typeof closure & {
-      totalRevenue: any
-      totalCash: any
-      totalPos: any
-      totalExpenses: any
-      bankDeposit: any
-      cashDifference: any
-      netCash: any
-      coffeeMachineStart: any
-      coffeeMachineEnd: any
-      coffeeSold: any
+      totalRevenue: DecimalValue
+      totalCash: DecimalValue
+      totalPos: DecimalValue
+      totalExpenses: DecimalValue
+      bankDeposit: DecimalValue
+      cashDifference: DecimalValue
+      netCash: DecimalValue
+      coffeeMachineStart: DecimalValue
+      coffeeMachineEnd: DecimalValue
+      coffeeSold: DecimalValue
     }
 
     // Crea workbook Excel
@@ -278,7 +280,7 @@ export async function GET(
       },
     })
   } catch (error) {
-    console.error('Errore generazione Excel:', error)
+    logger.error('Errore generazione Excel', error)
     return NextResponse.json(
       { error: 'Errore nella generazione del file Excel' },
       { status: 500 }

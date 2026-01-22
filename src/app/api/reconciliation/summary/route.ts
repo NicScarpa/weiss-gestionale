@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { summaryQuerySchema } from '@/lib/validations/reconciliation'
 import type { ReconciliationSummary, ReconciliationStatus } from '@/types/reconciliation'
 
+import { logger } from '@/lib/logger'
 // GET /api/reconciliation/summary - Summary per dashboard
 export async function GET(request: NextRequest) {
   try {
@@ -103,7 +104,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(summary)
   } catch (error) {
-    console.error('GET /api/reconciliation/summary error:', error)
+    logger.error('GET /api/reconciliation/summary error', error)
     return NextResponse.json(
       { error: 'Errore nel recupero del summary' },
       { status: 500 }

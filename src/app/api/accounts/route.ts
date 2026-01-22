@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 
+import { logger } from '@/lib/logger'
 // Schema validazione
 const accountSchema = z.object({
   code: z.string().min(1, 'Codice obbligatorio').max(20, 'Codice max 20 caratteri'),
@@ -27,14 +29,14 @@ export async function GET(request: NextRequest) {
     const includeInactive = searchParams.get('includeInactive') === 'true'
     const full = searchParams.get('full') === 'true'
 
-    const where: any = {}
+    const where: Prisma.AccountWhereInput = {}
 
     if (!includeInactive) {
       where.isActive = true
     }
 
     if (type) {
-      where.type = type
+      where.type = type as Prisma.EnumAccountTypeFilter
     }
 
     const accounts = await prisma.account.findMany({
@@ -71,7 +73,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ accounts })
   } catch (error) {
-    console.error('Errore GET /api/accounts:', error)
+    logger.error('Errore GET /api/accounts', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dei conti' },
       { status: 500 }
@@ -129,7 +131,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ account })
   } catch (error) {
-    console.error('Errore POST /api/accounts:', error)
+    logger.error('Errore POST /api/accounts', error)
 
     if (error instanceof z.ZodError) {
       return NextResponse.json(
@@ -209,7 +211,7 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({ account })
   } catch (error) {
-    console.error('Errore PUT /api/accounts:', error)
+    logger.error('Errore PUT /api/accounts', error)
 
     if (error instanceof z.ZodError) {
       return NextResponse.json(
@@ -285,7 +287,7 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ message: 'Conto eliminato' })
   } catch (error) {
-    console.error('Errore DELETE /api/accounts:', error)
+    logger.error('Errore DELETE /api/accounts', error)
     return NextResponse.json(
       { error: 'Errore nell\'eliminazione del conto' },
       { status: 500 }

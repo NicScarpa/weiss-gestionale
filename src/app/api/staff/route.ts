@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 import { generateUniqueUsername } from '@/lib/utils/username'
 
+import { logger } from '@/lib/logger'
 // Password iniziale di default
 const DEFAULT_PASSWORD = '1234567890'
 
@@ -83,7 +85,7 @@ export async function GET(request: NextRequest) {
     const includeInactive = searchParams.get('includeInactive') === 'true' // deprecated, use showInactive
 
     // Costruisci where clause
-    const where: any = {
+    const where: Prisma.UserWhereInput = {
       // Escludi admin dalla lista dipendenti
       role: {
         name: { not: 'admin' }
@@ -141,7 +143,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: staff })
   } catch (error) {
-    console.error('Errore GET /api/staff:', error)
+    logger.error('Errore GET /api/staff', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dello staff' },
       { status: 500 }
@@ -173,7 +175,7 @@ export async function PUT(request: NextRequest) {
     const validatedData = updateStaffSchema.parse(data)
 
     // Prepara dati per update
-    const updateData: any = {}
+    const updateData: Prisma.UserUpdateInput = {}
 
     if (validatedData.firstName !== undefined) {
       updateData.firstName = validatedData.firstName
@@ -225,7 +227,7 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    console.error('Errore PUT /api/staff:', error)
+    logger.error('Errore PUT /api/staff', error)
     return NextResponse.json(
       { error: 'Errore nell\'aggiornamento del dipendente' },
       { status: 500 }
@@ -368,7 +370,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Errore POST /api/staff:', error)
+    logger.error('Errore POST /api/staff', error)
     return NextResponse.json(
       { error: 'Errore nella creazione del dipendente' },
       { status: 500 }

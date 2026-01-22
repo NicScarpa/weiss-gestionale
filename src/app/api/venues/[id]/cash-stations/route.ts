@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
+import { logger } from '@/lib/logger'
 // GET /api/venues/[id]/cash-stations - Template postazioni cassa per sede
 export async function GET(
   request: NextRequest,
@@ -61,7 +62,7 @@ export async function GET(
       cashStations: cashStationTemplates,
     })
   } catch (error) {
-    console.error('Errore GET /api/venues/[id]/cash-stations:', error)
+    logger.error('Errore GET /api/venues/[id]/cash-stations', error)
     return NextResponse.json(
       { error: 'Errore nel recupero delle postazioni' },
       { status: 500 }

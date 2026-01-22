@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 
+import { logger } from '@/lib/logger'
 // Schema validazione
 const supplierSchema = z.object({
   name: z.string().min(1, 'Nome obbligatorio'),
@@ -28,12 +30,19 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const query = searchParams.get('q')
+    const showOnlyInactive = searchParams.get('showOnlyInactive') === 'true'
     const includeInactive = searchParams.get('includeInactive') === 'true'
     const full = searchParams.get('full') === 'true' // Include tutti i campi
 
-    const where: any = {}
+    const where: Prisma.SupplierWhereInput = {}
 
-    if (!includeInactive) {
+    // Logica filtro:
+    // - showOnlyInactive=true: mostra SOLO inattivi
+    // - includeInactive=true: mostra TUTTI (attivi + inattivi)
+    // - default: mostra SOLO attivi
+    if (showOnlyInactive) {
+      where.isActive = false
+    } else if (!includeInactive) {
       where.isActive = true
     }
 
@@ -77,7 +86,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ suppliers })
   } catch (error) {
-    console.error('Errore GET /api/suppliers:', error)
+    logger.error('Errore GET /api/suppliers', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dei fornitori' },
       { status: 500 }
@@ -163,7 +172,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ supplier })
   } catch (error) {
-    console.error('Errore POST /api/suppliers:', error)
+    logger.error('Errore POST /api/suppliers', error)
 
     if (error instanceof z.ZodError) {
       return NextResponse.json(
@@ -245,7 +254,7 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({ supplier })
   } catch (error) {
-    console.error('Errore PUT /api/suppliers:', error)
+    logger.error('Errore PUT /api/suppliers', error)
 
     if (error instanceof z.ZodError) {
       return NextResponse.json(
@@ -261,7 +270,8 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-// DELETE /api/suppliers - Elimina fornitore (soft delete)
+// DELETE /api/suppliers - Elimina fornitore/i (soft delete)
+// Supporta: ?id=xxx per singolo, oppure body { ids: [...] } per bulk
 export async function DELETE(request: NextRequest) {
   try {
     const session = await auth()
@@ -275,27 +285,55 @@ export async function DELETE(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const id = searchParams.get('id')
+    const singleId = searchParams.get('id')
 
-    if (!id) {
+    let ids: string[] = []
+
+    if (singleId) {
+      // Modalità singola (compatibilità retroattiva)
+      ids = [singleId]
+    } else {
+      // Modalità bulk: leggi IDs dal body
+      try {
+        const body = await request.json()
+        if (Array.isArray(body.ids) && body.ids.length > 0) {
+          ids = body.ids
+        }
+      } catch {
+        // Body vuoto o non JSON
+      }
+    }
+
+    if (ids.length === 0) {
       return NextResponse.json({ error: 'ID fornitore obbligatorio' }, { status: 400 })
     }
 
-    // Verifica esistenza
-    const existing = await prisma.supplier.findUnique({ where: { id } })
-    if (!existing) {
-      return NextResponse.json({ error: 'Fornitore non trovato' }, { status: 404 })
+    // Verifica esistenza fornitori
+    const existing = await prisma.supplier.findMany({
+      where: { id: { in: ids } },
+      select: { id: true }
+    })
+
+    if (existing.length === 0) {
+      return NextResponse.json({ error: 'Nessun fornitore trovato' }, { status: 404 })
     }
 
-    // Soft delete
-    await prisma.supplier.update({
-      where: { id },
+    const existingIds = existing.map(s => s.id)
+
+    // Soft delete (singolo o multiplo)
+    const result = await prisma.supplier.updateMany({
+      where: { id: { in: existingIds } },
       data: { isActive: false },
     })
 
-    return NextResponse.json({ message: 'Fornitore disattivato' })
+    const count = result.count
+    const message = count === 1
+      ? 'Fornitore disattivato'
+      : `${count} fornitori disattivati`
+
+    return NextResponse.json({ message, count })
   } catch (error) {
-    console.error('Errore DELETE /api/suppliers:', error)
+    logger.error('Errore DELETE /api/suppliers', error)
     return NextResponse.json(
       { error: 'Errore nell\'eliminazione del fornitore' },
       { status: 500 }

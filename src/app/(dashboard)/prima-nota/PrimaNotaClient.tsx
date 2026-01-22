@@ -40,6 +40,7 @@ import {
 import type { JournalEntry, RegisterType } from '@/types/prima-nota'
 import { toast } from 'sonner'
 
+import { logger } from '@/lib/logger'
 interface Account {
   id: string
   code: string
@@ -131,7 +132,7 @@ export function PrimaNotaClient({
       }))
       setSummary(data.summary)
     } catch (error) {
-      console.error('Errore fetch movimenti:', error)
+      logger.error('Errore fetch movimenti', error)
       toast.error('Errore nel caricamento dei movimenti')
     } finally {
       setLoading(false)
@@ -152,7 +153,7 @@ export function PrimaNotaClient({
         setBalances(data.data[0])
       }
     } catch (error) {
-      console.error('Errore fetch saldi:', error)
+      logger.error('Errore fetch saldi', error)
     }
   }, [venueId])
 

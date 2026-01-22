@@ -11,6 +11,7 @@ import {
   RATE_LIMIT_CONFIGS,
 } from './rate-limit'
 
+import { logger } from '@/lib/logger'
 // Standard API error response format
 export interface ApiErrorResponse {
   error: string
@@ -102,7 +103,7 @@ export function handleApiError(
   }
 
   // Log error for debugging (preserves existing behavior)
-  console.error(`Errore ${context}:`, error)
+  logger.error(`Errore ${context}:`, error)
 
   return internalError(defaultMessage)
 }

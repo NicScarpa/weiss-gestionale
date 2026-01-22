@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { Separator } from '@/components/ui/separator'
 
+import { logger } from '@/lib/logger'
 interface NotificationPreferences {
   pushEnabled: boolean
   newShiftPublished: boolean
@@ -68,7 +69,7 @@ export function NotificationSettings() {
         }
       }
     } catch (error) {
-      console.error('Error loading preferences:', error)
+      logger.error('Error loading preferences', error)
     } finally {
       setLoading(false)
     }
@@ -125,7 +126,7 @@ export function NotificationSettings() {
         toast.error('Permesso negato - Abilita le notifiche dalle impostazioni del browser')
       }
     } catch (error) {
-      console.error('Error requesting push permission:', error)
+      logger.error('Error requesting push permission', error)
       toast.error('Impossibile attivare le notifiche')
     }
   }

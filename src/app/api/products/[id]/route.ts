@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // GET /api/products/[id] - Dettaglio prodotto con storico prezzi
 export async function GET(
   request: NextRequest,
@@ -94,7 +95,7 @@ export async function GET(
       },
     })
   } catch (error) {
-    console.error('Errore GET /api/products/[id]:', error)
+    logger.error('Errore GET /api/products/[id]', error)
     return NextResponse.json(
       { error: 'Errore nel recupero del prodotto' },
       { status: 500 }
@@ -171,7 +172,7 @@ export async function PATCH(
       )
     }
 
-    console.error('Errore PATCH /api/products/[id]:', error)
+    logger.error('Errore PATCH /api/products/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'aggiornamento del prodotto' },
       { status: 500 }
@@ -213,7 +214,7 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Prodotto disattivato' })
   } catch (error) {
-    console.error('Errore DELETE /api/products/[id]:', error)
+    logger.error('Errore DELETE /api/products/[id]', error)
     return NextResponse.json(
       { error: 'Errore nella disattivazione del prodotto' },
       { status: 500 }

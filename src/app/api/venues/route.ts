@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // Schema validazione
 const venueSchema = z.object({
   name: z.string().min(1, 'Nome obbligatorio'),
@@ -62,7 +63,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ venues: formattedVenues })
   } catch (error) {
-    console.error('Errore GET /api/venues:', error)
+    logger.error('Errore GET /api/venues', error)
     return NextResponse.json(
       { error: 'Errore nel recupero delle sedi' },
       { status: 500 }
@@ -117,7 +118,7 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Errore POST /api/venues:', error)
+    logger.error('Errore POST /api/venues', error)
 
     if (error instanceof z.ZodError) {
       return NextResponse.json(
@@ -196,7 +197,7 @@ export async function PUT(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Errore PUT /api/venues:', error)
+    logger.error('Errore PUT /api/venues', error)
 
     if (error instanceof z.ZodError) {
       return NextResponse.json(
@@ -263,7 +264,7 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ message: 'Sede eliminata' })
   } catch (error) {
-    console.error('Errore DELETE /api/venues:', error)
+    logger.error('Errore DELETE /api/venues', error)
     return NextResponse.json(
       { error: 'Errore nell\'eliminazione della sede' },
       { status: 500 }

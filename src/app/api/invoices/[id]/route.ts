@@ -5,6 +5,7 @@ import { InvoiceStatus } from '@prisma/client'
 import { z } from 'zod'
 import { parseFatturaPA, TIPI_DOCUMENTO } from '@/lib/sdi/parser'
 
+import { logger } from '@/lib/logger'
 // Schema per aggiornamento fattura
 const updateInvoiceSchema = z.object({
   // Categorizzazione
@@ -114,14 +115,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
           arrotondamento: fattura.arrotondamento,
         }
       } catch (parseError) {
-        console.error('Errore parsing XML per dettaglio:', parseError)
+        logger.error('Errore parsing XML per dettaglio', parseError)
         // Non blocchiamo la risposta se il parsing fallisce
       }
     }
 
     return NextResponse.json({ ...invoice, parsedData })
   } catch (error) {
-    console.error('Errore GET /api/invoices/[id]:', error)
+    logger.error('Errore GET /api/invoices/[id]', error)
     return NextResponse.json(
       { error: 'Errore nel recupero della fattura' },
       { status: 500 }
@@ -277,7 +278,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       )
     }
 
-    console.error('Errore PUT /api/invoices/[id]:', error)
+    logger.error('Errore PUT /api/invoices/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'aggiornamento della fattura' },
       { status: 500 }
@@ -323,7 +324,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Errore DELETE /api/invoices/[id]:', error)
+    logger.error('Errore DELETE /api/invoices/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'eliminazione della fattura' },
       { status: 500 }

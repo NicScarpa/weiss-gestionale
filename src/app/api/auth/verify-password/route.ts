@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { compare } from 'bcryptjs'
 
+import { logger } from '@/lib/logger'
 // POST /api/auth/verify-password
 // Verifica la password dell'utente corrente per operazioni sensibili
 export async function POST(request: Request) {
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ valid: isValid })
   } catch (error) {
-    console.error('Errore verifica password:', error)
+    logger.error('Errore verifica password', error)
     return NextResponse.json(
       { error: 'Errore nella verifica' },
       { status: 500 }

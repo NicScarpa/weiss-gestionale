@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { notifySwapRequest } from '@/lib/notifications/triggers'
 
+import { logger } from '@/lib/logger'
 // Schema per richiesta scambio turno
 const createSwapRequestSchema = z.object({
   assignmentId: z.string().min(1, 'assignmentId richiesto'),
@@ -140,7 +141,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ swapRequests: enrichedSwaps })
   } catch (error) {
-    console.error('Errore GET /api/shift-swaps:', error)
+    logger.error('Errore GET /api/shift-swaps', error)
     return NextResponse.json(
       { error: 'Errore nel recupero delle richieste di scambio' },
       { status: 500 }
@@ -270,7 +271,7 @@ export async function POST(request: NextRequest) {
 
     // Invia notifica push all'utente target
     notifySwapRequest(updatedAssignment.id).catch((err) => {
-      console.error('Errore invio notifica swap request:', err)
+      logger.error('Errore invio notifica swap request', err)
     })
 
     return NextResponse.json({
@@ -286,7 +287,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Errore POST /api/shift-swaps:', error)
+    logger.error('Errore POST /api/shift-swaps', error)
     return NextResponse.json(
       { error: 'Errore nella creazione della richiesta di scambio' },
       { status: 500 }

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // Schema per creazione vincolo relazionale
 const createRelConstraintSchema = z.object({
   constraintType: z.enum([
@@ -80,7 +81,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: constraints })
   } catch (error) {
-    console.error('Errore GET /api/relationship-constraints:', error)
+    logger.error('Errore GET /api/relationship-constraints', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dei vincoli relazionali' },
       { status: 500 }
@@ -180,7 +181,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Errore POST /api/relationship-constraints:', error)
+    logger.error('Errore POST /api/relationship-constraints', error)
     return NextResponse.json(
       { error: 'Errore nella creazione del vincolo relazionale' },
       { status: 500 }

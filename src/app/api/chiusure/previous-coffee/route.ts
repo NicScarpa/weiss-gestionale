@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
+import { logger } from '@/lib/logger'
 // GET /api/chiusure/previous-coffee?date=YYYY-MM-DD&venueId=xxx
 // Recupera l'ultimo contatore caffè dalla chiusura precedente
 export async function GET(request: NextRequest) {
@@ -65,7 +66,7 @@ export async function GET(request: NextRequest) {
       previousDate: previousClosure.date.toISOString().split('T')[0],
     })
   } catch (error) {
-    console.error('Errore nel recupero caffè precedente:', error)
+    logger.error('Errore nel recupero caffè precedente', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dati' },
       { status: 500 }

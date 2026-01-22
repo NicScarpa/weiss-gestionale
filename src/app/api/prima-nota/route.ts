@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 import {
   createJournalEntrySchema,
   journalEntryFiltersSchema,
 } from '@/lib/validations/prima-nota'
 import { toDebitCredit, calculateTotals } from '@/lib/prima-nota-utils'
 
+import { logger } from '@/lib/logger'
 /**
  * @swagger
  * /api/prima-nota:
@@ -112,13 +114,16 @@ export async function GET(request: NextRequest) {
     })
 
     // Costruisci where clause
-    const where: any = {}
+    const where: Prisma.JournalEntryWhereInput = {}
 
     // Filtra per sede (admin vede tutte, altri solo la propria)
-    if (session.user.role !== 'admin') {
+    if (session.user.role !== 'admin' && session.user.venueId) {
       where.venueId = session.user.venueId
-    } else if (searchParams.get('venueId')) {
-      where.venueId = searchParams.get('venueId')
+    } else {
+      const venueIdParam = searchParams.get('venueId')
+      if (venueIdParam) {
+        where.venueId = venueIdParam
+      }
     }
 
     if (filters.registerType) {
@@ -271,7 +276,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    console.error('Errore GET /api/prima-nota:', error)
+    logger.error('Errore GET /api/prima-nota', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dei movimenti' },
       { status: 500 }
@@ -376,7 +381,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Errore POST /api/prima-nota:', error)
+    logger.error('Errore POST /api/prima-nota', error)
     return NextResponse.json(
       { error: 'Errore nella creazione del movimento' },
       { status: 500 }

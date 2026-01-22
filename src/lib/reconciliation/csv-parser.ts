@@ -3,6 +3,7 @@
 import * as XLSX from 'xlsx'
 import type { CSVParserConfig, ImportError } from '@/types/reconciliation'
 
+import { logger } from '@/lib/logger'
 interface ParsedRow {
   transactionDate: Date
   valueDate: Date | null
@@ -336,7 +337,7 @@ export function parseXLS(
 
     return processRows(data, config)
   } catch (error) {
-    console.error('XLS parse error:', error)
+    logger.error('XLS parse error', error)
     return {
       rows: [],
       errors: [
@@ -513,7 +514,7 @@ export function parseCBIXML(content: string): ParseResult {
 
     return { rows, errors }
   } catch (error) {
-    console.error('CBI XML parse error:', error)
+    logger.error('CBI XML parse error', error)
     return {
       rows: [],
       errors: [
@@ -746,7 +747,7 @@ export function parseCBITXT(content: string): ParseResult {
 
     return { rows, errors }
   } catch (error) {
-    console.error('CBI TXT parse error:', error)
+    logger.error('CBI TXT parse error', error)
     return {
       rows: [],
       errors: [

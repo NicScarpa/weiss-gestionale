@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { aggregateCategoriesForBudget } from '@/lib/budget/category-aggregator'
 
+import { logger } from '@/lib/logger'
 // GET /api/budget/[id]/categories - Budget aggregato per categoria
 export async function GET(
   request: NextRequest,
@@ -50,7 +51,7 @@ export async function GET(
       budgetStatus: budget.status,
     })
   } catch (error) {
-    console.error('Errore GET /api/budget/[id]/categories:', error)
+    logger.error('Errore GET /api/budget/[id]/categories', error)
     return NextResponse.json(
       { error: 'Errore nel recupero delle categorie budget' },
       { status: 500 }

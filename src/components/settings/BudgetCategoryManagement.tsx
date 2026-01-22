@@ -34,6 +34,7 @@ import { toast } from 'sonner'
 import { Plus, Trash2, Edit, GripVertical, Wand2, ChevronRight, Loader2, Link2 } from 'lucide-react'
 import { AccountMappingManager } from './AccountMappingManager'
 
+import { logger } from '@/lib/logger'
 interface BudgetCategory {
   id: string
   code: string
@@ -136,7 +137,7 @@ export function BudgetCategoryManagement() {
         setSelectedVenueId(venuesList[0].id)
       }
     } catch (error) {
-      console.error('Errore caricamento sedi:', error)
+      logger.error('Errore caricamento sedi', error)
       setVenues([])
     }
   }
@@ -150,7 +151,7 @@ export function BudgetCategoryManagement() {
       setCategories(data.categories || [])
       setHierarchy(data.hierarchy || [])
     } catch (error) {
-      console.error('Errore caricamento categorie:', error)
+      logger.error('Errore caricamento categorie', error)
       toast.error('Impossibile caricare le categorie')
     } finally {
       setLoading(false)
@@ -164,7 +165,7 @@ export function BudgetCategoryManagement() {
       const data = await res.json()
       setUnmappedAccounts(data.unmappedAccounts || [])
     } catch (error) {
-      console.error('Errore caricamento conti:', error)
+      logger.error('Errore caricamento conti', error)
     }
   }
 

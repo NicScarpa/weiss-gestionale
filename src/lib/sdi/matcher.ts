@@ -7,6 +7,7 @@ import { prisma } from '@/lib/prisma'
 import type { Supplier } from '@prisma/client'
 import type { FatturaParsata } from './types'
 
+import { logger } from '@/lib/logger'
 export interface SupplierMatchResult {
   matched: boolean
   supplier: Supplier | null
@@ -153,7 +154,7 @@ export async function createSupplierFromData(
     const existing = await findSupplierByVat(data.vatNumber, data.fiscalCode)
     if (existing) {
       // Fornitore già esiste, ritorna quello esistente
-      console.log(`Fornitore già esistente trovato: ${existing.name} (${existing.vatNumber})`)
+      logger.info(`Fornitore già esistente trovato: ${existing.name} (${existing.vatNumber})`)
       return existing
     }
   }

@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { startOfMonth, endOfMonth, subMonths, format, parseISO, eachDayOfInterval } from 'date-fns'
 
+import { logger } from '@/lib/logger'
 // GET /api/report/incassi-giornalieri - Report incassi giornalieri
 export async function GET(request: NextRequest) {
   try {
@@ -193,7 +194,7 @@ export async function GET(request: NextRequest) {
       comparison,
     })
   } catch (error) {
-    console.error('Errore GET /api/report/incassi-giornalieri:', error)
+    logger.error('Errore GET /api/report/incassi-giornalieri', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dei dati' },
       { status: 500 }

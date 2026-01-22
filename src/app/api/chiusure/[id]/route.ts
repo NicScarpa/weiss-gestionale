@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // Schema per aggiornamento chiusura
 const updateClosureSchema = z.object({
   date: z.string().transform((s) => new Date(s)).optional(),
@@ -238,7 +239,7 @@ export async function GET(
 
     return NextResponse.json(response)
   } catch (error) {
-    console.error('Errore GET /api/chiusure/[id]:', error)
+    logger.error('Errore GET /api/chiusure/[id]', error)
     return NextResponse.json(
       { error: 'Errore nel recupero della chiusura' },
       { status: 500 }
@@ -310,7 +311,7 @@ export async function PUT(
       )
     }
 
-    console.error('Errore PUT /api/chiusure/[id]:', error)
+    logger.error('Errore PUT /api/chiusure/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'aggiornamento della chiusura' },
       { status: 500 }
@@ -388,7 +389,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Errore DELETE /api/chiusure/[id]:', error)
+    logger.error('Errore DELETE /api/chiusure/[id]', error)
     return NextResponse.json(
       { error: 'Errore nell\'eliminazione della chiusura' },
       { status: 500 }

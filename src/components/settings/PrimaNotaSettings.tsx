@@ -34,6 +34,7 @@ import { Badge } from '@/components/ui/badge'
 import { Wallet, Plus, Pencil, Trash2, Loader2, Building2 } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { logger } from '@/lib/logger'
 interface Venue {
   id: string
   name: string
@@ -81,7 +82,7 @@ export function PrimaNotaSettings() {
       const data = await res.json()
       setVenues(data.venues || [])
     } catch (error) {
-      console.error('Errore:', error)
+      logger.error('Errore', error)
       toast.error('Errore nel caricamento delle sedi')
     }
   }
@@ -95,7 +96,7 @@ export function PrimaNotaSettings() {
       const data = await res.json()
       setBalances(data.data || [])
     } catch (error) {
-      console.error('Errore:', error)
+      logger.error('Errore', error)
       toast.error('Errore nel caricamento dei saldi iniziali')
     } finally {
       setLoading(false)
@@ -167,7 +168,7 @@ export function PrimaNotaSettings() {
       setEditingBalance(null)
       fetchBalances()
     } catch (error: any) {
-      console.error('Errore:', error)
+      logger.error('Errore', error)
       toast.error(error.message || 'Errore nel salvataggio')
     } finally {
       setSaving(false)
@@ -194,7 +195,7 @@ export function PrimaNotaSettings() {
       setBalanceToDelete(null)
       fetchBalances()
     } catch (error: any) {
-      console.error('Errore:', error)
+      logger.error('Errore', error)
       toast.error(error.message || 'Errore nell\'eliminazione')
     } finally {
       setSaving(false)

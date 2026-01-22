@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // Password iniziale di default (non può essere usata come nuova password)
 const DEFAULT_PASSWORD = '1234567890'
 
@@ -101,7 +102,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Errore POST /api/auth/change-password:', error)
+    logger.error('Errore POST /api/auth/change-password', error)
     return NextResponse.json(
       { error: 'Errore nel cambio password' },
       { status: 500 }

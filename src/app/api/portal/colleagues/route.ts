@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
+import { logger } from '@/lib/logger'
 // GET /api/portal/colleagues - Lista colleghi della stessa sede
 export async function GET(request: NextRequest) {
   try {
@@ -45,7 +46,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: colleagues })
   } catch (error) {
-    console.error('Errore GET /api/portal/colleagues:', error)
+    logger.error('Errore GET /api/portal/colleagues', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dei colleghi' },
       { status: 500 }

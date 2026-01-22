@@ -15,6 +15,7 @@ import {
 } from 'date-fns'
 import { it } from 'date-fns/locale'
 
+import { logger } from '@/lib/logger'
 interface ForecastDay {
   date: string
   dateFormatted: string
@@ -252,7 +253,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(result)
   } catch (error) {
-    console.error('Errore GET /api/dashboard/forecast:', error)
+    logger.error('Errore GET /api/dashboard/forecast', error)
     return NextResponse.json(
       { error: 'Errore nel calcolo della previsione' },
       { status: 500 }

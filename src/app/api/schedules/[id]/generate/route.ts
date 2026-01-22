@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { generateShifts, saveAssignments } from '@/lib/shift-generation'
 
+import { logger } from '@/lib/logger'
 // Schema per parametri generazione
 const generateParamsSchema = z.object({
   preferFixedStaff: z.boolean().default(true),
@@ -124,7 +125,7 @@ export async function POST(
       )
     }
 
-    console.error('Errore POST /api/schedules/[id]/generate:', error)
+    logger.error('Errore POST /api/schedules/[id]/generate', error)
     return NextResponse.json(
       { error: 'Errore nella generazione dei turni' },
       { status: 500 }

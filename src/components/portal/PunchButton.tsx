@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { AttendanceStatus } from './PunchStatus'
 
+import { logger } from '@/lib/logger'
 type PunchType = 'IN' | 'OUT' | 'BREAK_START' | 'BREAK_END'
 
 interface PunchButtonProps {
@@ -94,7 +95,7 @@ export function PunchButton({
         const count = await getPendingPunchCount()
         setPendingCount(count)
       } catch (error) {
-        console.error('Errore caricamento pendenti:', error)
+        logger.error('Errore caricamento pendenti', error)
       }
     }
 
@@ -121,7 +122,7 @@ export function PunchButton({
       const newCount = await getPendingPunchCount()
       setPendingCount(newCount)
     } catch (error) {
-      console.error('Errore sync:', error)
+      logger.error('Errore sync', error)
     } finally {
       setIsSyncing(false)
     }
@@ -210,7 +211,7 @@ export function PunchButton({
       try {
         position = await getCurrentPosition()
       } catch (gpsError) {
-        console.warn('GPS error:', gpsError)
+        logger.warn('GPS error', { error: gpsError })
         // Continua senza GPS
       }
 
@@ -244,7 +245,7 @@ export function PunchButton({
             const registration = await navigator.serviceWorker.ready
             await (registration as any).sync.register('sync-punches')
           } catch (err) {
-            console.warn('Background Sync non disponibile:', err)
+            logger.warn('Background Sync non disponibile', { error: err })
           }
         }
 
@@ -291,7 +292,7 @@ export function PunchButton({
               const registration = await navigator.serviceWorker.ready
               await (registration as any).sync.register('sync-punches')
             } catch (err) {
-              console.warn('Background Sync non disponibile:', err)
+              logger.warn('Background Sync non disponibile', { error: err })
             }
           }
 

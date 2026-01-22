@@ -8,6 +8,7 @@ import { trackPricesFromInvoice } from '@/lib/price-tracking'
 import { Prisma, InvoiceStatus } from '@prisma/client'
 import { z } from 'zod'
 
+import { logger } from '@/lib/logger'
 // Schema validazione import
 const importInvoiceSchema = z.object({
   xmlContent: z.string().min(100, 'Contenuto XML non valido'),
@@ -220,7 +221,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Errore GET /api/invoices:', error)
+    logger.error('Errore GET /api/invoices', error)
     return NextResponse.json(
       { error: 'Errore nel recupero delle fatture' },
       { status: 500 }
@@ -374,7 +375,7 @@ export async function POST(request: NextRequest) {
     try {
       datiEstesi = estraiDatiEstesi(validatedData.xmlContent)
     } catch (extendedError) {
-      console.warn('Errore estrazione dati estesi:', extendedError)
+      logger.warn('Errore estrazione dati estesi', { error: extendedError })
       // Non blocchiamo l'import se l'estrazione estesa fallisce
       datiEstesi = null
     }
@@ -439,7 +440,7 @@ export async function POST(request: NextRequest) {
           })),
         })
       } catch (priceError) {
-        console.error('Errore tracking prezzi:', priceError)
+        logger.error('Errore tracking prezzi', priceError)
         // Non blocchiamo l'import se il tracking fallisce
       }
     }
@@ -461,7 +462,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Errore POST /api/invoices:', error)
+    logger.error('Errore POST /api/invoices', error)
     return NextResponse.json(
       { error: 'Errore nell\'importazione della fattura' },
       { status: 500 }
