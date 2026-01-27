@@ -1,7 +1,7 @@
 'use client'
 
 import { format } from 'date-fns'
-import { Calendar as CalendarIcon, CloudSun, PartyPopper } from 'lucide-react'
+import { Calendar as CalendarIcon, CloudSun } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -85,8 +85,7 @@ export function ClosureMetadataSection({
                 disabled={disabled}
                 className="h-4 w-4"
               />
-              <PartyPopper className="h-4 w-4" />
-              Evento speciale
+              EVENTO
             </Label>
             {isEvent && (
               <Input
