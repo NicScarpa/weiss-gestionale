@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { startOfMonth, endOfMonth, subMonths, format, parseISO, eachDayOfInterval } from 'date-fns'
-
+import { it } from 'date-fns/locale'
 import { logger } from '@/lib/logger'
 // GET /api/report/incassi-giornalieri - Report incassi giornalieri
 export async function GET(request: NextRequest) {
@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
       return {
         date: format(closure.date, 'yyyy-MM-dd'),
         displayDate: format(closure.date, 'dd/MM/yyyy'),
-        dayOfWeek: format(closure.date, 'EEEE'),
+        dayOfWeek: format(closure.date, 'EEE', { locale: it }).toUpperCase(),
         venue: closure.venue,
         cashTotal,
         posTotal,
