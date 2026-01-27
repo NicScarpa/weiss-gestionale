@@ -27,6 +27,20 @@ import { formatCurrency, CASH_DIFFERENCE_THRESHOLD } from '@/lib/constants'
 import { ValidateActions } from './ValidateActions'
 import { AdminClosureActions } from './AdminClosureActions'
 
+const WEATHER_EMOJI: Record<string, string> = {
+  sunny: '☀️',
+  cloudy: '☁️',
+  rainy: '🌧️',
+  stormy: '⛈️',
+  snowy: '❄️',
+  foggy: '🌫️',
+}
+
+function weatherEmoji(value: string | null | undefined): string | null {
+  if (!value) return null
+  return WEATHER_EMOJI[value] ?? value
+}
+
 export const metadata = {
   title: 'Dettaglio Chiusura'
 }
@@ -343,7 +357,7 @@ export default async function DettaglioChiusuraPage({ params }: Props) {
             <CloudSun className="h-4 w-4 text-muted-foreground" />
             <span className="text-muted-foreground">Meteo:</span>
             {closure.weatherMorning || closure.weatherAfternoon || closure.weatherEvening
-              ? `${closure.weatherMorning || '-'} / ${closure.weatherAfternoon || '-'} / ${closure.weatherEvening || '-'}`
+              ? `${weatherEmoji(closure.weatherMorning) || '-'} / ${weatherEmoji(closure.weatherAfternoon) || '-'} / ${weatherEmoji(closure.weatherEvening) || '-'}`
               : '-'}
           </div>
         </CardContent>
