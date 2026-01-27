@@ -457,7 +457,7 @@ export function DailyRevenueClient({ venueId, isAdmin, venues }: DailyRevenueCli
                       {data.data.map((day) => (
                         <TableRow key={`${day.date}-${day.venue.id}`}>
                           <TableCell className="font-medium">{day.displayDate}</TableCell>
-                          <TableCell className="capitalize">{day.dayOfWeek}</TableCell>
+                          <TableCell>{day.dayOfWeek}</TableCell>
                           {isAdmin && (
                             <TableCell>
                               <Badge variant="outline">{day.venue.code}</Badge>
