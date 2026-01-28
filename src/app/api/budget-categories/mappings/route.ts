@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
         includeInBudget: mapping.includeInBudget,
       })
       return acc
-    }, {} as Record<string, { category: any; accounts: any[] }>)
+    }, {} as Record<string, { category: { id: string; code: string; name: string; categoryType: string }; accounts: Array<{ id: string; code: string; name: string; type: string; category: string | null; includeInBudget: boolean }> }>)
 
     return NextResponse.json({
       mappings,

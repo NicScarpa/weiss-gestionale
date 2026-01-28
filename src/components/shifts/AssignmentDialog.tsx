@@ -128,28 +128,30 @@ export function AssignmentDialog({
   // Inizializza form quando si apre
   useEffect(() => {
     if (open) {
-      if (assignment) {
-        // Modifica
-        setFormData({
-          userId: assignment.userId,
-          shiftDefinitionId: assignment.shiftDefinitionId || '',
-          startTime: assignment.startTime,
-          endTime: assignment.endTime,
-          breakMinutes: assignment.breakMinutes,
-          notes: assignment.notes || '',
-        })
-      } else {
-        // Nuova assegnazione
-        const selectedShift = shiftDefinitions.find(s => s.id === shiftDefId)
-        setFormData({
-          userId: '',
-          shiftDefinitionId: shiftDefId || '',
-          startTime: selectedShift?.startTime || '09:00',
-          endTime: selectedShift?.endTime || '17:00',
-          breakMinutes: selectedShift?.breakMinutes || 0,
-          notes: '',
-        })
-      }
+      queueMicrotask(() => {
+        if (assignment) {
+          // Modifica
+          setFormData({
+            userId: assignment.userId,
+            shiftDefinitionId: assignment.shiftDefinitionId || '',
+            startTime: assignment.startTime,
+            endTime: assignment.endTime,
+            breakMinutes: assignment.breakMinutes,
+            notes: assignment.notes || '',
+          })
+        } else {
+          // Nuova assegnazione
+          const selectedShift = shiftDefinitions.find(s => s.id === shiftDefId)
+          setFormData({
+            userId: '',
+            shiftDefinitionId: shiftDefId || '',
+            startTime: selectedShift?.startTime || '09:00',
+            endTime: selectedShift?.endTime || '17:00',
+            breakMinutes: selectedShift?.breakMinutes || 0,
+            notes: '',
+          })
+        }
+      })
     }
   }, [open, assignment, shiftDefId, shiftDefinitions])
 

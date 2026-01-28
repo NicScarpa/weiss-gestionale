@@ -6,7 +6,7 @@
  */
 
 import { prisma } from '@/lib/prisma'
-import { PunchType, LeaveStatus } from '@prisma/client'
+import { Prisma, PunchType, LeaveStatus } from '@prisma/client'
 import {
   format,
   parseISO,
@@ -177,7 +177,7 @@ function calculateHoursFromPunches(
   )
 
   // Calcola minuti totali
-  let totalMinutes = differenceInMinutes(lastOut, firstIn)
+  const totalMinutes = differenceInMinutes(lastOut, firstIn)
 
   // Sottrai pause
   let breakMinutes = 0
@@ -238,7 +238,7 @@ export async function generatePayrollData(
   const days = eachDayOfInterval({ start: startDate, end: endDate })
 
   // Carica dipendenti attivi
-  const usersWhere: any = {
+  const usersWhere: Prisma.UserWhereInput = {
     isActive: true,
     portalEnabled: true,
   }

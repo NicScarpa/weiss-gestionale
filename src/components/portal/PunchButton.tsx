@@ -11,6 +11,11 @@ import { cn } from '@/lib/utils'
 import type { AttendanceStatus } from './PunchStatus'
 
 import { logger } from '@/lib/logger'
+
+type ServiceWorkerRegistrationWithSync = ServiceWorkerRegistration & {
+  sync: { register(tag: string): Promise<void> }
+}
+
 type PunchType = 'IN' | 'OUT' | 'BREAK_START' | 'BREAK_END'
 
 interface PunchButtonProps {
@@ -77,7 +82,7 @@ export function PunchButton({
     const updateOnlineStatus = () => setIsOnline(navigator.onLine)
 
     // Stato iniziale
-    setIsOnline(navigator.onLine)
+    queueMicrotask(() => setIsOnline(navigator.onLine))
 
     window.addEventListener('online', updateOnlineStatus)
     window.addEventListener('offline', updateOnlineStatus)
@@ -243,7 +248,7 @@ export function PunchButton({
         if ('serviceWorker' in navigator && 'sync' in ServiceWorkerRegistration.prototype) {
           try {
             const registration = await navigator.serviceWorker.ready
-            await (registration as any).sync.register('sync-punches')
+            await (registration as ServiceWorkerRegistrationWithSync).sync.register('sync-punches')
           } catch (err) {
             logger.warn('Background Sync non disponibile', { error: err })
           }
@@ -290,7 +295,7 @@ export function PunchButton({
           if ('serviceWorker' in navigator && 'sync' in ServiceWorkerRegistration.prototype) {
             try {
               const registration = await navigator.serviceWorker.ready
-              await (registration as any).sync.register('sync-punches')
+              await (registration as ServiceWorkerRegistrationWithSync).sync.register('sync-punches')
             } catch (err) {
               logger.warn('Background Sync non disponibile', { error: err })
             }

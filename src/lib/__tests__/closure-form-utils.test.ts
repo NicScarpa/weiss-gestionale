@@ -4,6 +4,9 @@ import {
   buildClosureUpdatePayload,
 } from '../closure-form-utils'
 import { ClosureFormData } from '@/components/chiusura/ClosureForm'
+import type { CashStationData } from '@/components/chiusura/CashStationCard'
+import type { ExpenseData } from '@/components/chiusura/ExpensesSection'
+import type { HourlyPartialData } from '@/components/chiusura/HourlyPartialsSection'
 
 // Helper to create minimal valid form data
 function createFormData(overrides?: Partial<ClosureFormData>): ClosureFormData {
@@ -141,8 +144,8 @@ describe('buildClosurePayload', () => {
     it('should map multiple stations', () => {
       const data = createFormData({
         stations: [
-          { name: 'BAR', position: 0, cashAmount: 100, posAmount: 50 } as any,
-          { name: 'CASSA 1', position: 1, cashAmount: 200, posAmount: 75 } as any,
+          { name: 'BAR', position: 0, cashAmount: 100, posAmount: 50 } as unknown as CashStationData,
+          { name: 'CASSA 1', position: 1, cashAmount: 200, posAmount: 75 } as unknown as CashStationData,
         ],
       })
 
@@ -224,8 +227,8 @@ describe('buildClosurePayload', () => {
     it('should map multiple expenses', () => {
       const data = createFormData({
         expenses: [
-          { payee: 'Fornitore A', amount: 50 } as any,
-          { payee: 'Fornitore B', amount: 75 } as any,
+          { payee: 'Fornitore A', amount: 50 } as unknown as ExpenseData,
+          { payee: 'Fornitore B', amount: 75 } as unknown as ExpenseData,
         ],
       })
 
@@ -294,13 +297,13 @@ describe('buildClosurePayload', () => {
         weatherMorning: 'sunny',
         notes: 'Evento speciale',
         stations: [
-          { name: 'BAR', position: 0, cashAmount: 500, posAmount: 300 } as any,
+          { name: 'BAR', position: 0, cashAmount: 500, posAmount: 300 } as unknown as CashStationData,
         ],
         partials: [
-          { timeSlot: '18:00', receiptProgressive: 2000 } as any,
+          { timeSlot: '18:00', receiptProgressive: 2000 } as unknown as HourlyPartialData,
         ],
         expenses: [
-          { payee: 'Audio Service', amount: 200 } as any,
+          { payee: 'Audio Service', amount: 200 } as unknown as ExpenseData,
         ],
         attendance: [
           { userId: 'user-1', shift: 'EVENING' as const, hours: 8 },
@@ -329,8 +332,8 @@ describe('buildClosureUpdatePayload', () => {
       weatherAfternoon: 'rainy',
       weatherEvening: 'sunny',
       notes: 'Updated notes',
-      stations: [{ name: 'BAR', cashAmount: 100 } as any],
-      expenses: [{ payee: 'Test', amount: 50 } as any],
+      stations: [{ name: 'BAR', cashAmount: 100 } as unknown as CashStationData],
+      expenses: [{ payee: 'Test', amount: 50 } as unknown as ExpenseData],
     })
 
     const result = buildClosureUpdatePayload(data)

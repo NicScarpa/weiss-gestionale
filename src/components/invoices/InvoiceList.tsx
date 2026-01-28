@@ -126,6 +126,30 @@ interface InvoicesResponse {
 
 type SortField = 'documentType' | 'invoiceDate' | 'invoiceNumber' | 'supplierName' | 'totalAmount' | 'status'
 
+function SortableHeader({ field, label, className = '', sortBy, sortOrder, onSort }: {
+  field: SortField
+  label: string
+  className?: string
+  sortBy: SortField
+  sortOrder: 'asc' | 'desc'
+  onSort: (field: SortField) => void
+}) {
+  const isActive = sortBy === field
+  return (
+    <button
+      className={`flex items-center gap-1 hover:text-slate-900 transition-colors ${className}`}
+      onClick={() => onSort(field)}
+    >
+      {label}
+      {isActive && (
+        sortOrder === 'asc'
+          ? <ChevronUp className="h-4 w-4" />
+          : <ChevronDown className="h-4 w-4" />
+      )}
+    </button>
+  )
+}
+
 async function fetchInvoices(params: URLSearchParams): Promise<InvoicesResponse> {
   const res = await fetch(`/api/invoices?${params.toString()}`)
   if (!res.ok) throw new Error('Errore nel caricamento fatture')
@@ -277,7 +301,7 @@ export function InvoiceList() {
     } else {
       setSelectedIds(new Set(deletableIds))
     }
-  }, [data?.data, selectedIds.size])
+  }, [data, selectedIds.size])
 
   const toggleSelectOne = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -334,24 +358,6 @@ export function InvoiceList() {
           {error instanceof Error ? error.message : 'Errore sconosciuto'}
         </p>
       </div>
-    )
-  }
-
-  // Componente header ordinabile
-  const SortableHeader = ({ field, label, className = '' }: { field: SortField; label: string; className?: string }) => {
-    const isActive = sortBy === field
-    return (
-      <button
-        className={`flex items-center gap-1 hover:text-slate-900 transition-colors ${className}`}
-        onClick={() => handleSort(field)}
-      >
-        {label}
-        {isActive && (
-          sortOrder === 'asc'
-            ? <ChevronUp className="h-4 w-4" />
-            : <ChevronDown className="h-4 w-4" />
-        )}
-      </button>
     )
   }
 
@@ -486,22 +492,22 @@ export function InvoiceList() {
                 </TableHead>
               )}
               <TableHead className="w-[80px]">
-                <SortableHeader field="documentType" label="Doc" />
+                <SortableHeader field="documentType" label="Doc" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
               </TableHead>
               <TableHead className="w-[110px]">
-                <SortableHeader field="invoiceDate" label="Data" />
+                <SortableHeader field="invoiceDate" label="Data" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
               </TableHead>
               <TableHead>
-                <SortableHeader field="invoiceNumber" label="Numero" />
+                <SortableHeader field="invoiceNumber" label="Numero" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
               </TableHead>
               <TableHead>
-                <SortableHeader field="supplierName" label="Fornitore" />
+                <SortableHeader field="supplierName" label="Fornitore" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
               </TableHead>
               <TableHead className="text-right w-[130px]">
-                <SortableHeader field="totalAmount" label="Importo" className="justify-end" />
+                <SortableHeader field="totalAmount" label="Importo" className="justify-end" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
               </TableHead>
               <TableHead className="w-[130px]">
-                <SortableHeader field="status" label="Stato" />
+                <SortableHeader field="status" label="Stato" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
               </TableHead>
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>

@@ -104,7 +104,7 @@ export function AccountManagement() {
   }
 
   useEffect(() => {
-    fetchAccounts()
+    queueMicrotask(() => fetchAccounts())
   }, [showInactive])
 
   // Filtra conti per tipo e ricerca
@@ -186,9 +186,9 @@ export function AccountManagement() {
       setIsDialogOpen(false)
       setEditingAccount(null)
       fetchAccounts()
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Errore', error)
-      toast.error(error.message || 'Errore nel salvataggio')
+      toast.error(error instanceof Error ? error.message : 'Errore nel salvataggio')
     } finally {
       setSaving(false)
     }
@@ -214,9 +214,9 @@ export function AccountManagement() {
       setIsDeleteDialogOpen(false)
       setAccountToDelete(null)
       fetchAccounts()
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Errore', error)
-      toast.error(error.message || 'Errore nell\'eliminazione')
+      toast.error(error instanceof Error ? error.message : 'Errore nell\'eliminazione')
     } finally {
       setSaving(false)
     }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { type BudgetCategoryType } from '@prisma/client'
 
 import { logger } from '@/lib/logger'
 // Schema di validazione per nuova categoria
@@ -43,7 +44,7 @@ export async function GET(request: NextRequest) {
       where: {
         venueId,
         ...(includeInactive ? {} : { isActive: true }),
-        ...(categoryType ? { categoryType: categoryType as any } : {}),
+        ...(categoryType ? { categoryType: categoryType as BudgetCategoryType } : {}),
       },
       include: {
         parent: {

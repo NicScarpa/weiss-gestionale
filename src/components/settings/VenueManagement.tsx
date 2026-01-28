@@ -145,9 +145,9 @@ export function VenueManagement() {
       setIsDialogOpen(false)
       setEditingVenue(null)
       fetchVenues()
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Errore', error)
-      toast.error(error.message || 'Errore nel salvataggio')
+      toast.error(error instanceof Error ? error.message : 'Errore nel salvataggio')
     } finally {
       setSaving(false)
     }
@@ -173,9 +173,9 @@ export function VenueManagement() {
       setIsDeleteDialogOpen(false)
       setVenueToDelete(null)
       fetchVenues()
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Errore', error)
-      toast.error(error.message || 'Errore nell\'eliminazione')
+      toast.error(error instanceof Error ? error.message : 'Errore nell\'eliminazione')
     } finally {
       setSaving(false)
     }

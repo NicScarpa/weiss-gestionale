@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 
 import { logger } from '@/lib/logger'
 const storicoFiltersSchema = z.object({
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Costruisci where clause
-    const where: any = {}
+    const where: Prisma.JournalEntryWhereInput = {}
 
     if (venueId) {
       where.venueId = venueId
@@ -107,8 +108,8 @@ interface EntryData {
   venueId: string
   date: Date
   registerType: string
-  debitAmount: any
-  creditAmount: any
+  debitAmount: Prisma.Decimal | null
+  creditAmount: Prisma.Decimal | null
 }
 
 function groupByPeriod(
@@ -156,10 +157,23 @@ function getPeriodKey(date: Date, groupBy: 'day' | 'week' | 'month'): string {
   }
 }
 
+interface PeriodSummary {
+  period: string
+  registers: Record<string, {
+    openingBalance: number
+    debits: number
+    credits: number
+    netMovement: number
+    closingBalance: number
+    movementCount: number
+  }>
+  totalAvailable: number
+}
+
 function calculateHistoricalBalances(
   grouped: Map<string, Map<string, EntryData[]>>
-): any[] {
-  const history: any[] = []
+): PeriodSummary[] {
+  const history: PeriodSummary[] = []
 
   // Saldi progressivi per registro
   const runningBalances: Record<string, number> = {
@@ -172,7 +186,7 @@ function calculateHistoricalBalances(
 
   for (const period of sortedPeriods) {
     const periodData = grouped.get(period)!
-    const periodSummary: any = {
+    const periodSummary: PeriodSummary = {
       period,
       registers: {},
       totalAvailable: 0,

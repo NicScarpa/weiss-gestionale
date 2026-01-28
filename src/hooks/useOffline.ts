@@ -20,7 +20,7 @@ interface UseOfflineReturn {
   hasPending: boolean
   syncNow: () => Promise<void>
   prefetchData: () => Promise<void>
-  savePendingClosure: (data: any) => Promise<string>
+  savePendingClosure: (data: unknown) => Promise<string>
   getCachedClosures: <T>() => Promise<T[]>
   getCachedVenues: <T>() => Promise<T[]>
   getCachedStaff: <T>() => Promise<T[]>
@@ -104,7 +104,7 @@ export function useOffline(): UseOfflineReturn {
   }, [isOnline])
 
   // Save pending closure (for offline submission)
-  const savePending = useCallback(async (data: any) => {
+  const savePending = useCallback(async (data: unknown) => {
     const id = await savePendingClosure(data)
     await updatePendingStatus()
     return id

@@ -483,7 +483,7 @@ export function parseCBIXML(content: string): ParseResult {
         }
 
         // Estrai saldo dopo operazione (opzionale)
-        let balance: number | null = null
+        const balance: number | null = null
         // In CAMT.053, il saldo potrebbe essere in un elemento separato, non per ogni entry
         // Lo lasciamo null per ora
 

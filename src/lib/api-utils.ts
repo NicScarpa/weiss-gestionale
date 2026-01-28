@@ -70,7 +70,7 @@ export function notFound(message: string = 'Risorsa non trovata'): NextResponse<
 
 export function conflict(message: string, existingId?: string): NextResponse<ApiErrorResponse> {
   const body: ApiErrorResponse & { existingId?: string } = { error: message }
-  if (existingId) (body as any).existingId = existingId
+  if (existingId) (body as ApiErrorResponse & { existingId?: string }).existingId = existingId
   return NextResponse.json(body, { status: HttpStatus.CONFLICT })
 }
 

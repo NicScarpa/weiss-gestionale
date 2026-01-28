@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { z } from 'zod'
+import type { Session } from 'next-auth'
 import {
   errorResponse,
   badRequest,
@@ -45,7 +46,7 @@ describe('api-utils', () => {
 
     it('badRequest should include details when provided', async () => {
       const zodIssues = [{ code: 'invalid_type', message: 'Expected string' }]
-      const response = badRequest('Dati non validi', zodIssues as any)
+      const response = badRequest('Dati non validi', zodIssues as unknown as z.ZodIssue[])
       const body = await response.json()
 
       expect(body.details).toEqual(zodIssues)
@@ -209,12 +210,12 @@ describe('api-utils', () => {
       })
 
       it('should return unauthorized for session without user', () => {
-        const result = requireAuth({ expires: '2099-01-01' } as any)
+        const result = requireAuth({ expires: '2099-01-01' } as unknown as Session)
         expect(result.authorized).toBe(false)
       })
 
       it('should return authorized for valid session', () => {
-        const result = requireAuth(mockSession as any)
+        const result = requireAuth(mockSession as unknown as Session)
         expect(result.authorized).toBe(true)
         expect(result.session).toBeDefined()
       })
@@ -228,18 +229,18 @@ describe('api-utils', () => {
       })
 
       it('should return forbidden for wrong role', () => {
-        const result = requireRole(mockSession as any, ['admin'])
+        const result = requireRole(mockSession as unknown as Session, ['admin'])
         expect(result.authorized).toBe(false)
         expect(result.response?.status).toBe(403)
       })
 
       it('should return authorized for correct role', () => {
-        const result = requireRole(mockSession as any, ['staff', 'manager'])
+        const result = requireRole(mockSession as unknown as Session, ['staff', 'manager'])
         expect(result.authorized).toBe(true)
       })
 
       it('should return authorized for admin role', () => {
-        const result = requireRole(mockAdminSession as any, ['admin'])
+        const result = requireRole(mockAdminSession as unknown as Session, ['admin'])
         expect(result.authorized).toBe(true)
       })
     })
@@ -252,17 +253,17 @@ describe('api-utils', () => {
       })
 
       it('should return authorized for admin accessing any venue', () => {
-        const result = requireVenueAccess(mockAdminSession as any, 'any-venue')
+        const result = requireVenueAccess(mockAdminSession as unknown as Session, 'any-venue')
         expect(result.authorized).toBe(true)
       })
 
       it('should return authorized for user accessing own venue', () => {
-        const result = requireVenueAccess(mockSession as any, 'venue-123')
+        const result = requireVenueAccess(mockSession as unknown as Session, 'venue-123')
         expect(result.authorized).toBe(true)
       })
 
       it('should return forbidden for user accessing other venue', () => {
-        const result = requireVenueAccess(mockSession as any, 'other-venue')
+        const result = requireVenueAccess(mockSession as unknown as Session, 'other-venue')
         expect(result.authorized).toBe(false)
         expect(result.response?.status).toBe(403)
       })

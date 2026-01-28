@@ -140,8 +140,8 @@ export function BudgetList({ venueId, isAdmin }: BudgetListProps) {
       toast.success('Budget eliminato')
       setDeleteId(null)
       fetchBudgets()
-    } catch (error: any) {
-      toast.error(error.message)
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Errore eliminazione')
     }
   }
 
@@ -159,8 +159,8 @@ export function BudgetList({ venueId, isAdmin }: BudgetListProps) {
       }
       toast.success(`Budget ${BUDGET_STATUS_LABELS[newStatus].toLowerCase()}`)
       fetchBudgets()
-    } catch (error: any) {
-      toast.error(error.message)
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Errore aggiornamento')
     }
   }
 

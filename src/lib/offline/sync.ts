@@ -173,7 +173,7 @@ export async function requestBackgroundSync() {
   if ('serviceWorker' in navigator && 'SyncManager' in window) {
     try {
       const registration = await navigator.serviceWorker.ready
-      await (registration as any).sync.register('sync-closures')
+      await (registration as ServiceWorkerRegistration & { sync: { register: (tag: string) => Promise<void> } }).sync.register('sync-closures')
     } catch (error) {
       logger.error('[Offline] Background sync registration failed', error)
     }

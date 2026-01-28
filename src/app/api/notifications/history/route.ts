@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { Prisma, NotificationType } from '@prisma/client'
 
 import { logger } from '@/lib/logger'
 const historyQuerySchema = z.object({
@@ -29,12 +30,12 @@ export async function GET(request: NextRequest) {
     })
 
     // Costruisci filtri
-    const where: any = {
+    const where: Prisma.NotificationLogWhereInput = {
       userId: session.user.id,
     }
 
     if (query.type) {
-      where.type = query.type
+      where.type = query.type as NotificationType
     }
 
     if (query.unreadOnly) {

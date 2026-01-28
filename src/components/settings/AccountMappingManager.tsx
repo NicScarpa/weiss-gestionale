@@ -358,8 +358,8 @@ export function AccountMappingManager() {
         const data = await res.json()
         throw new Error(data.error)
       }
-    } catch (error: any) {
-      toast.error(error.message || 'Impossibile salvare i mapping')
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Impossibile salvare i mapping')
     } finally {
       setSaving(false)
     }

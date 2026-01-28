@@ -42,8 +42,10 @@ export function NotificationSettings() {
   useEffect(() => {
     // Check push notification support
     if ('Notification' in window && 'serviceWorker' in navigator) {
-      setPushSupported(true)
-      setPushPermission(Notification.permission)
+      queueMicrotask(() => {
+        setPushSupported(true)
+        setPushPermission(Notification.permission)
+      })
     }
 
     // Load preferences
@@ -214,7 +216,7 @@ export function NotificationSettings() {
               <div className="space-y-0.5">
                 <Label>Promemoria turno</Label>
                 <p className="text-sm text-slate-500">
-                  Avviso prima dell'inizio del turno
+                  Avviso prima dell&apos;inizio del turno
                 </p>
               </div>
               <Switch
@@ -228,7 +230,7 @@ export function NotificationSettings() {
               <div className="space-y-0.5">
                 <Label>Anomalie rilevate</Label>
                 <p className="text-sm text-slate-500">
-                  Quando viene creata un'anomalia
+                  Quando viene creata un&apos;anomalia
                 </p>
               </div>
               <Switch
@@ -242,7 +244,7 @@ export function NotificationSettings() {
               <div className="space-y-0.5">
                 <Label>Anomalie risolte</Label>
                 <p className="text-sm text-slate-500">
-                  Quando un'anomalia viene risolta
+                  Quando un&apos;anomalia viene risolta
                 </p>
               </div>
               <Switch

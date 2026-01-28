@@ -38,7 +38,7 @@ const serwist = new Serwist({
 serwist.addEventListeners()
 
 // Background sync for offline form submissions
-self.addEventListener('sync', (event: any) => {
+self.addEventListener('sync', (event: ExtendableEvent & { tag: string }) => {
   if (event.tag === 'sync-closures') {
     event.waitUntil(syncPendingClosures())
   }
@@ -80,8 +80,7 @@ self.addEventListener('push', (event: PushEvent) => {
   try {
     const data = event.data.json()
 
-    // Use any to allow extended notification properties
-    const options: Record<string, any> = {
+    const options: Record<string, unknown> = {
       body: data.body || data.notification?.body,
       icon: data.icon || '/icons/icon-192.png',
       badge: data.badge || '/icons/badge-72.png',

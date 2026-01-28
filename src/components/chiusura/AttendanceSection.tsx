@@ -168,18 +168,6 @@ export function AttendanceSection({
     enabled: !!closureDate && !hasLoadedFromSchedule,
   })
 
-  // Pre-popola da turni schedulati se non ci sono presenze e ci sono turni
-  useEffect(() => {
-    if (
-      scheduledShifts &&
-      scheduledShifts.length > 0 &&
-      attendance.length === 0 &&
-      !hasLoadedFromSchedule
-    ) {
-      loadFromSchedule()
-    }
-  }, [scheduledShifts])
-
   // Carica presenze da turni schedulati e timbrature effettive
   const loadFromSchedule = () => {
     if (!scheduledShifts || scheduledShifts.length === 0) return
@@ -225,6 +213,19 @@ export function AttendanceSection({
     onChange(newAttendance)
     setHasLoadedFromSchedule(true)
   }
+
+  // Pre-popola da turni schedulati se non ci sono presenze e ci sono turni
+  useEffect(() => {
+    if (
+      scheduledShifts &&
+      scheduledShifts.length > 0 &&
+      attendance.length === 0 &&
+      !hasLoadedFromSchedule
+    ) {
+      queueMicrotask(() => loadFromSchedule())
+    }
+  }, [scheduledShifts])
+
   // Separa staff fisso da extra
   const fixedStaff = staffMembers.filter((s) => s.isFixedStaff)
   const extraStaff = staffMembers.filter((s) => !s.isFixedStaff)

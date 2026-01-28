@@ -256,13 +256,15 @@ export async function POST(request: NextRequest) {
       created,
       total: existingCount + created.length,
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Errore POST budget-categories/seed', error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    const errorCode = error instanceof Object && 'code' in error ? (error as { code: unknown }).code : undefined
     return NextResponse.json(
       {
         error: 'Errore nel seed delle categorie',
-        details: error?.message || String(error),
-        code: error?.code
+        details: errorMessage,
+        code: errorCode
       },
       { status: 500 }
     )

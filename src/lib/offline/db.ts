@@ -8,7 +8,7 @@ interface WeissDB extends DBSchema {
     key: string
     value: {
       id: string
-      data: any
+      data: unknown
       createdAt: Date
       status: 'pending' | 'syncing' | 'error'
       errorMessage?: string
@@ -21,7 +21,7 @@ interface WeissDB extends DBSchema {
     key: string
     value: {
       id: string
-      data: any
+      data: unknown
       cachedAt: Date
     }
   }
@@ -30,7 +30,7 @@ interface WeissDB extends DBSchema {
     key: string
     value: {
       id: string
-      data: any
+      data: unknown
       cachedAt: Date
     }
   }
@@ -39,7 +39,7 @@ interface WeissDB extends DBSchema {
     key: string
     value: {
       id: string
-      data: any
+      data: unknown
       cachedAt: Date
     }
   }
@@ -48,7 +48,7 @@ interface WeissDB extends DBSchema {
     key: string
     value: {
       id: string
-      data: any
+      data: unknown
       cachedAt: Date
     }
   }
@@ -57,7 +57,7 @@ interface WeissDB extends DBSchema {
     key: string
     value: {
       id: string
-      data: any
+      data: unknown
       cachedAt: Date
     }
   }
@@ -116,7 +116,7 @@ export async function getDB(): Promise<IDBPDatabase<WeissDB>> {
 }
 
 // Pending closures operations
-export async function savePendingClosure(data: any): Promise<string> {
+export async function savePendingClosure(data: unknown): Promise<string> {
   const db = await getDB()
   const id = `pending-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 
@@ -162,7 +162,7 @@ export async function deletePendingClosure(id: string) {
 // Cache operations
 export async function cacheData<T extends 'cachedClosures' | 'cachedVenues' | 'cachedStaff' | 'cachedAccounts' | 'cachedSuppliers'>(
   store: T,
-  items: Array<{ id: string; [key: string]: any }> | undefined | null
+  items: Array<{ id: string; [key: string]: unknown }> | undefined | null
 ) {
   // Guard against undefined/null items
   if (!items || !Array.isArray(items) || items.length === 0) {

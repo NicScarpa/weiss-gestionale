@@ -277,9 +277,11 @@ export function InvoiceImportDialog({
   // Set default venue from session
   useEffect(() => {
     if (session?.user?.venueId && !selectedVenueId) {
-      setSelectedVenueId(session.user.venueId)
+      const venueId = session.user.venueId
+      queueMicrotask(() => setSelectedVenueId(venueId))
     } else if (venues?.length === 1 && !selectedVenueId) {
-      setSelectedVenueId(venues[0].id)
+      const venueId = venues[0].id
+      queueMicrotask(() => setSelectedVenueId(venueId))
     }
   }, [session, venues, selectedVenueId])
 
@@ -366,6 +368,44 @@ export function InvoiceImportDialog({
     }
 
     setFiles(prev => [...prev, ...newFiles])
+  }
+
+  // Prepare review item state
+  const prepareReviewItem = (item: FileItem) => {
+    if (!item.parsedData) return
+
+    // Set suggested data
+    if (item.parsedData.supplierMatch.suggestedData) {
+      const s = item.parsedData.supplierMatch.suggestedData
+      setEditableSupplier({
+        name: s.name || '',
+        vatNumber: s.vatNumber || '',
+        fiscalCode: s.fiscalCode || '',
+        address: s.address || '',
+        city: s.city || '',
+        province: s.province || '',
+        postalCode: s.postalCode || '',
+      })
+    } else {
+      // Fallback to parsed raw data
+      const f = item.parsedData.parsed.fornitore
+      setEditableSupplier({
+        name: f.denominazione || '',
+        vatNumber: f.partitaIva || '',
+        fiscalCode: f.codiceFiscale || '',
+        address: f.indirizzo || '',
+        city: '', province: '', postalCode: '',
+      })
+    }
+
+    setCreateNewSupplier(!item.parsedData.supplierMatch.found)
+    setSupplierFormOpen(!item.parsedData.supplierMatch.found)
+
+    if (item.parsedData.suggestedAccount) {
+      setSelectedAccountId(item.parsedData.suggestedAccount.id)
+    } else {
+      setSelectedAccountId('_none')
+    }
   }
 
   // 2. Process Queue
@@ -455,44 +495,6 @@ export function InvoiceImportDialog({
     }
   }, [files, selectedVenueId, session, venues, queryClient, onSuccess])
 
-  // Prepare review item state
-  const prepareReviewItem = (item: FileItem) => {
-    if (!item.parsedData) return
-
-    // Set suggested data
-    if (item.parsedData.supplierMatch.suggestedData) {
-      const s = item.parsedData.supplierMatch.suggestedData
-      setEditableSupplier({
-        name: s.name || '',
-        vatNumber: s.vatNumber || '',
-        fiscalCode: s.fiscalCode || '',
-        address: s.address || '',
-        city: s.city || '',
-        province: s.province || '',
-        postalCode: s.postalCode || '',
-      })
-    } else {
-      // Fallback to parsed raw data
-      const f = item.parsedData.parsed.fornitore
-      setEditableSupplier({
-        name: f.denominazione || '',
-        vatNumber: f.partitaIva || '',
-        fiscalCode: f.codiceFiscale || '',
-        address: f.indirizzo || '',
-        city: '', province: '', postalCode: '',
-      })
-    }
-
-    setCreateNewSupplier(!item.parsedData.supplierMatch.found)
-    setSupplierFormOpen(!item.parsedData.supplierMatch.found)
-    
-    if (item.parsedData.suggestedAccount) {
-      setSelectedAccountId(item.parsedData.suggestedAccount.id)
-    } else {
-      setSelectedAccountId('_none')
-    }
-  }
-
   // Handle Review Actions
   const handleImportReviewItem = async () => {
     const currentFile = files[currentReviewIndex]
@@ -510,7 +512,7 @@ export function InvoiceImportDialog({
         venueId: selectedVenueId,
         supplierId: currentFile.parsedData.supplierMatch.supplier?.id,
         createSupplier: createNewSupplier,
-        supplierData: createNewSupplier ? (editableSupplier as any) : undefined,
+        supplierData: createNewSupplier ? (editableSupplier as unknown as Record<string, unknown>) : undefined,
         accountId: selectedAccountId !== '_none' ? selectedAccountId : undefined
       })
 

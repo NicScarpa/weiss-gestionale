@@ -107,8 +107,8 @@ export function NuovoBudgetClient({
       const budget = await res.json()
       toast.success('Budget creato con successo')
       router.push(`/budget/${budget.id}?edit=true`)
-    } catch (error: any) {
-      toast.error(error.message)
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Errore nella creazione')
     } finally {
       setLoading(false)
     }

@@ -297,7 +297,7 @@ export function BudgetConfrontoClient({
 
             <Select
               value={filters.accountType}
-              onValueChange={(v) => setFilters({ ...filters, accountType: v as any })}
+              onValueChange={(v) => setFilters({ ...filters, accountType: v as 'ALL' | 'RICAVO' | 'COSTO' })}
             >
               <SelectTrigger className="w-[150px]">
                 <SelectValue placeholder="Tipo" />

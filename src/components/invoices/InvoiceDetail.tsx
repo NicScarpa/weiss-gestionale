@@ -159,9 +159,9 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   // Set initial account when invoice loads
   useEffect(() => {
     if (invoice?.account) {
-      setSelectedAccountId(invoice.account.id)
+      queueMicrotask(() => setSelectedAccountId(invoice.account!.id))
     } else if (invoice) {
-      setSelectedAccountId('_none')
+      queueMicrotask(() => setSelectedAccountId('_none'))
     }
   }, [invoice])
 

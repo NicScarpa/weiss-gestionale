@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
+import { Session } from 'next-auth'
+import { DailyClosure } from '@prisma/client'
 import { GET, POST } from '../route'
 import {
   createTestClosure,
@@ -8,6 +10,7 @@ import {
   createMockDbClosure,
   createMockSession,
   createInvalidClosure,
+  TestClosureData,
 } from '@/test/factories/closure.factory'
 
 // Mock auth
@@ -48,7 +51,7 @@ describe('GET /api/chiusure', () => {
     })
 
     it('should return 401 if session has no user', async () => {
-      vi.mocked(auth).mockResolvedValue({ user: null } as any)
+      vi.mocked(auth).mockResolvedValue({ user: null } as unknown as Session)
 
       const request = new NextRequest('http://localhost:3000/api/chiusure')
       const response = await GET(request)
@@ -94,7 +97,7 @@ describe('GET /api/chiusure', () => {
         _count: { stations: 1, expenses: 1 },
       }
 
-      vi.mocked(prisma.dailyClosure.findMany).mockResolvedValue([mockClosure] as any)
+      vi.mocked(prisma.dailyClosure.findMany).mockResolvedValue([mockClosure] as unknown as DailyClosure[])
       vi.mocked(prisma.dailyClosure.count).mockResolvedValue(1)
 
       const request = new NextRequest('http://localhost:3000/api/chiusure')
@@ -254,8 +257,8 @@ describe('POST /api/chiusure', () => {
       vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(null)
 
       const closureData = createMinimalClosure({ venueId: 'any-venue' })
-      const mockResult = createMockDbClosure(closureData as any)
-      vi.mocked(prisma.dailyClosure.create).mockResolvedValue(mockResult as any)
+      const mockResult = createMockDbClosure(closureData as TestClosureData)
+      vi.mocked(prisma.dailyClosure.create).mockResolvedValue(mockResult as unknown as DailyClosure)
 
       const request = new NextRequest('http://localhost:3000/api/chiusure', {
         method: 'POST',
@@ -305,7 +308,7 @@ describe('POST /api/chiusure', () => {
           {
             payee: 'Test',
             amount: 50,
-            documentType: 'INVALID_TYPE' as any,
+            documentType: 'INVALID_TYPE' as unknown as 'NONE' | 'FATTURA' | 'DDT' | 'RICEVUTA' | 'PERSONALE',
           },
         ],
       })
@@ -324,7 +327,7 @@ describe('POST /api/chiusure', () => {
       vi.mocked(auth).mockResolvedValue(createMockSession())
 
       const existingClosure = { id: 'existing-closure-id' }
-      vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(existingClosure as any)
+      vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(existingClosure as unknown as DailyClosure)
 
       const closureData = createTestClosure()
       const request = new NextRequest('http://localhost:3000/api/chiusure', {
@@ -346,8 +349,8 @@ describe('POST /api/chiusure', () => {
       vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(null)
 
       const closureData = createMinimalClosure()
-      const mockResult = createMockDbClosure(closureData as any)
-      vi.mocked(prisma.dailyClosure.create).mockResolvedValue(mockResult as any)
+      const mockResult = createMockDbClosure(closureData as TestClosureData)
+      vi.mocked(prisma.dailyClosure.create).mockResolvedValue(mockResult as unknown as DailyClosure)
 
       const request = new NextRequest('http://localhost:3000/api/chiusure', {
         method: 'POST',
@@ -366,8 +369,8 @@ describe('POST /api/chiusure', () => {
       vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(null)
 
       const closureData = createTestClosure()
-      const mockResult = createMockDbClosure(closureData as any)
-      vi.mocked(prisma.dailyClosure.create).mockResolvedValue(mockResult as any)
+      const mockResult = createMockDbClosure(closureData as TestClosureData)
+      vi.mocked(prisma.dailyClosure.create).mockResolvedValue(mockResult as unknown as DailyClosure)
 
       const request = new NextRequest('http://localhost:3000/api/chiusure', {
         method: 'POST',
@@ -394,8 +397,8 @@ describe('POST /api/chiusure', () => {
       vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(null)
 
       const closureData = createCompleteClosure()
-      const mockResult = createMockDbClosure(closureData as any)
-      vi.mocked(prisma.dailyClosure.create).mockResolvedValue(mockResult as any)
+      const mockResult = createMockDbClosure(closureData as TestClosureData)
+      vi.mocked(prisma.dailyClosure.create).mockResolvedValue(mockResult as unknown as DailyClosure)
 
       const request = new NextRequest('http://localhost:3000/api/chiusure', {
         method: 'POST',
@@ -426,8 +429,8 @@ describe('POST /api/chiusure', () => {
           },
         ],
       })
-      const mockResult = createMockDbClosure(closureData as any)
-      vi.mocked(prisma.dailyClosure.create).mockResolvedValue(mockResult as any)
+      const mockResult = createMockDbClosure(closureData as TestClosureData)
+      vi.mocked(prisma.dailyClosure.create).mockResolvedValue(mockResult as unknown as DailyClosure)
 
       const request = new NextRequest('http://localhost:3000/api/chiusure', {
         method: 'POST',
@@ -453,8 +456,8 @@ describe('POST /api/chiusure', () => {
           },
         ],
       })
-      const mockResult = createMockDbClosure(closureData as any)
-      vi.mocked(prisma.dailyClosure.create).mockResolvedValue(mockResult as any)
+      const mockResult = createMockDbClosure(closureData as TestClosureData)
+      vi.mocked(prisma.dailyClosure.create).mockResolvedValue(mockResult as unknown as DailyClosure)
 
       const request = new NextRequest('http://localhost:3000/api/chiusure', {
         method: 'POST',
@@ -478,8 +481,8 @@ describe('POST /api/chiusure', () => {
         isEvent: true,
         eventName: 'Concerto Estate 2024',
       })
-      const mockResult = createMockDbClosure(closureData as any)
-      vi.mocked(prisma.dailyClosure.create).mockResolvedValue(mockResult as any)
+      const mockResult = createMockDbClosure(closureData as TestClosureData)
+      vi.mocked(prisma.dailyClosure.create).mockResolvedValue(mockResult as unknown as DailyClosure)
 
       const request = new NextRequest('http://localhost:3000/api/chiusure', {
         method: 'POST',
@@ -535,8 +538,8 @@ describe('Edge Cases', () => {
 
     const testDate = '2024-03-15T00:00:00.000Z'
     const closureData = createMinimalClosure({ date: testDate })
-    const mockResult = createMockDbClosure(closureData as any)
-    vi.mocked(prisma.dailyClosure.create).mockResolvedValue(mockResult as any)
+    const mockResult = createMockDbClosure(closureData as TestClosureData)
+    vi.mocked(prisma.dailyClosure.create).mockResolvedValue(mockResult as unknown as DailyClosure)
 
     const request = new NextRequest('http://localhost:3000/api/chiusure', {
       method: 'POST',

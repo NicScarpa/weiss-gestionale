@@ -179,8 +179,8 @@ export function BudgetDetailClient({
       setAddDialogOpen(false)
       setNewLineAccountId('')
       fetchLines()
-    } catch (error: any) {
-      toast.error(error.message)
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Errore nell\'aggiunta')
     }
   }
 
@@ -200,8 +200,8 @@ export function BudgetDetailClient({
 
       toast.success('Riga eliminata')
       fetchLines()
-    } catch (error: any) {
-      toast.error(error.message)
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Errore nell\'eliminazione')
     }
   }
 
@@ -240,8 +240,8 @@ export function BudgetDetailClient({
       toast.success('Budget salvato')
       setIsEditing(false)
       fetchLines()
-    } catch (error: any) {
-      toast.error(error.message)
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Errore nel salvataggio')
     } finally {
       setSaving(false)
     }

@@ -20,6 +20,7 @@ import {
   BILL_DENOMINATIONS,
   COIN_DENOMINATIONS,
 } from '../constants'
+import type { CashStationFormData } from '@/types/chiusura-cassa'
 
 describe('calculateCashStationTotal', () => {
   it('should return 0 for empty counts', () => {
@@ -111,7 +112,7 @@ describe('calculateGrossTotal', () => {
   it('should calculate total for single station', () => {
     const stations = [
       { counts: { '50': 2, '20': 3 } },
-    ] as any
+    ] as unknown as CashStationFormData[]
     // 100 + 60 = 160
     expect(calculateGrossTotal(stations)).toBe(160)
   })
@@ -121,7 +122,7 @@ describe('calculateGrossTotal', () => {
       { counts: { '50': 2 } },  // 100
       { counts: { '20': 5 } },  // 100
       { counts: { '10': 10 } }, // 100
-    ] as any
+    ] as unknown as CashStationFormData[]
     expect(calculateGrossTotal(stations)).toBe(300)
   })
 
@@ -130,7 +131,7 @@ describe('calculateGrossTotal', () => {
       { counts: { '50': 2 } }, // 100
       { counts: {} },          // 0
       { counts: { '20': 1 } }, // 20
-    ] as any
+    ] as unknown as CashStationFormData[]
     expect(calculateGrossTotal(stations)).toBe(120)
   })
 })
@@ -335,7 +336,7 @@ describe('calculateClosureTotals', () => {
     {
       counts: { '10': 10, '5': 4 }, // 120
     },
-  ] as any
+  ] as unknown as CashStationFormData[]
 
   const mockExpenses = [
     { amount: 30 },

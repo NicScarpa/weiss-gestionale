@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 
 interface ModificaChiusuraClientProps {
   closureId: string
-  initialData: any
+  initialData: Partial<ClosureFormData>
   venue: {
     id: string
     name: string

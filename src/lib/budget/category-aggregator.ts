@@ -2,7 +2,6 @@
 import { prisma } from '@/lib/prisma'
 import {
   type MonthlyValues,
-  type MonthKey,
   MONTH_KEYS,
   MONTH_NUMBER_TO_KEY,
 } from '@/types/budget'
@@ -186,7 +185,20 @@ async function getBudgetByAccount(
   const byAccount: Record<string, MonthlyValues> = {}
 
   for (const line of lines) {
-    byAccount[line.accountId] = budgetLineToMonthlyValues(line)
+    byAccount[line.accountId] = budgetLineToMonthlyValues({
+      jan: line.jan !== null ? Number(line.jan) : null,
+      feb: line.feb !== null ? Number(line.feb) : null,
+      mar: line.mar !== null ? Number(line.mar) : null,
+      apr: line.apr !== null ? Number(line.apr) : null,
+      may: line.may !== null ? Number(line.may) : null,
+      jun: line.jun !== null ? Number(line.jun) : null,
+      jul: line.jul !== null ? Number(line.jul) : null,
+      aug: line.aug !== null ? Number(line.aug) : null,
+      sep: line.sep !== null ? Number(line.sep) : null,
+      oct: line.oct !== null ? Number(line.oct) : null,
+      nov: line.nov !== null ? Number(line.nov) : null,
+      dec: line.dec !== null ? Number(line.dec) : null,
+    })
   }
 
   return byAccount

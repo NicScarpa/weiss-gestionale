@@ -62,7 +62,7 @@ export function GenerationParamsForm({
   // Sincronizza quando initialStaffingRequirements cambia (es. caricato dal database)
   useEffect(() => {
     if (initialStaffingRequirements && Object.keys(initialStaffingRequirements).length > 0) {
-      setStaffingRequirementsState(initialStaffingRequirements)
+      queueMicrotask(() => setStaffingRequirementsState(initialStaffingRequirements))
     }
   }, [initialStaffingRequirements])
   const [isDialogOpen, setIsDialogOpen] = useState(false)

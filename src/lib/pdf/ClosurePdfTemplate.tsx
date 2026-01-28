@@ -3,509 +3,796 @@ import {
   Page,
   Text,
   View,
+  Image,
   StyleSheet,
 } from '@react-pdf/renderer'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
+import * as path from 'path'
 
+// ============================================================
+// Types
+// ============================================================
+
+interface CashCountData {
+  bills500: number
+  bills200: number
+  bills100: number
+  bills50: number
+  bills20: number
+  bills10: number
+  bills5: number
+  coins2: number
+  coins1: number
+  coins050: number
+  coins020: number
+  coins010: number
+  coins005: number
+  coins002: number
+  coins001: number
+  totalCounted: number
+  expectedTotal: number
+  difference: number
+}
+
+interface ClosurePdfProps {
+  closure: {
+    id: string
+    date: Date
+    status: string
+    notes: string | null
+    isEvent: boolean
+    eventName: string | null
+    weatherMorning: string | null
+    weatherAfternoon: string | null
+    weatherEvening: string | null
+    venue: { name: string; code: string }
+    submittedBy?: { firstName: string; lastName: string } | null
+    validatedBy?: { firstName: string; lastName: string } | null
+    totalCash: number
+    totalPos: number
+    totalRevenue: number
+    totalExpenses: number
+    netCash: number
+    stations: Array<{
+      name: string
+      receiptAmount: number
+      receiptVat: number
+      invoiceAmount: number
+      suspendedAmount: number
+      cashAmount: number
+      posAmount: number
+      totalAmount: number
+      cashCount: CashCountData | null
+    }>
+    expenses: Array<{
+      payee: string
+      description: string | null
+      paidBy: string | null
+      amount: number
+    }>
+    partials: Array<{
+      timeSlot: string
+      receiptProgressive: number
+      posProgressive: number
+      total: number
+      coffeeCounter: number | null
+      coffeeDelta: number | null
+      weather: string | null
+    }>
+    attendance: Array<{
+      userName: string
+      shift: string
+      statusCode: string | null
+      hours: number | null
+      hourlyRate: number | null
+      totalPay: number | null
+      isPaid: boolean
+      isExtra: boolean
+    }>
+  }
+}
+
+// ============================================================
 // Styles
-const styles = StyleSheet.create({
+// ============================================================
+
+const COLORS = {
+  black: '#1d1d1b',
+  darkGray: '#333333',
+  mediumGray: '#666666',
+  lightGray: '#999999',
+  borderGray: '#cccccc',
+  bgLight: '#f5f5f5',
+  bgHeader: '#e8e8e8',
+  white: '#ffffff',
+  red: '#cc0000',
+  green: '#008800',
+}
+
+const s = StyleSheet.create({
   page: {
-    padding: 30,
-    fontSize: 10,
+    padding: 24,
+    paddingBottom: 50,
+    fontSize: 8,
     fontFamily: 'Helvetica',
+    color: COLORS.black,
   },
+
+  // Header
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 20,
-    paddingBottom: 10,
-    borderBottomWidth: 2,
-    borderBottomColor: '#0f172a',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1.5,
+    borderBottomColor: COLORS.black,
   },
   headerLeft: {
-    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  logo: {
+    width: 70,
+    height: 50,
+  },
+  headerInfo: {},
+  headerTitle: {
+    fontSize: 14,
+    fontFamily: 'Helvetica-Bold',
+  },
+  headerSubtitle: {
+    fontSize: 9,
+    color: COLORS.mediumGray,
+    marginTop: 1,
   },
   headerRight: {
     alignItems: 'flex-end',
   },
-  title: {
-    fontSize: 18,
+  headerDate: {
+    fontSize: 10,
     fontFamily: 'Helvetica-Bold',
-    color: '#0f172a',
   },
-  subtitle: {
-    fontSize: 12,
-    color: '#64748b',
+  headerMeta: {
+    fontSize: 7,
+    color: COLORS.mediumGray,
     marginTop: 2,
   },
-  badge: {
-    backgroundColor: '#22c55e',
-    color: 'white',
-    padding: '4 8',
-    borderRadius: 4,
-    fontSize: 9,
-    marginTop: 4,
-  },
-  badgePending: {
-    backgroundColor: '#f59e0b',
-  },
-  badgeDraft: {
-    backgroundColor: '#94a3b8',
-  },
-  section: {
-    marginBottom: 15,
-  },
+
+  // Section titles
   sectionTitle: {
-    fontSize: 12,
+    fontSize: 9,
     fontFamily: 'Helvetica-Bold',
-    color: '#0f172a',
-    marginBottom: 8,
-    paddingBottom: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    color: COLORS.black,
+    backgroundColor: COLORS.bgHeader,
+    padding: '3 4',
+    marginBottom: 2,
+    marginTop: 8,
   },
-  row: {
+
+  // Table generic
+  tableRow: {
     flexDirection: 'row',
-    paddingVertical: 4,
+    borderBottomWidth: 0.5,
+    borderBottomColor: COLORS.borderGray,
+    paddingVertical: 2,
+    minHeight: 13,
+    alignItems: 'center',
+  },
+  tableRowAlt: {
+    backgroundColor: COLORS.bgLight,
+  },
+  tableRowTotal: {
+    backgroundColor: COLORS.bgHeader,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    borderBottomColor: COLORS.black,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.black,
   },
-  rowHeader: {
-    backgroundColor: '#f8fafc',
+  tableHeaderRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.black,
+    paddingVertical: 2,
+    backgroundColor: COLORS.bgHeader,
+    minHeight: 14,
+    alignItems: 'center',
+  },
+  tableHeaderText: {
+    fontSize: 7,
     fontFamily: 'Helvetica-Bold',
-  },
-  col: {
-    flex: 1,
-  },
-  colNarrow: {
-    width: 80,
-  },
-  colWide: {
-    flex: 2,
-  },
-  textRight: {
-    textAlign: 'right',
-  },
-  textCenter: {
     textAlign: 'center',
+  },
+  tableCellText: {
+    fontSize: 7.5,
+  },
+  tableCellRight: {
+    textAlign: 'right',
+    fontSize: 7.5,
+  },
+  tableCellCenter: {
+    textAlign: 'center',
+    fontSize: 7.5,
   },
   bold: {
     fontFamily: 'Helvetica-Bold',
   },
+
+  // Stations table column widths (8 columns)
+  stColName: { width: '14%', paddingLeft: 3 },
+  stColReceipt: { width: '13%', paddingRight: 3 },
+  stColVat: { width: '11%', paddingRight: 3 },
+  stColInvoice: { width: '11%', paddingRight: 3 },
+  stColSuspended: { width: '11%', paddingRight: 3 },
+  stColCash: { width: '13%', paddingRight: 3 },
+  stColPos: { width: '13%', paddingRight: 3 },
+  stColTotal: { width: '14%', paddingRight: 3 },
+
+  // Expenses table
+  expColDesc: { width: '55%', paddingLeft: 3 },
+  expColPaidBy: { width: '20%' },
+  expColAmount: { width: '25%', paddingRight: 3 },
+
+  // Partials
+  partialsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 2,
+    marginBottom: 4,
+  },
+  partialCard: {
+    width: '48%',
+    border: '0.5 solid ' + COLORS.borderGray,
+    borderRadius: 2,
+    padding: '3 5',
+  },
+  partialTime: {
+    fontSize: 8,
+    fontFamily: 'Helvetica-Bold',
+  },
+  partialDetail: {
+    fontSize: 7,
+    color: COLORS.mediumGray,
+    marginTop: 1,
+  },
+
+  // Two-column layout
+  twoColContainer: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+  },
+  colLeft: {
+    width: '48%',
+  },
+  colRight: {
+    width: '52%',
+  },
+
+  // Cash count grid
+  cashCountRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 0.5,
+    borderBottomColor: COLORS.borderGray,
+    paddingVertical: 1.5,
+    alignItems: 'center',
+  },
+  cashCountLabel: {
+    width: '35%',
+    fontSize: 7,
+    paddingLeft: 3,
+  },
+  cashCountQty: {
+    width: '25%',
+    fontSize: 7,
+    textAlign: 'center',
+  },
+  cashCountValue: {
+    width: '40%',
+    fontSize: 7,
+    textAlign: 'right',
+    paddingRight: 3,
+  },
+
+  // Attendance
+  attRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 0.5,
+    borderBottomColor: COLORS.borderGray,
+    paddingVertical: 2,
+    alignItems: 'center',
+  },
+  attColName: { width: '50%', paddingLeft: 3 },
+  attColShift: { width: '50%' },
+
+  // Extra table
+  extraColName: { width: '45%', paddingLeft: 3 },
+  extraColHours: { width: '20%' },
+  extraColPay: { width: '20%', paddingRight: 3 },
+  extraColPaid: { width: '15%' },
+
+  // Summary
   summaryBox: {
-    backgroundColor: '#f8fafc',
-    padding: 12,
-    borderRadius: 4,
-    marginTop: 10,
+    marginTop: 6,
+    border: '1 solid ' + COLORS.black,
+    padding: 6,
   },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 3,
+    paddingVertical: 1.5,
   },
-  summaryTotal: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingTop: 8,
-    marginTop: 8,
-    borderTopWidth: 2,
-    borderTopColor: '#0f172a',
+  summaryLabel: {
+    fontSize: 8,
   },
-  totalLabel: {
-    fontSize: 12,
+  summaryValue: {
+    fontSize: 8,
     fontFamily: 'Helvetica-Bold',
   },
-  totalValue: {
-    fontSize: 14,
+  summaryDivider: {
+    borderTopWidth: 1,
+    borderTopColor: COLORS.black,
+    marginVertical: 3,
+  },
+  summaryTotalLabel: {
+    fontSize: 10,
     fontFamily: 'Helvetica-Bold',
-    color: '#0f172a',
   },
-  differencePositive: {
-    color: '#22c55e',
+  summaryTotalValue: {
+    fontSize: 10,
+    fontFamily: 'Helvetica-Bold',
   },
-  differenceNegative: {
-    color: '#ef4444',
-  },
+
+  // Footer
   footer: {
     position: 'absolute',
-    bottom: 30,
-    left: 30,
-    right: 30,
+    bottom: 20,
+    left: 24,
+    right: 24,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    fontSize: 8,
-    color: '#94a3b8',
-    borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
-    paddingTop: 10,
+    fontSize: 6.5,
+    color: COLORS.lightGray,
+    borderTopWidth: 0.5,
+    borderTopColor: COLORS.borderGray,
+    paddingTop: 6,
   },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+
+  // Notes
+  notesBox: {
+    marginTop: 6,
+    padding: '4 6',
+    border: '0.5 solid ' + COLORS.borderGray,
+    borderRadius: 2,
   },
-  gridItem: {
-    width: '50%',
-    paddingRight: 10,
-    marginBottom: 8,
-  },
-  infoLabel: {
-    fontSize: 8,
-    color: '#64748b',
-    marginBottom: 2,
-  },
-  infoValue: {
-    fontSize: 10,
-  },
-  weatherRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  weatherItem: {
-    flex: 1,
-    alignItems: 'center',
-    padding: 8,
-    backgroundColor: '#f8fafc',
-    borderRadius: 4,
-    marginHorizontal: 2,
+  notesText: {
+    fontSize: 7.5,
+    lineHeight: 1.4,
   },
 })
 
-// Format currency helper
-function formatCurrency(value: number | null | undefined): string {
-  if (value === null || value === undefined) return '0,00 €'
+// ============================================================
+// Helpers
+// ============================================================
+
+function fmt(value: number | null | undefined): string {
+  if (value === null || value === undefined || isNaN(value)) return '-'
+  if (value === 0) return '-'
+  return new Intl.NumberFormat('it-IT', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value)
+}
+
+function fmtCurrency(value: number | null | undefined): string {
+  if (value === null || value === undefined || isNaN(value)) return '0,00 €'
   return new Intl.NumberFormat('it-IT', {
     style: 'currency',
     currency: 'EUR',
   }).format(value)
 }
 
-// Get status badge style
-function getStatusStyle(status: string) {
-  switch (status) {
-    case 'VALIDATED':
-      return styles.badge
-    case 'SUBMITTED':
-      return { ...styles.badge, ...styles.badgePending }
-    default:
-      return { ...styles.badge, ...styles.badgeDraft }
-  }
+function getWeatherString(closure: ClosurePdfProps['closure']): string {
+  const parts: string[] = []
+  if (closure.weatherMorning) parts.push(`Matt: ${closure.weatherMorning}`)
+  if (closure.weatherAfternoon) parts.push(`Pom: ${closure.weatherAfternoon}`)
+  if (closure.weatherEvening) parts.push(`Sera: ${closure.weatherEvening}`)
+  return parts.join(' / ') || '-'
 }
 
-function getStatusLabel(status: string) {
-  switch (status) {
-    case 'VALIDATED':
-      return 'Validata'
-    case 'SUBMITTED':
-      return 'In Attesa'
-    default:
-      return 'Bozza'
-  }
-}
+// Denomination definitions for cash count
+const DENOMINATIONS = [
+  { key: 'bills500', label: '€ 500', value: 500 },
+  { key: 'bills200', label: '€ 200', value: 200 },
+  { key: 'bills100', label: '€ 100', value: 100 },
+  { key: 'bills50', label: '€ 50', value: 50 },
+  { key: 'bills20', label: '€ 20', value: 20 },
+  { key: 'bills10', label: '€ 10', value: 10 },
+  { key: 'bills5', label: '€ 5', value: 5 },
+  { key: 'coins2', label: '€ 2', value: 2 },
+  { key: 'coins1', label: '€ 1', value: 1 },
+  { key: 'coins050', label: '€ 0,50', value: 0.5 },
+  { key: 'coins020', label: '€ 0,20', value: 0.2 },
+  { key: 'coins010', label: '€ 0,10', value: 0.1 },
+  { key: 'coins005', label: '€ 0,05', value: 0.05 },
+  { key: 'coins002', label: '€ 0,02', value: 0.02 },
+  { key: 'coins001', label: '€ 0,01', value: 0.01 },
+] as const
 
-// Props interface
-interface ClosurePdfProps {
-  closure: {
-    id: string
-    date: Date
-    status: string
-    totalRevenue: number
-    totalCash: number
-    totalPos: number
-    totalExpenses: number
-    bankDeposit: number | null
-    cashDifference: number
-    netCash: number
-    coffeeMachineStart: number | null
-    coffeeMachineEnd: number | null
-    coffeeSold: number | null
-    notes: string | null
-    weatherMorning: string | null
-    weatherAfternoon: string | null
-    weatherEvening: string | null
-    venue: {
-      name: string
-      code: string
+// Aggregate cash counts from all stations
+function aggregateCashCounts(stations: ClosurePdfProps['closure']['stations']): Record<string, number> | null {
+  const countsAvailable = stations.some(st => st.cashCount !== null)
+  if (!countsAvailable) return null
+
+  const totals: Record<string, number> = {}
+  for (const d of DENOMINATIONS) {
+    totals[d.key] = 0
+  }
+
+  for (const st of stations) {
+    if (!st.cashCount) continue
+    for (const d of DENOMINATIONS) {
+      totals[d.key] += (st.cashCount as unknown as Record<string, number>)[d.key] || 0
     }
-    submittedBy?: {
-      firstName: string
-      lastName: string
-    } | null
-    validatedBy?: {
-      firstName: string
-      lastName: string
-    } | null
-    stations: Array<{
-      name: string
-      totalCash: number
-      totalPos: number
-      cashCount?: {
-        bill500: number
-        bill200: number
-        bill100: number
-        bill50: number
-        bill20: number
-        bill10: number
-        bill5: number
-        coin2: number
-        coin1: number
-        coin050: number
-        coin020: number
-        coin010: number
-        coin005: number
-        coin002: number
-        coin001: number
-      } | null
-    }>
-    expenses: Array<{
-      description: string
-      amount: number
-      account?: {
-        code: string
-        name: string
-      } | null
-    }>
-    partials: Array<{
-      timeSlot: string
-      amount: number
-    }>
-    attendance: Array<{
-      status: string
-      hoursWorked: number | null
-      user: {
-        firstName: string
-        lastName: string
-      }
-    }>
   }
+
+  return totals
 }
 
-export function ClosurePdfDocument({ closure }: ClosurePdfProps) {
-  const formattedDate = format(new Date(closure.date), "EEEE d MMMM yyyy", { locale: it })
+// ============================================================
+// Components
+// ============================================================
 
-  // Calculate totals
-  const totalStationsCash = closure.stations.reduce((sum, s) => sum + Number(s.totalCash || 0), 0)
-  const totalStationsPos = closure.stations.reduce((sum, s) => sum + Number(s.totalPos || 0), 0)
+function Header({ closure }: ClosurePdfProps) {
+  const formattedDate = format(new Date(closure.date), "EEEE d MMMM yyyy", { locale: it })
+  const logoPath = path.join(process.cwd(), 'public', 'images', 'logo.png')
 
   return (
-    <Document>
-      <Page size="A4" style={styles.page}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.title}>Chiusura Cassa</Text>
-            <Text style={styles.subtitle}>{closure.venue.name} ({closure.venue.code})</Text>
-            <Text style={styles.subtitle}>{formattedDate}</Text>
-          </View>
-          <View style={styles.headerRight}>
-            <Text style={getStatusStyle(closure.status)}>{getStatusLabel(closure.status)}</Text>
-            {closure.submittedBy && (
-              <Text style={{ fontSize: 8, color: '#64748b', marginTop: 4 }}>
-                Compilata da: {closure.submittedBy.firstName} {closure.submittedBy.lastName}
-              </Text>
-            )}
-            {closure.validatedBy && (
-              <Text style={{ fontSize: 8, color: '#64748b', marginTop: 2 }}>
-                Validata da: {closure.validatedBy.firstName} {closure.validatedBy.lastName}
-              </Text>
-            )}
-          </View>
+    <View style={s.header}>
+      <View style={s.headerLeft}>
+        <Image style={s.logo} src={logoPath} />
+        <View style={s.headerInfo}>
+          <Text style={s.headerTitle}>CHIUSURA CASSA</Text>
+          <Text style={s.headerSubtitle}>
+            {closure.venue.name}
+            {closure.isEvent && closure.eventName ? ` — ${closure.eventName}` : ''}
+          </Text>
         </View>
+      </View>
+      <View style={s.headerRight}>
+        <Text style={s.headerDate}>{formattedDate}</Text>
+        <Text style={s.headerMeta}>METEO: {getWeatherString(closure)}</Text>
+        {closure.submittedBy && (
+          <Text style={s.headerMeta}>
+            Compilata: {closure.submittedBy.firstName} {closure.submittedBy.lastName}
+          </Text>
+        )}
+        {closure.validatedBy && (
+          <Text style={s.headerMeta}>
+            Validata: {closure.validatedBy.firstName} {closure.validatedBy.lastName}
+          </Text>
+        )}
+      </View>
+    </View>
+  )
+}
 
-        {/* Summary Box */}
-        <View style={styles.summaryBox}>
-          <View style={styles.summaryRow}>
-            <Text>Totale Lordo</Text>
-            <Text style={styles.bold}>{formatCurrency(Number(closure.totalRevenue))}</Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text>Contanti</Text>
-            <Text>{formatCurrency(Number(closure.totalCash))}</Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text>POS</Text>
-            <Text>{formatCurrency(Number(closure.totalPos))}</Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text>Uscite</Text>
-            <Text style={{ color: '#ef4444' }}>- {formatCurrency(Number(closure.totalExpenses))}</Text>
-          </View>
-          {closure.bankDeposit && Number(closure.bankDeposit) > 0 && (
-            <View style={styles.summaryRow}>
-              <Text>Versamento Banca</Text>
-              <Text>{formatCurrency(Number(closure.bankDeposit))}</Text>
+function StationsTable({ closure }: ClosurePdfProps) {
+  const totals = {
+    receiptAmount: closure.stations.reduce((sum, st) => sum + st.receiptAmount, 0),
+    receiptVat: closure.stations.reduce((sum, st) => sum + st.receiptVat, 0),
+    invoiceAmount: closure.stations.reduce((sum, st) => sum + st.invoiceAmount, 0),
+    suspendedAmount: closure.stations.reduce((sum, st) => sum + st.suspendedAmount, 0),
+    cashAmount: closure.stations.reduce((sum, st) => sum + st.cashAmount, 0),
+    posAmount: closure.stations.reduce((sum, st) => sum + st.posAmount, 0),
+    totalAmount: closure.stations.reduce((sum, st) => sum + st.totalAmount, 0),
+  }
+
+  return (
+    <View>
+      <Text style={s.sectionTitle}>POSTAZIONI CASSA</Text>
+      {/* Header */}
+      <View style={s.tableHeaderRow}>
+        <Text style={[s.tableHeaderText, s.stColName]}>POSTAZIONE</Text>
+        <Text style={[s.tableHeaderText, s.stColReceipt]}>CORRISP.</Text>
+        <Text style={[s.tableHeaderText, s.stColVat]}>IVA</Text>
+        <Text style={[s.tableHeaderText, s.stColInvoice]}>FATTURE</Text>
+        <Text style={[s.tableHeaderText, s.stColSuspended]}>SOSPESI</Text>
+        <Text style={[s.tableHeaderText, s.stColCash]}>CONTANTI</Text>
+        <Text style={[s.tableHeaderText, s.stColPos]}>POS</Text>
+        <Text style={[s.tableHeaderText, s.stColTotal]}>TOTALE</Text>
+      </View>
+      {/* Rows */}
+      {closure.stations.map((st, idx) => (
+        <View key={idx} style={[s.tableRow, idx % 2 === 1 ? s.tableRowAlt : {}]}>
+          <Text style={[s.tableCellText, s.bold, s.stColName]}>{st.name}</Text>
+          <Text style={[s.tableCellRight, s.stColReceipt]}>{fmt(st.receiptAmount)}</Text>
+          <Text style={[s.tableCellRight, s.stColVat]}>{fmt(st.receiptVat)}</Text>
+          <Text style={[s.tableCellRight, s.stColInvoice]}>{fmt(st.invoiceAmount)}</Text>
+          <Text style={[s.tableCellRight, s.stColSuspended]}>{fmt(st.suspendedAmount)}</Text>
+          <Text style={[s.tableCellRight, s.stColCash]}>{fmt(st.cashAmount)}</Text>
+          <Text style={[s.tableCellRight, s.stColPos]}>{fmt(st.posAmount)}</Text>
+          <Text style={[s.tableCellRight, s.bold, s.stColTotal]}>{fmt(st.totalAmount)}</Text>
+        </View>
+      ))}
+      {/* Total */}
+      <View style={[s.tableRow, s.tableRowTotal]}>
+        <Text style={[s.tableCellText, s.bold, s.stColName]}>TOTALE</Text>
+        <Text style={[s.tableCellRight, s.bold, s.stColReceipt]}>{fmt(totals.receiptAmount)}</Text>
+        <Text style={[s.tableCellRight, s.bold, s.stColVat]}>{fmt(totals.receiptVat)}</Text>
+        <Text style={[s.tableCellRight, s.bold, s.stColInvoice]}>{fmt(totals.invoiceAmount)}</Text>
+        <Text style={[s.tableCellRight, s.bold, s.stColSuspended]}>{fmt(totals.suspendedAmount)}</Text>
+        <Text style={[s.tableCellRight, s.bold, s.stColCash]}>{fmt(totals.cashAmount)}</Text>
+        <Text style={[s.tableCellRight, s.bold, s.stColPos]}>{fmt(totals.posAmount)}</Text>
+        <Text style={[s.tableCellRight, s.bold, s.stColTotal]}>{fmt(totals.totalAmount)}</Text>
+      </View>
+    </View>
+  )
+}
+
+function PartialsSection({ closure }: ClosurePdfProps) {
+  if (closure.partials.length === 0) return null
+  return (
+    <View>
+      <Text style={s.sectionTitle}>PARZIALI ORARI</Text>
+      <View style={s.partialsContainer}>
+        {closure.partials.map((p, idx) => (
+          <View key={idx} style={s.partialCard}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <Text style={s.partialTime}>Ore {p.timeSlot}</Text>
+              <Text style={[s.partialTime]}>{fmt(p.total)} €</Text>
             </View>
-          )}
-          <View style={styles.summaryTotal}>
-            <Text style={styles.totalLabel}>Cassa Netta</Text>
-            <Text style={styles.totalValue}>{formatCurrency(Number(closure.netCash))}</Text>
-          </View>
-          <View style={{ ...styles.summaryRow, marginTop: 4 }}>
-            <Text>Differenza Cassa</Text>
-            <Text style={Number(closure.cashDifference) >= 0 ? styles.differencePositive : styles.differenceNegative}>
-              {Number(closure.cashDifference) >= 0 ? '+' : ''}{formatCurrency(Number(closure.cashDifference))}
+            <Text style={s.partialDetail}>
+              Cont. {fmt(p.receiptProgressive)} + POS {fmt(p.posProgressive)}
+              {p.weather ? `  |  ${p.weather}` : ''}
             </Text>
+            {p.coffeeCounter !== null && (
+              <Text style={s.partialDetail}>
+                Caffè: {p.coffeeCounter}
+                {p.coffeeDelta !== null ? ` (Δ ${p.coffeeDelta})` : ''}
+              </Text>
+            )}
+          </View>
+        ))}
+      </View>
+    </View>
+  )
+}
+
+function ExpensesTable({ closure }: ClosurePdfProps) {
+  if (closure.expenses.length === 0) return null
+  return (
+    <View>
+      <Text style={s.sectionTitle}>USCITE</Text>
+      <View style={s.tableHeaderRow}>
+        <Text style={[s.tableHeaderText, s.expColDesc, { textAlign: 'left', paddingLeft: 3 }]}>CAUSALE</Text>
+        <Text style={[s.tableHeaderText, s.expColPaidBy]}>PAGAMENTO</Text>
+        <Text style={[s.tableHeaderText, s.expColAmount, { textAlign: 'right', paddingRight: 3 }]}>IMPORTO</Text>
+      </View>
+      {closure.expenses.map((exp, idx) => (
+        <View key={idx} style={[s.tableRow, idx % 2 === 1 ? s.tableRowAlt : {}]}>
+          <Text style={[s.tableCellText, s.expColDesc]}>
+            {exp.payee}{exp.description ? ` — ${exp.description}` : ''}
+          </Text>
+          <Text style={[s.tableCellCenter, s.expColPaidBy]}>{exp.paidBy || 'CASSA'}</Text>
+          <Text style={[s.tableCellRight, s.expColAmount]}>{fmt(exp.amount)}</Text>
+        </View>
+      ))}
+      <View style={[s.tableRow, s.tableRowTotal]}>
+        <Text style={[s.tableCellText, s.bold, s.expColDesc]}>TOTALE USCITE</Text>
+        <Text style={[s.tableCellCenter, s.expColPaidBy]}></Text>
+        <Text style={[s.tableCellRight, s.bold, s.expColAmount]}>{fmt(closure.totalExpenses)}</Text>
+      </View>
+    </View>
+  )
+}
+
+function CashCountSection({ closure }: ClosurePdfProps) {
+  const counts = aggregateCashCounts(closure.stations)
+  if (!counts) return null
+
+  let total = 0
+  for (const d of DENOMINATIONS) {
+    total += (counts[d.key] || 0) * d.value
+  }
+
+  return (
+    <View>
+      <Text style={s.sectionTitle}>LIQUIDITÀ</Text>
+      {/* Header */}
+      <View style={[s.cashCountRow, { borderBottomWidth: 1, borderBottomColor: COLORS.black }]}>
+        <Text style={[s.cashCountLabel, s.bold, { fontSize: 7 }]}>TAGLIO</Text>
+        <Text style={[s.cashCountQty, s.bold, { fontSize: 7 }]}>QTÀ</Text>
+        <Text style={[s.cashCountValue, s.bold, { fontSize: 7 }]}>VALORE</Text>
+      </View>
+      {DENOMINATIONS.map((d) => {
+        const qty = counts[d.key] || 0
+        if (qty === 0) return null
+        return (
+          <View key={d.key} style={s.cashCountRow}>
+            <Text style={s.cashCountLabel}>{d.label}</Text>
+            <Text style={s.cashCountQty}>{qty}</Text>
+            <Text style={s.cashCountValue}>{fmt(qty * d.value)}</Text>
+          </View>
+        )
+      })}
+      {/* Total */}
+      <View style={[s.cashCountRow, { borderTopWidth: 1, borderTopColor: COLORS.black, borderBottomWidth: 0 }]}>
+        <Text style={[s.cashCountLabel, s.bold]}>TOTALE</Text>
+        <Text style={s.cashCountQty}></Text>
+        <Text style={[s.cashCountValue, s.bold]}>{fmt(total)}</Text>
+      </View>
+    </View>
+  )
+}
+
+function AttendanceSection({ closure }: ClosurePdfProps) {
+  const staff = closure.attendance.filter(a => !a.isExtra)
+  const extras = closure.attendance.filter(a => a.isExtra)
+  const morningStaff = staff.filter(a => a.shift === 'MORNING')
+  const eveningStaff = staff.filter(a => a.shift === 'EVENING')
+
+  if (staff.length === 0 && extras.length === 0) return null
+
+  return (
+    <View>
+      {/* Fixed Staff */}
+      {staff.length > 0 && (
+        <View>
+          <Text style={s.sectionTitle}>DIPENDENTI</Text>
+          <View style={{ flexDirection: 'row', gap: 6 }}>
+            {/* Morning column */}
+            <View style={{ width: '50%' }}>
+              <View style={[s.tableHeaderRow, { minHeight: 12 }]}>
+                <Text style={[s.tableHeaderText, { width: '100%' }]}>MATTINA</Text>
+              </View>
+              {morningStaff.length > 0 ? morningStaff.map((a, idx) => (
+                <View key={idx} style={s.attRow}>
+                  <Text style={[s.tableCellText, { paddingLeft: 3 }]}>
+                    {a.userName}{a.statusCode ? ` (${a.statusCode})` : ''}
+                  </Text>
+                </View>
+              )) : (
+                <View style={s.attRow}>
+                  <Text style={[s.tableCellText, { paddingLeft: 3, color: COLORS.lightGray }]}>-</Text>
+                </View>
+              )}
+            </View>
+            {/* Evening column */}
+            <View style={{ width: '50%' }}>
+              <View style={[s.tableHeaderRow, { minHeight: 12 }]}>
+                <Text style={[s.tableHeaderText, { width: '100%' }]}>SERA</Text>
+              </View>
+              {eveningStaff.length > 0 ? eveningStaff.map((a, idx) => (
+                <View key={idx} style={s.attRow}>
+                  <Text style={[s.tableCellText, { paddingLeft: 3 }]}>
+                    {a.userName}{a.statusCode ? ` (${a.statusCode})` : ''}
+                  </Text>
+                </View>
+              )) : (
+                <View style={s.attRow}>
+                  <Text style={[s.tableCellText, { paddingLeft: 3, color: COLORS.lightGray }]}>-</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Extras */}
+      {extras.length > 0 && (
+        <View style={{ marginTop: 6 }}>
+          <Text style={s.sectionTitle}>EXTRA</Text>
+          <View style={s.tableHeaderRow}>
+            <Text style={[s.tableHeaderText, s.extraColName, { textAlign: 'left', paddingLeft: 3 }]}>NOME</Text>
+            <Text style={[s.tableHeaderText, s.extraColHours]}>ORE</Text>
+            <Text style={[s.tableHeaderText, s.extraColPay, { textAlign: 'right', paddingRight: 3 }]}>COMPENSO</Text>
+            <Text style={[s.tableHeaderText, s.extraColPaid]}>PAGATO</Text>
+          </View>
+          {extras.map((a, idx) => (
+            <View key={idx} style={[s.tableRow, idx % 2 === 1 ? s.tableRowAlt : {}]}>
+              <Text style={[s.tableCellText, s.extraColName]}>{a.userName}</Text>
+              <Text style={[s.tableCellCenter, s.extraColHours]}>{a.hours ? `${a.hours}h` : '-'}</Text>
+              <Text style={[s.tableCellRight, s.extraColPay]}>{a.totalPay ? fmt(a.totalPay) : '-'}</Text>
+              <Text style={[s.tableCellCenter, s.extraColPaid]}>{a.isPaid ? 'Sì' : 'No'}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  )
+}
+
+function SummaryBox({ closure }: ClosurePdfProps) {
+  const cashDiff = closure.stations.reduce((sum, st) => {
+    if (!st.cashCount) return sum
+    return sum + st.cashCount.difference
+  }, 0)
+  const hasCashCount = closure.stations.some(st => st.cashCount !== null)
+
+  return (
+    <View style={s.summaryBox}>
+      <View style={s.summaryRow}>
+        <Text style={s.summaryLabel}>Totale Contanti</Text>
+        <Text style={s.summaryValue}>{fmtCurrency(closure.totalCash)}</Text>
+      </View>
+      <View style={s.summaryRow}>
+        <Text style={s.summaryLabel}>Totale POS</Text>
+        <Text style={s.summaryValue}>{fmtCurrency(closure.totalPos)}</Text>
+      </View>
+      <View style={s.summaryRow}>
+        <Text style={s.summaryLabel}>Totale Incassi</Text>
+        <Text style={s.summaryValue}>{fmtCurrency(closure.totalRevenue)}</Text>
+      </View>
+      <View style={s.summaryRow}>
+        <Text style={s.summaryLabel}>Totale Uscite</Text>
+        <Text style={[s.summaryValue, { color: COLORS.red }]}>- {fmtCurrency(closure.totalExpenses)}</Text>
+      </View>
+      <View style={s.summaryDivider} />
+      <View style={s.summaryRow}>
+        <Text style={s.summaryTotalLabel}>CASSA NETTA</Text>
+        <Text style={s.summaryTotalValue}>{fmtCurrency(closure.netCash)}</Text>
+      </View>
+      {hasCashCount && (
+        <View style={[s.summaryRow, { marginTop: 2 }]}>
+          <Text style={s.summaryLabel}>Differenza Cassa</Text>
+          <Text style={[s.summaryValue, { color: cashDiff >= 0 ? COLORS.green : COLORS.red }]}>
+            {cashDiff >= 0 ? '+' : ''}{fmtCurrency(cashDiff)}
+          </Text>
+        </View>
+      )}
+    </View>
+  )
+}
+
+function Footer({ closure }: ClosurePdfProps) {
+  return (
+    <View style={s.footer} fixed>
+      <Text>Weiss Cafè Gestionale</Text>
+      <Text>Generato il {format(new Date(), "dd/MM/yyyy 'alle' HH:mm", { locale: it })}</Text>
+      <Text>ID: {closure.id.slice(0, 8)}</Text>
+    </View>
+  )
+}
+
+// ============================================================
+// Main Document
+// ============================================================
+
+export function ClosurePdfDocument({ closure }: ClosurePdfProps) {
+  return (
+    <Document>
+      <Page size="A4" style={s.page}>
+        <Header closure={closure} />
+        <StationsTable closure={closure} />
+        <PartialsSection closure={closure} />
+        <ExpensesTable closure={closure} />
+
+        {/* Two-column layout: Cash Count + Attendance */}
+        <View style={s.twoColContainer}>
+          <View style={s.colLeft}>
+            <CashCountSection closure={closure} />
+          </View>
+          <View style={s.colRight}>
+            <AttendanceSection closure={closure} />
           </View>
         </View>
 
-        {/* Cash Stations */}
-        {closure.stations.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Postazioni Cassa</Text>
-            <View style={[styles.row, styles.rowHeader]}>
-              <Text style={styles.colWide}>Postazione</Text>
-              <Text style={[styles.col, styles.textRight]}>Contanti</Text>
-              <Text style={[styles.col, styles.textRight]}>POS</Text>
-              <Text style={[styles.col, styles.textRight]}>Totale</Text>
-            </View>
-            {closure.stations.map((station, idx) => (
-              <View key={idx} style={styles.row}>
-                <Text style={styles.colWide}>{station.name}</Text>
-                <Text style={[styles.col, styles.textRight]}>{formatCurrency(Number(station.totalCash))}</Text>
-                <Text style={[styles.col, styles.textRight]}>{formatCurrency(Number(station.totalPos))}</Text>
-                <Text style={[styles.col, styles.textRight, styles.bold]}>
-                  {formatCurrency(Number(station.totalCash) + Number(station.totalPos))}
-                </Text>
-              </View>
-            ))}
-            <View style={[styles.row, { backgroundColor: '#f1f5f9' }]}>
-              <Text style={[styles.colWide, styles.bold]}>Totale</Text>
-              <Text style={[styles.col, styles.textRight, styles.bold]}>{formatCurrency(totalStationsCash)}</Text>
-              <Text style={[styles.col, styles.textRight, styles.bold]}>{formatCurrency(totalStationsPos)}</Text>
-              <Text style={[styles.col, styles.textRight, styles.bold]}>
-                {formatCurrency(totalStationsCash + totalStationsPos)}
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {/* Expenses */}
-        {closure.expenses.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Uscite</Text>
-            <View style={[styles.row, styles.rowHeader]}>
-              <Text style={styles.colWide}>Descrizione</Text>
-              <Text style={styles.col}>Conto</Text>
-              <Text style={[styles.colNarrow, styles.textRight]}>Importo</Text>
-            </View>
-            {closure.expenses.map((expense, idx) => (
-              <View key={idx} style={styles.row}>
-                <Text style={styles.colWide}>{expense.description}</Text>
-                <Text style={styles.col}>
-                  {expense.account ? `${expense.account.code} - ${expense.account.name}` : '-'}
-                </Text>
-                <Text style={[styles.colNarrow, styles.textRight]}>{formatCurrency(Number(expense.amount))}</Text>
-              </View>
-            ))}
-            <View style={[styles.row, { backgroundColor: '#f1f5f9' }]}>
-              <Text style={[styles.colWide, styles.bold]}>Totale Uscite</Text>
-              <Text style={styles.col}></Text>
-              <Text style={[styles.colNarrow, styles.textRight, styles.bold]}>
-                {formatCurrency(Number(closure.totalExpenses))}
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {/* Hourly Partials */}
-        {closure.partials.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Parziali Orari</Text>
-            <View style={styles.grid}>
-              {closure.partials.map((partial, idx) => (
-                <View key={idx} style={styles.gridItem}>
-                  <Text style={styles.infoLabel}>{partial.timeSlot}</Text>
-                  <Text style={styles.infoValue}>{formatCurrency(Number(partial.amount))}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* Staff Attendance */}
-        {closure.attendance.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Presenze</Text>
-            <View style={[styles.row, styles.rowHeader]}>
-              <Text style={styles.colWide}>Dipendente</Text>
-              <Text style={[styles.col, styles.textCenter]}>Stato</Text>
-              <Text style={[styles.colNarrow, styles.textRight]}>Ore</Text>
-            </View>
-            {closure.attendance.map((att, idx) => (
-              <View key={idx} style={styles.row}>
-                <Text style={styles.colWide}>{att.user.firstName} {att.user.lastName}</Text>
-                <Text style={[styles.col, styles.textCenter]}>{att.status}</Text>
-                <Text style={[styles.colNarrow, styles.textRight]}>
-                  {att.hoursWorked ? `${att.hoursWorked}h` : '-'}
-                </Text>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* Weather */}
-        {(closure.weatherMorning || closure.weatherAfternoon || closure.weatherEvening) && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Meteo</Text>
-            <View style={styles.weatherRow}>
-              {closure.weatherMorning && (
-                <View style={styles.weatherItem}>
-                  <Text style={styles.infoLabel}>Mattina</Text>
-                  <Text style={styles.infoValue}>{closure.weatherMorning}</Text>
-                </View>
-              )}
-              {closure.weatherAfternoon && (
-                <View style={styles.weatherItem}>
-                  <Text style={styles.infoLabel}>Pomeriggio</Text>
-                  <Text style={styles.infoValue}>{closure.weatherAfternoon}</Text>
-                </View>
-              )}
-              {closure.weatherEvening && (
-                <View style={styles.weatherItem}>
-                  <Text style={styles.infoLabel}>Sera</Text>
-                  <Text style={styles.infoValue}>{closure.weatherEvening}</Text>
-                </View>
-              )}
-            </View>
-          </View>
-        )}
-
-        {/* Coffee Machine */}
-        {(closure.coffeeMachineStart || closure.coffeeMachineEnd) && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Macchina Caffe</Text>
-            <View style={styles.grid}>
-              <View style={styles.gridItem}>
-                <Text style={styles.infoLabel}>Lettura Iniziale</Text>
-                <Text style={styles.infoValue}>{closure.coffeeMachineStart || '-'}</Text>
-              </View>
-              <View style={styles.gridItem}>
-                <Text style={styles.infoLabel}>Lettura Finale</Text>
-                <Text style={styles.infoValue}>{closure.coffeeMachineEnd || '-'}</Text>
-              </View>
-              <View style={styles.gridItem}>
-                <Text style={styles.infoLabel}>Caffe Venduti</Text>
-                <Text style={[styles.infoValue, styles.bold]}>{closure.coffeeSold || 0}</Text>
-              </View>
-            </View>
-          </View>
-        )}
+        {/* Summary */}
+        <SummaryBox closure={closure} />
 
         {/* Notes */}
         {closure.notes && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Note</Text>
-            <Text style={{ lineHeight: 1.5 }}>{closure.notes}</Text>
+          <View style={s.notesBox}>
+            <Text style={[s.bold, { fontSize: 7, marginBottom: 2 }]}>NOTE:</Text>
+            <Text style={s.notesText}>{closure.notes}</Text>
           </View>
         )}
 
-        {/* Footer */}
-        <View style={styles.footer}>
-          <Text>Weiss Cafe Gestionale</Text>
-          <Text>Generato il {format(new Date(), "dd/MM/yyyy 'alle' HH:mm", { locale: it })}</Text>
-          <Text>ID: {closure.id.slice(0, 8)}</Text>
-        </View>
+        <Footer closure={closure} />
       </Page>
     </Document>
   )
