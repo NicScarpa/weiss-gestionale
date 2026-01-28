@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import type { JournalEntry } from '@/types/prima-nota'
 import {
   getMovementDirection,
   toDebitCredit,
@@ -86,7 +87,7 @@ describe('calculateRunningBalances', () => {
   it('should calculate running balance for single entry', () => {
     const entries = [
       { id: '1', debitAmount: 100, creditAmount: null },
-    ] as any
+    ] as unknown as JournalEntry[]
 
     const result = calculateRunningBalances(entries)
 
@@ -98,7 +99,7 @@ describe('calculateRunningBalances', () => {
       { id: '1', debitAmount: 100, creditAmount: null },
       { id: '2', debitAmount: null, creditAmount: 30 },
       { id: '3', debitAmount: 50, creditAmount: null },
-    ] as any
+    ] as unknown as JournalEntry[]
 
     const result = calculateRunningBalances(entries)
 
@@ -110,7 +111,7 @@ describe('calculateRunningBalances', () => {
   it('should use opening balance', () => {
     const entries = [
       { id: '1', debitAmount: 100, creditAmount: null },
-    ] as any
+    ] as unknown as JournalEntry[]
 
     const result = calculateRunningBalances(entries, 500)
 
@@ -120,7 +121,7 @@ describe('calculateRunningBalances', () => {
   it('should handle null amounts as zero', () => {
     const entries = [
       { id: '1', debitAmount: null, creditAmount: null },
-    ] as any
+    ] as unknown as JournalEntry[]
 
     const result = calculateRunningBalances(entries, 100)
 
@@ -130,7 +131,7 @@ describe('calculateRunningBalances', () => {
   it('should preserve original entry properties', () => {
     const entries = [
       { id: '1', description: 'Test', debitAmount: 100, creditAmount: null },
-    ] as any
+    ] as unknown as JournalEntry[]
 
     const result = calculateRunningBalances(entries)
 
@@ -151,7 +152,7 @@ describe('calculateTotals', () => {
   it('should calculate totals for single entry', () => {
     const entries = [
       { debitAmount: 100, creditAmount: null },
-    ] as any
+    ] as unknown as JournalEntry[]
 
     const result = calculateTotals(entries)
 
@@ -166,7 +167,7 @@ describe('calculateTotals', () => {
       { debitAmount: 50, creditAmount: null },
       { debitAmount: null, creditAmount: 30 },
       { debitAmount: null, creditAmount: 20 },
-    ] as any
+    ] as unknown as JournalEntry[]
 
     const result = calculateTotals(entries)
 
@@ -178,7 +179,7 @@ describe('calculateTotals', () => {
   it('should handle mixed entries', () => {
     const entries = [
       { debitAmount: 100, creditAmount: 50 },  // Both in same entry
-    ] as any
+    ] as unknown as JournalEntry[]
 
     const result = calculateTotals(entries)
 
@@ -191,7 +192,7 @@ describe('calculateTotals', () => {
     const entries = [
       { debitAmount: 50, creditAmount: null },
       { debitAmount: null, creditAmount: 100 },
-    ] as any
+    ] as unknown as JournalEntry[]
 
     const result = calculateTotals(entries)
 
@@ -307,17 +308,17 @@ describe('formatSignedAmount', () => {
 
 describe('isEntryEditable', () => {
   it('should return true for entry without closureId', () => {
-    const entry = { id: '1', closureId: null } as any
+    const entry = { id: '1', closureId: null } as unknown as JournalEntry
     expect(isEntryEditable(entry)).toBe(true)
   })
 
   it('should return true for entry with undefined closureId', () => {
-    const entry = { id: '1' } as any
+    const entry = { id: '1' } as unknown as JournalEntry
     expect(isEntryEditable(entry)).toBe(true)
   })
 
   it('should return false for entry with closureId', () => {
-    const entry = { id: '1', closureId: 'closure-123' } as any
+    const entry = { id: '1', closureId: 'closure-123' } as unknown as JournalEntry
     expect(isEntryEditable(entry)).toBe(false)
   })
 })
@@ -331,7 +332,7 @@ describe('groupEntriesByDate', () => {
   it('should group single entry', () => {
     const entries = [
       { id: '1', date: new Date('2024-03-15T10:00:00') },
-    ] as any
+    ] as unknown as JournalEntry[]
 
     const result = groupEntriesByDate(entries)
 
@@ -344,7 +345,7 @@ describe('groupEntriesByDate', () => {
       { id: '1', date: new Date('2024-03-15T10:00:00') },
       { id: '2', date: new Date('2024-03-15T14:00:00') },
       { id: '3', date: new Date('2024-03-16T09:00:00') },
-    ] as any
+    ] as unknown as JournalEntry[]
 
     const result = groupEntriesByDate(entries)
 
@@ -356,7 +357,7 @@ describe('groupEntriesByDate', () => {
   it('should handle string dates', () => {
     const entries = [
       { id: '1', date: '2024-03-15' },
-    ] as any
+    ] as unknown as JournalEntry[]
 
     const result = groupEntriesByDate(entries)
 
@@ -368,7 +369,7 @@ describe('groupEntriesByDate', () => {
     const entries = [
       { id: '1', date: new Date('2024-03-15T10:00:00') },
       { id: '2', date: new Date('2024-03-15T14:00:00') },
-    ] as any
+    ] as unknown as JournalEntry[]
 
     const result = groupEntriesByDate(entries)
     const dateEntries = result.get('2024-03-15')!

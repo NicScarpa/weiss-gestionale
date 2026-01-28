@@ -44,8 +44,8 @@ export function ValidateActions({ closureId }: ValidateActionsProps) {
 
       toast.success('Chiusura validata con successo')
       router.refresh()
-    } catch (error: any) {
-      toast.error(error.message)
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Errore nella validazione')
     } finally {
       setIsApproving(false)
     }
@@ -76,8 +76,8 @@ export function ValidateActions({ closureId }: ValidateActionsProps) {
       toast.success('Chiusura rifiutata e riportata in bozza')
       setShowRejectDialog(false)
       router.refresh()
-    } catch (error: any) {
-      toast.error(error.message)
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Errore nel rifiuto')
     } finally {
       setIsRejecting(false)
     }

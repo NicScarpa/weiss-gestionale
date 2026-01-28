@@ -7,6 +7,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { sendPushNotification, sendPushNotificationBatch, isFirebaseConfigured } from './fcm'
+import type { NotificationLog, NotificationType } from '@prisma/client'
 import {
   NotificationPayload,
   SendNotificationOptions,
@@ -318,7 +319,7 @@ export async function markNotificationAsRead(
 export async function getUnreadNotifications(
   userId: string,
   limit = 20
-): Promise<any[]> {
+): Promise<NotificationLog[]> {
   return prisma.notificationLog.findMany({
     where: {
       userId,
@@ -339,13 +340,13 @@ export async function getNotificationHistory(
     offset?: number
     type?: string
   } = {}
-): Promise<any[]> {
+): Promise<NotificationLog[]> {
   const { limit = 50, offset = 0, type } = options
 
   return prisma.notificationLog.findMany({
     where: {
       userId,
-      ...(type ? { type: type as any } : {}),
+      ...(type ? { type: type as NotificationType } : {}),
     },
     orderBy: { sentAt: 'desc' },
     take: limit,

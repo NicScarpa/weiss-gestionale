@@ -15,9 +15,21 @@ import { logger } from '@/lib/logger'
 let firebaseApp: FirebaseApp | null = null
 let messaging: Messaging | null = null
 
-// Type definitions per evitare import diretti
-type FirebaseApp = any
-type Messaging = any
+// Type definitions per evitare import diretti (firebase-admin is lazy loaded)
+interface FirebaseApp {
+  name: string
+}
+
+interface SendResponse {
+  success: boolean
+  messageId?: string
+  error?: { message?: string }
+}
+
+interface Messaging {
+  send(message: Record<string, unknown>, dryRun?: boolean): Promise<string>
+  sendEach(messages: Record<string, unknown>[]): Promise<{ responses: SendResponse[] }>
+}
 
 /**
  * Inizializza Firebase Admin SDK
@@ -53,7 +65,7 @@ async function initializeFirebase(): Promise<boolean> {
       firebaseApp = admin.apps[0]
     }
 
-    messaging = admin.messaging()
+    messaging = admin.messaging() as unknown as Messaging
     logger.info('Firebase Admin SDK initialized')
     return true
   } catch (error) {
@@ -96,13 +108,14 @@ export async function sendPushNotification(
     })
 
     return { success: true, messageId }
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('FCM send error', error)
 
     // Gestisci token non valido
+    const fcmError = error as { code?: string; message?: string }
     if (
-      error.code === 'messaging/invalid-registration-token' ||
-      error.code === 'messaging/registration-token-not-registered'
+      fcmError.code === 'messaging/invalid-registration-token' ||
+      fcmError.code === 'messaging/registration-token-not-registered'
     ) {
       return {
         success: false,
@@ -112,7 +125,7 @@ export async function sendPushNotification(
 
     return {
       success: false,
-      error: error.message || 'Unknown error',
+      error: fcmError.message || 'Unknown error',
     }
   }
 }
@@ -151,7 +164,7 @@ export async function sendPushNotificationBatch(
 
     const response = await messaging.sendEach(fcmMessages)
 
-    return response.responses.map((res: any, index: number) => {
+    return response.responses.map((res: SendResponse) => {
       if (res.success) {
         return { success: true, messageId: res.messageId }
       } else {
@@ -161,11 +174,11 @@ export async function sendPushNotificationBatch(
         }
       }
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('FCM batch send error', error)
     return messages.map(() => ({
       success: false,
-      error: error.message || 'Unknown error',
+      error: error instanceof Error ? error.message : 'Unknown error',
     }))
   }
 }

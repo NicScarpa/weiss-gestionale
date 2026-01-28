@@ -189,18 +189,18 @@ export function distributeAnnualWeighted(
  * Converte una BudgetLine Prisma in MonthlyValues
  */
 export function budgetLineToMonthlyValues(line: {
-  jan: number | any
-  feb: number | any
-  mar: number | any
-  apr: number | any
-  may: number | any
-  jun: number | any
-  jul: number | any
-  aug: number | any
-  sep: number | any
-  oct: number | any
-  nov: number | any
-  dec: number | any
+  jan: number | null
+  feb: number | null
+  mar: number | null
+  apr: number | null
+  may: number | null
+  jun: number | null
+  jul: number | null
+  aug: number | null
+  sep: number | null
+  oct: number | null
+  nov: number | null
+  dec: number | null
 }): MonthlyValues {
   return {
     jan: Number(line.jan) || 0,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 import {
   createBudgetSchema,
   budgetFiltersSchema,
@@ -30,11 +31,11 @@ export async function GET(request: NextRequest) {
     })
 
     // Costruisci where clause
-    const where: any = {}
+    const where: Prisma.BudgetWhereInput = {}
 
     // Filtra per sede (admin vede tutte, altri solo la propria)
     if (session.user.role !== 'admin') {
-      where.venueId = session.user.venueId
+      where.venueId = session.user.venueId || undefined
     } else if (filters.venueId) {
       where.venueId = filters.venueId
     }
@@ -173,7 +174,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Se richiesto, copia da anno precedente
-    let linesToCopy: any[] = []
+    let linesToCopy: Prisma.BudgetLineUncheckedCreateWithoutBudgetInput[] = []
     if (validatedData.copyFromYear) {
       const previousBudget = await prisma.budget.findUnique({
         where: {

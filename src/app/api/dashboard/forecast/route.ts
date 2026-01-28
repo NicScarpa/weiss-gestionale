@@ -447,7 +447,7 @@ function calculateExpectedExpenses(
   recurringExpenses: Array<{
     id: string
     name: string
-    amount: any
+    amount: { toNumber(): number } | number | string
     frequency: string
     dayOfMonth: number | null
     dayOfWeek: number | null

@@ -319,7 +319,7 @@ export function PolicyForm({
             <div>
               <Label>Notifica anomalie</Label>
               <p className="text-sm text-muted-foreground">
-                Invia notifica quando viene rilevata un'anomalia
+                Invia notifica quando viene rilevata un&apos;anomalia
               </p>
             </div>
             <Switch

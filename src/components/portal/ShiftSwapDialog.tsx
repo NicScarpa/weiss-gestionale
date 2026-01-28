@@ -109,8 +109,10 @@ export function ShiftSwapDialog({
   // Reset form when dialog opens
   useEffect(() => {
     if (open) {
-      setSelectedColleague('')
-      setMessage('')
+      queueMicrotask(() => {
+        setSelectedColleague('')
+        setMessage('')
+      })
     }
   }, [open])
 

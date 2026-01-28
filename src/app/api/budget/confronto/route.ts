@@ -158,7 +158,17 @@ export async function GET(request: NextRequest) {
     })
 
     // Costruisci la comparazione per ogni riga budget
-    const comparisons: any[] = []
+    interface BudgetComparison {
+      accountId: string
+      accountCode: string
+      accountName: string
+      accountType: string
+      budget: MonthlyValues & { annual: number }
+      actual: MonthlyValues & { annual: number }
+      variance: MonthlyValues & { annual: number }
+      variancePercent: MonthlyValues & { annual: number }
+    }
+    const comparisons: BudgetComparison[] = []
 
     for (const line of budget.lines) {
       const account = line.account
@@ -169,7 +179,20 @@ export async function GET(request: NextRequest) {
         continue
       }
 
-      const budgetValues = budgetLineToMonthlyValues(line)
+      const budgetValues = budgetLineToMonthlyValues({
+        jan: line.jan === null ? null : Number(line.jan),
+        feb: line.feb === null ? null : Number(line.feb),
+        mar: line.mar === null ? null : Number(line.mar),
+        apr: line.apr === null ? null : Number(line.apr),
+        may: line.may === null ? null : Number(line.may),
+        jun: line.jun === null ? null : Number(line.jun),
+        jul: line.jul === null ? null : Number(line.jul),
+        aug: line.aug === null ? null : Number(line.aug),
+        sep: line.sep === null ? null : Number(line.sep),
+        oct: line.oct === null ? null : Number(line.oct),
+        nov: line.nov === null ? null : Number(line.nov),
+        dec: line.dec === null ? null : Number(line.dec),
+      })
       let actualValues: MonthlyValues
 
       if (account.type === 'RICAVO') {

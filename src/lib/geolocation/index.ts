@@ -144,8 +144,37 @@ export function useGeolocation(
   }, [options])
 
   useEffect(() => {
-    updatePosition()
-  }, [updatePosition])
+    if (!isGeolocationSupported()) {
+      return
+    }
+
+    let cancelled = false
+
+    getCurrentPosition(options)
+      .then((position) => {
+        if (!cancelled) {
+          setState({
+            position,
+            error: null,
+            isLoading: false,
+            isSupported: true,
+          })
+        }
+      })
+      .catch((error: GeolocationError) => {
+        if (!cancelled) {
+          setState((prev) => ({
+            ...prev,
+            error,
+            isLoading: false,
+          }))
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [options])
 
   return {
     ...state,

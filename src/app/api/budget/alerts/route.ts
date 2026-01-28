@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 import { alertFiltersSchema, acknowledgeAlertSchema } from '@/lib/validations/budget'
 import {
   BUDGET_VARIANCE_THRESHOLD,
@@ -33,12 +34,12 @@ export async function GET(request: NextRequest) {
     })
 
     // Costruisci where clause
-    const where: any = {}
+    const where: Prisma.BudgetAlertWhereInput = {}
 
     // Filtra per sede attraverso il budget
-    const budgetWhere: any = {}
+    const budgetWhere: Prisma.BudgetWhereInput = {}
     if (session.user.role !== 'admin') {
-      budgetWhere.venueId = session.user.venueId
+      budgetWhere.venueId = session.user.venueId || undefined
     } else if (filters.venueId) {
       budgetWhere.venueId = filters.venueId
     }

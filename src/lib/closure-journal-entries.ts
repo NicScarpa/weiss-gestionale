@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
 import { generateClosureDescription } from '@/lib/prima-nota-utils'
 
 interface CashStation {
@@ -31,7 +32,7 @@ export async function generateJournalEntriesFromClosure(
   closure: Closure,
   userId: string
 ): Promise<{ entriesCreated: number; totalDebits: number; totalCredits: number }> {
-  const entries: any[] = []
+  const entries: Prisma.JournalEntryCreateManyInput[] = []
   let totalDebits = 0
   let totalCredits = 0
 

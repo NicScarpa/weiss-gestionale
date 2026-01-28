@@ -231,8 +231,8 @@ export function BudgetCategoryManagement() {
       } else {
         throw new Error(data.error)
       }
-    } catch (error: any) {
-      toast.error(error.message || 'Impossibile salvare la categoria')
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Impossibile salvare la categoria')
     }
   }
 
@@ -256,8 +256,8 @@ export function BudgetCategoryManagement() {
         const data = await res.json()
         throw new Error(data.error)
       }
-    } catch (error: any) {
-      toast.error(error.message || 'Impossibile eliminare la categoria')
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Impossibile eliminare la categoria')
     }
   }
 
@@ -544,7 +544,7 @@ export function BudgetCategoryManagement() {
                 <Label htmlFor="categoryType">Tipo</Label>
                 <Select
                   value={formData.categoryType}
-                  onValueChange={(v) => setFormData({ ...formData, categoryType: v as any })}
+                  onValueChange={(v) => setFormData({ ...formData, categoryType: v as BudgetCategory['categoryType'] })}
                   disabled={editCategory?.isSystem}
                 >
                   <SelectTrigger>
@@ -616,7 +616,7 @@ export function BudgetCategoryManagement() {
                 <Label htmlFor="comparison">Confronto</Label>
                 <Select
                   value={formData.benchmarkComparison}
-                  onValueChange={(v) => setFormData({ ...formData, benchmarkComparison: v as any })}
+                  onValueChange={(v) => setFormData({ ...formData, benchmarkComparison: v as BudgetCategory['benchmarkComparison'] })}
                 >
                   <SelectTrigger>
                     <SelectValue />

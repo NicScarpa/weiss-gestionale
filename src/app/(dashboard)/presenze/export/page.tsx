@@ -207,7 +207,7 @@ export default function ExportPage() {
             Export Presenze per Paghe
           </h1>
           <p className="text-muted-foreground">
-            Genera il file mensile per l'elaborazione delle buste paga
+            Genera il file mensile per l&apos;elaborazione delle buste paga
           </p>
         </div>
       </div>

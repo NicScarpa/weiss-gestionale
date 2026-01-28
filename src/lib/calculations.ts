@@ -176,9 +176,9 @@ export function separateBillsAndCoins(counts: Record<string, number>): {
 
   for (const [denomination, quantity] of Object.entries(counts)) {
     const denomValue = parseFloat(denomination)
-    if (BILL_DENOMINATIONS.includes(denomValue as any)) {
+    if ((BILL_DENOMINATIONS as readonly number[]).includes(denomValue)) {
       bills[denomination] = quantity
-    } else if (COIN_DENOMINATIONS.includes(denomValue as any)) {
+    } else if ((COIN_DENOMINATIONS as readonly number[]).includes(denomValue)) {
       coins[denomination] = quantity
     }
   }

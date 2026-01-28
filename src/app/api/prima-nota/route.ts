@@ -8,6 +8,7 @@ import {
   journalEntryFiltersSchema,
 } from '@/lib/validations/prima-nota'
 import { toDebitCredit, calculateTotals } from '@/lib/prima-nota-utils'
+import type { JournalEntry } from '@/types/prima-nota'
 
 import { logger } from '@/lib/logger'
 /**
@@ -232,7 +233,7 @@ export async function GET(request: NextRequest) {
         ...e,
         debitAmount: e.debitAmount ? Number(e.debitAmount) : undefined,
         creditAmount: e.creditAmount ? Number(e.creditAmount) : undefined,
-      })) as any
+      })) as unknown as JournalEntry[]
     )
 
     // Formatta risposta

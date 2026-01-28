@@ -399,9 +399,9 @@ export async function POST(request: NextRequest) {
         createdBy: session.user.id,
         // Nuovi campi estesi (Phase 1 PRD)
         documentType: datiEstesi?.documentType || fattura.tipoDocumento || 'TD01',
-        lineItems: (datiEstesi?.lineItems ?? Prisma.DbNull) as any,
-        references: (datiEstesi?.references ?? Prisma.DbNull) as any,
-        vatSummary: (datiEstesi?.vatSummary ?? Prisma.DbNull) as any,
+        lineItems: (datiEstesi?.lineItems ?? Prisma.DbNull) as unknown as Prisma.InputJsonValue,
+        references: (datiEstesi?.references ?? Prisma.DbNull) as unknown as Prisma.InputJsonValue,
+        vatSummary: (datiEstesi?.vatSummary ?? Prisma.DbNull) as unknown as Prisma.InputJsonValue,
         causale: datiEstesi?.causale || null,
         deadlines: {
           create: scadenze.map((s, index) => ({

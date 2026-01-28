@@ -7,7 +7,6 @@ import Link from 'next/link'
 import {
   ArrowLeft,
   Pencil,
-  Send,
   CheckCircle,
   XCircle,
   Clock,
@@ -16,13 +15,11 @@ import {
   CloudSun,
   Banknote,
   CreditCard,
-  Trash2,
   Download,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
 import { formatCurrency, CASH_DIFFERENCE_THRESHOLD, getWeatherEmoji } from '@/lib/constants'
 import { ValidateActions } from './ValidateActions'
 import { AdminClosureActions } from './AdminClosureActions'
@@ -141,24 +138,24 @@ export default async function DettaglioChiusuraPage({ params }: Props) {
   const cashTotal = cashSales + expensesTotal
 
   // Calcola differenza cassa per ogni stazione
-  const calculateCashCounted = (cashCount: any): number => {
+  const calculateCashCounted = (cashCount: Record<string, number | unknown> | null): number => {
     if (!cashCount) return 0
     return (
-      (cashCount.bills500 || 0) * 500 +
-      (cashCount.bills200 || 0) * 200 +
-      (cashCount.bills100 || 0) * 100 +
-      (cashCount.bills50 || 0) * 50 +
-      (cashCount.bills20 || 0) * 20 +
-      (cashCount.bills10 || 0) * 10 +
-      (cashCount.bills5 || 0) * 5 +
-      (cashCount.coins2 || 0) * 2 +
-      (cashCount.coins1 || 0) * 1 +
-      (cashCount.coins050 || 0) * 0.5 +
-      (cashCount.coins020 || 0) * 0.2 +
-      (cashCount.coins010 || 0) * 0.1 +
-      (cashCount.coins005 || 0) * 0.05 +
-      (cashCount.coins002 || 0) * 0.02 +
-      (cashCount.coins001 || 0) * 0.01
+      (Number(cashCount.bills500) || 0) * 500 +
+      (Number(cashCount.bills200) || 0) * 200 +
+      (Number(cashCount.bills100) || 0) * 100 +
+      (Number(cashCount.bills50) || 0) * 50 +
+      (Number(cashCount.bills20) || 0) * 20 +
+      (Number(cashCount.bills10) || 0) * 10 +
+      (Number(cashCount.bills5) || 0) * 5 +
+      (Number(cashCount.coins2) || 0) * 2 +
+      (Number(cashCount.coins1) || 0) * 1 +
+      (Number(cashCount.coins050) || 0) * 0.5 +
+      (Number(cashCount.coins020) || 0) * 0.2 +
+      (Number(cashCount.coins010) || 0) * 0.1 +
+      (Number(cashCount.coins005) || 0) * 0.05 +
+      (Number(cashCount.coins002) || 0) * 0.02 +
+      (Number(cashCount.coins001) || 0) * 0.01
     )
   }
 

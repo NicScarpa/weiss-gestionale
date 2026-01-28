@@ -73,14 +73,14 @@ export function Sidebar() {
   // Auto-espandi quando si naviga in sezione Personale
   useEffect(() => {
     if (isInPersonnelSection && !isPersonnelOpen) {
-      setIsPersonnelOpen(true)
+      queueMicrotask(() => setIsPersonnelOpen(true))
     }
   }, [pathname, isInPersonnelSection, isPersonnelOpen])
 
   // Auto-espandi quando si naviga in sezione Impostazioni
   useEffect(() => {
     if (isInSettingsSection && !isSettingsOpen) {
-      setIsSettingsOpen(true)
+      queueMicrotask(() => setIsSettingsOpen(true))
     }
   }, [pathname, isInSettingsSection, isSettingsOpen])
 

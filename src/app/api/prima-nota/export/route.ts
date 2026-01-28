@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 import { renderToBuffer } from '@react-pdf/renderer'
@@ -35,13 +36,13 @@ export async function GET(request: NextRequest) {
     })
 
     // Costruisci where clause
-    const where: any = {}
+    const where: Prisma.JournalEntryWhereInput = {}
 
     // Filtra per sede
     if (session.user.role !== 'admin') {
-      where.venueId = session.user.venueId
+      where.venueId = session.user.venueId || undefined
     } else if (searchParams.get('venueId')) {
-      where.venueId = searchParams.get('venueId')
+      where.venueId = searchParams.get('venueId') || undefined
     }
 
     if (filters.registerType) {
@@ -237,9 +238,9 @@ interface Entry {
   registerType: string
   description: string
   documentRef: string | null
-  debitAmount: any
-  creditAmount: any
-  vatAmount: any
+  debitAmount: Prisma.Decimal | null
+  creditAmount: Prisma.Decimal | null
+  vatAmount: Prisma.Decimal | null
   venue: { name: string; code: string } | null
   account: { code: string; name: string } | null
   closure: { date: Date } | null

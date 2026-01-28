@@ -104,8 +104,10 @@ export function PrimaNotaSettings() {
   }
 
   useEffect(() => {
-    fetchVenues()
-    fetchBalances()
+    queueMicrotask(() => {
+      fetchVenues()
+      fetchBalances()
+    })
   }, [])
 
   // Apri dialog per nuovo saldo
@@ -167,9 +169,9 @@ export function PrimaNotaSettings() {
       setIsDialogOpen(false)
       setEditingBalance(null)
       fetchBalances()
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Errore', error)
-      toast.error(error.message || 'Errore nel salvataggio')
+      toast.error(error instanceof Error ? error.message : 'Errore nel salvataggio')
     } finally {
       setSaving(false)
     }
@@ -194,9 +196,9 @@ export function PrimaNotaSettings() {
       setIsDeleteDialogOpen(false)
       setBalanceToDelete(null)
       fetchBalances()
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Errore', error)
-      toast.error(error.message || 'Errore nell\'eliminazione')
+      toast.error(error instanceof Error ? error.message : 'Errore nell\'eliminazione')
     } finally {
       setSaving(false)
     }
@@ -245,7 +247,7 @@ export function PrimaNotaSettings() {
         <CardContent>
           {balances.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-4">
-              Nessun saldo iniziale configurato. Clicca su "Nuovo Saldo Iniziale" per iniziare.
+              Nessun saldo iniziale configurato. Clicca su &quot;Nuovo Saldo Iniziale&quot; per iniziare.
             </p>
           ) : (
             <div className="space-y-2">
@@ -450,11 +452,12 @@ export function PrimaNotaSettings() {
             <AlertDialogTitle>Elimina Saldo Iniziale</AlertDialogTitle>
             <AlertDialogDescription>
               Sei sicuro di voler eliminare il saldo iniziale di{' '}
-              <strong>{balanceToDelete?.venue.name}</strong> per l'anno{' '}
+              <strong>{balanceToDelete?.venue.name}</strong> per l&apos;anno{' '}
               <strong>{balanceToDelete?.year}</strong>?
               <br />
               I movimenti Prima Nota non saranno eliminati, ma i saldi verranno
               ricalcolati senza questo saldo di apertura.
+
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

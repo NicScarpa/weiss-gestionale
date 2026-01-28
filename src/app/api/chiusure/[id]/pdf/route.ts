@@ -71,6 +71,7 @@ export async function GET(
                 id: true,
                 firstName: true,
                 lastName: true,
+                isFixedStaff: true,
               },
             },
           },
@@ -83,74 +84,86 @@ export async function GET(
       return NextResponse.json({ error: 'Chiusura non trovata' }, { status: 404 })
     }
 
-    // Type assertion per campi Prisma Decimal
-    type DecimalValue = { toNumber: () => number } | null
-    const c = closure as typeof closure & {
-      totalRevenue: DecimalValue
-      totalCash: DecimalValue
-      totalPos: DecimalValue
-      totalExpenses: DecimalValue
-      bankDeposit: DecimalValue
-      cashDifference: DecimalValue
-      netCash: DecimalValue
-      coffeeMachineStart: DecimalValue
-      coffeeMachineEnd: DecimalValue
-      coffeeSold: DecimalValue
-    }
+    // Calcola totali dalle stazioni
+    const stations = closure.stations.map((s) => ({
+      name: s.name,
+      receiptAmount: Number(s.receiptAmount),
+      receiptVat: Number(s.receiptVat),
+      invoiceAmount: Number(s.invoiceAmount),
+      suspendedAmount: Number(s.suspendedAmount),
+      cashAmount: Number(s.cashAmount),
+      posAmount: Number(s.posAmount),
+      totalAmount: Number(s.totalAmount),
+      cashCount: s.cashCount ? {
+        bills500: Number(s.cashCount.bills500),
+        bills200: Number(s.cashCount.bills200),
+        bills100: Number(s.cashCount.bills100),
+        bills50: Number(s.cashCount.bills50),
+        bills20: Number(s.cashCount.bills20),
+        bills10: Number(s.cashCount.bills10),
+        bills5: Number(s.cashCount.bills5),
+        coins2: Number(s.cashCount.coins2),
+        coins1: Number(s.cashCount.coins1),
+        coins050: Number(s.cashCount.coins050),
+        coins020: Number(s.cashCount.coins020),
+        coins010: Number(s.cashCount.coins010),
+        coins005: Number(s.cashCount.coins005),
+        coins002: Number(s.cashCount.coins002),
+        coins001: Number(s.cashCount.coins001),
+        totalCounted: Number(s.cashCount.totalCounted),
+        expectedTotal: Number(s.cashCount.expectedTotal),
+        difference: Number(s.cashCount.difference),
+      } : null,
+    }))
 
-    // Filtra solo le postazioni con dati
-    const stationsWithData = closure.stations.filter(
-      (s) => Number(s.cashAmount) > 0 || Number(s.posAmount) > 0
-    )
+    const totalCash = stations.reduce((sum, s) => sum + s.cashAmount, 0)
+    const totalPos = stations.reduce((sum, s) => sum + s.posAmount, 0)
+    const totalExpenses = closure.expenses.reduce((sum, e) => sum + Number(e.amount), 0)
 
     // Prepara i dati per il PDF
     const pdfData = {
-      ...closure,
-      totalRevenue: Number(c.totalRevenue),
-      totalCash: Number(c.totalCash),
-      totalPos: Number(c.totalPos),
-      totalExpenses: Number(c.totalExpenses),
-      bankDeposit: c.bankDeposit ? Number(c.bankDeposit) : null,
-      cashDifference: Number(c.cashDifference),
-      netCash: Number(c.netCash),
-      coffeeMachineStart: c.coffeeMachineStart ? Number(c.coffeeMachineStart) : null,
-      coffeeMachineEnd: c.coffeeMachineEnd ? Number(c.coffeeMachineEnd) : null,
-      coffeeSold: c.coffeeSold ? Number(c.coffeeSold) : null,
-      stations: stationsWithData.map((s) => ({
-        ...s,
-        totalCash: Number(s.cashAmount),
-        totalPos: Number(s.posAmount),
-        cashCount: s.cashCount ? {
-          bill500: Number(s.cashCount.bills500),
-          bill200: Number(s.cashCount.bills200),
-          bill100: Number(s.cashCount.bills100),
-          bill50: Number(s.cashCount.bills50),
-          bill20: Number(s.cashCount.bills20),
-          bill10: Number(s.cashCount.bills10),
-          bill5: Number(s.cashCount.bills5),
-          coin2: Number(s.cashCount.coins2),
-          coin1: Number(s.cashCount.coins1),
-          coin050: Number(s.cashCount.coins050),
-          coin020: Number(s.cashCount.coins020),
-          coin010: Number(s.cashCount.coins010),
-          coin005: Number(s.cashCount.coins005),
-          coin002: Number(s.cashCount.coins002),
-          coin001: Number(s.cashCount.coins001),
-        } : null,
-      })),
+      id: closure.id,
+      date: closure.date,
+      status: closure.status,
+      notes: closure.notes,
+      isEvent: closure.isEvent,
+      eventName: closure.eventName,
+      weatherMorning: closure.weatherMorning,
+      weatherAfternoon: closure.weatherAfternoon,
+      weatherEvening: closure.weatherEvening,
+      venue: closure.venue,
+      submittedBy: closure.submittedBy,
+      validatedBy: closure.validatedBy,
+      totalCash,
+      totalPos,
+      totalRevenue: totalCash + totalPos,
+      totalExpenses,
+      netCash: totalCash - totalExpenses,
+      stations,
       expenses: closure.expenses.map((e) => ({
-        description: e.payee + (e.description ? ` - ${e.description}` : ''),
+        payee: e.payee,
+        description: e.description,
+        paidBy: e.paidBy,
         amount: Number(e.amount),
-        account: e.account,
       })),
       partials: closure.partials.map((p) => ({
         timeSlot: p.timeSlot,
-        amount: Number(p.receiptProgressive) + Number(p.posProgressive),
+        receiptProgressive: Number(p.receiptProgressive),
+        posProgressive: Number(p.posProgressive),
+        total: Number(p.receiptProgressive) + Number(p.posProgressive),
+        coffeeCounter: p.coffeeCounter,
+        coffeeDelta: p.coffeeDelta,
+        weather: p.weather,
       })),
       attendance: closure.attendance.map((a) => ({
-        status: a.statusCode || a.shift || '-',
-        hoursWorked: a.hours ? Number(a.hours) : null,
-        user: a.user,
+        userName: `${a.user.firstName} ${a.user.lastName}`,
+        shift: a.shift,
+        statusCode: a.statusCode || null,
+        hours: a.hours ? Number(a.hours) : null,
+        hourlyRate: a.hourlyRate ? Number(a.hourlyRate) : null,
+        totalPay: a.totalPay ? Number(a.totalPay) : null,
+        isPaid: a.isPaid,
+        isExtra: !a.user.isFixedStaff,
       })),
     }
 

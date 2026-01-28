@@ -133,7 +133,7 @@ export function ClosureForm({
   }, [formData.date, venueId])
 
   // Handlers
-  const handleFieldChange = (field: keyof ClosureFormData, value: any) => {
+  const handleFieldChange = (field: keyof ClosureFormData, value: ClosureFormData[keyof ClosureFormData]) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
   }
 
