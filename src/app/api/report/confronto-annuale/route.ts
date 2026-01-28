@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { startOfYear, endOfYear, subYears, format, eachMonthOfInterval, startOfMonth, endOfMonth } from 'date-fns'
+import { startOfYear, endOfYear, format, eachMonthOfInterval, startOfMonth, endOfMonth } from 'date-fns'
 import { it } from 'date-fns/locale'
 
 import { logger } from '@/lib/logger'

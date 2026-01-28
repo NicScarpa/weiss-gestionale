@@ -248,7 +248,7 @@ export function createInvalidClosure(): Partial<TestClosureData> {
  * Creates a mock database closure result
  */
 export function createMockDbClosure(input: TestClosureData, id = 'closure-mock-123') {
-  const totalAmount = (input.stations || []).reduce(
+  const _totalAmount = (input.stations || []).reduce(
     (sum, s) => sum + (s.cashAmount || 0) + (s.posAmount || 0),
     0
   )

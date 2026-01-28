@@ -51,7 +51,7 @@ export function UserForm({ mode, initialData, onSubmit, onCancel }: UserFormProp
   const currentUserRole = (session?.user?.role as UserRole) || 'staff'
 
   const [venues, setVenues] = useState<Venue[]>([])
-  const [roles, setRoles] = useState<Role[]>([])
+  const [_roles, setRoles] = useState<Role[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [previewUsername, setPreviewUsername] = useState('')
 

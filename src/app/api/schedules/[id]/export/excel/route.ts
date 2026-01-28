@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import ExcelJS from 'exceljs'
-import { format, eachDayOfInterval, parseISO } from 'date-fns'
+import { format, eachDayOfInterval } from 'date-fns'
 import { it } from 'date-fns/locale'
 
 import { logger } from '@/lib/logger'

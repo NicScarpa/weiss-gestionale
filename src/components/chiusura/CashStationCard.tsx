@@ -69,7 +69,6 @@ export function CashStationCard({
 
   // Calcola totali
   const totalAmount = station.cashAmount + station.posAmount
-  const cashCounted = calculateCashCountTotal(station.cashCount)
 
   // Calcola "non battuto" (totale - corrispettivo scontrini)
   // Rappresenta l'incasso non registrato nei corrispettivi

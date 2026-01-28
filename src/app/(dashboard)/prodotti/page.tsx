@@ -3,8 +3,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
-import { format } from 'date-fns'
-import { it } from 'date-fns/locale'
 import {
   Search,
   Filter,
@@ -17,7 +15,6 @@ import {
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'

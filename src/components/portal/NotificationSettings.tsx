@@ -91,7 +91,7 @@ export function NotificationSettings() {
       } else {
         throw new Error('Failed to save')
       }
-    } catch (error) {
+    } catch {
       toast.error('Impossibile salvare le preferenze')
     } finally {
       setSaving(false)
@@ -116,7 +116,7 @@ export function NotificationSettings() {
 
       if (permission === 'granted') {
         // Register service worker and get push subscription
-        const registration = await navigator.serviceWorker.ready
+        await navigator.serviceWorker.ready
 
         // For now, just enable push in preferences
         const newPreferences = { ...preferences, pushEnabled: true }

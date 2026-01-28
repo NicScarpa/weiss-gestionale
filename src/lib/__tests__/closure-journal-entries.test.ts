@@ -129,7 +129,7 @@ describe('generateJournalEntriesFromClosure', () => {
         ],
       }
 
-      const result = await generateJournalEntriesFromClosure(closure, userId)
+      await generateJournalEntriesFromClosure(closure, userId)
 
       // Cash income should be 500 (cash sales) + 50 (expenses paid) = 550
       expect(prisma.journalEntry.createMany).toHaveBeenCalledWith({

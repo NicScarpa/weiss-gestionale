@@ -14,12 +14,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import {
   ArrowLeft,
   Calendar,
-  Wand2,
   Send,
   Users,
   Clock,
   Euro,
-  RefreshCw,
   FileDown,
   FileSpreadsheet,
 } from 'lucide-react'

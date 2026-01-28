@@ -453,6 +453,7 @@ function Header({ closure }: ClosurePdfProps) {
   return (
     <View style={s.header}>
       <View style={s.headerLeft}>
+{/* eslint-disable-next-line jsx-a11y/alt-text */}
         <Image style={s.logo} src={logoPath} />
         <View style={s.headerInfo}>
           <Text style={s.headerTitle}>CHIUSURA CASSA</Text>

@@ -25,7 +25,7 @@ declare module 'next-auth' {
 }
 
 // JWT type extension
-interface CustomJWT {
+interface _CustomJWT {
   id: string
   email: string | null
   username: string

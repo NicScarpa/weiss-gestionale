@@ -37,7 +37,7 @@ export async function GET() {
     }
 
     // Restituisce tutti i campi del proprio profilo (tranne password)
-    const { passwordHash, ...userWithoutPassword } = user
+    const { passwordHash: _passwordHash, ...userWithoutPassword } = user
 
     return NextResponse.json(userWithoutPassword)
   } catch (error) {
@@ -96,7 +96,7 @@ export async function PATCH(request: NextRequest) {
       },
     })
 
-    const { passwordHash, ...userWithoutPassword } = updatedUser
+    const { passwordHash: _passwordHash, ...userWithoutPassword } = updatedUser
 
     return NextResponse.json(userWithoutPassword)
   } catch (error) {

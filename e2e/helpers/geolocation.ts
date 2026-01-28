@@ -1,4 +1,4 @@
-import { BrowserContext, Page } from '@playwright/test'
+import { BrowserContext } from '@playwright/test'
 
 /**
  * Coordinate test per diverse sedi

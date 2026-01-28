@@ -109,6 +109,7 @@ export function SupplierManagement() {
   useEffect(() => {
     fetchSuppliers()
     fetchAccounts()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showInactive])
 
   // Filtra fornitori per ricerca

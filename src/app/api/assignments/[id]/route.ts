@@ -186,13 +186,13 @@ export async function PUT(
         : assignment.shiftDefinitionId
 
       // Determina l'orario di inizio
-      let targetStartTime = assignment.startTime
+      let _targetStartTime = assignment.startTime
       if (targetShiftDefId && targetShiftDefId !== assignment.shiftDefinitionId) {
         const newShiftDef = await prisma.shiftDefinition.findUnique({
           where: { id: targetShiftDefId },
         })
         if (newShiftDef) {
-          targetStartTime = parseTimeToDate(
+          _targetStartTime = parseTimeToDate(
             newShiftDef.startTime.toTimeString().substring(0, 5),
             targetDate
           )

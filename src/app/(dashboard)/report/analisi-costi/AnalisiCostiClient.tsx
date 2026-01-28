@@ -721,7 +721,7 @@ export function AnalisiCostiClient({
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {data.topExpenses.map((expense, index) => (
+                        {data.topExpenses.map((expense) => (
                           <TableRow key={expense.id}>
                             <TableCell className="text-muted-foreground">{expense.date}</TableCell>
                             <TableCell className="font-medium">{expense.payee}</TableCell>

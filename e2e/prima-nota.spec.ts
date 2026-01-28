@@ -188,7 +188,7 @@ test.describe('Prima Nota - Creazione Movimento', () => {
     ]
 
     for (const element of formElements) {
-      const isVisible = await element.first().isVisible()
+      await element.first().isVisible()
       // Il form dovrebbe avere alcuni di questi campi
     }
 
@@ -237,10 +237,10 @@ test.describe('Prima Nota - Creazione Movimento', () => {
         page.locator('.text-destructive'),
       ]
 
-      let hasError = false
+      let _hasError = false
       for (const indicator of errorIndicators) {
         if (await indicator.first().isVisible()) {
-          hasError = true
+          _hasError = true
           break
         }
       }
@@ -376,7 +376,7 @@ test.describe('Prima Nota - Eliminazione Movimento', () => {
         await page.waitForTimeout(300)
 
         const deleteOption = page.getByText(/elimina|cancella/i)
-        const hasDelete = await deleteOption.isVisible()
+        void await deleteOption.isVisible()
         expect(true).toBe(true)
       }
     }
@@ -425,10 +425,10 @@ test.describe('Prima Nota - Paginazione', () => {
       page.locator('[data-pagination]'),
     ]
 
-    let hasPagination = false
+    let _hasPagination = false
     for (const control of paginationControls) {
       if (await control.first().isVisible()) {
-        hasPagination = true
+        _hasPagination = true
         break
       }
     }

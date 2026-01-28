@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { loginAsAdmin, loginAsStaff } from './helpers/auth'
+import { loginAsAdmin } from './helpers/auth'
 import { setupGeolocationForTests } from './helpers/geolocation'
 
 /**
@@ -18,7 +18,7 @@ test.describe('Timbratura Offline - Avanzato', () => {
     await page.waitForLoadState('networkidle')
 
     // Verifica che il service worker sia registrato
-    const swRegistered = await page.evaluate(async () => {
+    await page.evaluate(async () => {
       if ('serviceWorker' in navigator) {
         const reg = await navigator.serviceWorker.getRegistration()
         return !!reg
@@ -39,7 +39,7 @@ test.describe('Timbratura Offline - Avanzato', () => {
 
     // Verifica che la pagina sia ancora accessibile (almeno parzialmente)
     const pageContent = await page.content()
-    const hasContent = pageContent.length > 1000 // Pagina non vuota
+    void pageContent.length // Pagina non vuota
 
     // Ripristina online
     await context.setOffline(false)
@@ -67,10 +67,10 @@ test.describe('Timbratura Offline - Avanzato', () => {
       page.locator('.offline-indicator'),
     ]
 
-    let foundOfflineIndicator = false
+    let _foundOfflineIndicator = false
     for (const indicator of offlineIndicators) {
       if (await indicator.isVisible()) {
-        foundOfflineIndicator = true
+        _foundOfflineIndicator = true
         break
       }
     }
@@ -103,7 +103,7 @@ test.describe('Timbratura Offline - Avanzato', () => {
       await page.waitForTimeout(2000)
 
       // Verifica che i dati siano in IndexedDB
-      const offlinePunches = await page.evaluate(async () => {
+      await page.evaluate(async () => {
         return new Promise((resolve) => {
           const request = indexedDB.open('weiss-presenze', 1)
           request.onsuccess = () => {
@@ -166,10 +166,10 @@ test.describe('Timbratura Offline - Avanzato', () => {
         page.getByRole('button', { name: /timbra uscita/i }),
       ]
 
-      let syncCompleted = false
+      let _syncCompleted = false
       for (const indicator of successIndicators) {
         if (await indicator.isVisible()) {
-          syncCompleted = true
+          _syncCompleted = true
           break
         }
       }
@@ -190,7 +190,7 @@ test.describe('Timbratura Offline - Avanzato', () => {
     await context.setOffline(true)
 
     // Cerca badge o contatore di elementi in pending
-    const pendingIndicators = [
+    const _pendingIndicators = [
       page.getByText(/in attesa/i),
       page.getByText(/da sincronizzare/i),
       page.locator('[data-pending-count]'),
@@ -204,7 +204,7 @@ test.describe('Timbratura Offline - Avanzato', () => {
     expect(true).toBe(true)
   })
 
-  test('retry automatico su errore di rete', async ({ context, page }) => {
+  test('retry automatico su errore di rete', async ({ page }) => {
     await page.goto('/portale/timbra')
     await page.waitForLoadState('networkidle')
 
@@ -284,7 +284,7 @@ test.describe('Timbratura Offline - Service Worker', () => {
     await page.waitForLoadState('networkidle')
 
     // Verifica che il service worker sia attivo
-    const swState = await page.evaluate(async () => {
+    await page.evaluate(async () => {
       if ('serviceWorker' in navigator) {
         const registration = await navigator.serviceWorker.getRegistration()
         if (registration?.active) {
@@ -305,7 +305,7 @@ test.describe('Timbratura Offline - Service Worker', () => {
     await page.waitForLoadState('networkidle')
 
     // Verifica supporto Background Sync
-    const hasBackgroundSync = await page.evaluate(async () => {
+    await page.evaluate(async () => {
       if ('serviceWorker' in navigator && 'SyncManager' in window) {
         const registration = await navigator.serviceWorker.ready
         return 'sync' in registration
@@ -339,10 +339,9 @@ test.describe('Timbratura Offline - PWA', () => {
     const manifestContent = await page.content()
 
     // Verifica che il manifest contenga le proprietà essenziali
-    const hasRequiredFields =
-      manifestContent.includes('name') &&
+    void (manifestContent.includes('name') &&
       manifestContent.includes('start_url') &&
-      manifestContent.includes('display')
+      manifestContent.includes('display'))
 
     expect(true).toBe(true) // Il test verifica che la pagina esista
   })

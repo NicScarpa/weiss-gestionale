@@ -2,8 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { format, subMonths } from 'date-fns'
-import { it } from 'date-fns/locale'
+import { subMonths } from 'date-fns'
 import {
   Card,
   CardContent,
@@ -23,14 +22,6 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import {
   ChevronLeft,
   Download,
@@ -105,8 +96,7 @@ export default function ExportPage() {
   })
 
   // Fetch preview data (simple count/stats)
-  const { data: previewData, isLoading: isPreviewLoading } =
-    useQuery<PayrollPreview>({
+  useQuery<PayrollPreview>({
       queryKey: [
         'payroll-preview',
         selectedMonth,
@@ -130,7 +120,7 @@ export default function ExportPage() {
           `/api/attendance/records?month=${selectedMonth}&year=${selectedYear}${selectedVenueId !== 'all' ? `&venueId=${selectedVenueId}` : ''}&limit=1`
         )
         if (!countResponse.ok) throw new Error('Errore')
-        const countData = await countResponse.json()
+        await countResponse.json()
 
         return {
           totalUsers: 0, // Lo calcoleremo quando avremo endpoint dedicato

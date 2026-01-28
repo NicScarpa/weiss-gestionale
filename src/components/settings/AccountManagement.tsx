@@ -33,7 +33,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
-import { Calculator, Plus, Pencil, Trash2, Loader2, Search, TrendingUp, TrendingDown, Wallet, CreditCard } from 'lucide-react'
+import { Plus, Pencil, Trash2, Loader2, Search, TrendingUp, TrendingDown, Wallet, CreditCard } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { logger } from '@/lib/logger'
@@ -105,6 +105,7 @@ export function AccountManagement() {
 
   useEffect(() => {
     queueMicrotask(() => fetchAccounts())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showInactive])
 
   // Filtra conti per tipo e ricerca
@@ -220,11 +221,6 @@ export function AccountManagement() {
     } finally {
       setSaving(false)
     }
-  }
-
-  const getTypeIcon = (type: AccountType) => {
-    const typeConfig = ACCOUNT_TYPES.find((t) => t.value === type)
-    return typeConfig?.icon || Calculator
   }
 
   if (loading) {

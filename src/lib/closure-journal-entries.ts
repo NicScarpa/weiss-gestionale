@@ -45,7 +45,7 @@ export async function generateJournalEntriesFromClosure(
     (sum, s) => sum + (Number(s.posAmount) || 0),
     0
   )
-  const totalRevenue = totalCash + totalPos
+  // totalCash + totalPos available if needed for revenue calculation
 
   // Calcola totale uscite pagate in contanti
   const totalExpenses = closure.expenses.reduce(

@@ -5,7 +5,6 @@ import { z } from 'zod'
 import { budgetComparisonFiltersSchema } from '@/lib/validations/budget'
 import {
   type MonthlyValues,
-  type MonthKey,
   MONTH_KEYS,
   MONTH_NUMBER_TO_KEY,
 } from '@/types/budget'

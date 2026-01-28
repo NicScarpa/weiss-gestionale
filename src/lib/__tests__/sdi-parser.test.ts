@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseFatturaPA, calcolaImporti, estraiScadenze, estraiDatiEstesi, parseFatturaPASafe } from '../sdi/parser'
+import { parseFatturaPA, calcolaImporti, estraiScadenze, parseFatturaPASafe } from '../sdi/parser'
 import { TIPI_DOCUMENTO, MODALITA_PAGAMENTO, NATURA_OPERAZIONE } from '../sdi/types'
 
 describe('sdi/parser - parseFatturaPA', () => {

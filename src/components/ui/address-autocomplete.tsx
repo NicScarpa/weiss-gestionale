@@ -3,9 +3,8 @@
 import * as React from 'react'
 import usePlacesAutocomplete, {
     getGeocode,
-    getLatLng,
 } from 'use-places-autocomplete'
-import { Check, ChevronsUpDown, Loader2 } from 'lucide-react'
+import { Check, ChevronsUpDown } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import {
@@ -45,8 +44,6 @@ interface AddressAutocompleteProps {
     placeholder?: string
 }
 
-const libraries: ('places')[] = ['places']
-
 export function AddressAutocomplete({
     value,
     onChange,
@@ -85,6 +82,7 @@ export function AddressAutocomplete({
         if (value && value !== searchValue) {
             setSearchValue(value, false)
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [value]) // Only sync single way to allow typing
 
     const handleSelect = async (address: string) => {
@@ -95,7 +93,7 @@ export function AddressAutocomplete({
 
         // Optional: Get coordinates if needed
         try {
-            const results = await getGeocode({ address })
+            await getGeocode({ address })
             // const { lat, lng } = await getLatLng(results[0])
             // logger.info('📍 Coordinates: ', { lat, lng })
         } catch (error) {

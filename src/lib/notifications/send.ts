@@ -6,7 +6,7 @@
  */
 
 import { prisma } from '@/lib/prisma'
-import { sendPushNotification, sendPushNotificationBatch, isFirebaseConfigured } from './fcm'
+import { sendPushNotificationBatch } from './fcm'
 import type { NotificationLog, NotificationType } from '@prisma/client'
 import {
   NotificationPayload,
@@ -16,7 +16,6 @@ import {
   BulkNotificationResult,
   FCMMessage,
   NotificationChannel,
-  NotificationStatus,
 } from './types'
 
 import { logger } from '@/lib/logger'

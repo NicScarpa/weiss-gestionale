@@ -6,7 +6,6 @@ import {
   subDays,
   subYears,
   startOfDay,
-  endOfDay,
   format,
   getDay,
   getDate,
@@ -406,7 +405,7 @@ function calculateExpectedIncome(
 ): { income: number; source: 'historical' | 'average' | 'hybrid' } {
   const monthDay = format(date, 'MM-dd')
   const dayOfWeek = getDay(date)
-  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
+  const _isWeekend = dayOfWeek === 0 || dayOfWeek === 6
 
   const historicalIncome = historicalData.historicalByDate[monthDay]
   const dowData = historicalData.dayOfWeekAverages[dayOfWeek]

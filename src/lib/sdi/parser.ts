@@ -450,7 +450,7 @@ export function parseFatturaPA(xmlContent: string, fileName?: string): FatturaPa
   // Header trasmissione
   const header = (fattura.FatturaElettronicaHeader || {}) as Record<string, unknown>
   const datiTrasmissione = (header.DatiTrasmissione || {}) as Record<string, unknown>
-  const idTrasmittente = (datiTrasmissione.IdTrasmittente || {}) as Record<string, unknown>
+  // IdTrasmittente available via datiTrasmissione.IdTrasmittente if needed
 
   // Cedente e Cessionario
   const cedente = (header.CedentePrestatore || {}) as Record<string, unknown>
@@ -777,7 +777,6 @@ export function parseFatturaPASafe(xmlContent: string, fileName?: string): Parse
 
     // Warning per P.IVA non standard
     if (cedenteParsed.partitaIva) {
-      const rawVat = getText((cedente.DatiAnagrafici as Record<string, unknown>)?.IdFiscaleIVA as Record<string, unknown> || {})
       if (cedenteParsed.partitaIva.length !== 11) {
         warnings.push({
           code: 'VAT_NON_STANDARD_LENGTH',

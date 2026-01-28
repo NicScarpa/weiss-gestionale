@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
-import { validateFCMToken } from '@/lib/notifications/fcm'
 
 import { logger } from '@/lib/logger'
 const subscribeSchema = z.object({
@@ -149,7 +148,7 @@ export async function DELETE(request: NextRequest) {
 }
 
 // GET /api/notifications/subscribe - Lista subscriptions dell'utente
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const session = await auth()
 

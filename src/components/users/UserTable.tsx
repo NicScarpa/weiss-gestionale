@@ -105,7 +105,7 @@ export function UserTable({ users, isLoading, onResetPassword, onToggleActive }:
             : `${actionDialog.user.firstName} ${actionDialog.user.lastName} riattivato`
         )
       }
-    } catch (error) {
+    } catch (_error) {
       toast.error('Errore durante l\'operazione')
     } finally {
       setIsProcessing(false)

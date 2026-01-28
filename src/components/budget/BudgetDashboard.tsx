@@ -18,7 +18,6 @@ import { BudgetCategoryRow } from './BudgetCategoryRow'
 import { BudgetTargetEditor } from './BudgetTargetEditor'
 import { BudgetSetupWizard } from './BudgetSetupWizard'
 import { BudgetAlerts } from './BudgetAlerts'
-import { MONTH_LABELS_FULL } from '@/types/budget'
 
 interface MonthlyWithAnnual {
   jan: number

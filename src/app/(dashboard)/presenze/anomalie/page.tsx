@@ -3,13 +3,9 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { it } from 'date-fns/locale'
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
@@ -110,12 +106,9 @@ export default function AnomaliePage() {
   })
 
   const anomalies = anomaliesData?.data || []
-  const totalCount = anomaliesData?.pagination?.total || 0
 
   // Count by status
   const pendingCount = anomalies.filter((a) => a.status === 'PENDING').length
-  const approvedCount = anomalies.filter((a) => a.status === 'APPROVED').length
-  const rejectedCount = anomalies.filter((a) => a.status === 'REJECTED').length
 
   return (
     <div className="container mx-auto py-6 space-y-6">
