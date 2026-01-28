@@ -71,8 +71,6 @@ export function BudgetKPICards({ kpis, selectedMonth }: BudgetKPICardsProps) {
   const revenueValue = getMonthValue(kpis.totalRevenue, selectedMonth)
   const costsValue = getMonthValue(kpis.totalCosts, selectedMonth)
   const profitValue = getMonthValue(kpis.profit, selectedMonth)
-  const marginValue = getMonthValue(kpis.profitMargin, selectedMonth)
-
   const revenueVsTarget = getPercentChange(targetValue, revenueValue)
   const costsPercent = revenueValue > 0 ? (costsValue / revenueValue) * 100 : 0
   const profitPercent = revenueValue > 0 ? (profitValue / revenueValue) * 100 : 0

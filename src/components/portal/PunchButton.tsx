@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { getCurrentPosition, VenueLocation } from '@/lib/geolocation'
@@ -108,7 +108,7 @@ export function PunchButton({
   }, [])
 
   // Funzione per sincronizzare - usa useCallback per avere sempre i valori aggiornati
-  const performSync = async () => {
+  const performSync = useCallback(async () => {
     // Controlla direttamente da IndexedDB per evitare stale closures
     const currentPending = await getPendingPunchCount()
     if (currentPending === 0) return
@@ -131,14 +131,14 @@ export function PunchButton({
     } finally {
       setIsSyncing(false)
     }
-  }
+  }, [queryClient])
 
   // Sincronizza quando torna online
   useEffect(() => {
     if (isOnline && !isSyncing) {
       performSync()
     }
-  }, [isOnline])
+  }, [isOnline, isSyncing, performSync])
 
   // Ascolta messaggi dal service worker per Background Sync
   useEffect(() => {
@@ -153,7 +153,7 @@ export function PunchButton({
     return () => {
       navigator.serviceWorker?.removeEventListener('message', handleServiceWorkerMessage)
     }
-  }, [])
+  }, [performSync])
 
   const config = buttonConfig[status]
   const Icon = config.icon
@@ -266,9 +266,9 @@ export function PunchButton({
         longitude: position.longitude,
         accuracy: position.accuracy,
       })
-    } catch (error) {
+    } catch (err) {
       // Se fallisce la rete, salva offline
-      if (!isOnline || (error instanceof Error && error.message.includes('fetch'))) {
+      if (!isOnline || (err instanceof Error && err.message.includes('fetch'))) {
         try {
           let position: { latitude?: number; longitude?: number; accuracy?: number } = {}
           try {
@@ -302,12 +302,12 @@ export function PunchButton({
           }
 
           setPendingCount(prev => prev + 1)
-        } catch (offlineError) {
+        } catch {
           toast.error('Errore nel salvataggio offline')
         }
       } else {
         toast.error(
-          (error as { message?: string })?.message ||
+          (err as { message?: string })?.message ||
             'Errore nella timbratura'
         )
       }
@@ -436,7 +436,7 @@ export function BreakButton({
         longitude: position.longitude,
         accuracy: position.accuracy,
       })
-    } catch (error) {
+    } catch {
       try {
         await punchMutation.mutateAsync({
           punchType: 'BREAK_START',

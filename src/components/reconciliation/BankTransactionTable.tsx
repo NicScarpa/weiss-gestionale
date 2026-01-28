@@ -22,7 +22,6 @@ import { cn } from '@/lib/utils'
 import { formatCurrency, formatDateShort } from '@/lib/constants'
 import {
   CheckCircle2,
-  XCircle,
   MoreHorizontal,
   Link2,
   Ban,

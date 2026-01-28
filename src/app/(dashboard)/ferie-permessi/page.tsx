@@ -5,7 +5,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
 import { it } from 'date-fns/locale'
 import {
-  Clock,
   CheckCircle2,
   XCircle,
   Filter,

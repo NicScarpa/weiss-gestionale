@@ -10,9 +10,6 @@ import {
 } from './db'
 
 import { logger } from '@/lib/logger'
-// Sync status type
-type SyncStatus = 'idle' | 'syncing' | 'success' | 'error'
-
 // Event types for sync updates
 type SyncEventType = 'sync-start' | 'sync-progress' | 'sync-complete' | 'sync-error' | 'online' | 'offline'
 

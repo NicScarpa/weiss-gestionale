@@ -7,7 +7,6 @@
 
 import { prisma } from '@/lib/prisma'
 import { sendNotification, sendBulkNotification } from './send'
-import { NotificationType } from './types'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 

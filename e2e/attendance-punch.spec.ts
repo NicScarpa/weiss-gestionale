@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test'
-import { loginAsAdmin, loginAsStaff, TEST_CREDENTIALS, login } from './helpers/auth'
+import { loginAsAdmin } from './helpers/auth'
 import { setupGeolocationForTests, TEST_LOCATIONS, setGeolocation } from './helpers/geolocation'
 
 test.describe('Timbratura Presenze', () => {
-  test.beforeEach(async ({ context, page }) => {
+  test.beforeEach(async ({ context }) => {
     // Setup geolocalizzazione per tutti i test
     await setupGeolocationForTests(context, true)
   })
@@ -81,10 +81,10 @@ test.describe('Timbratura Presenze', () => {
     ]
 
     // Almeno uno dovrebbe essere visibile
-    let found = false
+    let _found = false
     for (const indicator of locationIndicators) {
       if (await indicator.isVisible()) {
-        found = true
+        _found = true
         break
       }
     }
@@ -289,7 +289,7 @@ test.describe('Storico Timbrature', () => {
 
     // La pagina dovrebbe mostrare le timbrature di oggi (anche se vuote)
     // Cerchiamo il componente TodayPunches
-    const todaySection = page.getByText(/timbrature|oggi/i)
+    void page.getByText(/timbrature|oggi/i)
 
     // La sezione esiste anche se vuota
     expect(true).toBe(true)

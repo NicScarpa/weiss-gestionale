@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -155,7 +155,7 @@ export function AttendanceSection({
   const [hasLoadedFromSchedule, setHasLoadedFromSchedule] = useState(false)
 
   // Query per turni schedulati
-  const { data: scheduledShifts, refetch: refetchShifts, isLoading: loadingShifts } = useQuery({
+  const { data: scheduledShifts } = useQuery({
     queryKey: ['scheduled-shifts', closureDate, venueId],
     queryFn: () => fetchScheduledShifts(closureDate!, venueId),
     enabled: !!closureDate && !hasLoadedFromSchedule,
@@ -169,7 +169,7 @@ export function AttendanceSection({
   })
 
   // Carica presenze da turni schedulati e timbrature effettive
-  const loadFromSchedule = () => {
+  const loadFromSchedule = useCallback(() => {
     if (!scheduledShifts || scheduledShifts.length === 0) return
 
     const newAttendance: AttendanceData[] = scheduledShifts.map((shift) => {
@@ -212,7 +212,7 @@ export function AttendanceSection({
 
     onChange(newAttendance)
     setHasLoadedFromSchedule(true)
-  }
+  }, [scheduledShifts, actualAttendance, onChange])
 
   // Pre-popola da turni schedulati se non ci sono presenze e ci sono turni
   useEffect(() => {
@@ -224,7 +224,7 @@ export function AttendanceSection({
     ) {
       queueMicrotask(() => loadFromSchedule())
     }
-  }, [scheduledShifts])
+  }, [scheduledShifts, attendance.length, hasLoadedFromSchedule, loadFromSchedule])
 
   // Separa staff fisso da extra
   const fixedStaff = staffMembers.filter((s) => s.isFixedStaff)

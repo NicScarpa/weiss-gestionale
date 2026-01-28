@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma'
 
 import { logger } from '@/lib/logger'
 // GET /api/attendance/policies - Lista policy per sede
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const session = await auth()
 

@@ -36,15 +36,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
 import { formatCurrency } from '@/lib/constants'
 import { toast } from 'sonner'
 import {
   type MonthKey,
-  MONTH_KEYS,
-  MONTH_LABELS,
-  BUDGET_VARIANCE_THRESHOLD,
 } from '@/types/budget'
 import {
   formatVariancePercent,

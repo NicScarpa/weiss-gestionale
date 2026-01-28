@@ -10,7 +10,7 @@ import {
   UseGeolocationOptions,
   DEFAULT_GEOLOCATION_OPTIONS,
 } from './types'
-import { calculateDistance, isWithinRadius, formatDistance } from './haversine'
+import { calculateDistance, isWithinRadius } from './haversine'
 
 // Re-export utilities
 export { calculateDistance, isWithinRadius, formatDistance } from './haversine'

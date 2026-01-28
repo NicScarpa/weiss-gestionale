@@ -23,15 +23,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
-import { Plus, Trash2, Edit, GripVertical, Wand2, ChevronRight, Loader2, Link2 } from 'lucide-react'
+import { Plus, Trash2, Edit, GripVertical, Wand2, Loader2, Link2 } from 'lucide-react'
 import { AccountMappingManager } from './AccountMappingManager'
 
 import { logger } from '@/lib/logger'
@@ -117,6 +111,7 @@ export function BudgetCategoryManagement() {
 
   useEffect(() => {
     fetchVenues()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -124,6 +119,7 @@ export function BudgetCategoryManagement() {
       fetchCategories()
       fetchUnmappedAccounts()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedVenueId])
 
   const fetchVenues = async () => {
@@ -186,7 +182,7 @@ export function BudgetCategoryManagement() {
       } else {
         throw new Error(data.error)
       }
-    } catch (error) {
+    } catch (_error) {
       toast.error('Impossibile creare le categorie predefinite')
     } finally {
       setSeeding(false)

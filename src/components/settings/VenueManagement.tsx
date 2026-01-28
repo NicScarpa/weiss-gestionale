@@ -81,6 +81,7 @@ export function VenueManagement() {
 
   useEffect(() => {
     fetchVenues()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showInactive])
 
   // Apri dialog per nuova sede

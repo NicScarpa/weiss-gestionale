@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { upsertBudgetLinesSchema } from '@/lib/validations/budget'
-import { calculateAnnualTotal, budgetLineToMonthlyValues } from '@/lib/budget-utils'
+import { calculateAnnualTotal } from '@/lib/budget-utils'
 
 import { logger } from '@/lib/logger'
 // GET /api/budget/[id]/lines - Lista righe budget

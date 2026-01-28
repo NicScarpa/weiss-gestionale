@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft,
@@ -9,8 +8,6 @@ import {
   Plus,
   Trash2,
   Pencil,
-  Eye,
-  AlertTriangle,
   LayoutDashboard,
   Table as TableIcon,
 } from 'lucide-react'
@@ -20,7 +17,6 @@ import { Label } from '@/components/ui/label'
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
@@ -92,7 +88,6 @@ export function BudgetDetailClient({
   isEditing: initialEditing,
   canEdit,
 }: BudgetDetailClientProps) {
-  const router = useRouter()
   const [lines, setLines] = useState<BudgetLine[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)

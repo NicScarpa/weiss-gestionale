@@ -30,7 +30,7 @@ const preferencesSchema = z.object({
 })
 
 // GET /api/notifications/preferences - Ottieni preferenze utente
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const session = await auth()
 
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Rimuovi campi non necessari per il client
-    const { id, userId, createdAt, updatedAt, ...prefs } = preferences
+    const { id: _id, userId: _userId, createdAt: _createdAt, updatedAt: _updatedAt, ...prefs } = preferences
 
     return NextResponse.json({ preferences: prefs })
   } catch (error) {
@@ -85,7 +85,7 @@ export async function PUT(request: NextRequest) {
     })
 
     // Rimuovi campi non necessari per il client
-    const { id, userId, createdAt, updatedAt, ...prefs } = preferences
+    const { id: _id, userId: _userId, createdAt: _createdAt, updatedAt: _updatedAt, ...prefs } = preferences
 
     return NextResponse.json({
       success: true,

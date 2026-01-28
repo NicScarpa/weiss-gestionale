@@ -2,7 +2,6 @@ import { z } from 'zod'
 import {
   ATTENDANCE_CODES,
   CLOSURE_STATUS,
-  ALL_DENOMINATIONS,
   DEFAULT_CASH_FLOAT
 } from '@/lib/constants'
 

@@ -1,7 +1,6 @@
 'use client'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
 import { AlertTriangle, AlertCircle, Info } from 'lucide-react'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
@@ -35,28 +34,6 @@ export function ScheduleWarnings({ warnings }: ScheduleWarningsProps) {
   const highSeverity = warnings.filter(w => w.severity === 'high')
   const mediumSeverity = warnings.filter(w => w.severity === 'medium')
   const lowSeverity = warnings.filter(w => w.severity === 'low')
-
-  const getIcon = (severity: string) => {
-    switch (severity) {
-      case 'high':
-        return <AlertCircle className="h-4 w-4" />
-      case 'medium':
-        return <AlertTriangle className="h-4 w-4" />
-      default:
-        return <Info className="h-4 w-4" />
-    }
-  }
-
-  const getSeverityBadge = (severity: string) => {
-    switch (severity) {
-      case 'high':
-        return <Badge variant="destructive">Critico</Badge>
-      case 'medium':
-        return <Badge className="bg-amber-100 text-amber-700">Attenzione</Badge>
-      default:
-        return <Badge variant="secondary">Info</Badge>
-    }
-  }
 
   return (
     <div className="space-y-3">

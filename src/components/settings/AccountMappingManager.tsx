@@ -103,7 +103,6 @@ function DroppableCategory({
   category,
   mappedAccounts,
   onRemoveMapping,
-  allAccounts,
 }: {
   category: BudgetCategory
   mappedAccounts: Account[]
@@ -185,12 +184,14 @@ export function AccountMappingManager() {
 
   useEffect(() => {
     fetchVenues()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
     if (selectedVenueId) {
       fetchData()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedVenueId])
 
   const fetchVenues = async () => {

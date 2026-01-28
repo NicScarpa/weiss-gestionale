@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { UserPlus, ArrowLeft, Loader2, User, Briefcase, Euro, Calendar } from 'lucide-react'
+import { UserPlus, ArrowLeft, Loader2, User, Briefcase, Euro } from 'lucide-react'
 import Link from 'next/link'
 import { AddressAutocomplete } from '@/components/ui/address-autocomplete'
 

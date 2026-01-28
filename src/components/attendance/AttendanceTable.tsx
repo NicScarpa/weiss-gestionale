@@ -12,7 +12,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { AlertTriangle, Clock, Coffee, Home, LogIn, Calendar } from 'lucide-react'
 import { format } from 'date-fns'
-import { it } from 'date-fns/locale'
 
 interface AttendanceSummaryItem {
   assignment: {

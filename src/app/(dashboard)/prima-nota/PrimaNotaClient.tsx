@@ -10,7 +10,6 @@ import {
   RefreshCw,
   Wallet,
   Building2,
-  ArrowRightLeft,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -222,30 +221,6 @@ export function PrimaNotaClient({
     toast.success('Movimento eliminato')
     fetchEntries()
     fetchBalances()
-  }
-
-  // Bank deposit (versamento)
-  const handleBankDeposit = async (data: JournalEntryFormData) => {
-    const res = await fetch('/api/prima-nota/versamento', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        date: data.date,
-        amount: data.amount,
-        description: data.description,
-        documentRef: data.documentRef,
-      }),
-    })
-
-    if (!res.ok) {
-      const error = await res.json()
-      throw new Error(error.error || 'Errore nel versamento')
-    }
-
-    setIsFormOpen(false)
-    fetchEntries()
-    fetchBalances()
-    toast.success('Versamento registrato')
   }
 
   const handleEdit = (entry: JournalEntry) => {

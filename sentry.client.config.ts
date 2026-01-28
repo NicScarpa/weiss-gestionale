@@ -49,7 +49,7 @@ Sentry.init({
   ],
 
   // Prima di inviare l'evento
-  beforeSend(event, hint) {
+  beforeSend(event, _hint) {
     // Non inviare errori in development (a meno che DSN sia configurato)
     if (process.env.NODE_ENV === 'development' && !process.env.NEXT_PUBLIC_SENTRY_DSN) {
       return null

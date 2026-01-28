@@ -6,26 +6,18 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSession } from 'next-auth/react'
 import { format } from 'date-fns'
-import { it } from 'date-fns/locale'
 import {
   Upload,
   FileText,
   Check,
   AlertCircle,
-  Building2,
-  CreditCard,
   Loader2,
   X,
-  Plus,
-  ShieldCheck,
-  ChevronDown,
-  ChevronUp,
   Pencil,
   ArrowRight,
-  Play,
   Archive,
   Package
 } from 'lucide-react'
@@ -35,7 +27,6 @@ import {
   extractInvoicesFromZip,
   createFileFromExtracted,
   getZipErrorMessage,
-  type ZipExtractionResult,
 } from '@/lib/zip-utils'
 import {
   Dialog,
@@ -56,12 +47,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Separator } from '@/components/ui/separator'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
 import { Progress } from '@/components/ui/progress'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { toast } from 'sonner'
@@ -236,7 +221,7 @@ const formatCurrency = (value: number) => {
 export function InvoiceImportDialog({
   open,
   onOpenChange,
-  onSuccess,
+  onSuccess: _onSuccess,
 }: InvoiceImportDialogProps) {
   const { data: session } = useSession()
   const queryClient = useQueryClient()
@@ -247,13 +232,13 @@ export function InvoiceImportDialog({
   const [currentReviewIndex, setCurrentReviewIndex] = useState(0)
 
   // ZIP Extraction State
-  const [zipExtraction, setZipExtraction] = useState<ZipExtractionState | null>(null)
+  const [, setZipExtraction] = useState<ZipExtractionState | null>(null)
   
   // Review Item State
   const [selectedVenueId, setSelectedVenueId] = useState<string>('')
   const [selectedAccountId, setSelectedAccountId] = useState<string>('_none')
   const [createNewSupplier, setCreateNewSupplier] = useState(false)
-  const [supplierFormOpen, setSupplierFormOpen] = useState(true)
+  const [, setSupplierFormOpen] = useState(true)
   const [editableSupplier, setEditableSupplier] = useState<EditableSupplierData>({
     name: '', vatNumber: '', fiscalCode: '', address: '', city: '', province: '', postalCode: '',
   })
@@ -493,7 +478,7 @@ export function InvoiceImportDialog({
     } else {
       setStep('summary')
     }
-  }, [files, selectedVenueId, session, venues, queryClient, onSuccess])
+  }, [files, selectedVenueId, session, venues, queryClient])
 
   // Handle Review Actions
   const handleImportReviewItem = async () => {

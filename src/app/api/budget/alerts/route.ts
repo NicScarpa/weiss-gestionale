@@ -5,9 +5,7 @@ import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 import { alertFiltersSchema, acknowledgeAlertSchema } from '@/lib/validations/budget'
 import {
-  BUDGET_VARIANCE_THRESHOLD,
   MONTH_LABELS_FULL,
-  type MonthKey,
 } from '@/types/budget'
 import { monthNumberToKey } from '@/lib/budget-utils'
 

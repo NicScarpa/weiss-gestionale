@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { startOfMonth, endOfMonth, subMonths, format, parseISO, eachDayOfInterval } from 'date-fns'
+import { startOfMonth, endOfMonth, subMonths, format, parseISO } from 'date-fns'
 import { it } from 'date-fns/locale'
 import { logger } from '@/lib/logger'
 // GET /api/report/incassi-giornalieri - Report incassi giornalieri
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     const dateFrom = searchParams.get('dateFrom')
     const dateTo = searchParams.get('dateTo')
     const venueId = searchParams.get('venueId')
-    const groupBy = searchParams.get('groupBy') || 'day' // day, week, month
+    const _groupBy = searchParams.get('groupBy') || 'day' // day, week, month
 
     // Date di default: mese corrente
     const now = new Date()

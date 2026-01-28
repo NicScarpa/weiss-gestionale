@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     const dateFrom = searchParams.get('dateFrom')
     const dateTo = searchParams.get('dateTo')
     const venueId = searchParams.get('venueId')
-    const groupBy = searchParams.get('groupBy') || 'category' // category, payee, month
+    const _groupBy = searchParams.get('groupBy') || 'category' // category, payee, month
 
     // Date di default: anno corrente
     const now = new Date()

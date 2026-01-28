@@ -1,14 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import {
   Plus,
   Eye,
   Pencil,
   Trash2,
-  Calculator,
   AlertTriangle,
   BarChart3,
   FileText,
@@ -19,7 +17,6 @@ import { Button } from '@/components/ui/button'
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
@@ -92,7 +89,6 @@ interface BudgetListProps {
 }
 
 export function BudgetList({ venueId, isAdmin }: BudgetListProps) {
-  const router = useRouter()
   const [budgets, setBudgets] = useState<Budget[]>([])
   const [loading, setLoading] = useState(true)
   const [yearFilter, setYearFilter] = useState<string>('all')
@@ -102,7 +98,7 @@ export function BudgetList({ venueId, isAdmin }: BudgetListProps) {
   const availableYears = getAvailableYears()
 
   // Fetch budgets
-  const fetchBudgets = async () => {
+  const fetchBudgets = useCallback(async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams()
@@ -121,11 +117,11 @@ export function BudgetList({ venueId, isAdmin }: BudgetListProps) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [venueId, yearFilter, statusFilter])
 
   useEffect(() => {
     fetchBudgets()
-  }, [venueId, yearFilter, statusFilter])
+  }, [fetchBudgets])
 
   // Delete budget
   const handleDelete = async () => {

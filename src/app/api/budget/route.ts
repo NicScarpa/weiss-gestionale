@@ -7,7 +7,6 @@ import {
   createBudgetSchema,
   budgetFiltersSchema,
 } from '@/lib/validations/budget'
-import { calculateAnnualTotal } from '@/lib/budget-utils'
 
 import { logger } from '@/lib/logger'
 // GET /api/budget - Lista budget con filtri

@@ -11,8 +11,6 @@ import {
   ChevronRight,
   ChevronDown,
   ChevronUp,
-  ArrowUpRight,
-  ArrowDownLeft,
   Link as LinkIcon,
   FileText,
   User,
@@ -121,32 +119,6 @@ export function JournalEntryTable({
       default:
         return <Badge variant="outline">{registerType}</Badge>
     }
-  }
-
-  // Formatta importo con colore
-  const formatAmount = (entry: JournalEntry) => {
-    const debit = entry.debitAmount || 0
-    const credit = entry.creditAmount || 0
-
-    if (debit > 0) {
-      return (
-        <span className="text-green-600 font-mono font-medium flex items-center gap-1">
-          <ArrowDownLeft className="h-3 w-3" />
-          +{formatCurrency(debit)}
-        </span>
-      )
-    }
-
-    if (credit > 0) {
-      return (
-        <span className="text-red-600 font-mono font-medium flex items-center gap-1">
-          <ArrowUpRight className="h-3 w-3" />
-          -{formatCurrency(credit)}
-        </span>
-      )
-    }
-
-    return <span className="text-muted-foreground font-mono">€0,00</span>
   }
 
   // Formatta saldo progressivo

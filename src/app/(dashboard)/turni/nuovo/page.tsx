@@ -42,7 +42,7 @@ export default function NuovoPianificazionePage() {
     notes: '',
   })
 
-  const { data: venuesData, isLoading: loadingVenues } = useQuery({
+  const { data: venuesData } = useQuery({
     queryKey: ['venues'],
     queryFn: async () => {
       const res = await fetch('/api/venues')

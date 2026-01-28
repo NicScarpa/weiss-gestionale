@@ -43,7 +43,7 @@ export default function LoginPage() {
         router.push(callbackUrl)
         router.refresh()
       }
-    } catch (err) {
+    } catch (_err) {
       setLoginError('Si è verificato un errore durante il login')
     } finally {
       setIsLoading(false)
