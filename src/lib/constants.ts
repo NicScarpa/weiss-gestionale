@@ -39,6 +39,21 @@ export const CLOSURE_STATUS = {
 
 export type ClosureStatus = typeof CLOSURE_STATUS[keyof typeof CLOSURE_STATUS]
 
+// Emoji meteo condivise
+export const WEATHER_EMOJI: Record<string, string> = {
+  sunny: '☀️',
+  cloudy: '☁️',
+  rainy: '🌧️',
+  stormy: '⛈️',
+  snowy: '❄️',
+  foggy: '🌫️',
+}
+
+export function getWeatherEmoji(value?: string | null): string {
+  if (!value) return ''
+  return WEATHER_EMOJI[value] ?? value
+}
+
 // Formattazione importi in italiano
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('it-IT', {

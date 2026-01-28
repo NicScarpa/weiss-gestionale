@@ -61,6 +61,16 @@ export async function GET(request: NextRequest) {
             amount: true,
           },
         },
+        partials: {
+          select: {
+            timeSlot: true,
+            receiptProgressive: true,
+            posProgressive: true,
+            coffeeDelta: true,
+            weather: true,
+          },
+          orderBy: { timeSlot: 'asc' as const },
+        },
       },
       orderBy: { date: 'asc' },
     })
@@ -93,6 +103,13 @@ export async function GET(request: NextRequest) {
         netTotal: grossTotal - expensesTotal,
         isEvent: closure.isEvent,
         eventName: closure.eventName,
+        partials: closure.partials.map((p) => ({
+          timeSlot: p.timeSlot,
+          receiptProgressive: Number(p.receiptProgressive) || 0,
+          posProgressive: Number(p.posProgressive) || 0,
+          coffeeDelta: p.coffeeDelta,
+          weather: p.weather,
+        })),
       }
     })
 

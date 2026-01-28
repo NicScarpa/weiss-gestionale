@@ -1,9 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Fragment } from 'react'
 import Link from 'next/link'
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
-import { it } from 'date-fns/locale'
 import {
   ArrowLeft,
   TrendingUp,
@@ -14,9 +13,10 @@ import {
   Banknote,
   CreditCard,
   Receipt,
-  Minus,
   Trophy,
   AlertTriangle,
+  ChevronRight,
+  ChevronDown,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -37,14 +37,23 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { formatCurrency } from '@/lib/constants'
+import { formatCurrency, getWeatherEmoji } from '@/lib/constants'
 import { toast } from 'sonner'
 
 import { logger } from '@/lib/logger'
+
 interface Venue {
   id: string
   name: string
   code: string
+}
+
+interface PartialData {
+  timeSlot: string
+  receiptProgressive: number
+  posProgressive: number
+  coffeeDelta: number | null
+  weather: string | null
 }
 
 interface DailyData {
@@ -59,6 +68,7 @@ interface DailyData {
   netTotal: number
   isEvent: boolean
   eventName: string | null
+  partials: PartialData[]
 }
 
 interface ReportData {
@@ -97,6 +107,102 @@ interface ReportData {
   }
 }
 
+interface TimeSlotBreakdown {
+  label: string
+  receipt: number
+  pos: number
+  cash: number
+  coffeeDelta: number | null
+  weather: string | null
+}
+
+const TIME_SLOT_LABELS = ['AM', 'APE', 'PM']
+
+function computeTimeSlotBreakdown(
+  partials: PartialData[],
+  dailyGross: number,
+  dailyPos: number,
+): TimeSlotBreakdown[] {
+  if (partials.length === 0) return []
+
+  const sorted = [...partials].sort(
+    (a, b) => a.timeSlot.localeCompare(b.timeSlot)
+  )
+
+  const result: TimeSlotBreakdown[] = []
+
+  for (let i = 0; i < sorted.length; i++) {
+    const prevReceipt = i === 0 ? 0 : sorted[i - 1].receiptProgressive
+    const prevPos = i === 0 ? 0 : sorted[i - 1].posProgressive
+    const receipt = Math.max(0, sorted[i].receiptProgressive - prevReceipt)
+    const pos = Math.max(0, sorted[i].posProgressive - prevPos)
+    const cash = Math.max(0, receipt - pos)
+
+    result.push({
+      label: TIME_SLOT_LABELS[i] || `P${i + 1}`,
+      receipt,
+      pos,
+      cash,
+      coffeeDelta: sorted[i].coffeeDelta,
+      weather: sorted[i].weather,
+    })
+  }
+
+  // Periodo finale: da ultimo progressivo al totale giornaliero
+  const lastReceipt = sorted[sorted.length - 1].receiptProgressive
+  const lastPos = sorted[sorted.length - 1].posProgressive
+  const finalReceipt = Math.max(0, dailyGross - lastReceipt)
+  const finalPos = Math.max(0, dailyPos - lastPos)
+  const finalCash = Math.max(0, finalReceipt - finalPos)
+
+  result.push({
+    label: TIME_SLOT_LABELS[sorted.length] || 'PM',
+    receipt: finalReceipt,
+    pos: finalPos,
+    cash: finalCash,
+    coffeeDelta: null,
+    weather: null,
+  })
+
+  return result
+}
+
+function TimeSlotBreakdownView({ slots }: { slots: TimeSlotBreakdown[] }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 py-2">
+      {slots.map((slot) => (
+        <div
+          key={slot.label}
+          className="flex items-center gap-3 rounded-lg border bg-background px-3 py-2"
+        >
+          <div className="flex flex-col items-center min-w-[36px]">
+            <span className="text-xs font-semibold text-muted-foreground">{slot.label}</span>
+            {slot.weather && (
+              <span className="text-sm">{getWeatherEmoji(slot.weather)}</span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+            <span className="flex items-center gap-1">
+              <Banknote className="h-3 w-3 text-green-600" />
+              <span className="font-mono">{formatCurrency(slot.cash)}</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <CreditCard className="h-3 w-3 text-blue-600" />
+              <span className="font-mono">{formatCurrency(slot.pos)}</span>
+            </span>
+            {slot.coffeeDelta != null && (
+              <span className="flex items-center gap-1">
+                <span>☕</span>
+                <span className="font-mono">{slot.coffeeDelta}</span>
+              </span>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 interface DailyRevenueClientProps {
   venueId?: string
   isAdmin: boolean
@@ -106,11 +212,15 @@ interface DailyRevenueClientProps {
 export function DailyRevenueClient({ venueId, isAdmin, venues }: DailyRevenueClientProps) {
   const [data, setData] = useState<ReportData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
   const [filters, setFilters] = useState({
     dateFrom: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
     dateTo: format(endOfMonth(new Date()), 'yyyy-MM-dd'),
     venueId: venueId || '',
   })
+
+  const toggleExpand = (key: string) =>
+    setExpandedId((prev) => (prev === key ? null : key))
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -169,7 +279,7 @@ export function DailyRevenueClient({ venueId, isAdmin, venues }: DailyRevenueCli
   const exportCSV = () => {
     if (!data) return
 
-    const headers = ['Data', 'Giorno', 'Sede', 'Contanti', 'POS', 'Totale Lordo', 'Spese', 'Totale Netto', 'Evento']
+    const headers = ['Data', 'Giorno', 'Sede', 'Contanti', 'POS', 'Totale']
     const rows = data.data.map((day) => [
       day.displayDate,
       day.dayOfWeek,
@@ -177,9 +287,6 @@ export function DailyRevenueClient({ venueId, isAdmin, venues }: DailyRevenueCli
       day.cashTotal.toFixed(2),
       day.posTotal.toFixed(2),
       day.grossTotal.toFixed(2),
-      day.expensesTotal.toFixed(2),
-      day.netTotal.toFixed(2),
-      day.isEvent ? day.eventName || 'Si' : 'No',
     ])
 
     const csvContent = [headers.join(';'), ...rows.map((r) => r.join(';'))].join('\n')
@@ -189,6 +296,8 @@ export function DailyRevenueClient({ venueId, isAdmin, venues }: DailyRevenueCli
     link.download = `incassi_${filters.dateFrom}_${filters.dateTo}.csv`
     link.click()
   }
+
+  const colCount = isAdmin ? 7 : 6 // chevron + Data + Giorno + [Sede] + Contanti + POS + Totale
 
   return (
     <div className="space-y-6">
@@ -442,53 +551,70 @@ export function DailyRevenueClient({ venueId, isAdmin, venues }: DailyRevenueCli
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="w-8" />
                         <TableHead>Data</TableHead>
                         <TableHead>Giorno</TableHead>
                         {isAdmin && <TableHead>Sede</TableHead>}
                         <TableHead className="text-right">Contanti</TableHead>
                         <TableHead className="text-right">POS</TableHead>
                         <TableHead className="text-right">Totale</TableHead>
-                        <TableHead className="text-right">Spese</TableHead>
-                        <TableHead className="text-right">Netto</TableHead>
-                        <TableHead>Evento</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {data.data.map((day) => (
-                        <TableRow key={`${day.date}-${day.venue.id}`}>
-                          <TableCell className="font-medium">{day.displayDate}</TableCell>
-                          <TableCell>{day.dayOfWeek}</TableCell>
-                          {isAdmin && (
-                            <TableCell>
-                              <Badge variant="outline">{day.venue.code}</Badge>
-                            </TableCell>
-                          )}
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(day.cashTotal)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(day.posTotal)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-semibold">
-                            {formatCurrency(day.grossTotal)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono text-red-600">
-                            {day.expensesTotal > 0 ? `-${formatCurrency(day.expensesTotal)}` : '-'}
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-semibold">
-                            {formatCurrency(day.netTotal)}
-                          </TableCell>
-                          <TableCell>
-                            {day.isEvent ? (
-                              <Badge variant="secondary">{day.eventName || 'Evento'}</Badge>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
+                      {data.data.map((day) => {
+                        const rowKey = `${day.date}-${day.venue.id}`
+                        const hasPartials = day.partials && day.partials.length > 0
+                        const isExpanded = expandedId === rowKey
+
+                        return (
+                          <Fragment key={rowKey}>
+                            <TableRow
+                              className={hasPartials ? 'cursor-pointer hover:bg-muted/50' : ''}
+                              onClick={() => hasPartials && toggleExpand(rowKey)}
+                            >
+                              <TableCell className="w-8 px-2">
+                                {hasPartials && (
+                                  isExpanded
+                                    ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                    : <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                                )}
+                              </TableCell>
+                              <TableCell className="font-medium">{day.displayDate}</TableCell>
+                              <TableCell>{day.dayOfWeek}</TableCell>
+                              {isAdmin && (
+                                <TableCell>
+                                  <Badge variant="outline">{day.venue.code}</Badge>
+                                </TableCell>
+                              )}
+                              <TableCell className="text-right font-mono">
+                                {formatCurrency(day.cashTotal)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {formatCurrency(day.posTotal)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-semibold">
+                                {formatCurrency(day.grossTotal)}
+                              </TableCell>
+                            </TableRow>
+                            {isExpanded && hasPartials && (
+                              <TableRow className="bg-muted/30 hover:bg-muted/30">
+                                <TableCell colSpan={colCount} className="p-3">
+                                  <TimeSlotBreakdownView
+                                    slots={computeTimeSlotBreakdown(
+                                      day.partials,
+                                      day.grossTotal,
+                                      day.posTotal,
+                                    )}
+                                  />
+                                </TableCell>
+                              </TableRow>
                             )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                          </Fragment>
+                        )
+                      })}
                       {/* Totali */}
                       <TableRow className="bg-muted/50 font-bold">
+                        <TableCell />
                         <TableCell colSpan={isAdmin ? 3 : 2}>TOTALE</TableCell>
                         <TableCell className="text-right font-mono">
                           {formatCurrency(data.totals.cashTotal)}
@@ -499,13 +625,6 @@ export function DailyRevenueClient({ venueId, isAdmin, venues }: DailyRevenueCli
                         <TableCell className="text-right font-mono">
                           {formatCurrency(data.totals.grossTotal)}
                         </TableCell>
-                        <TableCell className="text-right font-mono text-red-600">
-                          -{formatCurrency(data.totals.expensesTotal)}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCurrency(data.totals.netTotal)}
-                        </TableCell>
-                        <TableCell />
                       </TableRow>
                     </TableBody>
                   </Table>
