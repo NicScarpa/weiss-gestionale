@@ -103,6 +103,9 @@ model User {
   attendancePunches   AttendanceRecord[]
   attendanceAnomalies AttendanceAnomaly[]
 
+  // Relazioni Fase 4 - Certificazioni
+  certifications Certification[]
+
   // Relazioni Fase 5.2 - Notifiche
   notificationPreferences NotificationPreference?
 
@@ -1707,4 +1710,34 @@ enum ForecastMethod {
   HISTORICAL      // Solo storico anno precedente
   MOVING_AVERAGE  // Solo media mobile
   HYBRID          // Combinazione ponderata
+}
+
+// === FASE 4: CERTIFICAZIONI DIPENDENTI ===
+enum CertificationType {
+  HACCP             // Igiene alimentare
+  SICUREZZA         // Sicurezza sul lavoro (D.Lgs. 81/08)
+  ANTINCENDIO       // Prevenzione incendi
+  PRIMO_SOCCORSO    // Primo soccorso aziendale
+  PREPOSTO          // Formazione preposto
+}
+
+model Certification {
+  id     String @id @default(cuid())
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @map("user_id")
+
+  type         CertificationType
+  obtainedDate DateTime  @map("obtained_date") @db.Date
+  expiryDate   DateTime  @map("expiry_date") @db.Date
+
+  documentUrl        String?   @map("document_url")
+  documentUploadedAt DateTime? @map("document_uploaded_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([type])
+  @@index([expiryDate])
+  @@map("certifications")
 }
