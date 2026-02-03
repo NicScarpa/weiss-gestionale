@@ -82,6 +82,8 @@ export function CashStationCard({
   }
 
   // Handler per cambio campo numerico
+  // Quando il campo è vuoto (''), salva 0 nel dato; il binding value={field || ''}
+  // converte 0 → '' mostrando correttamente il placeholder
   const handleFieldChange = (
     field: keyof CashStationData,
     value: string
@@ -94,7 +96,7 @@ export function CashStationCard({
       onChange({
         ...station,
         receiptAmount: numValue,
-        receiptVat: Math.round(calculatedVat * 100) / 100, // Arrotonda a 2 decimali
+        receiptVat: Math.round(calculatedVat * 100) / 100,
       })
       return
     }
