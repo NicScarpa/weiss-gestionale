@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { ClosureFormData } from '@/components/chiusura/ClosureForm'
-import { buildClosurePayload, buildClosureUpdatePayload } from '@/lib/closure-form-utils'
+import { buildClosurePayload } from '@/lib/closure-form-utils'
 
 interface UseClosureMutationOptions {
   venueId: string
@@ -127,7 +127,7 @@ export function useClosureMutation({
   )
 
   /**
-   * Updates an existing closure (metadata only)
+   * Updates an existing closure (metadata + all relational data)
    */
   const updateClosure = useCallback(
     async (data: ClosureFormData): Promise<void> => {
@@ -139,7 +139,7 @@ export function useClosureMutation({
       setError(null)
 
       try {
-        const payload = buildClosureUpdatePayload(data)
+        const payload = buildClosurePayload(data, venueId)
 
         const res = await fetch(`/api/chiusure/${closureId}`, {
           method: 'PUT',
@@ -162,7 +162,7 @@ export function useClosureMutation({
         setIsSaving(false)
       }
     },
-    [closureId, onSuccess, onError]
+    [closureId, venueId, onSuccess, onError]
   )
 
   return {

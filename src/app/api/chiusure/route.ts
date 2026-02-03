@@ -5,6 +5,8 @@ import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 
 import { logger } from '@/lib/logger'
+import { buildStationCreateData } from '@/lib/closure-calculations'
+
 // Schema per creazione chiusura
 const createClosureSchema = z.object({
   date: z.string().transform((s) => new Date(s)),
@@ -390,55 +392,7 @@ export async function POST(request: NextRequest) {
 
         // Crea stazioni
         stations: validatedData.stations ? {
-          create: validatedData.stations.map((station, index) => {
-            // Calcola totale stazione
-            const totalAmount = (station.cashAmount || 0) + (station.posAmount || 0)
-            const nonReceiptAmount = totalAmount - (station.receiptAmount || 0)
-
-            // Calcola totale conteggio
-            let totalCounted = 0
-            if (station.cashCount) {
-              totalCounted =
-                (station.cashCount.bills500 || 0) * 500 +
-                (station.cashCount.bills200 || 0) * 200 +
-                (station.cashCount.bills100 || 0) * 100 +
-                (station.cashCount.bills50 || 0) * 50 +
-                (station.cashCount.bills20 || 0) * 20 +
-                (station.cashCount.bills10 || 0) * 10 +
-                (station.cashCount.bills5 || 0) * 5 +
-                (station.cashCount.coins2 || 0) * 2 +
-                (station.cashCount.coins1 || 0) * 1 +
-                (station.cashCount.coins050 || 0) * 0.5 +
-                (station.cashCount.coins020 || 0) * 0.2 +
-                (station.cashCount.coins010 || 0) * 0.1 +
-                (station.cashCount.coins005 || 0) * 0.05 +
-                (station.cashCount.coins002 || 0) * 0.02 +
-                (station.cashCount.coins001 || 0) * 0.01
-            }
-
-            return {
-              name: station.name,
-              position: station.position ?? index,
-              receiptAmount: station.receiptAmount || 0,
-              receiptVat: station.receiptVat || 0,
-              invoiceAmount: station.invoiceAmount || 0,
-              invoiceVat: station.invoiceVat || 0,
-              suspendedAmount: station.suspendedAmount || 0,
-              cashAmount: station.cashAmount || 0,
-              posAmount: station.posAmount || 0,
-              totalAmount,
-              nonReceiptAmount,
-              floatAmount: station.floatAmount || 114,
-              cashCount: station.cashCount ? {
-                create: {
-                  ...station.cashCount,
-                  totalCounted,
-                  expectedTotal: station.cashAmount || 0,
-                  difference: totalCounted - (station.cashAmount || 0),
-                },
-              } : undefined,
-            }
-          }),
+          create: validatedData.stations.map((station, index) => buildStationCreateData(station, index)),
         } : undefined,
 
         // Crea parziali orari

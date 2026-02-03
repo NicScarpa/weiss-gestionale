@@ -4,7 +4,9 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
 import { logger } from '@/lib/logger'
-// Schema per aggiornamento chiusura
+import { buildStationCreateData } from '@/lib/closure-calculations'
+
+// Schema per aggiornamento chiusura (metadati + dati relazionali opzionali)
 const updateClosureSchema = z.object({
   date: z.string().transform((s) => new Date(s)).optional(),
   isEvent: z.boolean().optional(),
@@ -13,6 +15,62 @@ const updateClosureSchema = z.object({
   weatherAfternoon: z.string().optional(),
   weatherEvening: z.string().optional(),
   notes: z.string().optional(),
+  stations: z.array(z.object({
+    name: z.string(),
+    position: z.number().default(0),
+    receiptAmount: z.number().default(0),
+    receiptVat: z.number().default(0),
+    invoiceAmount: z.number().default(0),
+    invoiceVat: z.number().default(0),
+    suspendedAmount: z.number().default(0),
+    cashAmount: z.number().default(0),
+    posAmount: z.number().default(0),
+    floatAmount: z.number().default(114),
+    cashCount: z.object({
+      bills500: z.number().int().default(0),
+      bills200: z.number().int().default(0),
+      bills100: z.number().int().default(0),
+      bills50: z.number().int().default(0),
+      bills20: z.number().int().default(0),
+      bills10: z.number().int().default(0),
+      bills5: z.number().int().default(0),
+      coins2: z.number().int().default(0),
+      coins1: z.number().int().default(0),
+      coins050: z.number().int().default(0),
+      coins020: z.number().int().default(0),
+      coins010: z.number().int().default(0),
+      coins005: z.number().int().default(0),
+      coins002: z.number().int().default(0),
+      coins001: z.number().int().default(0),
+    }).optional(),
+  })).optional(),
+  partials: z.array(z.object({
+    timeSlot: z.string(),
+    receiptProgressive: z.number().default(0),
+    posProgressive: z.number().default(0),
+    coffeeCounter: z.number().int().optional(),
+    coffeeDelta: z.number().int().optional(),
+    weather: z.string().optional(),
+  })).optional(),
+  expenses: z.array(z.object({
+    payee: z.string(),
+    description: z.string().optional(),
+    documentRef: z.string().optional(),
+    documentType: z.enum(['NONE', 'FATTURA', 'DDT', 'RICEVUTA', 'PERSONALE']).default('NONE'),
+    amount: z.number(),
+    vatAmount: z.number().optional(),
+    accountId: z.string().optional(),
+    isPaid: z.boolean().default(true),
+    paidBy: z.string().optional(),
+  })).optional(),
+  attendance: z.array(z.object({
+    userId: z.string(),
+    shift: z.enum(['MORNING', 'EVENING']),
+    hours: z.number().optional(),
+    statusCode: z.string().optional(),
+    hourlyRate: z.number().optional(),
+    notes: z.string().optional(),
+  })).optional(),
 })
 
 // GET /api/chiusure/[id] - Dettaglio singola chiusura
@@ -295,11 +353,93 @@ export async function PUT(
       )
     }
 
-    // Aggiorna
-    const updated = await prisma.dailyClosure.update({
-      where: { id },
-      data: validatedData,
-      select: { id: true, updatedAt: true },
+    // Separa metadati dai dati relazionali
+    const { stations, partials, expenses, attendance, ...metadata } = validatedData
+
+    // Aggiorna in transazione: metadati + delete/recreate relazioni
+    const updated = await prisma.$transaction(async (tx) => {
+      // 1. Aggiorna metadati DailyClosure
+      const closure = await tx.dailyClosure.update({
+        where: { id },
+        data: metadata,
+        select: { id: true, updatedAt: true },
+      })
+
+      // 2. Se stations fornite: delete + recreate (cascade elimina CashCount)
+      if (stations !== undefined) {
+        await tx.cashStation.deleteMany({ where: { closureId: id } })
+        if (stations.length > 0) {
+          for (const [index, station] of stations.entries()) {
+            const stationData = buildStationCreateData(station, index)
+            await tx.cashStation.create({
+              data: {
+                closureId: id,
+                ...stationData,
+              },
+            })
+          }
+        }
+      }
+
+      // 3. Se partials fornite: delete + recreate
+      if (partials !== undefined) {
+        await tx.hourlyPartial.deleteMany({ where: { closureId: id } })
+        if (partials.length > 0) {
+          await tx.hourlyPartial.createMany({
+            data: partials.map((partial) => ({
+              closureId: id,
+              timeSlot: partial.timeSlot,
+              receiptProgressive: partial.receiptProgressive || 0,
+              posProgressive: partial.posProgressive || 0,
+              coffeeCounter: partial.coffeeCounter,
+              coffeeDelta: partial.coffeeDelta,
+              weather: partial.weather,
+            })),
+          })
+        }
+      }
+
+      // 4. Se expenses fornite: delete + recreate
+      if (expenses !== undefined) {
+        await tx.dailyExpense.deleteMany({ where: { closureId: id } })
+        if (expenses.length > 0) {
+          await tx.dailyExpense.createMany({
+            data: expenses.map((expense, index) => ({
+              closureId: id,
+              payee: expense.payee,
+              description: expense.description,
+              documentRef: expense.documentRef,
+              documentType: expense.documentType || 'NONE',
+              amount: expense.amount,
+              vatAmount: expense.vatAmount,
+              accountId: expense.accountId,
+              isPaid: expense.isPaid ?? true,
+              paidBy: expense.paidBy,
+              position: index,
+            })),
+          })
+        }
+      }
+
+      // 5. Se attendance fornite: delete + recreate
+      if (attendance !== undefined) {
+        await tx.dailyAttendance.deleteMany({ where: { closureId: id } })
+        if (attendance.length > 0) {
+          await tx.dailyAttendance.createMany({
+            data: attendance.map((att) => ({
+              closureId: id,
+              userId: att.userId,
+              shift: att.shift,
+              hours: att.hours,
+              statusCode: att.statusCode,
+              hourlyRate: att.hourlyRate,
+              notes: att.notes,
+            })),
+          })
+        }
+      }
+
+      return closure
     })
 
     return NextResponse.json(updated)

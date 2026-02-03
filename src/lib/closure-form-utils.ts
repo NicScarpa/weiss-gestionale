@@ -166,20 +166,3 @@ export function buildClosurePayload(
   }
 }
 
-/**
- * Builds a partial update payload (metadata only, no relations)
- * Used for updating existing closures
- */
-export function buildClosureUpdatePayload(
-  data: ClosureFormData
-): Partial<ClosureApiPayload> {
-  return {
-    date: data.date.toISOString().split('T')[0], // YYYY-MM-DD format
-    isEvent: data.isEvent,
-    eventName: data.eventName,
-    weatherMorning: data.weatherMorning,
-    weatherAfternoon: data.weatherAfternoon,
-    weatherEvening: data.weatherEvening,
-    notes: data.notes,
-  }
-}

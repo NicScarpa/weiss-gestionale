@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildClosurePayload,
-  buildClosureUpdatePayload,
 } from '../closure-form-utils'
 import { ClosureFormData } from '@/components/chiusura/ClosureForm'
 import type { CashStationData } from '@/components/chiusura/CashStationCard'
@@ -323,57 +322,3 @@ describe('buildClosurePayload', () => {
   })
 })
 
-describe('buildClosureUpdatePayload', () => {
-  it('should return only metadata fields', () => {
-    const data = createFormData({
-      isEvent: true,
-      eventName: 'Updated Event',
-      weatherMorning: 'cloudy',
-      weatherAfternoon: 'rainy',
-      weatherEvening: 'sunny',
-      notes: 'Updated notes',
-      stations: [{ name: 'BAR', cashAmount: 100 } as unknown as CashStationData],
-      expenses: [{ payee: 'Test', amount: 50 } as unknown as ExpenseData],
-    })
-
-    const result = buildClosureUpdatePayload(data)
-
-    // Should include metadata
-    expect(result.date).toBeDefined()
-    expect(result.isEvent).toBe(true)
-    expect(result.eventName).toBe('Updated Event')
-    expect(result.weatherMorning).toBe('cloudy')
-    expect(result.weatherAfternoon).toBe('rainy')
-    expect(result.weatherEvening).toBe('sunny')
-    expect(result.notes).toBe('Updated notes')
-
-    // Should NOT include relations
-    expect(result).not.toHaveProperty('stations')
-    expect(result).not.toHaveProperty('expenses')
-    expect(result).not.toHaveProperty('partials')
-    expect(result).not.toHaveProperty('attendance')
-    expect(result).not.toHaveProperty('venueId')
-  })
-
-  it('should format date as YYYY-MM-DD', () => {
-    const data = createFormData({
-      date: new Date('2024-03-15T14:30:00'),
-    })
-
-    const result = buildClosureUpdatePayload(data)
-
-    expect(result.date).toBe('2024-03-15')
-  })
-
-  it('should handle undefined optional fields', () => {
-    const data = createFormData({
-      eventName: undefined,
-      notes: undefined,
-    })
-
-    const result = buildClosureUpdatePayload(data)
-
-    expect(result.eventName).toBeUndefined()
-    expect(result.notes).toBeUndefined()
-  })
-})
