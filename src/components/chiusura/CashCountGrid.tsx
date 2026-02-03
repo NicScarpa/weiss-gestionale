@@ -123,10 +123,7 @@ const DenominationRow = memo(function DenominationRow({
           value={count}
           onChange={(e) => onChange(denomination, e.target.value)}
           disabled={disabled}
-          className={cn(
-            'w-16 h-11 text-center font-mono text-lg',
-            '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
-          )}
+          className="w-16 h-11 text-center font-mono text-lg"
         />
         <button
           type="button"

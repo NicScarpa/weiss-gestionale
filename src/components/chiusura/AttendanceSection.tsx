@@ -279,7 +279,9 @@ export function AttendanceSection({
     const current = updated[index]
 
     if (field === 'hours' || field === 'hourlyRate') {
-      const numValue = typeof value === 'string' ? parseFloat(value) || 0 : Number(value) || 0
+      const numValue = typeof value === 'string'
+        ? (value === '' ? undefined : (parseFloat(value) || 0))
+        : (Number(value) || 0)
       updated[index] = {
         ...current,
         [field]: numValue,
@@ -287,8 +289,8 @@ export function AttendanceSection({
 
       // Ricalcola totalPay per extra
       if (current.isExtra) {
-        const hours: number = field === 'hours' ? numValue : Number(current.hours || 0)
-        const rate: number = field === 'hourlyRate' ? numValue : Number(current.hourlyRate || 0)
+        const hours: number = field === 'hours' ? (numValue ?? 0) : Number(current.hours || 0)
+        const rate: number = field === 'hourlyRate' ? (numValue ?? 0) : Number(current.hourlyRate || 0)
         updated[index].totalPay = hours * rate
       }
     } else if (field === 'userId') {

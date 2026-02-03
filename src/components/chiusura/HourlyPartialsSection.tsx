@@ -71,17 +71,28 @@ export function HourlyPartialsSection({
   }
 
   // Aggiorna campo parziale
+  // Per campi opzionali (coffeeCounter), un campo vuoto diventa undefined
+  // per mostrare il placeholder. Per campi obbligatori, diventa 0.
   const handleFieldChange = (
     index: number,
     field: keyof HourlyPartialData,
     value: string | number
   ) => {
     const updated = [...partials]
-    updated[index] = {
-      ...updated[index],
-      [field]: typeof value === 'string' && field !== 'timeSlot'
-        ? parseFloat(value) || 0
-        : value,
+    if (typeof value === 'string' && field !== 'timeSlot') {
+      const isOptionalField = field === 'coffeeCounter'
+      const numValue = value === '' && isOptionalField
+        ? undefined
+        : (parseFloat(value) || 0)
+      updated[index] = {
+        ...updated[index],
+        [field]: numValue,
+      }
+    } else {
+      updated[index] = {
+        ...updated[index],
+        [field]: value,
+      }
     }
     onChange(updated)
   }
