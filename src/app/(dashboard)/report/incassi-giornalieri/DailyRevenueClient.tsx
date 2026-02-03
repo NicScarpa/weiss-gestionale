@@ -181,21 +181,24 @@ function TimeSlotBreakdownView({ slots }: { slots: TimeSlotBreakdown[] }) {
               <span className="text-sm">{getWeatherEmoji(slot.weather)}</span>
             )}
           </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-            <span className="flex items-center gap-1">
-              <Banknote className="h-3 w-3 text-green-600" />
-              <span className="font-mono">{formatCurrency(slot.cash)}</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <CreditCard className="h-3 w-3 text-blue-600" />
-              <span className="font-mono">{formatCurrency(slot.pos)}</span>
-            </span>
-            {slot.coffeeDelta != null && (
+          <div className="flex flex-1 items-center justify-between text-sm">
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
               <span className="flex items-center gap-1">
-                <span>☕</span>
-                <span className="font-mono">{slot.coffeeDelta}</span>
+                <Banknote className="h-3 w-3 text-green-600" />
+                <span className="font-mono">{formatCurrency(slot.cash)}</span>
               </span>
-            )}
+              <span className="flex items-center gap-1">
+                <CreditCard className="h-3 w-3 text-blue-600" />
+                <span className="font-mono">{formatCurrency(slot.pos)}</span>
+              </span>
+              {slot.coffeeDelta != null && (
+                <span className="flex items-center gap-1">
+                  <span>☕</span>
+                  <span className="font-mono">{slot.coffeeDelta}</span>
+                </span>
+              )}
+            </div>
+            <span className="font-mono font-bold ml-2">{formatCurrency(slot.cash + slot.pos)}</span>
           </div>
         </div>
       ))}
