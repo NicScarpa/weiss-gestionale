@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { logger } from '@/lib/logger'
 // Campi che l'utente può modificare del proprio profilo
 const updateProfileSchema = z.object({
+  // Campi disponibili a tutti gli utenti
   phoneNumber: z.string().optional().nullable(),
   email: z.string().email().optional().nullable(),
   address: z.string().optional().nullable(),
@@ -13,7 +14,13 @@ const updateProfileSchema = z.object({
   notifyEmail: z.boolean().optional(),
   notifyPush: z.boolean().optional(),
   notifyWhatsapp: z.boolean().optional(),
+  // Campi modificabili solo dagli admin
+  firstName: z.string().min(1, 'Nome richiesto').optional(),
+  lastName: z.string().min(1, 'Cognome richiesto').optional(),
 })
+
+// Campi che richiedono ruolo admin per essere modificati
+const ADMIN_ONLY_FIELDS = ['firstName', 'lastName']
 
 // GET /api/users/me - Profilo utente corrente
 export async function GET() {
@@ -39,7 +46,7 @@ export async function GET() {
     // Restituisce tutti i campi del proprio profilo (tranne password)
     const { passwordHash: _passwordHash, ...userWithoutPassword } = user
 
-    return NextResponse.json(userWithoutPassword)
+    return NextResponse.json({ data: userWithoutPassword })
   } catch (error) {
     logger.error('Errore GET /api/users/me', error)
     return NextResponse.json(
@@ -60,6 +67,24 @@ export async function PATCH(request: NextRequest) {
 
     const body = await request.json()
     const validatedData = updateProfileSchema.parse(body)
+
+    // Verifica che solo gli admin possano modificare firstName/lastName
+    const hasAdminFields = ADMIN_ONLY_FIELDS.some(
+      (f) => f in validatedData && validatedData[f as keyof typeof validatedData] !== undefined
+    )
+
+    if (hasAdminFields) {
+      const currentUser = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        include: { role: { select: { name: true } } },
+      })
+      if (currentUser?.role.name !== 'admin') {
+        return NextResponse.json(
+          { error: 'Non autorizzato a modificare questi campi' },
+          { status: 403 }
+        )
+      }
+    }
 
     // Costruisci dati da aggiornare
     const updateData: Record<string, unknown> = {}
@@ -98,7 +123,7 @@ export async function PATCH(request: NextRequest) {
 
     const { passwordHash: _passwordHash, ...userWithoutPassword } = updatedUser
 
-    return NextResponse.json(userWithoutPassword)
+    return NextResponse.json({ data: userWithoutPassword })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

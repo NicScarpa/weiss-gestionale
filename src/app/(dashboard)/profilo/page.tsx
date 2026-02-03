@@ -32,6 +32,7 @@ import {
   Eye,
   EyeOff,
   Save,
+  Pencil,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -52,6 +53,11 @@ interface UserProfile {
   lastLoginAt: string | null
 }
 
+const personalInfoSchema = z.object({
+  firstName: z.string().min(1, 'Nome richiesto'),
+  lastName: z.string().min(1, 'Cognome richiesto'),
+})
+
 const contactFormSchema = z.object({
   email: z.string().email('Email non valida').or(z.literal('')),
   phoneNumber: z.string().optional(),
@@ -70,6 +76,7 @@ const passwordFormSchema = z.object({
   path: ['confirmPassword'],
 })
 
+type PersonalInfoFormData = z.infer<typeof personalInfoSchema>
 type ContactFormData = z.infer<typeof contactFormSchema>
 type PasswordFormData = z.infer<typeof passwordFormSchema>
 
@@ -78,12 +85,23 @@ export default function ProfiloPage() {
 
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isUpdatingPersonalInfo, setIsUpdatingPersonalInfo] = useState(false)
   const [isUpdatingContact, setIsUpdatingContact] = useState(false)
   const [isChangingPassword, setIsChangingPassword] = useState(false)
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false)
   const [showCurrentPassword, setShowCurrentPassword] = useState(false)
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+
+  const isAdmin = session?.user?.role === 'admin'
+
+  const personalInfoForm = useForm<PersonalInfoFormData>({
+    resolver: zodResolver(personalInfoSchema),
+    defaultValues: {
+      firstName: '',
+      lastName: '',
+    },
+  })
 
   const contactForm = useForm<ContactFormData>({
     resolver: zodResolver(contactFormSchema),
@@ -117,6 +135,13 @@ export default function ProfiloPage() {
           phoneNumber: data.data.phoneNumber || '',
           address: data.data.address || '',
         })
+        // Inizializza form info personali per admin
+        if (session?.user?.role === 'admin') {
+          personalInfoForm.reset({
+            firstName: data.data.firstName || '',
+            lastName: data.data.lastName || '',
+          })
+        }
       } catch {
         toast.error('Errore nel caricamento del profilo')
       } finally {
@@ -127,7 +152,32 @@ export default function ProfiloPage() {
     if (session?.user) {
       fetchProfile()
     }
-  }, [session, contactForm])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session])
+
+  const handleUpdatePersonalInfo = async (data: PersonalInfoFormData) => {
+    setIsUpdatingPersonalInfo(true)
+    try {
+      const response = await fetch('/api/users/me', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+
+      if (!response.ok) {
+        const result = await response.json()
+        throw new Error(result.error || 'Errore aggiornamento')
+      }
+
+      const result = await response.json()
+      setProfile(result.data)
+      toast.success('Informazioni personali aggiornate con successo')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Errore aggiornamento')
+    } finally {
+      setIsUpdatingPersonalInfo(false)
+    }
+  }
 
   const handleUpdateContact = async (data: ContactFormData) => {
     setIsUpdatingContact(true)
@@ -236,42 +286,119 @@ export default function ProfiloPage() {
       </div>
 
       <div className="space-y-6">
-        {/* Informazioni personali (sola lettura) */}
+        {/* Informazioni personali */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Informazioni personali</CardTitle>
+            <CardTitle className="text-lg flex items-center gap-2">
+              {isAdmin && <Pencil className="h-4 w-4" />}
+              Informazioni personali
+            </CardTitle>
             <CardDescription>
-              Queste informazioni sono gestite dall&apos;amministratore
+              {isAdmin
+                ? 'Modifica le tue informazioni personali'
+                : 'Queste informazioni sono gestite dall\'amministratore'}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm text-muted-foreground">Nome completo</p>
-                <p className="font-medium">{profile.firstName} {profile.lastName}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Username</p>
-                <code className="text-sm bg-muted px-1.5 py-0.5 rounded">
-                  {profile.username}
-                </code>
-              </div>
-              <div className="flex items-center gap-3">
-                <Building2 className="h-4 w-4 text-muted-foreground" />
+            {isAdmin ? (
+              <form onSubmit={personalInfoForm.handleSubmit(handleUpdatePersonalInfo)} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="firstName">Nome</Label>
+                    <Input
+                      id="firstName"
+                      {...personalInfoForm.register('firstName')}
+                      disabled={isUpdatingPersonalInfo}
+                    />
+                    {personalInfoForm.formState.errors.firstName && (
+                      <p className="text-sm text-destructive">
+                        {personalInfoForm.formState.errors.firstName.message}
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="lastName">Cognome</Label>
+                    <Input
+                      id="lastName"
+                      {...personalInfoForm.register('lastName')}
+                      disabled={isUpdatingPersonalInfo}
+                    />
+                    {personalInfoForm.formState.errors.lastName && (
+                      <p className="text-sm text-destructive">
+                        {personalInfoForm.formState.errors.lastName.message}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <Separator />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Username</p>
+                    <code className="text-sm bg-muted px-1.5 py-0.5 rounded">
+                      {profile.username}
+                    </code>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Building2 className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm text-muted-foreground">Sede</p>
+                      <p className="font-medium">
+                        {profile.venue ? `${profile.venue.name} (${profile.venue.code})` : '-'}
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Ruolo</p>
+                    <Badge variant={getRoleBadgeVariant(profile.role.name)} className="mt-1">
+                      {getRoleLabel(profile.role.name)}
+                    </Badge>
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button type="submit" disabled={isUpdatingPersonalInfo}>
+                    {isUpdatingPersonalInfo ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Salvataggio...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="mr-2 h-4 w-4" />
+                        Salva informazioni
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm text-muted-foreground">Sede</p>
-                  <p className="font-medium">
-                    {profile.venue ? `${profile.venue.name} (${profile.venue.code})` : '-'}
-                  </p>
+                  <p className="text-sm text-muted-foreground">Nome completo</p>
+                  <p className="font-medium">{profile.firstName} {profile.lastName}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Username</p>
+                  <code className="text-sm bg-muted px-1.5 py-0.5 rounded">
+                    {profile.username}
+                  </code>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Building2 className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm text-muted-foreground">Sede</p>
+                    <p className="font-medium">
+                      {profile.venue ? `${profile.venue.name} (${profile.venue.code})` : '-'}
+                    </p>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Ruolo</p>
+                  <Badge variant={getRoleBadgeVariant(profile.role.name)} className="mt-1">
+                    {getRoleLabel(profile.role.name)}
+                  </Badge>
                 </div>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Ruolo</p>
-                <Badge variant={getRoleBadgeVariant(profile.role.name)} className="mt-1">
-                  {getRoleLabel(profile.role.name)}
-                </Badge>
-              </div>
-            </div>
+            )}
           </CardContent>
         </Card>
 
