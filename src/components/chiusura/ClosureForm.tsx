@@ -163,24 +163,36 @@ export function ClosureForm({
     // Identifica tutto il personale pagato (extra + staff fisso con isPaid)
     const paidStaff = newAttendance.filter((a) => a.isPaid && (a.totalPay || 0) > 0)
 
+    // Preserva paidBy delle auto-expenses esistenti
+    const existingAutoPaidBy: Record<string, string> = {}
+    for (const e of formData.expenses) {
+      if ((e.payee.startsWith('[EXTRA]') || e.payee.startsWith('[PAGATO]')) && e.paidBy) {
+        existingAutoPaidBy[e.payee] = e.paidBy
+      }
+    }
+
     // Rimuovi tutte le uscite auto-generate (identificate dai prefissi [EXTRA] e [PAGATO])
     const nonAutoExpenses = formData.expenses.filter(
       (e) => !e.payee.startsWith('[EXTRA]') && !e.payee.startsWith('[PAGATO]')
     )
 
     // Genera nuove uscite per ogni membro pagato
-    const autoExpenses: ExpenseData[] = paidStaff.map((staff) => ({
-      payee: staff.isExtra
+    const autoExpenses: ExpenseData[] = paidStaff.map((staff) => {
+      const payeeLabel = staff.isExtra
         ? `[EXTRA] ${staff.userName || 'Personale Extra'}`
-        : `[PAGATO] ${staff.userName || 'Dipendente'}`,
-      description: staff.isExtra
-        ? `Compenso ${staff.shift === 'MORNING' ? 'mattina' : 'sera'} - ${staff.hours || 0}h x ${formatCurrency(staff.hourlyRate || 0)}/h`
-        : `Pagamento fine servizio ${staff.shift === 'MORNING' ? 'mattina' : 'sera'} - ${staff.hours || 0}h x ${formatCurrency(staff.hourlyRate || 0)}/h`,
-      documentType: 'PERSONALE' as const,
-      amount: staff.totalPay || 0,
-      isPaid: true,
-      paidBy: '',
-    }))
+        : `[PAGATO] ${staff.userName || 'Dipendente'}`
+
+      return {
+        payee: payeeLabel,
+        description: staff.isExtra
+          ? `Compenso ${staff.shift === 'MORNING' ? 'mattina' : 'sera'} - ${staff.hours || 0}h x ${formatCurrency(staff.hourlyRate || 0)}/h`
+          : `Pagamento fine servizio ${staff.shift === 'MORNING' ? 'mattina' : 'sera'} - ${staff.hours || 0}h x ${formatCurrency(staff.hourlyRate || 0)}/h`,
+        documentType: 'PERSONALE' as const,
+        amount: staff.totalPay || 0,
+        isPaid: true,
+        paidBy: existingAutoPaidBy[payeeLabel] || '',
+      }
+    })
 
     // Combina le uscite
     const updatedExpenses = [...nonAutoExpenses, ...autoExpenses]
@@ -211,6 +223,15 @@ export function ClosureForm({
   // Invia per validazione
   const handleSubmit = async () => {
     if (!onSubmit) return
+
+    // Verifica paidBy su tutte le uscite
+    const expensesWithoutPaidBy = formData.expenses.filter(
+      (e) => e.amount > 0 && !e.paidBy
+    )
+    if (expensesWithoutPaidBy.length > 0) {
+      toast.error('Seleziona la postazione "Pagato da" per ogni uscita di cassa')
+      return
+    }
 
     // Validazione base
     if (formData.stations.length === 0) {

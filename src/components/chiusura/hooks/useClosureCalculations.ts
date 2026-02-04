@@ -8,6 +8,7 @@ export interface ClosureTotals {
   grossTotal: number
   salesTotal: number
   cashTotal: number
+  cashWithExpenses: number
   posTotal: number
   countedTotal: number
   expensesTotal: number
@@ -79,6 +80,9 @@ export function useClosureCalculations({
     // Totale movimentazione = vendite + uscite (tutto il denaro movimentato)
     const grossTotal = salesTotal + expensesTotal
 
+    // Contanti con uscite = vendite contanti + uscite pagate (per display riepilogo)
+    const cashWithExpenses = cashTotal + expensesTotal
+
     // Incasso contanti totale = vendite contanti + uscite pagate
     // Perché: se ho 550€ in cassa e ho pagato 37,90€ di uscite,
     // significa che l'incasso contanti totale era 587,90€
@@ -97,6 +101,7 @@ export function useClosureCalculations({
       grossTotal,
       salesTotal,
       cashTotal,
+      cashWithExpenses,
       posTotal,
       countedTotal,
       expensesTotal,

@@ -13,7 +13,7 @@ interface ClosureSummaryCardProps {
   vatRate: number
 }
 
-export function ClosureSummaryCard({ totals, vatRate }: ClosureSummaryCardProps) {
+export function ClosureSummaryCard({ totals, vatRate: _vatRate }: ClosureSummaryCardProps) {
   return (
     <Card
       className={cn(
@@ -36,50 +36,47 @@ export function ClosureSummaryCard({ totals, vatRate }: ClosureSummaryCardProps)
           {/* Colonna sinistra: Movimentazione */}
           <div className="space-y-2">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Vendite Contanti:</span>
+              <span className="text-muted-foreground">Contanti:</span>
               <span className="font-mono">
-                {formatCurrency(totals.cashTotal)}
+                {formatCurrency(totals.cashWithExpenses)}
+              </span>
+            </div>
+            <div className="flex justify-between pl-4">
+              <span className="text-muted-foreground text-xs">di cui Uscite:</span>
+              <span className="font-mono text-xs">
+                {formatCurrency(totals.expensesTotal)}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Vendite POS:</span>
+              <span className="text-muted-foreground">POS:</span>
               <span className="font-mono">
                 {formatCurrency(totals.posTotal)}
               </span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Uscite Pagate:</span>
-              <span className="font-mono">
-                {formatCurrency(totals.expensesTotal)}
-              </span>
-            </div>
             <Separator />
-            <div className="flex justify-between font-semibold">
-              <span>Totale Lordo:</span>
+            <div className="flex justify-between font-semibold text-[18px]">
+              <span>Totale:</span>
               <span className="font-mono">
                 {formatCurrency(totals.grossTotal)}
               </span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">
-                IVA stimata ({(vatRate * 100).toFixed(0)}%):
-              </span>
-              <span className="font-mono">
-                {formatCurrency(totals.estimatedVat)}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Netto Vendite:</span>
-              <span className="font-mono">
-                {formatCurrency(totals.netTotal)}
-              </span>
+            <div className="h-4" />
+            <div className="flex justify-between text-[12px] text-muted-foreground">
+              <div className="flex gap-1">
+                <span>IVA:</span>
+                <span className="font-mono">{formatCurrency(totals.estimatedVat)}</span>
+              </div>
+              <div className="flex gap-1">
+                <span>Totale netto:</span>
+                <span className="font-mono">{formatCurrency(totals.netTotal)}</span>
+              </div>
             </div>
           </div>
 
           {/* Colonna destra: Quadratura Cassa */}
           <div className="space-y-2">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Vendite Contanti:</span>
+              <span className="text-muted-foreground">Contanti:</span>
               <span className="font-mono">
                 {formatCurrency(totals.cashTotal)}
               </span>
@@ -103,29 +100,6 @@ export function ClosureSummaryCard({ totals, vatRate }: ClosureSummaryCardProps)
               </span>
             </div>
           </div>
-        </div>
-
-        {/* Riepilogo Contanti */}
-        <Separator />
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">
-            Incasso Contanti (Vendite + Uscite):
-          </span>
-          <span className="font-mono font-semibold">
-            {formatCurrency(totals.cashIncomeTotal)}
-          </span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">Contanti in Cassa:</span>
-          <span className="font-mono">
-            {formatCurrency(totals.countedTotal)}
-          </span>
-        </div>
-        <div className="flex justify-between font-semibold text-primary">
-          <span>Versamento Banca (POS):</span>
-          <span className="font-mono">
-            {formatCurrency(totals.bankDeposit)}
-          </span>
         </div>
       </CardContent>
     </Card>

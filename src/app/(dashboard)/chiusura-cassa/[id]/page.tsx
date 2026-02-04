@@ -15,7 +15,6 @@ import {
   CloudSun,
   Banknote,
   CreditCard,
-  Download,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -23,6 +22,7 @@ import { Badge } from '@/components/ui/badge'
 import { formatCurrency, CASH_DIFFERENCE_THRESHOLD, getWeatherEmoji } from '@/lib/constants'
 import { ValidateActions } from './ValidateActions'
 import { AdminClosureActions } from './AdminClosureActions'
+import { DownloadButtons } from './DownloadButtons'
 
 export const metadata = {
   title: 'Dettaglio Chiusura'
@@ -221,21 +221,8 @@ export default async function DettaglioChiusuraPage({ params }: Props) {
         </div>
 
         <div className="flex gap-2">
-          {/* Scarica PDF */}
-          <Button variant="outline" asChild>
-            <a href={`/api/chiusure/${id}/pdf`} download>
-              <Download className="mr-2 h-4 w-4" />
-              PDF
-            </a>
-          </Button>
-
-          {/* Scarica Excel */}
-          <Button variant="outline" asChild>
-            <a href={`/api/chiusure/${id}/excel`} download>
-              <Download className="mr-2 h-4 w-4" />
-              Excel
-            </a>
-          </Button>
+          {/* Download PDF/Excel con error handling */}
+          <DownloadButtons closureId={id} />
 
           {/* Modifica: DRAFT per tutti, qualsiasi stato per admin */}
           {(closure.status === 'DRAFT' || session.user.role === 'admin') && (
@@ -351,6 +338,15 @@ export default async function DettaglioChiusuraPage({ params }: Props) {
         const activeStations = closure.stations.filter(
           (s) => Number(s.totalAmount || 0) > 0
         )
+
+        // Calcola uscite per stazione
+        const expensesByStation = closure.expenses.reduce((map, e) => {
+          if (e.paidBy) {
+            map[e.paidBy] = (map[e.paidBy] || 0) + Number(e.amount)
+          }
+          return map
+        }, {} as Record<string, number>)
+
         return activeStations.length > 0 ? (
           <Card>
             <CardHeader>
@@ -365,6 +361,10 @@ export default async function DettaglioChiusuraPage({ params }: Props) {
                   const diff = counted - Number(station.cashAmount || 0)
                   const hasDiff =
                     counted > 0 && Math.abs(diff) > CASH_DIFFERENCE_THRESHOLD
+                  const stationKey = station.name.replace(/\s/g, '').toUpperCase()
+                  const stationExpenses = expensesByStation[stationKey] || 0
+                  const stationCashWithExpenses = Number(station.cashAmount) + stationExpenses
+                  const stationTotal = stationCashWithExpenses + Number(station.posAmount)
 
                   return (
                     <div
@@ -384,7 +384,7 @@ export default async function DettaglioChiusuraPage({ params }: Props) {
                         <span>
                           <span className="text-muted-foreground">Contanti:</span>{' '}
                           <span className="font-mono">
-                            {formatCurrency(Number(station.cashAmount))}
+                            {formatCurrency(stationCashWithExpenses)}
                           </span>
                         </span>
                         <span>
@@ -394,7 +394,7 @@ export default async function DettaglioChiusuraPage({ params }: Props) {
                           </span>
                         </span>
                         <span className="font-semibold">
-                          {formatCurrency(Number(station.totalAmount))}
+                          {formatCurrency(stationTotal)}
                         </span>
                       </div>
                     </div>
@@ -409,10 +409,11 @@ export default async function DettaglioChiusuraPage({ params }: Props) {
       {/* Uscite */}
       {closure.expenses.length > 0 && (
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              Uscite ({closure.expenses.length}) - {formatCurrency(expensesTotal)}
-            </CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-base">Uscite</CardTitle>
+            <span className="font-mono font-semibold text-base">
+              {formatCurrency(expensesTotal)}
+            </span>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
@@ -442,10 +443,11 @@ export default async function DettaglioChiusuraPage({ params }: Props) {
       {/* Presenze */}
       {closure.attendance.length > 0 && (
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              Presenze Staff ({closure.attendance.length})
-            </CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-base">Presenze Staff</CardTitle>
+            <span className="font-mono text-base">
+              {closure.attendance.filter(a => a.statusCode === 'P' || !a.statusCode).length}
+            </span>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
@@ -454,15 +456,19 @@ export default async function DettaglioChiusuraPage({ params }: Props) {
                   key={att.id}
                   className="flex items-center justify-between p-2 rounded bg-muted/50 text-sm"
                 >
-                  <div>
-                    <span className="font-medium">
-                      {att.user.firstName} {att.user.lastName}
-                    </span>
-                    <Badge variant="outline" className="ml-2">
+                  <span className="font-medium flex-1">
+                    {att.user.firstName} {att.user.lastName}
+                  </span>
+                  <div className="flex items-center gap-4">
+                    <Badge variant="outline" className="min-w-[36px] justify-center">
                       {att.statusCode || 'P'}
                     </Badge>
+                    <span className="font-mono text-right min-w-[40px]">
+                      {att.statusCode === 'P' || !att.statusCode
+                        ? `${Number(att.hours || 0)}h`
+                        : '-'}
+                    </span>
                   </div>
-                  <span>{Number(att.hours || 0)}h</span>
                 </div>
               ))}
             </div>

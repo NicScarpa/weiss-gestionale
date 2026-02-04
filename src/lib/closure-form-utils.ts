@@ -47,11 +47,13 @@ export interface ClosurePartialPayload {
 
 export interface ClosureExpensePayload {
   payee: string
+  description?: string
   documentRef?: string
   documentType?: string
   amount: number
   vatAmount?: number
   accountId?: string
+  isPaid?: boolean
   paidBy?: string
 }
 
@@ -61,6 +63,8 @@ export interface ClosureAttendancePayload {
   hours?: number
   statusCode?: string
   hourlyRate?: number
+  totalPay?: number
+  isPaid?: boolean
   notes?: string
 }
 
@@ -117,11 +121,13 @@ function mapPartialToPayload(partial: ClosureFormData['partials'][0]): ClosurePa
 function mapExpenseToPayload(expense: ClosureFormData['expenses'][0]): ClosureExpensePayload {
   return {
     payee: expense.payee,
+    description: expense.description,
     documentRef: expense.documentRef,
     documentType: expense.documentType,
     amount: expense.amount,
     vatAmount: expense.vatAmount,
     accountId: expense.accountId,
+    isPaid: expense.isPaid,
     paidBy: expense.paidBy,
   }
 }
@@ -136,6 +142,8 @@ function mapAttendanceToPayload(attendance: ClosureFormData['attendance'][0]): C
     hours: attendance.hours,
     statusCode: attendance.statusCode,
     hourlyRate: attendance.hourlyRate,
+    totalPay: attendance.totalPay,
+    isPaid: attendance.isPaid,
     notes: attendance.notes,
   }
 }
