@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Users, UserPlus, Plus, Trash2, Calendar, RefreshCw, AlertTriangle, Banknote } from 'lucide-react'
+import { Users, UserPlus, Plus, Trash2, Calendar, RefreshCw, Banknote } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { formatCurrency } from '@/lib/constants'
@@ -22,7 +22,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { cn } from '@/lib/utils'
 
 // Tipo per presenza
 export interface AttendanceData {
@@ -228,6 +227,31 @@ export function AttendanceSection({
     }
   }, [scheduledShifts, attendance.length, hasLoadedFromSchedule, loadFromSchedule])
 
+  // Auto-caricamento dipendenti fissi per nuove chiusure (fallback se non ci sono turni schedulati)
+  useEffect(() => {
+    if (attendance.length > 0 || disabled || !staffMembers?.length) return
+    if (hasLoadedFromSchedule) return
+    // Aspetta che la query turni sia completata prima di fare il fallback
+    if (scheduledShifts === undefined) return
+    if (scheduledShifts && scheduledShifts.length > 0) return
+
+    const fixedStaffMembers = staffMembers.filter(s => s.isFixedStaff)
+    if (fixedStaffMembers.length === 0) return
+
+    const autoAttendance: AttendanceData[] = fixedStaffMembers.map(staff => ({
+      userId: staff.id,
+      userName: `${staff.firstName} ${staff.lastName}`,
+      shift: staff.defaultShift || 'EVENING',
+      hours: undefined,
+      statusCode: 'P',
+      hourlyRate: staff.hourlyRate || undefined,
+      isExtra: false,
+    }))
+
+    onChange(autoAttendance)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scheduledShifts, staffMembers])
+
   // Separa staff fisso da extra
   const fixedStaff = staffMembers.filter((s) => s.isFixedStaff)
   const extraStaff = staffMembers.filter((s) => !s.isFixedStaff)
@@ -359,13 +383,6 @@ export function AttendanceSection({
     return attendance.findIndex((a) => a === att)
   }
 
-  // Calcola differenza ore
-  const getHoursDifference = (att: AttendanceData): number | null => {
-    if (att.statusCode !== 'P' || !att.scheduledHours) return null
-    const actualHours = att.hours || 0
-    return actualHours - att.scheduledHours
-  }
-
   return (
     <TooltipProvider>
     <div className={`space-y-4 ${className || ''}`}>
@@ -430,12 +447,10 @@ export function AttendanceSection({
           ) : (
             <>
               {/* Header */}
-              <div className="grid grid-cols-[1fr_80px_100px_70px_60px_50px_50px_40px] gap-2 text-xs font-medium text-muted-foreground border-b pb-2">
+              <div className="grid grid-cols-[1fr_100px_70px_60px_50px_40px] gap-2 text-xs font-medium text-muted-foreground border-b pb-2">
                 <span>Dipendente</span>
-                <span>Turno Sch.</span>
                 <span>Turno</span>
                 <span className="text-center">Codice</span>
-                <span className="text-center">Ore Sch.</span>
                 <span className="text-center">Ore Eff.</span>
                 <span className="text-center">Pagato</span>
                 <span></span>
@@ -443,11 +458,10 @@ export function AttendanceSection({
 
               {fixedAttendance.map((att) => {
                 const realIndex = getRealIndex(att)
-                const hoursDiff = getHoursDifference(att)
                 return (
                   <div key={realIndex} className="space-y-1">
                     <div
-                      className="grid grid-cols-[1fr_80px_100px_70px_60px_50px_50px_40px] gap-2 items-center"
+                      className="grid grid-cols-[1fr_100px_70px_60px_50px_40px] gap-2 items-center"
                     >
                       {/* Dipendente */}
                       <Select
@@ -469,32 +483,7 @@ export function AttendanceSection({
                         </SelectContent>
                       </Select>
 
-                      {/* Turno Schedulato (badge) */}
-                      <div className="flex justify-center">
-                        {att.shiftCode ? (
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <Badge
-                                variant="outline"
-                                className="text-xs"
-                                style={{
-                                  borderColor: att.shiftColor || '#6B7280',
-                                  backgroundColor: `${att.shiftColor}20` || undefined,
-                                }}
-                              >
-                                {att.shiftCode}
-                              </Badge>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {att.shiftName}
-                            </TooltipContent>
-                          </Tooltip>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">-</span>
-                        )}
-                      </div>
-
-                      {/* Turno Effettivo */}
+                      {/* Turno */}
                       <Select
                         value={att.shift}
                         onValueChange={(value) =>
@@ -534,49 +523,20 @@ export function AttendanceSection({
                         </SelectContent>
                       </Select>
 
-                      {/* Ore Schedulate */}
-                      <div className="text-center text-sm text-muted-foreground font-mono">
-                        {att.scheduledHours?.toFixed(1) || '-'}
-                      </div>
-
-                      {/* Ore Effettive - con indicatore differenza */}
-                      <div className="relative">
-                        <Input
-                          type="number"
-                          min="0"
-                          max="24"
-                          step="0.5"
-                          value={att.statusCode === 'P' ? (att.hours ?? '') : ''}
-                          onChange={(e) =>
-                            handleFieldChange(realIndex, 'hours', e.target.value)
-                          }
-                          disabled={disabled || att.statusCode !== 'P'}
-                          className={cn(
-                            'font-mono text-center',
-                            hoursDiff && hoursDiff !== 0 && 'pr-6',
-                            hoursDiff && hoursDiff > 0 && 'border-amber-400',
-                            hoursDiff && hoursDiff < 0 && 'border-red-400'
-                          )}
-                          placeholder={att.statusCode === 'P' ? '0' : '-'}
-                        />
-                        {hoursDiff !== null && hoursDiff !== 0 && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div className="absolute right-1 top-1/2 -translate-y-1/2">
-                                <AlertTriangle
-                                  className={cn(
-                                    'h-4 w-4',
-                                    hoursDiff > 0 ? 'text-amber-500' : 'text-red-500'
-                                  )}
-                                />
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {hoursDiff > 0 ? '+' : ''}{hoursDiff.toFixed(1)}h rispetto allo schedulato
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
-                      </div>
+                      {/* Ore Effettive */}
+                      <Input
+                        type="number"
+                        min="0"
+                        max="24"
+                        step="0.5"
+                        value={att.statusCode === 'P' ? (att.hours ?? '') : ''}
+                        onChange={(e) =>
+                          handleFieldChange(realIndex, 'hours', e.target.value)
+                        }
+                        disabled={disabled || att.statusCode !== 'P'}
+                        className="font-mono text-center"
+                        placeholder={att.statusCode === 'P' ? '0' : '-'}
+                      />
 
                       {/* Toggle Pagato */}
                       <div className="flex justify-center">

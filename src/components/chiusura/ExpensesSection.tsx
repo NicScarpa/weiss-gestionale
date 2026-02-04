@@ -13,17 +13,20 @@ import {
 import { Receipt, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/constants'
+import { cn } from '@/lib/utils'
 import { PayeeAutocomplete } from '@/components/ui/payee-autocomplete'
 
 // Tipo per uscita
 export interface ExpenseData {
   id?: string
   payee: string
+  description?: string
   documentRef?: string
   documentType: 'NONE' | 'FATTURA' | 'DDT' | 'RICEVUTA' | 'PERSONALE'
   amount: number
   vatAmount?: number
   accountId?: string
+  isPaid?: boolean
   paidBy?: string
 }
 
@@ -274,7 +277,7 @@ export function ExpensesSection({
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-xs">Pagato da</Label>
+                  <Label className="text-xs">Pagato da *</Label>
                   <Select
                     value={expense.paidBy || ''}
                     onValueChange={(value) =>
@@ -282,8 +285,8 @@ export function ExpensesSection({
                     }
                     disabled={disabled}
                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleziona postazione..." />
+                    <SelectTrigger className={cn(!expense.paidBy && expense.amount > 0 && 'border-destructive')}>
+                      <SelectValue placeholder="Seleziona postazione... *" />
                     </SelectTrigger>
                     <SelectContent>
                       {STATION_OPTIONS.map((opt) => (
