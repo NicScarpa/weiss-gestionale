@@ -17,7 +17,7 @@ export function ClosureActions({
   isSubmitting,
 }: ClosureActionsProps) {
   return (
-    <div className="flex justify-end gap-3 sticky bottom-4 bg-background/95 backdrop-blur py-4 -mx-4 px-4 border-t">
+    <div className="flex justify-end gap-3 sticky bottom-0 bg-background/95 backdrop-blur py-4 -mx-6 px-6 border-t z-10">
       <Button
         variant="outline"
         onClick={onSave}
