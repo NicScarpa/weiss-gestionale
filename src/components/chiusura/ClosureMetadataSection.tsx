@@ -1,9 +1,11 @@
 'use client'
 
 import { format } from 'date-fns'
-import { Calendar as CalendarIcon, CloudSun } from 'lucide-react'
+import { Calendar as CalendarIcon, CloudSun, StickyNote } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { useTypingPlaceholder } from '@/hooks/useTypingPlaceholder'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select,
@@ -36,6 +38,8 @@ interface ClosureMetadataSectionProps {
   onWeatherMorningChange: (weather: string) => void
   onWeatherAfternoonChange: (weather: string) => void
   onWeatherEveningChange: (weather: string) => void
+  notes?: string
+  onNotesChange: (notes: string) => void
   disabled?: boolean
 }
 
@@ -52,8 +56,24 @@ export function ClosureMetadataSection({
   onWeatherMorningChange,
   onWeatherAfternoonChange,
   onWeatherEveningChange,
+  notes,
+  onNotesChange,
   disabled = false,
 }: ClosureMetadataSectionProps) {
+  const NOTES_PHRASES = [
+    "C'era qualche evento in concorrenza nella zona?",
+    "C'è stato qualche evento particolare in piazza?",
+    "Abbiamo avuto un compleanno nella sala?",
+  ]
+
+  const typingPlaceholder = useTypingPlaceholder({
+    phrases: NOTES_PHRASES,
+    typingSpeed: 50,
+    deletingSpeed: 25,
+    pauseAfterTyping: 2500,
+    pauseAfterDeleting: 400,
+  })
+
   return (
     <Card>
       <CardHeader>
@@ -156,6 +176,21 @@ export function ClosureMetadataSection({
               </SelectContent>
             </Select>
           </div>
+        </div>
+
+        {/* Note */}
+        <div className="space-y-2">
+          <Label className="flex items-center gap-2">
+            <StickyNote className="h-4 w-4" />
+            Note
+          </Label>
+          <Textarea
+            value={notes || ''}
+            onChange={(e) => onNotesChange(e.target.value)}
+            disabled={disabled}
+            placeholder={typingPlaceholder}
+            rows={2}
+          />
         </div>
       </CardContent>
     </Card>
