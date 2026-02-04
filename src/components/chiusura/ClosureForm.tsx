@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
@@ -139,6 +139,23 @@ export function ClosureForm({
     const updated = [...formData.stations]
     updated[index] = data
     setFormData((prev) => ({ ...prev, stations: updated }))
+  }
+
+  // Calcola uscite per postazione (mappa nome postazione normalizzato → totale uscite)
+  const expensesByStation = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const expense of formData.expenses) {
+      if (expense.paidBy && expense.amount > 0) {
+        map[expense.paidBy] = (map[expense.paidBy] || 0) + expense.amount
+      }
+    }
+    return map
+  }, [formData.expenses])
+
+  // Converte nome postazione nel valore paidBy corrispondente
+  // es. "CASSA 1" → "CASSA1", "BAR" → "BAR"
+  const getStationPaidByKey = (stationName: string): string => {
+    return stationName.replace(/\s/g, '').toUpperCase()
   }
 
   // Handler per presenze con auto-generazione uscite per personale pagato
@@ -317,6 +334,7 @@ export function ClosureForm({
                 disabled={isReadOnly}
                 defaultExpanded={originalIndex === 0}
                 vatRate={vatRate}
+                stationExpenses={expensesByStation[getStationPaidByKey(station.name)] || 0}
               />
             )
           })}

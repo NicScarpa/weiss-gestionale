@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronDown, ChevronUp, Banknote, CreditCard } from 'lucide-react'
+import { ChevronDown, ChevronUp, Banknote, CreditCard, Receipt } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -55,6 +55,7 @@ interface CashStationCardProps {
   defaultExpanded?: boolean
   className?: string
   vatRate?: number // Aliquota IVA (es. 0.10 per 10%)
+  stationExpenses?: number // Totale uscite pagate da questa postazione
 }
 
 export function CashStationCard({
@@ -64,11 +65,12 @@ export function CashStationCard({
   defaultExpanded = false,
   className,
   vatRate = 0.10,
+  stationExpenses = 0,
 }: CashStationCardProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded)
 
-  // Calcola totali
-  const totalAmount = station.cashAmount + station.posAmount
+  // Calcola totali (include uscite pagate da questa postazione)
+  const totalAmount = station.cashAmount + station.posAmount + stationExpenses
 
   // Calcola "non battuto" (totale - corrispettivo scontrini)
   // Rappresenta l'incasso non registrato nei corrispettivi
@@ -168,6 +170,12 @@ export function CashStationCard({
                 <CreditCard className="h-4 w-4" />
                 {formatCurrency(station.posAmount)}
               </span>
+              {stationExpenses > 0 && (
+                <span className="flex items-center gap-1">
+                  <Receipt className="h-4 w-4" />
+                  {formatCurrency(stationExpenses)}
+                </span>
+              )}
             </div>
           )}
         </CardHeader>
@@ -341,6 +349,19 @@ export function CashStationCard({
                   />
                 </div>
               </div>
+
+              {/* Uscite pagate da questa postazione */}
+              {stationExpenses > 0 && (
+                <div className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2 mt-2">
+                  <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Receipt className="h-4 w-4" />
+                    Uscite da postazione
+                  </span>
+                  <span className="font-mono text-sm font-medium">
+                    {formatCurrency(stationExpenses)}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Liquidità (Distinta Contanti) */}

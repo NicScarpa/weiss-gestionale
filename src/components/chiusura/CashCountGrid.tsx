@@ -223,7 +223,7 @@ export function CashCountGrid({
       {/* Totale Generale */}
       <div className="rounded-lg bg-primary/10 border-2 border-primary p-4">
         <div className="flex items-center justify-between">
-          <span className="font-semibold text-lg">Totale Contato</span>
+          <span className="font-semibold text-lg">Totale Liquidità</span>
           <span className="font-mono font-bold text-2xl text-primary">
             {formatCurrency(grandTotal)}
           </span>
