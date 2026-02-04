@@ -194,18 +194,22 @@ export default async function ModificaChiusuraPage({ params }: Props) {
       accountId: e.accountId || undefined,
       paidBy: e.paidBy || undefined,
     })),
-    attendance: closure.attendance.map((a) => ({
-      id: a.id,
-      userId: a.userId,
-      userName: `${a.user.firstName} ${a.user.lastName}`,
-      shift: a.shift as 'MORNING' | 'EVENING',
-      hours: Number(a.hours) || undefined,
-      statusCode: a.statusCode || undefined,
-      hourlyRate: Number(a.hourlyRate) || undefined,
-      totalPay: Number(a.totalPay) || undefined,
-      isPaid: a.isPaid || undefined,
-      notes: a.notes || undefined,
-    })),
+    attendance: closure.attendance.map((a) => {
+      const staffMember = staffMembers.find((s) => s.id === a.userId)
+      return {
+        id: a.id,
+        userId: a.userId,
+        userName: `${a.user.firstName} ${a.user.lastName}`,
+        shift: a.shift as 'MORNING' | 'EVENING',
+        hours: Number(a.hours) || undefined,
+        statusCode: a.statusCode || undefined,
+        hourlyRate: Number(a.hourlyRate) || undefined,
+        totalPay: Number(a.totalPay) || undefined,
+        isPaid: a.isPaid || undefined,
+        notes: a.notes || undefined,
+        isExtra: staffMember ? !staffMember.isFixedStaff : true,
+      }
+    }),
   }
 
   return (

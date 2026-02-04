@@ -69,6 +69,8 @@ const updateClosureSchema = z.object({
     hours: z.number().optional(),
     statusCode: z.string().optional(),
     hourlyRate: z.number().optional(),
+    totalPay: z.number().optional(),
+    isPaid: z.boolean().optional().default(false),
     notes: z.string().optional(),
   })).optional(),
 })
@@ -433,6 +435,8 @@ export async function PUT(
               hours: att.hours,
               statusCode: att.statusCode,
               hourlyRate: att.hourlyRate,
+              totalPay: att.totalPay,
+              isPaid: att.isPaid ?? false,
               notes: att.notes,
             })),
           })

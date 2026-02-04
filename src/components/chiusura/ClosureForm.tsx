@@ -143,24 +143,28 @@ export function ClosureForm({
     setFormData((prev) => ({ ...prev, stations: updated }))
   }
 
-  // Handler per presenze con auto-generazione uscite per extra pagati
+  // Handler per presenze con auto-generazione uscite per personale pagato
   const handleAttendanceChange = (newAttendance: AttendanceData[]) => {
-    // Identifica gli extra pagati nella nuova lista
-    const paidExtras = newAttendance.filter((a) => a.isExtra && a.isPaid && (a.totalPay || 0) > 0)
+    // Identifica tutto il personale pagato (extra + staff fisso con isPaid)
+    const paidStaff = newAttendance.filter((a) => a.isPaid && (a.totalPay || 0) > 0)
 
-    // Rimuovi tutte le uscite auto-generate per extra (identificate dal prefisso [EXTRA])
+    // Rimuovi tutte le uscite auto-generate (identificate dai prefissi [EXTRA] e [PAGATO])
     const nonAutoExpenses = formData.expenses.filter(
-      (e) => !e.payee.startsWith('[EXTRA]')
+      (e) => !e.payee.startsWith('[EXTRA]') && !e.payee.startsWith('[PAGATO]')
     )
 
-    // Genera nuove uscite per ogni extra pagato
-    const autoExpenses: ExpenseData[] = paidExtras.map((extra) => ({
-      payee: `[EXTRA] ${extra.userName || 'Personale Extra'}`,
-      description: `Compenso ${extra.shift === 'MORNING' ? 'mattina' : 'sera'} - ${extra.hours || 0}h x ${formatCurrency(extra.hourlyRate || 0)}/h`,
+    // Genera nuove uscite per ogni membro pagato
+    const autoExpenses: ExpenseData[] = paidStaff.map((staff) => ({
+      payee: staff.isExtra
+        ? `[EXTRA] ${staff.userName || 'Personale Extra'}`
+        : `[PAGATO] ${staff.userName || 'Dipendente'}`,
+      description: staff.isExtra
+        ? `Compenso ${staff.shift === 'MORNING' ? 'mattina' : 'sera'} - ${staff.hours || 0}h x ${formatCurrency(staff.hourlyRate || 0)}/h`
+        : `Pagamento fine servizio ${staff.shift === 'MORNING' ? 'mattina' : 'sera'} - ${staff.hours || 0}h x ${formatCurrency(staff.hourlyRate || 0)}/h`,
       documentType: 'PERSONALE' as const,
-      amount: extra.totalPay || 0,
+      amount: staff.totalPay || 0,
       isPaid: true,
-      paidBy: '', // Pagato dalla cassa, impatta quadratura
+      paidBy: '',
     }))
 
     // Combina le uscite

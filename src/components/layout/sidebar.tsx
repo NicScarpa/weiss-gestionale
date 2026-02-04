@@ -23,6 +23,7 @@ import {
   Truck,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { useState, useEffect } from 'react'
 
 // Navigazione principale (prima dell'accordion)
@@ -88,7 +89,7 @@ export function Sidebar() {
     const isActive = pathname === item.href ||
       (item.href !== '/' && pathname.startsWith(item.href + '/'))
 
-    return (
+    const link = (
       <Link
         key={item.name}
         href={item.href}
@@ -104,6 +105,21 @@ export function Sidebar() {
         {!collapsed && <span>{item.name}</span>}
       </Link>
     )
+
+    if (collapsed) {
+      return (
+        <Tooltip key={item.name}>
+          <TooltipTrigger asChild>
+            {link}
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={8}>
+            {item.name}
+          </TooltipContent>
+        </Tooltip>
+      )
+    }
+
+    return link
   }
 
   return (
@@ -141,28 +157,45 @@ export function Sidebar() {
 
         {/* Personale Accordion */}
         <div className="pt-1">
-          <button
-            onClick={() => setIsPersonnelOpen(!isPersonnelOpen)}
-            className={cn(
-              "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-              isInPersonnelSection
-                ? "bg-slate-800 text-white"
-                : "text-slate-300 hover:bg-slate-800 hover:text-white"
-            )}
-          >
-            <Users className="h-5 w-5 flex-shrink-0" />
-            {!collapsed && (
-              <>
-                <span className="flex-1 text-left">Personale</span>
-                <ChevronDown
+          {collapsed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setIsPersonnelOpen(!isPersonnelOpen)}
                   className={cn(
-                    "h-4 w-4 transition-transform duration-200",
-                    isPersonnelOpen ? "rotate-0" : "-rotate-90"
+                    "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                    isInPersonnelSection
+                      ? "bg-slate-800 text-white"
+                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
                   )}
-                />
-              </>
-            )}
-          </button>
+                >
+                  <Users className="h-5 w-5 flex-shrink-0" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>
+                Personale
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <button
+              onClick={() => setIsPersonnelOpen(!isPersonnelOpen)}
+              className={cn(
+                "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                isInPersonnelSection
+                  ? "bg-slate-800 text-white"
+                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
+              )}
+            >
+              <Users className="h-5 w-5 flex-shrink-0" />
+              <span className="flex-1 text-left">Personale</span>
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 transition-transform duration-200",
+                  isPersonnelOpen ? "rotate-0" : "-rotate-90"
+                )}
+              />
+            </button>
+          )}
 
           {/* Sottovoci accordion Personale */}
           <div
@@ -179,28 +212,45 @@ export function Sidebar() {
 
         {/* Impostazioni Accordion */}
         <div className="pt-1">
-          <button
-            onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-            className={cn(
-              "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-              isInSettingsSection
-                ? "bg-slate-800 text-white"
-                : "text-slate-300 hover:bg-slate-800 hover:text-white"
-            )}
-          >
-            <Settings className="h-5 w-5 flex-shrink-0" />
-            {!collapsed && (
-              <>
-                <span className="flex-1 text-left">Impostazioni</span>
-                <ChevronDown
+          {collapsed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setIsSettingsOpen(!isSettingsOpen)}
                   className={cn(
-                    "h-4 w-4 transition-transform duration-200",
-                    isSettingsOpen ? "rotate-0" : "-rotate-90"
+                    "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                    isInSettingsSection
+                      ? "bg-slate-800 text-white"
+                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
                   )}
-                />
-              </>
-            )}
-          </button>
+                >
+                  <Settings className="h-5 w-5 flex-shrink-0" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>
+                Impostazioni
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <button
+              onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+              className={cn(
+                "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                isInSettingsSection
+                  ? "bg-slate-800 text-white"
+                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
+              )}
+            >
+              <Settings className="h-5 w-5 flex-shrink-0" />
+              <span className="flex-1 text-left">Impostazioni</span>
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 transition-transform duration-200",
+                  isSettingsOpen ? "rotate-0" : "-rotate-90"
+                )}
+              />
+            </button>
+          )}
 
           {/* Sottovoci accordion Impostazioni */}
           <div
