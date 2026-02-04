@@ -4,8 +4,6 @@ import { useState, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
-import { Textarea } from '@/components/ui/textarea'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatCurrency, formatDate, DEFAULT_VAT_RATE } from '@/lib/constants'
 import { CashStationCard, CashStationData, emptyCashStation } from './CashStationCard'
 import { HourlyPartialsSection, HourlyPartialData } from './HourlyPartialsSection'
@@ -293,6 +291,8 @@ export function ClosureForm({
         onWeatherMorningChange={(w) => handleFieldChange('weatherMorning', w)}
         onWeatherAfternoonChange={(w) => handleFieldChange('weatherAfternoon', w)}
         onWeatherEveningChange={(w) => handleFieldChange('weatherEvening', w)}
+        notes={formData.notes}
+        onNotesChange={(notes) => handleFieldChange('notes', notes)}
         disabled={isReadOnly}
       />
 
@@ -336,6 +336,7 @@ export function ClosureForm({
         onChange={(expenses) => handleFieldChange('expenses', expenses)}
         accounts={accounts}
         disabled={isReadOnly}
+        venueId={venueId}
       />
 
       {/* Presenze */}
@@ -347,22 +348,6 @@ export function ClosureForm({
         closureDate={format(formData.date, 'yyyy-MM-dd')}
         venueId={venueId}
       />
-
-      {/* Note */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Note</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Textarea
-            value={formData.notes || ''}
-            onChange={(e) => handleFieldChange('notes', e.target.value)}
-            disabled={isReadOnly}
-            placeholder="Note aggiuntive sulla giornata..."
-            rows={3}
-          />
-        </CardContent>
-      </Card>
 
       {/* Riepilogo */}
       <ClosureSummaryCard totals={totals} vatRate={vatRate} />

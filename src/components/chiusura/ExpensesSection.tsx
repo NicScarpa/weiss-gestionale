@@ -13,6 +13,7 @@ import {
 import { Receipt, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/constants'
+import { PayeeAutocomplete } from '@/components/ui/payee-autocomplete'
 
 // Tipo per uscita
 export interface ExpenseData {
@@ -68,6 +69,7 @@ interface ExpensesSectionProps {
   accounts?: Account[]
   disabled?: boolean
   className?: string
+  venueId?: string
 }
 
 export function ExpensesSection({
@@ -76,6 +78,7 @@ export function ExpensesSection({
   accounts = [],
   disabled = false,
   className,
+  venueId,
 }: ExpensesSectionProps) {
   // Calcola totale
   const total = expenses.reduce((sum, e) => sum + (e.amount || 0), 0)
@@ -152,13 +155,16 @@ export function ExpensesSection({
               <div className="grid grid-cols-[1fr_40px] gap-2 items-end">
                 <div className="space-y-1">
                   <Label className="text-xs">Beneficiario *</Label>
-                  <Input
+                  <PayeeAutocomplete
                     value={expense.payee}
-                    onChange={(e) =>
-                      handleFieldChange(index, 'payee', e.target.value)
-                    }
+                    onChange={(val) => handleFieldChange(index, 'payee', val)}
+                    onSupplierSelect={(suggestion) => {
+                      if (suggestion.defaultAccountId) {
+                        handleFieldChange(index, 'accountId', suggestion.defaultAccountId)
+                      }
+                    }}
+                    venueId={venueId}
                     disabled={disabled}
-                    placeholder="es. Fornitore XYZ"
                   />
                 </div>
 
