@@ -72,10 +72,6 @@ export function CashStationCard({
   // Calcola totali (include uscite pagate da questa postazione)
   const totalAmount = station.cashAmount + station.posAmount + stationExpenses
 
-  // Calcola "non battuto" (totale - corrispettivo scontrini)
-  // Rappresenta l'incasso non registrato nei corrispettivi
-  const nonBattuto = totalAmount - station.receiptAmount
-
   // Calcola IVA da importo lordo: IVA = lordo - (lordo / (1 + aliquota))
   const calculateVatFromGross = (grossAmount: number): number => {
     if (grossAmount <= 0) return 0
@@ -376,29 +372,6 @@ export function CashStationCard({
               />
             </div>
 
-            {/* Totale Postazione con dettaglio non battuto */}
-            <div className="rounded-lg bg-primary/10 border-2 border-primary p-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold">Totale Postazione</span>
-                <span className="font-mono font-bold text-xl text-primary">
-                  {formatCurrency(totalAmount)}
-                </span>
-              </div>
-              {/* Non battuto (se c'è differenza tra totale e scontrini) */}
-              {totalAmount > 0 && station.receiptAmount > 0 && Math.abs(nonBattuto) > 0.01 && (
-                <div className="flex justify-between text-sm pt-2 border-t border-primary/30">
-                  <span className="text-muted-foreground">
-                    Non battuto (fatture, sospesi, etc.)
-                  </span>
-                  <span className={cn(
-                    "font-mono",
-                    nonBattuto > 0 ? "text-amber-600" : "text-green-600"
-                  )}>
-                    {nonBattuto >= 0 ? '+' : ''}{formatCurrency(nonBattuto)}
-                  </span>
-                </div>
-              )}
-            </div>
           </CardContent>
         </CollapsibleContent>
       </Collapsible>
