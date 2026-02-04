@@ -166,15 +166,37 @@ export function DashboardClient({ userName }: { userName?: string }) {
 
   return (
     <div className="space-y-6">
-      {/* Welcome Section */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">
-          Benvenuto, {userName}
-        </h1>
-        <p className="text-muted-foreground">
-          Ecco un riepilogo delle attività{' '}
-          {data?.meta.currentMonth && `- ${data.meta.currentMonth}`}
-        </p>
+      {/* Welcome Section + Quick Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">
+            Benvenuto, {userName}
+          </h1>
+          <p className="text-muted-foreground">
+            Ecco un riepilogo delle attività{' '}
+            {data?.meta.currentMonth && `- ${data.meta.currentMonth}`}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 shrink-0">
+          <Button asChild size="sm">
+            <Link href="/chiusura-cassa/nuova">
+              <Receipt className="h-4 w-4 mr-2" />
+              Nuova Chiusura
+            </Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/prima-nota">
+              <BookOpen className="h-4 w-4 mr-2" />
+              Prima Nota
+            </Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/report">
+              <TrendingUp className="h-4 w-4 mr-2" />
+              Report
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/* Quick Stats */}
@@ -416,63 +438,8 @@ export function DashboardClient({ userName }: { userName?: string }) {
         </div>
       </div>
 
-      {/* Quick Actions & Recent */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Azioni Rapide</CardTitle>
-            <CardDescription>Operazioni frequenti</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <Link
-              href="/chiusura-cassa/nuova"
-              className="flex items-center justify-between p-3 rounded-lg border hover:bg-slate-50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <Receipt className="h-5 w-5 text-slate-600" />
-                <div>
-                  <p className="font-medium">Nuova Chiusura Cassa</p>
-                  <p className="text-sm text-muted-foreground">
-                    Registra la chiusura giornaliera
-                  </p>
-                </div>
-              </div>
-              <ArrowRight className="h-4 w-4 text-muted-foreground" />
-            </Link>
-            <Link
-              href="/prima-nota"
-              className="flex items-center justify-between p-3 rounded-lg border hover:bg-slate-50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <BookOpen className="h-5 w-5 text-slate-600" />
-                <div>
-                  <p className="font-medium">Prima Nota</p>
-                  <p className="text-sm text-muted-foreground">
-                    Consulta i movimenti contabili
-                  </p>
-                </div>
-              </div>
-              <ArrowRight className="h-4 w-4 text-muted-foreground" />
-            </Link>
-            <Link
-              href="/report"
-              className="flex items-center justify-between p-3 rounded-lg border hover:bg-slate-50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <TrendingUp className="h-5 w-5 text-slate-600" />
-                <div>
-                  <p className="font-medium">Report</p>
-                  <p className="text-sm text-muted-foreground">
-                    Visualizza statistiche e analisi
-                  </p>
-                </div>
-              </div>
-              <ArrowRight className="h-4 w-4 text-muted-foreground" />
-            </Link>
-          </CardContent>
-        </Card>
-
-        <Card>
+      {/* Ultime Chiusure */}
+      <Card>
           <CardHeader>
             <CardTitle>Ultime Chiusure</CardTitle>
             <CardDescription>Chiusure cassa recenti</CardDescription>
@@ -537,8 +504,7 @@ export function DashboardClient({ userName }: { userName?: string }) {
               </div>
             )}
           </CardContent>
-        </Card>
-      </div>
+      </Card>
     </div>
   )
 }
