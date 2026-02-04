@@ -125,7 +125,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "flex flex-col h-screen bg-slate-900 text-white transition-all duration-300",
+        "flex flex-col h-full bg-slate-900 text-white transition-all duration-300",
         collapsed ? "w-16" : "w-64"
       )}
     >
@@ -267,13 +267,14 @@ export function Sidebar() {
       </nav>
 
       {/* Footer */}
-      {!collapsed && (
-        <div className="p-4 border-t border-slate-700">
-          <p className="text-xs text-slate-400">
-            Sistema Gestionale v1.0
-          </p>
-        </div>
-      )}
+      <div className="border-t border-slate-700 px-4 py-3">
+        <p className={cn(
+          "text-xs text-slate-400 truncate",
+          collapsed && "text-center"
+        )}>
+          {collapsed ? "v1.0" : "Sistema Gestionale v1.0"}
+        </p>
+      </div>
     </aside>
   )
 }
