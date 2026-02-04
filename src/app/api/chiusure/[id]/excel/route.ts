@@ -232,18 +232,21 @@ export async function GET(
 
     // === FOGLIO 5: PRESENZE ===
     if (closure.attendance.length > 0) {
-      const attendanceHeader = ['Dipendente', 'Turno', 'Ore', 'Codice', 'Note']
+      const attendanceHeader = ['Dipendente', 'Turno', 'Ore', 'Codice', 'Tariffa', 'Totale', 'Pagato', 'Note']
       const attendanceRows = closure.attendance.map((a) => [
         `${a.user.firstName} ${a.user.lastName}`,
         a.shift,
         a.hours ? Number(a.hours) : '',
         a.statusCode || '',
+        a.hourlyRate ? Number(a.hourlyRate) : '',
+        a.totalPay ? Number(a.totalPay) : '',
+        a.isPaid ? 'Sì' : '',
         a.notes || '',
       ])
 
       const wsAttendance = XLSX.utils.aoa_to_sheet([attendanceHeader, ...attendanceRows])
       wsAttendance['!cols'] = [
-        { wch: 25 }, { wch: 12 }, { wch: 8 }, { wch: 10 }, { wch: 30 }
+        { wch: 25 }, { wch: 12 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 30 }
       ]
       XLSX.utils.book_append_sheet(wb, wsAttendance, 'Presenze')
     }

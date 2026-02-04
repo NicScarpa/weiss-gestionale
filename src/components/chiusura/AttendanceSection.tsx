@@ -11,8 +11,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Users, UserPlus, Plus, Trash2, Calendar, RefreshCw, AlertTriangle } from 'lucide-react'
+import { Users, UserPlus, Plus, Trash2, Calendar, RefreshCw, AlertTriangle, Banknote } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
+import { formatCurrency } from '@/lib/constants'
 import { Badge } from '@/components/ui/badge'
 import {
   Tooltip,
@@ -287,8 +289,8 @@ export function AttendanceSection({
         [field]: numValue,
       }
 
-      // Ricalcola totalPay per extra
-      if (current.isExtra) {
+      // Ricalcola totalPay per extra O per staff fisso pagato
+      if (current.isExtra || current.isPaid) {
         const hours: number = field === 'hours' ? (numValue ?? 0) : Number(current.hours || 0)
         const rate: number = field === 'hourlyRate' ? (numValue ?? 0) : Number(current.hourlyRate || 0)
         updated[index].totalPay = hours * rate
@@ -307,6 +309,40 @@ export function AttendanceSection({
       // Ricalcola totalPay per extra
       if (current.isExtra && staff?.hourlyRate) {
         updated[index].totalPay = (current.hours || 0) * staff.hourlyRate
+      }
+    } else if (field === 'isPaid') {
+      // Toggle pagato a fine servizio (staff fisso ed extra)
+      const isPaidNow = value === true
+      if (isPaidNow) {
+        // Attiva: pre-compila hourlyRate dal profilo se disponibile
+        const staff = staffMembers.find((s) => s.id === current.userId)
+        const rate = current.hourlyRate || staff?.hourlyRate || 0
+        const hours = Number(current.hours || 0)
+        updated[index] = {
+          ...current,
+          isPaid: true,
+          hourlyRate: rate,
+          totalPay: hours * rate,
+        }
+      } else {
+        // Disattiva: azzera i campi pagamento
+        updated[index] = {
+          ...current,
+          isPaid: false,
+          hourlyRate: undefined,
+          totalPay: undefined,
+        }
+      }
+    } else if (field === 'statusCode') {
+      updated[index] = {
+        ...current,
+        statusCode: value as string,
+      }
+      // Se il codice non è P, disattiva il pagamento
+      if (value !== 'P' && current.isPaid) {
+        updated[index].isPaid = false
+        updated[index].hourlyRate = undefined
+        updated[index].totalPay = undefined
       }
     } else {
       updated[index] = {
@@ -394,13 +430,14 @@ export function AttendanceSection({
           ) : (
             <>
               {/* Header */}
-              <div className="grid grid-cols-[1fr_80px_100px_70px_60px_50px_40px] gap-2 text-xs font-medium text-muted-foreground border-b pb-2">
+              <div className="grid grid-cols-[1fr_80px_100px_70px_60px_50px_50px_40px] gap-2 text-xs font-medium text-muted-foreground border-b pb-2">
                 <span>Dipendente</span>
                 <span>Turno Sch.</span>
                 <span>Turno</span>
                 <span className="text-center">Codice</span>
                 <span className="text-center">Ore Sch.</span>
                 <span className="text-center">Ore Eff.</span>
+                <span className="text-center">Pagato</span>
                 <span></span>
               </div>
 
@@ -408,150 +445,208 @@ export function AttendanceSection({
                 const realIndex = getRealIndex(att)
                 const hoursDiff = getHoursDifference(att)
                 return (
-                  <div
-                    key={realIndex}
-                    className="grid grid-cols-[1fr_80px_100px_70px_60px_50px_40px] gap-2 items-center"
-                  >
-                    {/* Dipendente */}
-                    <Select
-                      value={att.userId}
-                      onValueChange={(value) =>
-                        handleFieldChange(realIndex, 'userId', value)
-                      }
-                      disabled={disabled}
+                  <div key={realIndex} className="space-y-1">
+                    <div
+                      className="grid grid-cols-[1fr_80px_100px_70px_60px_50px_50px_40px] gap-2 items-center"
                     >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleziona..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {fixedStaff.map((staff) => (
-                          <SelectItem key={staff.id} value={staff.id}>
-                            {staff.firstName} {staff.lastName}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-
-                    {/* Turno Schedulato (badge) */}
-                    <div className="flex justify-center">
-                      {att.shiftCode ? (
-                        <Tooltip>
-                          <TooltipTrigger>
-                            <Badge
-                              variant="outline"
-                              className="text-xs"
-                              style={{
-                                borderColor: att.shiftColor || '#6B7280',
-                                backgroundColor: `${att.shiftColor}20` || undefined,
-                              }}
-                            >
-                              {att.shiftCode}
-                            </Badge>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {att.shiftName}
-                          </TooltipContent>
-                        </Tooltip>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">-</span>
-                      )}
-                    </div>
-
-                    {/* Turno Effettivo */}
-                    <Select
-                      value={att.shift}
-                      onValueChange={(value) =>
-                        handleFieldChange(realIndex, 'shift', value)
-                      }
-                      disabled={disabled}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {SHIFT_OPTIONS.map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-
-                    {/* Codice Presenza */}
-                    <Select
-                      value={att.statusCode || 'P'}
-                      onValueChange={(value) =>
-                        handleFieldChange(realIndex, 'statusCode', value)
-                      }
-                      disabled={disabled}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {STATUS_CODE_OPTIONS.map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-
-                    {/* Ore Schedulate */}
-                    <div className="text-center text-sm text-muted-foreground font-mono">
-                      {att.scheduledHours?.toFixed(1) || '-'}
-                    </div>
-
-                    {/* Ore Effettive - con indicatore differenza */}
-                    <div className="relative">
-                      <Input
-                        type="number"
-                        min="0"
-                        max="24"
-                        step="0.5"
-                        value={att.statusCode === 'P' ? (att.hours ?? '') : ''}
-                        onChange={(e) =>
-                          handleFieldChange(realIndex, 'hours', e.target.value)
+                      {/* Dipendente */}
+                      <Select
+                        value={att.userId}
+                        onValueChange={(value) =>
+                          handleFieldChange(realIndex, 'userId', value)
                         }
-                        disabled={disabled || att.statusCode !== 'P'}
-                        className={cn(
-                          'font-mono text-center',
-                          hoursDiff && hoursDiff !== 0 && 'pr-6',
-                          hoursDiff && hoursDiff > 0 && 'border-amber-400',
-                          hoursDiff && hoursDiff < 0 && 'border-red-400'
+                        disabled={disabled}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleziona..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {fixedStaff.map((staff) => (
+                            <SelectItem key={staff.id} value={staff.id}>
+                              {staff.firstName} {staff.lastName}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+
+                      {/* Turno Schedulato (badge) */}
+                      <div className="flex justify-center">
+                        {att.shiftCode ? (
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <Badge
+                                variant="outline"
+                                className="text-xs"
+                                style={{
+                                  borderColor: att.shiftColor || '#6B7280',
+                                  backgroundColor: `${att.shiftColor}20` || undefined,
+                                }}
+                              >
+                                {att.shiftCode}
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {att.shiftName}
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">-</span>
                         )}
-                        placeholder={att.statusCode === 'P' ? '0' : '-'}
-                      />
-                      {hoursDiff !== null && hoursDiff !== 0 && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div className="absolute right-1 top-1/2 -translate-y-1/2">
-                              <AlertTriangle
-                                className={cn(
-                                  'h-4 w-4',
-                                  hoursDiff > 0 ? 'text-amber-500' : 'text-red-500'
-                                )}
-                              />
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {hoursDiff > 0 ? '+' : ''}{hoursDiff.toFixed(1)}h rispetto allo schedulato
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
+                      </div>
+
+                      {/* Turno Effettivo */}
+                      <Select
+                        value={att.shift}
+                        onValueChange={(value) =>
+                          handleFieldChange(realIndex, 'shift', value)
+                        }
+                        disabled={disabled}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SHIFT_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+
+                      {/* Codice Presenza */}
+                      <Select
+                        value={att.statusCode || 'P'}
+                        onValueChange={(value) =>
+                          handleFieldChange(realIndex, 'statusCode', value)
+                        }
+                        disabled={disabled}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {STATUS_CODE_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+
+                      {/* Ore Schedulate */}
+                      <div className="text-center text-sm text-muted-foreground font-mono">
+                        {att.scheduledHours?.toFixed(1) || '-'}
+                      </div>
+
+                      {/* Ore Effettive - con indicatore differenza */}
+                      <div className="relative">
+                        <Input
+                          type="number"
+                          min="0"
+                          max="24"
+                          step="0.5"
+                          value={att.statusCode === 'P' ? (att.hours ?? '') : ''}
+                          onChange={(e) =>
+                            handleFieldChange(realIndex, 'hours', e.target.value)
+                          }
+                          disabled={disabled || att.statusCode !== 'P'}
+                          className={cn(
+                            'font-mono text-center',
+                            hoursDiff && hoursDiff !== 0 && 'pr-6',
+                            hoursDiff && hoursDiff > 0 && 'border-amber-400',
+                            hoursDiff && hoursDiff < 0 && 'border-red-400'
+                          )}
+                          placeholder={att.statusCode === 'P' ? '0' : '-'}
+                        />
+                        {hoursDiff !== null && hoursDiff !== 0 && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="absolute right-1 top-1/2 -translate-y-1/2">
+                                <AlertTriangle
+                                  className={cn(
+                                    'h-4 w-4',
+                                    hoursDiff > 0 ? 'text-amber-500' : 'text-red-500'
+                                  )}
+                                />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {hoursDiff > 0 ? '+' : ''}{hoursDiff.toFixed(1)}h rispetto allo schedulato
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
+
+                      {/* Toggle Pagato */}
+                      <div className="flex justify-center">
+                        {att.statusCode === 'P' ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div>
+                                <Switch
+                                  checked={att.isPaid || false}
+                                  onCheckedChange={(checked) =>
+                                    handleFieldChange(realIndex, 'isPaid', checked)
+                                  }
+                                  disabled={disabled}
+                                  className="data-[state=checked]:bg-green-600"
+                                />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              Pagato a fine servizio
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        )}
+                      </div>
+
+                      {/* Rimuovi */}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleRemove(realIndex)}
+                        disabled={disabled}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
 
-                    {/* Rimuovi */}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleRemove(realIndex)}
-                      disabled={disabled}
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {/* Riga espandibile: Tariffa e Totale (solo se pagato) */}
+                    {att.isPaid && att.statusCode === 'P' && (
+                      <div className="ml-4 flex items-center gap-3 py-1 px-3 bg-green-50 border border-green-200 rounded text-sm">
+                        <Banknote className="h-4 w-4 text-green-600 shrink-0" />
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs text-muted-foreground whitespace-nowrap">Tariffa:</label>
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-muted-foreground">€</span>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.50"
+                              value={att.hourlyRate ?? ''}
+                              onChange={(e) =>
+                                handleFieldChange(realIndex, 'hourlyRate', e.target.value)
+                              }
+                              disabled={disabled}
+                              className="w-20 h-7 font-mono text-sm"
+                              placeholder="0"
+                            />
+                            <span className="text-xs text-muted-foreground">/h</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 ml-auto">
+                          <span className="text-xs text-muted-foreground">Totale:</span>
+                          <span className="font-mono font-medium text-green-700">
+                            {formatCurrency(att.totalPay || 0)}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )
               })}
@@ -592,97 +687,152 @@ export function AttendanceSection({
           ) : (
             <>
               {/* Header */}
-              <div className="grid grid-cols-[1fr_100px_60px_40px] gap-3 text-xs font-medium text-muted-foreground border-b pb-2">
+              <div className="grid grid-cols-[1fr_100px_60px_50px_40px] gap-3 text-xs font-medium text-muted-foreground border-b pb-2">
                 <span>Nome</span>
                 <span>Turno</span>
                 <span className="text-center">Ore</span>
+                <span className="text-center">Pagato</span>
                 <span></span>
               </div>
 
               {extraAttendance.map((att) => {
                 const realIndex = getRealIndex(att)
                 return (
-                  <div
-                    key={realIndex}
-                    className="grid grid-cols-[1fr_100px_60px_40px] gap-3 items-center"
-                  >
-                    {/* Nome (da lista extra o testo libero) */}
-                    {extraStaff.length > 0 ? (
+                  <div key={realIndex} className="space-y-1">
+                    <div
+                      className="grid grid-cols-[1fr_100px_60px_50px_40px] gap-3 items-center"
+                    >
+                      {/* Nome (da lista extra o testo libero) */}
+                      {extraStaff.length > 0 ? (
+                        <Select
+                          value={att.userId}
+                          onValueChange={(value) =>
+                            handleFieldChange(realIndex, 'userId', value)
+                          }
+                          disabled={disabled}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Seleziona..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {extraStaff.map((staff) => (
+                              <SelectItem key={staff.id} value={staff.id}>
+                                {staff.firstName} {staff.lastName}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input
+                          value={att.userName || ''}
+                          onChange={(e) =>
+                            handleFieldChange(realIndex, 'userName', e.target.value)
+                          }
+                          disabled={disabled}
+                          placeholder="Nome collaboratore"
+                        />
+                      )}
+
+                      {/* Turno */}
                       <Select
-                        value={att.userId}
+                        value={att.shift}
                         onValueChange={(value) =>
-                          handleFieldChange(realIndex, 'userId', value)
+                          handleFieldChange(realIndex, 'shift', value)
                         }
                         disabled={disabled}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Seleziona..." />
+                          <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {extraStaff.map((staff) => (
-                            <SelectItem key={staff.id} value={staff.id}>
-                              {staff.firstName} {staff.lastName}
+                          {SHIFT_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                    ) : (
+
+                      {/* Ore */}
                       <Input
-                        value={att.userName || ''}
+                        type="number"
+                        min="0"
+                        max="24"
+                        step="0.5"
+                        value={att.hours ?? ''}
                         onChange={(e) =>
-                          handleFieldChange(realIndex, 'userName', e.target.value)
+                          handleFieldChange(realIndex, 'hours', e.target.value)
                         }
                         disabled={disabled}
-                        placeholder="Nome collaboratore"
+                        className="font-mono"
+                        placeholder="0"
                       />
+
+                      {/* Toggle Pagato */}
+                      <div className="flex justify-center">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div>
+                              <Switch
+                                checked={att.isPaid || false}
+                                onCheckedChange={(checked) =>
+                                  handleFieldChange(realIndex, 'isPaid', checked)
+                                }
+                                disabled={disabled}
+                                className="data-[state=checked]:bg-green-600"
+                              />
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Pagato a fine servizio
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+
+                      {/* Rimuovi */}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleRemove(realIndex)}
+                        disabled={disabled}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    {/* Riga espandibile: Tariffa e Totale (solo se pagato) */}
+                    {att.isPaid && (
+                      <div className="ml-4 flex items-center gap-3 py-1 px-3 bg-green-50 border border-green-200 rounded text-sm">
+                        <Banknote className="h-4 w-4 text-green-600 shrink-0" />
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs text-muted-foreground whitespace-nowrap">Tariffa:</label>
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-muted-foreground">€</span>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.50"
+                              value={att.hourlyRate ?? ''}
+                              onChange={(e) =>
+                                handleFieldChange(realIndex, 'hourlyRate', e.target.value)
+                              }
+                              disabled={disabled}
+                              className="w-20 h-7 font-mono text-sm"
+                              placeholder="0"
+                            />
+                            <span className="text-xs text-muted-foreground">/h</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 ml-auto">
+                          <span className="text-xs text-muted-foreground">Totale:</span>
+                          <span className="font-mono font-medium text-green-700">
+                            {formatCurrency(att.totalPay || 0)}
+                          </span>
+                        </div>
+                      </div>
                     )}
-
-                    {/* Turno */}
-                    <Select
-                      value={att.shift}
-                      onValueChange={(value) =>
-                        handleFieldChange(realIndex, 'shift', value)
-                      }
-                      disabled={disabled}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {SHIFT_OPTIONS.map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-
-                    {/* Ore */}
-                    <Input
-                      type="number"
-                      min="0"
-                      max="24"
-                      step="0.5"
-                      value={att.hours ?? ''}
-                      onChange={(e) =>
-                        handleFieldChange(realIndex, 'hours', e.target.value)
-                      }
-                      disabled={disabled}
-                      className="font-mono"
-                      placeholder="0"
-                    />
-
-                    {/* Rimuovi */}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleRemove(realIndex)}
-                      disabled={disabled}
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
                   </div>
                 )
               })}
@@ -691,74 +841,6 @@ export function AttendanceSection({
         </CardContent>
       </Card>
 
-      {/* RIEPILOGO COSTI PERSONALE */}
-      {(fixedAttendance.length > 0 || extraAttendance.length > 0) && (
-        <Card className="bg-muted/50">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Riepilogo Costi Personale</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2 text-sm">
-              {/* Staff Fisso */}
-              {fixedAttendance.filter(a => a.statusCode === 'P').length > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">
-                    Dipendenti ({fixedAttendance.filter(a => a.statusCode === 'P').length} presenti):
-                  </span>
-                  <span className="font-mono">
-                    {fixedAttendance
-                      .filter(a => a.statusCode === 'P')
-                      .reduce((sum, a) => sum + (a.hours || 0), 0)
-                      .toFixed(1)}h
-                    {fixedAttendance.some(a => a.hourlyRate) && (
-                      <span className="ml-2 text-muted-foreground">
-                        ≈ €{fixedAttendance
-                          .filter(a => a.statusCode === 'P')
-                          .reduce((sum, a) => sum + ((a.hours || 0) * (a.hourlyRate || 0)), 0)
-                          .toFixed(2)}
-                      </span>
-                    )}
-                  </span>
-                </div>
-              )}
-
-              {/* Extra */}
-              {extraAttendance.length > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">
-                    Extra ({extraAttendance.length}):
-                  </span>
-                  <span className="font-mono">
-                    {extraAttendance.reduce((sum, a) => sum + (a.hours || 0), 0).toFixed(1)}h
-                    {extraAttendance.some(a => a.totalPay) && (
-                      <span className="ml-2">
-                        = €{extraAttendance.reduce((sum, a) => sum + (a.totalPay || 0), 0).toFixed(2)}
-                      </span>
-                    )}
-                  </span>
-                </div>
-              )}
-
-              {/* Totale */}
-              {(fixedAttendance.some(a => a.hourlyRate && a.statusCode === 'P') || extraAttendance.some(a => a.totalPay)) && (
-                <>
-                  <div className="border-t pt-2 flex justify-between font-medium">
-                    <span>Costo Totale Stimato:</span>
-                    <span className="font-mono">
-                      €{(
-                        fixedAttendance
-                          .filter(a => a.statusCode === 'P')
-                          .reduce((sum, a) => sum + ((a.hours || 0) * (a.hourlyRate || 0)), 0) +
-                        extraAttendance.reduce((sum, a) => sum + (a.totalPay || 0), 0)
-                      ).toFixed(2)}
-                    </span>
-                  </div>
-                </>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
     </TooltipProvider>
   )
