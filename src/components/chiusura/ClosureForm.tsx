@@ -274,6 +274,17 @@ export function ClosureForm({
       if (!confirm) return
     }
 
+    // Check uscite manuali assenti
+    const manualExpenses = formData.expenses.filter(
+      (e) => !e.payee.startsWith('[EXTRA]') && !e.payee.startsWith('[PAGATO]')
+    )
+    if (manualExpenses.length === 0) {
+      const confirmNoExpenses = window.confirm(
+        'Nessuna uscita registrata per oggi.\n\nConfermi che non ci sono state uscite di cassa per questa giornata?'
+      )
+      if (!confirmNoExpenses) return
+    }
+
     setIsSubmitting(true)
     try {
       await onSubmit(formData)
