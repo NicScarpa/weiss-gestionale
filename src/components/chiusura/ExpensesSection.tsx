@@ -73,6 +73,7 @@ interface ExpensesSectionProps {
   disabled?: boolean
   className?: string
   venueId?: string
+  activeStationKeys?: string[]
 }
 
 export function ExpensesSection({
@@ -82,7 +83,18 @@ export function ExpensesSection({
   disabled = false,
   className,
   venueId,
+  activeStationKeys,
 }: ExpensesSectionProps) {
+  // Filtra opzioni stazione in base alle stazioni movimentate
+  const getFilteredStationOptions = (currentPaidBy?: string) => {
+    if (!activeStationKeys) return STATION_OPTIONS
+    return STATION_OPTIONS.filter(opt =>
+      opt.value === 'ESTERNO' ||
+      activeStationKeys.includes(opt.value) ||
+      (currentPaidBy && opt.value === currentPaidBy)
+    )
+  }
+
   // Calcola totale
   const total = expenses.reduce((sum, e) => sum + (e.amount || 0), 0)
 
@@ -289,7 +301,7 @@ export function ExpensesSection({
                       <SelectValue placeholder="Seleziona postazione... *" />
                     </SelectTrigger>
                     <SelectContent>
-                      {STATION_OPTIONS.map((opt) => (
+                      {getFilteredStationOptions(expense.paidBy).map((opt) => (
                         <SelectItem key={opt.value} value={opt.value}>
                           {opt.label}
                         </SelectItem>
