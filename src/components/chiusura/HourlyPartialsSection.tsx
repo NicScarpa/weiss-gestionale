@@ -148,7 +148,8 @@ export function HourlyPartialsSection({
                   type="number"
                   min="0"
                   step="0.01"
-                  value={partial.receiptProgressive || ''}
+                  value={Number(partial.receiptProgressive) || ''}
+                  onFocus={(e) => e.target.select()}
                   onChange={(e) =>
                     handleFieldChange(index, 'receiptProgressive', e.target.value)
                   }
@@ -165,7 +166,8 @@ export function HourlyPartialsSection({
                   type="number"
                   min="0"
                   step="0.01"
-                  value={partial.posProgressive || ''}
+                  value={Number(partial.posProgressive) || ''}
+                  onFocus={(e) => e.target.select()}
                   onChange={(e) =>
                     handleFieldChange(index, 'posProgressive', e.target.value)
                   }
