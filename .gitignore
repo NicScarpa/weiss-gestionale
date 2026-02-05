@@ -73,3 +73,10 @@ test-results/
 
 # Python virtual environment
 .venv/
+
+# Claude plans
+.claude/plans/
+
+# Internal docs and plans
+modifiche/
+weiss-docs/
