@@ -320,6 +320,55 @@ describe('POST /api/chiusure', () => {
 
       expect(response.status).toBe(400)
     })
+
+    it('should return 400 for attendance with empty userId', async () => {
+      vi.mocked(auth).mockResolvedValue(createMockSession())
+
+      const closureData = createTestClosure({
+        attendance: [
+          {
+            userId: '',
+            shift: 'MORNING',
+            hours: 8,
+          },
+        ],
+      })
+
+      const request = new NextRequest('http://localhost:3000/api/chiusure', {
+        method: 'POST',
+        body: JSON.stringify(closureData),
+      })
+      const response = await POST(request)
+
+      expect(response.status).toBe(400)
+      const data = await response.json()
+      expect(data.error).toBe('Dati non validi')
+      expect(Array.isArray(data.details)).toBe(true)
+      expect(data.details.some((d: { path?: unknown[] }) => Array.isArray(d.path) && d.path[0] === 'attendance')).toBe(true)
+    })
+
+    it('should return 400 for duplicate partial timeSlot', async () => {
+      vi.mocked(auth).mockResolvedValue(createMockSession())
+
+      const closureData = createTestClosure({
+        partials: [
+          { timeSlot: '16:00', receiptProgressive: 0, posProgressive: 0 },
+          { timeSlot: '16:00', receiptProgressive: 10, posProgressive: 5 },
+        ],
+      })
+
+      const request = new NextRequest('http://localhost:3000/api/chiusure', {
+        method: 'POST',
+        body: JSON.stringify(closureData),
+      })
+      const response = await POST(request)
+
+      expect(response.status).toBe(400)
+      const data = await response.json()
+      expect(data.error).toBe('Dati non validi')
+      expect(Array.isArray(data.details)).toBe(true)
+      expect(data.details.some((d: { path?: unknown[] }) => Array.isArray(d.path) && d.path[0] === 'partials')).toBe(true)
+    })
   })
 
   describe('Conflict Detection', () => {

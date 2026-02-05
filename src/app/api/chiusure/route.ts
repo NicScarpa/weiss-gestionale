@@ -7,10 +7,68 @@ import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { buildStationCreateData } from '@/lib/closure-calculations'
 
+const dateSchema = z
+  .string()
+  .min(1, 'Data richiesta')
+  .transform((s) => new Date(s))
+  .refine((d) => !Number.isNaN(d.getTime()), 'Data non valida')
+
+const attendanceItemSchema = z.object({
+  userId: z.string().min(1, 'Seleziona un dipendente'),
+  shift: z.enum(['MORNING', 'EVENING'], { message: 'Seleziona un turno' }),
+  hours: z.number().optional(),
+  statusCode: z.string().optional(),
+  hourlyRate: z.number().optional(),
+  totalPay: z.number().optional(),
+  isPaid: z.boolean().optional().default(false),
+  notes: z.string().optional(),
+})
+
+const attendanceSchema = z.array(attendanceItemSchema).superRefine((items, ctx) => {
+  const seen = new Set<string>()
+  items.forEach((item, index) => {
+    const key = `${item.userId}:${item.shift}`
+    if (seen.has(key)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Dipendente duplicato nello stesso turno',
+        path: [index, 'userId'],
+      })
+    } else {
+      seen.add(key)
+    }
+  })
+})
+
+const partialItemSchema = z.object({
+  timeSlot: z.string().min(1, 'Orario richiesto'),
+  receiptProgressive: z.number().default(0),
+  posProgressive: z.number().default(0),
+  coffeeCounter: z.number().int().optional(),
+  coffeeDelta: z.number().int().optional(),
+  weather: z.string().optional(),
+})
+
+const partialsSchema = z.array(partialItemSchema).superRefine((items, ctx) => {
+  const seen = new Set<string>()
+  items.forEach((item, index) => {
+    const key = item.timeSlot
+    if (seen.has(key)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Orario duplicato',
+        path: [index, 'timeSlot'],
+      })
+    } else {
+      seen.add(key)
+    }
+  })
+})
+
 // Schema per creazione chiusura
 const createClosureSchema = z.object({
-  date: z.string().transform((s) => new Date(s)),
-  venueId: z.string().min(1),
+  date: dateSchema,
+  venueId: z.string().min(1, 'Sede richiesta'),
   isEvent: z.boolean().default(false),
   eventName: z.string().optional(),
   weatherMorning: z.string().optional(),
@@ -46,14 +104,7 @@ const createClosureSchema = z.object({
       coins001: z.number().int().default(0),
     }).optional(),
   })).optional(),
-  partials: z.array(z.object({
-    timeSlot: z.string(),
-    receiptProgressive: z.number().default(0),
-    posProgressive: z.number().default(0),
-    coffeeCounter: z.number().int().optional(),
-    coffeeDelta: z.number().int().optional(),
-    weather: z.string().optional(),
-  })).optional(),
+  partials: partialsSchema.optional(),
   expenses: z.array(z.object({
     payee: z.string(),
     description: z.string().optional(),
@@ -65,16 +116,7 @@ const createClosureSchema = z.object({
     isPaid: z.boolean().default(true),
     paidBy: z.string().optional(),
   })).optional(),
-  attendance: z.array(z.object({
-    userId: z.string(),
-    shift: z.enum(['MORNING', 'EVENING']),
-    hours: z.number().optional(),
-    statusCode: z.string().optional(),
-    hourlyRate: z.number().optional(),
-    totalPay: z.number().optional(),
-    isPaid: z.boolean().optional().default(false),
-    notes: z.string().optional(),
-  })).optional(),
+  attendance: attendanceSchema.optional(),
 })
 
 /**

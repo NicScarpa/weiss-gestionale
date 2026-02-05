@@ -6,6 +6,86 @@ import { toast } from 'sonner'
 import { ClosureFormData } from '@/components/chiusura/ClosureForm'
 import { buildClosurePayload } from '@/lib/closure-form-utils'
 
+type ZodIssueLike = { path?: Array<string | number>; message?: string }
+
+class ApiMutationError extends Error {
+  status: number
+  details?: string[]
+
+  constructor(message: string, status: number, details?: string[]) {
+    super(message)
+    this.name = 'ApiMutationError'
+    this.status = status
+    this.details = details
+  }
+}
+
+function formatZodIssues(issues: ZodIssueLike[] | undefined): string[] {
+  if (!issues?.length) return []
+
+  return issues.map((issue) => {
+    const path = issue.path ?? []
+    const msg = issue.message || 'Valore non valido'
+
+    if (path[0] === 'attendance' && typeof path[1] === 'number') {
+      const row = path[1] + 1
+      const field = path[2]
+      if (field === 'userId') return `Presenze: riga ${row} — ${msg}`
+      if (field === 'hours') return `Presenze: riga ${row} — ${msg}`
+      if (field === 'shift') return `Presenze: riga ${row} — ${msg}`
+      return `Presenze: riga ${row} — ${msg}`
+    }
+
+    if (path[0] === 'partials' && typeof path[1] === 'number') {
+      const row = path[1] + 1
+      const field = path[2]
+      if (field === 'timeSlot') return `Parziali orari: riga ${row} — ${msg}`
+      return `Parziali orari: riga ${row} — ${msg}`
+    }
+
+    if (path[0] === 'date') return `Data: ${msg}`
+    if (path[0] === 'venueId') return `Sede: ${msg}`
+
+    return msg
+  })
+}
+
+async function safeReadJson(res: Response): Promise<unknown> {
+  try {
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
+function buildApiError(status: number, data: unknown): ApiMutationError {
+  const payload = (data ?? {}) as {
+    error?: string
+    details?: unknown
+  }
+
+  const baseMessage =
+    (payload.error === 'Dati non validi' && Array.isArray(payload.details)
+      ? 'Impossibile salvare: dati non validi'
+      : payload.error) ||
+    (status === 401
+      ? 'Sessione scaduta o non autorizzato'
+      : status === 403
+      ? 'Accesso negato'
+      : 'Errore nel salvataggio')
+
+  const details: string[] = []
+  if (Array.isArray(payload.details)) {
+    if (payload.details.length > 0 && typeof payload.details[0] === 'string') {
+      details.push(...(payload.details as string[]))
+    } else {
+      details.push(...formatZodIssues(payload.details as ZodIssueLike[]))
+    }
+  }
+
+  return new ApiMutationError(baseMessage, status, details.length ? details : undefined)
+}
+
 interface UseClosureMutationOptions {
   venueId: string
   closureId?: string
@@ -59,16 +139,19 @@ export function useClosureMutation({
         })
 
         if (!res.ok) {
-          const errorData = await res.json()
+          const errorData = await safeReadJson(res)
 
           // Handle conflict (closure already exists for this date)
-          if (res.status === 409 && errorData.existingId) {
-            toast.error('Esiste già una chiusura per questa data')
-            router.push(`/chiusura-cassa/${errorData.existingId}/modifica`)
+          const conflict = (errorData ?? {}) as { existingId?: string }
+          if (res.status === 409 && conflict.existingId) {
+            toast.error('Chiusura già presente', {
+              description: 'Esiste già una chiusura per questa data. Apri la bozza esistente.',
+            })
+            router.push(`/chiusura-cassa/${conflict.existingId}/modifica`)
             return null
           }
 
-          throw new Error(errorData.error || 'Errore nel salvataggio')
+          throw buildApiError(res.status, errorData)
         }
 
         const result = await res.json()
@@ -109,8 +192,8 @@ export function useClosureMutation({
         })
 
         if (!submitRes.ok) {
-          const errorData = await submitRes.json()
-          throw new Error(errorData.error || "Errore nell'invio")
+          const errorData = await safeReadJson(submitRes)
+          throw buildApiError(submitRes.status, errorData)
         }
 
         window.open(`/api/chiusure/${newClosureId}/pdf?view=inline`, '_blank')
@@ -149,8 +232,8 @@ export function useClosureMutation({
         })
 
         if (!res.ok) {
-          const errorData = await res.json()
-          throw new Error(errorData.error || "Errore nell'aggiornamento")
+          const errorData = await safeReadJson(res)
+          throw buildApiError(res.status, errorData)
         }
 
         onSuccess?.(closureId)

@@ -42,10 +42,15 @@ export function ValidateActions({ closureId }: ValidateActionsProps) {
         throw new Error(data.error || 'Errore nella validazione')
       }
 
-      toast.success('Chiusura validata con successo')
+      toast.success('Chiusura validata', {
+        description: 'La chiusura è stata approvata correttamente.',
+      })
       router.refresh()
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : 'Errore nella validazione')
+      const message = error instanceof Error ? error.message : 'Errore nella validazione'
+      toast.error('Validazione non riuscita', {
+        description: message,
+      })
     } finally {
       setIsApproving(false)
     }
@@ -53,7 +58,9 @@ export function ValidateActions({ closureId }: ValidateActionsProps) {
 
   const handleReject = async () => {
     if (!rejectionNotes.trim()) {
-      toast.error('Inserisci un motivo per il rifiuto')
+      toast.error('Motivo mancante', {
+        description: 'Inserisci un motivo per il rifiuto.',
+      })
       return
     }
 
@@ -73,11 +80,16 @@ export function ValidateActions({ closureId }: ValidateActionsProps) {
         throw new Error(data.error || 'Errore nel rifiuto')
       }
 
-      toast.success('Chiusura rifiutata e riportata in bozza')
+      toast.success('Chiusura rifiutata', {
+        description: 'La chiusura è stata riportata in bozza.',
+      })
       setShowRejectDialog(false)
       router.refresh()
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : 'Errore nel rifiuto')
+      const message = error instanceof Error ? error.message : 'Errore nel rifiuto'
+      toast.error('Rifiuto non riuscito', {
+        description: message,
+      })
     } finally {
       setIsRejecting(false)
     }

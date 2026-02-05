@@ -19,8 +19,8 @@ const createStaffSchema = z.object({
   isFixedStaff: z.boolean().default(false), // Default: staff fisso (switch OFF)
   hourlyRate: z.number().min(0).nullable().optional(),
   defaultShift: z.enum(['MORNING', 'EVENING']).nullable().optional(),
-  venueId: z.string().optional(),
-  roleId: z.string().optional(),
+  venueId: z.string().min(1, 'Sede richiesta'),
+  roleId: z.string().min(1, 'Ruolo richiesto'),
 
   // Campi contratto
   contractType: z.enum([
@@ -29,10 +29,10 @@ const createStaffSchema = z.object({
     'LAVORO_INTERMITTENTE',
     'LAVORATORE_OCCASIONALE',
     'LIBERO_PROFESSIONISTA'
-  ]).nullable().optional(),
+  ]),
   contractHoursWeek: z.number().min(0).max(60).nullable().optional(),
   workDaysPerWeek: z.number().min(1).max(7).nullable().optional(),
-  hireDate: z.string().nullable().optional(),
+  hireDate: z.string().min(1, 'Data assunzione richiesta'),
   terminationDate: z.string().nullable().optional(),
 
   // Dati fiscali
@@ -264,18 +264,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Trova il ruolo "staff"
-    const staffRole = await prisma.role.findFirst({
-      where: { name: 'staff' },
-    })
-
-    if (!staffRole) {
-      return NextResponse.json(
-        { error: 'Ruolo staff non trovato' },
-        { status: 500 }
-      )
-    }
-
     // Genera username unico (NomeCognome)
     const username = await generateUniqueUsername(prisma, validatedData.firstName, validatedData.lastName)
 
@@ -293,8 +281,8 @@ export async function POST(request: NextRequest) {
         isFixedStaff: validatedData.isFixedStaff,
         hourlyRate: validatedData.hourlyRate ?? null,
         defaultShift: validatedData.defaultShift ?? null,
-        venueId: validatedData.venueId || session.user.venueId || null,
-        roleId: validatedData.roleId || staffRole.id,
+        venueId: validatedData.venueId,
+        roleId: validatedData.roleId,
         isActive: true,
         mustChangePassword: true, // Obbliga cambio password al primo accesso
         createdById: session.user.id, // Chi ha creato l'utente
@@ -302,7 +290,7 @@ export async function POST(request: NextRequest) {
         contractType: validatedData.contractType ?? null,
         contractHoursWeek: validatedData.contractHoursWeek ?? null,
         workDaysPerWeek: validatedData.workDaysPerWeek ?? null,
-        hireDate: validatedData.hireDate ? new Date(validatedData.hireDate) : null,
+        hireDate: new Date(validatedData.hireDate),
         terminationDate: validatedData.terminationDate ? new Date(validatedData.terminationDate) : null,
         // Dati fiscali
         vatNumber: validatedData.vatNumber ?? null,
