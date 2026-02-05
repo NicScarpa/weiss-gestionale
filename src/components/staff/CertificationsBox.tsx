@@ -75,6 +75,7 @@ export function CertificationsBox({
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingCert, setEditingCert] = useState<Certification | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [dialogKey, setDialogKey] = useState(0)
 
   // Fetch certificazioni
   const { data: certsData, isLoading } = useQuery({
@@ -197,15 +198,18 @@ export function CertificationsBox({
         .then((res) => res.json())
         .then((res) => {
           setEditingCert(res.data)
+          setDialogKey((k) => k + 1)
           setIsDialogOpen(true)
         })
         .catch(() => {
           // Fallback: usa dati dalla lista
           setEditingCert(cert)
+          setDialogKey((k) => k + 1)
           setIsDialogOpen(true)
         })
     } else {
       setEditingCert(null)
+      setDialogKey((k) => k + 1)
       setIsDialogOpen(true)
     }
   }
@@ -352,6 +356,7 @@ export function CertificationsBox({
 
       {/* Dialog creazione/modifica */}
       <CertificationDialog
+        key={dialogKey}
         open={isDialogOpen}
         onOpenChange={(open) => {
           if (!open) handleCloseDialog()

@@ -70,6 +70,7 @@ export function CertificationDialog({
     !!certification?.documentUrl || !!certification?.hasDocument
   )
   const [fileError, setFileError] = useState('')
+  const [attempted, setAttempted] = useState(false)
 
   // Tipi disponibili: escludi quelli già presenti (tranne quello corrente in modifica)
   const availableTypes = (
@@ -106,7 +107,8 @@ export function CertificationDialog({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!type || !obtainedDate || !expiryDate) return
+    setAttempted(true)
+    if (!isValid) return
 
     onSubmit({
       type,
@@ -120,7 +122,8 @@ export function CertificationDialog({
     type !== '' &&
     obtainedDate !== '' &&
     expiryDate !== '' &&
-    new Date(expiryDate) > new Date(obtainedDate)
+    new Date(expiryDate) > new Date(obtainedDate) &&
+    hasDocument
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -192,7 +195,7 @@ export function CertificationDialog({
 
           {/* Upload documento */}
           <div className="space-y-2">
-            <Label>Documento (opzionale)</Label>
+            <Label>Documento</Label>
             {hasDocument ? (
               <div className="flex items-center gap-2 p-2 border rounded-md bg-muted/30">
                 <FileText className="h-4 w-4 text-muted-foreground" />
@@ -259,6 +262,12 @@ export function CertificationDialog({
             )}
           </div>
 
+          {attempted && !isValid && (
+            <p className="text-sm text-destructive">
+              Tutti i campi sono obbligatori
+            </p>
+          )}
+
           <DialogFooter>
             <Button
               type="button"
@@ -268,7 +277,7 @@ export function CertificationDialog({
             >
               Annulla
             </Button>
-            <Button type="submit" disabled={!isValid || isSubmitting}>
+            <Button type="submit" disabled={isSubmitting}>
               {isSubmitting && (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               )}

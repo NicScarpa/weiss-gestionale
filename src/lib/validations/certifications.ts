@@ -19,7 +19,7 @@ export const CreateCertificationSchema = z
     type: certificationTypeEnum,
     obtainedDate: z.string().min(1, 'Data conseguimento obbligatoria'),
     expiryDate: z.string().min(1, 'Data scadenza obbligatoria'),
-    documentUrl: z.string().nullable().optional(),
+    documentUrl: z.string().min(1, 'Il documento è obbligatorio'),
   })
   .refine(
     (data) => {
