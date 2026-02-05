@@ -93,6 +93,7 @@ export default async function ModificaChiusuraPage({ params }: Props) {
       where: {
         venueId: closure.venueId,
         isActive: true,
+        role: { name: 'staff' },
       },
       select: {
         id: true,

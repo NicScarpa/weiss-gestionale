@@ -51,6 +51,7 @@ export default async function NuovaChiusuraPage() {
       where: {
         venueId: session.user.venueId,
         isActive: true,
+        role: { name: 'staff' },
       },
       select: {
         id: true,
