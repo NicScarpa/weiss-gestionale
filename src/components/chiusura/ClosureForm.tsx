@@ -145,6 +145,19 @@ export function ClosureForm({
     setFormData((prev) => ({ ...prev, stations: updated }))
   }
 
+  // Calcola stazioni attive (almeno un importo > 0)
+  const activeStationKeys = useMemo(() => {
+    return formData.stations
+      .filter(s =>
+        s.receiptAmount > 0 ||
+        s.cashAmount > 0 ||
+        s.posAmount > 0 ||
+        s.invoiceAmount > 0 ||
+        s.suspendedAmount > 0
+      )
+      .map(s => getStationPaidByKey(s.name))
+  }, [formData.stations])
+
   // Calcola uscite per postazione (mappa nome postazione normalizzato → totale uscite)
   const expensesByStation = useMemo(() => {
     const map: Record<string, number> = {}
@@ -391,6 +404,7 @@ export function ClosureForm({
         accounts={accounts}
         disabled={isReadOnly}
         venueId={venueId}
+        activeStationKeys={activeStationKeys}
       />
 
       {/* Presenze */}
