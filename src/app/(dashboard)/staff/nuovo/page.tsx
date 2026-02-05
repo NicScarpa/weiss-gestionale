@@ -42,6 +42,12 @@ const DAYS_OF_WEEK = [
   { value: 6, label: 'Domenica', short: 'Dom' },
 ]
 
+const EXTRA_ONLY_CONTRACTS = [
+  'LAVORO_INTERMITTENTE',
+  'LAVORATORE_OCCASIONALE',
+  'LIBERO_PROFESSIONISTA',
+] as const
+
 export default function NuovoDipendentePage() {
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -136,9 +142,24 @@ export default function NuovoDipendentePage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
-    // Validazione base
-    if (!firstName.trim() || !lastName.trim() || !email.trim() || !venueId) {
-      toast.error('Compila tutti i campi obbligatori')
+    // Validazione campi obbligatori
+    const missingFields: string[] = []
+    if (!firstName.trim()) missingFields.push('Nome')
+    if (!lastName.trim()) missingFields.push('Cognome')
+    if (!email.trim()) missingFields.push('Email')
+    if (!venueId) missingFields.push('Sede')
+    if (!roleId) missingFields.push('Ruolo')
+    if (!contractType) missingFields.push('Tipo Contratto')
+    if (!hireDate) missingFields.push('Data Assunzione')
+
+    if (missingFields.length > 0) {
+      toast.error(`Campi obbligatori mancanti: ${missingFields.join(', ')}`)
+      return
+    }
+
+    // Validazione turno per staff extra
+    if (isExtra && !defaultShift) {
+      toast.error('Seleziona il turno predefinito per lo staff extra')
       return
     }
 
@@ -170,13 +191,13 @@ export default function NuovoDipendentePage() {
       birthDate: birthDate || null,
       address: address.trim() || null,
       venueId,
-      roleId: roleId || undefined,
-      contractType: contractType || null,
+      roleId,
+      contractType,
       isFixedStaff: !isExtra,
       defaultShift: defaultShift || null,
       workDaysPerWeek: workDaysPerWeek ? parseInt(workDaysPerWeek) : null,
       contractHoursWeek: contractHoursWeek ? parseFloat(contractHoursWeek) : null,
-      hireDate: hireDate || null,
+      hireDate,
       availableDays: isExtra ? availableDays : [],
       availableHolidays: isExtra ? availableHolidays : false,
       hourlyRateBase: hourlyRateBase ? parseFloat(hourlyRateBase) : null,
@@ -325,7 +346,7 @@ export default function NuovoDipendentePage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="role">Ruolo</Label>
+                <Label htmlFor="role">Ruolo *</Label>
                 <Select value={roleId} onValueChange={setRoleId}>
                   <SelectTrigger>
                     <SelectValue placeholder="Staff (default)" />
@@ -345,8 +366,13 @@ export default function NuovoDipendentePage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="contractType">Tipo Contratto</Label>
-                <Select value={contractType} onValueChange={setContractType}>
+                <Label htmlFor="contractType">Tipo Contratto *</Label>
+                <Select value={contractType} onValueChange={(value) => {
+                  setContractType(value)
+                  if (EXTRA_ONLY_CONTRACTS.includes(value as typeof EXTRA_ONLY_CONTRACTS[number])) {
+                    setIsExtra(true)
+                  }
+                }}>
                   <SelectTrigger>
                     <SelectValue placeholder="Seleziona tipo contratto" />
                   </SelectTrigger>
@@ -360,7 +386,7 @@ export default function NuovoDipendentePage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="hireDate">Data Assunzione</Label>
+                <Label htmlFor="hireDate">Data Assunzione *</Label>
                 <Input
                   id="hireDate"
                   type="date"
@@ -373,20 +399,14 @@ export default function NuovoDipendentePage() {
             {/* Tipo Staff */}
             <div className="space-y-4 p-4 border rounded-lg bg-muted/30">
               <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="isExtra" className="text-base font-medium">
-                    Extra / Collaboratore
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    {isExtra
-                      ? 'Lavoratore extra a chiamata'
-                      : 'Staff fisso con turni regolari'}
-                  </p>
-                </div>
+                <Label htmlFor="isExtra" className="text-base font-medium">
+                  Extra
+                </Label>
                 <Switch
                   id="isExtra"
                   checked={isExtra}
                   onCheckedChange={setIsExtra}
+                  disabled={EXTRA_ONLY_CONTRACTS.includes(contractType as typeof EXTRA_ONLY_CONTRACTS[number])}
                 />
               </div>
 

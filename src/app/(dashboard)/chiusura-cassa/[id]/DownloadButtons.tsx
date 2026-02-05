@@ -14,6 +14,7 @@ export function DownloadButtons({ closureId }: DownloadButtonsProps) {
   const [loadingExcel, setLoadingExcel] = useState(false)
 
   const handleDownload = async (type: 'pdf' | 'excel') => {
+    const label = type === 'pdf' ? 'PDF' : 'Excel'
     const setLoading = type === 'pdf' ? setLoadingPdf : setLoadingExcel
     setLoading(true)
     try {
@@ -31,7 +32,9 @@ export function DownloadButtons({ closureId }: DownloadButtonsProps) {
       a.click()
       URL.revokeObjectURL(blobUrl)
     } catch {
-      toast.error('Errore nel download. Riprova.')
+      toast.error('Download non riuscito', {
+        description: `Impossibile scaricare il ${label}. Riprova tra qualche secondo.`,
+      })
     } finally {
       setLoading(false)
     }

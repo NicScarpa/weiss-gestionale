@@ -143,7 +143,9 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
       setSelectedIds(new Set())
     } catch (error) {
       logger.error('Errore fetch chiusure', error)
-      toast.error('Errore nel caricamento delle chiusure')
+      toast.error('Caricamento fallito', {
+        description: 'Impossibile recuperare le chiusure. Riprova tra qualche secondo.',
+      })
     } finally {
       setLoading(false)
     }
@@ -414,7 +416,9 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
                             closureDate={closure.date}
                             closureStatus={closure.status}
                             onDeleted={() => {
-                              toast.success('Chiusura eliminata')
+                              toast.success('Chiusura eliminata', {
+                                description: 'La chiusura è stata rimossa correttamente.',
+                              })
                               fetchClosures()
                             }}
                             trigger={
@@ -476,7 +480,9 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
         selectedIds={Array.from(selectedIds)}
         hasValidated={hasValidatedSelected}
         onDeleted={() => {
-          toast.success(`${selectedIds.size} chiusure eliminate`)
+          toast.success('Chiusure eliminate', {
+            description: `${selectedIds.size} chiusure rimosse.`,
+          })
           setSelectedIds(new Set())
           fetchClosures()
         }}

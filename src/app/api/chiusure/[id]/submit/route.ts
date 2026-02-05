@@ -12,7 +12,10 @@ export async function POST(
     const session = await auth()
 
     if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
+      return NextResponse.json(
+        { error: 'Sessione scaduta: accedi di nuovo per inviare la chiusura' },
+        { status: 401 }
+      )
     }
 
     const { id } = await params
@@ -22,12 +25,13 @@ export async function POST(
       where: { id },
       include: {
         stations: true,
+        expenses: true,
       },
     })
 
     if (!closure) {
       return NextResponse.json(
-        { error: 'Chiusura non trovata' },
+        { error: 'Bozza non trovata. Ricarica la pagina.' },
         { status: 404 }
       )
     }
@@ -46,7 +50,7 @@ export async function POST(
     // Solo DRAFT può essere inviata
     if (closure.status !== 'DRAFT') {
       return NextResponse.json(
-        { error: 'Solo le chiusure in bozza possono essere inviate' },
+        { error: 'La chiusura non è in bozza e non può essere inviata' },
         { status: 400 }
       )
     }
@@ -54,7 +58,36 @@ export async function POST(
     // Verifica che ci sia almeno una stazione
     if (closure.stations.length === 0) {
       return NextResponse.json(
-        { error: 'La chiusura deve avere almeno una postazione cassa' },
+        { error: 'Postazioni cassa: aggiungi almeno una postazione prima dell\'invio' },
+        { status: 400 }
+      )
+    }
+
+    const hasAnyActivity = closure.stations.some(
+      (station) => Number(station.cashAmount || 0) > 0 || Number(station.posAmount || 0) > 0
+    )
+    if (!hasAnyActivity) {
+      return NextResponse.json(
+        {
+          error:
+            'Incassi: tutte le postazioni hanno Contanti e POS = 0. Inserisci almeno un incasso.',
+        },
+        { status: 400 }
+      )
+    }
+
+    const expensesWithoutPaidBy = closure.expenses.filter(
+      (expense) => Number(expense.amount || 0) > 0 && !expense.paidBy
+    )
+    if (expensesWithoutPaidBy.length > 0) {
+      const example = expensesWithoutPaidBy[0]?.payee?.trim()
+      const exampleLabel = example
+        ? ` (es. ${example}${expensesWithoutPaidBy.length > 1 ? ` +${expensesWithoutPaidBy.length - 1} altre` : ''})`
+        : ''
+      return NextResponse.json(
+        {
+          error: `Uscite di cassa: manca "Pagato da" per ${expensesWithoutPaidBy.length} riga/e${exampleLabel}`,
+        },
         { status: 400 }
       )
     }
@@ -81,7 +114,7 @@ export async function POST(
   } catch (error) {
     logger.error('Errore POST /api/chiusure/[id]/submit', error)
     return NextResponse.json(
-      { error: 'Errore nell\'invio della chiusura' },
+      { error: 'Errore nell\'invio della chiusura. Riprova.' },
       { status: 500 }
     )
   }

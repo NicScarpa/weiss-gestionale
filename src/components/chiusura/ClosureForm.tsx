@@ -17,6 +17,58 @@ import { useClosureCalculations } from './hooks/useClosureCalculations'
 import { toast } from 'sonner'
 
 import { logger } from '@/lib/logger'
+
+function shiftLabel(shift: 'MORNING' | 'EVENING') {
+  return shift === 'MORNING' ? 'Mattina' : 'Sera'
+}
+
+function getDraftBlockingIssues(data: ClosureFormData): string[] {
+  const issues: string[] = []
+
+  const fixedRows = data.attendance.filter((a) => !a.isExtra)
+  const extraRows = data.attendance.filter((a) => a.isExtra)
+
+  fixedRows.forEach((row, index) => {
+    if (!row.userId?.trim()) {
+      issues.push(`Presenze: riga ${index + 1} — seleziona un dipendente oppure elimina la riga`)
+    }
+  })
+
+  extraRows.forEach((row, index) => {
+    if (!row.userId?.trim()) {
+      issues.push(
+        `Extra: riga ${index + 1} — seleziona una persona e inserisci le ore (oppure elimina la riga)`
+      )
+    }
+  })
+
+  const seenAttendance = new Set<string>()
+  for (const row of data.attendance) {
+    const userId = row.userId?.trim()
+    if (!userId) continue
+    const key = `${userId}:${row.shift}`
+    if (seenAttendance.has(key)) {
+      const who = row.userName?.trim() || userId
+      issues.push(`Presenze: ${who} è inserito più volte nel turno ${shiftLabel(row.shift)}`)
+    } else {
+      seenAttendance.add(key)
+    }
+  }
+
+  const seenSlots = new Set<string>()
+  for (const partial of data.partials) {
+    const slot = partial.timeSlot?.trim()
+    if (!slot) continue
+    if (seenSlots.has(slot)) {
+      issues.push(`Parziali orari: orario duplicato ${slot} (rimuovi o modifica uno dei due)`)
+    } else {
+      seenSlots.add(slot)
+    }
+  }
+
+  return issues
+}
+
 // Tipo dati form
 export interface ClosureFormData {
   date: Date
@@ -225,13 +277,33 @@ export function ClosureForm({
   const handleSave = async () => {
     if (!onSave) return
 
+    const blockingIssues = getDraftBlockingIssues(formData)
+    if (blockingIssues.length > 0) {
+      toast.error('Bozza non salvata', {
+        description: blockingIssues.join('\n'),
+      })
+      return
+    }
+
     setIsSaving(true)
     try {
       await onSave(formData)
-      toast.success('Chiusura salvata')
+      toast.success('Bozza salvata', {
+        description: 'La chiusura è stata salvata correttamente.',
+      })
     } catch (error) {
       logger.error('Errore salvataggio', error)
-      toast.error('Errore nel salvataggio')
+      const err = error instanceof Error ? error : new Error('Errore nel salvataggio')
+      const details = Array.isArray((err as unknown as { details?: unknown }).details)
+        ? ((err as unknown as { details: string[] }).details ?? [])
+        : []
+      if (details.length > 0) {
+        toast.error('Errore salvataggio bozza', { description: details.join('\n') })
+      } else {
+        toast.error('Errore salvataggio bozza', {
+          description: err.message || 'Riprova tra qualche secondo.',
+        })
+      }
     } finally {
       setIsSaving(false)
     }
@@ -241,18 +313,44 @@ export function ClosureForm({
   const handleSubmit = async () => {
     if (!onSubmit) return
 
+    const blockingIssues = getDraftBlockingIssues(formData)
+    if (blockingIssues.length > 0) {
+      toast.error('Invio non possibile', {
+        description: blockingIssues.join('\n'),
+      })
+      return
+    }
+
     // Verifica paidBy su tutte le uscite
     const expensesWithoutPaidBy = formData.expenses.filter(
       (e) => e.amount > 0 && !e.paidBy
     )
     if (expensesWithoutPaidBy.length > 0) {
-      toast.error('Seleziona la postazione "Pagato da" per ogni uscita di cassa')
+      const exampleItems = expensesWithoutPaidBy
+        .map((e) => e.payee?.trim())
+        .filter(Boolean)
+        .slice(0, 2)
+      const examples = exampleItems.join(', ')
+      const extraCount = expensesWithoutPaidBy.length - exampleItems.length
+      const descriptionParts = []
+      descriptionParts.push(
+        `Manca "Pagato da" per ${expensesWithoutPaidBy.length} riga/e.`
+      )
+      if (examples) {
+        descriptionParts.push(
+          `Esempi: ${examples}${extraCount > 0 ? `, +${extraCount} altre` : ''}`
+        )
+      }
+      descriptionParts.push('Seleziona la postazione che ha anticipato il pagamento.')
+      toast.error('Uscite di cassa incomplete', { description: descriptionParts.join('\n') })
       return
     }
 
     // Validazione base
     if (formData.stations.length === 0) {
-      toast.error('Aggiungi almeno una postazione cassa')
+      toast.error('Postazioni mancanti', {
+        description: 'Aggiungi almeno una postazione per inviare la chiusura.',
+      })
       return
     }
 
@@ -261,7 +359,10 @@ export function ClosureForm({
       (s) => (s.cashAmount || 0) > 0 || (s.posAmount || 0) > 0
     )
     if (!hasAnyActivity) {
-      toast.error('Inserisci almeno un incasso (Contanti o POS) in una postazione')
+      toast.error('Incassi mancanti', {
+        description:
+          'Tutte le postazioni hanno Contanti e POS = 0. Inserisci almeno un incasso.',
+      })
       return
     }
 
@@ -272,19 +373,26 @@ export function ClosureForm({
     if (stationsWithCashButNoPos.length > 0) {
       const names = stationsWithCashButNoPos.map((s) => s.name).join(', ')
       const confirmNoPos = window.confirm(
-        `Le seguenti postazioni hanno incasso contanti ma POS a €0:\n${names}\n\nConfermi che non ci sono stati pagamenti POS?`
+        `POS: ${names}\nContanti > 0 e POS = 0.\n\nConfermi che non ci sono stati pagamenti POS?`
       )
       if (!confirmNoPos) {
-        toast.error('Inserisci l\'importo POS per completare la chiusura')
+        toast.error('POS non confermato', {
+          description: `Postazioni: ${names}. Inserisci il POS oppure conferma che non ci sono stati pagamenti POS.`,
+        })
         return
       }
     }
 
     if (totals.hasSignificantDifference) {
       const confirm = window.confirm(
-        `Attenzione: c'è una differenza cassa di ${formatCurrency(totals.cashDifference)}. Vuoi procedere comunque?`
+        `Differenza cassa: ${formatCurrency(totals.cashDifference)}.\nVuoi inviare comunque la chiusura?`
       )
-      if (!confirm) return
+      if (!confirm) {
+        toast.error('Invio annullato', {
+          description: `Verifica la differenza cassa di ${formatCurrency(totals.cashDifference)}.`,
+        })
+        return
+      }
     }
 
     // Check uscite manuali assenti
@@ -293,19 +401,37 @@ export function ClosureForm({
     )
     if (manualExpenses.length === 0) {
       const confirmNoExpenses = window.confirm(
-        'Nessuna uscita registrata per oggi.\n\nConfermi che non ci sono state uscite di cassa per questa giornata?'
+        'Uscite di cassa: nessuna uscita manuale registrata.\n\nConfermi che non ci sono state uscite oggi?'
       )
-      if (!confirmNoExpenses) return
+      if (!confirmNoExpenses) {
+        toast.error('Invio annullato', {
+          description:
+            'Inserisci le uscite di cassa oppure conferma che non ce ne sono state.',
+        })
+        return
+      }
     }
 
     setIsSubmitting(true)
     try {
       await onSubmit(formData)
-      toast.success('Chiusura inviata per validazione')
+      toast.success('Inviata per validazione', {
+        description: 'La chiusura è stata inviata correttamente.',
+      })
       router.push('/chiusura-cassa')
     } catch (error) {
       logger.error('Errore invio', error)
-      toast.error('Errore nell\'invio')
+      const err = error instanceof Error ? error : new Error("Errore nell'invio")
+      const details = Array.isArray((err as unknown as { details?: unknown }).details)
+        ? ((err as unknown as { details: string[] }).details ?? [])
+        : []
+      if (details.length > 0) {
+        toast.error('Errore invio', { description: details.join('\n') })
+      } else {
+        toast.error('Errore invio', {
+          description: err.message || 'Riprova tra qualche secondo.',
+        })
+      }
     } finally {
       setIsSubmitting(false)
     }
