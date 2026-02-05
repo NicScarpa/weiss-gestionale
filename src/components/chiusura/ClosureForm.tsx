@@ -145,6 +145,12 @@ export function ClosureForm({
     setFormData((prev) => ({ ...prev, stations: updated }))
   }
 
+  // Converte nome postazione nel valore paidBy corrispondente
+  // es. "CASSA 1" → "CASSA1", "BAR" → "BAR"
+  const getStationPaidByKey = (stationName: string): string => {
+    return stationName.replace(/\s/g, '').toUpperCase()
+  }
+
   // Calcola stazioni attive (almeno un importo > 0)
   const activeStationKeys = useMemo(() => {
     return formData.stations
@@ -168,12 +174,6 @@ export function ClosureForm({
     }
     return map
   }, [formData.expenses])
-
-  // Converte nome postazione nel valore paidBy corrispondente
-  // es. "CASSA 1" → "CASSA1", "BAR" → "BAR"
-  const getStationPaidByKey = (stationName: string): string => {
-    return stationName.replace(/\s/g, '').toUpperCase()
-  }
 
   // Handler per presenze con auto-generazione uscite per personale pagato
   const handleAttendanceChange = (newAttendance: AttendanceData[]) => {
