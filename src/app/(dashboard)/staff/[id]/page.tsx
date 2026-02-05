@@ -7,8 +7,6 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmployeeProfileForm } from '@/components/staff/EmployeeProfileForm'
-import { ConstraintEditor } from '@/components/staff/ConstraintEditor'
-import { CertificationsBox } from '@/components/staff/CertificationsBox'
 import { ArrowLeft } from 'lucide-react'
 
 interface PageProps {
@@ -105,23 +103,9 @@ export default function StaffDetailPage({ params }: PageProps) {
         isAdmin={isAdmin}
         venues={venues}
         roles={roles}
-      />
-
-      {/* Certificazioni */}
-      <CertificationsBox
         userId={resolvedParams.id}
-        contractType={staffData.contractType}
-        roleName={staffData.role?.name}
-        isReadOnly={session?.user?.role === 'staff'}
+        userRole={session?.user?.role || 'staff'}
       />
-
-      {/* Vincoli (solo per admin/manager) */}
-      {(session?.user?.role === 'admin' || session?.user?.role === 'manager') && (
-        <ConstraintEditor
-          userId={resolvedParams.id}
-          userName={`${staffData.firstName} ${staffData.lastName}`}
-        />
-      )}
     </div>
   )
 }

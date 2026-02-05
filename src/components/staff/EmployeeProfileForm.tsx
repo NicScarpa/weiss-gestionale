@@ -16,7 +16,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { SkillsSelector } from './SkillsSelector'
+import { CertificationsBox } from './CertificationsBox'
+import { ConstraintEditor } from './ConstraintEditor'
 import { AddressAutocomplete } from '@/components/ui/address-autocomplete'
+import { Badge } from '@/components/ui/badge'
 import { Save, User, Briefcase, Euro, Bell, Shield, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -83,6 +86,8 @@ interface EmployeeProfileFormProps {
   isAdmin?: boolean
   venues?: Venue[]
   roles?: Role[]
+  userId: string
+  userRole: string
 }
 
 // Costanti per i giorni della settimana
@@ -96,7 +101,7 @@ const WEEKDAYS = [
   { value: 6, label: 'DOM' },
 ]
 
-export function EmployeeProfileForm({ employee, isAdmin = false, venues = [], roles = [] }: EmployeeProfileFormProps) {
+export function EmployeeProfileForm({ employee, isAdmin = false, venues = [], roles = [], userId, userRole }: EmployeeProfileFormProps) {
   const queryClient = useQueryClient()
 
   const [formData, setFormData] = useState({
@@ -419,7 +424,27 @@ export function EmployeeProfileForm({ employee, isAdmin = false, venues = [], ro
             {/* Tab Contratto */}
             <TabsContent value="contract" className="space-y-4">
               <div className="space-y-2">
-                <Label>Tipo contratto</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Tipo contratto</Label>
+                  {!formData.isFixedStaff && (
+                    <Badge
+                      variant="secondary"
+                      className={`text-xs ${isAdmin ? 'cursor-pointer hover:bg-primary hover:text-primary-foreground' : ''}`}
+                      onClick={() => isAdmin && setFormData(prev => ({ ...prev, isFixedStaff: true }))}
+                    >
+                      Extra
+                    </Badge>
+                  )}
+                  {formData.isFixedStaff && isAdmin && (
+                    <Badge
+                      variant="outline"
+                      className="text-xs cursor-pointer hover:bg-secondary"
+                      onClick={() => setFormData(prev => ({ ...prev, isFixedStaff: false }))}
+                    >
+                      Segna come Extra
+                    </Badge>
+                  )}
+                </div>
                 <Select
                   value={formData.contractType || ''}
                   onValueChange={v => setFormData(prev => ({
@@ -532,21 +557,6 @@ export function EmployeeProfileForm({ employee, isAdmin = false, venues = [], ro
                 </Select>
               </div>
 
-              {/* Switch EXTRA */}
-              <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
-                <Switch
-                  checked={!formData.isFixedStaff}
-                  onCheckedChange={v => setFormData(prev => ({ ...prev, isFixedStaff: !v }))}
-                  disabled={!isAdmin}
-                />
-                <div>
-                  <Label className="font-medium">EXTRA</Label>
-                  <p className="text-xs text-muted-foreground">
-                    {!formData.isFixedStaff ? 'Lavoratore extra a chiamata' : 'Staff fisso con turni regolari'}
-                  </p>
-                </div>
-              </div>
-
               {/* Disponibilità per EXTRA */}
               {!formData.isFixedStaff && (
                 <div className="space-y-3 p-3 border rounded-lg">
@@ -582,6 +592,14 @@ export function EmployeeProfileForm({ employee, isAdmin = false, venues = [], ro
                     Seleziona i giorni in cui il lavoratore è disponibile
                   </p>
                 </div>
+              )}
+
+              {/* Vincoli individuali (solo admin/manager) */}
+              {(userRole === 'admin' || userRole === 'manager') && (
+                <ConstraintEditor
+                  userId={userId}
+                  userName={`${employee.firstName} ${employee.lastName}`}
+                />
               )}
             </TabsContent>
 
@@ -754,6 +772,14 @@ export function EmployeeProfileForm({ employee, isAdmin = false, venues = [], ro
                 />
                 <Label>Può gestire la cassa</Label>
               </div>
+
+              {/* Certificazioni */}
+              <CertificationsBox
+                userId={userId}
+                contractType={employee.contractType}
+                roleName={employee.role?.name}
+                isReadOnly={userRole === 'staff'}
+              />
             </TabsContent>
           </Tabs>
         </CardContent>
