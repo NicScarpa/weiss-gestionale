@@ -5,10 +5,25 @@ import {
   View,
   Image,
   StyleSheet,
+  Font,
 } from '@react-pdf/renderer'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 import * as path from 'path'
+
+// Register Avenir Next font
+Font.register({
+  family: 'Avenir Next',
+  fonts: [
+    { src: path.join(process.cwd(), 'public', 'fonts', 'AvenirNext-Regular.ttf') },
+    { src: path.join(process.cwd(), 'public', 'fonts', 'AvenirNext-Bold.ttf'), fontWeight: 'bold' },
+  ],
+})
+
+Font.registerEmojiSource({
+  format: 'png',
+  url: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/72x72/',
+})
 
 // ============================================================
 // Types
@@ -68,6 +83,10 @@ interface ClosurePdfProps {
     expenses: Array<{
       payee: string
       description: string | null
+      documentType: string
+      documentRef: string | null
+      vatAmount: number | null
+      isPaid: boolean
       paidBy: string | null
       amount: number
     }>
@@ -115,7 +134,7 @@ const s = StyleSheet.create({
     padding: 24,
     paddingBottom: 50,
     fontSize: 8,
-    fontFamily: 'Helvetica',
+    fontFamily: 'Avenir Next',
     color: COLORS.black,
   },
 
@@ -141,7 +160,8 @@ const s = StyleSheet.create({
   headerInfo: {},
   headerTitle: {
     fontSize: 14,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: 'Avenir Next',
+    fontWeight: 'bold',
   },
   headerSubtitle: {
     fontSize: 9,
@@ -153,7 +173,8 @@ const s = StyleSheet.create({
   },
   headerDate: {
     fontSize: 10,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: 'Avenir Next',
+    fontWeight: 'bold',
   },
   headerMeta: {
     fontSize: 7,
@@ -164,7 +185,8 @@ const s = StyleSheet.create({
   // Section titles
   sectionTitle: {
     fontSize: 9,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: 'Avenir Next',
+    fontWeight: 'bold',
     color: COLORS.black,
     backgroundColor: COLORS.bgHeader,
     padding: '3 4',
@@ -202,7 +224,8 @@ const s = StyleSheet.create({
   },
   tableHeaderText: {
     fontSize: 7,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: 'Avenir Next',
+    fontWeight: 'bold',
     textAlign: 'center',
   },
   tableCellText: {
@@ -217,7 +240,8 @@ const s = StyleSheet.create({
     fontSize: 7.5,
   },
   bold: {
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: 'Avenir Next',
+    fontWeight: 'bold',
   },
 
   // Stations table column widths (8 columns)
@@ -230,10 +254,14 @@ const s = StyleSheet.create({
   stColPos: { width: '13%', paddingRight: 3 },
   stColTotal: { width: '14%', paddingRight: 3 },
 
-  // Expenses table
-  expColDesc: { width: '55%', paddingLeft: 3 },
-  expColPaidBy: { width: '20%' },
-  expColAmount: { width: '25%', paddingRight: 3 },
+  // Expenses table (7 columns)
+  expColPayee: { width: '22%', paddingLeft: 3 },
+  expColDesc: { width: '18%' },
+  expColDocType: { width: '8%' },
+  expColDocRef: { width: '12%' },
+  expColVat: { width: '10%', paddingRight: 3 },
+  expColPaidBy: { width: '10%' },
+  expColAmount: { width: '20%', paddingRight: 3 },
 
   // Partials
   partialsContainer: {
@@ -251,7 +279,8 @@ const s = StyleSheet.create({
   },
   partialTime: {
     fontSize: 8,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: 'Avenir Next',
+    fontWeight: 'bold',
   },
   partialDetail: {
     fontSize: 7,
@@ -314,38 +343,6 @@ const s = StyleSheet.create({
   extraColPay: { width: '20%', paddingRight: 3 },
   extraColPaid: { width: '15%' },
 
-  // Summary
-  summaryBox: {
-    marginTop: 6,
-    border: '1 solid ' + COLORS.black,
-    padding: 6,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 1.5,
-  },
-  summaryLabel: {
-    fontSize: 8,
-  },
-  summaryValue: {
-    fontSize: 8,
-    fontFamily: 'Helvetica-Bold',
-  },
-  summaryDivider: {
-    borderTopWidth: 1,
-    borderTopColor: COLORS.black,
-    marginVertical: 3,
-  },
-  summaryTotalLabel: {
-    fontSize: 10,
-    fontFamily: 'Helvetica-Bold',
-  },
-  summaryTotalValue: {
-    fontSize: 10,
-    fontFamily: 'Helvetica-Bold',
-  },
-
   // Footer
   footer: {
     position: 'absolute',
@@ -387,12 +384,33 @@ function fmt(value: number | null | undefined): string {
   }).format(value)
 }
 
-function fmtCurrency(value: number | null | undefined): string {
-  if (value === null || value === undefined || isNaN(value)) return '0,00 €'
-  return new Intl.NumberFormat('it-IT', {
-    style: 'currency',
-    currency: 'EUR',
-  }).format(value)
+function fmtEuro(value: number | null | undefined): string {
+  if (value === null || value === undefined || isNaN(value)) return '-'
+  if (value === 0) return '-'
+  return fmt(value) + ' \u20AC'
+}
+
+function getDocTypeLabel(type: string): string {
+  switch (type) {
+    case 'FATTURA': return 'Fatt.'
+    case 'DDT': return 'DDT'
+    case 'RICEVUTA': return 'Ric.'
+    case 'PERSONALE': return 'Pers.'
+    case 'NONE': default: return '-'
+  }
+}
+
+function cleanPayeeName(payee: string): string {
+  return payee.replace(/^\[(EXTRA|PAGATO)\]\s*/, '')
+}
+
+const WEATHER_EMOJI_PDF: Record<string, string> = {
+  sunny: '\u2600\uFE0F',       // ☀️
+  cloudy: '\u2601\uFE0F',      // ☁️
+  rainy: '\uD83C\uDF27\uFE0F', // 🌧️
+  stormy: '\u26C8\uFE0F',      // ⛈️
+  snowy: '\u2744\uFE0F',       // ❄️
+  foggy: '\uD83C\uDF2B\uFE0F', // 🌫️
 }
 
 function getWeatherString(closure: ClosurePdfProps['closure']): string {
@@ -447,7 +465,7 @@ function aggregateCashCounts(stations: ClosurePdfProps['closure']['stations']): 
 // ============================================================
 
 function Header({ closure }: ClosurePdfProps) {
-  const formattedDate = format(new Date(closure.date), "EEEE d MMMM yyyy", { locale: it })
+  const formattedDate = format(new Date(closure.date), "EEE dd/MM/yyyy", { locale: it }).toUpperCase()
   const logoPath = path.join(process.cwd(), 'public', 'images', 'logo.png')
 
   return (
@@ -457,10 +475,9 @@ function Header({ closure }: ClosurePdfProps) {
         <Image style={s.logo} src={logoPath} />
         <View style={s.headerInfo}>
           <Text style={s.headerTitle}>CHIUSURA CASSA</Text>
-          <Text style={s.headerSubtitle}>
-            {closure.venue.name}
-            {closure.isEvent && closure.eventName ? ` — ${closure.eventName}` : ''}
-          </Text>
+          {closure.isEvent && closure.eventName && (
+            <Text style={s.headerSubtitle}>{closure.eventName}</Text>
+          )}
         </View>
       </View>
       <View style={s.headerRight}>
@@ -492,6 +509,14 @@ function StationsTable({ closure }: ClosurePdfProps) {
     totalAmount: closure.stations.reduce((sum, st) => sum + st.totalAmount, 0),
   }
 
+  // #9: Contanti totale include uscite pagate dalla cassa
+  const totalCashExpenses = closure.expenses
+    .filter(e => e.paidBy && e.paidBy !== 'ESTERNO')
+    .reduce((sum, e) => sum + e.amount, 0)
+
+  // #6: Nascondi postazioni con totalAmount = 0
+  const activeStations = closure.stations.filter(st => st.totalAmount > 0)
+
   return (
     <View>
       <Text style={s.sectionTitle}>POSTAZIONI CASSA</Text>
@@ -506,29 +531,29 @@ function StationsTable({ closure }: ClosurePdfProps) {
         <Text style={[s.tableHeaderText, s.stColPos]}>POS</Text>
         <Text style={[s.tableHeaderText, s.stColTotal]}>TOTALE</Text>
       </View>
-      {/* Rows */}
-      {closure.stations.map((st, idx) => (
+      {/* Rows - #6: solo stazioni attive, #8: centrate */}
+      {activeStations.map((st, idx) => (
         <View key={idx} style={[s.tableRow, idx % 2 === 1 ? s.tableRowAlt : {}]}>
           <Text style={[s.tableCellText, s.bold, s.stColName]}>{st.name}</Text>
-          <Text style={[s.tableCellRight, s.stColReceipt]}>{fmt(st.receiptAmount)}</Text>
-          <Text style={[s.tableCellRight, s.stColVat]}>{fmt(st.receiptVat)}</Text>
-          <Text style={[s.tableCellRight, s.stColInvoice]}>{fmt(st.invoiceAmount)}</Text>
-          <Text style={[s.tableCellRight, s.stColSuspended]}>{fmt(st.suspendedAmount)}</Text>
-          <Text style={[s.tableCellRight, s.stColCash]}>{fmt(st.cashAmount)}</Text>
-          <Text style={[s.tableCellRight, s.stColPos]}>{fmt(st.posAmount)}</Text>
+          <Text style={[s.tableCellCenter, s.stColReceipt]}>{fmt(st.receiptAmount)}</Text>
+          <Text style={[s.tableCellCenter, s.stColVat]}>{fmt(st.receiptVat)}</Text>
+          <Text style={[s.tableCellCenter, s.stColInvoice]}>{fmt(st.invoiceAmount)}</Text>
+          <Text style={[s.tableCellCenter, s.stColSuspended]}>{fmt(st.suspendedAmount)}</Text>
+          <Text style={[s.tableCellCenter, s.stColCash]}>{fmt(st.cashAmount)}</Text>
+          <Text style={[s.tableCellCenter, s.stColPos]}>{fmt(st.posAmount)}</Text>
           <Text style={[s.tableCellRight, s.bold, s.stColTotal]}>{fmt(st.totalAmount)}</Text>
         </View>
       ))}
-      {/* Total */}
+      {/* Total - #8: fmtEuro, #9: contanti + uscite cassa */}
       <View style={[s.tableRow, s.tableRowTotal]}>
         <Text style={[s.tableCellText, s.bold, s.stColName]}>TOTALE</Text>
-        <Text style={[s.tableCellRight, s.bold, s.stColReceipt]}>{fmt(totals.receiptAmount)}</Text>
-        <Text style={[s.tableCellRight, s.bold, s.stColVat]}>{fmt(totals.receiptVat)}</Text>
-        <Text style={[s.tableCellRight, s.bold, s.stColInvoice]}>{fmt(totals.invoiceAmount)}</Text>
-        <Text style={[s.tableCellRight, s.bold, s.stColSuspended]}>{fmt(totals.suspendedAmount)}</Text>
-        <Text style={[s.tableCellRight, s.bold, s.stColCash]}>{fmt(totals.cashAmount)}</Text>
-        <Text style={[s.tableCellRight, s.bold, s.stColPos]}>{fmt(totals.posAmount)}</Text>
-        <Text style={[s.tableCellRight, s.bold, s.stColTotal]}>{fmt(totals.totalAmount)}</Text>
+        <Text style={[s.tableCellCenter, s.bold, s.stColReceipt]}>{fmtEuro(totals.receiptAmount)}</Text>
+        <Text style={[s.tableCellCenter, s.bold, s.stColVat]}>{fmtEuro(totals.receiptVat)}</Text>
+        <Text style={[s.tableCellCenter, s.bold, s.stColInvoice]}>{fmtEuro(totals.invoiceAmount)}</Text>
+        <Text style={[s.tableCellCenter, s.bold, s.stColSuspended]}>{fmtEuro(totals.suspendedAmount)}</Text>
+        <Text style={[s.tableCellCenter, s.bold, s.stColCash]}>{fmtEuro(totals.cashAmount + totalCashExpenses)}</Text>
+        <Text style={[s.tableCellCenter, s.bold, s.stColPos]}>{fmtEuro(totals.posAmount)}</Text>
+        <Text style={[s.tableCellRight, s.bold, s.stColTotal]}>{fmtEuro(totals.totalAmount)}</Text>
       </View>
     </View>
   )
@@ -542,13 +567,15 @@ function PartialsSection({ closure }: ClosurePdfProps) {
       <View style={s.partialsContainer}>
         {closure.partials.map((p, idx) => (
           <View key={idx} style={s.partialCard}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={s.partialTime}>Ore {p.timeSlot}</Text>
-              <Text style={[s.partialTime]}>{fmt(p.total)} €</Text>
+              <Text style={[s.partialTime]}>
+                {p.weather && WEATHER_EMOJI_PDF[p.weather] ? WEATHER_EMOJI_PDF[p.weather] + ' ' : ''}
+                {fmt(p.total)} €
+              </Text>
             </View>
             <Text style={s.partialDetail}>
               Cont. {fmt(p.receiptProgressive)} + POS {fmt(p.posProgressive)}
-              {p.weather ? `  |  ${p.weather}` : ''}
             </Text>
             {p.coffeeCounter !== null && (
               <Text style={s.partialDetail}>
@@ -569,21 +596,31 @@ function ExpensesTable({ closure }: ClosurePdfProps) {
     <View>
       <Text style={s.sectionTitle}>USCITE</Text>
       <View style={s.tableHeaderRow}>
-        <Text style={[s.tableHeaderText, s.expColDesc, { textAlign: 'left', paddingLeft: 3 }]}>CAUSALE</Text>
-        <Text style={[s.tableHeaderText, s.expColPaidBy]}>PAGAMENTO</Text>
+        <Text style={[s.tableHeaderText, s.expColPayee, { textAlign: 'left', paddingLeft: 3 }]}>BENEF.</Text>
+        <Text style={[s.tableHeaderText, s.expColDesc, { textAlign: 'left' }]}>CAUSALE</Text>
+        <Text style={[s.tableHeaderText, s.expColDocType]}>TIPO</Text>
+        <Text style={[s.tableHeaderText, s.expColDocRef]}>RIF.</Text>
+        <Text style={[s.tableHeaderText, s.expColVat]}>IVA</Text>
+        <Text style={[s.tableHeaderText, s.expColPaidBy]}>POSTAZ.</Text>
         <Text style={[s.tableHeaderText, s.expColAmount, { textAlign: 'right', paddingRight: 3 }]}>IMPORTO</Text>
       </View>
       {closure.expenses.map((exp, idx) => (
         <View key={idx} style={[s.tableRow, idx % 2 === 1 ? s.tableRowAlt : {}]}>
-          <Text style={[s.tableCellText, s.expColDesc]}>
-            {exp.payee}{exp.description ? ` — ${exp.description}` : ''}
-          </Text>
+          <Text style={[s.tableCellText, s.expColPayee]}>{cleanPayeeName(exp.payee)}</Text>
+          <Text style={[s.tableCellText, s.expColDesc]}>{exp.description || '-'}</Text>
+          <Text style={[s.tableCellCenter, s.expColDocType]}>{getDocTypeLabel(exp.documentType)}</Text>
+          <Text style={[s.tableCellCenter, s.expColDocRef]}>{exp.documentRef || '-'}</Text>
+          <Text style={[s.tableCellRight, s.expColVat]}>{exp.vatAmount ? fmt(exp.vatAmount) : '-'}</Text>
           <Text style={[s.tableCellCenter, s.expColPaidBy]}>{exp.paidBy || 'CASSA'}</Text>
           <Text style={[s.tableCellRight, s.expColAmount]}>{fmt(exp.amount)}</Text>
         </View>
       ))}
       <View style={[s.tableRow, s.tableRowTotal]}>
-        <Text style={[s.tableCellText, s.bold, s.expColDesc]}>TOTALE USCITE</Text>
+        <Text style={[s.tableCellText, s.bold, s.expColPayee]}>TOTALE USCITE</Text>
+        <Text style={[s.tableCellText, s.expColDesc]}></Text>
+        <Text style={[s.tableCellCenter, s.expColDocType]}></Text>
+        <Text style={[s.tableCellCenter, s.expColDocRef]}></Text>
+        <Text style={[s.tableCellRight, s.expColVat]}></Text>
         <Text style={[s.tableCellCenter, s.expColPaidBy]}></Text>
         <Text style={[s.tableCellRight, s.bold, s.expColAmount]}>{fmt(closure.totalExpenses)}</Text>
       </View>
@@ -611,12 +648,11 @@ function CashCountSection({ closure }: ClosurePdfProps) {
       </View>
       {DENOMINATIONS.map((d) => {
         const qty = counts[d.key] || 0
-        if (qty === 0) return null
         return (
           <View key={d.key} style={s.cashCountRow}>
             <Text style={s.cashCountLabel}>{d.label}</Text>
-            <Text style={s.cashCountQty}>{qty}</Text>
-            <Text style={s.cashCountValue}>{fmt(qty * d.value)}</Text>
+            <Text style={s.cashCountQty}>{qty === 0 ? '-' : String(qty)}</Text>
+            <Text style={s.cashCountValue}>{qty === 0 ? '-' : fmt(qty * d.value)}</Text>
           </View>
         )
       })}
@@ -707,48 +743,6 @@ function AttendanceSection({ closure }: ClosurePdfProps) {
   )
 }
 
-function SummaryBox({ closure }: ClosurePdfProps) {
-  const cashDiff = closure.stations.reduce((sum, st) => {
-    if (!st.cashCount) return sum
-    return sum + st.cashCount.difference
-  }, 0)
-  const hasCashCount = closure.stations.some(st => st.cashCount !== null)
-
-  return (
-    <View style={s.summaryBox}>
-      <View style={s.summaryRow}>
-        <Text style={s.summaryLabel}>Totale Contanti</Text>
-        <Text style={s.summaryValue}>{fmtCurrency(closure.totalCash)}</Text>
-      </View>
-      <View style={s.summaryRow}>
-        <Text style={s.summaryLabel}>Totale POS</Text>
-        <Text style={s.summaryValue}>{fmtCurrency(closure.totalPos)}</Text>
-      </View>
-      <View style={s.summaryRow}>
-        <Text style={s.summaryLabel}>Totale Incassi</Text>
-        <Text style={s.summaryValue}>{fmtCurrency(closure.totalRevenue)}</Text>
-      </View>
-      <View style={s.summaryRow}>
-        <Text style={s.summaryLabel}>Totale Uscite</Text>
-        <Text style={[s.summaryValue, { color: COLORS.red }]}>- {fmtCurrency(closure.totalExpenses)}</Text>
-      </View>
-      <View style={s.summaryDivider} />
-      <View style={s.summaryRow}>
-        <Text style={s.summaryTotalLabel}>CASSA NETTA</Text>
-        <Text style={s.summaryTotalValue}>{fmtCurrency(closure.netCash)}</Text>
-      </View>
-      {hasCashCount && (
-        <View style={[s.summaryRow, { marginTop: 2 }]}>
-          <Text style={s.summaryLabel}>Differenza Cassa</Text>
-          <Text style={[s.summaryValue, { color: cashDiff >= 0 ? COLORS.green : COLORS.red }]}>
-            {cashDiff >= 0 ? '+' : ''}{fmtCurrency(cashDiff)}
-          </Text>
-        </View>
-      )}
-    </View>
-  )
-}
-
 function Footer({ closure }: ClosurePdfProps) {
   return (
     <View style={s.footer} fixed>
@@ -781,9 +775,6 @@ export function ClosurePdfDocument({ closure }: ClosurePdfProps) {
             <AttendanceSection closure={closure} />
           </View>
         </View>
-
-        {/* Summary */}
-        <SummaryBox closure={closure} />
 
         {/* Notes */}
         {closure.notes && (

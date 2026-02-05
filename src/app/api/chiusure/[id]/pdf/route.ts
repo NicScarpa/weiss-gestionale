@@ -6,6 +6,20 @@ import { ClosurePdfDocument } from '@/lib/pdf/ClosurePdfTemplate'
 import { format } from 'date-fns'
 
 import { logger } from '@/lib/logger'
+
+function getWeatherForTimeSlot(
+  timeSlot: string,
+  weatherMorning: string | null,
+  weatherAfternoon: string | null,
+  weatherEvening: string | null
+): string | null {
+  const hour = parseInt(timeSlot.split(':')[0], 10)
+  if (isNaN(hour)) return null
+  if (hour < 14) return weatherMorning
+  if (hour < 18) return weatherAfternoon
+  return weatherEvening
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -143,6 +157,10 @@ export async function GET(
       expenses: closure.expenses.map((e) => ({
         payee: e.payee,
         description: e.description,
+        documentType: e.documentType,
+        documentRef: e.documentRef,
+        vatAmount: e.vatAmount ? Number(e.vatAmount) : null,
+        isPaid: e.isPaid,
         paidBy: e.paidBy,
         amount: Number(e.amount),
       })),
@@ -153,7 +171,12 @@ export async function GET(
         total: Number(p.receiptProgressive) + Number(p.posProgressive),
         coffeeCounter: p.coffeeCounter,
         coffeeDelta: p.coffeeDelta,
-        weather: p.weather,
+        weather: p.weather ?? getWeatherForTimeSlot(
+          p.timeSlot,
+          closure.weatherMorning,
+          closure.weatherAfternoon,
+          closure.weatherEvening
+        ),
       })),
       attendance: closure.attendance.map((a) => ({
         userName: `${a.user.firstName} ${a.user.lastName}`,
@@ -176,11 +199,15 @@ export async function GET(
     const dateStr = format(new Date(closure.date), 'yyyy-MM-dd')
     const filename = `chiusura-${closure.venue.code}-${dateStr}.pdf`
 
+    // Supporto inline per apertura in browser
+    const viewMode = request.nextUrl.searchParams.get('view')
+    const disposition = viewMode === 'inline' ? 'inline' : 'attachment'
+
     // Ritorna il PDF (converti Buffer a Uint8Array per Next.js 16)
     return new NextResponse(new Uint8Array(pdfBuffer), {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Disposition': `${disposition}; filename="${filename}"`,
       },
     })
   } catch (error) {
