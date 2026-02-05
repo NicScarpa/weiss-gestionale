@@ -120,9 +120,10 @@ const DenominationRow = memo(function DenominationRow({
         <Input
           type="number"
           min="0"
-          value={count}
+          value={count || ''}
           onChange={(e) => onChange(denomination, e.target.value)}
           disabled={disabled}
+          placeholder="0"
           className="w-16 h-11 text-center font-mono text-lg"
         />
         <button
