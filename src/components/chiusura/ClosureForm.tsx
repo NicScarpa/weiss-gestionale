@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
-import { formatCurrency, formatDate, DEFAULT_VAT_RATE } from '@/lib/constants'
+import { formatCurrency, formatDate, DEFAULT_VAT_RATE, DEFAULT_PARTIAL_HOURS } from '@/lib/constants'
 import { CashStationCard, CashStationData, emptyCashStation } from './CashStationCard'
 import { HourlyPartialsSection, HourlyPartialData } from './HourlyPartialsSection'
 import { ExpensesSection, ExpenseData } from './ExpensesSection'
@@ -98,7 +98,11 @@ export function ClosureForm({
     weatherEvening: initialData?.weatherEvening || '',
     notes: initialData?.notes || '',
     stations: initializeStations(),
-    partials: initialData?.partials || [],
+    partials: initialData?.partials ?? DEFAULT_PARTIAL_HOURS.map((timeSlot) => ({
+      timeSlot,
+      receiptProgressive: 0,
+      posProgressive: 0,
+    })),
     expenses: initialData?.expenses || [],
     attendance: initialData?.attendance || [],
   })
