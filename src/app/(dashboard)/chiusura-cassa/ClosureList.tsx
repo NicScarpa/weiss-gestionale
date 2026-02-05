@@ -348,11 +348,11 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
                         />
                       </TableHead>
                     )}
-                    <TableHead>Data</TableHead>
-                    {isAdmin && <TableHead>Sede</TableHead>}
-                    <TableHead className="text-right">Incasso</TableHead>
-                    <TableHead>Postazioni</TableHead>
-                    <TableHead>Evento</TableHead>
+                    <TableHead className="text-center">Data</TableHead>
+                    {isAdmin && <TableHead className="text-center">Sede</TableHead>}
+                    <TableHead className="text-center">Incasso</TableHead>
+                    <TableHead className="text-center">Postazioni</TableHead>
+                    <TableHead className="text-center">Evento</TableHead>
                     <TableHead className="w-10"></TableHead>
                     <TableHead className="w-10"></TableHead>
                     {isAdmin && <TableHead className="w-10"></TableHead>}
@@ -376,21 +376,21 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
                           />
                         </TableCell>
                       )}
-                      <TableCell className="font-medium">
+                      <TableCell className="text-center font-medium">
                         {formatDateCompact(closure.date)}
                       </TableCell>
                       {isAdmin && (
-                        <TableCell>
+                        <TableCell className="text-center">
                           <Badge variant="outline">{closure.venue.code}</Badge>
                         </TableCell>
                       )}
-                      <TableCell className="text-right font-mono">
+                      <TableCell className="text-center font-mono">
                         {formatCurrency(closure.grossTotal)}
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
+                      <TableCell className="text-center text-sm text-muted-foreground">
                         {getActiveStationNames(closure.stations)}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="text-center">
                         {closure.isEvent ? (
                           <Badge variant="secondary">{closure.eventName || 'Evento'}</Badge>
                         ) : (

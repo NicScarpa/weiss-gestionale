@@ -57,7 +57,7 @@ const settingsNavigation = [
 
 export function Sidebar() {
   const pathname = usePathname()
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(true)
 
   // Stato accordion Personale
   const isInPersonnelSection = personnelNavigation.some(
