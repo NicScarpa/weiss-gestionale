@@ -113,6 +113,7 @@ export function useClosureMutation({
           throw new Error(errorData.error || "Errore nell'invio")
         }
 
+        window.open(`/api/chiusure/${newClosureId}/pdf?view=inline`, '_blank')
         router.push('/chiusura-cassa')
       } catch (err) {
         const error = err instanceof Error ? err : new Error('Errore sconosciuto')
