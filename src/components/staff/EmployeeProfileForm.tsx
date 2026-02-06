@@ -426,24 +426,14 @@ export function EmployeeProfileForm({ employee, isAdmin = false, venues = [], ro
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>Tipo contratto</Label>
-                  {!formData.isFixedStaff && (
-                    <Badge
-                      variant="secondary"
-                      className={`text-xs ${isAdmin ? 'cursor-pointer hover:bg-primary hover:text-primary-foreground' : ''}`}
-                      onClick={() => isAdmin && setFormData(prev => ({ ...prev, isFixedStaff: true }))}
-                    >
-                      Extra
-                    </Badge>
-                  )}
-                  {formData.isFixedStaff && isAdmin && (
-                    <Badge
-                      variant="outline"
-                      className="text-xs cursor-pointer hover:bg-secondary"
-                      onClick={() => setFormData(prev => ({ ...prev, isFixedStaff: false }))}
-                    >
-                      Segna come Extra
-                    </Badge>
-                  )}
+                  <div className="flex items-center gap-3 rounded-lg bg-muted/60 border px-4 py-2">
+                    <span className="text-base font-bold tracking-wide">EXTRA</span>
+                    <Switch
+                      checked={!formData.isFixedStaff}
+                      onCheckedChange={(checked) => isAdmin && setFormData(prev => ({ ...prev, isFixedStaff: !checked }))}
+                      disabled={!isAdmin}
+                    />
+                  </div>
                 </div>
                 <Select
                   value={formData.contractType || ''}

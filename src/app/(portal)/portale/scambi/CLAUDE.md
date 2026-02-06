@@ -7,5 +7,5 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #2326 | 9:49 AM | 🔵 | Budget Comparison API with Actual Cost Aggregation | ~530 |
+| #2627 | 11:31 AM | ✅ | Redesigned shift swap interface with green/gray color scheme | ~458 |
 </claude-mem-context>

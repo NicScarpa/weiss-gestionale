@@ -7,5 +7,5 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #2326 | 9:49 AM | 🔵 | Budget Comparison API with Actual Cost Aggregation | ~530 |
+| #2239 | 9:46 AM | 🔵 | Shift Schedule Management Module | ~431 |
 </claude-mem-context>

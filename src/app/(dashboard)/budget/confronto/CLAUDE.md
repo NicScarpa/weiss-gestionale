@@ -7,5 +7,5 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #2326 | 9:49 AM | 🔵 | Budget Comparison API with Actual Cost Aggregation | ~530 |
+| #2201 | 9:45 AM | 🔵 | Budget Comparison Report with Category-Based Analysis | ~481 |
 </claude-mem-context>

@@ -7,5 +7,5 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #2326 | 9:49 AM | 🔵 | Budget Comparison API with Actual Cost Aggregation | ~530 |
+| #2620 | 11:30 AM | ✅ | Redesigned shift calendar UI with gray/green color palette | ~378 |
 </claude-mem-context>

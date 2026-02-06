@@ -276,15 +276,15 @@ export function UserForm({ mode, initialData, onSubmit, onCancel }: UserFormProp
               <div className="space-y-2">
                 <Label>Sede</Label>
                 <Select
-                  value={watch('venueId') || ''}
-                  onValueChange={(value) => setValue('venueId', value)}
+                  value={watch('venueId') || '__none__'}
+                  onValueChange={(value) => setValue('venueId', value === '__none__' ? '' : value)}
                   disabled={isSubmitting}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Seleziona sede" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Nessuna sede</SelectItem>
+                    <SelectItem value="__none__">Nessuna sede</SelectItem>
                     {venues.map((venue) => (
                       <SelectItem key={venue.id} value={venue.id}>
                         {venue.name} ({venue.code})

@@ -445,16 +445,16 @@ export function AccountManagement() {
             <div className="space-y-2">
               <Label htmlFor="account-parent">Conto Padre</Label>
               <Select
-                value={formData.parentId}
+                value={formData.parentId || '__none__'}
                 onValueChange={(value) =>
-                  setFormData({ ...formData, parentId: value })
+                  setFormData({ ...formData, parentId: value === '__none__' ? '' : value })
                 }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Nessuno (conto principale)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Nessuno</SelectItem>
+                  <SelectItem value="__none__">Nessuno</SelectItem>
                   {parentAccounts.map((account) => (
                     <SelectItem key={account.id} value={account.id}>
                       {account.code} - {account.name}
