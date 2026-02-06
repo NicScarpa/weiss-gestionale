@@ -7,5 +7,5 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #2326 | 9:49 AM | 🔵 | Budget Comparison API with Actual Cost Aggregation | ~530 |
+| #2226 | 9:46 AM | 🔵 | Attendance Management Dashboard for Punch Clock System | ~488 |
 </claude-mem-context>

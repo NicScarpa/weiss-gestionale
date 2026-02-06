@@ -559,14 +559,14 @@ export function BudgetCategoryManagement() {
               <div className="space-y-2">
                 <Label htmlFor="parentId">Categoria padre</Label>
                 <Select
-                  value={formData.parentId}
-                  onValueChange={(v) => setFormData({ ...formData, parentId: v })}
+                  value={formData.parentId || '__none__'}
+                  onValueChange={(v) => setFormData({ ...formData, parentId: v === '__none__' ? '' : v })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Nessuna (root)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Nessuna (root)</SelectItem>
+                    <SelectItem value="__none__">Nessuna (root)</SelectItem>
                     {categories
                       .filter(c => !c.parentId && c.id !== editCategory?.id)
                       .map(c => (

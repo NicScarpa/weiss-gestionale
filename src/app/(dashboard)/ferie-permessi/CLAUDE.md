@@ -7,5 +7,5 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #2326 | 9:49 AM | 🔵 | Budget Comparison API with Actual Cost Aggregation | ~530 |
+| #2254 | 9:47 AM | 🔵 | Leave Request Management System | ~499 |
 </claude-mem-context>

@@ -7,5 +7,5 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #2326 | 9:49 AM | 🔵 | Budget Comparison API with Actual Cost Aggregation | ~530 |
+| #2089 | 9:43 AM | 🔵 | Today's Attendance Summary with Hours Calculation | ~401 |
 </claude-mem-context>

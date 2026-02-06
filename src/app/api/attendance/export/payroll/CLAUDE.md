@@ -7,5 +7,5 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #2326 | 9:49 AM | 🔵 | Budget Comparison API with Actual Cost Aggregation | ~530 |
+| #2104 | 9:43 AM | 🔵 | Payroll Export System with Cost Estimation | ~494 |
 </claude-mem-context>

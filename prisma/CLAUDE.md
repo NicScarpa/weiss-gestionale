@@ -10,4 +10,11 @@
 | #725 | 7:06 PM | 🔵 | CashCount Schema with Denomination Fields | ~412 |
 | #722 | " | 🔵 | CashStation Database Schema Structure | ~404 |
 | #698 | 7:02 PM | 🔵 | Database Schema Analysis for Cash Closing PDF Generation | ~496 |
+
+### Feb 6, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #1631 | 9:32 AM | 🔵 | Leave Management and Attendance Tracking System Details | ~513 |
+| #1560 | 9:30 AM | 🔵 | Database Schema Analysis - Employee and Cash Closure Models | ~520 |
 </claude-mem-context>
