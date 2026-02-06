@@ -10,11 +10,11 @@ import { LeaveBalanceCard } from '@/components/portal/LeaveBalanceCard'
 function getGreeting(): { text: string; icon: React.ReactNode } {
   const hour = new Date().getHours()
   if (hour < 12) {
-    return { text: 'Buongiorno', icon: <Sun className="h-6 w-6 text-amber-500" /> }
+    return { text: 'Buongiorno', icon: <Sun className="h-6 w-6 text-white" /> }
   } else if (hour < 18) {
-    return { text: 'Buon pomeriggio', icon: <Cloud className="h-6 w-6 text-blue-400" /> }
+    return { text: 'Buon pomeriggio', icon: <Cloud className="h-6 w-6 text-white" /> }
   } else {
-    return { text: 'Buonasera', icon: <Moon className="h-6 w-6 text-indigo-400" /> }
+    return { text: 'Buonasera', icon: <Moon className="h-6 w-6 text-white" /> }
   }
 }
 
@@ -26,14 +26,14 @@ export default function PortalDashboardPage() {
   return (
     <div className="space-y-6">
       {/* Header di benvenuto */}
-      <div className="bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl p-6 text-white shadow-lg">
+      <div className="bg-gray-900 rounded-2xl p-6 text-white shadow-lg">
         <div className="flex items-center gap-3 mb-2">
           {greeting.icon}
           <span className="text-xl font-semibold">
             {greeting.text}, {session?.user?.firstName || 'Utente'}!
           </span>
         </div>
-        <p className="text-amber-100 capitalize">{today}</p>
+        <p className="text-gray-300 capitalize">{today}</p>
       </div>
 
       {/* Prossimi turni */}

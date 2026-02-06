@@ -154,7 +154,7 @@ export function ShiftSwapDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ArrowLeftRight className="w-5 h-5 text-amber-500" />
+            <ArrowLeftRight className="w-5 h-5 text-green-500" />
             Richiedi scambio turno
           </DialogTitle>
           <DialogDescription>
@@ -164,16 +164,16 @@ export function ShiftSwapDialog({
 
         <div className="space-y-4">
           {/* Dettagli turno */}
-          <div className="p-3 bg-slate-50 rounded-lg space-y-2">
+          <div className="p-3 bg-gray-50 rounded-lg space-y-2">
             <div className="flex items-center gap-2 text-sm">
-              <Calendar className="w-4 h-4 text-slate-400" />
+              <Calendar className="w-4 h-4 text-gray-400" />
               <span className="font-medium">
                 {format(parseISO(shift.date), 'EEEE d MMMM yyyy', { locale: it })}
               </span>
             </div>
             <div className="flex items-center gap-3 text-sm">
               <div className="flex items-center gap-1.5">
-                <Clock className="w-4 h-4 text-slate-400" />
+                <Clock className="w-4 h-4 text-gray-400" />
                 <span>
                   {formatTime(shift.startTime)} - {formatTime(shift.endTime)}
                 </span>
@@ -210,32 +210,32 @@ export function ShiftSwapDialog({
                 {filteredColleagues.map((colleague) => (
                   <label
                     key={colleague.id}
-                    className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors hover:bg-slate-50 ${
+                    className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors hover:bg-gray-50 ${
                       selectedColleague === colleague.id
-                        ? 'border-amber-500 bg-amber-50'
+                        ? 'border-green-500 bg-green-50'
                         : ''
                     }`}
                   >
                     <RadioGroupItem value={colleague.id} className="sr-only" />
-                    <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center">
-                      <User className="w-4 h-4 text-slate-500" />
+                    <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
+                      <User className="w-4 h-4 text-gray-500" />
                     </div>
                     <div className="flex-1">
                       <p className="font-medium text-sm">
                         {colleague.firstName} {colleague.lastName}
                       </p>
-                      <p className="text-xs text-slate-500">{colleague.email}</p>
+                      <p className="text-xs text-gray-500">{colleague.email}</p>
                     </div>
                     {selectedColleague === colleague.id && (
-                      <Check className="w-5 h-5 text-amber-500" />
+                      <Check className="w-5 h-5 text-green-500" />
                     )}
                   </label>
                 ))}
               </RadioGroup>
             ) : (
-              <div className="p-4 text-center border rounded-lg bg-slate-50">
-                <AlertCircle className="w-8 h-8 mx-auto mb-2 text-slate-400" />
-                <p className="text-sm text-slate-500">
+              <div className="p-4 text-center border rounded-lg bg-gray-50">
+                <AlertCircle className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                <p className="text-sm text-gray-500">
                   Nessun collega disponibile per lo scambio
                 </p>
               </div>

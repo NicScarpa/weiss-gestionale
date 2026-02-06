@@ -32,26 +32,26 @@ const statusConfig: Record<
   NOT_CLOCKED_IN: {
     label: 'Non timbrato',
     icon: LogIn,
-    bgColor: 'bg-slate-100 dark:bg-slate-800',
-    textColor: 'text-slate-600 dark:text-slate-400',
+    bgColor: 'bg-gray-50 border border-gray-200',
+    textColor: 'text-gray-500',
   },
   CLOCKED_IN: {
     label: 'In servizio',
     icon: Clock,
-    bgColor: 'bg-green-100 dark:bg-green-900/30',
-    textColor: 'text-green-700 dark:text-green-400',
+    bgColor: 'bg-green-50 border border-green-200',
+    textColor: 'text-green-600',
   },
   ON_BREAK: {
     label: 'In pausa',
     icon: Coffee,
-    bgColor: 'bg-amber-100 dark:bg-amber-900/30',
-    textColor: 'text-amber-700 dark:text-amber-400',
+    bgColor: 'bg-amber-50 border border-amber-200',
+    textColor: 'text-amber-600',
   },
   CLOCKED_OUT: {
     label: 'Turno terminato',
     icon: LogOut,
-    bgColor: 'bg-blue-100 dark:bg-blue-900/30',
-    textColor: 'text-blue-700 dark:text-blue-400',
+    bgColor: 'bg-blue-50 border border-blue-200',
+    textColor: 'text-blue-600',
   },
 }
 
@@ -100,17 +100,17 @@ export function PunchStatus({
 
       {/* Time details */}
       <div className="grid grid-cols-3 gap-2 text-center">
-        <div className="p-2 rounded-lg bg-muted/50">
+        <div className="p-2 rounded-xl bg-gray-50">
           <div className="text-xs text-muted-foreground mb-1">Entrata</div>
           <div className="font-mono font-medium">{formatTime(clockInTime)}</div>
         </div>
-        <div className="p-2 rounded-lg bg-muted/50">
+        <div className="p-2 rounded-xl bg-gray-50">
           <div className="text-xs text-muted-foreground mb-1">Pausa</div>
           <div className="font-mono font-medium">
             {formatTime(breakStartTime)}
           </div>
         </div>
-        <div className="p-2 rounded-lg bg-muted/50">
+        <div className="p-2 rounded-xl bg-gray-50">
           <div className="text-xs text-muted-foreground mb-1">Uscita</div>
           <div className="font-mono font-medium">{formatTime(clockOutTime)}</div>
         </div>

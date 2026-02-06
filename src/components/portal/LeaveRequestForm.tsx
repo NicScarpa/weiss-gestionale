@@ -249,7 +249,7 @@ export function LeaveRequestForm() {
           <div className="flex items-center justify-between rounded-lg border p-4">
             <div className="space-y-0.5">
               <Label>Giornata parziale</Label>
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-gray-500">
                 Richiedi solo alcune ore del giorno
               </p>
             </div>
@@ -303,14 +303,14 @@ export function LeaveRequestForm() {
             <Button
               type="button"
               variant="outline"
-              className="flex-1"
+              className="flex-1 border-gray-200 text-gray-600 rounded-xl"
               onClick={() => router.back()}
             >
               Annulla
             </Button>
             <Button
               type="submit"
-              className="flex-1"
+              className="flex-1 bg-green-500 hover:bg-green-600 text-white rounded-xl"
               disabled={mutation.isPending}
             >
               {mutation.isPending && (

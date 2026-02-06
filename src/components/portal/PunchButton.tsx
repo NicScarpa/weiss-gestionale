@@ -39,29 +39,29 @@ const buttonConfig: Record<
     punchType: 'IN',
     label: 'TIMBRA ENTRATA',
     icon: LogIn,
-    bgColor: 'bg-green-600',
-    hoverColor: 'hover:bg-green-700',
+    bgColor: 'bg-green-500',
+    hoverColor: 'hover:bg-green-600',
   },
   CLOCKED_IN: {
     punchType: 'OUT',
     label: 'TIMBRA USCITA',
     icon: LogOut,
-    bgColor: 'bg-red-600',
-    hoverColor: 'hover:bg-red-700',
+    bgColor: 'bg-red-500',
+    hoverColor: 'hover:bg-red-600',
   },
   ON_BREAK: {
     punchType: 'BREAK_END',
     label: 'FINE PAUSA',
     icon: Coffee,
-    bgColor: 'bg-amber-600',
-    hoverColor: 'hover:bg-amber-700',
+    bgColor: 'bg-amber-500',
+    hoverColor: 'hover:bg-amber-600',
   },
   CLOCKED_OUT: {
     punchType: 'IN',
     label: 'NUOVO TURNO',
     icon: LogIn,
-    bgColor: 'bg-green-600',
-    hoverColor: 'hover:bg-green-700',
+    bgColor: 'bg-green-500',
+    hoverColor: 'hover:bg-green-600',
   },
 }
 
@@ -351,7 +351,7 @@ export function PunchButton({
         onClick={handlePunch}
         disabled={disabled || isLoading || !venue}
         className={cn(
-          'w-full h-24 text-xl font-bold text-white shadow-lg',
+          'w-full h-24 text-xl font-bold text-white shadow-md rounded-2xl',
           !isOnline ? 'bg-amber-600 hover:bg-amber-700' : config.bgColor,
           !isOnline ? '' : config.hoverColor,
           'transition-all duration-200',

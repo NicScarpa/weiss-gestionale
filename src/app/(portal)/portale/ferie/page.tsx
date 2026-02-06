@@ -69,31 +69,31 @@ function getStatusConfig(status: string) {
       return {
         label: 'In attesa',
         icon: Clock,
-        className: 'bg-amber-100 text-amber-700',
+        className: 'bg-amber-50 text-amber-600 border border-amber-200',
       }
     case 'APPROVED':
       return {
         label: 'Approvata',
         icon: CheckCircle2,
-        className: 'bg-emerald-100 text-emerald-700',
+        className: 'bg-green-50 text-green-600 border border-green-200',
       }
     case 'REJECTED':
       return {
         label: 'Rifiutata',
         icon: XCircle,
-        className: 'bg-red-100 text-red-700',
+        className: 'bg-red-50 text-red-600 border border-red-200',
       }
     case 'CANCELLED':
       return {
         label: 'Annullata',
         icon: AlertCircle,
-        className: 'bg-slate-100 text-slate-600',
+        className: 'bg-gray-50 text-gray-500 border border-gray-200',
       }
     default:
       return {
         label: status,
         icon: AlertCircle,
-        className: 'bg-slate-100 text-slate-600',
+        className: 'bg-gray-50 text-gray-500 border border-gray-200',
       }
   }
 }
@@ -144,12 +144,12 @@ export default function PortalFeriePage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Ferie e Permessi</h1>
-          <p className="text-sm text-slate-600 mt-1">
+          <h1 className="text-2xl font-bold text-gray-900">Ferie e Permessi</h1>
+          <p className="text-sm text-gray-500 mt-1">
             Gestisci le tue richieste di ferie e permessi
           </p>
         </div>
-        <Button asChild>
+        <Button asChild className="bg-green-500 hover:bg-green-600 text-white rounded-xl">
           <Link href="/portale/ferie/nuova">
             <Plus className="h-4 w-4 mr-2" />
             Nuova
@@ -175,7 +175,7 @@ export default function PortalFeriePage() {
               return (
                 <div
                   key={req.id}
-                  className="flex items-start gap-4 p-4 rounded-lg border bg-amber-50/50"
+                  className="flex items-start gap-4 p-4 rounded-2xl border-l-4 border-l-amber-400 border border-gray-100 bg-white"
                 >
                   <div
                     className="w-1 h-12 rounded-full mt-1"
@@ -183,7 +183,7 @@ export default function PortalFeriePage() {
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="font-medium text-slate-900">
+                      <span className="font-medium text-gray-900">
                         {req.leaveType.name}
                       </span>
                       <Badge className={status.className}>
@@ -191,16 +191,16 @@ export default function PortalFeriePage() {
                         {status.label}
                       </Badge>
                     </div>
-                    <p className="text-sm text-slate-600">
+                    <p className="text-sm text-gray-600">
                       {formatDateRange(req.startDate, req.endDate)}
                       {req.daysRequested && (
-                        <span className="ml-2 text-slate-500">
+                        <span className="ml-2 text-gray-500">
                           ({Number(req.daysRequested).toFixed(1)} giorni)
                         </span>
                       )}
                     </p>
                     {req.notes && (
-                      <p className="text-sm text-slate-500 mt-1 italic">
+                      <p className="text-sm text-gray-500 mt-1 italic">
                         &quot;{req.notes}&quot;
                       </p>
                     )}
@@ -273,7 +273,7 @@ export default function PortalFeriePage() {
                     />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="font-medium text-slate-900">
+                        <span className="font-medium text-gray-900">
                           {req.leaveType.name}
                         </span>
                         <Badge className={status.className}>
@@ -281,10 +281,10 @@ export default function PortalFeriePage() {
                           {status.label}
                         </Badge>
                       </div>
-                      <p className="text-sm text-slate-600">
+                      <p className="text-sm text-gray-600">
                         {formatDateRange(req.startDate, req.endDate)}
                         {req.daysRequested && (
-                          <span className="ml-2 text-slate-500">
+                          <span className="ml-2 text-gray-500">
                             ({Number(req.daysRequested).toFixed(1)} giorni)
                           </span>
                         )}
@@ -300,7 +300,7 @@ export default function PortalFeriePage() {
               })}
             </div>
           ) : (
-            <p className="text-sm text-slate-500 text-center py-8">
+            <p className="text-sm text-gray-400 text-center py-8">
               Nessuna richiesta precedente
             </p>
           )}

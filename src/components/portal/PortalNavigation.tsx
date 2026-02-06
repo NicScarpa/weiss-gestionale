@@ -37,7 +37,7 @@ export function PortalNavigation() {
   const pathname = usePathname()
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t shadow-lg">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-100">
       <div className="flex items-center justify-around h-16">
         {navItems.map((item) => {
           const isActive = pathname === item.href ||
@@ -48,17 +48,23 @@ export function PortalNavigation() {
               key={item.href}
               href={item.href}
               className={cn(
-                'flex flex-col items-center justify-center min-w-[64px] h-full px-3 transition-colors',
+                'flex flex-col items-center justify-center min-w-[64px] h-full px-3 transition-colors duration-200',
                 isActive
-                  ? 'text-amber-600'
-                  : 'text-slate-500 hover:text-slate-700'
+                  ? 'text-green-500'
+                  : 'text-gray-400 hover:text-gray-600'
               )}
             >
               <item.icon className={cn(
-                'h-6 w-6 mb-1',
-                isActive && 'stroke-2'
+                'h-5 w-5 mb-1',
+                isActive && 'stroke-[2.5]'
               )} />
-              <span className="text-xs font-medium">{item.label}</span>
+              <span className={cn(
+                'text-[10px]',
+                isActive ? 'font-medium' : 'font-normal'
+              )}>{item.label}</span>
+              {isActive && (
+                <span className="w-1 h-1 rounded-full bg-green-500 mt-0.5" />
+              )}
             </Link>
           )
         })}
