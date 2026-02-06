@@ -137,7 +137,7 @@ export function NotificationSettings() {
     return (
       <Card>
         <CardContent className="pt-6 flex justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
         </CardContent>
       </Card>
     )
@@ -161,7 +161,7 @@ export function NotificationSettings() {
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label className="text-base">Notifiche Push</Label>
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-gray-500">
                   {pushPermission === 'granted'
                     ? 'Le notifiche push sono attive'
                     : pushPermission === 'denied'
@@ -176,12 +176,13 @@ export function NotificationSettings() {
                   disabled={saving}
                 />
               ) : pushPermission === 'denied' ? (
-                <BellOff className="h-5 w-5 text-slate-400" />
+                <BellOff className="h-5 w-5 text-gray-400" />
               ) : (
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={requestPushPermission}
+                  className="border-green-200 text-green-600 hover:bg-green-50"
                 >
                   Attiva
                 </Button>
@@ -193,7 +194,7 @@ export function NotificationSettings() {
 
         {/* Notification types */}
         <div className="space-y-4">
-          <Label className="text-sm font-medium text-slate-500">
+          <Label className="text-sm font-semibold text-gray-900">
             Tipi di notifica
           </Label>
 
@@ -201,7 +202,7 @@ export function NotificationSettings() {
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Nuovi turni pubblicati</Label>
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-gray-500">
                   Quando vengono pubblicati nuovi turni
                 </p>
               </div>
@@ -215,7 +216,7 @@ export function NotificationSettings() {
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Promemoria turno</Label>
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-gray-500">
                   Avviso prima dell&apos;inizio del turno
                 </p>
               </div>
@@ -229,7 +230,7 @@ export function NotificationSettings() {
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Anomalie rilevate</Label>
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-gray-500">
                   Quando viene creata un&apos;anomalia
                 </p>
               </div>
@@ -243,7 +244,7 @@ export function NotificationSettings() {
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Anomalie risolte</Label>
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-gray-500">
                   Quando un&apos;anomalia viene risolta
                 </p>
               </div>
@@ -257,7 +258,7 @@ export function NotificationSettings() {
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Ferie approvate</Label>
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-gray-500">
                   Quando una richiesta ferie viene approvata
                 </p>
               </div>
@@ -271,7 +272,7 @@ export function NotificationSettings() {
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Ferie rifiutate</Label>
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-gray-500">
                   Quando una richiesta ferie viene rifiutata
                 </p>
               </div>

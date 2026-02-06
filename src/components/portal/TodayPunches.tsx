@@ -129,13 +129,13 @@ export function TodayPunches({ venueId, className }: TodayPunchesProps) {
               return (
                 <div
                   key={punch.id}
-                  className="flex items-center justify-between p-2 rounded-lg bg-muted/50"
+                  className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 border border-gray-100"
                 >
                   <div className="flex items-center gap-3">
                     <div
                       className={cn(
-                        'p-1.5 rounded-full bg-white shadow-sm',
-                        config.color
+                        'p-2 rounded-full',
+                        punch.type === 'IN' ? 'bg-green-50 text-green-600' : punch.type === 'OUT' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
                       )}
                     >
                       <Icon className="h-4 w-4" />

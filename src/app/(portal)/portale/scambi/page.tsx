@@ -10,7 +10,7 @@ export default function PortaleScambiPage() {
   if (status === 'loading') {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
       </div>
     )
   }
@@ -22,11 +22,11 @@ export default function PortaleScambiPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-          <ArrowLeftRight className="w-6 h-6 text-amber-500" />
+        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+          <ArrowLeftRight className="w-6 h-6 text-green-500" />
           Scambi Turni
         </h1>
-        <p className="text-sm text-slate-600 mt-1">
+        <p className="text-sm text-gray-500 mt-1">
           Gestisci le richieste di scambio turni con i tuoi colleghi
         </p>
       </div>

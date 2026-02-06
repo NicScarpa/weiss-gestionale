@@ -39,15 +39,15 @@ export default function PortalProfiloPage() {
       <Card>
         <CardContent className="pt-6">
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center">
-              <User className="h-8 w-8 text-amber-600" />
+            <div className="w-16 h-16 rounded-full bg-green-50 flex items-center justify-center">
+              <User className="h-8 w-8 text-green-600" />
             </div>
             <div className="flex-1">
-              <h1 className="text-xl font-bold text-slate-900">
+              <h1 className="text-xl font-bold text-gray-900">
                 {user?.firstName} {user?.lastName}
               </h1>
-              <p className="text-sm text-slate-500">{user?.email}</p>
-              <Badge variant="secondary" className="mt-1">
+              <p className="text-sm text-gray-500">{user?.email}</p>
+              <Badge className="mt-1 bg-gray-900 text-white rounded-full">
                 {user?.role === 'admin'
                   ? 'Amministratore'
                   : user?.role === 'manager'
@@ -63,15 +63,15 @@ export default function PortalProfiloPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Settings className="h-5 w-5" />
+            <Settings className="h-5 w-5 text-green-500" />
             Informazioni
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-3">
-            <Mail className="h-5 w-5 text-slate-400" />
+            <Mail className="h-5 w-5 text-green-500" />
             <div>
-              <p className="text-sm text-slate-500">Email</p>
+              <p className="text-xs text-gray-400 uppercase">Email</p>
               <p className="font-medium">{user?.email}</p>
             </div>
           </div>
@@ -79,9 +79,9 @@ export default function PortalProfiloPage() {
           <Separator />
 
           <div className="flex items-center gap-3">
-            <MapPin className="h-5 w-5 text-slate-400" />
+            <MapPin className="h-5 w-5 text-green-500" />
             <div>
-              <p className="text-sm text-slate-500">Sede</p>
+              <p className="text-xs text-gray-400 uppercase">Sede</p>
               <p className="font-medium">
                 {user?.venueName || 'Non assegnata'}
               </p>
@@ -100,8 +100,8 @@ export default function PortalProfiloPage() {
       <Card>
         <CardContent className="pt-6">
           <Button
-            variant="destructive"
-            className="w-full"
+            variant="outline"
+            className="w-full border-red-200 text-red-500 hover:bg-red-50 rounded-xl"
             onClick={handleLogout}
           >
             <LogOut className="h-4 w-4 mr-2" />

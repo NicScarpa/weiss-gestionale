@@ -19,23 +19,26 @@ export default async function PortalLayout({
   // Ma permettiamo comunque l'accesso per test
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50">
+    <div className="flex min-h-screen flex-col bg-white">
       {/* Header fisso */}
-      <header className="sticky top-0 z-50 bg-white border-b shadow-sm">
+      <header className="sticky top-0 z-50 bg-white border-b border-gray-100">
         <div className="flex h-14 items-center px-4">
-          <h1 className="text-lg font-semibold text-slate-900">
-            Weiss Portale
+          <h1 className="text-lg font-bold text-gray-900">
+            Weiss
           </h1>
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-sm text-slate-600">
+          <div className="ml-auto flex items-center gap-3">
+            <span className="text-sm text-gray-600">
               {session.user.firstName} {session.user.lastName}
             </span>
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-50 text-green-600 text-xs font-semibold">
+              {session.user.firstName?.[0]}{session.user.lastName?.[0]}
+            </div>
           </div>
         </div>
       </header>
 
       {/* Contenuto principale con padding per la nav bottom */}
-      <main className="flex-1 pb-20 px-4 py-4">
+      <main className="flex-1 pb-24 px-4 py-5">
         {children}
       </main>
 

@@ -38,7 +38,7 @@ export function LeaveBalanceCard() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Palmtree className="h-5 w-5" />
+            <Palmtree className="h-5 w-5 text-green-500" />
             Saldo Ferie e Permessi
           </CardTitle>
         </CardHeader>
@@ -56,7 +56,7 @@ export function LeaveBalanceCard() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Palmtree className="h-5 w-5" />
+            <Palmtree className="h-5 w-5 text-green-500" />
             Saldo Ferie e Permessi
           </CardTitle>
         </CardHeader>
@@ -80,7 +80,7 @@ export function LeaveBalanceCard() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
-          <Palmtree className="h-5 w-5" />
+          <Palmtree className="h-5 w-5 text-green-500" />
           Saldo Ferie e Permessi
         </CardTitle>
       </CardHeader>
@@ -106,8 +106,8 @@ export function LeaveBalanceCard() {
                         {balance.leaveType.name}
                       </span>
                     </div>
-                    <span className="text-sm text-slate-600">
-                      <span className="font-semibold text-slate-900">
+                    <span className="text-sm text-gray-600">
+                      <span className="font-semibold text-green-600">
                         {balance.available.toFixed(1)}
                       </span>
                       {' / '}
@@ -115,10 +115,10 @@ export function LeaveBalanceCard() {
                     </span>
                   </div>
 
-                  <div className="relative h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="relative h-2 bg-gray-100 rounded-full overflow-hidden">
                     {/* Used (verde) */}
                     <div
-                      className="absolute h-full bg-emerald-500 rounded-full"
+                      className="absolute h-full bg-green-500 rounded-full"
                       style={{ width: `${usedPercent}%` }}
                     />
                     {/* Pending (giallo) */}
@@ -131,9 +131,9 @@ export function LeaveBalanceCard() {
                     />
                   </div>
 
-                  <div className="flex items-center gap-4 text-xs text-slate-500">
+                  <div className="flex items-center gap-4 text-xs text-gray-500">
                     <span className="flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                      <div className="w-2 h-2 rounded-full bg-green-500" />
                       Usati: {balance.used.toFixed(1)}
                     </span>
                     {balance.pending > 0 && (
@@ -149,7 +149,7 @@ export function LeaveBalanceCard() {
             })}
           </div>
         ) : (
-          <p className="text-sm text-slate-500 text-center py-4">
+          <p className="text-sm text-gray-400 text-center py-4">
             Nessun saldo disponibile
           </p>
         )}
