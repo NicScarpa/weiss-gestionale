@@ -58,6 +58,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs'
 import { Calendar } from '@/components/ui/calendar'
 
 interface LeaveRequest {
@@ -506,23 +512,39 @@ export default function FeriePermessiPage() {
       </div>
 
       {/* Filtri */}
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <Filter className="h-4 w-4 text-slate-500" />
-          <span className="text-sm text-slate-600">Stato:</span>
-        </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-48">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="PENDING">In Attesa</SelectItem>
-            <SelectItem value="APPROVED">Approvate</SelectItem>
-            <SelectItem value="REJECTED">Rifiutate</SelectItem>
-            <SelectItem value="ALL">Tutte</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <Tabs value={statusFilter} onValueChange={setStatusFilter}>
+        <TabsList className="flex gap-1 p-1 bg-muted/50 rounded-lg h-auto w-fit border-none">
+          <TabsTrigger
+            value="PENDING"
+            className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium gap-2"
+          >
+            In Attesa
+            {pendingCount > 0 && (
+              <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">
+                {pendingCount}
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger
+            value="APPROVED"
+            className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium"
+          >
+            Approvate
+          </TabsTrigger>
+          <TabsTrigger
+            value="REJECTED"
+            className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium"
+          >
+            Rifiutate
+          </TabsTrigger>
+          <TabsTrigger
+            value="ALL"
+            className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium"
+          >
+            Tutte
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {/* Lista richieste */}
       <Card>

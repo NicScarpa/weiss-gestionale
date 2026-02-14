@@ -407,12 +407,18 @@ export function BudgetDetailClient({
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="dashboard" className="flex items-center gap-2">
+        <TabsList className="flex gap-1 p-1 bg-muted/50 rounded-lg h-auto w-fit border-none">
+          <TabsTrigger
+            value="dashboard"
+            className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium flex items-center gap-2"
+          >
             <LayoutDashboard className="h-4 w-4" />
             Dashboard
           </TabsTrigger>
-          <TabsTrigger value="editor" className="flex items-center gap-2">
+          <TabsTrigger
+            value="editor"
+            className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium flex items-center gap-2"
+          >
             <TableIcon className="h-4 w-4" />
             Editor Righe
           </TabsTrigger>
@@ -427,117 +433,117 @@ export function BudgetDetailClient({
         <TabsContent value="editor" className="mt-6 space-y-6">
           {/* Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Totale Ricavi
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {formatCurrency(totalRicavi)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {ricaviLines.length} conti
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Totale Costi
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">
-              {formatCurrency(totalCosti)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {costiLines.length} conti
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Totale Budget
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {formatCurrency(totalBudget)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {lines.length} righe totali
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Add Line Button */}
-      {isEditing && availableAccounts.length > 0 && (
-        <Button variant="outline" onClick={() => setAddDialogOpen(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Aggiungi Conto
-        </Button>
-      )}
-
-      {/* Loading */}
-      {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-        </div>
-      ) : (
-        <>
-          {/* Ricavi Section */}
-          {renderSection('Ricavi', ricaviLines, 'RICAVO')}
-
-          {/* Costi Section */}
-          {renderSection('Costi', costiLines, 'COSTO')}
-        </>
-      )}
-
-      {/* Add Line Dialog */}
-      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Aggiungi Conto al Budget</DialogTitle>
-            <DialogDescription>
-              Seleziona un conto da aggiungere al budget
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Conto</Label>
-              <Select value={newLineAccountId} onValueChange={setNewLineAccountId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleziona conto" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableAccounts.map((acc) => (
-                    <SelectItem key={acc.id} value={acc.id}>
-                      <span className="flex items-center gap-2">
-                        <Badge variant={acc.type === 'RICAVO' ? 'default' : 'secondary'} className="text-xs">
-                          {acc.type === 'RICAVO' ? 'R' : 'C'}
-                        </Badge>
-                        {acc.code} - {acc.name}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Totale Ricavi
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">
+                  {formatCurrency(totalRicavi)}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {ricaviLines.length} conti
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Totale Costi
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-red-600">
+                  {formatCurrency(totalCosti)}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {costiLines.length} conti
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Totale Budget
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {formatCurrency(totalBudget)}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {lines.length} righe totali
+                </p>
+              </CardContent>
+            </Card>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>
-              Annulla
+
+          {/* Add Line Button */}
+          {isEditing && availableAccounts.length > 0 && (
+            <Button variant="outline" onClick={() => setAddDialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Aggiungi Conto
             </Button>
-            <Button onClick={handleAddLine} disabled={!newLineAccountId}>
-              Aggiungi
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          )}
+
+          {/* Loading */}
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+            </div>
+          ) : (
+            <>
+              {/* Ricavi Section */}
+              {renderSection('Ricavi', ricaviLines, 'RICAVO')}
+
+              {/* Costi Section */}
+              {renderSection('Costi', costiLines, 'COSTO')}
+            </>
+          )}
+
+          {/* Add Line Dialog */}
+          <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Aggiungi Conto al Budget</DialogTitle>
+                <DialogDescription>
+                  Seleziona un conto da aggiungere al budget
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Conto</Label>
+                  <Select value={newLineAccountId} onValueChange={setNewLineAccountId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleziona conto" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableAccounts.map((acc) => (
+                        <SelectItem key={acc.id} value={acc.id}>
+                          <span className="flex items-center gap-2">
+                            <Badge variant={acc.type === 'RICAVO' ? 'default' : 'secondary'} className="text-xs">
+                              {acc.type === 'RICAVO' ? 'R' : 'C'}
+                            </Badge>
+                            {acc.code} - {acc.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setAddDialogOpen(false)}>
+                  Annulla
+                </Button>
+                <Button onClick={handleAddLine} disabled={!newLineAccountId}>
+                  Aggiungi
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
       </Tabs>
     </div>

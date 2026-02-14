@@ -168,41 +168,49 @@ export default function PresenzePage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 p-1 bg-muted/50 rounded-lg">
           {/* Anomalie Button */}
-          <Button variant="outline" asChild className="relative">
-            <Link href="/presenze/anomalie">
-              <AlertTriangle className="h-4 w-4 mr-2" />
-              Anomalie
-              {pendingAnomalies > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
-                  {pendingAnomalies}
-                </span>
-              )}
-            </Link>
-          </Button>
+          <Link
+            href="/presenze/anomalie"
+            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground relative"
+          >
+            <AlertTriangle className="h-4 w-4" />
+            Anomalie
+            {pendingAnomalies > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full h-4 w-4 flex items-center justify-center font-bold border-2 border-white">
+                {pendingAnomalies}
+              </span>
+            )}
+          </Link>
 
           {/* Policy Button */}
-          <Button variant="outline" asChild>
-            <Link href="/presenze/policy">
-              <Settings className="h-4 w-4 mr-2" />
-              Policy
-            </Link>
-          </Button>
+          <Link
+            href="/presenze/policy"
+            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <Settings className="h-4 w-4" />
+            Policy
+          </Link>
 
           {/* Export Button */}
-          <Button variant="outline" asChild>
-            <Link href="/presenze/export">
-              <FileText className="h-4 w-4 mr-2" />
-              Export
-            </Link>
-          </Button>
+          <Link
+            href="/presenze/export"
+            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <FileText className="h-4 w-4" />
+            Export
+          </Link>
+
+          <div className="w-px h-4 bg-muted-foreground/20 mx-1" />
 
           {/* Manual Entry Button */}
-          <Button onClick={() => handleManualEntry()}>
-            <Plus className="h-4 w-4 mr-2" />
+          <button
+            onClick={() => handleManualEntry()}
+            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground active:scale-95"
+          >
+            <Plus className="h-4 w-4" />
             Inserimento Manuale
-          </Button>
+          </button>
         </div>
       </div>
 

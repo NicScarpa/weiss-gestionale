@@ -528,11 +528,31 @@ export function AnalisiCostiClient({
 
           {/* Tabs for different views */}
           <Tabs defaultValue="categories" className="space-y-4">
-            <TabsList>
-              <TabsTrigger value="categories">Per Categoria</TabsTrigger>
-              <TabsTrigger value="payees">Per Fornitore</TabsTrigger>
-              <TabsTrigger value="monthly">Andamento Mensile</TabsTrigger>
-              <TabsTrigger value="top">Spese Maggiori</TabsTrigger>
+            <TabsList className="flex gap-1 p-1 bg-muted/50 rounded-lg h-auto w-fit border-none">
+              <TabsTrigger
+                value="categories"
+                className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium"
+              >
+                Per Categoria
+              </TabsTrigger>
+              <TabsTrigger
+                value="payees"
+                className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium"
+              >
+                Per Fornitore
+              </TabsTrigger>
+              <TabsTrigger
+                value="monthly"
+                className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium"
+              >
+                Andamento Mensile
+              </TabsTrigger>
+              <TabsTrigger
+                value="top"
+                className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium"
+              >
+                Spese Maggiori
+              </TabsTrigger>
             </TabsList>
 
             {/* By Category */}

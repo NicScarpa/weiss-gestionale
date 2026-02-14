@@ -223,18 +223,36 @@ export default function AnomaliePage() {
 
       {/* Tabs by Status */}
       <Tabs value={statusFilter} onValueChange={setStatusFilter}>
-        <TabsList>
-          <TabsTrigger value="PENDING" className="gap-2">
+        <TabsList className="flex gap-1 p-1 bg-muted/50 rounded-lg h-auto w-fit border-none">
+          <TabsTrigger
+            value="PENDING"
+            className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium gap-2"
+          >
             Da verificare
             {pendingCount > 0 && (
-              <span className="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full">
+              <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">
                 {pendingCount}
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="APPROVED">Approvate</TabsTrigger>
-          <TabsTrigger value="REJECTED">Rifiutate</TabsTrigger>
-          <TabsTrigger value="all">Tutte</TabsTrigger>
+          <TabsTrigger
+            value="APPROVED"
+            className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium"
+          >
+            Approvate
+          </TabsTrigger>
+          <TabsTrigger
+            value="REJECTED"
+            className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium"
+          >
+            Rifiutate
+          </TabsTrigger>
+          <TabsTrigger
+            value="all"
+            className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium"
+          >
+            Tutte
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value={statusFilter} className="mt-6">

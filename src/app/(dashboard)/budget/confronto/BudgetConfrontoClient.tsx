@@ -485,12 +485,18 @@ export function BudgetConfrontoClient({
                   </CardDescription>
                 </div>
                 <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'categories' | 'accounts')}>
-                  <TabsList>
-                    <TabsTrigger value="categories" className="flex items-center gap-2">
+                  <TabsList className="flex gap-1 p-1 bg-muted/50 rounded-lg h-auto w-fit border-none">
+                    <TabsTrigger
+                      value="categories"
+                      className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium flex items-center gap-2"
+                    >
                       <FolderTree className="h-4 w-4" />
                       Categorie
                     </TabsTrigger>
-                    <TabsTrigger value="accounts" className="flex items-center gap-2">
+                    <TabsTrigger
+                      value="accounts"
+                      className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium flex items-center gap-2"
+                    >
                       <List className="h-4 w-4" />
                       Conti
                     </TabsTrigger>
