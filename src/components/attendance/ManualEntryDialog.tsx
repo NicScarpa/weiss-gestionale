@@ -80,7 +80,7 @@ export function ManualEntryDialog({
       const response = await fetch('/api/venues')
       if (!response.ok) throw new Error('Errore caricamento sedi')
       const data = await response.json()
-      return data.data || []
+      return data.venues || []
     },
     enabled: open,
   })
@@ -157,11 +157,13 @@ export function ManualEntryDialog({
                   <SelectValue placeholder="Seleziona dipendente" />
                 </SelectTrigger>
                 <SelectContent>
-                  {users?.map((user) => (
+                  {Array.isArray(users) ? users.map((user) => (
                     <SelectItem key={user.id} value={user.id}>
                       {user.firstName} {user.lastName}
                     </SelectItem>
-                  ))}
+                  )) : (
+                    <SelectItem value="" disabled>Nessun dipendente disponibile</SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -178,11 +180,13 @@ export function ManualEntryDialog({
                   <SelectValue placeholder="Seleziona sede" />
                 </SelectTrigger>
                 <SelectContent>
-                  {venues?.map((venue) => (
+                  {Array.isArray(venues) ? venues.map((venue) => (
                     <SelectItem key={venue.id} value={venue.id}>
                       {venue.name}
                     </SelectItem>
-                  ))}
+                  )) : (
+                    <SelectItem value="" disabled>Nessuna sede disponibile</SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </div>

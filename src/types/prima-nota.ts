@@ -54,6 +54,14 @@ export interface JournalEntry {
   createdById?: string
   createdAt: Date
   updatedAt: Date
+  // === Estensioni Sibill ===
+  verified?: boolean
+  hiddenAt?: Date
+  categorizationSource?: 'manual' | 'automatic' | 'rule' | 'import'
+  counterpartName?: string
+  notes?: string
+  budgetCategoryId?: string
+  appliedRuleId?: string
   // Relations (populated)
   venue?: {
     id: string
@@ -69,6 +77,17 @@ export interface JournalEntry {
     id: string
     code: string
     name: string
+  }
+  budgetCategory?: {
+    id: string
+    code: string
+    name: string
+    color?: string
+  }
+  appliedRule?: {
+    id: string
+    name: string
+    keywords: string[]
   }
   closure?: {
     id: string
@@ -127,6 +146,9 @@ export interface JournalEntryFilters {
   dateTo?: Date
   entryType?: EntryType
   accountId?: string
+  budgetCategoryId?: string  // Sibill: filtra per categoria budget
+  verified?: boolean           // Sibill: filtra per stato verifica
+  categorizationSource?: 'manual' | 'automatic' | 'rule' | 'import'  // Sibill: origine categorizzazione
   search?: string
 }
 

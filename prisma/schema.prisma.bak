@@ -1,0 +1,12 @@
+// Schema Prisma - Sistema Gestionale Weiss Cafè
+// Modulo 1: Contabilità e Controllo di Gestione
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==================== UTENTI E AUTENTICAZIONE ====================

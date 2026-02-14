@@ -6,12 +6,18 @@ const withSerwist = withSerwistInit({
   swSrc: "src/app/sw.ts",
   swDest: "public/sw.js",
   disable: process.env.NODE_ENV === "development",
+  // Disable turbo for production builds - it causes CSS parsing errors
+  turbo: {
+    rules: [
+      {
+        ignore: true,
+      },
+    ],
+  },
 });
 
 const nextConfig: NextConfig = {
-  // Use webpack for production builds (required by Serwist)
-  // Turbopack will still be used for dev
-  turbopack: {},
+  // Turbopack enabled for dev
 };
 
 // Configurazione Sentry
