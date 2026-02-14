@@ -8,4 +8,18 @@
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
 | #2095 | 9:43 AM | 🔵 | Dashboard Page Structure Reveals Navigation and Feature Organization | ~483 |
+
+### Feb 13, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #3434 | 1:27 PM | 🔵 | Weiss Design System Using Modern CSS and Tailwind v4 | ~543 |
+| #3433 | " | 🔵 | Weiss Cafè Brand Identity and PWA Configuration | ~494 |
+| #3426 | 1:24 PM | 🔵 | Weiss Application Structure and Existing Features | ~576 |
+
+### Feb 14, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #3762 | 1:42 PM | 🔵 | Global Styles and Design System | ~140 |
 </claude-mem-context>

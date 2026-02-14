@@ -9,4 +9,10 @@
 |----|------|---|-------|------|
 | #113 | 9:54 AM | 🟣 | ZIP Utility Import Added to Invoice Import Dialog | ~343 |
 | #110 | " | ⚖️ | MVP ZIP Upload Implementation Plan Refined | ~729 |
+
+### Feb 14, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #3774 | 1:42 PM | 🔵 | InvoiceImportDialog Component Pattern Identified | ~159 |
 </claude-mem-context>

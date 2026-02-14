@@ -114,6 +114,13 @@ export async function GET(request: NextRequest) {
       limit: searchParams.get('limit') || '50',
     })
 
+    // Nuovi filtri Sibill
+    const verified = searchParams.get('verified') === 'true'
+    const budgetCategoryId = searchParams.get('budgetCategoryId')
+    const direction = searchParams.get('direction') as 'inflow' | 'outflow' | null
+    const uncategorized = searchParams.get('uncategorized') === 'true'
+    const hidden = searchParams.get('hidden') !== 'true' // exclude hidden by default
+
     // Costruisci where clause
     const where: Prisma.JournalEntryWhereInput = {}
 
@@ -179,6 +186,25 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Filtri Sibill
+    if (verified) {
+      where.verified = true
+    }
+    if (budgetCategoryId) {
+      where.budgetCategoryId = budgetCategoryId
+    }
+    if (direction === 'inflow') {
+      where.debitAmount = { gt: 0 }
+    } else if (direction === 'outflow') {
+      where.creditAmount = { gt: 0 }
+    }
+    if (uncategorized) {
+      where.budgetCategoryId = null
+    }
+    if (!hidden) {
+      where.hiddenAt = null
+    }
+
     // Query con paginazione
     const [entries, total] = await Promise.all([
       prisma.journalEntry.findMany({
@@ -196,6 +222,21 @@ export async function GET(request: NextRequest) {
               id: true,
               code: true,
               name: true,
+            },
+          },
+          budgetCategory: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              color: true,
+            },
+          },
+          appliedRule: {
+            select: {
+              id: true,
+              name: true,
+              keywords: true,
             },
           },
           closure: {
@@ -225,6 +266,8 @@ export async function GET(request: NextRequest) {
       select: {
         debitAmount: true,
         creditAmount: true,
+        verified: true,
+        budgetCategoryId: true,
       },
     })
 
@@ -253,8 +296,19 @@ export async function GET(request: NextRequest) {
       runningBalance: entry.runningBalance ? Number(entry.runningBalance) : null,
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt,
+      // Campi Sibill
+      verified: entry.verified,
+      hiddenAt: entry.hiddenAt,
+      categorizationSource: entry.categorizationSource,
+      counterpartName: entry.counterpartName,
+      notes: entry.notes,
+      budgetCategoryId: entry.budgetCategoryId,
+      appliedRuleId: entry.appliedRuleId,
+      // Relazioni
       venue: entry.venue,
       account: entry.account,
+      budgetCategory: entry.budgetCategory,
+      appliedRule: entry.appliedRule,
       closure: entry.closure,
       createdBy: entry.createdBy,
     }))

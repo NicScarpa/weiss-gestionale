@@ -34,7 +34,7 @@ const mainNavigation = [
   { name: 'Riconciliazione', href: '/riconciliazione', icon: Landmark },
   { name: 'Fatture', href: '/fatture', icon: FileText },
   { name: 'Prodotti', href: '/prodotti', icon: Package },
-  { name: 'Budget', href: '/budget', icon: Calculator },
+  { name: 'Cash Flow', href: '/budget', icon: BarChart3 },
   { name: 'Report', href: '/report', icon: BarChart3 },
 ]
 
@@ -52,7 +52,7 @@ const settingsNavigation = [
   { name: 'Utenti', href: '/impostazioni/utenti', icon: Users },
   { name: 'Fornitori', href: '/impostazioni/fornitori', icon: Truck },
   { name: 'Piano Conti', href: '/impostazioni/conti', icon: BookOpen },
-  { name: 'Budget', href: '/impostazioni/budget', icon: Calculator },
+  { name: 'Cash Flow', href: '/impostazioni/budget', icon: BarChart3 },
 ]
 
 export function Sidebar() {

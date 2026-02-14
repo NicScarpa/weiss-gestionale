@@ -39,6 +39,36 @@ interface _CustomJWT {
   mustChangePassword: boolean
 }
 
+// Helper per ottenere la sessione lato server (per API routes)
+export async function getServerSession() {
+  // Con JWT strategy, la sessione si ottiene leggendo il token dal cookie
+  const { getToken } = await import('next-auth/jwt')
+  const token = await getToken({ cookieName: 'next-auth.session-token' })
+
+  if (!token) return null
+
+  // Decodifica il JWT per ottenere i dati utente
+  const { jwt: jwtDecode } = await import('next-auth/jwt')
+  const decoded = await jwtDecode({ token })
+
+  return {
+    user: {
+      id: decoded.id as string,
+      email: decoded.email as string | null,
+      username: decoded.username as string,
+      firstName: decoded.firstName as string,
+      lastName: decoded.lastName as string,
+      role: decoded.role as string,
+      roleId: decoded.roleId as string,
+      venueId: decoded.venueId as string | null,
+      venueName: decoded.venueName as string | null,
+      venueCode: decoded.venueCode as string | null,
+      mustChangePassword: decoded.mustChangePassword as boolean,
+      venues: [] // TODO: popolare con venues dell'utente
+    }
+  }
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
     Credentials({

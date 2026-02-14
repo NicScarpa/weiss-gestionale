@@ -8,4 +8,11 @@
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
 | #701 | 7:03 PM | 🔵 | Zod Validation Schemas for Cash Closing Forms | ~448 |
+
+### Feb 14, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #3791 | 1:43 PM | 🔵 | Zod Validation Schemas Found | ~145 |
+| #3785 | " | 🔵 | Bank Reconciliation Validation Schemas | ~127 |
 </claude-mem-context>

@@ -93,7 +93,7 @@ function formatCompactCurrency(value: number): string {
 }
 
 export function CashFlowForecast() {
-  const [forecastDays, setForecastDays] = useState('30')
+  const [forecastDays, setForecastDays] = useState<string>('30')
 
   const { data, isLoading, error } = useQuery<ForecastData>({
     queryKey: ['cashflow-forecast', forecastDays],

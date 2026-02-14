@@ -13,7 +13,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { AlertTriangle, Lock, Loader2, Trash2 } from 'lucide-react'
+import { AlertTriangle, Lock, Loader2, Trash2, X } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface Supplier {
   id: string
@@ -110,62 +111,75 @@ export function BulkDeleteSuppliersDialog({
   if (suppliers.length === 0) return null
 
   const count = suppliers.length
-  const plurale = count === 1 ? '' : 'i'
+  const supplierLabel = count === 1 ? 'fornitore' : 'fornitori'
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent showCloseButton={!isDeleting} className="max-w-md">
         {step === 'confirm' ? (
           <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-destructive">
-                <AlertTriangle className="h-5 w-5" />
-                Elimina {count} Fornitore{plurale}
-              </DialogTitle>
-              <DialogDescription className="pt-2">
-                Stai per eliminare {count === 1 ? 'il seguente fornitore' : `i seguenti ${count} fornitori`}:
-              </DialogDescription>
-            </DialogHeader>
-
-            <ScrollArea className="max-h-[200px] pr-4">
-              <div className="space-y-2">
-                {suppliers.map((supplier) => (
-                  <div
-                    key={supplier.id}
-                    className="flex items-center gap-2 p-2 rounded bg-muted/50"
-                  >
-                    <Trash2 className="h-4 w-4 text-destructive shrink-0" />
-                    <div className="min-w-0">
-                      <p className="font-medium truncate">{supplier.name}</p>
-                      {supplier.vatNumber && (
-                        <p className="text-xs text-muted-foreground font-mono">
-                          P.IVA: {supplier.vatNumber}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ))}
+            {/* Warning Header */}
+            <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-4">
+              <AlertTriangle className="h-6 w-6 text-red-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <DialogTitle className="text-red-900 text-lg">
+                  Elimina {count} {supplierLabel}?
+                </DialogTitle>
+                <DialogDescription className="text-red-700/80 text-sm">
+                  Questa azione disattiverà i fornitori selezionati. I dati storici verranno mantenuti.
+                </DialogDescription>
               </div>
-            </ScrollArea>
+            </div>
 
-            <p className="text-sm text-muted-foreground">
-              {count === 1 ? 'Il fornitore verrà disattivato' : 'I fornitori verranno disattivati'}.
-              Tutti i movimenti esistenti (fatture, registrazioni banca, prima nota)
-              rimarranno collegati per storico.
-            </p>
+            {/* Lista fornitori */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-muted-foreground">
+                Fornitori da eliminare ({count}):
+              </Label>
+              <div className="max-h-[240px] overflow-y-auto border rounded-md">
+                <div className="p-2 space-y-1">
+                  {suppliers.map((supplier) => (
+                    <div
+                      key={supplier.id}
+                      className="flex items-center gap-2 p-2 rounded-sm bg-muted/30 hover:bg-muted/50"
+                    >
+                      <X className="h-4 w-4 text-red-500 shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-sm">{supplier.name}</p>
+                        {supplier.vatNumber && (
+                          <p className="text-xs text-muted-foreground font-mono">
+                            P.IVA: {supplier.vatNumber}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
 
-            <DialogFooter className="mt-4">
+            {/* Nota informativa */}
+            <div className="bg-amber-50 border border-amber-200 rounded-md p-3 flex gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800">
+                I fornitori verranno solo disattivati. Tutti i movimenti esistenti (fatture, registrazioni bancarie, prima nota) rimarranno collegati per storico.
+              </p>
+            </div>
+
+            <DialogFooter className="gap-2 mt-2">
               <Button
                 variant="outline"
                 onClick={() => handleOpenChange(false)}
+                className="flex-1"
               >
                 Annulla
               </Button>
               <Button
                 variant="destructive"
                 onClick={handleContinue}
+                className="flex-1"
               >
-                Continua
+                Elimina
               </Button>
             </DialogFooter>
           </>
@@ -173,49 +187,62 @@ export function BulkDeleteSuppliersDialog({
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <Lock className="h-5 w-5" />
-                Conferma con Password
+                <Lock className="h-5 w-5 text-muted-foreground" />
+                Conferma Password
               </DialogTitle>
               <DialogDescription className="pt-2">
-                Inserisci la tua password per confermare l&apos;eliminazione di{' '}
-                <strong>{count} fornitore{plurale}</strong>.
+                Inserisci la tua password per confermare l'eliminazione di{' '}
+                <strong>{count} {supplierLabel}</strong>.
               </DialogDescription>
             </DialogHeader>
-            <div className="py-4">
-              <Label htmlFor="bulk-delete-password">Password</Label>
-              <Input
-                id="bulk-delete-password"
-                type="password"
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value)
-                  setError('')
-                }}
-                placeholder="Inserisci la password"
-                className="mt-1.5"
-                disabled={isDeleting}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !isDeleting) {
-                    handleDelete()
-                  }
-                }}
-              />
-              {error && (
-                <p className="text-sm text-destructive mt-2">{error}</p>
-              )}
+
+            <div className="py-4 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="bulk-delete-password">Password amministratore</Label>
+                <Input
+                  id="bulk-delete-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value)
+                    setError('')
+                  }}
+                  placeholder="Inserisci la password..."
+                  className={cn(
+                    "h-11",
+                    error && "border-red-500 focus-visible:ring-red-500"
+                  )}
+                  disabled={isDeleting}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !isDeleting) {
+                      handleDelete()
+                    }
+                  }}
+                />
+                {error && (
+                  <p className="text-sm text-red-600 flex items-center gap-1">
+                    <X className="h-3.5 w-3.5" />
+                    {error}
+                  </p>
+                )}
+              </div>
             </div>
-            <DialogFooter>
+
+            <DialogFooter className="gap-2">
               <Button
                 variant="outline"
                 onClick={() => setStep('confirm')}
                 disabled={isDeleting}
+                className="flex-1"
               >
                 Indietro
               </Button>
               <Button
                 variant="destructive"
                 onClick={handleDelete}
-                disabled={isDeleting}
+                disabled={isDeleting || !password.trim()}
+                className="flex-1"
               >
                 {isDeleting ? (
                   <>
@@ -223,7 +250,10 @@ export function BulkDeleteSuppliersDialog({
                     Eliminazione...
                   </>
                 ) : (
-                  `Elimina ${count} Fornitore${plurale}`
+                  <>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Conferma Elimina
+                  </>
                 )}
               </Button>
             </DialogFooter>

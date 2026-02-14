@@ -37,8 +37,8 @@ model User {
   createdUsers       User[]    @relation("CreatedByUser") // Utenti creati da questo utente
 
   // === Recupero password ===
-  resetToken        String?   @unique @map("reset_token")
-  resetTokenExpiry  DateTime? @map("reset_token_expiry")
+  resetToken       String?   @unique @map("reset_token")
+  resetTokenExpiry DateTime? @map("reset_token_expiry")
 
   // === FASE 4: Dati contrattuali estesi ===
   contractType      ContractType? @map("contract_type")
@@ -48,19 +48,19 @@ model User {
   terminationDate   DateTime?     @map("termination_date") @db.Date
 
   // Contatti aggiuntivi
-  phoneNumber       String?       @map("phone_number")
+  phoneNumber String? @map("phone_number")
 
   // Dati fiscali (per occasionali/freelance)
-  vatNumber         String?       @map("vat_number")      // P.IVA
-  fiscalCode        String?       @map("fiscal_code")     // Codice Fiscale
+  vatNumber  String? @map("vat_number") // P.IVA
+  fiscalCode String? @map("fiscal_code") // Codice Fiscale
 
   // Dati anagrafici aggiuntivi
-  birthDate         DateTime?     @map("birth_date") @db.Date
-  address           String?       // Indirizzo di residenza
+  birthDate DateTime? @map("birth_date") @db.Date
+  address   String? // Indirizzo di residenza
 
   // Disponibilità EXTRA (giorni: 0=LUN, 1=MAR, ..., 6=DOM)
-  availableDays     Int[]         @default([]) @map("available_days")
-  availableHolidays Boolean       @default(false) @map("available_holidays")
+  availableDays     Int[]   @default([]) @map("available_days")
+  availableHolidays Boolean @default(false) @map("available_holidays")
 
   // Tariffe orarie estese
   hourlyRateBase    Decimal? @map("hourly_rate_base") @db.Decimal(10, 2)
@@ -109,16 +109,20 @@ model User {
   // Relazioni Fase 5.2 - Notifiche
   notificationPreferences NotificationPreference?
 
+  // Relazioni Sibill
+  payments          Payment[]
+  cashFlowForecasts CashFlowForecast[]
+
   @@map("users")
 }
 
 // === FASE 4: TIPO CONTRATTO ===
 enum ContractType {
-  TEMPO_DETERMINATO        // Data assunzione + cessazione obbligatorie
-  TEMPO_INDETERMINATO      // Solo data assunzione obbligatoria
-  LAVORO_INTERMITTENTE     // Data assunzione + cessazione obbligatorie
-  LAVORATORE_OCCASIONALE   // Date non richieste
-  LIBERO_PROFESSIONISTA    // Date non richieste
+  TEMPO_DETERMINATO // Data assunzione + cessazione obbligatorie
+  TEMPO_INDETERMINATO // Solo data assunzione obbligatoria
+  LAVORO_INTERMITTENTE // Data assunzione + cessazione obbligatorie
+  LAVORATORE_OCCASIONALE // Date non richieste
+  LIBERO_PROFESSIONISTA // Date non richieste
 }
 
 model Role {
@@ -209,6 +213,12 @@ model Venue {
 
   // Relazioni tracking prezzi
   products Product[]
+
+  // Relazioni Sibill
+  payments            Payment[]
+  categorizationRules CategorizationRule[]
+  cashFlowForecasts   CashFlowForecast[]
+  cashFlowAlerts      CashFlowAlert[]
 
   @@map("venues")
 }
@@ -447,6 +457,9 @@ model Account {
   // Relazione cash flow previsionale
   recurringExpenses RecurringExpense[]
 
+  // Relazioni Sibill
+  categorizationRules CategorizationRule[]
+
   @@map("accounts")
 }
 
@@ -491,11 +504,27 @@ model JournalEntry {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
+  // Estensioni Sibill
+  verified             Boolean   @default(false)
+  hiddenAt             DateTime? @map("hidden_at")
+  categorizationSource String?   @map("categorization_source") // manual | automatic | rule | import
+  counterpartName      String?   @map("counterpart_name")
+  notes                String?   @db.Text
+
+  budgetCategory   BudgetCategory? @relation(fields: [budgetCategoryId], references: [id])
+  budgetCategoryId String?         @map("budget_category_id")
+
+  appliedRule   CategorizationRule? @relation(fields: [appliedRuleId], references: [id])
+  appliedRuleId String?             @map("applied_rule_id")
+
   // Relazione con fattura elettronica (opzionale)
   electronicInvoice ElectronicInvoice?
 
   // Relazione con transazione bancaria (riconciliazione)
   bankTransaction BankTransaction?
+
+  // Relazione con pagamento
+  payment Payment?
 
   @@map("journal_entries")
 }
@@ -616,9 +645,11 @@ model BudgetCategory {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relazioni
-  accountMappings AccountBudgetMapping[]
-  budgetLines     BudgetLine[]
-  alerts          BudgetAlert[]
+  accountMappings     AccountBudgetMapping[]
+  budgetLines         BudgetLine[]
+  alerts              BudgetAlert[]
+  journalEntries      JournalEntry[]
+  categorizationRules CategorizationRule[]
 
   @@unique([venueId, code])
   @@index([venueId, categoryType])
@@ -712,7 +743,7 @@ model BudgetAlert {
   category   BudgetCategory? @relation(fields: [categoryId], references: [id])
   categoryId String?         @map("category_id")
 
-  month     Int?
+  month Int?
 
   alertType       BudgetAlertType @map("alert_type")
   budgetAmount    Decimal         @map("budget_amount") @db.Decimal(12, 2)
@@ -903,10 +934,10 @@ model ShiftSchedule {
   status ScheduleStatus @default(DRAFT)
 
   // Generazione AI
-  generationParams      Json?    @map("generation_params")
-  generationLog         Json?    @map("generation_log")
-  generationScore       Decimal? @map("generation_score") @db.Decimal(5, 2)
-  staffingRequirements  Json?    @map("staffing_requirements") // Fabbisogno staff per data/turno
+  generationParams     Json?    @map("generation_params")
+  generationLog        Json?    @map("generation_log")
+  generationScore      Decimal? @map("generation_score") @db.Decimal(5, 2)
+  staffingRequirements Json?    @map("staffing_requirements") // Fabbisogno staff per data/turno
 
   // Workflow
   createdById   String?   @map("created_by")
@@ -1372,15 +1403,15 @@ model ElectronicInvoice {
   id String @id @default(cuid())
 
   // Identificativi SDI
-  sdiId         String? @unique @map("sdi_id") // Identificativo SDI
-  invoiceNumber String  @map("invoice_number") // Numero fattura
+  sdiId         String?  @unique @map("sdi_id") // Identificativo SDI
+  invoiceNumber String   @map("invoice_number") // Numero fattura
   invoiceDate   DateTime @map("invoice_date") @db.Date // Data fattura
 
   // Fornitore
-  supplier    Supplier? @relation(fields: [supplierId], references: [id])
-  supplierId  String?   @map("supplier_id")
-  supplierVat String    @map("supplier_vat") // P.IVA fornitore (per matching)
-  supplierName String   @map("supplier_name") // Denominazione fornitore
+  supplier     Supplier? @relation(fields: [supplierId], references: [id])
+  supplierId   String?   @map("supplier_id")
+  supplierVat  String    @map("supplier_vat") // P.IVA fornitore (per matching)
+  supplierName String    @map("supplier_name") // Denominazione fornitore
 
   // Importi
   totalAmount Decimal @map("total_amount") @db.Decimal(10, 2) // Totale documento
@@ -1388,11 +1419,11 @@ model ElectronicInvoice {
   netAmount   Decimal @map("net_amount") @db.Decimal(10, 2) // Imponibile
 
   // Tipo documento e dati estratti
-  documentType String?  @default("TD01") @map("document_type") // TD01, TD04, TD24, ecc.
-  lineItems    Json?    @map("line_items")    // Dettaglio linee fattura
-  references   Json?    @map("references")    // Riferimenti DDT, ordini, contratti
-  vatSummary   Json?    @map("vat_summary")   // Riepilogo IVA per aliquota
-  causale      String?  @map("causale") @db.Text // Causale documento
+  documentType String? @default("TD01") @map("document_type") // TD01, TD04, TD24, ecc.
+  lineItems    Json?   @map("line_items") // Dettaglio linee fattura
+  references   Json?   @map("references") // Riferimenti DDT, ordini, contratti
+  vatSummary   Json?   @map("vat_summary") // Riepilogo IVA per aliquota
+  causale      String? @map("causale") @db.Text // Causale documento
 
   // Stato elaborazione
   status InvoiceStatus @default(IMPORTED)
@@ -1439,12 +1470,12 @@ model InvoiceDeadline {
   invoice   ElectronicInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   invoiceId String            @map("invoice_id")
 
-  dueDate       DateTime @map("due_date") @db.Date
-  amount        Decimal  @db.Decimal(10, 2)
-  isPaid        Boolean  @default(false) @map("is_paid")
+  dueDate       DateTime  @map("due_date") @db.Date
+  amount        Decimal   @db.Decimal(10, 2)
+  isPaid        Boolean   @default(false) @map("is_paid")
   paidAt        DateTime? @map("paid_at")
-  paymentMethod String?  @map("payment_method") // Bonifico, RiBa, etc.
-  iban          String?  // IBAN estratto da XML pagamento
+  paymentMethod String?   @map("payment_method") // Bonifico, RiBa, etc.
+  iban          String? // IBAN estratto da XML pagamento
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -1462,11 +1493,11 @@ model Product {
   venueId String? @map("venue_id")
 
   // Identificazione prodotto
-  name           String // Nome normalizzato dell'articolo
-  originalName   String  @map("original_name") // Nome originale da fattura
-  code           String? // Codice articolo (se disponibile)
-  category       String? // Categoria merceologica
-  unit           String? // Unità di misura (kg, l, pz, etc.)
+  name         String // Nome normalizzato dell'articolo
+  originalName String  @map("original_name") // Nome originale da fattura
+  code         String? // Codice articolo (se disponibile)
+  category     String? // Categoria merceologica
+  unit         String? // Unità di misura (kg, l, pz, etc.)
 
   // Dati ultimi aggiornamenti
   lastPrice      Decimal?  @map("last_price") @db.Decimal(10, 4)
@@ -1474,7 +1505,7 @@ model Product {
   lastSupplierId String?   @map("last_supplier_id")
 
   // Stato
-  isActive  Boolean @default(true) @map("is_active")
+  isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -1495,21 +1526,21 @@ model PriceHistory {
   productId String  @map("product_id")
 
   // Dettagli prezzo
-  price      Decimal @db.Decimal(10, 4) // Prezzo unitario
+  price      Decimal  @db.Decimal(10, 4) // Prezzo unitario
   quantity   Decimal? @db.Decimal(10, 3) // Quantità acquistata
   totalPrice Decimal? @map("total_price") @db.Decimal(10, 2) // Prezzo totale linea
 
   // Fonte del prezzo
-  supplier   Supplier? @relation(fields: [supplierId], references: [id])
-  supplierId String?   @map("supplier_id")
-  invoiceId  String?   @map("invoice_id") // ID fattura elettronica
-  invoiceNumber String? @map("invoice_number")
-  invoiceDate DateTime @map("invoice_date") @db.Date
+  supplier      Supplier? @relation(fields: [supplierId], references: [id])
+  supplierId    String?   @map("supplier_id")
+  invoiceId     String?   @map("invoice_id") // ID fattura elettronica
+  invoiceNumber String?   @map("invoice_number")
+  invoiceDate   DateTime  @map("invoice_date") @db.Date
 
   // Variazione rispetto al prezzo precedente
-  previousPrice   Decimal? @map("previous_price") @db.Decimal(10, 4)
-  priceChange     Decimal? @map("price_change") @db.Decimal(10, 4) // Variazione assoluta
-  priceChangePct  Decimal? @map("price_change_pct") @db.Decimal(5, 2) // Variazione %
+  previousPrice  Decimal? @map("previous_price") @db.Decimal(10, 4)
+  priceChange    Decimal? @map("price_change") @db.Decimal(10, 4) // Variazione assoluta
+  priceChangePct Decimal? @map("price_change_pct") @db.Decimal(5, 2) // Variazione %
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -1526,22 +1557,22 @@ model PriceAlert {
   productId String  @map("product_id")
 
   // Dettagli alert
-  alertType   PriceAlertType @map("alert_type")
-  oldPrice    Decimal @map("old_price") @db.Decimal(10, 4)
-  newPrice    Decimal @map("new_price") @db.Decimal(10, 4)
-  changePercent Decimal @map("change_percent") @db.Decimal(5, 2)
+  alertType     PriceAlertType @map("alert_type")
+  oldPrice      Decimal        @map("old_price") @db.Decimal(10, 4)
+  newPrice      Decimal        @map("new_price") @db.Decimal(10, 4)
+  changePercent Decimal        @map("change_percent") @db.Decimal(5, 2)
 
   // Contesto
-  supplier   Supplier? @relation(fields: [supplierId], references: [id])
-  supplierId String?   @map("supplier_id")
-  invoiceId  String?   @map("invoice_id")
-  invoiceDate DateTime @map("invoice_date") @db.Date
+  supplier    Supplier? @relation(fields: [supplierId], references: [id])
+  supplierId  String?   @map("supplier_id")
+  invoiceId   String?   @map("invoice_id")
+  invoiceDate DateTime  @map("invoice_date") @db.Date
 
   // Stato alert
   status     PriceAlertStatus @default(PENDING)
-  reviewedAt DateTime?   @map("reviewed_at")
-  reviewedBy String?     @map("reviewed_by")
-  notes      String?     @db.Text
+  reviewedAt DateTime?        @map("reviewed_at")
+  reviewedBy String?          @map("reviewed_by")
+  notes      String?          @db.Text
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -1629,19 +1660,19 @@ model ImportBatch {
 enum ImportSource {
   CSV
   XLSX
-  CBI_XML    // ISO 20022 XML format (CAMT.053)
-  CBI_TXT    // CBI fixed-position TXT format
+  CBI_XML // ISO 20022 XML format (CAMT.053)
+  CBI_TXT // CBI fixed-position TXT format
   PSD2_FABRICK
   PSD2_TINK
   MANUAL
 }
 
 enum ReconciliationStatus {
-  PENDING   // Non ancora processato
-  MATCHED   // Match automatico confermato
+  PENDING // Non ancora processato
+  MATCHED // Match automatico confermato
   TO_REVIEW // Match con confidence < 90%
-  MANUAL    // Assegnato manualmente
-  IGNORED   // Ignorato dall'utente
+  MANUAL // Assegnato manualmente
+  IGNORED // Ignorato dall'utente
   UNMATCHED // Nessun match trovato
 }
 
@@ -1652,15 +1683,15 @@ model RecurringExpense {
   venue   Venue  @relation(fields: [venueId], references: [id])
   venueId String @map("venue_id")
 
-  name        String             // "Affitto", "Utenze", "Stipendi"
+  name        String // "Affitto", "Utenze", "Stipendi"
   description String?
-  amount      Decimal            @db.Decimal(12, 2)
+  amount      Decimal          @db.Decimal(12, 2)
   frequency   ExpenseFrequency
-  dayOfMonth  Int?               @map("day_of_month") // 1-31 per mensile
-  dayOfWeek   Int?               @map("day_of_week") // 0-6 per settimanale
-  startDate   DateTime?          @map("start_date") @db.Date
-  endDate     DateTime?          @map("end_date") @db.Date
-  isActive    Boolean            @default(true) @map("is_active")
+  dayOfMonth  Int?             @map("day_of_month") // 1-31 per mensile
+  dayOfWeek   Int?             @map("day_of_week") // 0-6 per settimanale
+  startDate   DateTime?        @map("start_date") @db.Date
+  endDate     DateTime?        @map("end_date") @db.Date
+  isActive    Boolean          @default(true) @map("is_active")
 
   // Collegamento opzionale a conto contabile
   account   Account? @relation(fields: [accountId], references: [id])
@@ -1668,7 +1699,7 @@ model RecurringExpense {
 
   // Metadati
   category  String? // "Personale", "Utenze", "Affitto", "Fornitori", "Tasse"
-  createdBy String  @map("created_by")
+  createdBy String   @map("created_by")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -1707,18 +1738,18 @@ model CashFlowSetting {
 }
 
 enum ForecastMethod {
-  HISTORICAL      // Solo storico anno precedente
-  MOVING_AVERAGE  // Solo media mobile
-  HYBRID          // Combinazione ponderata
+  HISTORICAL // Solo storico anno precedente
+  MOVING_AVERAGE // Solo media mobile
+  HYBRID // Combinazione ponderata
 }
 
 // === FASE 4: CERTIFICAZIONI DIPENDENTI ===
 enum CertificationType {
-  HACCP             // Igiene alimentare
-  SICUREZZA         // Sicurezza sul lavoro (D.Lgs. 81/08)
-  ANTINCENDIO       // Prevenzione incendi
-  PRIMO_SOCCORSO    // Primo soccorso aziendale
-  PREPOSTO          // Formazione preposto
+  HACCP // Igiene alimentare
+  SICUREZZA // Sicurezza sul lavoro (D.Lgs. 81/08)
+  ANTINCENDIO // Prevenzione incendi
+  PRIMO_SOCCORSO // Primo soccorso aziendale
+  PREPOSTO // Formazione preposto
 }
 
 model Certification {
@@ -1727,8 +1758,8 @@ model Certification {
   userId String @map("user_id")
 
   type         CertificationType
-  obtainedDate DateTime  @map("obtained_date") @db.Date
-  expiryDate   DateTime  @map("expiry_date") @db.Date
+  obtainedDate DateTime          @map("obtained_date") @db.Date
+  expiryDate   DateTime          @map("expiry_date") @db.Date
 
   documentUrl        String?   @map("document_url")
   documentUploadedAt DateTime? @map("document_uploaded_at")
@@ -1740,4 +1771,210 @@ model Certification {
   @@index([type])
   @@index([expiryDate])
   @@map("certifications")
+}
+
+// ==================== SIBILL: PAGAMENTI ====================
+
+model Payment {
+  id                 String        @id @default(cuid())
+  venue              Venue         @relation(fields: [venueId], references: [id])
+  venueId            String        @map("venue_id")
+  tipo               PaymentType   @map("tipo")
+  stato              PaymentStatus @default(BOZZA) @map("stato")
+  riferimentoInterno String?       @map("riferimento_interno")
+  dataEsecuzione     DateTime      @map("data_esecuzione") @db.Date
+  importo            Decimal       @db.Decimal(10, 2)
+  beneficiarioNome   String        @map("beneficiario_nome")
+  beneficiarioIban   String?       @map("beneficiario_iban")
+  causale            String?       @db.Text
+
+  journalEntry   JournalEntry? @relation(fields: [journalEntryId], references: [id])
+  journalEntryId String?       @unique @map("journal_entry_id")
+
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  createdById String?  @map("created_by")
+  note        String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("payments")
+}
+
+enum PaymentType {
+  BONIFICO
+  F24
+  ALTRO
+}
+
+enum PaymentStatus {
+  BOZZA
+  DA_APPROVARE
+  DISPOSTO
+  COMPLETATO
+  FALLITO
+  ANNULLATO
+}
+
+// ==================== SIBILL: REGOLE CATEGORISAZIONE ====================
+
+model CategorizationRule {
+  id        String        @id @default(cuid())
+  venue     Venue         @relation(fields: [venueId], references: [id])
+  venueId   String        @map("venue_id")
+  name      String
+  direction RuleDirection @map("direction")
+  keywords  String[]      @default([])
+  priority  Int           @default(5)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  budgetCategory   BudgetCategory? @relation(fields: [budgetCategoryId], references: [id])
+  budgetCategoryId String?         @map("budget_category_id")
+
+  account   Account? @relation(fields: [accountId], references: [id])
+  accountId String?  @map("account_id")
+
+  autoVerify Boolean @default(false) @map("auto_verify")
+  autoHide   Boolean @default(false) @map("auto_hide")
+
+  journalEntries JournalEntry[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("categorization_rules")
+}
+
+enum RuleDirection {
+  INFLOW
+  OUTFLOW
+}
+
+// ==================== SIBILL: CASH FLOW PREVISIONALE ====================
+
+model CashFlowForecast {
+  id          String @id @default(cuid())
+  venue       Venue  @relation(fields: [venueId], references: [id])
+  venueId     String @map("venue_id")
+  createdBy   User   @relation(fields: [createdById], references: [id])
+  createdById String @map("created_by")
+
+  nome        String
+  descrizione String?  @db.Text
+  dataInizio  DateTime @map("data_inizio") @db.Date
+  dataFine    DateTime @map("data_fine") @db.Date
+
+  saldoIniziale Decimal @map("saldo_iniziale") @db.Decimal(12, 2)
+  saldoFinale   Decimal @map("saldo_finale") @db.Decimal(12, 2)
+  totaleEntrate Decimal @map("totale_entrare") @db.Decimal(12, 2)
+  totaleUscite  Decimal @map("totale_uscite") @db.Decimal(12, 2)
+
+  stato ForecastStatus @default(BOZZA) @map("stato")
+  tipo  ForecastType   @default(BASE) @map("tipo")
+
+  lines     CashFlowForecastLine[]
+  scenarios CashFlowScenario[]
+  alerts    CashFlowAlert[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("cash_flow_forecasts")
+}
+
+enum ForecastStatus {
+  BOZZA
+  ATTIVA
+  ARCHIVIATA
+}
+
+enum ForecastType {
+  BASE
+  OTTIMISTICO
+  PESSIMISTICO
+  PERSONALIZZATO
+}
+
+model CashFlowForecastLine {
+  id         String           @id @default(cuid())
+  forecast   CashFlowForecast @relation(fields: [forecastId], references: [id], onDelete: Cascade)
+  forecastId String           @map("forecast_id")
+
+  data             DateTime        @map("data") @db.Date
+  tipo             FlowType        @map("tipo")
+  importo          Decimal         @db.Decimal(10, 2)
+  categoria        String?
+  descrizione      String?
+  fonte            String?
+  confidenza       ConfidenceLevel @default(CERTA) @map("confidenza")
+  saldoProgressivo Decimal?        @map("saldo_progressivo") @db.Decimal(12, 2)
+
+  isRealizzata Boolean @default(false) @map("is_realizzata")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([forecastId, data])
+  @@map("cash_flow_forecast_lines")
+}
+
+enum FlowType {
+  ENTRATA
+  USCITA
+}
+
+enum ConfidenceLevel {
+  CERTA
+  ALTA
+  MEDIA
+  BASSA
+}
+
+model CashFlowScenario {
+  id         String           @id @default(cuid())
+  forecast   CashFlowForecast @relation(fields: [forecastId], references: [id], onDelete: Cascade)
+  forecastId String           @map("forecast_id")
+
+  nome              String
+  descrizione       String? @db.Text
+  tipoAggiustamento String? @map("tipo_aggiustamento")
+  importiModificati Boolean @default(false) @map("importi_modificati")
+  dateModificate    Boolean @default(false) @map("date_modificate")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("cash_flow_scenarios")
+}
+
+model CashFlowAlert {
+  id         String            @id @default(cuid())
+  venue      Venue             @relation(fields: [venueId], references: [id])
+  venueId    String            @map("venue_id")
+  forecast   CashFlowForecast? @relation(fields: [forecastId], references: [id])
+  forecastId String?           @map("forecast_id")
+
+  tipo          CashFlowAlertType   @map("tipo")
+  dataPrevista  DateTime            @map("data_prevista") @db.Date
+  saldoPrevisto Decimal             @map("saldo_previsto") @db.Decimal(12, 2)
+  soglia        Decimal?            @map("soglia") @db.Decimal(12, 2)
+  messaggio     String?             @db.Text
+  stato         CashFlowAlertStatus @default(ATTIVO) @map("stato")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([venueId, stato])
+  @@map("cash_flow_alerts")
+}
+
+enum CashFlowAlertType {
+  SOTTO_SOGLIA
+  SOPRA_SOGLIA
+  SALDO_NEGATIVO
+  VARIANZA_ALTA
+}
+
+enum CashFlowAlertStatus {
+  ATTIVO
+  RISOLTO
+  IGNORATO
 }
