@@ -21,6 +21,9 @@ import {
   Package,
   ClipboardCheck,
   Truck,
+  Building2,
+  UserPlus,
+  Building,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
@@ -34,25 +37,31 @@ const mainNavigation = [
   { name: 'Riconciliazione', href: '/riconciliazione', icon: Landmark },
   { name: 'Fatture', href: '/fatture', icon: FileText },
   { name: 'Prodotti', href: '/prodotti', icon: Package },
-  { name: 'Cash Flow', href: '/budget', icon: BarChart3 },
+  { name: 'Budget', href: '/budget', icon: BarChart3 },
   { name: 'Report', href: '/report', icon: BarChart3 },
 ]
 
 // Sottovoci "Personale"
 const personnelNavigation = [
-  { name: 'Staff', href: '/staff', icon: Users },
+  { name: 'Staff', href: '/anagrafiche/personale', icon: Users },
   { name: 'Turni', href: '/turni', icon: Calendar },
   { name: 'Ferie/Permessi', href: '/ferie-permessi', icon: Palmtree },
   { name: 'Presenze', href: '/presenze', icon: ClipboardCheck },
 ]
 
+// Sottovoci "Anagrafiche"
+const anagraficheNavigation = [
+  { name: 'Clienti', href: '/anagrafiche/clienti', icon: Building2 },
+  { name: 'Fornitori', href: '/anagrafiche/fornitori', icon: Truck },
+  { name: 'Personale', href: '/anagrafiche/personale', icon: Users },
+  { name: 'Utenti', href: '/anagrafiche/utenti', icon: UserPlus },
+]
+
 // Sottovoci "Impostazioni"
 const settingsNavigation = [
   { name: 'Generali', href: '/impostazioni/generali', icon: Settings },
-  { name: 'Utenti', href: '/impostazioni/utenti', icon: Users },
-  { name: 'Fornitori', href: '/impostazioni/fornitori', icon: Truck },
   { name: 'Piano Conti', href: '/impostazioni/conti', icon: BookOpen },
-  { name: 'Cash Flow', href: '/impostazioni/budget', icon: BarChart3 },
+  { name: 'Budget', href: '/impostazioni/budget', icon: BarChart3 },
 ]
 
 export function Sidebar() {
@@ -64,6 +73,12 @@ export function Sidebar() {
     item => pathname === item.href || pathname.startsWith(item.href + '/')
   )
   const [isPersonnelOpen, setIsPersonnelOpen] = useState(isInPersonnelSection)
+
+  // Stato accordion Anagrafiche
+  const isInAnagraficheSection = anagraficheNavigation.some(
+    item => pathname === item.href || pathname.startsWith(item.href + '/')
+  )
+  const [isAnagraficheOpen, setIsAnagraficheOpen] = useState(isInAnagraficheSection)
 
   // Stato accordion Impostazioni
   const isInSettingsSection = settingsNavigation.some(
@@ -77,6 +92,13 @@ export function Sidebar() {
       queueMicrotask(() => setIsPersonnelOpen(true))
     }
   }, [pathname, isInPersonnelSection, isPersonnelOpen])
+
+  // Auto-espandi quando si naviga in sezione Anagrafiche
+  useEffect(() => {
+    if (isInAnagraficheSection && !isAnagraficheOpen) {
+      queueMicrotask(() => setIsAnagraficheOpen(true))
+    }
+  }, [pathname, isInAnagraficheSection, isAnagraficheOpen])
 
   // Auto-espandi quando si naviga in sezione Impostazioni
   useEffect(() => {
@@ -210,6 +232,61 @@ export function Sidebar() {
           </div>
         </div>
 
+        {/* Anagrafiche Accordion */}
+        <div className="pt-1">
+          {collapsed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setIsAnagraficheOpen(!isAnagraficheOpen)}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                    isInAnagraficheSection
+                      ? "bg-slate-800 text-white"
+                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                  )}
+                >
+                  <Building className="h-5 w-5 flex-shrink-0" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>
+                Anagrafiche
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <button
+              onClick={() => setIsAnagraficheOpen(!isAnagraficheOpen)}
+              className={cn(
+                "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                isInAnagraficheSection
+                  ? "bg-slate-800 text-white"
+                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
+              )}
+            >
+              <Building className="h-5 w-5 flex-shrink-0" />
+              <span className="flex-1 text-left">Anagrafiche</span>
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 transition-transform duration-200",
+                  isAnagraficheOpen ? "rotate-0" : "-rotate-90"
+                )}
+              />
+            </button>
+          )}
+
+          {/* Sottovoci accordion Anagrafiche */}
+          <div
+            className={cn(
+              "overflow-hidden transition-all duration-200",
+              isAnagraficheOpen && !collapsed ? "max-h-64 opacity-100" : "max-h-0 opacity-0"
+            )}
+          >
+            <div className="mt-1 space-y-1">
+              {anagraficheNavigation.map((item) => renderNavItem(item, true))}
+            </div>
+          </div>
+        </div>
+
         {/* Impostazioni Accordion */}
         <div className="pt-1">
           {collapsed ? (
@@ -256,7 +333,7 @@ export function Sidebar() {
           <div
             className={cn(
               "overflow-hidden transition-all duration-200",
-              isSettingsOpen && !collapsed ? "max-h-64 opacity-100" : "max-h-0 opacity-0"
+              isSettingsOpen && !collapsed ? "max-h-48 opacity-100" : "max-h-0 opacity-0"
             )}
           >
             <div className="mt-1 space-y-1">

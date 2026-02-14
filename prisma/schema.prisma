@@ -582,6 +582,35 @@ model Supplier {
   @@map("suppliers")
 }
 
+// ==================== CLIENTI (per fatturazione) ====================
+
+model Customer {
+  id               String   @id @default(cuid())
+  denominazione    String   // Nome azienda / ragione sociale
+  partitaIva       String?  @map("partita_iva")
+  codiceFiscale   String?  @map("codice_fiscale") // Codice fiscale
+  indirizzo        String?
+  citta            String?
+  cap              String?
+  provincia         String?
+  email            String?
+  telefono         String?
+  iban             String?
+  note             String?  @db.Text
+  attivo           Boolean  @default(true) @map("attivo")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")
+
+  // Relazione con fatture elettroniche
+  electronicInvoices ElectronicInvoice[]
+
+  // Conto di default per fatturazione
+  defaultAccount   Account? @relation(fields: [defaultAccountId], references: [id])
+  defaultAccountId String?  @map("default_account_id")
+
+  @@map("customers")
+}
+
 // ==================== BUDGET MODULE ====================
 
 model Budget {
@@ -1412,6 +1441,12 @@ model ElectronicInvoice {
   supplierId   String?   @map("supplier_id")
   supplierVat  String    @map("supplier_vat") // P.IVA fornitore (per matching)
   supplierName String    @map("supplier_name") // Denominazione fornitore
+
+  // Cliente (per fatture attive)
+  customer       Customer? @relation(fields: [customerId], references: [id])
+  customerId      String?   @map("customer_id")
+  customerVat     String?   @map("customer_vat") // P.IVA cliente (per matching)
+  customerName    String?   @map("customer_name") // Denominazione cliente
 
   // Importi
   totalAmount Decimal @map("total_amount") @db.Decimal(10, 2) // Totale documento

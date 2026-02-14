@@ -7,12 +7,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+  Tabs,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs'
 import {
   Table,
   TableBody,
@@ -161,20 +159,40 @@ export default function TurniPage() {
       </div>
 
       {/* Filtri */}
-      <div className="flex items-center gap-4">
-        <Select value={filterStatus} onValueChange={setFilterStatus}>
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="Filtra per stato" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Tutti gli stati</SelectItem>
-            <SelectItem value="DRAFT">Bozza</SelectItem>
-            <SelectItem value="GENERATED">Generato</SelectItem>
-            <SelectItem value="REVIEW">In revisione</SelectItem>
-            <SelectItem value="PUBLISHED">Pubblicato</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <Tabs value={filterStatus} onValueChange={setFilterStatus}>
+        <TabsList className="flex gap-1 p-1 bg-muted/50 rounded-lg h-auto w-fit border-none">
+          <TabsTrigger
+            value="all"
+            className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium"
+          >
+            Tutti gli stati
+          </TabsTrigger>
+          <TabsTrigger
+            value="DRAFT"
+            className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium"
+          >
+            Bozza
+          </TabsTrigger>
+          <TabsTrigger
+            value="GENERATED"
+            className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium"
+          >
+            Generato
+          </TabsTrigger>
+          <TabsTrigger
+            value="REVIEW"
+            className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium"
+          >
+            In revisione
+          </TabsTrigger>
+          <TabsTrigger
+            value="PUBLISHED"
+            className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium"
+          >
+            Pubblicato
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {/* Lista pianificazioni */}
       <Card>

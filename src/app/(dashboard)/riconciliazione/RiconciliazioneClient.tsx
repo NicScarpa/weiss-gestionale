@@ -54,8 +54,7 @@ export function RiconciliazioneClient({ venues }: { venues: Venue[] }) {
       const [summaryRes, transactionsRes] = await Promise.all([
         fetch(`/api/reconciliation/summary?venueId=${selectedVenueId}`),
         fetch(
-          `/api/bank-transactions?venueId=${selectedVenueId}${
-            statusFilter !== 'all' ? `&status=${statusFilter}` : ''
+          `/api/bank-transactions?venueId=${selectedVenueId}${statusFilter !== 'all' ? `&status=${statusFilter}` : ''
           }&limit=100`
         ),
       ])
@@ -198,12 +197,37 @@ export function RiconciliazioneClient({ venues }: { venues: Venue[] }) {
           onValueChange={(v) => setStatusFilter(v as StatusFilter)}
           className="w-full sm:w-auto"
         >
-          <TabsList className="grid grid-cols-5 w-full sm:w-auto">
-            <TabsTrigger value="all">Tutti</TabsTrigger>
-            <TabsTrigger value="TO_REVIEW">Da Verificare</TabsTrigger>
-            <TabsTrigger value="UNMATCHED">Non Matchati</TabsTrigger>
-            <TabsTrigger value="MATCHED">Riconciliati</TabsTrigger>
-            <TabsTrigger value="IGNORED">Ignorati</TabsTrigger>
+          <TabsList className="flex gap-1 p-1 bg-muted/50 rounded-lg h-auto w-fit border-none">
+            <TabsTrigger
+              value="all"
+              className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium"
+            >
+              Tutti
+            </TabsTrigger>
+            <TabsTrigger
+              value="TO_REVIEW"
+              className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium"
+            >
+              Da Verificare
+            </TabsTrigger>
+            <TabsTrigger
+              value="UNMATCHED"
+              className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium"
+            >
+              Non Matchati
+            </TabsTrigger>
+            <TabsTrigger
+              value="MATCHED"
+              className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium"
+            >
+              Riconciliati
+            </TabsTrigger>
+            <TabsTrigger
+              value="IGNORED"
+              className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium"
+            >
+              Ignorati
+            </TabsTrigger>
           </TabsList>
         </Tabs>
 

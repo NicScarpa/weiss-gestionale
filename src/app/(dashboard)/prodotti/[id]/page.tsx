@@ -293,16 +293,25 @@ export default function ProductDetailPage({ params }: PageProps) {
 
       {/* Tabs */}
       <Tabs defaultValue="history" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="history" className="gap-2">
+        <TabsList className="flex gap-1 p-1 bg-muted/50 rounded-lg h-auto w-fit border-none">
+          <TabsTrigger
+            value="history"
+            className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium gap-2"
+          >
             <History className="h-4 w-4" />
             Storico Prezzi
           </TabsTrigger>
-          <TabsTrigger value="suppliers" className="gap-2">
+          <TabsTrigger
+            value="suppliers"
+            className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium gap-2"
+          >
             <Building2 className="h-4 w-4" />
             Fornitori
           </TabsTrigger>
-          <TabsTrigger value="alerts" className="gap-2">
+          <TabsTrigger
+            value="alerts"
+            className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium gap-2"
+          >
             <AlertTriangle className="h-4 w-4" />
             Alert ({product.priceAlerts.length})
           </TabsTrigger>
@@ -356,13 +365,12 @@ export default function ProductDetailPage({ params }: PageProps) {
                           <TableCell className="text-right">
                             {record.priceChangePct ? (
                               <div
-                                className={`flex items-center justify-end gap-1 ${
-                                  isIncrease
+                                className={`flex items-center justify-end gap-1 ${isIncrease
                                     ? 'text-destructive'
                                     : isDecrease
                                       ? 'text-green-600'
                                       : ''
-                                }`}
+                                  }`}
                               >
                                 {isIncrease ? (
                                   <ArrowUpRight className="h-4 w-4" />

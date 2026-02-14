@@ -339,12 +339,18 @@ export function PrimaNotaClient({
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'cassa' | 'banca')}>
-        <TabsList className="grid w-full max-w-md grid-cols-2">
-          <TabsTrigger value="cassa" className="gap-2">
+        <TabsList className="flex gap-1 p-1 bg-muted/50 rounded-lg h-auto w-fit border-none">
+          <TabsTrigger
+            value="cassa"
+            className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium flex items-center gap-2"
+          >
             <Wallet className="h-4 w-4" />
             Prima Nota Cassa
           </TabsTrigger>
-          <TabsTrigger value="banca" className="gap-2">
+          <TabsTrigger
+            value="banca"
+            className="px-4 py-2 rounded-full data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none border-none text-sm font-medium flex items-center gap-2"
+          >
             <Building2 className="h-4 w-4" />
             Prima Nota Banca
           </TabsTrigger>
