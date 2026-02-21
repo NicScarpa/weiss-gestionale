@@ -4,7 +4,7 @@ import { getVenueId } from '@/lib/venue'
 import { z } from 'zod'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 import {
   generatePayrollData,
   PayrollRecord,
@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Excel
-    const excelBuffer = generateExcel(
+    const excelBuffer = await generateExcel(
       records,
       summaries,
       monthName,
@@ -160,15 +160,15 @@ function generateCSV(records: PayrollRecord[], includeLeaves: boolean): string {
 /**
  * Genera Excel con dettaglio e riepilogo
  */
-function generateExcel(
+async function generateExcel(
   records: PayrollRecord[],
   summaries: PayrollSummary[],
   monthName: string,
   warnings: string[],
   includeLeaves: boolean,
   includeSummary: boolean
-): Buffer {
-  const wb = XLSX.utils.book_new()
+): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook()
 
   // === Foglio 1: Dettaglio giornaliero ===
   const detailHeader = [
@@ -211,7 +211,7 @@ function generateExcel(
     ])
 
   // Info header
-  const infoRows = [
+  const infoRows: (string | number)[][] = [
     [`PRESENZE ${monthName.toUpperCase()}`],
     [],
     ['Esportato il', format(new Date(), 'dd/MM/yyyy HH:mm')],
@@ -219,31 +219,18 @@ function generateExcel(
     [],
   ]
 
-  const detailSheet = XLSX.utils.aoa_to_sheet([
-    ...infoRows,
-    detailHeader,
-    ...detailRows,
-  ])
+  const detailSheet = wb.addWorksheet('Dettaglio')
+
+  // Add info rows, header, and data rows
+  for (const row of [...infoRows, detailHeader, ...detailRows]) {
+    detailSheet.addRow(row)
+  }
 
   // Larghezza colonne
-  detailSheet['!cols'] = [
-    { wch: 10 },
-    { wch: 15 },
-    { wch: 15 },
-    { wch: 12 },
-    { wch: 12 },
-    { wch: 8 },
-    { wch: 8 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 12 },
-    { wch: 30 },
-  ]
-
-  XLSX.utils.book_append_sheet(wb, detailSheet, 'Dettaglio')
+  const detailColWidths = [10, 15, 15, 12, 12, 8, 8, 10, 10, 10, 10, 10, 12, 30]
+  detailColWidths.forEach((width, i) => {
+    detailSheet.getColumn(i + 1).width = width
+  })
 
   // === Foglio 2: Riepilogo mensile ===
   if (includeSummary) {
@@ -261,7 +248,7 @@ function generateExcel(
       'Costo Stimato',
     ]
 
-    const summaryRows = summaries
+    const summaryRows: (string | number)[][] = summaries
       .filter((s) => s.totalHours > 0 || s.totalLeaveDays > 0)
       .map((s) => [
         s.employeeCode,
@@ -316,7 +303,7 @@ function generateExcel(
       `€ ${totals.cost.toFixed(2)}`,
     ])
 
-    const summaryInfoRows = [
+    const summaryInfoRows: (string | number)[][] = [
       [`RIEPILOGO ${monthName.toUpperCase()}`],
       [],
       ['Dipendenti', summaries.length],
@@ -325,27 +312,16 @@ function generateExcel(
       [],
     ]
 
-    const summarySheet = XLSX.utils.aoa_to_sheet([
-      ...summaryInfoRows,
-      summaryHeader,
-      ...summaryRows,
-    ])
+    const summarySheet = wb.addWorksheet('Riepilogo')
 
-    summarySheet['!cols'] = [
-      { wch: 10 },
-      { wch: 15 },
-      { wch: 15 },
-      { wch: 10 },
-      { wch: 10 },
-      { wch: 10 },
-      { wch: 10 },
-      { wch: 12 },
-      { wch: 12 },
-      { wch: 25 },
-      { wch: 15 },
-    ]
+    for (const row of [...summaryInfoRows, summaryHeader, ...summaryRows]) {
+      summarySheet.addRow(row)
+    }
 
-    XLSX.utils.book_append_sheet(wb, summarySheet, 'Riepilogo')
+    const summaryColWidths = [10, 15, 15, 10, 10, 10, 10, 12, 12, 25, 15]
+    summaryColWidths.forEach((width, i) => {
+      summarySheet.getColumn(i + 1).width = width
+    })
   }
 
   // === Foglio 3: Avvisi (se presenti) ===
@@ -356,13 +332,17 @@ function generateExcel(
       ...warnings.map((w) => [w]),
     ]
 
-    const warningSheet = XLSX.utils.aoa_to_sheet(warningRows)
-    warningSheet['!cols'] = [{ wch: 80 }]
+    const warningSheet = wb.addWorksheet('Avvisi')
 
-    XLSX.utils.book_append_sheet(wb, warningSheet, 'Avvisi')
+    for (const row of warningRows) {
+      warningSheet.addRow(row)
+    }
+
+    warningSheet.getColumn(1).width = 80
   }
 
-  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
+  const arrayBuffer = await wb.xlsx.writeBuffer()
+  return Buffer.from(arrayBuffer)
 }
 
 function formatNumber(value: number): string {

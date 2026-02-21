@@ -5,19 +5,13 @@ import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 
 import { logger } from '@/lib/logger'
-// Password iniziale di default (non può essere usata come nuova password)
-const DEFAULT_PASSWORD = '1234567890'
+import { passwordSchema } from '@/lib/validations/password'
+import { checkRequestRateLimit, RATE_LIMIT_CONFIGS } from '@/lib/api-utils'
 
 // Schema cambio password
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Password attuale obbligatoria'),
-  newPassword: z
-    .string()
-    .min(8, 'La nuova password deve essere di almeno 8 caratteri')
-    .refine(
-      (pwd) => pwd !== DEFAULT_PASSWORD,
-      'Non puoi usare la password iniziale come nuova password'
-    ),
+  newPassword: passwordSchema,
   confirmPassword: z.string(),
 }).refine(
   (data) => data.newPassword === data.confirmPassword,
@@ -30,6 +24,9 @@ const changePasswordSchema = z.object({
 // POST /api/auth/change-password - Cambio password
 export async function POST(request: NextRequest) {
   try {
+    const rateCheck = checkRequestRateLimit(request, 'auth:change', RATE_LIMIT_CONFIGS.AUTH)
+    if (!rateCheck.allowed) return rateCheck.response!
+
     const session = await auth()
 
     if (!session?.user) {

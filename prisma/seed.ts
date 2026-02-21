@@ -14,6 +14,11 @@ const adapter = new PrismaPg(pool)
 const prisma = new PrismaClient({ adapter })
 
 async function main() {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('SEED BLOCCATO IN PRODUZIONE')
+    process.exit(1)
+  }
+
   console.log('🌱 Inizio seed database...')
 
   // ==================== RUOLI ====================

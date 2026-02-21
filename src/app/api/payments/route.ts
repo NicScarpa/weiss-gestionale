@@ -3,6 +3,7 @@ import { getServerSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { getVenueId } from '@/lib/venue'
 import { PaymentType, PaymentStatus, Prisma } from '@prisma/client'
+import { checkRequestRateLimit, RATE_LIMIT_CONFIGS } from '@/lib/api-utils'
 
 // GET /api/payments - Lista pagamenti con filtri
 export async function GET(request: NextRequest) {
@@ -93,6 +94,9 @@ export async function GET(request: NextRequest) {
 // POST /api/payments - Crea nuovo pagamento
 export async function POST(request: NextRequest) {
   try {
+    const rateCheck = checkRequestRateLimit(request, 'payments:create', RATE_LIMIT_CONFIGS.STRICT)
+    if (!rateCheck.allowed) return rateCheck.response!
+
     const session = await getServerSession()
     if (!session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -100,7 +104,6 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const {
-      venueId,
       tipo,
       dataEsecuzione,
       importo,
@@ -110,6 +113,9 @@ export async function POST(request: NextRequest) {
       riferimentoInterno,
       note,
     } = body
+
+    // Override venueId from session, not from body (IDOR prevention)
+    const venueId = await getVenueId()
 
     if (!venueId || !tipo || !dataEsecuzione || !importo || !beneficiarioNome) {
       return NextResponse.json(

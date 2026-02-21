@@ -156,6 +156,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Se il token ha un'email associata, verifica che corrisponda
+    if (invitation.email && invitation.email.toLowerCase() !== data.email.toLowerCase()) {
+      return NextResponse.json(
+        { error: 'L\'email inserita non corrisponde a quella dell\'invito.' },
+        { status: 400 }
+      )
+    }
+
     // Verifica che l'email non sia gia registrata
     const existingUser = await prisma.user.findUnique({
       where: { email: data.email },

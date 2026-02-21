@@ -57,8 +57,8 @@ function ResetPasswordForm() {
     setError(null)
 
     // Validazione client-side
-    if (password.length < 8) {
-      setError('La password deve essere di almeno 8 caratteri')
+    if (password.length < 10) {
+      setError('La password deve essere di almeno 10 caratteri')
       return
     }
 
@@ -67,8 +67,8 @@ function ResetPasswordForm() {
       return
     }
 
-    if (password === '1234567890') {
-      setError('Non puoi usare la password iniziale')
+    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+      setError('La password deve contenere maiuscola, minuscola, numero e carattere speciale')
       return
     }
 
@@ -196,7 +196,7 @@ function ResetPasswordForm() {
             required
             disabled={isLoading}
             autoComplete="new-password"
-            minLength={8}
+            minLength={10}
           />
           <button
             type="button"
@@ -207,7 +207,7 @@ function ResetPasswordForm() {
           </button>
         </div>
         <p className="text-xs text-muted-foreground">
-          Minimo 8 caratteri
+          Minimo 10 caratteri, maiuscola, minuscola, numero e carattere speciale
         </p>
       </div>
 

@@ -16,10 +16,10 @@ import {
   shouldUseEmailAsUsername,
 } from '@/lib/utils/username'
 
+import { checkRequestRateLimit, RATE_LIMIT_CONFIGS } from '@/lib/api-utils'
 import { logger } from '@/lib/logger'
 import { getVenueId } from '@/lib/venue'
-// Password iniziale di default
-const DEFAULT_PASSWORD = '1234567890'
+import crypto from 'crypto'
 
 // Schema creazione utente
 const createUserSchema = z.object({
@@ -137,6 +137,9 @@ export async function GET(request: NextRequest) {
 // POST /api/users - Crea nuovo utente
 export async function POST(request: NextRequest) {
   try {
+    const rateCheck = checkRequestRateLimit(request, 'users:create', RATE_LIMIT_CONFIGS.STRICT)
+    if (!rateCheck.allowed) return rateCheck.response!
+
     const session = await auth()
 
     if (!session?.user) {
@@ -224,8 +227,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Hash password iniziale
-    const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 12)
+    // Genera password temporanea random
+    const temporaryPassword = crypto.randomBytes(16).toString('base64url')
+    const passwordHash = await bcrypt.hash(temporaryPassword, 12)
 
     // Crea utente
     const newUser = await prisma.user.create({
@@ -260,12 +264,12 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Restituisci utente con credenziali (solo questa volta!)
+    // Restituisci utente con credenziali temporanee (una tantum)
     return NextResponse.json({
       user: filterUserFields(newUser as unknown as Record<string, unknown>, userRole),
       credentials: {
         username,
-        password: DEFAULT_PASSWORD,
+        password: temporaryPassword,
         mustChangePassword: true,
       },
     }, { status: 201 })

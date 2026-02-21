@@ -99,6 +99,7 @@ const navigationItems = [
           { name: 'Turni', href: '/turni' },
           { name: 'Ferie/Permessi', href: '/ferie-permessi' },
           { name: 'Presenze', href: '/presenze' },
+          { name: 'Documenti', href: '/documenti-dipendenti' },
         ],
       },
     ],
@@ -187,45 +188,83 @@ export function Sidebar() {
           </div>
         </div>
 
-        <nav className="flex-1 w-full space-y-2 px-2">
-          {navigationItems.map((item) => {
-            const isActive = activeItem === item.name
-            const isHovered = hoveredItem === item.name
-            const showBadge = item.name === 'Scadenzario' && scaduteCount > 0
+        <nav className="flex-1 w-full flex flex-col px-2">
+          <div className="space-y-2">
+            {navigationItems.filter(item => item.name !== 'Impostazioni').map((item) => {
+              const isActive = activeItem === item.name
+              const isHovered = hoveredItem === item.name
+              const showBadge = item.name === 'Scadenzario' && scaduteCount > 0
 
-            return (
-              <Tooltip key={item.name}>
-                <TooltipTrigger asChild>
-                  <Link
-                    href={item.href || '#'}
-                    onMouseEnter={() => setHoveredItem(item.name)}
-                    className={cn(
-                      "w-full aspect-square flex items-center justify-center rounded-lg transition-all relative group",
-                      isActive || isHovered
-                        ? "bg-slate-800 text-white"
-                        : "text-slate-400 hover:bg-slate-800 hover:text-white"
-                    )}
-                  >
-                    <item.icon className="h-5 w-5" />
-                    {showBadge && (
-                      <span className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
-                        {scaduteCount > 99 ? '99+' : scaduteCount}
-                      </span>
-                    )}
-                    {(isActive || isHovered) && (
-                      <motion.div
-                        layoutId="activeIndicator"
-                        className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-white rounded-r-full"
-                      />
-                    )}
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent side="right" sideOffset={10} className="bg-slate-900 border-slate-800 text-white">
-                  {item.name}
-                </TooltipContent>
-              </Tooltip>
-            )
-          })}
+              return (
+                <Tooltip key={item.name}>
+                  <TooltipTrigger asChild>
+                    <Link
+                      href={item.href || '#'}
+                      onMouseEnter={() => setHoveredItem(item.name)}
+                      className={cn(
+                        "w-full aspect-square flex items-center justify-center rounded-lg transition-all relative group",
+                        isActive || isHovered
+                          ? "bg-slate-800 text-white"
+                          : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                      )}
+                    >
+                      <item.icon className="h-5 w-5" />
+                      {showBadge && (
+                        <span className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                          {scaduteCount > 99 ? '99+' : scaduteCount}
+                        </span>
+                      )}
+                      {(isActive || isHovered) && (
+                        <motion.div
+                          layoutId="activeIndicator"
+                          className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-white rounded-r-full"
+                        />
+                      )}
+                    </Link>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={10} className="bg-slate-900 border-slate-800 text-white">
+                    {item.name}
+                  </TooltipContent>
+                </Tooltip>
+              )
+            })}
+          </div>
+
+          {/* Impostazioni - ancorato in basso */}
+          <div className="mt-auto pb-2">
+            {navigationItems.filter(item => item.name === 'Impostazioni').map((item) => {
+              const isActive = activeItem === item.name
+              const isHovered = hoveredItem === item.name
+
+              return (
+                <Tooltip key={item.name}>
+                  <TooltipTrigger asChild>
+                    <Link
+                      href={item.href || '#'}
+                      onMouseEnter={() => setHoveredItem(item.name)}
+                      className={cn(
+                        "w-full aspect-square flex items-center justify-center rounded-lg transition-all relative group",
+                        isActive || isHovered
+                          ? "bg-slate-800 text-white"
+                          : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                      )}
+                    >
+                      <item.icon className="h-5 w-5" />
+                      {(isActive || isHovered) && (
+                        <motion.div
+                          layoutId="activeIndicator"
+                          className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-white rounded-r-full"
+                        />
+                      )}
+                    </Link>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={10} className="bg-slate-900 border-slate-800 text-white">
+                    {item.name}
+                  </TooltipContent>
+                </Tooltip>
+              )
+            })}
+          </div>
         </nav>
       </aside>
 

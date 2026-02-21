@@ -51,7 +51,8 @@ export function generateUsername(firstName: string, lastName: string): string {
  * @param excludeUserId - ID utente da escludere dalla verifica (per aggiornamenti)
  */
 export async function generateUniqueUsername(
-  prisma: PrismaClient,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  prisma: { user: PrismaClient['user'] } | any,
   firstName: string,
   lastName: string,
   excludeUserId?: string

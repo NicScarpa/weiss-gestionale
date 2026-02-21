@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Clock, Calendar, Palmtree, ArrowLeftRight } from 'lucide-react'
+import { Home, Clock, Calendar, Palmtree, ArrowLeftRight, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -30,6 +30,11 @@ const navItems = [
     href: '/portale/scambi',
     label: 'Scambi',
     icon: ArrowLeftRight,
+  },
+  {
+    href: '/portale/documenti',
+    label: 'Documenti',
+    icon: FileText,
   },
 ]
 

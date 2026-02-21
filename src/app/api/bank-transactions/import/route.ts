@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
     if (isXLS) {
       // Parsa XLS/XLSX
       const buffer = await file.arrayBuffer()
-      const result = parseXLS(buffer, config)
+      const result = await parseXLS(buffer, config)
       rows = result.rows
       errors = result.errors
     } else if (isXML) {

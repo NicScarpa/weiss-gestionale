@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { getVenueId } from '@/lib/venue'
 import { writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
@@ -17,6 +18,23 @@ const ALLOWED_TYPES = [
   'application/xml',
 ]
 
+const ALLOWED_MIME_TYPES: Record<string, Buffer[]> = {
+  'application/pdf': [Buffer.from([0x25, 0x50, 0x44, 0x46])], // %PDF
+  'image/jpeg': [Buffer.from([0xFF, 0xD8, 0xFF])],
+  'image/jpg': [Buffer.from([0xFF, 0xD8, 0xFF])],
+  'image/png': [Buffer.from([0x89, 0x50, 0x4E, 0x47])],
+  'text/xml': [Buffer.from('<?xml', 'utf8')],
+  'application/xml': [Buffer.from('<?xml', 'utf8')],
+}
+
+const ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'xml']
+
+function validateFileMagicBytes(buffer: Buffer, declaredType: string): boolean {
+  const signatures = ALLOWED_MIME_TYPES[declaredType]
+  if (!signatures) return false
+  return signatures.some(sig => buffer.subarray(0, sig.length).equals(sig))
+}
+
 // GET /api/scadenzario/[id]/allegati - Lista allegati
 export async function GET(
   request: NextRequest,
@@ -30,8 +48,10 @@ export async function GET(
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
+    const venueId = await getVenueId()
+
     const schedule = await prisma.schedule.findFirst({
-      where: { id },
+      where: { id, venueId },
       select: { id: true, venueId: true },
     })
 
@@ -67,8 +87,10 @@ export async function POST(
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
+    const venueId = await getVenueId()
+
     const schedule = await prisma.schedule.findFirst({
-      where: { id },
+      where: { id, venueId },
       select: { id: true, venueId: true },
     })
 
@@ -94,15 +116,26 @@ export async function POST(
       )
     }
 
+    // Validate file extension
+    const ext = file.name.split('.').pop()?.toLowerCase()
+    if (!ext || !ALLOWED_EXTENSIONS.includes(ext)) {
+      return NextResponse.json({ error: 'Tipo file non consentito' }, { status: 400 })
+    }
+
+    // Validate magic bytes match declared MIME type
+    const fileBuffer = Buffer.from(await file.arrayBuffer())
+    if (!validateFileMagicBytes(fileBuffer, file.type)) {
+      return NextResponse.json({ error: 'Contenuto file non valido' }, { status: 400 })
+    }
+
     // Generate unique filename
-    const ext = file.name.split('.').pop() || 'bin'
     const filename = `${randomUUID()}.${ext}`
 
     // Ensure upload directory exists
     await mkdir(UPLOAD_DIR, { recursive: true })
 
     // Write file to disk
-    const buffer = Buffer.from(await file.arrayBuffer())
+    const buffer = fileBuffer
     const filePath = join(UPLOAD_DIR, filename)
     await writeFile(filePath, buffer)
 

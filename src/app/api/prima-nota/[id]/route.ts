@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { updateJournalEntrySchema } from '@/lib/validations/prima-nota'
-
+import { getVenueId } from '@/lib/venue'
 import { logger } from '@/lib/logger'
 // GET /api/prima-nota/[id] - Dettaglio singolo movimento
 export async function GET(
@@ -18,9 +18,10 @@ export async function GET(
     }
 
     const { id } = await params
+    const venueId = await getVenueId()
 
-    const entry = await prisma.journalEntry.findUnique({
-      where: { id },
+    const entry = await prisma.journalEntry.findFirst({
+      where: { id, venueId },
       include: {
         venue: {
           select: {
@@ -96,12 +97,13 @@ export async function PUT(
     }
 
     const { id } = await params
+    const venueId = await getVenueId()
     const body = await request.json()
     const validatedData = updateJournalEntrySchema.parse(body)
 
-    // Verifica che il movimento esista
-    const existingEntry = await prisma.journalEntry.findUnique({
-      where: { id },
+    // Verifica che il movimento esista e appartenga al venue
+    const existingEntry = await prisma.journalEntry.findFirst({
+      where: { id, venueId },
       select: { id: true, closureId: true },
     })
 
@@ -123,7 +125,14 @@ export async function PUT(
     // Aggiorna
     const updated = await prisma.journalEntry.update({
       where: { id },
-      data: validatedData,
+      data: {
+        date: validatedData.date,
+        description: validatedData.description,
+        documentRef: validatedData.documentRef,
+        documentType: validatedData.documentType,
+        accountId: validatedData.accountId,
+        vatAmount: validatedData.vatAmount,
+      },
       select: { id: true, updatedAt: true },
     })
 
@@ -157,10 +166,11 @@ export async function DELETE(
     }
 
     const { id } = await params
+    const venueId = await getVenueId()
 
-    // Verifica che il movimento esista
-    const existingEntry = await prisma.journalEntry.findUnique({
-      where: { id },
+    // Verifica che il movimento esista e appartenga al venue
+    const existingEntry = await prisma.journalEntry.findFirst({
+      where: { id, venueId },
       select: { id: true, closureId: true },
     })
 

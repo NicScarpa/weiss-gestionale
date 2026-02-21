@@ -241,6 +241,7 @@ function shouldSendNotification(
     leaveReminder?: boolean
     newLeaveRequest?: boolean
     staffAnomaly?: boolean
+    newDocument?: boolean
   } | null | undefined
 ): boolean {
   // Se non ci sono preferenze, usa i default (tutte abilitate)
@@ -260,6 +261,7 @@ function shouldSendNotification(
     LEAVE_REMINDER: preferences.leaveReminder,
     NEW_LEAVE_REQUEST: preferences.newLeaveRequest,
     STAFF_ANOMALY: preferences.staffAnomaly,
+    NEW_DOCUMENT: preferences.newDocument,
     GENERAL: true, // Sempre abilitate
   }
 

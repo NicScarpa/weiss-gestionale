@@ -60,7 +60,6 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const {
-      venueId,
       nome,
       descrizione,
       dataInizio,
@@ -68,6 +67,9 @@ export async function POST(request: NextRequest) {
       saldoIniziale,
       tipo,
     } = body
+
+    // Override venueId from session, not from body (IDOR prevention)
+    const venueId = await getVenueId()
 
     if (!venueId || !nome || !dataInizio || !dataFine) {
       return NextResponse.json(

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { findMatchCandidates } from '@/lib/reconciliation'
+import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
 // GET /api/bank-transactions/[id] - Dettaglio transazione con candidati match
@@ -16,9 +17,10 @@ export async function GET(
     }
 
     const { id } = await params
+    const venueId = await getVenueId()
 
-    const transaction = await prisma.bankTransaction.findUnique({
-      where: { id },
+    const transaction = await prisma.bankTransaction.findFirst({
+      where: { id, venueId },
       include: {
         venue: {
           select: { id: true, name: true, code: true },
@@ -116,9 +118,10 @@ export async function DELETE(
     }
 
     const { id } = await params
+    const venueId = await getVenueId()
 
-    const transaction = await prisma.bankTransaction.findUnique({
-      where: { id },
+    const transaction = await prisma.bankTransaction.findFirst({
+      where: { id, venueId },
     })
 
     if (!transaction) {

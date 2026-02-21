@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 
+import { checkRequestRateLimit, RATE_LIMIT_CONFIGS, requireRole } from '@/lib/api-utils'
 import { logger } from '@/lib/logger'
 import { getVenueId } from '@/lib/venue'
 import { buildStationCreateData } from '@/lib/closure-calculations'
@@ -195,7 +196,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
 
     // Filtri
-    const venueId = searchParams.get('venueId') || await getVenueId()
+    const venueId = await getVenueId()
     const status = searchParams.get('status')
     const dateFrom = searchParams.get('dateFrom')
     const dateTo = searchParams.get('dateTo')
@@ -385,20 +386,28 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const rateCheck = checkRequestRateLimit(request, 'closures:create', RATE_LIMIT_CONFIGS.STRICT)
+    if (!rateCheck.allowed) return rateCheck.response!
+
     const session = await auth()
 
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
+    // Solo admin e manager possono creare chiusure
+    const roleCheck = requireRole(session, ['admin', 'manager'])
+    if (!roleCheck.authorized) return roleCheck.response!
+
+    const venueId = await getVenueId()
 
     const body = await request.json()
     const validatedData = createClosureSchema.parse(body)
+
+    // Override venueId dal body con quello della sessione
+    validatedData.venueId = venueId
 
     // Verifica che non esista già una chiusura per questa data/sede
     const existingClosure = await prisma.dailyClosure.findUnique({
       where: {
         venueId_date: {
-          venueId: validatedData.venueId,
+          venueId,
           date: validatedData.date,
         },
       },

@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { getVenueId } from '@/lib/venue'
 import { logger } from '@/lib/logger'
 // GET /api/price-alerts/[id] - Dettaglio alert
 export async function GET(
@@ -17,9 +18,10 @@ export async function GET(
     }
 
     const { id } = await params
+    const venueId = await getVenueId()
 
-    const alert = await prisma.priceAlert.findUnique({
-      where: { id },
+    const alert = await prisma.priceAlert.findFirst({
+      where: { id, product: { venueId } },
       include: {
         product: {
           select: {
@@ -79,11 +81,12 @@ export async function PATCH(
     }
 
     const { id } = await params
+    const venueId = await getVenueId()
     const body = await request.json()
     const data = updateAlertSchema.parse(body)
 
-    const existing = await prisma.priceAlert.findUnique({
-      where: { id },
+    const existing = await prisma.priceAlert.findFirst({
+      where: { id, product: { venueId } },
     })
 
     if (!existing) {
