@@ -7,7 +7,7 @@ const resend = process.env.RESEND_API_KEY
   : null
 
 // Email del mittente (deve essere verificato in Resend)
-const FROM_EMAIL = process.env.EMAIL_FROM || 'noreply@weisscafe.it'
+const FROM_EMAIL = process.env.EMAIL_FROM || 'noreply@weisscafe.com'
 const APP_NAME = 'Weiss Cafè'
 
 interface SendEmailOptions {
@@ -22,9 +22,10 @@ interface SendEmailOptions {
  */
 export async function sendEmail({ to, subject, html, text }: SendEmailOptions): Promise<boolean> {
   if (!resend) {
-    logger.warn('[Email] Resend non configurato - email non inviata', { to, subject })
-    // In development, logga l'email invece di inviarla
-    if (process.env.NODE_ENV === 'development') {
+    if (process.env.NODE_ENV === 'production') {
+      logger.error('[Email] RESEND_API_KEY non configurata in produzione - email non inviata', { to, subject })
+    } else {
+      logger.warn('[Email] Resend non configurato - email non inviata', { to, subject })
       logger.info('[Email] Mock email:', { to, subject, html })
     }
     return false
