@@ -63,7 +63,8 @@ export function CustomerTable({ customers, isLoading, onEdit, onDelete }: Custom
               <TableHead>Cliente</TableHead>
               <TableHead>Contatti</TableHead>
               <TableHead>Sede</TableHead>
-              <TableStato</TableStato>
+              <TableHead>IBAN</TableHead>
+              <TableHead>Note</TableHead>
               <TableHead className="text-right">Azioni</TableHead>
             </TableRow>
           </TableHeader>

@@ -29,11 +29,6 @@ export async function GET(
       return NextResponse.json({ error: 'Budget non trovato' }, { status: 404 })
     }
 
-    // Verifica accesso sede
-    if (session.user.role !== 'admin' && budget.venueId !== session.user.venueId) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
     const lines = await prisma.budgetLine.findMany({
       where: { budgetId: id },
       include: {
@@ -116,11 +111,6 @@ export async function POST(
 
     if (!budget) {
       return NextResponse.json({ error: 'Budget non trovato' }, { status: 404 })
-    }
-
-    // Verifica accesso sede
-    if (session.user.role !== 'admin' && budget.venueId !== session.user.venueId) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
     // Non si possono modificare budget archiviati
@@ -282,11 +272,6 @@ export async function DELETE(
 
     if (!budget) {
       return NextResponse.json({ error: 'Budget non trovato' }, { status: 404 })
-    }
-
-    // Verifica accesso sede
-    if (session.user.role !== 'admin' && budget.venueId !== session.user.venueId) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
     // Non si possono modificare budget archiviati

@@ -29,12 +29,6 @@ import {
   TabsTrigger,
 } from '@/components/ui/tabs'
 
-interface Venue {
-  id: string
-  name: string
-  code: string
-}
-
 interface CategoryData {
   id: string
   code: string
@@ -109,21 +103,10 @@ interface ReportData {
   }
 }
 
-interface AnalisiCostiClientProps {
-  venueId?: string
-  isAdmin: boolean
-  venues: Venue[]
-}
-
 type QuickPeriod = 'thisYear' | 'lastYear' | 'last6Months' | 'last3Months' | 'thisMonth'
 
-export function AnalisiCostiClient({
-  venueId,
-  isAdmin,
-  venues,
-}: AnalisiCostiClientProps) {
+export function AnalisiCostiClient() {
   const [quickPeriod, setQuickPeriod] = useState<QuickPeriod>('thisYear')
-  const [selectedVenue, setSelectedVenue] = useState<string>(venueId || 'all')
   const [data, setData] = useState<ReportData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -176,9 +159,6 @@ export function AnalisiCostiClient({
         const params = new URLSearchParams()
         params.set('dateFrom', dateRange.from)
         params.set('dateTo', dateRange.to)
-        if (selectedVenue && selectedVenue !== 'all') {
-          params.set('venueId', selectedVenue)
-        }
 
         const response = await fetch(`/api/report/analisi-costi?${params}`)
         if (!response.ok) {
@@ -195,7 +175,7 @@ export function AnalisiCostiClient({
     }
 
     fetchData()
-  }, [quickPeriod, selectedVenue])
+  }, [quickPeriod])
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('it-IT', {
@@ -311,25 +291,6 @@ export function AnalisiCostiClient({
                 </SelectContent>
               </Select>
             </div>
-
-            {isAdmin && venues.length > 0 && (
-              <Select
-                value={selectedVenue}
-                onValueChange={setSelectedVenue}
-              >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Tutte le sedi" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tutte le sedi</SelectItem>
-                  {venues.map((venue) => (
-                    <SelectItem key={venue.id} value={venue.id}>
-                      {venue.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
 
             {data && (
               <Badge variant="outline" className="ml-auto">

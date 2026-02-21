@@ -72,15 +72,6 @@ export async function GET(
       return NextResponse.json({ error: 'Vincolo non trovato' }, { status: 404 })
     }
 
-    // Manager può vedere solo vincoli della propria sede
-    if (
-      session.user.role === 'manager' &&
-      constraint.venueId &&
-      constraint.venueId !== session.user.venueId
-    ) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
     return NextResponse.json(constraint)
   } catch (error) {
     logger.error('Errore GET /api/relationship-constraints/[id]', error)
@@ -122,18 +113,6 @@ export async function PUT(
 
     if (!existingConstraint) {
       return NextResponse.json({ error: 'Vincolo non trovato' }, { status: 404 })
-    }
-
-    // Manager può modificare solo vincoli della propria sede
-    if (
-      session.user.role === 'manager' &&
-      existingConstraint.venueId &&
-      existingConstraint.venueId !== session.user.venueId
-    ) {
-      return NextResponse.json(
-        { error: 'Non autorizzato per questa sede' },
-        { status: 403 }
-      )
     }
 
     // Prepara dati per update
@@ -179,17 +158,6 @@ export async function PUT(
           { error: 'Uno o più dipendenti non trovati' },
           { status: 404 }
         )
-      }
-
-      // Manager può modificare vincoli solo per dipendenti della stessa sede
-      if (session.user.role === 'manager') {
-        const allSameVenue = users.every(u => u.venueId === session.user.venueId)
-        if (!allSameVenue) {
-          return NextResponse.json(
-            { error: 'Puoi modificare vincoli solo per dipendenti della tua sede' },
-            { status: 403 }
-          )
-        }
       }
 
       // Elimina vecchi collegamenti
@@ -273,18 +241,6 @@ export async function DELETE(
 
     if (!existingConstraint) {
       return NextResponse.json({ error: 'Vincolo non trovato' }, { status: 404 })
-    }
-
-    // Manager può eliminare solo vincoli della propria sede
-    if (
-      session.user.role === 'manager' &&
-      existingConstraint.venueId &&
-      existingConstraint.venueId !== session.user.venueId
-    ) {
-      return NextResponse.json(
-        { error: 'Non autorizzato per questa sede' },
-        { status: 403 }
-      )
     }
 
     // Elimina prima i collegamenti (cascade non è automatico per many-to-many esplicito)

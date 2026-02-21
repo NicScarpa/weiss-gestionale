@@ -33,14 +33,6 @@ export async function GET(
       return NextResponse.json({ error: 'Sede non trovata' }, { status: 404 })
     }
 
-    // Verifica accesso (stessa sede o admin)
-    if (session.user.role !== 'admin' && session.user.venueId !== id) {
-      return NextResponse.json(
-        { error: 'Accesso non autorizzato' },
-        { status: 403 }
-      )
-    }
-
     // Recupera template postazioni cassa
     const cashStationTemplates = await prisma.cashStationTemplate.findMany({
       where: {

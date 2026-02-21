@@ -46,14 +46,6 @@ export async function POST(
       return NextResponse.json({ error: 'Richiesta non trovata' }, { status: 404 })
     }
 
-    // Manager può rifiutare solo richieste della propria sede
-    if (
-      session.user.role === 'manager' &&
-      leaveRequest.user.venueId !== session.user.venueId
-    ) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
     // Solo richieste PENDING possono essere rifiutate
     if (leaveRequest.status !== 'PENDING') {
       return NextResponse.json(

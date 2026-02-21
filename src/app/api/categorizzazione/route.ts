@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { getVenueId } from '@/lib/venue'
 
 const createRuleSchema = z.object({
   name: z.string().min(1),
@@ -28,7 +29,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const venueId = session.user.venueId!
+    const venueId = await getVenueId()
 
     const rules = await prisma.categorizationRule.findMany({
       where: { venueId },
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
 
     const rule = await prisma.categorizationRule.create({
       data: {
-        venueId: session.user.venueId!,
+        venueId: await getVenueId(),
         ...validated,
       },
       include: {

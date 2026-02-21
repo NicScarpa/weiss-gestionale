@@ -87,11 +87,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Fattura non trovata' }, { status: 404 })
     }
 
-    // Manager vede solo fatture della propria sede
-    if (session.user.role === 'manager' && invoice.venueId !== session.user.venueId) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
     // Parse XML per dati completi (causale, linee, riepilogo, pagamenti, etc.)
     let parsedData = null
     if (invoice.xmlContent) {
@@ -155,14 +150,6 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
     if (!existingInvoice) {
       return NextResponse.json({ error: 'Fattura non trovata' }, { status: 404 })
-    }
-
-    // Manager vede solo fatture della propria sede
-    if (
-      session.user.role === 'manager' &&
-      existingInvoice.venueId !== session.user.venueId
-    ) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
     // Non permettere modifiche a fatture già registrate in prima nota

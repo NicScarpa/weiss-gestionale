@@ -24,12 +24,6 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 
-interface Venue {
-  id: string
-  name: string
-  code: string
-}
-
 interface ExpenseByAccount {
   id: string
   code: string
@@ -99,20 +93,9 @@ interface ReportData {
   availableYears: number[]
 }
 
-interface RiepilogoMensileClientProps {
-  venueId?: string
-  isAdmin: boolean
-  venues: Venue[]
-}
-
-export function RiepilogoMensileClient({
-  venueId,
-  isAdmin,
-  venues,
-}: RiepilogoMensileClientProps) {
+export function RiepilogoMensileClient() {
   const currentYear = new Date().getFullYear()
   const [selectedYear, setSelectedYear] = useState(currentYear)
-  const [selectedVenue, setSelectedVenue] = useState<string>(venueId || 'all')
   const [data, setData] = useState<ReportData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -126,9 +109,6 @@ export function RiepilogoMensileClient({
       try {
         const params = new URLSearchParams()
         params.set('year', selectedYear.toString())
-        if (selectedVenue && selectedVenue !== 'all') {
-          params.set('venueId', selectedVenue)
-        }
 
         const response = await fetch(`/api/report/riepilogo-mensile?${params}`)
         if (!response.ok) {
@@ -145,7 +125,7 @@ export function RiepilogoMensileClient({
     }
 
     fetchData()
-  }, [selectedYear, selectedVenue])
+  }, [selectedYear])
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('it-IT', {
@@ -258,24 +238,6 @@ export function RiepilogoMensileClient({
               </Select>
             </div>
 
-            {isAdmin && venues.length > 0 && (
-              <Select
-                value={selectedVenue}
-                onValueChange={setSelectedVenue}
-              >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Tutte le sedi" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tutte le sedi</SelectItem>
-                  {venues.map((venue) => (
-                    <SelectItem key={venue.id} value={venue.id}>
-                      {venue.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
           </div>
         </CardContent>
       </Card>

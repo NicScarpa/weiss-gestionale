@@ -7,7 +7,6 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useSession } from 'next-auth/react'
 import { format } from 'date-fns'
 import {
   Upload,
@@ -223,7 +222,6 @@ export function InvoiceImportDialog({
   onOpenChange,
   onSuccess: _onSuccess,
 }: InvoiceImportDialogProps) {
-  const { data: session } = useSession()
   const queryClient = useQueryClient()
   
   // Dialog State
@@ -259,16 +257,13 @@ export function InvoiceImportDialog({
     enabled: open,
   })
 
-  // Set default venue from session
+  // Set default venue (single-venue: use first venue from API)
   useEffect(() => {
-    if (session?.user?.venueId && !selectedVenueId) {
-      const venueId = session.user.venueId
-      queueMicrotask(() => setSelectedVenueId(venueId))
-    } else if (venues?.length === 1 && !selectedVenueId) {
+    if (venues?.length && !selectedVenueId) {
       const venueId = venues[0].id
       queueMicrotask(() => setSelectedVenueId(venueId))
     }
-  }, [session, venues, selectedVenueId])
+  }, [venues, selectedVenueId])
 
   const resetDialog = useCallback(() => {
     setStep('upload')
@@ -405,8 +400,7 @@ export function InvoiceImportDialog({
 
     // Use default venue if available
     let currentVenueId = selectedVenueId
-    if (!currentVenueId && session?.user?.venueId) currentVenueId = session.user.venueId
-    if (!currentVenueId && venues?.length === 1) currentVenueId = venues[0].id
+    if (!currentVenueId && venues?.length) currentVenueId = venues[0].id
 
     for (let i = 0; i < updatedFiles.length; i++) {
       const item = updatedFiles[i]
@@ -478,7 +472,7 @@ export function InvoiceImportDialog({
     } else {
       setStep('summary')
     }
-  }, [files, selectedVenueId, session, venues, queryClient])
+  }, [files, selectedVenueId, venues, queryClient])
 
   // Handle Review Actions
   const handleImportReviewItem = async () => {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
+import { getVenueId } from '@/lib/venue'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search')
     const category = searchParams.get('category')
     const supplierId = searchParams.get('supplierId')
-    const venueId = searchParams.get('venueId') || session.user.venueId
+    const venueId = searchParams.get('venueId') || await getVenueId()
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
     const sortBy = searchParams.get('sortBy') || 'name'
@@ -162,7 +163,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = createProductSchema.parse(body)
 
-    const venueId = data.venueId || session.user.venueId
+    const venueId = data.venueId || await getVenueId()
 
     // Verifica unicità
     const existing = await prisma.product.findFirst({

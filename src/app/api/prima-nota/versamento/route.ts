@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { bankDepositSchema } from '@/lib/validations/prima-nota'
+import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
 // POST /api/prima-nota/versamento - Versamento cassa → banca
@@ -14,13 +15,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
-    // Verifica che l'utente abbia una sede
-    if (!session.user.venueId) {
-      return NextResponse.json(
-        { error: 'Nessuna sede assegnata' },
-        { status: 400 }
-      )
-    }
+    const venueId = await getVenueId()
 
     const body = await request.json()
     const validatedData = bankDepositSchema.parse(body)
@@ -34,7 +29,7 @@ export async function POST(request: NextRequest) {
       // Movimento CASSA: Avere (uscita verso banca)
       prisma.journalEntry.create({
         data: {
-          venueId: session.user.venueId,
+          venueId: venueId,
           date: validatedData.date,
           registerType: 'CASH',
           description: description,
@@ -51,7 +46,7 @@ export async function POST(request: NextRequest) {
       // Movimento BANCA: Dare (entrata da cassa)
       prisma.journalEntry.create({
         data: {
-          venueId: session.user.venueId,
+          venueId: venueId,
           date: validatedData.date,
           registerType: 'BANK',
           description: description,

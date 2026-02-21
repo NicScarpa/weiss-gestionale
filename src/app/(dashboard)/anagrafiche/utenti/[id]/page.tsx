@@ -103,7 +103,7 @@ export default function DettaglioUtentePage({ params }: { params: Promise<{ id: 
   const handleUpdate = async (data: {
     firstName: string
     lastName: string
-    email: string
+    email?: string
     phoneNumber?: string
     role: string
     venueId?: string

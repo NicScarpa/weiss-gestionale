@@ -13,6 +13,9 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #4370 | 8:10 PM | 🔵 | Accounting Application Structure Mapped | ~239 |
+| #4329 | 7:30 PM | 🔵 | Prima Nota Layout Uses Server-Side Data Fetching | ~275 |
+| #4308 | 7:28 PM | 🔵 | Examined Prima Nota Layout for Date Handling | ~209 |
 | #3706 | 1:33 PM | 🔵 | PrimaNotaClient Component Structure | ~128 |
 | #3698 | 1:32 PM | 🔵 | Prima Nota Layout Architecture | ~135 |
 | #3697 | " | 🔵 | Prima Nota Main Page Implementation | ~78 |

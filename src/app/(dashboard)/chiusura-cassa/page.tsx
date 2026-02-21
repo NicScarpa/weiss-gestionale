@@ -1,6 +1,7 @@
 import { Suspense } from 'react'
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
+import { getVenueId } from '@/lib/venue'
 import { ClosureList } from './ClosureList'
 import { ClosureListSkeleton } from './ClosureListSkeleton'
 
@@ -15,11 +16,13 @@ export default async function ChiusuraCassaPage() {
     redirect('/login')
   }
 
+  const venueId = await getVenueId()
+
   return (
     <div className="space-y-6">
       <Suspense fallback={<ClosureListSkeleton />}>
         <ClosureList
-          venueId={session.user.venueId || undefined}
+          venueId={venueId}
           isAdmin={session.user.role === 'admin'}
         />
       </Suspense>

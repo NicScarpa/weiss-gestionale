@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
+import { getVenueId } from '@/lib/venue'
 
 // GET /api/pagamenti - Lista pagamenti con filtri
 export async function GET(request: NextRequest) {
@@ -10,7 +12,7 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url)
-  const venueId = session.user.venueId!
+  const venueId = await getVenueId()
 
   // Filtri
   const stato = searchParams.get('stato') as
@@ -25,7 +27,7 @@ export async function GET(request: NextRequest) {
   const fromDate = searchParams.get('from')
   const toDate = searchParams.get('to')
 
-  const where: any = { venueId }
+  const where: Prisma.PaymentWhereInput = { venueId }
 
   if (stato) where.stato = stato
   if (tipo) where.tipo = tipo
@@ -52,7 +54,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const venueId = session.user.venueId!
+  const venueId = await getVenueId()
 
   const pagamento = await prisma.payment.create({
     data: {

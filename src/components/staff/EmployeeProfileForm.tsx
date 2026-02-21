@@ -19,7 +19,6 @@ import { SkillsSelector } from './SkillsSelector'
 import { CertificationsBox } from './CertificationsBox'
 import { ConstraintEditor } from './ConstraintEditor'
 import { AddressAutocomplete } from '@/components/ui/address-autocomplete'
-import { Badge } from '@/components/ui/badge'
 import { Save, User, Briefcase, Euro, Bell, Shield, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 

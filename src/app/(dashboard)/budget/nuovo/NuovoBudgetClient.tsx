@@ -26,33 +26,25 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { toast } from 'sonner'
 import { getAvailableYears } from '@/lib/budget-utils'
 
-interface Venue {
-  id: string
-  name: string
-  code: string
-}
-
 interface ExistingBudget {
   venueId: string
   year: number
 }
 
 interface NuovoBudgetClientProps {
-  venues: Venue[]
+  venueId: string
   existingBudgets: ExistingBudget[]
-  defaultVenueId?: string
 }
 
 export function NuovoBudgetClient({
-  venues,
+  venueId,
   existingBudgets,
-  defaultVenueId,
 }: NuovoBudgetClientProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
 
   const [formData, setFormData] = useState({
-    venueId: defaultVenueId || venues[0]?.id || '',
+    venueId,
     year: new Date().getFullYear(),
     name: '',
     notes: '',
@@ -74,11 +66,6 @@ export function NuovoBudgetClient({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
-    if (!formData.venueId) {
-      toast.error('Seleziona una sede')
-      return
-    }
 
     if (isYearUsed) {
       toast.error('Esiste già un budget per questo anno')
@@ -141,60 +128,38 @@ export function NuovoBudgetClient({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Sede e Anno */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="venue">Sede *</Label>
-                <Select
-                  value={formData.venueId}
-                  onValueChange={(v) => setFormData({ ...formData, venueId: v })}
-                  disabled={venues.length === 1}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleziona sede" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {venues.map((venue) => (
-                      <SelectItem key={venue.id} value={venue.id}>
-                        {venue.name} ({venue.code})
+            {/* Anno */}
+            <div className="space-y-2">
+              <Label htmlFor="year">Anno *</Label>
+              <Select
+                value={formData.year.toString()}
+                onValueChange={(v) => setFormData({ ...formData, year: parseInt(v) })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleziona anno" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableYears.map((year) => {
+                    const isUsed = existingBudgets.some(
+                      (b) => b.venueId === formData.venueId && b.year === year
+                    )
+                    return (
+                      <SelectItem
+                        key={year}
+                        value={year.toString()}
+                        disabled={isUsed}
+                      >
+                        {year} {isUsed && '(esistente)'}
                       </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="year">Anno *</Label>
-                <Select
-                  value={formData.year.toString()}
-                  onValueChange={(v) => setFormData({ ...formData, year: parseInt(v) })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleziona anno" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableYears.map((year) => {
-                      const isUsed = existingBudgets.some(
-                        (b) => b.venueId === formData.venueId && b.year === year
-                      )
-                      return (
-                        <SelectItem
-                          key={year}
-                          value={year.toString()}
-                          disabled={isUsed}
-                        >
-                          {year} {isUsed && '(esistente)'}
-                        </SelectItem>
-                      )
-                    })}
-                  </SelectContent>
-                </Select>
-                {isYearUsed && (
-                  <p className="text-sm text-destructive">
-                    Esiste già un budget per questo anno
-                  </p>
-                )}
-              </div>
+                    )
+                  })}
+                </SelectContent>
+              </Select>
+              {isYearUsed && (
+                <p className="text-sm text-destructive">
+                  Esiste già un budget per questo anno
+                </p>
+              )}
             </div>
 
             {/* Nome */}

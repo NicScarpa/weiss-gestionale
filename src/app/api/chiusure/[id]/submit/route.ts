@@ -36,17 +36,6 @@ export async function POST(
       )
     }
 
-    // Verifica accesso
-    if (
-      session.user.role !== 'admin' &&
-      session.user.venueId !== closure.venueId
-    ) {
-      return NextResponse.json(
-        { error: 'Non autorizzato per questa sede' },
-        { status: 403 }
-      )
-    }
-
     // Solo DRAFT può essere inviata
     if (closure.status !== 'DRAFT') {
       return NextResponse.json(

@@ -122,34 +122,42 @@ export async function POST(request: NextRequest) {
     // 1. Controlla Partita IVA (se presente)
     // 2. Controlla Codice Fiscale (se presente)
     // 3. Controlla Denominazione + Indirizzo per evitare omonimie
-    const duplicate = await prisma.customer.findFirst({
-      where: {
-        OR: [
-          // Se la Partita IVA è fornita, deve essere unica
-          ...(validatedData.partitaIva
-            ? [{ partitaIva: validatedData.partitaIva }]
-            : []),
-          // Se il Codice Fiscale è fornito, deve essere unico
-          ...(validatedData.codiceFiscale
-            ? [{ codiceFiscale: validatedData.codiceFiscale }]
-            : []),
-          // Altrimenti controlliamo la combinazione Denominazione + Indirizzo
-          {
-            AND: [
-              { denominazione: { equals: validatedData.denominazione, mode: 'insensitive' } },
-              // Se l'indirizzo è specificato, lo usiamo per il confronto
-              ...(validatedData.indirizzo
-                ? [{ indirizzo: { equals: validatedData.indirizzo, mode: 'insensitive' } }]
-                : []),
-              // Se la città è specificata, la usiamo per il confronto
-              ...(validatedData.citta
-                ? [{ citta: { equals: validatedData.citta, mode: 'insensitive' } }]
-                : []),
-            ],
-          },
-        ],
-      },
-    })
+
+    // Costruisci le condizioni OR per il controllo duplicati
+    const orConditions: Prisma.CustomerWhereInput[] = []
+
+    // Se la Partita IVA è fornita, deve essere unica
+    if (validatedData.partitaIva) {
+      orConditions.push({ partitaIva: validatedData.partitaIva })
+    }
+
+    // Se il Codice Fiscale è fornito, deve essere unico
+    if (validatedData.codiceFiscale) {
+      orConditions.push({ codiceFiscale: validatedData.codiceFiscale })
+    }
+
+    // Controlliamo la combinazione Denominazione + (Indirizzo o Città)
+    const andConditions: Prisma.CustomerWhereInput[] = [
+      { denominazione: { equals: validatedData.denominazione, mode: 'insensitive' } }
+    ]
+
+    if (validatedData.indirizzo) {
+      andConditions.push({ indirizzo: { equals: validatedData.indirizzo, mode: 'insensitive' } })
+    }
+
+    if (validatedData.citta) {
+      andConditions.push({ citta: { equals: validatedData.citta, mode: 'insensitive' } })
+    }
+
+    if (andConditions.length > 1) {
+      orConditions.push({ AND: andConditions })
+    }
+
+    const duplicate = orConditions.length > 0
+      ? await prisma.customer.findFirst({
+          where: { OR: orConditions },
+        })
+      : null
 
     if (duplicate) {
       const field = duplicate.partitaIva === validatedData.partitaIva
@@ -264,16 +272,8 @@ export async function PUT(request: NextRequest) {
       },
     })
 
-    // Propaga le modifiche alle fatture collegate
-    if (validatedData.denominazione || validatedData.partitaIva) {
-      await prisma.electronicInvoice.updateMany({
-        where: { customerId: id },
-        data: {
-          ...(validatedData.denominazione && { customerName: validatedData.denominazione }),
-          ...(validatedData.partitaIva && { customerVat: validatedData.partitaIva }),
-        },
-      })
-    }
+    // Nota: Le fatture elettroniche sono associate ai fornitori (Supplier), non ai clienti (Customer)
+    // Non è necessario propagare le modifiche alle fatture in questo caso
 
     return NextResponse.json({ customer })
   } catch (error) {

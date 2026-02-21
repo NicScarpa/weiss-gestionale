@@ -47,14 +47,6 @@ export async function GET(
       return NextResponse.json({ error: 'Pianificazione non trovata' }, { status: 404 })
     }
 
-    // Manager può vedere solo la propria sede
-    if (
-      session.user.role === 'manager' &&
-      schedule.venueId !== session.user.venueId
-    ) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
     const assignments = await prisma.shiftAssignment.findMany({
       where: { scheduleId: id },
       include: {
@@ -128,17 +120,6 @@ export async function POST(
 
     if (!schedule) {
       return NextResponse.json({ error: 'Pianificazione non trovata' }, { status: 404 })
-    }
-
-    // Manager può modificare solo la propria sede
-    if (
-      session.user.role === 'manager' &&
-      schedule.venueId !== session.user.venueId
-    ) {
-      return NextResponse.json(
-        { error: 'Non autorizzato per questa sede' },
-        { status: 403 }
-      )
     }
 
     // Nota: permettiamo l'aggiunta di turni anche su pianificazioni pubblicate

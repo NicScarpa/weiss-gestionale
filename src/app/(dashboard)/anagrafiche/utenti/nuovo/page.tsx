@@ -35,7 +35,7 @@ export default function NuovoUtentePage() {
   const handleSubmit = async (data: {
     firstName: string
     lastName: string
-    email: string
+    email?: string
     phoneNumber?: string
     role: string
     venueId?: string

@@ -67,17 +67,6 @@ export async function GET(
       )
     }
 
-    // Verifica accesso
-    if (
-      session.user.role !== 'admin' &&
-      session.user.venueId !== entry.venueId
-    ) {
-      return NextResponse.json(
-        { error: 'Accesso non autorizzato' },
-        { status: 403 }
-      )
-    }
-
     return NextResponse.json({
       ...entry,
       debitAmount: entry.debitAmount ? Number(entry.debitAmount) : null,
@@ -113,24 +102,13 @@ export async function PUT(
     // Verifica che il movimento esista
     const existingEntry = await prisma.journalEntry.findUnique({
       where: { id },
-      select: { id: true, venueId: true, closureId: true },
+      select: { id: true, closureId: true },
     })
 
     if (!existingEntry) {
       return NextResponse.json(
         { error: 'Movimento non trovato' },
         { status: 404 }
-      )
-    }
-
-    // Verifica accesso
-    if (
-      session.user.role !== 'admin' &&
-      session.user.venueId !== existingEntry.venueId
-    ) {
-      return NextResponse.json(
-        { error: 'Non autorizzato' },
-        { status: 403 }
       )
     }
 
@@ -183,7 +161,7 @@ export async function DELETE(
     // Verifica che il movimento esista
     const existingEntry = await prisma.journalEntry.findUnique({
       where: { id },
-      select: { id: true, venueId: true, closureId: true },
+      select: { id: true, closureId: true },
     })
 
     if (!existingEntry) {
@@ -197,16 +175,6 @@ export async function DELETE(
     if (session.user.role !== 'admin' && session.user.role !== 'manager') {
       return NextResponse.json(
         { error: 'Solo admin e manager possono eliminare movimenti' },
-        { status: 403 }
-      )
-    }
-
-    if (
-      session.user.role === 'manager' &&
-      session.user.venueId !== existingEntry.venueId
-    ) {
-      return NextResponse.json(
-        { error: 'Non autorizzato per questa sede' },
         { status: 403 }
       )
     }

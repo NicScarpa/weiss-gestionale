@@ -19,9 +19,8 @@ export default async function NuovoBudgetPage() {
     redirect('/budget')
   }
 
-  // Recupera le sedi (solo admin vede tutte)
-  const venues = await prisma.venue.findMany({
-    where: session.user.role === 'admin' ? {} : { id: session.user.venueId || '' },
+  // Recupera la prima sede disponibile
+  const venue = await prisma.venue.findFirst({
     select: {
       id: true,
       name: true,
@@ -30,9 +29,11 @@ export default async function NuovoBudgetPage() {
     orderBy: { name: 'asc' },
   })
 
-  // Recupera gli anni per cui esistono già budget per ogni sede
+  const venueId = venue?.id || ''
+
+  // Recupera gli anni per cui esistono già budget
   const existingBudgets = await prisma.budget.findMany({
-    where: session.user.role === 'admin' ? {} : { venueId: session.user.venueId || '' },
+    where: { venueId },
     select: {
       venueId: true,
       year: true,
@@ -41,9 +42,8 @@ export default async function NuovoBudgetPage() {
 
   return (
     <NuovoBudgetClient
-      venues={venues}
+      venueId={venueId}
       existingBudgets={existingBudgets}
-      defaultVenueId={session.user.venueId || undefined}
     />
   )
 }

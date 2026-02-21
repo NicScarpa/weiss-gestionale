@@ -70,11 +70,6 @@ export async function GET(request: NextRequest) {
 
     const { venueId, year } = validationResult.data
 
-    // Verifica accesso sede
-    if (session.user.role !== 'admin' && venueId !== session.user.venueId) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
     // Recupera i target
     const targets = await prisma.budgetTarget.findMany({
       where: { venueId, year },
@@ -141,11 +136,6 @@ export async function PUT(request: NextRequest) {
     }
 
     const { venueId, year, targets } = validationResult.data
-
-    // Verifica accesso sede
-    if (session.user.role !== 'admin' && venueId !== session.user.venueId) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
 
     // Verifica che la venue esista
     const venue = await prisma.venue.findUnique({

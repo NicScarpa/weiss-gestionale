@@ -68,15 +68,6 @@ export async function GET(
       return NextResponse.json({ error: 'Vincolo non trovato' }, { status: 404 })
     }
 
-    // Manager può vedere solo vincoli della propria sede
-    if (
-      session.user.role === 'manager' &&
-      constraint.venueId &&
-      constraint.venueId !== session.user.venueId
-    ) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
     return NextResponse.json(constraint)
   } catch (error) {
     logger.error('Errore GET /api/constraints/[id]', error)
@@ -120,17 +111,6 @@ export async function PUT(
 
     if (!existingConstraint) {
       return NextResponse.json({ error: 'Vincolo non trovato' }, { status: 404 })
-    }
-
-    // Manager può modificare solo vincoli per dipendenti della propria sede
-    if (
-      session.user.role === 'manager' &&
-      existingConstraint.user.venueId !== session.user.venueId
-    ) {
-      return NextResponse.json(
-        { error: 'Non autorizzato per questa sede' },
-        { status: 403 }
-      )
     }
 
     // Prepara dati per update
@@ -230,17 +210,6 @@ export async function DELETE(
 
     if (!existingConstraint) {
       return NextResponse.json({ error: 'Vincolo non trovato' }, { status: 404 })
-    }
-
-    // Manager può eliminare solo vincoli per dipendenti della propria sede
-    if (
-      session.user.role === 'manager' &&
-      existingConstraint.user.venueId !== session.user.venueId
-    ) {
-      return NextResponse.json(
-        { error: 'Non autorizzato per questa sede' },
-        { status: 403 }
-      )
     }
 
     await prisma.employeeConstraint.delete({

@@ -83,14 +83,6 @@ export async function GET(
       return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
-    // Manager può vedere solo la propria sede
-    if (
-      session.user.role === 'manager' &&
-      assignment.venueId !== session.user.venueId
-    ) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
     return NextResponse.json({
       ...assignment,
       startTime: assignment.startTime.toTimeString().substring(0, 5),
@@ -154,17 +146,6 @@ export async function PUT(
 
     if (!assignment) {
       return NextResponse.json({ error: 'Assegnazione non trovata' }, { status: 404 })
-    }
-
-    // Manager può modificare solo la propria sede
-    if (
-      session.user.role === 'manager' &&
-      assignment.venueId !== session.user.venueId
-    ) {
-      return NextResponse.json(
-        { error: 'Non autorizzato per questa sede' },
-        { status: 403 }
-      )
     }
 
     // Nota: permettiamo la modifica anche su pianificazioni pubblicate
@@ -373,17 +354,6 @@ export async function DELETE(
 
     if (!assignment) {
       return NextResponse.json({ error: 'Assegnazione non trovata' }, { status: 404 })
-    }
-
-    // Manager può eliminare solo dalla propria sede
-    if (
-      session.user.role === 'manager' &&
-      assignment.venueId !== session.user.venueId
-    ) {
-      return NextResponse.json(
-        { error: 'Non autorizzato per questa sede' },
-        { status: 403 }
-      )
     }
 
     // Nota: permettiamo la cancellazione anche su pianificazioni pubblicate

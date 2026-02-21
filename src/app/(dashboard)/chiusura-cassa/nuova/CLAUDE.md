@@ -13,5 +13,6 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #4370 | 8:10 PM | 🔵 | Accounting Application Structure Mapped | ~239 |
 | #3687 | 1:30 PM | 🔵 | New Cash Register Closure Client Component | ~313 |
 </claude-mem-context>

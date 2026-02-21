@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
+import { getVenueId } from '@/lib/venue'
 import { prisma } from '@/lib/prisma'
 import { PriceAlertStatus } from '@prisma/client'
 
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status') as PriceAlertStatus | null
     const alertType = searchParams.get('alertType')
-    const venueId = searchParams.get('venueId') || session.user.venueId
+    const venueId = searchParams.get('venueId') || await getVenueId()
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
 

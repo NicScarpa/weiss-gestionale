@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
+import { getVenueId } from '@/lib/venue'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
@@ -45,8 +46,8 @@ export async function GET(request: NextRequest) {
 
     if (venueId) {
       whereClause.venueId = venueId
-    } else if (session.user.role === 'manager' && session.user.venueId) {
-      whereClause.venueId = session.user.venueId
+    } else {
+      whereClause.venueId = await getVenueId()
     }
 
     if (!includeInactive) {
@@ -104,14 +105,6 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const validatedData = createShiftDefSchema.parse(body)
-
-    // Manager può creare solo per la propria sede
-    if (session.user.role === 'manager' && validatedData.venueId !== session.user.venueId) {
-      return NextResponse.json(
-        { error: 'Non autorizzato per questa sede' },
-        { status: 403 }
-      )
-    }
 
     // Verifica che la sede esista
     const venue = await prisma.venue.findUnique({

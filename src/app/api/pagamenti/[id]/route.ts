@@ -8,9 +8,10 @@ import { prisma } from '@/lib/prisma'
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const session = await auth()
 
     if (!session?.user) {
@@ -18,7 +19,7 @@ export async function GET(
     }
 
     const payment = await prisma.payment.findUnique({
-      where: { id: params.id },
+      where: { id: id },
       include: {
         venue: {
           select: { id: true, name: true },
@@ -34,11 +35,6 @@ export async function GET(
 
     if (!payment) {
       return NextResponse.json({ error: 'Pagamento non trovato' }, { status: 404 })
-    }
-
-    // Verifica autorizzazione sede
-    if (session.user.role !== 'admin' && payment.venueId !== session.user.venueId) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 })
     }
 
     return NextResponse.json(payment)
@@ -57,9 +53,10 @@ export async function GET(
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const session = await auth()
 
     if (!session?.user) {
@@ -67,23 +64,18 @@ export async function PATCH(
     }
 
     const current = await prisma.payment.findUnique({
-      where: { id: params.id },
-      select: { venueId: true },
+      where: { id: id },
+      select: { id: true },
     })
 
     if (!current) {
       return NextResponse.json({ error: 'Pagamento non trovato' }, { status: 404 })
     }
 
-    // Verifica autorizzazione sede
-    if (session.user.role !== 'admin' && current.venueId !== session.user.venueId) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 })
-    }
-
     const body = await request.json()
 
     const updated = await prisma.payment.update({
-      where: { id: params.id },
+      where: { id: id },
       data: {
         ...body,
         updatedAt: new Date(),
@@ -106,9 +98,10 @@ export async function PATCH(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const session = await auth()
 
     if (!session?.user) {
@@ -116,17 +109,12 @@ export async function DELETE(
     }
 
     const current = await prisma.payment.findUnique({
-      where: { id: params.id },
-      select: { venueId: true, stato: true },
+      where: { id: id },
+      select: { stato: true },
     })
 
     if (!current) {
       return NextResponse.json({ error: 'Pagamento non trovato' }, { status: 404 })
-    }
-
-    // Verifica autorizzazione sede
-    if (session.user.role !== 'admin' && current.venueId !== session.user.venueId) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 })
     }
 
     // Permetti eliminazione solo in BOZZA
@@ -138,7 +126,7 @@ export async function DELETE(
     }
 
     await prisma.payment.delete({
-      where: { id: params.id },
+      where: { id: id },
     })
 
     return NextResponse.json({ success: true })

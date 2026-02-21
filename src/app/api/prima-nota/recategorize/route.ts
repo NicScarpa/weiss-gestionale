@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getVenueId } from '@/lib/venue'
 
 /**
  * POST /api/prima-nota/recategorize
@@ -14,7 +15,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
-    const venueId = session.user.venueId!
+    const venueId = await getVenueId()
 
     // Recupera regole attive per la venue
     const rules = await prisma.categorizationRule.findMany({
@@ -59,8 +60,8 @@ export async function POST(request: NextRequest) {
 
         // Controllo direzione
         if (match) {
-          const isInflow = entry.debitAmount && entry.debitAmount > 0
-          const isOutflow = entry.creditAmount && entry.creditAmount > 0
+          const isInflow = entry.debitAmount && Number(entry.debitAmount) > 0
+          const isOutflow = entry.creditAmount && Number(entry.creditAmount) > 0
 
           if (rule.direction === 'INFLOW' && !isInflow) {
             match = false
@@ -74,8 +75,8 @@ export async function POST(request: NextRequest) {
           await prisma.journalEntry.update({
             where: { id: entry.id },
             data: {
-              budgetCategoryId: rule.budgetCategoryId?.id,
-              accountId: rule.account?.id,
+              budgetCategoryId: rule.budgetCategoryId,
+              accountId: rule.accountId,
               appliedRuleId: rule.id,
               verified: rule.autoVerify,
             },

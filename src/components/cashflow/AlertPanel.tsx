@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { AlertTriangle, CheckCircle, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -18,19 +18,38 @@ const ALERT_TYPE_LABELS: Record<AlertType, string> = {
   VARIANZA_ALTA: 'Varianza alta',
 }
 
+interface Alert {
+  id: string
+  tipo: AlertType
+  dataPrevista: string
+  messaggio: string
+  stato: AlertStatus
+}
+
 export function AlertPanel() {
   const [isOpen, setIsOpen] = useState(true)
+  const [alerts, setAlerts] = useState<Alert[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
-  // Placeholder - sostituire con dati reali
-  const alerts = [
-    {
-      id: '1',
-      tipo: 'SOTTO_SOGLIA' as AlertType,
-      dataPrevista: new Date().toISOString().split('T')[0],
-      messaggio: 'Saldo scenderà sotto i 5000€ tra 7 giorni',
-      stato: 'ATTIVO' as AlertStatus,
-    },
-  ]
+  useEffect(() => {
+    async function loadAlerts() {
+      try {
+        const res = await fetch('/api/cashflow/alerts')
+        if (res.ok) {
+          const data = await res.json()
+          setAlerts(data || [])
+        }
+      } catch (error) {
+        console.error('Errore caricamento alert:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    loadAlerts()
+  }, [])
+
+  if (isLoading) return null
+  if (alerts.length === 0) return null
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>

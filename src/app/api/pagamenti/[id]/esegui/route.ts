@@ -9,9 +9,10 @@ import { Prisma } from '@prisma/client'
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const session = await auth()
 
     if (!session?.user) {
@@ -19,7 +20,7 @@ export async function POST(
     }
 
     const payment = await prisma.payment.findUnique({
-      where: { id: params.id },
+      where: { id: id },
       include: {
         venue: { select: { id: true, name: true, code: true } },
       },
@@ -27,11 +28,6 @@ export async function POST(
 
     if (!payment) {
       return NextResponse.json({ error: 'Pagamento non trovato' }, { status: 404 })
-    }
-
-    // Verifica autorizzazione sede
-    if (session.user.role !== 'admin' && payment.venueId !== session.user.venueId) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 })
     }
 
     // Verifica stato
@@ -61,7 +57,7 @@ export async function POST(
 
     // Aggiorna stato pagamento
     const updated = await prisma.payment.update({
-      where: { id: params.id },
+      where: { id: id },
       data: {
         stato: 'DISPOSTO',
         journalEntryId: journalEntry.id,

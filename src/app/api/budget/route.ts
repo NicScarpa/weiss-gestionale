@@ -7,6 +7,7 @@ import {
   createBudgetSchema,
   budgetFiltersSchema,
 } from '@/lib/validations/budget'
+import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
 // GET /api/budget - Lista budget con filtri
@@ -32,12 +33,8 @@ export async function GET(request: NextRequest) {
     // Costruisci where clause
     const where: Prisma.BudgetWhereInput = {}
 
-    // Filtra per sede (admin vede tutte, altri solo la propria)
-    if (session.user.role !== 'admin') {
-      where.venueId = session.user.venueId || undefined
-    } else if (filters.venueId) {
-      where.venueId = filters.venueId
-    }
+    // Filtra per sede
+    where.venueId = await getVenueId()
 
     if (filters.year) {
       where.year = filters.year

@@ -68,7 +68,7 @@ async function showSummary() {
   // Conta record per ogni tabella
   for (const [key, model] of Object.entries(TABLES_TO_DELETE)) {
     try {
-      // @ts-ignore - access dinamico ai modelli Prisma
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const count = await (prisma as any)[model].count()
       counts[key] = count
       console.log(`  ${key.padEnd(25)}: ${formatNumber(count)} record`)
@@ -110,7 +110,7 @@ async function executeCleanup() {
   for (const key of childTables) {
     const model = TABLES_TO_DELETE[key as keyof typeof TABLES_TO_DELETE]
     try {
-      // @ts-ignore
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const result = await (prisma as any)[model].deleteMany({})
       results[key] = { deleted: result.count }
       console.log(`  ✅ ${key.padEnd(25)}: ${formatNumber(result.count)} eliminati`)
@@ -135,7 +135,7 @@ async function executeCleanup() {
   for (const key of parentTables) {
     const model = TABLES_TO_DELETE[key as keyof typeof TABLES_TO_DELETE]
     try {
-      // @ts-ignore
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const result = await (prisma as any)[model].deleteMany({})
       results[key] = { deleted: result.count }
       console.log(`  ✅ ${key.padEnd(25)}: ${formatNumber(result.count)} eliminati`)
@@ -159,7 +159,7 @@ async function verifyCleanup() {
 
   for (const [key, model] of Object.entries(TABLES_TO_DELETE)) {
     try {
-      // @ts-ignore
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const count = await (prisma as any)[model].count()
       if (count === 0) {
         allEmpty.push(key)
@@ -205,7 +205,7 @@ async function verifyCriticalData() {
 
   for (const [key, model] of Object.entries(criticalTables)) {
     try {
-      // @ts-ignore
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const count = await (prisma as any)[model].count()
       const status = count > 0 ? '✅' : '❌'
       console.log(`  ${status} ${key.padEnd(20)}: ${formatNumber(count)} record`)

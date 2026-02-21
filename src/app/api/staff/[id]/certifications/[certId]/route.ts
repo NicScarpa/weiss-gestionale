@@ -37,20 +37,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       )
     }
 
-    // Manager può vedere solo dipendenti della stessa sede
-    if (session.user.role === 'manager') {
-      const user = await prisma.user.findUnique({
-        where: { id },
-        select: { venueId: true },
-      })
-      if (user?.venueId !== session.user.venueId) {
-        return NextResponse.json(
-          { error: 'Non autorizzato per questa sede' },
-          { status: 403 }
-        )
-      }
-    }
-
     return NextResponse.json({
       data: {
         ...certification,
@@ -97,20 +83,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         { error: 'Certificazione non trovata' },
         { status: 404 }
       )
-    }
-
-    // Manager può modificare solo dipendenti della stessa sede
-    if (session.user.role === 'manager') {
-      const user = await prisma.user.findUnique({
-        where: { id },
-        select: { venueId: true },
-      })
-      if (user?.venueId !== session.user.venueId) {
-        return NextResponse.json(
-          { error: 'Non autorizzato per questa sede' },
-          { status: 403 }
-        )
-      }
     }
 
     // Prepara i dati per l'update
@@ -185,20 +157,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         { error: 'Certificazione non trovata' },
         { status: 404 }
       )
-    }
-
-    // Manager può eliminare solo per dipendenti della stessa sede
-    if (session.user.role === 'manager') {
-      const user = await prisma.user.findUnique({
-        where: { id },
-        select: { venueId: true },
-      })
-      if (user?.venueId !== session.user.venueId) {
-        return NextResponse.json(
-          { error: 'Non autorizzato per questa sede' },
-          { status: 403 }
-        )
-      }
     }
 
     await prisma.certification.delete({

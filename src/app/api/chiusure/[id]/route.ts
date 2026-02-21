@@ -205,17 +205,6 @@ export async function GET(
       )
     }
 
-    // Verifica accesso (stessa sede o admin)
-    if (
-      session.user.role !== 'admin' &&
-      session.user.venueId !== chiusura.venueId
-    ) {
-      return NextResponse.json(
-        { error: 'Accesso non autorizzato' },
-        { status: 403 }
-      )
-    }
-
     // Calcola totali
     const grossTotal = chiusura.stations.reduce(
       (sum, s) => sum + Number(s.totalAmount || 0),
@@ -378,17 +367,6 @@ export async function PUT(
       )
     }
 
-    // Verifica accesso
-    if (
-      session.user.role !== 'admin' &&
-      session.user.venueId !== existingClosure.venueId
-    ) {
-      return NextResponse.json(
-        { error: 'Non autorizzato' },
-        { status: 403 }
-      )
-    }
-
     // Solo DRAFT può essere modificata (admin può modificare qualsiasi stato)
     if (existingClosure.status !== 'DRAFT' && session.user.role !== 'admin') {
       return NextResponse.json(
@@ -539,16 +517,6 @@ export async function DELETE(
     ) {
       return NextResponse.json(
         { error: 'Solo admin e manager possono eliminare chiusure' },
-        { status: 403 }
-      )
-    }
-
-    if (
-      session.user.role === 'manager' &&
-      session.user.venueId !== existingClosure.venueId
-    ) {
-      return NextResponse.json(
-        { error: 'Non autorizzato per questa sede' },
         { status: 403 }
       )
     }

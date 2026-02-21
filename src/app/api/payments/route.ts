@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { PaymentType, PaymentStatus } from '@prisma/client'
+import { getVenueId } from '@/lib/venue'
+import { PaymentType, PaymentStatus, Prisma } from '@prisma/client'
 
 // GET /api/payments - Lista pagamenti con filtri
 export async function GET(request: NextRequest) {
@@ -12,7 +13,6 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const venueId = searchParams.get('venueId')
     const stato = searchParams.get('stato') as PaymentStatus | null
     const tipo = searchParams.get('tipo') as PaymentType | null
     const dateFrom = searchParams.get('dateFrom')
@@ -21,16 +21,10 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '50')
 
-    // Filtro per venue - gli utenti vedono solo le sedi autorizzate
-    const userVenues = session.user.venues || []
-    const filterVenueId = venueId || userVenues[0]
+    const venueId = await getVenueId()
 
-    if (!filterVenueId) {
-      return NextResponse.json({ error: 'Venue ID richiesto' }, { status: 400 })
-    }
-
-    const where: any = {
-      venueId: filterVenueId,
+    const where: Prisma.PaymentWhereInput = {
+      venueId,
     }
 
     if (stato) where.stato = stato
@@ -63,7 +57,7 @@ export async function GET(request: NextRequest) {
     const summary = await prisma.payment.groupBy({
       by: ['stato'],
       where: {
-        venueId: filterVenueId,
+        venueId: venueId,
         ...(dateFrom || dateTo ? {
           dataEsecuzione: {
             ...(dateFrom && { gte: new Date(dateFrom) }),
@@ -75,7 +69,7 @@ export async function GET(request: NextRequest) {
     })
 
     const summaryMap = summary.reduce((acc, item) => {
-      acc[item.stato] = item._sum.importo || 0
+      acc[item.stato] = item._sum.importo ? Number(item._sum.importo) : 0
       return acc
     }, {} as Record<string, number>)
 

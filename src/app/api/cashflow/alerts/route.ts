@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getVenueId } from '@/lib/venue'
 
 // GET /api/cashflow/alerts - Lista alert attivi
 export async function GET(request: NextRequest) {
@@ -9,7 +10,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const venueId = session.user.venueId!
+  const venueId = await getVenueId()
 
   const alerts = await prisma.cashFlowAlert.findMany({
     where: {

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { parseCSV, parseXLS, parseCBIXML, parseCBITXT, RELAXBANKING_CONFIG } from '@/lib/reconciliation'
 import { importBatchSchema } from '@/lib/validations/reconciliation'
 import type { ImportResult, CSVParserConfig, ImportSource } from '@/types/reconciliation'
+import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
 // POST /api/bank-transactions/import - Import CSV/XLS
@@ -16,7 +17,7 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData()
     const file = formData.get('file') as File | null
-    const venueId = formData.get('venueId') as string | null
+    const venueId = await getVenueId()
     const configJson = formData.get('config') as string | null
 
     if (!file) {
@@ -24,22 +25,6 @@ export async function POST(request: NextRequest) {
         { error: 'Nessun file caricato' },
         { status: 400 }
       )
-    }
-
-    if (!venueId) {
-      return NextResponse.json(
-        { error: 'Sede non specificata' },
-        { status: 400 }
-      )
-    }
-
-    // Verifica venue
-    const venue = await prisma.venue.findUnique({
-      where: { id: venueId },
-    })
-
-    if (!venue) {
-      return NextResponse.json({ error: 'Sede non trovata' }, { status: 404 })
     }
 
     // Determina tipo file
@@ -76,7 +61,7 @@ export async function POST(request: NextRequest) {
     })
 
     // Usa configurazione custom o default RelaxBanking
-    const config: CSVParserConfig = params.config || RELAXBANKING_CONFIG
+    const config: CSVParserConfig = (params.config || RELAXBANKING_CONFIG) as CSVParserConfig
 
     // Parsa il file
     let rows: Array<{

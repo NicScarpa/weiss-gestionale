@@ -8,350 +8,272 @@ import {
   Receipt,
   BookOpen,
   FileText,
-  Calculator,
   BarChart3,
   Settings,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
   Users,
-  Calendar,
-  Palmtree,
-  Landmark,
-  Package,
-  ClipboardCheck,
-  Truck,
-  Building2,
-  UserPlus,
-  Building,
+  CreditCard,
+  RefreshCw,
+  CalendarClock,
+  ListChecks,
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 
-// Navigazione principale (prima dell'accordion)
-const mainNavigation = [
+import { motion, AnimatePresence } from 'framer-motion'
+
+// Navigazione principale (Rail)
+const navigationItems = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { name: 'Chiusura Cassa', href: '/chiusura-cassa', icon: Receipt },
-  { name: 'Prima Nota', href: '/prima-nota', icon: BookOpen },
-  { name: 'Riconciliazione', href: '/riconciliazione', icon: Landmark },
-  { name: 'Fatture', href: '/fatture', icon: FileText },
-  { name: 'Prodotti', href: '/prodotti', icon: Package },
-  { name: 'Budget', href: '/budget', icon: BarChart3 },
-  { name: 'Report', href: '/report', icon: BarChart3 },
-]
-
-// Sottovoci "Personale"
-const personnelNavigation = [
-  { name: 'Staff', href: '/anagrafiche/personale', icon: Users },
-  { name: 'Turni', href: '/turni', icon: Calendar },
-  { name: 'Ferie/Permessi', href: '/ferie-permessi', icon: Palmtree },
-  { name: 'Presenze', href: '/presenze', icon: ClipboardCheck },
-]
-
-// Sottovoci "Anagrafiche"
-const anagraficheNavigation = [
-  { name: 'Clienti', href: '/anagrafiche/clienti', icon: Building2 },
-  { name: 'Fornitori', href: '/anagrafiche/fornitori', icon: Truck },
-  { name: 'Personale', href: '/anagrafiche/personale', icon: Users },
-  { name: 'Utenti', href: '/anagrafiche/utenti', icon: UserPlus },
-]
-
-// Sottovoci "Impostazioni"
-const settingsNavigation = [
-  { name: 'Generali', href: '/impostazioni/generali', icon: Settings },
-  { name: 'Piano Conti', href: '/impostazioni/conti', icon: BookOpen },
-  { name: 'Budget', href: '/impostazioni/budget', icon: BarChart3 },
+  {
+    name: 'Prima Nota',
+    href: '/prima-nota/movimenti',
+    icon: BookOpen,
+    sections: [
+      {
+        title: 'Contabilità',
+        items: [
+          { name: 'Movimenti', href: '/prima-nota/movimenti', icon: BookOpen },
+          { name: 'Pagamenti', href: '/prima-nota/pagamenti', icon: CreditCard },
+          { name: 'Regole', href: '/prima-nota/regole', icon: ListChecks },
+          { name: 'Riconciliazione', href: '/riconciliazione', icon: RefreshCw },
+          { name: 'Chiusure Cassa', href: '/chiusura-cassa', icon: Receipt },
+        ],
+      },
+    ],
+  },
+  {
+    name: 'Fatturazione',
+    href: '/fatture',
+    icon: FileText,
+    sections: [
+      {
+        title: 'Documenti',
+        items: [
+          { name: 'Fatture', href: '/fatture' },
+          { name: 'Prodotti', href: '/prodotti' },
+        ],
+      },
+      {
+        title: 'Configurazione',
+        items: [
+          { name: 'Fornitori', href: '/anagrafiche/fornitori' },
+          { name: 'Clienti', href: '/anagrafiche/clienti' }
+        ]
+      }
+    ],
+  },
+  {
+    name: 'Budget',
+    href: '/budget',
+    icon: BarChart3,
+    sections: [
+      {
+        title: 'Analisi',
+        items: [
+          { name: 'Situazione', href: '/budget' },
+          { name: 'Report', href: '/report' },
+        ],
+      },
+      {
+        title: 'Configurazione',
+        items: [
+          { name: 'Settings Budget', href: '/impostazioni/budget' },
+        ]
+      }
+    ],
+  },
+  {
+    name: 'Personale',
+    icon: Users,
+    sections: [
+      {
+        title: 'Anagrafiche',
+        items: [
+          { name: 'Dipendenti', href: '/anagrafiche/personale' },
+          { name: 'Livelli di Accesso', href: '/anagrafiche/utenti' },
+        ],
+      },
+      {
+        title: 'Gestione',
+        items: [
+          { name: 'Turni', href: '/turni' },
+          { name: 'Ferie/Permessi', href: '/ferie-permessi' },
+          { name: 'Presenze', href: '/presenze' },
+        ],
+      },
+    ],
+  },
+  {
+    name: 'Scadenzario',
+    href: '/scadenzario',
+    icon: CalendarClock,
+  },
+  {
+    name: 'Impostazioni',
+    href: '/impostazioni/generali',
+    icon: Settings,
+    sections: [
+      {
+        title: 'Configurazione',
+        items: [
+          { name: 'Generali', href: '/impostazioni/generali' },
+          { name: 'Piano dei conti', href: '/impostazioni/conti' },
+          { name: 'Banche e Conti', href: '/impostazioni/banche-e-conti' },
+          { name: 'Budget', href: '/impostazioni/budget' },
+        ],
+      },
+      {
+        title: 'Anagrafiche',
+        items: [
+          { name: 'Anagrafiche', href: '/anagrafiche' },
+        ],
+      },
+    ],
+  },
 ]
 
 export function Sidebar() {
   const pathname = usePathname()
-  const [collapsed, setCollapsed] = useState(true)
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null)
+  const [scaduteCount, setScaduteCount] = useState(0)
 
-  // Stato accordion Personale
-  const isInPersonnelSection = personnelNavigation.some(
-    item => pathname === item.href || pathname.startsWith(item.href + '/')
-  )
-  const [isPersonnelOpen, setIsPersonnelOpen] = useState(isInPersonnelSection)
-
-  // Stato accordion Anagrafiche
-  const isInAnagraficheSection = anagraficheNavigation.some(
-    item => pathname === item.href || pathname.startsWith(item.href + '/')
-  )
-  const [isAnagraficheOpen, setIsAnagraficheOpen] = useState(isInAnagraficheSection)
-
-  // Stato accordion Impostazioni
-  const isInSettingsSection = settingsNavigation.some(
-    item => pathname === item.href || pathname.startsWith(item.href + '/')
-  )
-  const [isSettingsOpen, setIsSettingsOpen] = useState(isInSettingsSection)
-
-  // Auto-espandi quando si naviga in sezione Personale
+  // Fetch scadenze scadute per badge
   useEffect(() => {
-    if (isInPersonnelSection && !isPersonnelOpen) {
-      queueMicrotask(() => setIsPersonnelOpen(true))
+    const fetchScadute = async () => {
+      try {
+        const resp = await fetch('/api/scadenzario/summary')
+        if (resp.ok) {
+          const data = await resp.json()
+          setScaduteCount(data.totaleScadute || 0)
+        }
+      } catch {
+        // Non-critical, ignora errori
+      }
     }
-  }, [pathname, isInPersonnelSection, isPersonnelOpen])
+    fetchScadute()
+  }, [pathname]) // Ricarica quando cambia pagina
 
-  // Auto-espandi quando si naviga in sezione Anagrafiche
-  useEffect(() => {
-    if (isInAnagraficheSection && !isAnagraficheOpen) {
-      queueMicrotask(() => setIsAnagraficheOpen(true))
+  // Determina quale voce principale è attiva basandosi sul pathname
+  const activeItem = useMemo(() => {
+    for (const item of navigationItems) {
+      if (item.href === pathname) return item.name
+      if (item.sections) {
+        for (const section of item.sections) {
+          for (const subItem of section.items) {
+            if (pathname.startsWith(subItem.href)) return item.name
+          }
+        }
+      }
     }
-  }, [pathname, isInAnagraficheSection, isAnagraficheOpen])
+    return null
+  }, [pathname])
 
-  // Auto-espandi quando si naviga in sezione Impostazioni
-  useEffect(() => {
-    if (isInSettingsSection && !isSettingsOpen) {
-      queueMicrotask(() => setIsSettingsOpen(true))
-    }
-  }, [pathname, isInSettingsSection, isSettingsOpen])
-
-  const renderNavItem = (item: { name: string; href: string; icon: React.ComponentType<{ className?: string }> }, indent = false) => {
-    const isActive = pathname === item.href ||
-      (item.href !== '/' && pathname.startsWith(item.href + '/'))
-
-    const link = (
-      <Link
-        key={item.name}
-        href={item.href}
-        className={cn(
-          "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-          indent && !collapsed && "ml-3",
-          isActive
-            ? "bg-slate-800 text-white"
-            : "text-slate-300 hover:bg-slate-800 hover:text-white"
-        )}
-      >
-        <item.icon className={cn("flex-shrink-0", indent ? "h-4 w-4" : "h-5 w-5")} />
-        {!collapsed && <span>{item.name}</span>}
-      </Link>
-    )
-
-    if (collapsed) {
-      return (
-        <Tooltip key={item.name}>
-          <TooltipTrigger asChild>
-            {link}
-          </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={8}>
-            {item.name}
-          </TooltipContent>
-        </Tooltip>
-      )
-    }
-
-    return link
-  }
+  const currentDisplayItem = hoveredItem || activeItem
+  const activeNavigation = navigationItems.find(item => item.name === currentDisplayItem)
+  const hasSubSections = activeNavigation?.sections && activeNavigation.sections.length > 0
 
   return (
-    <aside
-      className={cn(
-        "flex flex-col h-full bg-slate-900 text-white transition-all duration-300",
-        collapsed ? "w-16" : "w-64"
-      )}
+    <div
+      className="flex h-full relative"
+      onMouseLeave={() => setHoveredItem(null)}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between h-16 px-4 border-b border-slate-700">
-        {!collapsed && (
-          <span className="text-lg font-semibold tracking-tight">
-            Weiss Cafè
-          </span>
+      {/* Rail Sidebar (Livello 1 - Icone) */}
+      <aside className="w-16 h-full bg-slate-900 flex flex-col items-center py-4 z-50 border-r border-slate-800">
+        <div className="mb-8 px-2 overflow-hidden text-center">
+          <div className="w-8 h-8 mx-auto bg-white rounded flex items-center justify-center text-slate-900 font-bold text-sm">
+            WS
+          </div>
+        </div>
+
+        <nav className="flex-1 w-full space-y-2 px-2">
+          {navigationItems.map((item) => {
+            const isActive = activeItem === item.name
+            const isHovered = hoveredItem === item.name
+            const showBadge = item.name === 'Scadenzario' && scaduteCount > 0
+
+            return (
+              <Tooltip key={item.name}>
+                <TooltipTrigger asChild>
+                  <Link
+                    href={item.href || '#'}
+                    onMouseEnter={() => setHoveredItem(item.name)}
+                    className={cn(
+                      "w-full aspect-square flex items-center justify-center rounded-lg transition-all relative group",
+                      isActive || isHovered
+                        ? "bg-slate-800 text-white"
+                        : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                    )}
+                  >
+                    <item.icon className="h-5 w-5" />
+                    {showBadge && (
+                      <span className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                        {scaduteCount > 99 ? '99+' : scaduteCount}
+                      </span>
+                    )}
+                    {(isActive || isHovered) && (
+                      <motion.div
+                        layoutId="activeIndicator"
+                        className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-white rounded-r-full"
+                      />
+                    )}
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent side="right" sideOffset={10} className="bg-slate-900 border-slate-800 text-white">
+                  {item.name}
+                </TooltipContent>
+              </Tooltip>
+            )
+          })}
+        </nav>
+      </aside>
+
+      {/* Flyout Panel (Livello 2 - Sottovoci) */}
+      <AnimatePresence>
+        {hasSubSections && activeNavigation && (
+          <motion.aside
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 256, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={{ type: "spring", bounce: 0, duration: 0.3 }}
+            className="h-full bg-white border-r border-slate-200 z-40 overflow-hidden shadow-xl"
+          >
+            <div className="w-64 py-6 px-4 whitespace-nowrap">
+              <h2 className="text-xl font-bold text-slate-900 mb-8 px-2">
+                {activeNavigation.name}
+              </h2>
+
+              <div className="space-y-8">
+                {activeNavigation.sections?.map((section) => (
+                  <div key={section.title}>
+                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-2">
+                      {section.title}
+                    </h3>
+                    <div className="space-y-1 text-sm">
+                      {section.items.map((subItem) => {
+                        const isSubActive = pathname === subItem.href
+                        return (
+                          <Link
+                            key={subItem.name}
+                            href={subItem.href}
+                            className={cn(
+                              "flex items-center gap-3 px-3 py-2 rounded-md font-medium transition-colors",
+                              isSubActive
+                                ? "bg-slate-100 text-slate-900"
+                                : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                            )}
+                          >
+                            <span>{subItem.name}</span>
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.aside>
         )}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setCollapsed(!collapsed)}
-          className="text-slate-400 hover:text-white hover:bg-slate-800"
-        >
-          {collapsed ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
-            <ChevronLeft className="h-4 w-4" />
-          )}
-        </Button>
-      </div>
-
-      {/* Navigation */}
-      <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
-        {/* Main navigation */}
-        {mainNavigation.map((item) => renderNavItem(item))}
-
-        {/* Personale Accordion */}
-        <div className="pt-1">
-          {collapsed ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={() => setIsPersonnelOpen(!isPersonnelOpen)}
-                  className={cn(
-                    "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                    isInPersonnelSection
-                      ? "bg-slate-800 text-white"
-                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                  )}
-                >
-                  <Users className="h-5 w-5 flex-shrink-0" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={8}>
-                Personale
-              </TooltipContent>
-            </Tooltip>
-          ) : (
-            <button
-              onClick={() => setIsPersonnelOpen(!isPersonnelOpen)}
-              className={cn(
-                "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                isInPersonnelSection
-                  ? "bg-slate-800 text-white"
-                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
-              )}
-            >
-              <Users className="h-5 w-5 flex-shrink-0" />
-              <span className="flex-1 text-left">Personale</span>
-              <ChevronDown
-                className={cn(
-                  "h-4 w-4 transition-transform duration-200",
-                  isPersonnelOpen ? "rotate-0" : "-rotate-90"
-                )}
-              />
-            </button>
-          )}
-
-          {/* Sottovoci accordion Personale */}
-          <div
-            className={cn(
-              "overflow-hidden transition-all duration-200",
-              isPersonnelOpen && !collapsed ? "max-h-48 opacity-100" : "max-h-0 opacity-0"
-            )}
-          >
-            <div className="mt-1 space-y-1">
-              {personnelNavigation.map((item) => renderNavItem(item, true))}
-            </div>
-          </div>
-        </div>
-
-        {/* Anagrafiche Accordion */}
-        <div className="pt-1">
-          {collapsed ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={() => setIsAnagraficheOpen(!isAnagraficheOpen)}
-                  className={cn(
-                    "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                    isInAnagraficheSection
-                      ? "bg-slate-800 text-white"
-                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                  )}
-                >
-                  <Building className="h-5 w-5 flex-shrink-0" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={8}>
-                Anagrafiche
-              </TooltipContent>
-            </Tooltip>
-          ) : (
-            <button
-              onClick={() => setIsAnagraficheOpen(!isAnagraficheOpen)}
-              className={cn(
-                "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                isInAnagraficheSection
-                  ? "bg-slate-800 text-white"
-                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
-              )}
-            >
-              <Building className="h-5 w-5 flex-shrink-0" />
-              <span className="flex-1 text-left">Anagrafiche</span>
-              <ChevronDown
-                className={cn(
-                  "h-4 w-4 transition-transform duration-200",
-                  isAnagraficheOpen ? "rotate-0" : "-rotate-90"
-                )}
-              />
-            </button>
-          )}
-
-          {/* Sottovoci accordion Anagrafiche */}
-          <div
-            className={cn(
-              "overflow-hidden transition-all duration-200",
-              isAnagraficheOpen && !collapsed ? "max-h-64 opacity-100" : "max-h-0 opacity-0"
-            )}
-          >
-            <div className="mt-1 space-y-1">
-              {anagraficheNavigation.map((item) => renderNavItem(item, true))}
-            </div>
-          </div>
-        </div>
-
-        {/* Impostazioni Accordion */}
-        <div className="pt-1">
-          {collapsed ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-                  className={cn(
-                    "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                    isInSettingsSection
-                      ? "bg-slate-800 text-white"
-                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                  )}
-                >
-                  <Settings className="h-5 w-5 flex-shrink-0" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={8}>
-                Impostazioni
-              </TooltipContent>
-            </Tooltip>
-          ) : (
-            <button
-              onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-              className={cn(
-                "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                isInSettingsSection
-                  ? "bg-slate-800 text-white"
-                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
-              )}
-            >
-              <Settings className="h-5 w-5 flex-shrink-0" />
-              <span className="flex-1 text-left">Impostazioni</span>
-              <ChevronDown
-                className={cn(
-                  "h-4 w-4 transition-transform duration-200",
-                  isSettingsOpen ? "rotate-0" : "-rotate-90"
-                )}
-              />
-            </button>
-          )}
-
-          {/* Sottovoci accordion Impostazioni */}
-          <div
-            className={cn(
-              "overflow-hidden transition-all duration-200",
-              isSettingsOpen && !collapsed ? "max-h-48 opacity-100" : "max-h-0 opacity-0"
-            )}
-          >
-            <div className="mt-1 space-y-1">
-              {settingsNavigation.map((item) => renderNavItem(item, true))}
-            </div>
-          </div>
-        </div>
-      </nav>
-
-      {/* Footer */}
-      <div className="border-t border-slate-700 px-4 py-3">
-        <p className={cn(
-          "text-xs text-slate-400 truncate",
-          collapsed && "text-center"
-        )}>
-          {collapsed ? "v1.0" : "Sistema Gestionale v1.0"}
-        </p>
-      </div>
-    </aside>
+      </AnimatePresence>
+    </div>
   )
 }

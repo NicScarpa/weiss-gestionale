@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getVenueId } from '@/lib/venue'
 import {
   addDays,
   subDays,
@@ -68,20 +69,8 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const venueId = searchParams.get('venueId') || session.user.venueId
+    const venueId = await getVenueId()
     const days = parseInt(searchParams.get('days') || '30')
-
-    if (!venueId) {
-      return NextResponse.json(
-        { error: 'Sede non specificata' },
-        { status: 400 }
-      )
-    }
-
-    // Verifica accesso alla sede
-    if (session.user.role !== 'admin' && session.user.venueId !== venueId) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
 
     const forecastDays = Math.min(Math.max(days, 7), 90)
     const today = startOfDay(new Date())

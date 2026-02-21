@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
+import { getVenueId } from '@/lib/venue'
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
@@ -54,10 +55,9 @@ export async function GET(request: NextRequest) {
 
     if (venueId) {
       where.venueId = venueId
-    } else if (session.user.role === 'manager') {
-      // Manager vede solo vincoli della propria sede
+    } else {
       where.OR = [
-        { venueId: session.user.venueId },
+        { venueId: await getVenueId() },
         { venueId: null },
       ]
     }
@@ -126,17 +126,6 @@ export async function POST(request: NextRequest) {
 
     if (!targetUser) {
       return NextResponse.json({ error: 'Utente non trovato' }, { status: 404 })
-    }
-
-    // Manager può creare vincoli solo per dipendenti della propria sede
-    if (
-      session.user.role === 'manager' &&
-      targetUser.venueId !== session.user.venueId
-    ) {
-      return NextResponse.json(
-        { error: 'Non autorizzato per questa sede' },
-        { status: 403 }
-      )
     }
 
     // Crea il vincolo

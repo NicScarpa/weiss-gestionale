@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
+import { getVenueId } from '@/lib/venue'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const venueId = searchParams.get('venueId') || session.user.venueId
+    const venueId = searchParams.get('venueId') || await getVenueId()
     const includeInactive = searchParams.get('includeInactive') === 'true'
 
     if (!venueId) {
@@ -35,11 +36,6 @@ export async function GET(request: NextRequest) {
         { error: 'Sede non specificata' },
         { status: 400 }
       )
-    }
-
-    // Verifica accesso
-    if (session.user.role !== 'admin' && session.user.venueId !== venueId) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
     const expenses = await prisma.recurringExpense.findMany({
@@ -127,18 +123,13 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const venueId = body.venueId || session.user.venueId
+    const venueId = body.venueId || await getVenueId()
 
     if (!venueId) {
       return NextResponse.json(
         { error: 'Sede non specificata' },
         { status: 400 }
       )
-    }
-
-    // Verifica accesso
-    if (session.user.role !== 'admin' && session.user.venueId !== venueId) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
     const validatedData = createExpenseSchema.parse(body)

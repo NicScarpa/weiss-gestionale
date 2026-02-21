@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
+import { getVenueId } from '@/lib/venue'
 
 /**
  * GET /api/prima-nota/metadata
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const venueId = session.user.venueId!
+    const venueId = await getVenueId()
 
     const dateFrom = searchParams.get('dateFrom')
     const dateTo = searchParams.get('dateTo')
@@ -24,13 +25,14 @@ export async function GET(request: NextRequest) {
     const where: Prisma.JournalEntryWhereInput = { venueId }
 
     if (dateFrom || dateTo) {
-      where.date = {} as any
+      const dateFilter: Prisma.DateTimeFilter = {}
       if (dateFrom) {
-        where.date.gte = new Date(dateFrom)
+        dateFilter.gte = new Date(dateFrom)
       }
       if (dateTo) {
-        where.date.lte = new Date(dateTo)
+        dateFilter.lte = new Date(dateTo)
       }
+      where.date = dateFilter
     }
 
     // Query aggregazioni parallele

@@ -24,12 +24,6 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 
-interface Venue {
-  id: string
-  name: string
-  code: string
-}
-
 interface MonthData {
   month: string
   monthShort: string
@@ -93,20 +87,9 @@ interface ReportData {
   availableYears: number[]
 }
 
-interface ConfrontoAnnualeClientProps {
-  venueId?: string
-  isAdmin: boolean
-  venues: Venue[]
-}
-
-export function ConfrontoAnnualeClient({
-  venueId,
-  isAdmin,
-  venues,
-}: ConfrontoAnnualeClientProps) {
+export function ConfrontoAnnualeClient() {
   const currentYear = new Date().getFullYear()
   const [selectedYear, setSelectedYear] = useState(currentYear)
-  const [selectedVenue, setSelectedVenue] = useState<string>(venueId || 'all')
   const [data, setData] = useState<ReportData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -120,9 +103,6 @@ export function ConfrontoAnnualeClient({
       try {
         const params = new URLSearchParams()
         params.set('year', selectedYear.toString())
-        if (selectedVenue && selectedVenue !== 'all') {
-          params.set('venueId', selectedVenue)
-        }
 
         const response = await fetch(`/api/report/confronto-annuale?${params}`)
         if (!response.ok) {
@@ -139,7 +119,7 @@ export function ConfrontoAnnualeClient({
     }
 
     fetchData()
-  }, [selectedYear, selectedVenue])
+  }, [selectedYear])
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('it-IT', {
@@ -268,24 +248,6 @@ export function ConfrontoAnnualeClient({
               <Badge variant="outline">{selectedYear - 1}</Badge>
             </div>
 
-            {isAdmin && venues.length > 0 && (
-              <Select
-                value={selectedVenue}
-                onValueChange={setSelectedVenue}
-              >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Tutte le sedi" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tutte le sedi</SelectItem>
-                  {venues.map((venue) => (
-                    <SelectItem key={venue.id} value={venue.id}>
-                      {venue.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
           </div>
         </CardContent>
       </Card>

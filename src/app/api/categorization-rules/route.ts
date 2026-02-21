@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getVenueId } from '@/lib/venue'
+import { Prisma, RuleDirection } from '@prisma/client'
 
 // GET /api/categorization-rules - Lista regole categorizzazione
 export async function GET(request: NextRequest) {
@@ -11,20 +13,13 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const venueId = searchParams.get('venueId')
     const direction = searchParams.get('direction')
     const isActive = searchParams.get('isActive')
 
-    // Filtro per venue
-    const userVenues = session.user.venues || []
-    const filterVenueId = venueId || userVenues[0]
+    const venueId = await getVenueId()
 
-    if (!filterVenueId) {
-      return NextResponse.json({ error: 'Venue ID richiesto' }, { status: 400 })
-    }
-
-    const where: any = { venueId: filterVenueId }
-    if (direction) where.direction = direction
+    const where: Prisma.CategorizationRuleWhereInput = { venueId }
+    if (direction) where.direction = direction as RuleDirection
     if (isActive !== null) where.isActive = isActive === 'true'
 
     const rules = await prisma.categorizationRule.findMany({
@@ -42,16 +37,16 @@ export async function GET(request: NextRequest) {
 
     // Statistiche
     const stats = await prisma.categorizationRule.aggregate({
-      where: { venueId: filterVenueId },
+      where: { venueId: venueId },
       _count: { id: true },
       _avg: { priority: true },
     })
 
     const inflowRules = await prisma.categorizationRule.count({
-      where: { venueId: filterVenueId, direction: 'INFLOW', isActive: true },
+      where: { venueId: venueId, direction: 'INFLOW', isActive: true },
     })
     const outflowRules = await prisma.categorizationRule.count({
-      where: { venueId: filterVenueId, direction: 'OUTFLOW', isActive: true },
+      where: { venueId: venueId, direction: 'OUTFLOW', isActive: true },
     })
 
     return NextResponse.json({
@@ -59,7 +54,7 @@ export async function GET(request: NextRequest) {
       stats: {
         totalRules: stats._count.id || 0,
         activeRules: await prisma.categorizationRule.count({
-          where: { venueId: filterVenueId, isActive: true },
+          where: { venueId: venueId, isActive: true },
         }),
         inflowRules,
         outflowRules,

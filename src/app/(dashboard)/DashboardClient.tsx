@@ -19,7 +19,12 @@ import {
   CalendarDays,
 } from 'lucide-react'
 import Link from 'next/link'
-import { CashFlowForecast } from '@/components/dashboard/CashFlowForecast'
+import dynamic from 'next/dynamic'
+
+const CashFlowForecast = dynamic(
+  () => import('@/components/dashboard/CashFlowForecast').then(mod => ({ default: mod.CashFlowForecast })),
+  { ssr: false }
+)
 
 interface DashboardData {
   stats: {

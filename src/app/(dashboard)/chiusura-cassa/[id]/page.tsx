@@ -104,14 +104,6 @@ export default async function DettaglioChiusuraPage({ params }: Props) {
     notFound()
   }
 
-  // Verifica accesso
-  if (
-    session.user.role !== 'admin' &&
-    session.user.venueId !== closure.venueId
-  ) {
-    redirect('/chiusura-cassa?error=unauthorized')
-  }
-
   // Calcoli
   const salesTotal = closure.stations.reduce(
     (sum, s) => sum + Number(s.totalAmount || 0),

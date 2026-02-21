@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getVenueId } from '@/lib/venue'
 
 // GET /api/cashflow/forecasts/[id]/lines - Lista righe forecast
 export async function GET(
@@ -25,8 +26,8 @@ export async function GET(
       return NextResponse.json({ error: 'Forecast not found' }, { status: 404 })
     }
 
-    const userVenues = session.user.venues || []
-    if (!userVenues.includes(forecast.venueId)) {
+    const venueId = await getVenueId()
+    if (forecast.venueId !== venueId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -90,8 +91,8 @@ export async function POST(
       return NextResponse.json({ error: 'Forecast not found' }, { status: 404 })
     }
 
-    const userVenues = session.user.venues || []
-    if (!userVenues.includes(forecast.venueId)) {
+    const venueId = await getVenueId()
+    if (forecast.venueId !== venueId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

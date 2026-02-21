@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { ForecastStatus, ForecastType } from '@prisma/client'
+import { getVenueId } from '@/lib/venue'
+import { ForecastStatus, ForecastType, Prisma } from '@prisma/client'
 import { addDays, startOfDay, endOfDay } from 'date-fns'
 
 // GET /api/cashflow/forecasts - Lista cash flow forecasts
@@ -13,23 +14,16 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const venueId = searchParams.get('venueId')
     const stato = searchParams.get('stato')
     const tipo = searchParams.get('tipo')
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '20')
 
-    // Filtro per venue
-    const userVenues = session.user.venues || []
-    const filterVenueId = venueId || userVenues[0]
+    const venueId = await getVenueId()
 
-    if (!filterVenueId) {
-      return NextResponse.json({ error: 'Venue ID richiesto' }, { status: 400 })
-    }
-
-    const where: any = { venueId: filterVenueId }
-    if (stato) where.stato = stato
-    if (tipo) where.tipo = tipo
+    const where: Prisma.CashFlowForecastWhereInput = { venueId }
+    if (stato) where.stato = stato as ForecastStatus
+    if (tipo) where.tipo = tipo as ForecastType
 
     const [forecasts, total] = await Promise.all([
       prisma.cashFlowForecast.findMany({

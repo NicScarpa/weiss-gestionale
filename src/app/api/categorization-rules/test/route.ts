@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { CategorizationRule } from '@prisma/client'
 
 // POST /api/categorization-rules/test - Test regola su descrizione
 export async function POST(request: NextRequest) {
@@ -64,7 +65,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function calculateConfidence(rule: any, description: string): number {
+function calculateConfidence(rule: Pick<CategorizationRule, 'keywords' | 'priority'>, description: string): number {
   // Calcola confidence in base a:
   // - Numero di keywords che matchano
   // - Priorità della regola

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getVenueId } from '@/lib/venue'
+import { Prisma } from '@prisma/client'
+
+type Decimal = Prisma.Decimal
 
 // GET /api/cashflow/forecasts/[id]/summary - Riepilogo forecast per dashboard
 export async function GET(
@@ -39,8 +43,8 @@ export async function GET(
       return NextResponse.json({ error: 'Forecast not found' }, { status: 404 })
     }
 
-    const userVenues = session.user.venues || []
-    if (!userVenues.includes(forecast.venueId)) {
+    const venueId = await getVenueId()
+    if (forecast.venueId !== venueId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -100,8 +104,8 @@ export async function GET(
   }
 }
 
-function groupByMonth(lines: any[], startDate: Date, initialBalance: number) {
-  const monthlyMap = new Map<string, any>()
+function groupByMonth(lines: { data: Date; tipo: string; importo: Decimal }[], startDate: Date, initialBalance: number) {
+  const monthlyMap = new Map<string, { month: string; entrate: number; uscite: number; saldo: number }>()
   let saldo = initialBalance
 
   for (const line of lines) {

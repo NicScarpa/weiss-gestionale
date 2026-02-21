@@ -15,9 +15,10 @@ const categorizeSchema = z.object({
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const session = await auth()
 
     if (!session?.user) {
@@ -29,22 +30,17 @@ export async function PATCH(
 
     // Recupera la entry corrente
     const current = await prisma.journalEntry.findUnique({
-      where: { id: params.id },
-      select: { venueId: true },
+      where: { id: id },
+      select: { id: true },
     })
 
     if (!current) {
       return NextResponse.json({ error: 'Movimento non trovato' }, { status: 404 })
     }
 
-    // Verifica autorizzazione sede
-    if (session.user.role !== 'admin' && current.venueId !== session.user.venueId) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 })
-    }
-
     // Aggiorna categorizzazione
     const updated = await prisma.journalEntry.update({
-      where: { id: params.id },
+      where: { id: id },
       data: {
         budgetCategoryId: validated.budgetCategoryId || null,
         accountId: validated.accountId || undefined,

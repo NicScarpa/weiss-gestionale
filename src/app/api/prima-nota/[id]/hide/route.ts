@@ -8,9 +8,10 @@ import { prisma } from '@/lib/prisma'
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const session = await auth()
 
     if (!session?.user) {
@@ -19,22 +20,17 @@ export async function PATCH(
 
     // Recupera la entry corrente
     const current = await prisma.journalEntry.findUnique({
-      where: { id: params.id },
-      select: { hiddenAt: true, venueId: true },
+      where: { id: id },
+      select: { hiddenAt: true },
     })
 
     if (!current) {
       return NextResponse.json({ error: 'Movimento non trovato' }, { status: 404 })
     }
 
-    // Verifica autorizzazione sede
-    if (session.user.role !== 'admin' && current.venueId !== session.user.venueId) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 })
-    }
-
     // Toggle hidden
     const updated = await prisma.journalEntry.update({
-      where: { id: params.id },
+      where: { id: id },
       data: { hiddenAt: current.hiddenAt ? null : new Date() },
     })
 

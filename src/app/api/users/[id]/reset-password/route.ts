@@ -51,13 +51,6 @@ export async function POST(
       )
     }
 
-    // Manager può resettare solo utenti della propria sede
-    if (userRole === 'manager') {
-      if (targetUser.venueId !== session.user.venueId) {
-        return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-      }
-    }
-
     // Hash nuova password
     const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 12)
 

@@ -9,6 +9,7 @@ import {
 } from '@/lib/validations/prima-nota'
 import { toDebitCredit, calculateTotals } from '@/lib/prima-nota-utils'
 import type { JournalEntry } from '@/types/prima-nota'
+import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
 /**
@@ -124,15 +125,8 @@ export async function GET(request: NextRequest) {
     // Costruisci where clause
     const where: Prisma.JournalEntryWhereInput = {}
 
-    // Filtra per sede (admin vede tutte, altri solo la propria)
-    if (session.user.role !== 'admin' && session.user.venueId) {
-      where.venueId = session.user.venueId
-    } else {
-      const venueIdParam = searchParams.get('venueId')
-      if (venueIdParam) {
-        where.venueId = venueIdParam
-      }
-    }
+    // Filtra per sede
+    where.venueId = await getVenueId()
 
     if (filters.registerType) {
       where.registerType = filters.registerType
@@ -376,16 +370,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
-    // Verifica che l'utente abbia una sede
-    if (!session.user.venueId) {
-      return NextResponse.json(
-        { error: 'Nessuna sede assegnata' },
-        { status: 400 }
-      )
-    }
-
     const body = await request.json()
     const validatedData = createJournalEntrySchema.parse(body)
+    const venueId = await getVenueId()
 
     // Converti in dare/avere
     const { debitAmount, creditAmount } = toDebitCredit(
@@ -397,7 +384,7 @@ export async function POST(request: NextRequest) {
     // Crea il movimento
     const entry = await prisma.journalEntry.create({
       data: {
-        venueId: session.user.venueId,
+        venueId,
         date: validatedData.date,
         registerType: validatedData.registerType,
         description: validatedData.description,
