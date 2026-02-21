@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
-import { splitBulkPdf } from '@/lib/documents/pdf-splitter'
+// Import dinamico per evitare errori DOMMatrix di pdf-parse durante il build
+const loadSplitter = () => import('@/lib/documents/pdf-splitter').then(m => m.splitBulkPdf)
 import { writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
@@ -49,7 +50,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Contenuto file non valido' }, { status: 400 })
     }
 
-    // Split PDF
+    // Split PDF (import dinamico per evitare errori build)
+    const splitBulkPdf = await loadSplitter()
     const result = await splitBulkPdf(fileBuffer)
 
     // Salva i PDF matched su disco e crea record DB
