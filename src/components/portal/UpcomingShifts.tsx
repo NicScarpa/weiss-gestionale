@@ -60,7 +60,7 @@ export function UpcomingShifts() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Calendar className="h-5 w-5 text-portal-primary" />
+            <Calendar className="h-5 w-5 text-gray-700" />
             Prossimi Turni
           </CardTitle>
         </CardHeader>
@@ -78,7 +78,7 @@ export function UpcomingShifts() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Calendar className="h-5 w-5 text-portal-primary" />
+            <Calendar className="h-5 w-5 text-gray-700" />
             Prossimi Turni
           </CardTitle>
         </CardHeader>
@@ -95,7 +95,7 @@ export function UpcomingShifts() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
-          <Calendar className="h-5 w-5 text-portal-primary" />
+          <Calendar className="h-5 w-5 text-gray-700" />
           Prossimi Turni
         </CardTitle>
       </CardHeader>

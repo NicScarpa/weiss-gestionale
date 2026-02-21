@@ -19,42 +19,28 @@ export default async function PortalLayout({
 
   return (
     <div className="flex min-h-screen flex-col bg-gray-50">
-      {/* Header con gradiente viola e wave */}
-      <header className="relative bg-gradient-to-br from-portal-gradient-start to-portal-gradient-end">
-        <div className="flex items-center justify-between px-5 pt-12 pb-8">
+      {/* Header bianco minimale */}
+      <header className="bg-white border-b border-gray-200">
+        <div className="flex items-center justify-between px-5 pt-12 pb-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/20">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-900">
               <span className="text-base font-bold text-white">{initials}</span>
             </div>
             <div>
-              <h1 className="text-base font-bold text-white">
+              <h1 className="text-base font-bold text-gray-900">
                 {session.user.firstName} {session.user.lastName}
               </h1>
-              <p className="text-sm text-white/70">Weiss Srl</p>
+              <p className="text-sm text-gray-500">Weiss Srl</p>
             </div>
           </div>
-          <button className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10">
-            <Bell className="h-5 w-5 text-white" />
+          <button className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-gray-100">
+            <Bell className="h-5 w-5 text-gray-600" />
           </button>
         </div>
-        {/* Wave SVG organica */}
-        <svg
-          className="absolute bottom-0 left-0 w-full"
-          viewBox="0 0 1440 60"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          preserveAspectRatio="none"
-          style={{ height: '30px', display: 'block' }}
-        >
-          <path
-            d="M0 0C240 50 480 60 720 40C960 20 1200 50 1440 30V60H0V0Z"
-            fill="#F9FAFB"
-          />
-        </svg>
       </header>
 
-      {/* Contenuto principale con overlap leggero sotto la wave */}
-      <main className="-mt-4 flex-1 pb-24 px-4 py-5 relative z-10">
+      {/* Contenuto principale */}
+      <main className="flex-1 pb-24 px-4 py-5">
         {children}
       </main>
 

@@ -23,7 +23,7 @@ export default function PortaleScambiPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <ArrowLeftRight className="w-6 h-6 text-portal-primary" />
+          <ArrowLeftRight className="w-6 h-6 text-gray-700" />
           Scambi Turni
         </h1>
         <p className="text-sm text-gray-500 mt-1">

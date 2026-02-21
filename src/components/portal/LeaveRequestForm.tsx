@@ -310,7 +310,7 @@ export function LeaveRequestForm() {
             </Button>
             <Button
               type="submit"
-              className="flex-1 bg-portal-primary hover:bg-portal-primary-dark text-white rounded-xl"
+              className="flex-1 bg-gray-900 hover:bg-black text-white rounded-xl"
               disabled={mutation.isPending}
             >
               {mutation.isPending && (
