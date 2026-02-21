@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { PlusIcon, PenLineIcon, UploadIcon } from 'lucide-react'
+import { DangerousDeleteDialog } from '@/components/ui/dangerous-delete-dialog'
 import { usePrimaNota } from '@/components/prima-nota/PrimaNotaContext'
 import type { JournalEntry, RegisterType, EntryType } from '@/types/prima-nota'
 
@@ -63,6 +64,7 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
   const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
   // Load data from API
   const loadData = useCallback(async () => {
@@ -121,20 +123,20 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
     setDialogOpen(true)
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Eliminare questo movimento?')) return
-    try {
-      const res = await fetch(`/api/prima-nota/${id}`, { method: 'DELETE' })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Errore eliminazione')
-      }
-      toast.success('Movimento eliminato')
-      loadData()
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Errore sconosciuto'
-      toast.error(message)
+  const handleDelete = (id: string) => {
+    setDeleteTargetId(id)
+  }
+
+  const confirmDeleteMovimento = async () => {
+    if (!deleteTargetId) return
+    const res = await fetch(`/api/prima-nota/${deleteTargetId}`, { method: 'DELETE' })
+    if (!res.ok) {
+      const err = await res.json()
+      throw new Error(err.error || 'Errore eliminazione')
     }
+    toast.success('Movimento eliminato')
+    setDeleteTargetId(null)
+    loadData()
   }
 
   const handleVerify = async (id: string, verified: boolean) => {
@@ -316,6 +318,15 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
         accounts={accounts}
         venueId={venueId}
         onImportComplete={loadData}
+      />
+
+      <DangerousDeleteDialog
+        open={!!deleteTargetId}
+        onOpenChange={(open) => { if (!open) setDeleteTargetId(null) }}
+        title="Elimina Movimento"
+        description="Stai per eliminare questo movimento. Questa azione è irreversibile."
+        confirmLabel="Elimina Movimento"
+        onConfirm={confirmDeleteMovimento}
       />
     </div>
   )

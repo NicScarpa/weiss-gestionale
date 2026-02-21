@@ -7,6 +7,7 @@ import { PagamentiTable } from '@/components/prima-nota/pagamenti/PagamentiTable
 import { PagamentoFormDialog } from '@/components/prima-nota/pagamenti/PagamentoFormDialog'
 import { Button } from '@/components/ui/button'
 import { PlusIcon } from 'lucide-react'
+import { DangerousDeleteDialog } from '@/components/ui/dangerous-delete-dialog'
 import { usePrimaNota } from '@/components/prima-nota/PrimaNotaContext'
 import type { Payment, PaymentStatus, PaymentType, PaymentFormData } from '@/types/prima-nota'
 
@@ -28,6 +29,7 @@ export function PagamentiClient() {
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -71,20 +73,20 @@ export function PagamentiClient() {
     }
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Eliminare questo pagamento?')) return
-    try {
-      const res = await fetch(`/api/pagamenti/${id}`, { method: 'DELETE' })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Errore eliminazione')
-      }
-      toast.success('Pagamento eliminato')
-      loadData()
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Errore sconosciuto'
-      toast.error(message)
+  const handleDelete = (id: string) => {
+    setDeleteTargetId(id)
+  }
+
+  const confirmDeletePagamento = async () => {
+    if (!deleteTargetId) return
+    const res = await fetch(`/api/pagamenti/${deleteTargetId}`, { method: 'DELETE' })
+    if (!res.ok) {
+      const err = await res.json()
+      throw new Error(err.error || 'Errore eliminazione')
     }
+    toast.success('Pagamento eliminato')
+    setDeleteTargetId(null)
+    loadData()
   }
 
   const handleStatusChange = async (id: string, stato: PaymentStatus) => {
@@ -226,6 +228,15 @@ export function PagamentiClient() {
         }}
         onSave={handleSave}
         isSubmitting={isSubmitting}
+      />
+
+      <DangerousDeleteDialog
+        open={!!deleteTargetId}
+        onOpenChange={(open) => { if (!open) setDeleteTargetId(null) }}
+        title="Elimina Pagamento"
+        description="Stai per eliminare questo pagamento. Questa azione è irreversibile."
+        confirmLabel="Elimina Pagamento"
+        onConfirm={confirmDeletePagamento}
       />
     </div>
   )

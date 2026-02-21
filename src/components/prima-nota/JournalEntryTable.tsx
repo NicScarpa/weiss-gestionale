@@ -41,6 +41,7 @@ import {
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/constants'
+import { DangerousDeleteDialog } from '@/components/ui/dangerous-delete-dialog'
 import type { JournalEntry } from '@/types/prima-nota'
 
 interface JournalEntryTableProps {
@@ -77,24 +78,25 @@ export function JournalEntryTable({
 }: JournalEntryTableProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<JournalEntry | null>(null)
 
   const toggleExpand = (entryId: string) => {
     setExpandedId((prev) => (prev === entryId ? null : entryId))
   }
 
-  const handleDelete = async (entry: JournalEntry) => {
+  const handleDelete = (entry: JournalEntry) => {
     if (!onDelete) return
+    setDeleteTarget(entry)
+  }
 
-    const confirmed = window.confirm(
-      `Eliminare il movimento "${entry.description}"?`
-    )
-    if (!confirmed) return
-
-    setDeletingId(entry.id)
+  const confirmDelete = async () => {
+    if (!deleteTarget || !onDelete) return
+    setDeletingId(deleteTarget.id)
     try {
-      await onDelete(entry)
+      await onDelete(deleteTarget)
     } finally {
       setDeletingId(null)
+      setDeleteTarget(null)
     }
   }
 
@@ -464,6 +466,15 @@ export function JournalEntryTable({
           )}
         </div>
       )}
+      <DangerousDeleteDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}
+        title="Elimina Movimento"
+        description="Stai per eliminare questo movimento. Questa azione è irreversibile."
+        entityName={deleteTarget?.description}
+        confirmLabel="Elimina Movimento"
+        onConfirm={confirmDelete}
+      />
     </div>
   )
 }

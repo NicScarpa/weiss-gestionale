@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/table'
 import { ArrowLeft, Plus, Pencil, Trash2, Clock, Users, Settings } from 'lucide-react'
 import { toast } from 'sonner'
+import { DangerousDeleteDialog } from '@/components/ui/dangerous-delete-dialog'
 
 interface ShiftDefinition {
   id: string
@@ -78,6 +79,7 @@ export default function ShiftDefinitionsPage() {
   const [filterVenue, setFilterVenue] = useState<string>('all')
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingShift, setEditingShift] = useState<ShiftDefinition | null>(null)
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
   const [formData, setFormData] = useState({
     venueId: '',
@@ -374,11 +376,7 @@ export default function ShiftDefinitionsPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => {
-                            if (confirm('Eliminare questa definizione turno?')) {
-                              deleteMutation.mutate(shift.id)
-                            }
-                          }}
+                          onClick={() => setDeleteTargetId(shift.id)}
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
@@ -526,6 +524,19 @@ export default function ShiftDefinitionsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <DangerousDeleteDialog
+        open={!!deleteTargetId}
+        onOpenChange={(open) => { if (!open) setDeleteTargetId(null) }}
+        title="Elimina Definizione Turno"
+        description="Stai per eliminare questa definizione turno. Questa azione è irreversibile."
+        confirmLabel="Elimina Turno"
+        onConfirm={async () => {
+          if (!deleteTargetId) return
+          deleteMutation.mutate(deleteTargetId)
+          setDeleteTargetId(null)
+        }}
+      />
     </div>
   )
 }
