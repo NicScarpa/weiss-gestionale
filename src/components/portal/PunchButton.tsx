@@ -39,8 +39,8 @@ const buttonConfig: Record<
     punchType: 'IN',
     label: 'TIMBRA ENTRATA',
     icon: LogIn,
-    bgColor: 'bg-green-500',
-    hoverColor: 'hover:bg-green-600',
+    bgColor: 'bg-portal-primary',
+    hoverColor: 'hover:bg-portal-primary-dark',
   },
   CLOCKED_IN: {
     punchType: 'OUT',
@@ -60,8 +60,8 @@ const buttonConfig: Record<
     punchType: 'IN',
     label: 'NUOVO TURNO',
     icon: LogIn,
-    bgColor: 'bg-green-500',
-    hoverColor: 'hover:bg-green-600',
+    bgColor: 'bg-portal-primary',
+    hoverColor: 'hover:bg-portal-primary-dark',
   },
 }
 

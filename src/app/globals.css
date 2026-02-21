@@ -42,6 +42,22 @@
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
+  --color-portal-primary: var(--portal-primary);
+  --color-portal-primary-light: var(--portal-primary-light);
+  --color-portal-primary-dark: var(--portal-primary-dark);
+  --color-portal-primary-bg: var(--portal-primary-bg);
+  --color-portal-gradient-start: var(--portal-gradient-start);
+  --color-portal-gradient-end: var(--portal-gradient-end);
+}
+
+/* Portal (Sesame HR) Palette */
+:root {
+  --portal-primary: #7C3AED;
+  --portal-primary-light: #A78BFA;
+  --portal-primary-dark: #6D28D9;
+  --portal-primary-bg: #EDE9FE;
+  --portal-gradient-start: #7C3AED;
+  --portal-gradient-end: #5B21B6;
 }
 
 /* Sibill Palette */

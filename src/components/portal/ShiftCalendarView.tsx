@@ -113,7 +113,7 @@ export function ShiftCalendarView() {
           <h2 className="text-lg font-bold text-gray-900 capitalize">
             {format(currentMonth, 'MMMM yyyy', { locale: it })}
           </h2>
-          <Button variant="outline" size="sm" onClick={goToToday} className="border-green-200 text-green-600 hover:bg-green-50">
+          <Button variant="outline" size="sm" onClick={goToToday} className="border-portal-primary-light text-portal-primary hover:bg-portal-primary-bg">
             Oggi
           </Button>
         </div>
@@ -167,7 +167,7 @@ export function ShiftCalendarView() {
                     <div
                       className={cn(
                         'text-xs font-medium mb-1 w-6 h-6 flex items-center justify-center rounded-full',
-                        isCurrentDay && 'bg-green-500 text-white',
+                        isCurrentDay && 'bg-portal-primary text-white',
                         !isCurrentMonth && 'text-gray-300'
                       )}
                     >
@@ -191,9 +191,9 @@ export function ShiftCalendarView() {
                           disabled={!canSwap}
                           className={cn(
                             "w-full text-left text-xs p-1 rounded mb-0.5 truncate transition-all",
-                            canSwap && "hover:ring-2 hover:ring-green-400 cursor-pointer",
+                            canSwap && "hover:ring-2 hover:ring-portal-primary-light cursor-pointer",
                             !canSwap && "opacity-60 cursor-not-allowed",
-                            shift.swapStatus === 'PENDING' && "ring-2 ring-green-300"
+                            shift.swapStatus === 'PENDING' && "ring-2 ring-portal-primary-light"
                           )}
                           style={{
                             backgroundColor: shift.shiftDefinition?.color
@@ -211,7 +211,7 @@ export function ShiftCalendarView() {
                             {formatTime(shift.startTime)}
                           </span>
                           {shift.swapStatus === 'PENDING' && (
-                            <ArrowLeftRight className="inline-block w-3 h-3 ml-1 text-green-500" />
+                            <ArrowLeftRight className="inline-block w-3 h-3 ml-1 text-portal-primary" />
                           )}
                         </button>
                       )

@@ -152,7 +152,7 @@ function SwapCard({ swap, isSent, currentUserId, onAccept, onReject, onCancel, i
   return (
     <Card className={cn(
       "transition-colors",
-      isPending && "border-green-200 bg-green-50/30"
+      isPending && "border-portal-primary-light bg-portal-primary-bg/30"
     )}>
       <CardContent className="p-4">
         <div className="flex flex-col gap-3">
@@ -191,7 +191,7 @@ function SwapCard({ swap, isSent, currentUserId, onAccept, onReject, onCancel, i
                 {swap.user?.firstName} {swap.user?.lastName}
               </span>
             </div>
-            <ArrowLeftRight className="w-5 h-5 text-green-500" />
+            <ArrowLeftRight className="w-5 h-5 text-portal-primary" />
             <div className="flex items-center gap-2 flex-1 justify-end">
               <span className="text-sm">
                 {swap.targetUser?.firstName} {swap.targetUser?.lastName}
@@ -216,7 +216,7 @@ function SwapCard({ swap, isSent, currentUserId, onAccept, onReject, onCancel, i
                     size="sm"
                     onClick={onAccept}
                     disabled={isLoading}
-                    className="flex-1 bg-green-500 hover:bg-green-600"
+                    className="flex-1 bg-portal-primary hover:bg-portal-primary-dark"
                   >
                     {isLoading ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -350,7 +350,7 @@ export function ShiftSwapManager({ currentUserId }: ShiftSwapManagerProps) {
           <TabsTrigger value="received" className="relative">
             Ricevute
             {pendingReceived > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 text-white text-xs rounded-full flex items-center justify-center">
+              <span className="absolute -top-1 -right-1 w-5 h-5 bg-portal-primary text-white text-xs rounded-full flex items-center justify-center">
                 {pendingReceived}
               </span>
             )}
