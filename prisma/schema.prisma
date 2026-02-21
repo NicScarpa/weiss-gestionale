@@ -77,6 +77,8 @@ model User {
   scheduleRulesCreated    ScheduleRule[]               @relation("ScheduleRuleCreatedBy")
   role                    Role                         @relation(fields: [roleId], references: [id])
   venue                   Venue?                       @relation(fields: [venueId], references: [id])
+  sentInvitations         InvitationToken[]            @relation("InvitedByUser")
+  createdByInvitation     InvitationToken?             @relation("CreatedByInvitation")
 
   @@map("users")
 }
@@ -1463,6 +1465,27 @@ model ScheduleRule {
   @@index([venueId, direzione, ordine])
   @@index([isActive])
   @@map("schedule_rules")
+}
+
+model InvitationToken {
+  id            String    @id @default(cuid())
+  token         String    @unique
+  email         String?
+  firstName     String?   @map("first_name")
+  lastName      String?   @map("last_name")
+  invitedById   String    @map("invited_by_id")
+  expiresAt     DateTime  @map("expires_at")
+  usedAt        DateTime? @map("used_at")
+  createdUserId String?   @unique @map("created_user_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  isActive      Boolean   @default(true) @map("is_active")
+
+  invitedBy     User      @relation("InvitedByUser", fields: [invitedById], references: [id])
+  createdUser   User?     @relation("CreatedByInvitation", fields: [createdUserId], references: [id])
+
+  @@index([token])
+  @@index([email])
+  @@map("invitation_tokens")
 }
 
 enum ContractType {

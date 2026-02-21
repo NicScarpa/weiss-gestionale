@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { signIn } from 'next-auth/react'
+import { useState, useEffect } from 'react'
+import { signIn, useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -11,9 +11,12 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { AlertCircle, Loader2 } from 'lucide-react'
 import Image from 'next/image'
 
+const STAFF_HOSTNAME = 'staff.weisscafe.com'
+
 export default function LoginPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { data: session } = useSession()
   const callbackUrl = searchParams.get('callbackUrl') || '/'
   const error = searchParams.get('error')
 
@@ -21,6 +24,25 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [loginError, setLoginError] = useState<string | null>(null)
+  const [isStaffDomain, setIsStaffDomain] = useState(false)
+
+  // Rileva se siamo sul dominio staff
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsStaffDomain(window.location.hostname === STAFF_HOSTNAME)
+    }
+  }, [])
+
+  // Se già autenticato, redirect basato su ruolo
+  useEffect(() => {
+    if (session?.user) {
+      if (session.user.role === 'staff' || isStaffDomain) {
+        router.replace('/portale')
+      } else {
+        router.replace('/')
+      }
+    }
+  }, [session, isStaffDomain, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -28,11 +50,14 @@ export default function LoginPage() {
     setLoginError(null)
 
     try {
+      // Su dominio staff, forza callbackUrl a /portale
+      const targetUrl = isStaffDomain ? '/portale' : callbackUrl
+
       const result = await signIn('credentials', {
         identifier,
         password,
         redirect: false,
-        callbackUrl
+        callbackUrl: targetUrl
       })
 
       if (result?.error) {
@@ -40,7 +65,15 @@ export default function LoginPage() {
           ? 'Username/Email o password non validi'
           : result.error)
       } else if (result?.ok) {
-        router.push(callbackUrl)
+        // Fetch session per determinare il ruolo
+        const sessionRes = await fetch('/api/auth/session')
+        const sessionData = await sessionRes.json()
+
+        if (sessionData?.user?.role === 'staff' || isStaffDomain) {
+          router.push('/portale')
+        } else {
+          router.push(targetUrl)
+        }
         router.refresh()
       }
     } catch (_err) {
@@ -52,16 +85,32 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-black p-4">
-      <Card className="w-full max-w-md">
+      <Card className="w-full max-w-md !bg-white !text-black border-none [&_input]:!bg-white [&_input]:!text-black [&_label]:!text-black [&_a]:!text-gray-500">
         <CardHeader className="flex items-center justify-center py-6">
-          <Image
-            src="/images/logo.svg"
-            alt="Weiss Cafè"
-            width={200}
-            height={80}
-            priority
-            className="h-auto w-auto max-w-[200px]"
-          />
+          {isStaffDomain ? (
+            <div className="text-center">
+              <Image
+                src="/images/logo.svg"
+                alt="Weiss Cafè"
+                width={160}
+                height={64}
+                priority
+                className="h-auto w-auto max-w-[160px] mx-auto"
+              />
+              <p className="mt-3 text-sm font-medium text-gray-500 uppercase tracking-wider">
+                Portale Dipendenti
+              </p>
+            </div>
+          ) : (
+            <Image
+              src="/images/logo.svg"
+              alt="Weiss Cafè"
+              width={200}
+              height={80}
+              priority
+              className="h-auto w-auto max-w-[200px]"
+            />
+          )}
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -116,14 +165,16 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-6 text-center">
-            <Link
-              href="/forgot-password"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Password dimenticata?
-            </Link>
-          </div>
+          {!isStaffDomain && (
+            <div className="mt-6 text-center">
+              <Link
+                href="/forgot-password"
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Password dimenticata?
+              </Link>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
