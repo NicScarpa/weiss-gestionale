@@ -11,6 +11,7 @@ import { CustomerTable, type CustomerData } from '@/components/customers/Custome
 import { Plus, Building2, FileText, Phone } from 'lucide-react'
 import { toast } from 'sonner'
 import { canAccessUserManagement, type UserRole } from '@/lib/utils/permissions'
+import { DangerousDeleteDialog } from '@/components/ui/dangerous-delete-dialog'
 
 export default function ClientiPage() {
   const router = useRouter()
@@ -24,6 +25,7 @@ export default function ClientiPage() {
     search: '',
     showInactive: false,
   })
+  const [deleteTarget, setDeleteTarget] = useState<CustomerData | null>(null)
 
   // Verifica accesso (solo admin può gestire i clienti)
   useEffect(() => {
@@ -202,21 +204,27 @@ export default function ClientiPage() {
           // Naviga alla pagina di modifica
           router.push(`/anagrafiche/clienti/${customer.id}`)
         }}
-        onDelete={async (customer) => {
-          if (confirm(`Sei sicuro di voler disattivare il cliente "${customer.denominazione}"?`)) {
-            try {
-              const response = await fetch(`/api/customers`, {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ids: [customer.id] }),
-              })
-              if (!response.ok) throw new Error('Errore eliminazione')
-              toast.success('Cliente disattivato')
-              await fetchCustomers()
-            } catch {
-              toast.error('Errore nella disattivazione del cliente')
-            }
-          }
+        onDelete={(customer) => setDeleteTarget(customer)}
+      />
+
+      <DangerousDeleteDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}
+        title="Disattiva Cliente"
+        description="Stai per disattivare questo cliente. I dati storici verranno mantenuti."
+        entityName={deleteTarget?.denominazione}
+        confirmLabel="Disattiva Cliente"
+        onConfirm={async () => {
+          if (!deleteTarget) return
+          const response = await fetch('/api/customers', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: [deleteTarget.id] }),
+          })
+          if (!response.ok) throw new Error('Errore eliminazione')
+          toast.success('Cliente disattivato')
+          setDeleteTarget(null)
+          await fetchCustomers()
         }}
       />
     </div>

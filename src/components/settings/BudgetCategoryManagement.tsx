@@ -26,6 +26,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import { Plus, Trash2, Edit, GripVertical, Wand2, Loader2, Link2 } from 'lucide-react'
+import { DangerousDeleteDialog } from '@/components/ui/dangerous-delete-dialog'
 import { AccountMappingManager } from './AccountMappingManager'
 
 import { logger } from '@/lib/logger'
@@ -95,6 +96,7 @@ export function BudgetCategoryManagement() {
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [editCategory, setEditCategory] = useState<BudgetCategory | null>(null)
   const [unmappedAccounts, setUnmappedAccounts] = useState<Account[]>([])
+  const [deleteTarget, setDeleteTarget] = useState<BudgetCategory | null>(null)
 
   // Form state
   const [formData, setFormData] = useState({
@@ -232,29 +234,26 @@ export function BudgetCategoryManagement() {
     }
   }
 
-  const handleDelete = async (category: BudgetCategory) => {
+  const handleDelete = (category: BudgetCategory) => {
     if (category.isSystem) {
       toast.error('Le categorie di sistema non possono essere eliminate')
       return
     }
+    setDeleteTarget(category)
+  }
 
-    if (!confirm(`Eliminare la categoria "${category.name}"?`)) return
-
-    try {
-      const res = await fetch(`/api/budget-categories/${category.id}`, {
-        method: 'DELETE',
-      })
-
-      if (res.ok) {
-        toast.success(`${category.name} eliminata con successo`)
-        fetchCategories()
-      } else {
-        const data = await res.json()
-        throw new Error(data.error)
-      }
-    } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : 'Impossibile eliminare la categoria')
+  const confirmDeleteCategory = async () => {
+    if (!deleteTarget) return
+    const res = await fetch(`/api/budget-categories/${deleteTarget.id}`, {
+      method: 'DELETE',
+    })
+    if (!res.ok) {
+      const data = await res.json()
+      throw new Error(data.error || 'Impossibile eliminare la categoria')
     }
+    toast.success(`${deleteTarget.name} eliminata con successo`)
+    setDeleteTarget(null)
+    fetchCategories()
   }
 
   const openEditDialog = (category: BudgetCategory) => {
@@ -648,6 +647,16 @@ export function BudgetCategoryManagement() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <DangerousDeleteDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}
+        title="Elimina Categoria"
+        description="Stai per eliminare questa categoria budget. Questa azione è irreversibile."
+        entityName={deleteTarget?.name}
+        confirmLabel="Elimina Categoria"
+        onConfirm={confirmDeleteCategory}
+      />
     </div>
   )
 }

@@ -59,6 +59,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
+import { DangerousDeleteDialog } from '@/components/ui/dangerous-delete-dialog'
 import { toast } from 'sonner'
 import { InvoiceImportDialog } from './InvoiceImportDialog'
 import {
@@ -175,6 +176,7 @@ export function InvoiceList() {
   const { data: session } = useSession()
   const queryClient = useQueryClient()
   const [importDialogOpen, setImportDialogOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Invoice | null>(null)
 
   // Selezione multipla
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -231,16 +233,6 @@ export function InvoiceList() {
     queryFn: () => fetchInvoices(params),
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: deleteInvoice,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['invoices'] })
-      toast.success('Fattura eliminata')
-    },
-    onError: (err: Error) => {
-      toast.error(err.message)
-    },
-  })
 
   const recordMutation = useMutation({
     mutationFn: recordInvoice,
@@ -608,15 +600,7 @@ export function InvoiceList() {
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
                                   className="text-red-600"
-                                  onClick={() => {
-                                    if (
-                                      confirm(
-                                        'Sei sicuro di voler eliminare questa fattura?'
-                                      )
-                                    ) {
-                                      deleteMutation.mutate(invoice.id)
-                                    }
-                                  }}
+                                  onClick={() => setDeleteTarget(invoice)}
                                 >
                                   <Trash2 className="mr-2 h-4 w-4" />
                                   Elimina
@@ -776,6 +760,23 @@ export function InvoiceList() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog eliminazione singola fattura */}
+      <DangerousDeleteDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}
+        title="Elimina Fattura"
+        description="Stai per eliminare questa fattura. Questa azione è irreversibile."
+        entityName={deleteTarget ? `${deleteTarget.invoiceNumber} - ${deleteTarget.supplier?.name || deleteTarget.supplierName}` : undefined}
+        confirmLabel="Elimina Fattura"
+        onConfirm={async () => {
+          if (!deleteTarget) return
+          await deleteInvoice(deleteTarget.id)
+          queryClient.invalidateQueries({ queryKey: ['invoices'] })
+          toast.success('Fattura eliminata')
+          setDeleteTarget(null)
+        }}
+      />
     </div>
   )
 }

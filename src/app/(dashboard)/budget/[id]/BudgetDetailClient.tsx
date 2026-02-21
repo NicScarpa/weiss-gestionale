@@ -14,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { DangerousDeleteDialog } from '@/components/ui/dangerous-delete-dialog'
 import {
   Card,
   CardContent,
@@ -97,6 +98,7 @@ export function BudgetDetailClient({
   // Dialog per aggiungere riga
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [newLineAccountId, setNewLineAccountId] = useState('')
+  const [deleteLineAccountId, setDeleteLineAccountId] = useState<string | null>(null)
 
   // Fetch lines
   const fetchLines = useCallback(async () => {
@@ -180,24 +182,22 @@ export function BudgetDetailClient({
   }
 
   // Delete line
-  const handleDeleteLine = async (accountId: string) => {
-    if (!confirm('Eliminare questa riga?')) return
+  const handleDeleteLine = (accountId: string) => {
+    setDeleteLineAccountId(accountId)
+  }
 
-    try {
-      const res = await fetch(`/api/budget/${budgetId}/lines?accountId=${accountId}`, {
-        method: 'DELETE',
-      })
-
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || 'Errore nell\'eliminazione')
-      }
-
-      toast.success('Riga eliminata')
-      fetchLines()
-    } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : 'Errore nell\'eliminazione')
+  const confirmDeleteLine = async () => {
+    if (!deleteLineAccountId) return
+    const res = await fetch(`/api/budget/${budgetId}/lines?accountId=${deleteLineAccountId}`, {
+      method: 'DELETE',
+    })
+    if (!res.ok) {
+      const data = await res.json()
+      throw new Error(data.error || 'Errore nell\'eliminazione')
     }
+    toast.success('Riga eliminata')
+    setDeleteLineAccountId(null)
+    fetchLines()
   }
 
   // Save all changes
@@ -546,6 +546,15 @@ export function BudgetDetailClient({
           </Dialog>
         </TabsContent>
       </Tabs>
+
+      <DangerousDeleteDialog
+        open={!!deleteLineAccountId}
+        onOpenChange={(open) => { if (!open) setDeleteLineAccountId(null) }}
+        title="Elimina Riga Budget"
+        description="Stai per eliminare questa riga dal budget. Questa azione è irreversibile."
+        confirmLabel="Elimina Riga"
+        onConfirm={confirmDeleteLine}
+      />
     </div>
   )
 }
