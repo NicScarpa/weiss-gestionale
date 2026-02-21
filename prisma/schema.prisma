@@ -79,6 +79,9 @@ model User {
   venue                   Venue?                       @relation(fields: [venueId], references: [id])
   sentInvitations         InvitationToken[]            @relation("InvitedByUser")
   createdByInvitation     InvitationToken?             @relation("CreatedByInvitation")
+  auditLogs               AuditLog[]
+  documents               EmployeeDocument[]           @relation("EmployeeDocuments")
+  uploadedDocuments       EmployeeDocument[]           @relation("DocumentUploader")
 
   @@map("users")
 }
@@ -158,6 +161,7 @@ model Venue {
   recurrences             Recurrence[]
   scheduleRules           ScheduleRule[]
   bankAccounts            BankAccount[]
+  auditLogs               AuditLog[]
 
   @@map("venues")
 }
@@ -218,6 +222,8 @@ model DailyClosure {
   updatedAt        DateTime          @updatedAt @map("updated_at")
   stations         CashStation[]
   attendance       DailyAttendance[]
+  deletedAt        DateTime?         @map("deleted_at")
+  deletedById      String?           @map("deleted_by_id")
   submittedBy      User?             @relation("SubmittedBy", fields: [submittedById], references: [id])
   validatedBy      User?             @relation("ValidatedBy", fields: [validatedById], references: [id])
   venue            Venue             @relation(fields: [venueId], references: [id])
@@ -388,9 +394,11 @@ model JournalEntry {
   bankTransaction      BankTransaction?
   electronicInvoice    ElectronicInvoice?
   account              Account?            @relation(fields: [accountId], references: [id])
+  deletedAt            DateTime?           @map("deleted_at")
+  deletedById          String?             @map("deleted_by_id")
   appliedRule          CategorizationRule? @relation(fields: [appliedRuleId], references: [id])
   budgetCategory       BudgetCategory?     @relation(fields: [budgetCategoryId], references: [id])
-  closure              DailyClosure?       @relation(fields: [closureId], references: [id])
+  closure              DailyClosure?       @relation(fields: [closureId], references: [id], onDelete: SetNull)
   counterpart          Account?            @relation("Counterpart", fields: [counterpartId], references: [id])
   createdBy            User?               @relation(fields: [createdById], references: [id])
   venue                Venue               @relation(fields: [venueId], references: [id])
@@ -491,6 +499,8 @@ model Schedule {
   note                    String?
   source                  String                      @default("manuale") // 'manuale', 'import_csv', 'import_fatture_sdi', 'ricorrenza_auto'
   createdById             String?                     @map("created_by")
+  deletedAt              DateTime?                   @map("deleted_at")
+  deletedById            String?                     @map("deleted_by_id")
   createdAt              DateTime                    @default(now()) @map("created_at")
   updatedAt              DateTime                    @updatedAt @map("updated_at")
   payments                SchedulePayment[]
@@ -604,6 +614,8 @@ model Budget {
   createdById String?       @map("created_by")
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
+  deletedAt   DateTime?     @map("deleted_at")
+  deletedById String?       @map("deleted_by_id")
   alerts      BudgetAlert[]
   lines       BudgetLine[]
   createdBy   User?         @relation(fields: [createdById], references: [id])
@@ -1046,6 +1058,7 @@ model NotificationPreference {
   leaveReminder        Boolean  @default(true) @map("leave_reminder")
   newLeaveRequest      Boolean  @default(true) @map("new_leave_request")
   staffAnomaly         Boolean  @default(true) @map("staff_anomaly")
+  newDocument          Boolean  @default(true) @map("new_document")
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
   user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1117,6 +1130,8 @@ model ElectronicInvoice {
   lineItems      Json?             @map("line_items")
   references     Json?             @map("references")
   vatSummary     Json?             @map("vat_summary")
+  deletedAt      DateTime?         @map("deleted_at")
+  deletedById    String?           @map("deleted_by_id")
   account        Account?          @relation(fields: [accountId], references: [id])
   journalEntry   JournalEntry?     @relation(fields: [journalEntryId], references: [id])
   supplier       Supplier?         @relation(fields: [supplierId], references: [id])
@@ -1237,6 +1252,8 @@ model BankTransaction {
   reconciledBy    String?              @map("reconciled_by")
   reconciledAt    DateTime?            @map("reconciled_at")
   createdAt       DateTime             @default(now()) @map("created_at")
+  deletedAt       DateTime?            @map("deleted_at")
+  deletedById     String?              @map("deleted_by_id")
   importBatch     ImportBatch?         @relation(fields: [importBatchId], references: [id])
   matchedEntry    JournalEntry?        @relation(fields: [matchedEntryId], references: [id])
   venue           Venue                @relation(fields: [venueId], references: [id])
@@ -1338,6 +1355,8 @@ model Payment {
   note               String?
   createdAt          DateTime      @default(now()) @map("created_at")
   updatedAt          DateTime      @updatedAt @map("updated_at")
+  deletedAt          DateTime?     @map("deleted_at")
+  deletedById        String?       @map("deleted_by_id")
   createdBy          User?         @relation(fields: [createdById], references: [id])
   journalEntry       JournalEntry? @relation(fields: [journalEntryId], references: [id])
   venue              Venue         @relation(fields: [venueId], references: [id])
@@ -1383,6 +1402,8 @@ model CashFlowForecast {
   tipo          ForecastType           @default(BASE) @map("tipo")
   createdAt     DateTime               @default(now()) @map("created_at")
   updatedAt     DateTime               @updatedAt @map("updated_at")
+  deletedAt     DateTime?              @map("deleted_at")
+  deletedById   String?                @map("deleted_by_id")
   alerts        CashFlowAlert[]
   lines         CashFlowForecastLine[]
   createdBy     User                   @relation(fields: [createdById], references: [id])
@@ -1486,6 +1507,51 @@ model InvitationToken {
   @@index([token])
   @@index([email])
   @@map("invitation_tokens")
+}
+
+model EmployeeDocument {
+  id               String           @id @default(cuid())
+  userId           String           @map("user_id")
+  category         DocumentCategory
+  filename         String
+  originalFilename String           @map("original_filename")
+  contentType      String           @map("content_type")
+  fileSize         Int              @map("file_size")
+  period           String?
+  periodLabel      String?          @map("period_label")
+  description      String?
+  uploadedByUserId String           @map("uploaded_by_user_id")
+  uploadBatchId    String?          @map("upload_batch_id")
+  createdAt        DateTime         @default(now()) @map("created_at")
+
+  user       User @relation("EmployeeDocuments", fields: [userId], references: [id], onDelete: Cascade)
+  uploadedBy User @relation("DocumentUploader", fields: [uploadedByUserId], references: [id])
+
+  @@index([userId, category])
+  @@index([userId, period])
+  @@map("employee_documents")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  timestamp   DateTime @default(now())
+  userId      String?  @map("user_id")
+  action      String   // CREATE, UPDATE, DELETE, LOGIN, PASSWORD_CHANGE
+  entityType  String   @map("entity_type")
+  entityId    String?  @map("entity_id")
+  venueId     String?  @map("venue_id")
+  oldValues   Json?    @map("old_values")
+  newValues   Json?    @map("new_values")
+  ipAddress   String?  @map("ip_address")
+  userAgent   String?  @map("user_agent")
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  venue       Venue?   @relation(fields: [venueId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([venueId])
+  @@index([timestamp])
+  @@map("audit_logs")
 }
 
 enum ContractType {
@@ -1653,6 +1719,7 @@ enum NotificationType {
   LEAVE_REMINDER
   NEW_LEAVE_REQUEST
   STAFF_ANOMALY
+  NEW_DOCUMENT
   GENERAL
 }
 
@@ -1790,6 +1857,12 @@ enum CashFlowAlertStatus {
   ATTIVO
   RISOLTO
   IGNORATO
+}
+
+enum DocumentCategory {
+  CEDOLINI
+  ATTESTATI
+  ALTRO
 }
 
 enum ScheduleType {

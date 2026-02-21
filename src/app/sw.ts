@@ -2,6 +2,7 @@
 import { defaultCache } from '@serwist/next/worker'
 import type { PrecacheEntry, SerwistGlobalConfig } from 'serwist'
 import { Serwist } from 'serwist'
+import { NetworkOnly } from 'serwist'
 
 // Extend global scope with Serwist types
 declare global {
@@ -19,12 +20,18 @@ interface NotificationAction {
   icon?: string
 }
 
+// Ensure API routes use NetworkOnly (no caching)
+const apiNetworkOnly = {
+  matcher: ({ url }: { url: URL }) => url.pathname.startsWith('/api/'),
+  handler: new NetworkOnly(),
+}
+
 const serwist = new Serwist({
   precacheEntries: self.__SW_MANIFEST,
   skipWaiting: true,
   clientsClaim: true,
   navigationPreload: true,
-  runtimeCaching: defaultCache,
+  runtimeCaching: [apiNetworkOnly, ...defaultCache],
   fallbacks: {
     entries: [
       {

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { getVenueId } from '@/lib/venue'
 
+import { checkRequestRateLimit, RATE_LIMIT_CONFIGS } from '@/lib/api-utils'
 import { logger } from '@/lib/logger'
 
 const importSchema = z.object({
@@ -17,6 +18,9 @@ const importSchema = z.object({
  */
 export async function POST(request: NextRequest) {
     try {
+        const rateCheck = checkRequestRateLimit(request, 'import:journal', RATE_LIMIT_CONFIGS.IMPORT)
+        if (!rateCheck.allowed) return rateCheck.response!
+
         const session = await auth()
         if (!session?.user) {
             return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
@@ -43,53 +47,53 @@ export async function POST(request: NextRequest) {
             })
         }
 
-        let created = 0
-        const errors: Array<{ transactionId: string; error: string }> = []
+        const result = await prisma.$transaction(async (tx) => {
+            let created = 0
+            const errors: Array<{ transactionId: string; error: string }> = []
 
-        for (const tx of transactions) {
-            try {
-                const amount = Number(tx.amount)
-                const isInflow = amount > 0
+            for (const bankTx of transactions) {
+                try {
+                    const amount = Number(bankTx.amount)
+                    const isInflow = amount > 0
 
-                // Create journal entry
-                const entry = await prisma.journalEntry.create({
-                    data: {
-                        venueId,
-                        date: tx.transactionDate,
-                        registerType: 'BANK',
-                        description: tx.description,
-                        debitAmount: isInflow ? Math.abs(amount) : null,
-                        creditAmount: !isInflow ? Math.abs(amount) : null,
-                        categorizationSource: 'import',
-                        notes: tx.bankReference ? `Rif. banca: ${tx.bankReference}` : undefined,
-                        createdById: session.user.id,
-                    },
-                })
+                    // Create journal entry
+                    const entry = await tx.journalEntry.create({
+                        data: {
+                            venueId,
+                            date: bankTx.transactionDate,
+                            registerType: 'BANK',
+                            description: bankTx.description,
+                            debitAmount: isInflow ? Math.abs(amount) : null,
+                            creditAmount: !isInflow ? Math.abs(amount) : null,
+                            categorizationSource: 'import',
+                            notes: bankTx.bankReference ? `Rif. banca: ${bankTx.bankReference}` : undefined,
+                            createdById: session.user.id,
+                        },
+                    })
 
-                // Link bank transaction to journal entry
-                await prisma.bankTransaction.update({
-                    where: { id: tx.id },
-                    data: {
-                        matchedEntryId: entry.id,
-                        status: 'MATCHED',
-                        matchConfidence: 1.0,
-                        reconciledBy: session.user.id,
-                        reconciledAt: new Date(),
-                    },
-                })
+                    // Link bank transaction to journal entry
+                    await tx.bankTransaction.update({
+                        where: { id: bankTx.id },
+                        data: {
+                            matchedEntryId: entry.id,
+                            status: 'MATCHED',
+                            matchConfidence: 1.0,
+                            reconciledBy: session.user.id,
+                            reconciledAt: new Date(),
+                        },
+                    })
 
-                created++
-            } catch (error) {
-                const message = error instanceof Error ? error.message : 'Errore sconosciuto'
-                errors.push({ transactionId: tx.id, error: message })
+                    created++
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : 'Errore sconosciuto'
+                    errors.push({ transactionId: bankTx.id, error: message })
+                }
             }
-        }
 
-        return NextResponse.json({
-            created,
-            total: transactions.length,
-            errors,
+            return { created, total: transactions.length, errors }
         })
+
+        return NextResponse.json(result)
     } catch (error) {
         if (error instanceof z.ZodError) {
             return NextResponse.json(

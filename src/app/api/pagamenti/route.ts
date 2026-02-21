@@ -3,6 +3,17 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { getVenueId } from '@/lib/venue'
+import { z } from 'zod'
+
+const createPagamentoSchema = z.object({
+  tipo: z.enum(['BONIFICO', 'F24', 'ALTRO']),
+  riferimentoInterno: z.string().optional(),
+  dataEsecuzione: z.string().optional(),
+  importo: z.number(),
+  beneficiarioNome: z.string().min(1),
+  beneficiarioIban: z.string().optional(),
+  causale: z.string().optional(),
+})
 
 // GET /api/pagamenti - Lista pagamenti con filtri
 export async function GET(request: NextRequest) {
@@ -54,19 +65,29 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
+  const parsed = createPagamentoSchema.safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Dati non validi', details: parsed.error.flatten() },
+      { status: 400 }
+    )
+  }
+
+  // Force venueId from session, not from body (IDOR prevention)
   const venueId = await getVenueId()
+  const data = parsed.data
 
   const pagamento = await prisma.payment.create({
     data: {
       venueId,
-      tipo: body.tipo,
+      tipo: data.tipo,
       stato: 'BOZZA',
-      riferimentoInterno: body.riferimentoInterno,
-      dataEsecuzione: body.dataEsecuzione ? new Date(body.dataEsecuzione) : null,
-      importo: body.importo,
-      beneficiarioNome: body.beneficiarioNome,
-      beneficiarioIban: body.beneficiarioIban,
-      causale: body.causale,
+      riferimentoInterno: data.riferimentoInterno,
+      dataEsecuzione: data.dataEsecuzione ? new Date(data.dataEsecuzione) : null,
+      importo: data.importo,
+      beneficiarioNome: data.beneficiarioNome,
+      beneficiarioIban: data.beneficiarioIban,
+      causale: data.causale,
       createdById: session.user.id,
     },
   })

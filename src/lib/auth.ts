@@ -134,6 +134,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.venueCode = user.venueCode
         token.mustChangePassword = user.mustChangePassword
       }
+      // Verifica periodica che l'utente sia ancora attivo
+      if (!user && token.id) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          select: { isActive: true, mustChangePassword: true }
+        })
+        if (!dbUser || !dbUser.isActive) return {} as typeof token
+        token.mustChangePassword = dbUser.mustChangePassword
+      }
       // Aggiorna mustChangePassword dopo cambio password
       if (trigger === 'update') {
         const dbUser = await prisma.user.findUnique({
@@ -170,7 +179,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   session: {
     strategy: 'jwt',
-    maxAge: 30 * 24 * 60 * 60, // 30 giorni
+    maxAge: 8 * 60 * 60, // 8 ore
   },
   trustHost: true
 })

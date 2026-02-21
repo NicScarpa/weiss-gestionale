@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 
@@ -99,7 +99,7 @@ export async function GET(
     }
 
     // Crea workbook Excel
-    const wb = XLSX.utils.book_new()
+    const wb = new ExcelJS.Workbook()
 
     // === FOGLIO 1: RIEPILOGO ===
     const summaryData = [
@@ -138,11 +138,12 @@ export async function GET(
       ['Validato da', closure.validatedBy ? `${closure.validatedBy.firstName} ${closure.validatedBy.lastName}` : ''],
       ['Data validazione', closure.validatedAt ? format(new Date(closure.validatedAt), 'dd/MM/yyyy HH:mm') : ''],
     ]
-    const wsSummary = XLSX.utils.aoa_to_sheet(summaryData)
+    const wsSummary = wb.addWorksheet('Riepilogo')
+    summaryData.forEach(row => wsSummary.addRow(row))
 
     // Imposta larghezza colonne
-    wsSummary['!cols'] = [{ wch: 20 }, { wch: 30 }]
-    XLSX.utils.book_append_sheet(wb, wsSummary, 'Riepilogo')
+    wsSummary.getColumn(1).width = 20
+    wsSummary.getColumn(2).width = 30
 
     // === FOGLIO 2: POSTAZIONI ===
     const stationsWithData = closure.stations.filter(
@@ -171,11 +172,15 @@ export async function GET(
       stationsRows.push([])
       stationsRows.push(['TOTALE', totalCash, totalPos, totalCash + totalPos, totalReceipt, totalInvoice, totalSuspended])
 
-      const wsStations = XLSX.utils.aoa_to_sheet([stationsHeader, ...stationsRows])
-      wsStations['!cols'] = [
-        { wch: 15 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }
-      ]
-      XLSX.utils.book_append_sheet(wb, wsStations, 'Postazioni')
+      const wsStations = wb.addWorksheet('Postazioni')
+      ;[stationsHeader, ...stationsRows].forEach(row => wsStations.addRow(row))
+      wsStations.getColumn(1).width = 15
+      wsStations.getColumn(2).width = 12
+      wsStations.getColumn(3).width = 12
+      wsStations.getColumn(4).width = 12
+      wsStations.getColumn(5).width = 12
+      wsStations.getColumn(6).width = 12
+      wsStations.getColumn(7).width = 12
     }
 
     // === FOGLIO 3: CONTEGGIO BANCONOTE ===
@@ -200,10 +205,12 @@ export async function GET(
         ]
       })
 
-      const wsCount = XLSX.utils.aoa_to_sheet([countHeader, ...countRows])
-      wsCount['!cols'] = Array(17).fill({ wch: 8 })
-      wsCount['!cols'][0] = { wch: 15 }
-      XLSX.utils.book_append_sheet(wb, wsCount, 'Conteggio')
+      const wsCount = wb.addWorksheet('Conteggio')
+      ;[countHeader, ...countRows].forEach(row => wsCount.addRow(row))
+      wsCount.getColumn(1).width = 15
+      for (let i = 2; i <= 17; i++) {
+        wsCount.getColumn(i).width = 8
+      }
     }
 
     // === FOGLIO 4: SPESE/USCITE ===
@@ -223,11 +230,14 @@ export async function GET(
       expensesRows.push([])
       expensesRows.push(['TOTALE', '', totalExpenses, '', '', ''])
 
-      const wsExpenses = XLSX.utils.aoa_to_sheet([expensesHeader, ...expensesRows])
-      wsExpenses['!cols'] = [
-        { wch: 20 }, { wch: 25 }, { wch: 12 }, { wch: 25 }, { wch: 15 }, { wch: 8 }
-      ]
-      XLSX.utils.book_append_sheet(wb, wsExpenses, 'Uscite')
+      const wsExpenses = wb.addWorksheet('Uscite')
+      ;[expensesHeader, ...expensesRows].forEach(row => wsExpenses.addRow(row))
+      wsExpenses.getColumn(1).width = 20
+      wsExpenses.getColumn(2).width = 25
+      wsExpenses.getColumn(3).width = 12
+      wsExpenses.getColumn(4).width = 25
+      wsExpenses.getColumn(5).width = 15
+      wsExpenses.getColumn(6).width = 8
     }
 
     // === FOGLIO 5: PRESENZE ===
@@ -244,11 +254,16 @@ export async function GET(
         a.notes || '',
       ])
 
-      const wsAttendance = XLSX.utils.aoa_to_sheet([attendanceHeader, ...attendanceRows])
-      wsAttendance['!cols'] = [
-        { wch: 25 }, { wch: 12 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 30 }
-      ]
-      XLSX.utils.book_append_sheet(wb, wsAttendance, 'Presenze')
+      const wsAttendance = wb.addWorksheet('Presenze')
+      ;[attendanceHeader, ...attendanceRows].forEach(row => wsAttendance.addRow(row))
+      wsAttendance.getColumn(1).width = 25
+      wsAttendance.getColumn(2).width = 12
+      wsAttendance.getColumn(3).width = 8
+      wsAttendance.getColumn(4).width = 10
+      wsAttendance.getColumn(5).width = 10
+      wsAttendance.getColumn(6).width = 10
+      wsAttendance.getColumn(7).width = 8
+      wsAttendance.getColumn(8).width = 30
     }
 
     // === FOGLIO 6: PARZIALI ORARI ===
@@ -261,15 +276,16 @@ export async function GET(
         p.coffeeCounter || '',
       ])
 
-      const wsPartials = XLSX.utils.aoa_to_sheet([partialsHeader, ...partialsRows])
-      wsPartials['!cols'] = [
-        { wch: 10 }, { wch: 25 }, { wch: 20 }, { wch: 18 }
-      ]
-      XLSX.utils.book_append_sheet(wb, wsPartials, 'Parziali')
+      const wsPartials = wb.addWorksheet('Parziali')
+      ;[partialsHeader, ...partialsRows].forEach(row => wsPartials.addRow(row))
+      wsPartials.getColumn(1).width = 10
+      wsPartials.getColumn(2).width = 25
+      wsPartials.getColumn(3).width = 20
+      wsPartials.getColumn(4).width = 18
     }
 
     // Genera buffer Excel
-    const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
+    const excelBuffer = await wb.xlsx.writeBuffer()
 
     // Nome file
     const dateStr = format(new Date(closure.date), 'yyyy-MM-dd')

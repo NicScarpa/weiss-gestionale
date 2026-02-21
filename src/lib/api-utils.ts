@@ -115,11 +115,20 @@ export interface AuthCheckResult {
   session?: Session
 }
 
-export function requireAuth(session: Session | null): AuthCheckResult {
+export function requireAuth(session: Session | null, allowMustChangePassword = false): AuthCheckResult {
   if (!session?.user) {
     return {
       authorized: false,
       response: unauthorized(),
+    }
+  }
+  if (!allowMustChangePassword && session.user.mustChangePassword) {
+    return {
+      authorized: false,
+      response: NextResponse.json(
+        { error: 'Devi cambiare la password', code: 'MUST_CHANGE_PASSWORD' },
+        { status: 403 }
+      ),
     }
   }
   return { authorized: true, session }
@@ -143,9 +152,15 @@ export function requireRole(
 
 export function requireVenueAccess(
   session: Session | null,
-  _venueId?: string
+  venueId?: string
 ): AuthCheckResult {
-  return requireAuth(session)
+  const authCheck = requireAuth(session)
+  if (!authCheck.authorized) return authCheck
+  if (session!.user.role === 'admin') return { authorized: true, session: session! }
+  if (venueId && session!.user.venueId !== venueId) {
+    return { authorized: false, response: forbidden('Non hai accesso a questa sede') }
+  }
+  return { authorized: true, session: session! }
 }
 
 // Pagination helpers

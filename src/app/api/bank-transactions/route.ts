@@ -6,7 +6,9 @@ import {
   createBankTransactionSchema,
 } from '@/lib/validations/reconciliation'
 import type { ReconciliationStatus } from '@/types/reconciliation'
+import { getVenueId } from '@/lib/venue'
 
+import { checkRequestRateLimit, RATE_LIMIT_CONFIGS } from '@/lib/api-utils'
 import { logger } from '@/lib/logger'
 // GET /api/bank-transactions - Lista transazioni bancarie
 export async function GET(request: NextRequest) {
@@ -16,9 +18,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
+    const venueId = await getVenueId()
+
     const searchParams = request.nextUrl.searchParams
     const params = bankTransactionFiltersSchema.parse({
-      venueId: searchParams.get('venueId') || undefined,
+      venueId,
       status: searchParams.get('status') || undefined,
       dateFrom: searchParams.get('dateFrom') || undefined,
       dateTo: searchParams.get('dateTo') || undefined,
@@ -28,14 +32,12 @@ export async function GET(request: NextRequest) {
       limit: searchParams.get('limit') || 50,
     })
 
-    const { venueId, status, dateFrom, dateTo, search, importBatchId, page, limit } = params
+    const { status, dateFrom, dateTo, search, importBatchId, page, limit } = params
 
     // Costruisci where clause
     const where: Record<string, unknown> = {}
 
-    if (venueId) {
-      where.venueId = venueId
-    }
+    where.venueId = venueId
 
     if (status) {
       where.status = status
@@ -91,7 +93,7 @@ export async function GET(request: NextRequest) {
     // Calcola summary per status
     const summary = await prisma.bankTransaction.groupBy({
       by: ['status'],
-      where: venueId ? { venueId } : undefined,
+      where: { venueId },
       _count: { id: true },
     })
 
@@ -149,17 +151,22 @@ export async function GET(request: NextRequest) {
 // POST /api/bank-transactions - Crea transazione manuale
 export async function POST(request: NextRequest) {
   try {
+    const rateCheck = checkRequestRateLimit(request, 'bank:create', RATE_LIMIT_CONFIGS.STRICT)
+    if (!rateCheck.allowed) return rateCheck.response!
+
     const session = await auth()
     if (!session?.user) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
+
+    const venueId = await getVenueId()
 
     const body = await request.json()
     const data = createBankTransactionSchema.parse(body)
 
     // Verifica che la venue esista
     const venue = await prisma.venue.findUnique({
-      where: { id: data.venueId },
+      where: { id: venueId },
     })
 
     if (!venue) {
@@ -169,7 +176,7 @@ export async function POST(request: NextRequest) {
     // Crea la transazione
     const transaction = await prisma.bankTransaction.create({
       data: {
-        venueId: data.venueId,
+        venueId,
         transactionDate: new Date(data.transactionDate),
         valueDate: data.valueDate ? new Date(data.valueDate) : null,
         description: data.description,

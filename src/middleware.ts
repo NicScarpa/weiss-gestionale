@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { decodeJwt } from 'jose'
 
 // Rotte accessibili agli utenti Staff (portale + API correlate)
 const STAFF_ALLOWED_PREFIXES = [
@@ -34,6 +35,21 @@ function isPathAllowed(pathname: string, prefixes: string[]) {
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
+  // Handle CORS preflight
+  if (request.method === 'OPTIONS' && pathname.startsWith('/api/')) {
+    const origin = request.headers.get('origin') || ''
+    const allowedOrigin = process.env.NEXT_PUBLIC_APP_URL || ''
+    return new NextResponse(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': origin === allowedOrigin ? allowedOrigin : '',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Max-Age': '86400',
+      },
+    })
+  }
+
   // Rotte pubbliche: accessibili a tutti
   if (isPathAllowed(pathname, PUBLIC_PREFIXES)) {
     return NextResponse.next()
@@ -50,11 +66,29 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl)
   }
 
-  // Nota: il controllo ruolo staff viene gestito lato server nelle API routes
-  // perché decodificare il JWT nel middleware edge richiede librerie Node.js.
-  // Per le pagine, il redirect avviene lato client tramite la sessione.
+  // Verifica scadenza JWT (decode senza verifica firma — Edge runtime limitation)
+  try {
+    const payload = decodeJwt(sessionToken)
+    if (payload.exp && payload.exp * 1000 < Date.now()) {
+      const loginUrl = new URL('/login', request.url)
+      loginUrl.searchParams.set('callbackUrl', pathname)
+      return NextResponse.redirect(loginUrl)
+    }
+  } catch {
+    const loginUrl = new URL('/login', request.url)
+    loginUrl.searchParams.set('callbackUrl', pathname)
+    return NextResponse.redirect(loginUrl)
+  }
 
-  return NextResponse.next()
+  const response = NextResponse.next()
+  if (pathname.startsWith('/api/')) {
+    const origin = request.headers.get('origin') || ''
+    const allowedOrigin = process.env.NEXT_PUBLIC_APP_URL || ''
+    if (origin === allowedOrigin) {
+      response.headers.set('Access-Control-Allow-Origin', allowedOrigin)
+    }
+  }
+  return response
 }
 
 export const config = {

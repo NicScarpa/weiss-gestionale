@@ -4,6 +4,7 @@ import { z } from 'zod'
 import crypto from 'crypto'
 import { sendPasswordResetEmail } from '@/lib/email'
 import { logger } from '@/lib/logger'
+import { checkRequestRateLimit, RATE_LIMIT_CONFIGS } from '@/lib/api-utils'
 
 // Schema per richiesta reset password
 const forgotPasswordSchema = z.object({
@@ -22,6 +23,9 @@ const TOKEN_EXPIRY_HOURS = 1
  */
 export async function POST(request: NextRequest) {
   try {
+    const rateCheck = checkRequestRateLimit(request, 'auth:forgot', RATE_LIMIT_CONFIGS.AUTH)
+    if (!rateCheck.allowed) return rateCheck.response!
+
     const body = await request.json()
     const { email } = forgotPasswordSchema.parse(body)
 
@@ -39,7 +43,7 @@ export async function POST(request: NextRequest) {
     // Se l'utente esiste ed è attivo, invia email
     if (user && user.isActive && user.email) {
       // Genera token sicuro
-      const resetToken = crypto.randomUUID()
+      const resetToken = crypto.randomBytes(32).toString('hex')
       const resetTokenExpiry = new Date(Date.now() + TOKEN_EXPIRY_HOURS * 60 * 60 * 1000)
 
       // Salva token nel database

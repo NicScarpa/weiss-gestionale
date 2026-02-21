@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
 import { logger } from '@/lib/logger'
+import { getVenueId } from '@/lib/venue'
 import { buildStationCreateData } from '@/lib/closure-calculations'
 
 const dateSchema = z
@@ -130,9 +131,10 @@ export async function GET(
     }
 
     const { id } = await params
+    const venueId = await getVenueId()
 
-    const chiusura = await prisma.dailyClosure.findUnique({
-      where: { id },
+    const chiusura = await prisma.dailyClosure.findFirst({
+      where: { id, venueId },
       include: {
         venue: {
           select: {
@@ -354,6 +356,8 @@ export async function PUT(
     const body = await request.json()
     const validatedData = updateClosureSchema.parse(body)
 
+    const venueId = await getVenueId()
+
     // Verifica che la chiusura esista
     const existingClosure = await prisma.dailyClosure.findUnique({
       where: { id },
@@ -364,6 +368,13 @@ export async function PUT(
       return NextResponse.json(
         { error: 'Chiusura non trovata' },
         { status: 404 }
+      )
+    }
+
+    if (existingClosure.venueId !== venueId) {
+      return NextResponse.json(
+        { error: 'Accesso negato' },
+        { status: 403 }
       )
     }
 
@@ -497,6 +508,8 @@ export async function DELETE(
 
     const { id } = await params
 
+    const venueId = await getVenueId()
+
     // Verifica che la chiusura esista
     const existingClosure = await prisma.dailyClosure.findUnique({
       where: { id },
@@ -507,6 +520,13 @@ export async function DELETE(
       return NextResponse.json(
         { error: 'Chiusura non trovata' },
         { status: 404 }
+      )
+    }
+
+    if (existingClosure.venueId !== venueId) {
+      return NextResponse.json(
+        { error: 'Accesso negato' },
+        { status: 403 }
       )
     }
 

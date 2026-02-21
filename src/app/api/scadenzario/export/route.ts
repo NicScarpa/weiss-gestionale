@@ -15,6 +15,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
+    if (session.user.role !== 'admin' && session.user.role !== 'manager') {
+      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
+    }
+
     const { searchParams } = new URL(request.url)
 
     const venueId = await getVenueId()

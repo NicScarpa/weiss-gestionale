@@ -3,20 +3,13 @@ import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { logger } from '@/lib/logger'
-
-// Password iniziale di default (non può essere usata)
-const DEFAULT_PASSWORD = '1234567890'
+import { passwordSchema } from '@/lib/validations/password'
+import { checkRequestRateLimit, RATE_LIMIT_CONFIGS } from '@/lib/api-utils'
 
 // Schema per reset password
 const resetPasswordSchema = z.object({
   token: z.string().min(1, 'Token obbligatorio'),
-  password: z
-    .string()
-    .min(8, 'La password deve essere di almeno 8 caratteri')
-    .refine(
-      (pwd) => pwd !== DEFAULT_PASSWORD,
-      'Non puoi usare la password iniziale'
-    ),
+  password: passwordSchema,
   confirmPassword: z.string(),
 }).refine(
   (data) => data.password === data.confirmPassword,
@@ -33,6 +26,9 @@ const resetPasswordSchema = z.object({
  */
 export async function POST(request: NextRequest) {
   try {
+    const rateCheck = checkRequestRateLimit(request, 'auth:reset', RATE_LIMIT_CONFIGS.AUTH)
+    if (!rateCheck.allowed) return rateCheck.response!
+
     const body = await request.json()
     const { token, password } = resetPasswordSchema.parse(body)
 

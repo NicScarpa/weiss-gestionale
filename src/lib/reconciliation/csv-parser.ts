@@ -1,6 +1,6 @@
 // Parser CSV/XLS per estratti conto bancari
 
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 import type { CSVParserConfig, ImportError } from '@/types/reconciliation'
 
 import { logger } from '@/lib/logger'
@@ -310,29 +310,28 @@ export function parseCSV(content: string, config: CSVParserConfig): ParseResult 
 /**
  * Parsa un file XLS/XLSX di estratto conto bancario
  */
-export function parseXLS(
+export async function parseXLS(
   buffer: ArrayBuffer,
   config: CSVParserConfig
-): ParseResult {
+): Promise<ParseResult> {
   try {
-    const workbook = XLSX.read(buffer, { type: 'array' })
+    const workbook = new ExcelJS.Workbook()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await workbook.xlsx.load(Buffer.from(buffer) as any)
 
     // Prendi il primo foglio
-    const firstSheetName = workbook.SheetNames[0]
-    if (!firstSheetName) {
+    const sheet = workbook.worksheets[0]
+    if (!sheet) {
       return {
         rows: [],
         errors: [{ row: 0, field: 'file', message: 'Il file non contiene fogli' }],
       }
     }
 
-    const sheet = workbook.Sheets[firstSheetName]
-
     // Converti in array di array
-    const data: string[][] = XLSX.utils.sheet_to_json(sheet, {
-      header: 1,
-      raw: false, // Ottieni stringhe formattate
-      defval: '', // Valore default per celle vuote
+    const data: string[][] = []
+    sheet.eachRow((row) => {
+      data.push((row.values as unknown[])!.slice(1).map((v) => (v !== null && v !== undefined ? String(v) : '')))
     })
 
     return processRows(data, config)

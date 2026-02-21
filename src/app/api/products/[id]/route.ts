@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+import { getVenueId } from '@/lib/venue'
 import { logger } from '@/lib/logger'
 // GET /api/products/[id] - Dettaglio prodotto con storico prezzi
 export async function GET(
@@ -17,9 +18,10 @@ export async function GET(
     }
 
     const { id } = await params
+    const venueId = await getVenueId()
 
-    const product = await prisma.product.findUnique({
-      where: { id },
+    const product = await prisma.product.findFirst({
+      where: { id, venueId },
       include: {
         venue: {
           select: { id: true, name: true, code: true },
@@ -128,12 +130,13 @@ export async function PATCH(
     }
 
     const { id } = await params
+    const venueId = await getVenueId()
     const body = await request.json()
     const data = updateProductSchema.parse(body)
 
     // Verifica esistenza
-    const existing = await prisma.product.findUnique({
-      where: { id },
+    const existing = await prisma.product.findFirst({
+      where: { id, venueId },
     })
 
     if (!existing) {
@@ -197,9 +200,10 @@ export async function DELETE(
     }
 
     const { id } = await params
+    const venueId = await getVenueId()
 
-    const existing = await prisma.product.findUnique({
-      where: { id },
+    const existing = await prisma.product.findFirst({
+      where: { id, venueId },
     })
 
     if (!existing) {
