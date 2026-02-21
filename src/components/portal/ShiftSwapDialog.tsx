@@ -154,7 +154,7 @@ export function ShiftSwapDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ArrowLeftRight className="w-5 h-5 text-green-500" />
+            <ArrowLeftRight className="w-5 h-5 text-portal-primary" />
             Richiedi scambio turno
           </DialogTitle>
           <DialogDescription>
@@ -212,7 +212,7 @@ export function ShiftSwapDialog({
                     key={colleague.id}
                     className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors hover:bg-gray-50 ${
                       selectedColleague === colleague.id
-                        ? 'border-green-500 bg-green-50'
+                        ? 'border-portal-primary bg-portal-primary-bg'
                         : ''
                     }`}
                   >
@@ -227,7 +227,7 @@ export function ShiftSwapDialog({
                       <p className="text-xs text-gray-500">{colleague.email}</p>
                     </div>
                     {selectedColleague === colleague.id && (
-                      <Check className="w-5 h-5 text-green-500" />
+                      <Check className="w-5 h-5 text-portal-primary" />
                     )}
                   </label>
                 ))}

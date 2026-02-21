@@ -50,21 +50,25 @@ export function PortalNavigation() {
               className={cn(
                 'flex flex-col items-center justify-center min-w-[64px] h-full px-3 transition-colors duration-200',
                 isActive
-                  ? 'text-green-500'
+                  ? 'text-portal-primary'
                   : 'text-gray-400 hover:text-gray-600'
               )}
             >
-              <item.icon className={cn(
-                'h-5 w-5 mb-1',
-                isActive && 'stroke-[2.5]'
-              )} />
+              <div className={cn(
+                'flex items-center justify-center mb-1 transition-all duration-200',
+                isActive
+                  ? 'bg-portal-primary-bg rounded-full h-10 w-10'
+                  : 'h-5 w-5'
+              )}>
+                <item.icon className={cn(
+                  'h-5 w-5',
+                  isActive && 'stroke-[2.5]'
+                )} />
+              </div>
               <span className={cn(
                 'text-[10px]',
                 isActive ? 'font-medium' : 'font-normal'
               )}>{item.label}</span>
-              {isActive && (
-                <span className="w-1 h-1 rounded-full bg-green-500 mt-0.5" />
-              )}
             </Link>
           )
         })}

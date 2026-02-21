@@ -182,7 +182,7 @@ export function NotificationSettings() {
                   variant="outline"
                   size="sm"
                   onClick={requestPushPermission}
-                  className="border-green-200 text-green-600 hover:bg-green-50"
+                  className="border-portal-primary-light text-portal-primary hover:bg-portal-primary-bg"
                 >
                   Attiva
                 </Button>

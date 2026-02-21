@@ -39,8 +39,8 @@ export default function PortalProfiloPage() {
       <Card>
         <CardContent className="pt-6">
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-green-50 flex items-center justify-center">
-              <User className="h-8 w-8 text-green-600" />
+            <div className="w-16 h-16 rounded-full bg-portal-primary-bg flex items-center justify-center">
+              <User className="h-8 w-8 text-portal-primary" />
             </div>
             <div className="flex-1">
               <h1 className="text-xl font-bold text-gray-900">
@@ -63,13 +63,13 @@ export default function PortalProfiloPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Settings className="h-5 w-5 text-green-500" />
+            <Settings className="h-5 w-5 text-portal-primary" />
             Informazioni
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-3">
-            <Mail className="h-5 w-5 text-green-500" />
+            <Mail className="h-5 w-5 text-portal-primary" />
             <div>
               <p className="text-xs text-gray-400 uppercase">Email</p>
               <p className="font-medium">{user?.email}</p>
@@ -79,7 +79,7 @@ export default function PortalProfiloPage() {
           <Separator />
 
           <div className="flex items-center gap-3">
-            <MapPin className="h-5 w-5 text-green-500" />
+            <MapPin className="h-5 w-5 text-portal-primary" />
             <div>
               <p className="text-xs text-gray-400 uppercase">Sede</p>
               <p className="font-medium">
