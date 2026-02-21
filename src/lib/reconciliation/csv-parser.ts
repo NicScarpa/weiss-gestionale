@@ -375,7 +375,8 @@ export function parseCBIXML(content: string): ParseResult {
     // Estrai tutti gli elementi Ntry (transaction entries)
     // Usa regex per gestire diversi namespace (ns5, camt, etc.)
     const entryRegex = /<(?:\w+:)?Ntry>([\s\S]*?)<\/(?:\w+:)?Ntry>/gi
-    const entries = cleanContent.match(entryRegex) || []
+    const matchResult = cleanContent.match(entryRegex)
+    const entries: string[] = matchResult ?? []
 
     if (entries.length === 0) {
       errors.push({

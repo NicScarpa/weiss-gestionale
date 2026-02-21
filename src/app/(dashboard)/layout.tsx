@@ -15,6 +15,11 @@ export default async function DashboardLayout({
     redirect('/login')
   }
 
+  // Staff non può accedere alla dashboard — redirect al portale
+  if (session.user.role === 'staff') {
+    redirect('/portale')
+  }
+
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar />

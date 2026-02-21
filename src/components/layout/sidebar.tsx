@@ -135,6 +135,7 @@ const navigationItems = [
 export function Sidebar() {
   const pathname = usePathname()
   const [hoveredItem, setHoveredItem] = useState<string | null>(null)
+  const [isSidebarHovered, setIsSidebarHovered] = useState(false)
   const [scaduteCount, setScaduteCount] = useState(0)
 
   // Fetch scadenze scadute per badge
@@ -175,7 +176,8 @@ export function Sidebar() {
   return (
     <div
       className="flex h-full relative"
-      onMouseLeave={() => setHoveredItem(null)}
+      onMouseEnter={() => setIsSidebarHovered(true)}
+      onMouseLeave={() => { setIsSidebarHovered(false); setHoveredItem(null) }}
     >
       {/* Rail Sidebar (Livello 1 - Icone) */}
       <aside className="w-16 h-full bg-slate-900 flex flex-col items-center py-4 z-50 border-r border-slate-800">
@@ -229,7 +231,7 @@ export function Sidebar() {
 
       {/* Flyout Panel (Livello 2 - Sottovoci) */}
       <AnimatePresence>
-        {hasSubSections && activeNavigation && (
+        {isSidebarHovered && hasSubSections && activeNavigation && (
           <motion.aside
             initial={{ width: 0, opacity: 0 }}
             animate={{ width: 256, opacity: 1 }}

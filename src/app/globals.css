@@ -1,8 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-/* Light theme (default) */
-:root {
+@theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-public-sans);
