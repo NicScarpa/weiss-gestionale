@@ -85,7 +85,21 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-black p-4">
-      <Card className="w-full max-w-md !bg-white !text-black border-none [&_input]:!bg-white [&_input]:!text-black [&_label]:!text-black [&_a]:!text-gray-500">
+      <Card
+        className="w-full max-w-md border-none"
+        style={{
+          backgroundColor: 'white',
+          '--card': 'oklch(1 0 0)',
+          '--card-foreground': 'oklch(0.2 0.02 260)',
+          '--input': 'oklch(0.94 0 0)',
+          '--border': 'oklch(0.94 0 0)',
+          '--muted-foreground': 'oklch(0.6 0.02 260)',
+          '--foreground': 'oklch(0.2 0.02 260)',
+          '--primary': 'oklch(0 0 0)',
+          '--primary-foreground': 'oklch(0.985 0 0)',
+          '--ring': 'oklch(0.708 0 0)',
+        } as React.CSSProperties}
+      >
         <CardHeader className="flex items-center justify-center py-6">
           {isStaffDomain ? (
             <div className="text-center">
