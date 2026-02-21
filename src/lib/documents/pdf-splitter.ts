@@ -1,5 +1,3 @@
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdf = require('pdf-parse')
 import { PDFDocument } from 'pdf-lib'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
@@ -28,9 +26,20 @@ interface EmployeeLookup {
 }
 
 /**
+ * Carica pdf-parse dinamicamente per evitare errori DOMMatrix a build time.
+ * L'uso di eval('require') impedisce a Turbopack di analizzare il modulo staticamente.
+ */
+async function loadPdfParse() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any, no-eval
+  const pdfParse = eval('require')('pdf-parse') as any
+  return pdfParse
+}
+
+/**
  * Estrae il testo da ogni pagina del PDF usando pdf-parse
  */
 async function extractPageTexts(pdfBuffer: Buffer): Promise<string[]> {
+  const pdf = await loadPdfParse()
   const pageTexts: string[] = []
 
   // pdf-parse con pagerender custom per ottenere testo per pagina
