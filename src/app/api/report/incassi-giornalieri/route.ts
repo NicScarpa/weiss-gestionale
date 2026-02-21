@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { startOfMonth, endOfMonth, subMonths, format, parseISO } from 'date-fns'
 import { it } from 'date-fns/locale'
 import { logger } from '@/lib/logger'
+import { getVenueId } from '@/lib/venue'
 // GET /api/report/incassi-giornalieri - Report incassi giornalieri
 export async function GET(request: NextRequest) {
   try {
@@ -28,13 +29,7 @@ export async function GET(request: NextRequest) {
     const endDate = dateTo ? parseISO(dateTo) : defaultDateTo
 
     // Determina la sede da filtrare
-    let targetVenueId: string | undefined
-
-    if (session.user.role !== 'admin') {
-      targetVenueId = session.user.venueId || undefined
-    } else if (venueId) {
-      targetVenueId = venueId
-    }
+    const targetVenueId = await getVenueId()
 
     // Query chiusure validate nel periodo
     const closures = await prisma.dailyClosure.findMany({

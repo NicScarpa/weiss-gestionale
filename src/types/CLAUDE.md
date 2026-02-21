@@ -14,8 +14,18 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #4328 | 7:30 PM | 🔵 | Read prima-nota.ts Type Definitions | ~240 |
+| #4323 | 7:29 PM | 🔵 | Reviewed Prima Nota Type Definitions | ~233 |
+| #4020 | 5:06 PM | 🟣 | TypeScript Types Extended for Sibill Features | ~137 |
+| #4011 | 5:05 PM | 🔵 | Prima Nota TypeScript Types Review | ~136 |
 | #3764 | 1:42 PM | 🔵 | Payment Types Already Defined | ~121 |
 | #3761 | " | 🔵 | CategorizationRule Types Already Defined | ~114 |
 | #3754 | " | 🔵 | Prima Nota Types File Reviewed | ~120 |
 | #3723 | 1:34 PM | 🔵 | Prima Nota Type Definitions Complete | ~134 |
+
+### Feb 15, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #4674 | 12:46 PM | 🔵 | Schedule Types and Enums Comprehensive Type System | ~314 |
 </claude-mem-context>

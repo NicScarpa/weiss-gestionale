@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
+import { getVenueId } from '@/lib/venue'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { notifyNewLeaveRequest } from '@/lib/notifications'
@@ -56,10 +57,10 @@ export async function GET(request: NextRequest) {
       whereClause.userId = userId
     }
 
-    // Manager vede solo richieste della propria sede
+    // Filtra per sede
     if (session.user.role === 'manager') {
       whereClause.user = {
-        venueId: session.user.venueId,
+        venueId: await getVenueId(),
       }
     }
 

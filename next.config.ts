@@ -6,18 +6,10 @@ const withSerwist = withSerwistInit({
   swSrc: "src/app/sw.ts",
   swDest: "public/sw.js",
   disable: process.env.NODE_ENV === "development",
-  // Disable turbo for production builds - it causes CSS parsing errors
-  turbo: {
-    rules: [
-      {
-        ignore: true,
-      },
-    ],
-  },
 });
 
 const nextConfig: NextConfig = {
-  // Turbopack enabled for dev
+  serverExternalPackages: ['pg'],
 };
 
 // Configurazione Sentry
@@ -38,11 +30,13 @@ const sentryConfig = {
   // Nascondi source maps dal client
   hideSourceMaps: true,
 
-  // Disabilita tree shaking di Sentry (può causare problemi)
-  disableLogger: true,
-
-  // Automaticamente instrumenta API routes
-  automaticVercelMonitors: true,
+  // Configurazione webpack per Sentry
+  webpack: {
+    treeshake: {
+      removeDebugLogging: true,
+    },
+    automaticVercelMonitors: true,
+  },
 };
 
 // Esporta la configurazione con Serwist e Sentry

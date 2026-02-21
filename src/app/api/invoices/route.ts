@@ -3,10 +3,11 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { parseFatturaPASafe, calcolaImporti, estraiScadenze, estraiDatiEstesi } from '@/lib/sdi/parser'
 import type { ParseWarning } from '@/lib/sdi/types'
-import { matchSupplier, createSupplierFromData } from '@/lib/sdi/matcher'
+import { matchSupplier, createSupplierFromData, type SuggestedSupplierData } from '@/lib/sdi/matcher'
 import { trackPricesFromInvoice } from '@/lib/price-tracking'
 import { Prisma, InvoiceStatus } from '@prisma/client'
 import { z } from 'zod'
+import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
 // Schema validazione import
@@ -67,12 +68,9 @@ export async function GET(request: NextRequest) {
     // Costruisci filtri
     const where: Prisma.ElectronicInvoiceWhereInput = {}
 
-    // Manager vede solo fatture della propria sede
-    if (session.user.role === 'manager') {
-      where.venueId = session.user.venueId || undefined
-    } else if (venueId) {
-      where.venueId = venueId
-    }
+    // Single-venue mode: filter by venue
+    const resolvedVenueId = await getVenueId()
+    where.venueId = resolvedVenueId
 
     if (status) {
       where.status = status
@@ -246,24 +244,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const validatedData = importInvoiceSchema.parse(body)
 
-    // Manager può importare solo per la propria sede
-    if (
-      session.user.role === 'manager' &&
-      validatedData.venueId !== session.user.venueId
-    ) {
-      return NextResponse.json(
-        { error: 'Non autorizzato per questa sede' },
-        { status: 403 }
-      )
-    }
-
-    // Verifica che la sede esista
-    const venue = await prisma.venue.findUnique({
-      where: { id: validatedData.venueId },
-    })
-    if (!venue) {
-      return NextResponse.json({ error: 'Sede non trovata' }, { status: 404 })
-    }
+    // Override venueId with single-venue value
+    validatedData.venueId = await getVenueId()
 
     // Parse XML con error handling strutturato
     const parseResult = parseFatturaPASafe(validatedData.xmlContent, validatedData.fileName)
@@ -330,7 +312,7 @@ export async function POST(request: NextRequest) {
       }
     } else if (validatedData.createSupplier && validatedData.supplierData) {
       // Crea nuovo fornitore
-      const newSupplier = await createSupplierFromData(validatedData.supplierData)
+      const newSupplier = await createSupplierFromData(validatedData.supplierData as SuggestedSupplierData)
       supplierId = newSupplier.id
       supplierNameForInvoice = newSupplier.name // Use new supplier name
       status = 'MATCHED'

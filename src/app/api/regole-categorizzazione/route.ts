@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
+import { getVenueId } from '@/lib/venue'
 
 // GET /api/regole-categorizzazione - Lista regole
 export async function GET(request: NextRequest) {
@@ -10,12 +12,12 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url)
-  const venueId = session.user.venueId!
+  const venueId = await getVenueId()
 
   const direction = searchParams.get('direction') as 'inflow' | 'outflow' | null
   const isActive = searchParams.get('isActive') !== 'false'
 
-  const where: any = { venueId, isActive }
+  const where: Prisma.CategorizationRuleWhereInput = { venueId, isActive }
   if (direction) where.direction = direction === 'inflow' ? 'INFLOW' : 'OUTFLOW'
 
   const regole = await prisma.categorizationRule.findMany({
@@ -35,7 +37,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const venueId = session.user.venueId!
+  const venueId = await getVenueId()
 
   const regola = await prisma.categorizationRule.create({
     data: {

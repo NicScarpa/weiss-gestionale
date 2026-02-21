@@ -38,11 +38,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Fattura non trovata' }, { status: 404 })
     }
 
-    // Manager può registrare solo fatture della propria sede
-    if (session.user.role === 'manager' && invoice.venueId !== session.user.venueId) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
     // Verifica stato
     if (invoice.status === 'RECORDED') {
       return NextResponse.json(

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { PaymentStatus } from '@prisma/client'
+import { getVenueId } from '@/lib/venue'
+import { PaymentStatus, Prisma } from '@prisma/client'
 
 // GET /api/payments/[id] - Dettaglio pagamento
 export async function GET(
@@ -34,9 +35,8 @@ export async function GET(
       return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
     }
 
-    // Verifica permessi venue
-    const userVenues = session.user.venues || []
-    if (!userVenues.includes(payment.venueId)) {
+    const venueId = await getVenueId()
+    if (payment.venueId !== venueId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -71,8 +71,8 @@ export async function PATCH(
       return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
     }
 
-    const userVenues = session.user.venues || []
-    if (!userVenues.includes(existing.venueId)) {
+    const venueId = await getVenueId()
+    if (existing.venueId !== venueId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -81,7 +81,7 @@ export async function PATCH(
       'tipo', 'dataEsecuzione', 'importo', 'beneficiarioNome',
       'beneficiarioIban', 'causale', 'riferimentoInterno', 'note',
     ]
-    const data: any = {}
+    const data: Prisma.PaymentUpdateInput = {}
     for (const field of updatable) {
       if (body[field] !== undefined) {
         data[field] = field === 'dataEsecuzione' ? new Date(body[field]) : body[field]
@@ -136,8 +136,8 @@ export async function DELETE(
       )
     }
 
-    const userVenues = session.user.venues || []
-    if (!userVenues.includes(existing.venueId)) {
+    const venueId = await getVenueId()
+    if (existing.venueId !== venueId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

@@ -2,13 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   ReconciliationSummaryCards,
@@ -26,16 +19,19 @@ import type {
 } from '@/types/reconciliation'
 
 import { logger } from '@/lib/logger'
-interface Venue {
-  id: string
-  name: string
-  code: string
-}
 
 type StatusFilter = 'all' | ReconciliationStatus
 
-export function RiconciliazioneClient({ venues }: { venues: Venue[] }) {
-  const [selectedVenueId, setSelectedVenueId] = useState<string>(venues[0]?.id || '')
+export function RiconciliazioneClient() {
+  const [venueId, setVenueId] = useState<string>('')
+
+  useEffect(() => {
+    fetch('/api/venues').then(r => r.json()).then(data => {
+      const venue = data.venues?.[0] || data.data?.[0]
+      if (venue) setVenueId(venue.id)
+    })
+  }, [])
+
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [summary, setSummary] = useState<ReconciliationSummary | null>(null)
   const [transactions, setTransactions] = useState<BankTransactionWithMatch[]>([])
@@ -46,15 +42,15 @@ export function RiconciliazioneClient({ venues }: { venues: Venue[] }) {
   const [reconciling, setReconciling] = useState(false)
 
   const loadData = useCallback(async () => {
-    if (!selectedVenueId) return
+    if (!venueId) return
 
     setLoading(true)
     try {
       // Load summary and transactions in parallel
       const [summaryRes, transactionsRes] = await Promise.all([
-        fetch(`/api/reconciliation/summary?venueId=${selectedVenueId}`),
+        fetch(`/api/reconciliation/summary?venueId=${venueId}`),
         fetch(
-          `/api/bank-transactions?venueId=${selectedVenueId}${statusFilter !== 'all' ? `&status=${statusFilter}` : ''
+          `/api/bank-transactions?venueId=${venueId}${statusFilter !== 'all' ? `&status=${statusFilter}` : ''
           }&limit=100`
         ),
       ])
@@ -76,21 +72,21 @@ export function RiconciliazioneClient({ venues }: { venues: Venue[] }) {
     } finally {
       setLoading(false)
     }
-  }, [selectedVenueId, statusFilter])
+  }, [venueId, statusFilter])
 
   useEffect(() => {
     loadData()
   }, [loadData])
 
   const handleReconcile = async () => {
-    if (!selectedVenueId) return
+    if (!venueId) return
 
     setReconciling(true)
     try {
       const res = await fetch('/api/reconciliation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ venueId: selectedVenueId }),
+        body: JSON.stringify({ venueId: venueId }),
       })
 
       if (!res.ok) {
@@ -165,7 +161,7 @@ export function RiconciliazioneClient({ venues }: { venues: Venue[] }) {
           </Button>
           <Button
             onClick={handleReconcile}
-            disabled={reconciling || !selectedVenueId}
+            disabled={reconciling || !venueId}
           >
             {reconciling ? (
               <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
@@ -179,19 +175,6 @@ export function RiconciliazioneClient({ venues }: { venues: Venue[] }) {
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-4">
-        <Select value={selectedVenueId} onValueChange={setSelectedVenueId}>
-          <SelectTrigger className="w-full sm:w-[200px]">
-            <SelectValue placeholder="Seleziona sede" />
-          </SelectTrigger>
-          <SelectContent>
-            {venues.map((venue) => (
-              <SelectItem key={venue.id} value={venue.id}>
-                {venue.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
         <Tabs
           value={statusFilter}
           onValueChange={(v) => setStatusFilter(v as StatusFilter)}
@@ -259,7 +242,6 @@ export function RiconciliazioneClient({ venues }: { venues: Venue[] }) {
       <ImportDialog
         open={importOpen}
         onOpenChange={setImportOpen}
-        venues={venues}
         onSuccess={loadData}
       />
 

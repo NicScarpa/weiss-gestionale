@@ -17,14 +17,6 @@ export async function GET(
 
     const { id } = await params
 
-    // Verifica accesso (stessa sede o admin)
-    if (session.user.role !== 'admin' && session.user.venueId !== id) {
-      return NextResponse.json(
-        { error: 'Accesso non autorizzato' },
-        { status: 403 }
-      )
-    }
-
     // Recupera staff attivo della sede (solo utenti con ruolo 'staff')
     const staff = await prisma.user.findMany({
       where: {

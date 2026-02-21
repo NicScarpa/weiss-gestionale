@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
 
 // PATCH /api/cashflow/forecasts/[id]/lines/[lineId] - Aggiorna riga
 export async function PATCH(
@@ -30,7 +31,7 @@ export async function PATCH(
     const updatable = [
       'data', 'tipo', 'importo', 'categoria', 'descrizione', 'fonte', 'confidenza', 'isRealizzata',
     ]
-    const data: any = {}
+    const data: Prisma.CashFlowForecastLineUpdateInput = {}
     for (const field of updatable) {
       if (body[field] !== undefined) {
         data[field] = field === 'data' ? new Date(body[field]) : body[field]

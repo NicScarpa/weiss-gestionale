@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { startOfYear, endOfYear, format, eachMonthOfInterval, startOfMonth, endOfMonth } from 'date-fns'
 import { it } from 'date-fns/locale'
+import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
 // GET /api/report/confronto-annuale - Report confronto year-over-year
@@ -29,13 +30,7 @@ export async function GET(request: NextRequest) {
     const previousYearEnd = endOfYear(new Date(previousYear, 0, 1))
 
     // Determina la sede da filtrare
-    let targetVenueId: string | undefined
-
-    if (session.user.role !== 'admin') {
-      targetVenueId = session.user.venueId || undefined
-    } else if (venueId) {
-      targetVenueId = venueId
-    }
+    const targetVenueId = await getVenueId()
 
     // Query parallele per entrambi gli anni (ottimizzazione performance)
     const [currentYearClosures, previousYearClosures] = await Promise.all([

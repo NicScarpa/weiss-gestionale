@@ -29,24 +29,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency, getWeatherEmoji } from '@/lib/constants'
 import { toast } from 'sonner'
 
 import { logger } from '@/lib/logger'
-
-interface Venue {
-  id: string
-  name: string
-  code: string
-}
 
 interface PartialData {
   timeSlot: string
@@ -60,7 +47,7 @@ interface DailyData {
   date: string
   displayDate: string
   dayOfWeek: string
-  venue: Venue
+  venue: { id: string; name: string; code: string }
   cashTotal: number
   posTotal: number
   grossTotal: number
@@ -206,20 +193,13 @@ function TimeSlotBreakdownView({ slots }: { slots: TimeSlotBreakdown[] }) {
   )
 }
 
-interface DailyRevenueClientProps {
-  venueId?: string
-  isAdmin: boolean
-  venues: Venue[]
-}
-
-export function DailyRevenueClient({ venueId, isAdmin, venues }: DailyRevenueClientProps) {
+export function DailyRevenueClient() {
   const [data, setData] = useState<ReportData | null>(null)
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [filters, setFilters] = useState({
     dateFrom: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
     dateTo: format(endOfMonth(new Date()), 'yyyy-MM-dd'),
-    venueId: venueId || '',
   })
 
   const toggleExpand = (key: string) =>
@@ -231,7 +211,6 @@ export function DailyRevenueClient({ venueId, isAdmin, venues }: DailyRevenueCli
       const params = new URLSearchParams()
       if (filters.dateFrom) params.set('dateFrom', filters.dateFrom)
       if (filters.dateTo) params.set('dateTo', filters.dateTo)
-      if (filters.venueId) params.set('venueId', filters.venueId)
 
       const res = await fetch(`/api/report/incassi-giornalieri?${params.toString()}`)
       if (!res.ok) throw new Error('Errore nel caricamento')
@@ -300,7 +279,7 @@ export function DailyRevenueClient({ venueId, isAdmin, venues }: DailyRevenueCli
     link.click()
   }
 
-  const colCount = isAdmin ? 7 : 6 // chevron + Data + Giorno + [Sede] + Contanti + POS + Totale
+  const colCount = 6 // chevron + Data + Giorno + Contanti + POS + Totale
 
   return (
     <div className="space-y-6">
@@ -365,24 +344,6 @@ export function DailyRevenueClient({ venueId, isAdmin, venues }: DailyRevenueCli
               value={filters.dateTo}
               onChange={(e) => setFilters((prev) => ({ ...prev, dateTo: e.target.value }))}
             />
-            {isAdmin && venues.length > 0 && (
-              <Select
-                value={filters.venueId || 'all'}
-                onValueChange={(v) => setFilters((prev) => ({ ...prev, venueId: v === 'all' ? '' : v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Tutte le sedi" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tutte le sedi</SelectItem>
-                  {venues.map((venue) => (
-                    <SelectItem key={venue.id} value={venue.id}>
-                      {venue.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
           </div>
         </CardContent>
       </Card>
@@ -557,7 +518,6 @@ export function DailyRevenueClient({ venueId, isAdmin, venues }: DailyRevenueCli
                         <TableHead className="w-8" />
                         <TableHead>Data</TableHead>
                         <TableHead>Giorno</TableHead>
-                        {isAdmin && <TableHead>Sede</TableHead>}
                         <TableHead className="text-right">Contanti</TableHead>
                         <TableHead className="text-right">POS</TableHead>
                         <TableHead className="text-right">Totale</TableHead>
@@ -584,11 +544,6 @@ export function DailyRevenueClient({ venueId, isAdmin, venues }: DailyRevenueCli
                               </TableCell>
                               <TableCell className="font-medium">{day.displayDate}</TableCell>
                               <TableCell>{day.dayOfWeek}</TableCell>
-                              {isAdmin && (
-                                <TableCell>
-                                  <Badge variant="outline">{day.venue.code}</Badge>
-                                </TableCell>
-                              )}
                               <TableCell className="text-right font-mono">
                                 {formatCurrency(day.cashTotal)}
                               </TableCell>
@@ -618,7 +573,7 @@ export function DailyRevenueClient({ venueId, isAdmin, venues }: DailyRevenueCli
                       {/* Totali */}
                       <TableRow className="bg-muted/50 font-bold">
                         <TableCell />
-                        <TableCell colSpan={isAdmin ? 3 : 2}>TOTALE</TableCell>
+                        <TableCell colSpan={2}>TOTALE</TableCell>
                         <TableCell className="text-right font-mono">
                           {formatCurrency(data.totals.cashTotal)}
                         </TableCell>

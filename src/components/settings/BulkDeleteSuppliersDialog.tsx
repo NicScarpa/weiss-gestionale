@@ -12,7 +12,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { AlertTriangle, Lock, Loader2, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -191,7 +190,7 @@ export function BulkDeleteSuppliersDialog({
                 Conferma Password
               </DialogTitle>
               <DialogDescription className="pt-2">
-                Inserisci la tua password per confermare l'eliminazione di{' '}
+                Inserisci la tua password per confermare l&apos;eliminazione di{' '}
                 <strong>{count} {supplierLabel}</strong>.
               </DialogDescription>
             </DialogHeader>

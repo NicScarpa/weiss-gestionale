@@ -19,13 +19,6 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
   CalendarIcon,
   ChevronLeft,
   ChevronRight,
@@ -93,39 +86,18 @@ interface DailySummaryResponse {
   }
 }
 
-interface Venue {
-  id: string
-  name: string
-  code: string
-}
-
 export default function PresenzePage() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
-  const [selectedVenueId, setSelectedVenueId] = useState<string>('all')
   const [manualEntryOpen, setManualEntryOpen] = useState(false)
   const [selectedUserIdForEntry, setSelectedUserIdForEntry] = useState<string | undefined>()
 
-  // Fetch venues
-  const { data: venues } = useQuery<Venue[]>({
-    queryKey: ['venues-list'],
-    queryFn: async () => {
-      const response = await fetch('/api/venues')
-      if (!response.ok) throw new Error('Errore caricamento sedi')
-      const data = await response.json()
-      return data.data || []
-    },
-  })
-
   // Fetch daily summary
   const { data: summary, isLoading } = useQuery<DailySummaryResponse>({
-    queryKey: ['attendance-summary', format(selectedDate, 'yyyy-MM-dd'), selectedVenueId],
+    queryKey: ['attendance-summary', format(selectedDate, 'yyyy-MM-dd')],
     queryFn: async () => {
       const params = new URLSearchParams({
         date: format(selectedDate, 'yyyy-MM-dd'),
       })
-      if (selectedVenueId !== 'all') {
-        params.append('venueId', selectedVenueId)
-      }
       const response = await fetch(`/api/attendance/daily-summary?${params}`)
       if (!response.ok) throw new Error('Errore caricamento presenze')
       return response.json()
@@ -258,23 +230,6 @@ export default function PresenzePage() {
               )}
             </div>
 
-            {/* Venue Filter */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Sede:</span>
-              <Select value={selectedVenueId} onValueChange={setSelectedVenueId}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Tutte le sedi" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tutte le sedi</SelectItem>
-                  {venues?.map((venue) => (
-                    <SelectItem key={venue.id} value={venue.id}>
-                      {venue.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
           </div>
         </CardContent>
       </Card>

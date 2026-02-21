@@ -7,6 +7,7 @@ import { format } from 'date-fns'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { PrimaNotaPdfDocument } from '@/lib/pdf/PrimaNotaPdfTemplate'
 import * as XLSX from 'xlsx'
+import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
 const exportFiltersSchema = z.object({
@@ -38,11 +39,7 @@ export async function GET(request: NextRequest) {
     const where: Prisma.JournalEntryWhereInput = {}
 
     // Filtra per sede
-    if (session.user.role !== 'admin') {
-      where.venueId = session.user.venueId || undefined
-    } else if (searchParams.get('venueId')) {
-      where.venueId = searchParams.get('venueId') || undefined
-    }
+    where.venueId = await getVenueId()
 
     if (filters.registerType) {
       where.registerType = filters.registerType

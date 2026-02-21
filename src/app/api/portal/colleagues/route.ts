@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
+import { getVenueId } from '@/lib/venue'
 import { prisma } from '@/lib/prisma'
 
 import { logger } from '@/lib/logger'
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
     const venueId = searchParams.get('venueId')
 
     // Usa la sede dell'utente corrente se non specificata
-    const targetVenueId = venueId || session.user.venueId
+    const targetVenueId = venueId || await getVenueId()
 
     if (!targetVenueId) {
       return NextResponse.json({ error: 'Sede non specificata' }, { status: 400 })

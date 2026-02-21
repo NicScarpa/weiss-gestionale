@@ -7,6 +7,8 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #4370 | 8:10 PM | 🔵 | Accounting Application Structure Mapped | ~239 |
+| #4076 | 5:10 PM | 🟣 | Pagamenti Page Implementation | ~138 |
 | #3721 | 1:34 PM | 🔵 | Pagamenti Page Structure Confirmed | ~97 |
 | #3700 | 1:32 PM | 🔵 | Pagamenti Page is Placeholder | ~88 |
 </claude-mem-context>

@@ -53,6 +53,7 @@ export const INVOICE_TYPE_COLORS: Record<InvoiceDocumentType, string> = {
   [InvoiceDocumentType.FATTURA]: '#8cddba',
   [InvoiceDocumentType.NOTA_CREDITO]: '#ffd98c',
   [InvoiceDocumentType.NOTA_DEBITO]: '#c0c8ff',
+  [InvoiceDocumentType.PARCELLA]: '#f0c8a0',
   [InvoiceDocumentType.AUTOFATTURA]: '#c8b9df',
 } as const
 

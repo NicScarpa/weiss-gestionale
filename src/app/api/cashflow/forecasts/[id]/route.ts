@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { ForecastStatus } from '@prisma/client'
+import { getVenueId } from '@/lib/venue'
+import { ForecastStatus, Prisma } from '@prisma/client'
 
 // GET /api/cashflow/forecasts/[id] - Dettaglio forecast
 export async function GET(
@@ -35,8 +36,8 @@ export async function GET(
       return NextResponse.json({ error: 'Forecast not found' }, { status: 404 })
     }
 
-    const userVenues = session.user.venues || []
-    if (!userVenues.includes(forecast.venueId)) {
+    const venueId = await getVenueId()
+    if (forecast.venueId !== venueId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -112,8 +113,8 @@ export async function PATCH(
       return NextResponse.json({ error: 'Forecast not found' }, { status: 404 })
     }
 
-    const userVenues = session.user.venues || []
-    if (!userVenues.includes(existing.venueId)) {
+    const venueId = await getVenueId()
+    if (existing.venueId !== venueId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -121,7 +122,7 @@ export async function PATCH(
     const updatable = [
       'nome', 'descrizione', 'dataInizio', 'dataFine', 'saldoIniziale', 'stato', 'tipo',
     ]
-    const data: any = {}
+    const data: Prisma.CashFlowForecastUpdateInput = {}
     for (const field of updatable) {
       if (body[field] !== undefined) {
         if (field === 'dataInizio' || field === 'dataFine') {
@@ -171,8 +172,8 @@ export async function DELETE(
       return NextResponse.json({ error: 'Forecast not found' }, { status: 404 })
     }
 
-    const userVenues = session.user.venues || []
-    if (!userVenues.includes(existing.venueId)) {
+    const venueId = await getVenueId()
+    if (existing.venueId !== venueId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

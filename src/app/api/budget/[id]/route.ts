@@ -68,11 +68,6 @@ export async function GET(
       return NextResponse.json({ error: 'Budget non trovato' }, { status: 404 })
     }
 
-    // Verifica accesso sede
-    if (session.user.role !== 'admin' && budget.venueId !== session.user.venueId) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
     // Formatta le righe con valori numerici
     const formattedLines = budget.lines.map((line) => ({
       id: line.id,
@@ -170,11 +165,6 @@ export async function PUT(
 
     if (!existing) {
       return NextResponse.json({ error: 'Budget non trovato' }, { status: 404 })
-    }
-
-    // Verifica accesso sede
-    if (session.user.role !== 'admin' && existing.venueId !== session.user.venueId) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
     const body = await request.json()

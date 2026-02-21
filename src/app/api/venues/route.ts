@@ -16,7 +16,7 @@ const venueSchema = z.object({
   longitude: z.number().min(-180).max(180).optional().nullable(),
 })
 
-// GET /api/venues - Lista sedi
+// GET /api/venues - Restituisce la sede (singola)
 export async function GET(request: NextRequest) {
   try {
     const session = await auth()
@@ -25,16 +25,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
-    // Solo admin può vedere tutte le sedi
-    if (session.user.role !== 'admin') {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
-    const { searchParams } = new URL(request.url)
-    const includeInactive = searchParams.get('includeInactive') === 'true'
-
     const venues = await prisma.venue.findMany({
-      where: includeInactive ? {} : { isActive: true },
+      where: { isActive: true },
       select: {
         id: true,
         name: true,
@@ -43,6 +35,8 @@ export async function GET(request: NextRequest) {
         defaultFloat: true,
         vatRate: true,
         isActive: true,
+        latitude: true,
+        longitude: true,
         createdAt: true,
         _count: {
           select: {
@@ -71,7 +65,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/venues - Crea nuova sede
+// POST /api/venues - Bloccata: sede singola
 export async function POST(request: NextRequest) {
   try {
     const session = await auth()
@@ -84,20 +78,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
-    const body = await request.json()
-    const validatedData = venueSchema.parse(body)
-
-    // Verifica codice unico
-    const existingCode = await prisma.venue.findUnique({
-      where: { code: validatedData.code.toUpperCase() },
-    })
-
-    if (existingCode) {
+    // Verifica che non esista già una sede
+    const existingCount = await prisma.venue.count()
+    if (existingCount > 0) {
       return NextResponse.json(
-        { error: 'Codice sede già esistente' },
-        { status: 400 }
+        { error: 'Esiste già una sede configurata. Questa installazione supporta una sola sede.' },
+        { status: 409 }
       )
     }
+
+    const body = await request.json()
+    const validatedData = venueSchema.parse(body)
 
     const venue = await prisma.venue.create({
       data: {
@@ -213,61 +204,10 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-// DELETE /api/venues - Elimina sede (soft delete)
-export async function DELETE(request: NextRequest) {
-  try {
-    const session = await auth()
-
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
-    if (session.user.role !== 'admin') {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
-    const { searchParams } = new URL(request.url)
-    const id = searchParams.get('id')
-
-    if (!id) {
-      return NextResponse.json({ error: 'ID sede obbligatorio' }, { status: 400 })
-    }
-
-    // Verifica esistenza
-    const existing = await prisma.venue.findUnique({
-      where: { id },
-      include: {
-        _count: {
-          select: {
-            users: true,
-            closures: true,
-          },
-        },
-      },
-    })
-
-    if (!existing) {
-      return NextResponse.json({ error: 'Sede non trovata' }, { status: 404 })
-    }
-
-    // Se ha chiusure, fai soft delete
-    if (existing._count.closures > 0) {
-      await prisma.venue.update({
-        where: { id },
-        data: { isActive: false },
-      })
-      return NextResponse.json({ message: 'Sede disattivata (aveva chiusure associate)' })
-    }
-
-    // Altrimenti elimina fisicamente
-    await prisma.venue.delete({ where: { id } })
-
-    return NextResponse.json({ message: 'Sede eliminata' })
-  } catch (error) {
-    logger.error('Errore DELETE /api/venues', error)
-    return NextResponse.json(
-      { error: 'Errore nell\'eliminazione della sede' },
-      { status: 500 }
-    )
-  }
+// DELETE /api/venues - Bloccata: non è possibile eliminare la sede singola
+export async function DELETE() {
+  return NextResponse.json(
+    { error: 'Non è possibile eliminare la sede. Questa installazione richiede una sede attiva.' },
+    { status: 403 }
+  )
 }

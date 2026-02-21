@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
+import { getVenueId } from '@/lib/venue'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { notifySwapRequest } from '@/lib/notifications/triggers'
@@ -50,7 +51,7 @@ export async function GET(request: NextRequest) {
       }
     } else if (session.user.role === 'manager') {
       // Manager vede scambi della propria sede
-      where.venueId = session.user.venueId
+      where.venueId = await getVenueId()
     }
     // Admin vede tutto
 

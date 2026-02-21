@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
 import { logger } from '@/lib/logger'
+import { getVenueId } from '@/lib/venue'
 const bulkDeleteSchema = z.object({
   ids: z.array(z.string()).min(1, 'Seleziona almeno una chiusura'),
 })
@@ -17,7 +18,7 @@ export async function POST(request: NextRequest) {
     }
 
     const userRole = session.user.role
-    const userVenueId = session.user.venueId
+    const userVenueId = await getVenueId()
 
     // Solo admin e manager possono eliminare
     if (userRole !== 'admin' && userRole !== 'manager') {

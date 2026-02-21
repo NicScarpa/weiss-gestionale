@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { budgetComparisonFiltersSchema } from '@/lib/validations/budget'
+import { getVenueId } from '@/lib/venue'
 import {
   type MonthlyValues,
   MONTH_KEYS,
@@ -37,17 +38,7 @@ export async function GET(request: NextRequest) {
     })
 
     // Determina venueId
-    let venueId = filters.venueId
-    if (session.user.role !== 'admin') {
-      venueId = session.user.venueId || undefined
-    }
-
-    if (!venueId) {
-      return NextResponse.json(
-        { error: 'Sede non specificata' },
-        { status: 400 }
-      )
-    }
+    const venueId = await getVenueId()
 
     // Recupera il budget attivo per l'anno
     const budget = await prisma.budget.findFirst({

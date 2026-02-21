@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -27,17 +27,26 @@ import { logger } from '@/lib/logger'
 interface ImportDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  venues: Array<{ id: string; name: string; code: string }>
   onSuccess?: () => void
 }
 
 export function ImportDialog({
   open,
   onOpenChange,
-  venues,
   onSuccess,
 }: ImportDialogProps) {
+  const [venues, setVenues] = useState<Array<{ id: string; name: string; code: string }>>([])
   const [venueId, setVenueId] = useState<string>('')
+
+  useEffect(() => {
+    if (open) {
+      fetch('/api/venues').then(r => r.json()).then(data => {
+        const venueList = data.venues || data.data || []
+        setVenues(venueList)
+        if (venueList.length === 1) setVenueId(venueList[0].id)
+      })
+    }
+  }, [open])
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<ImportResult | null>(null)

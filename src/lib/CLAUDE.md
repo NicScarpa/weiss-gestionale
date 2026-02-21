@@ -21,10 +21,18 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #4306 | 7:28 PM | 🔵 | API Validation Utilities Use z.coerce.date() Pattern | ~260 |
 | #3784 | 1:43 PM | 🔵 | Authentication Library | ~130 |
 | #3781 | " | 🔵 | Project Constants and Utilities | ~116 |
 | #3777 | 1:42 PM | 🔵 | CSS Utility Function | ~106 |
 | #3776 | " | 🔵 | Prima Nota Utility Functions | ~185 |
 | #3770 | " | 🔵 | Prisma Client Configuration | ~125 |
 | #3765 | " | 🔵 | Authentication System Implementation | ~129 |
+
+### Feb 15, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #4676 | 12:47 PM | 🔵 | Recurrence Date Calculation Utilities | ~405 |
+| #4666 | 12:44 PM | 🔵 | NextAuth Authentication System with Venue Isolation | ~485 |
 </claude-mem-context>

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getVenueId } from '@/lib/venue'
 
 // GET /api/pagamenti/summary - Conteggi per stato
 export async function GET() {
@@ -9,16 +10,16 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const venueId = session.user.venueId!
+  const venueId = await getVenueId()
 
-  const [countByState] = await prisma.$queryRaw`
+  const countByState = await prisma.$queryRaw<Array<{ stato: string; count: bigint }>>`
     SELECT
       stato,
       COUNT(*) as count
     FROM payments
     WHERE venue_id = ${venueId}::uuid
     GROUP BY stato
-  ` as Array<{ stato: string; count: bigint }>
+  `
 
   const summary = {
     bozza: 0,

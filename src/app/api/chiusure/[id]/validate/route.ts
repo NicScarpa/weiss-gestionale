@@ -66,17 +66,6 @@ export async function POST(
       )
     }
 
-    // Verifica accesso per manager (stessa sede)
-    if (
-      session.user.role === 'manager' &&
-      session.user.venueId !== closure.venueId
-    ) {
-      return NextResponse.json(
-        { error: 'Non autorizzato per questa sede' },
-        { status: 403 }
-      )
-    }
-
     // Solo SUBMITTED può essere validata
     if (closure.status !== 'SUBMITTED') {
       return NextResponse.json(

@@ -51,14 +51,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       )
     }
 
-    // Verifica accesso
-    if (
-      session.user.role !== 'admin' &&
-      session.user.venueId !== expense.venueId
-    ) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
     return NextResponse.json(expense)
   } catch (error) {
     logger.error('Errore GET /api/recurring-expenses/[id]', error)
@@ -93,14 +85,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         { error: 'Spesa non trovata' },
         { status: 404 }
       )
-    }
-
-    // Verifica accesso sede
-    if (
-      session.user.role !== 'admin' &&
-      session.user.venueId !== expense.venueId
-    ) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
     const body = await request.json()
@@ -189,14 +173,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         { error: 'Spesa non trovata' },
         { status: 404 }
       )
-    }
-
-    // Verifica accesso sede
-    if (
-      session.user.role !== 'admin' &&
-      session.user.venueId !== expense.venueId
-    ) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
     await prisma.recurringExpense.delete({

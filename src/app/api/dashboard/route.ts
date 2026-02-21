@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, format } from 'date-fns'
 import { it } from 'date-fns/locale'
+import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
 // GET /api/dashboard - KPI e statistiche per la dashboard
@@ -24,10 +25,9 @@ export async function GET() {
     const lastMonthStart = startOfMonth(subMonths(now, 1))
     const lastMonthEnd = endOfMonth(subMonths(now, 1))
 
-    // Filtro sede per non-admin
-    const venueFilter = session.user.role !== 'admin' && session.user.venueId
-      ? { venueId: session.user.venueId }
-      : {}
+    // Filtro sede
+    const venueId = await getVenueId()
+    const venueFilter = { venueId }
 
     // Query parallele per performance
     const [

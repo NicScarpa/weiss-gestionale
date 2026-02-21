@@ -143,25 +143,9 @@ export function requireRole(
 
 export function requireVenueAccess(
   session: Session | null,
-  venueId: string
+  _venueId?: string
 ): AuthCheckResult {
-  const authCheck = requireAuth(session)
-  if (!authCheck.authorized) return authCheck
-
-  // Admin can access all venues
-  if (session!.user.role === 'admin') {
-    return { authorized: true, session: session! }
-  }
-
-  // Other users can only access their own venue
-  if (session!.user.venueId !== venueId) {
-    return {
-      authorized: false,
-      response: forbidden('Non autorizzato per questa sede'),
-    }
-  }
-
-  return { authorized: true, session: session! }
+  return requireAuth(session)
 }
 
 // Pagination helpers

@@ -70,14 +70,6 @@ export async function GET(
       return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
-    // Manager può vedere solo richieste della propria sede
-    if (
-      session.user.role === 'manager' &&
-      leaveRequest.user.venue?.id !== session.user.venueId
-    ) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
     return NextResponse.json(leaveRequest)
   } catch (error) {
     logger.error('Errore GET /api/leave-requests/[id]', error)

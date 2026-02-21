@@ -17,6 +17,7 @@ import {
 } from '@/lib/utils/username'
 
 import { logger } from '@/lib/logger'
+import { getVenueId } from '@/lib/venue'
 // Password iniziale di default
 const DEFAULT_PASSWORD = '1234567890'
 
@@ -79,7 +80,7 @@ export async function GET(request: NextRequest) {
 
     // Manager vede solo la propria sede
     if (userRole === 'manager') {
-      whereClause.venueId = session.user.venueId
+      whereClause.venueId = await getVenueId()
     } else if (venueId) {
       whereClause.venueId = venueId
     }
@@ -177,13 +178,14 @@ export async function POST(request: NextRequest) {
 
     // Manager può creare solo nella propria sede
     if (userRole === 'manager') {
-      if (validatedData.venueId && validatedData.venueId !== session.user.venueId) {
+      const managerVenueId = await getVenueId()
+      if (validatedData.venueId && validatedData.venueId !== managerVenueId) {
         return NextResponse.json(
           { error: 'Puoi creare utenti solo nella tua sede' },
           { status: 403 }
         )
       }
-      validatedData.venueId = session.user.venueId
+      validatedData.venueId = managerVenueId
     }
 
     // Verifica email univoca (se fornita)

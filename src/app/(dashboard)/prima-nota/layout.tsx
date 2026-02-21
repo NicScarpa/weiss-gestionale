@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
+import { getVenueId } from '@/lib/venue'
 import { RegisterBalanceCards } from '@/components/prima-nota/RegisterBalanceCards'
 import { PrimaNotaTabNav } from '@/components/prima-nota/PrimaNotaTabNav'
 import { AccountSelectorToggle } from '@/components/prima-nota/AccountSelectorToggle'
@@ -20,7 +21,7 @@ export default async function PrimaNotaLayout({
     redirect('/login')
   }
 
-  const venueId = session.user.venueId!
+  const venueId = await getVenueId()
   const isAdmin = session.user.role === 'admin'
 
   // Fetch balances per RegisterBalanceCards
@@ -34,18 +35,33 @@ export default async function PrimaNotaLayout({
     }),
   ])
 
+  // Converti Decimal in number
+  const convertBalance = (balance: typeof cashBalance) => {
+    if (!balance) return null
+    return {
+      ...balance,
+      openingBalance: balance.openingBalance.toNumber(),
+      totalDebits: balance.totalDebits.toNumber(),
+      totalCredits: balance.totalCredits.toNumber(),
+      closingBalance: balance.closingBalance.toNumber(),
+    }
+  }
+
+  const convertedCashBalance = convertBalance(cashBalance)
+  const convertedBankBalance = convertBalance(bankBalance)
+
   return (
     <PrimaNotaProvider
       venueId={venueId}
       isAdmin={isAdmin}
-      cashBalance={cashBalance}
-      bankBalance={bankBalance}
+      cashBalance={convertedCashBalance}
+      bankBalance={convertedBankBalance}
     >
       <div className="space-y-6">
         {/* 3 box compatti */}
         <RegisterBalanceCards
-          cashRegister={cashBalance}
-          bankRegister={bankBalance}
+          cashRegister={convertedCashBalance}
+          bankRegister={convertedBankBalance}
           className="mb-6"
         />
 

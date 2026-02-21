@@ -50,11 +50,6 @@ import {
 import { BudgetCategoryRow } from '@/components/budget/BudgetCategoryRow'
 
 import { logger } from '@/lib/logger'
-interface Venue {
-  id: string
-  name: string
-  code: string
-}
 
 interface Comparison {
   accountId: string
@@ -126,17 +121,13 @@ interface CategoryAggregation {
 }
 
 interface BudgetConfrontoClientProps {
-  venues: Venue[]
+  venueId: string
   availableYears: number[]
-  defaultVenueId?: string
-  isAdmin: boolean
 }
 
 export function BudgetConfrontoClient({
-  venues,
+  venueId,
   availableYears,
-  defaultVenueId,
-  isAdmin,
 }: BudgetConfrontoClientProps) {
   const [comparisons, setComparisons] = useState<Comparison[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
@@ -145,7 +136,7 @@ export function BudgetConfrontoClient({
   const [viewMode, setViewMode] = useState<'categories' | 'accounts'>('categories')
 
   const [filters, setFilters] = useState({
-    venueId: defaultVenueId || venues[0]?.id || '',
+    venueId,
     year: availableYears[0] || new Date().getFullYear(),
     accountType: 'ALL' as 'ALL' | 'RICAVO' | 'COSTO',
   })
@@ -252,24 +243,6 @@ export function BudgetConfrontoClient({
       <Card>
         <CardContent className="pt-6">
           <div className="flex flex-wrap gap-4">
-            {isAdmin && venues.length > 1 && (
-              <Select
-                value={filters.venueId}
-                onValueChange={(v) => setFilters({ ...filters, venueId: v })}
-              >
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="Sede" />
-                </SelectTrigger>
-                <SelectContent>
-                  {venues.map((venue) => (
-                    <SelectItem key={venue.id} value={venue.id}>
-                      {venue.name} ({venue.code})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-
             <Select
               value={filters.year.toString()}
               onValueChange={(v) => setFilters({ ...filters, year: parseInt(v) })}

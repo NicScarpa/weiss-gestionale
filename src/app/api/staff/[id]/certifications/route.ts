@@ -34,14 +34,6 @@ export async function GET(
       return NextResponse.json({ error: 'Dipendente non trovato' }, { status: 404 })
     }
 
-    // Manager può vedere solo dipendenti della stessa sede
-    if (session.user.role === 'manager' && user.venueId !== session.user.venueId) {
-      return NextResponse.json(
-        { error: 'Non autorizzato per questa sede' },
-        { status: 403 }
-      )
-    }
-
     const certifications = await prisma.certification.findMany({
       where: { userId: id },
       select: {
@@ -104,14 +96,6 @@ export async function POST(
 
     if (!user) {
       return NextResponse.json({ error: 'Dipendente non trovato' }, { status: 404 })
-    }
-
-    // Manager può modificare solo dipendenti della stessa sede
-    if (session.user.role === 'manager' && user.venueId !== session.user.venueId) {
-      return NextResponse.json(
-        { error: 'Non autorizzato per questa sede' },
-        { status: 403 }
-      )
     }
 
     // Check duplicato: 1 certificazione per tipo per utente

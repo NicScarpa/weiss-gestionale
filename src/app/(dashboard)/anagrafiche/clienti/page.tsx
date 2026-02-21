@@ -79,9 +79,7 @@ export default function ClientiPage() {
 
     // Filtro attivo/inattivo
     // Di default mostra solo attivi, se showInactive è true mostra solo inattivi
-    const matchesActive = filters.showInactive ? !customer.attivo : customer.attivo
-
-    result = result.filter(c => matchesActive)
+    result = result.filter(c => filters.showInactive ? !c.attivo : c.attivo)
 
     setFilteredCustomers(result)
   }, [customers, filters])
@@ -129,7 +127,7 @@ export default function ClientiPage() {
             Gestione Clienti
           </h1>
           <p className="text-muted-foreground">
-            Gestisci l'anagrafica clienti per fatturazione
+            Gestisci l&apos;anagrafica clienti per fatturazione
           </p>
         </div>
         <Button asChild>

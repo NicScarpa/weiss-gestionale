@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { AlertStatus } from '@prisma/client'
+import { getVenueId } from '@/lib/venue'
+import { AlertStatus, CashFlowAlertStatus, CashFlowAlertType, Prisma } from '@prisma/client'
 
 // PATCH /api/cashflow/alerts/bulk - Aggiorna stato alert in blocco
 export async function PATCH(request: NextRequest) {
@@ -31,12 +32,12 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Alert not found' }, { status: 404 })
     }
 
-    const userVenues = session.user.venues || []
-    if (!userVenues.includes(firstAlert.venueId)) {
+    const venueId = await getVenueId()
+    if (firstAlert.venueId !== venueId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const newStatus = action === 'resolve' ? AlertStatus.RISOLTO : AlertStatus.IGNORATO
+    const newStatus = action === 'resolve' ? 'RISOLTO' : 'IGNORATO'
 
     await prisma.cashFlowAlert.updateMany({
       where: { id: { in: alertIds } },
@@ -59,22 +60,15 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const venueId = searchParams.get('venueId')
     const stato = searchParams.get('stato')
     const tipo = searchParams.get('tipo')
     const forecastId = searchParams.get('forecastId')
 
-    // Filtro per venue
-    const userVenues = session.user.venues || []
-    const filterVenueId = venueId || userVenues[0]
+    const venueId = await getVenueId()
 
-    if (!filterVenueId) {
-      return NextResponse.json({ error: 'Venue ID richiesto' }, { status: 400 })
-    }
-
-    const where: any = { venueId: filterVenueId }
-    if (stato) where.stato = stato
-    if (tipo) where.tipo = tipo
+    const where: Prisma.CashFlowAlertWhereInput = { venueId }
+    if (stato) where.stato = stato as CashFlowAlertStatus
+    if (tipo) where.tipo = tipo as CashFlowAlertType
     if (forecastId) where.forecastId = forecastId
 
     const alerts = await prisma.cashFlowAlert.findMany({

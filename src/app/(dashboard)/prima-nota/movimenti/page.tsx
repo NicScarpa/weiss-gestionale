@@ -1,14 +1,25 @@
 import { auth } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
+import { MovimentiClient } from './MovimentiClient'
 
 export default async function MovimentiPage() {
   const session = await auth()
 
-  return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Movimenti</h1>
-      <p className="text-muted-foreground">Tab Movimenti - Coming soon</p>
+  const [accounts, budgetCategories] = await Promise.all([
+    prisma.account.findMany({
+      select: { id: true, name: true, code: true },
+      orderBy: { code: 'asc' },
+    }),
+    prisma.budgetCategory.findMany({
+      select: { id: true, name: true, code: true, color: true },
+      orderBy: { code: 'asc' },
+    }),
+  ])
 
-      {/* TODO: Implementare componente MovimentiTable */}
-    </div>
+  return (
+    <MovimentiClient
+      accounts={accounts}
+      budgetCategories={budgetCategories}
+    />
   )
 }

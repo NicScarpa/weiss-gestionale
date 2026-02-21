@@ -38,17 +38,6 @@ export async function POST(
       return NextResponse.json({ error: 'Pianificazione non trovata' }, { status: 404 })
     }
 
-    // Manager può pubblicare solo per la propria sede
-    if (
-      session.user.role === 'manager' &&
-      schedule.venueId !== session.user.venueId
-    ) {
-      return NextResponse.json(
-        { error: 'Non autorizzato per questa sede' },
-        { status: 403 }
-      )
-    }
-
     // Verifica stato: può pubblicare solo da GENERATED o REVIEW
     if (!['GENERATED', 'REVIEW'].includes(schedule.status)) {
       return NextResponse.json(

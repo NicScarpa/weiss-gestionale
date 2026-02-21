@@ -112,14 +112,6 @@ export async function POST(
       return NextResponse.json({ error: 'Dipendente non trovato' }, { status: 404 })
     }
 
-    // Manager può creare vincoli solo per dipendenti della stessa sede
-    if (session.user.role === 'manager' && user.venueId !== session.user.venueId) {
-      return NextResponse.json(
-        { error: 'Non autorizzato per questa sede' },
-        { status: 403 }
-      )
-    }
-
     const constraint = await prisma.employeeConstraint.create({
       data: {
         userId: id,

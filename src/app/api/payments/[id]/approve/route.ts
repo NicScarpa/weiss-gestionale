@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getVenueId } from '@/lib/venue'
 import { PaymentStatus } from '@prisma/client'
 
 // POST /api/payments/[id]/approve - Approva pagamento (da BOZZA → DA_APPROVARE → DISPOSTO)
@@ -28,8 +29,8 @@ export async function POST(
       return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
     }
 
-    const userVenues = session.user.venues || []
-    if (!userVenues.includes(existing.venueId)) {
+    const venueId = await getVenueId()
+    if (existing.venueId !== venueId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -37,9 +38,10 @@ export async function POST(
     const transitions: Record<PaymentStatus, PaymentStatus[]> = {
       [PaymentStatus.BOZZA]: [PaymentStatus.DA_APPROVARE],
       [PaymentStatus.DA_APPROVARE]: [PaymentStatus.DISPOSTO, PaymentStatus.BOZZA],
-      [PaymentStatus.DISPOSTO]: [PaymentStatus.COMPLETATO],
+      [PaymentStatus.DISPOSTO]: [PaymentStatus.COMPLETATO, PaymentStatus.FALLITO],
       [PaymentStatus.COMPLETATO]: [],
       [PaymentStatus.ANNULLATO]: [PaymentStatus.BOZZA],
+      [PaymentStatus.FALLITO]: [PaymentStatus.BOZZA],
     }
 
     const allowedTransitions = transitions[existing.stato as PaymentStatus] || []

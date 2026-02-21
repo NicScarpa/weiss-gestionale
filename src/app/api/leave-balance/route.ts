@@ -24,19 +24,6 @@ export async function GET(request: NextRequest) {
       targetUserId = userId
     }
 
-    // Manager può vedere solo dipendenti della propria sede
-    if (session.user.role === 'manager' && userId && userId !== session.user.id) {
-      const targetUser = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { venueId: true },
-      })
-
-      if (targetUser?.venueId !== session.user.venueId) {
-        return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-      }
-      targetUserId = userId
-    }
-
     // Recupera tutti i saldi per l'utente e l'anno
     const balances = await prisma.leaveBalance.findMany({
       where: {

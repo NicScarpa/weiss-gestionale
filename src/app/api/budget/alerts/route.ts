@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 import { alertFiltersSchema, acknowledgeAlertSchema } from '@/lib/validations/budget'
+import { getVenueId } from '@/lib/venue'
 import {
   MONTH_LABELS_FULL,
 } from '@/types/budget'
@@ -36,11 +37,7 @@ export async function GET(request: NextRequest) {
 
     // Filtra per sede attraverso il budget
     const budgetWhere: Prisma.BudgetWhereInput = {}
-    if (session.user.role !== 'admin') {
-      budgetWhere.venueId = session.user.venueId || undefined
-    } else if (filters.venueId) {
-      budgetWhere.venueId = filters.venueId
-    }
+    budgetWhere.venueId = await getVenueId()
 
     if (filters.year) {
       budgetWhere.year = filters.year
@@ -163,11 +160,6 @@ export async function POST(request: NextRequest) {
 
     if (!alert) {
       return NextResponse.json({ error: 'Alert non trovato' }, { status: 404 })
-    }
-
-    // Verifica accesso sede
-    if (session.user.role !== 'admin' && alert.budget.venueId !== session.user.venueId) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
     // Aggiorna lo stato dell'alert

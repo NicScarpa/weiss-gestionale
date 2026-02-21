@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
+import { getVenueId } from '@/lib/venue'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { notifySwapApproved, notifySwapRejected } from '@/lib/notifications/triggers'
@@ -75,10 +76,6 @@ export async function GET(
         assignment.swapWithUserId === session.user.id
 
       if (!canAccess) {
-        return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-      }
-    } else if (session.user.role === 'manager') {
-      if (assignment.venueId !== session.user.venueId) {
         return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
       }
     }
@@ -170,10 +167,9 @@ export async function PUT(
 
     // Verifica che l'utente sia il destinatario dello scambio o un manager
     const isTarget = assignment.swapWithUserId === session.user.id
-    const isManager = session.user.role === 'manager' && assignment.venueId === session.user.venueId
-    const isAdmin = session.user.role === 'admin'
+    const isManagerOrAdmin = session.user.role === 'manager' || session.user.role === 'admin'
 
-    if (!isTarget && !isManager && !isAdmin) {
+    if (!isTarget && !isManagerOrAdmin) {
       return NextResponse.json(
         { error: 'Non sei autorizzato a rispondere a questa richiesta' },
         { status: 403 }
@@ -312,10 +308,9 @@ export async function DELETE(
 
     // Solo chi ha richiesto lo scambio o un manager/admin può annullare
     const isRequester = assignment.swapRequestedById === session.user.id
-    const isManager = session.user.role === 'manager' && assignment.venueId === session.user.venueId
-    const isAdmin = session.user.role === 'admin'
+    const isManagerOrAdmin = session.user.role === 'manager' || session.user.role === 'admin'
 
-    if (!isRequester && !isManager && !isAdmin) {
+    if (!isRequester && !isManagerOrAdmin) {
       return NextResponse.json(
         { error: 'Non sei autorizzato ad annullare questa richiesta' },
         { status: 403 }

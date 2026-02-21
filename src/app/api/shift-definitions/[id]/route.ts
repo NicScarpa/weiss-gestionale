@@ -59,14 +59,6 @@ export async function GET(
       return NextResponse.json({ error: 'Definizione turno non trovata' }, { status: 404 })
     }
 
-    // Manager può vedere solo turni della propria sede
-    if (
-      session.user.role === 'manager' &&
-      shiftDefinition.venueId !== session.user.venueId
-    ) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
     return NextResponse.json({
       ...shiftDefinition,
       startTime: shiftDefinition.startTime.toTimeString().substring(0, 5),
@@ -110,17 +102,6 @@ export async function PUT(
 
     if (!existingShift) {
       return NextResponse.json({ error: 'Definizione turno non trovata' }, { status: 404 })
-    }
-
-    // Manager può modificare solo turni della propria sede
-    if (
-      session.user.role === 'manager' &&
-      existingShift.venueId !== session.user.venueId
-    ) {
-      return NextResponse.json(
-        { error: 'Non autorizzato per questa sede' },
-        { status: 403 }
-      )
     }
 
     // Verifica unicità codice se modificato

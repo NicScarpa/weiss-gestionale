@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
+import { getVenueId } from '@/lib/venue'
 import { z } from 'zod'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
@@ -45,11 +46,8 @@ export async function GET(request: NextRequest) {
       includeSummary: searchParams.get('includeSummary') !== 'false',
     })
 
-    // Se non admin, filtra per sede dell'utente
-    const venueId =
-      session.user.role !== 'admin'
-        ? session.user.venueId
-        : filters.venueId
+    // Filtra per sede
+    const venueId = filters.venueId || await getVenueId()
 
     // Genera dati payroll
     const { records, summaries, warnings } = await generatePayrollData(

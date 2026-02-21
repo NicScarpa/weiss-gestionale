@@ -39,11 +39,6 @@ export default async function BudgetDetailPage({ params, searchParams }: PagePro
     notFound()
   }
 
-  // Verifica accesso sede
-  if (session.user.role !== 'admin' && budget.venueId !== session.user.venueId) {
-    redirect('/budget')
-  }
-
   // Recupera i conti per il form
   const accounts = await prisma.account.findMany({
     where: {

@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { redirect } from 'next/navigation'
+import { getVenueId } from '@/lib/venue'
 import { NuovaChiusuraClient } from './NuovaChiusuraClient'
 
 export const metadata = {
@@ -14,16 +15,13 @@ export default async function NuovaChiusuraPage() {
     redirect('/login')
   }
 
-  // Verifica che l'utente abbia una sede assegnata
-  if (!session.user.venueId) {
-    redirect('/chiusura-cassa?error=no-venue')
-  }
+  const venueId = await getVenueId()
 
   // Recupera dati necessari per il form
   const [venue, cashStationTemplates, staffMembers, accounts] = await Promise.all([
     // Venue con dettagli
     prisma.venue.findUnique({
-      where: { id: session.user.venueId },
+      where: { id: venueId },
       select: {
         id: true,
         name: true,
@@ -35,7 +33,7 @@ export default async function NuovaChiusuraPage() {
     // Template postazioni cassa
     prisma.cashStationTemplate.findMany({
       where: {
-        venueId: session.user.venueId,
+        venueId: venueId,
         isActive: true,
       },
       select: {
@@ -49,7 +47,7 @@ export default async function NuovaChiusuraPage() {
     // Staff della sede
     prisma.user.findMany({
       where: {
-        venueId: session.user.venueId,
+        venueId: venueId,
         isActive: true,
         role: { name: 'staff' },
       },

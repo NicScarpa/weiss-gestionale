@@ -5,8 +5,9 @@ import { prisma } from '@/lib/prisma'
 // PATCH /api/regole-categorizzazione/[id] - Modifica regola
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   const session = await auth()
   if (!session?.user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -15,7 +16,7 @@ export async function PATCH(
   const body = await request.json()
 
   const regola = await prisma.categorizationRule.update({
-    where: { id: params.id },
+    where: { id: id },
     data: {
       ...(body.name !== undefined && { name: body.name }),
       ...(body.keywords !== undefined && { keywords: body.keywords }),
@@ -33,15 +34,16 @@ export async function PATCH(
 // DELETE /api/regole-categorizzazione/[id] - Elimina regola
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   const session = await auth()
   if (!session?.user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   await prisma.categorizationRule.delete({
-    where: { id: params.id },
+    where: { id: id },
   })
 
   return NextResponse.json({ success: true })

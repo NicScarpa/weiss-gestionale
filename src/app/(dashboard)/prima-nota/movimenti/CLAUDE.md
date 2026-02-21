@@ -7,6 +7,9 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #4370 | 8:10 PM | 🔵 | Accounting Application Structure Mapped | ~239 |
+| #4073 | 5:09 PM | 🟣 | Movimenti Page Implementation Started | ~153 |
+| #4071 | " | 🔵 | Movimenti Page Status Confirmed | ~83 |
 | #3722 | 1:34 PM | 🔵 | Movimenti Page Structure Confirmed | ~100 |
 | #3699 | 1:32 PM | 🔵 | Movimenti Page is Placeholder | ~97 |
 </claude-mem-context>

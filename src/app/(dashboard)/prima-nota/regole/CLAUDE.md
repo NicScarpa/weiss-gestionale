@@ -7,6 +7,9 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #4370 | 8:10 PM | 🔵 | Accounting Application Structure Mapped | ~239 |
+| #4082 | 5:11 PM | 🟣 | Regole Page Component Implemented | ~133 |
+| #4077 | 5:10 PM | 🟣 | Regole Page Updated with CategorizationRulesManager | ~143 |
 | #3720 | 1:34 PM | 🔵 | Regole Page Structure Confirmed | ~96 |
 | #3712 | 1:33 PM | 🔵 | Regole Page is Placeholder | ~107 |
 </claude-mem-context>

@@ -33,11 +33,6 @@ export async function GET(
       return NextResponse.json({ error: 'Budget non trovato' }, { status: 404 })
     }
 
-    // Verifica accesso sede
-    if (session.user.role !== 'admin' && budget.venueId !== session.user.venueId) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
     // Aggrega i dati per categoria
     const result = await aggregateCategoriesForBudget(
       budget.id,

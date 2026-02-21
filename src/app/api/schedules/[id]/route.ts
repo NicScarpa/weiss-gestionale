@@ -69,14 +69,6 @@ export async function GET(
       return NextResponse.json({ error: 'Pianificazione non trovata' }, { status: 404 })
     }
 
-    // Manager può vedere solo pianificazioni della propria sede
-    if (
-      session.user.role === 'manager' &&
-      schedule.venueId !== session.user.venueId
-    ) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
     // Formatta gli orari
     const formatted = {
       ...schedule,
@@ -132,17 +124,6 @@ export async function PUT(
 
     if (!schedule) {
       return NextResponse.json({ error: 'Pianificazione non trovata' }, { status: 404 })
-    }
-
-    // Manager può modificare solo la propria sede
-    if (
-      session.user.role === 'manager' &&
-      schedule.venueId !== session.user.venueId
-    ) {
-      return NextResponse.json(
-        { error: 'Non autorizzato per questa sede' },
-        { status: 403 }
-      )
     }
 
     // Verifica stato: non si può modificare se pubblicata (tranne admin)

@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 
 import { logger } from '@/lib/logger'
+import { getVenueId } from '@/lib/venue'
 import { buildStationCreateData } from '@/lib/closure-calculations'
 
 const dateSchema = z
@@ -194,7 +195,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
 
     // Filtri
-    const venueId = searchParams.get('venueId') || session.user.venueId
+    const venueId = searchParams.get('venueId') || await getVenueId()
     const status = searchParams.get('status')
     const dateFrom = searchParams.get('dateFrom')
     const dateTo = searchParams.get('dateTo')
@@ -392,17 +393,6 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const validatedData = createClosureSchema.parse(body)
-
-    // Verifica accesso alla sede
-    if (
-      session.user.role !== 'admin' &&
-      session.user.venueId !== validatedData.venueId
-    ) {
-      return NextResponse.json(
-        { error: 'Non autorizzato per questa sede' },
-        { status: 403 }
-      )
-    }
 
     // Verifica che non esista già una chiusura per questa data/sede
     const existingClosure = await prisma.dailyClosure.findUnique({

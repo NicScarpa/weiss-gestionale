@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { startOfMonth, endOfMonth, subMonths, format, parseISO, eachMonthOfInterval, startOfYear, endOfYear } from 'date-fns'
 import { it } from 'date-fns/locale'
+import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
 // GET /api/report/analisi-costi - Report analisi costi
@@ -29,13 +30,7 @@ export async function GET(request: NextRequest) {
     const endDate = dateTo ? parseISO(dateTo) : defaultDateTo
 
     // Determina la sede da filtrare
-    let targetVenueId: string | undefined
-
-    if (session.user.role !== 'admin') {
-      targetVenueId = session.user.venueId || undefined
-    } else if (venueId) {
-      targetVenueId = venueId
-    }
+    const targetVenueId = await getVenueId()
 
     // Query spese da chiusure validate
     const expenses = await prisma.dailyExpense.findMany({

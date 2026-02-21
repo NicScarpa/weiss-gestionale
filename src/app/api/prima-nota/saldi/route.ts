@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
 // GET /api/prima-nota/saldi - Saldi attuali dei registri
@@ -16,13 +17,7 @@ export async function GET(request: NextRequest) {
     const venueId = searchParams.get('venueId')
 
     // Determina la sede da filtrare
-    let targetVenueId: string | undefined
-
-    if (session.user.role !== 'admin') {
-      targetVenueId = session.user.venueId || undefined
-    } else if (venueId) {
-      targetVenueId = venueId
-    }
+    const targetVenueId = await getVenueId()
 
     // Calcola i saldi correnti dai movimenti
     const calculatedBalances = await calculateBalancesFromEntries(targetVenueId)

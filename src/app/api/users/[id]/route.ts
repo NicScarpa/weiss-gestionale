@@ -83,13 +83,6 @@ export async function GET(
       return NextResponse.json({ error: 'Utente non trovato' }, { status: 404 })
     }
 
-    // Manager può vedere solo utenti della propria sede
-    if (userRole === 'manager' && !isSelf) {
-      if (user.venueId !== session.user.venueId) {
-        return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-      }
-    }
-
     return NextResponse.json(filterUserFields(user as unknown as Record<string, unknown>, userRole))
   } catch (error) {
     logger.error('Errore GET /api/users/[id]', error)
@@ -134,13 +127,6 @@ export async function PATCH(
         { error: 'Non hai i permessi per modificare questo utente' },
         { status: 403 }
       )
-    }
-
-    // Manager può modificare solo utenti della propria sede
-    if (userRole === 'manager' && !isSelf) {
-      if (targetUser.venueId !== session.user.venueId) {
-        return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-      }
     }
 
     const body = await request.json()
@@ -278,13 +264,6 @@ export async function DELETE(
         { error: 'Non hai i permessi per disattivare questo utente' },
         { status: 403 }
       )
-    }
-
-    // Manager può disattivare solo utenti della propria sede
-    if (userRole === 'manager') {
-      if (targetUser.venueId !== session.user.venueId) {
-        return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-      }
     }
 
     // Soft delete: imposta isActive = false

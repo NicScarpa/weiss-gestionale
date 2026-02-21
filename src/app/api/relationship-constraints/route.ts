@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
+import { getVenueId } from '@/lib/venue'
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
@@ -43,11 +44,10 @@ export async function GET(request: NextRequest) {
 
     const whereClause: Record<string, unknown> = {}
 
-    // Manager vede solo vincoli della propria sede
-    if (session.user.role === 'manager') {
-      whereClause.venueId = session.user.venueId
-    } else if (venueId) {
+    if (venueId) {
       whereClause.venueId = venueId
+    } else {
+      whereClause.venueId = await getVenueId()
     }
 
     const constraints = await prisma.relationshipConstraint.findMany({
@@ -121,23 +121,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Manager può creare vincoli solo per dipendenti della stessa sede
-    if (session.user.role === 'manager') {
-      const allSameVenue = users.every(u => u.venueId === session.user.venueId)
-      if (!allSameVenue) {
-        return NextResponse.json(
-          { error: 'Puoi creare vincoli solo per dipendenti della tua sede' },
-          { status: 403 }
-        )
-      }
-    }
-
     // Crea il vincolo con i collegamenti agli utenti
     const constraint = await prisma.relationshipConstraint.create({
       data: {
         constraintType: validatedData.constraintType,
         config: validatedData.config as Prisma.InputJsonValue,
-        venueId: validatedData.venueId || (session.user.role === 'manager' ? session.user.venueId : null),
+        venueId: validatedData.venueId || await getVenueId(),
         validFrom: validatedData.validFrom ? new Date(validatedData.validFrom) : null,
         validTo: validatedData.validTo ? new Date(validatedData.validTo) : null,
         priority: validatedData.priority,

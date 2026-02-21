@@ -7,5 +7,7 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #4370 | 8:10 PM | 🔵 | Accounting Application Structure Mapped | ~239 |
+| #3703 | 1:32 PM | 🔵 | Conti Settings Page Implementation | ~125 |
 | #3673 | 1:29 PM | 🔵 | Account Management Page Implementation | ~284 |
 </claude-mem-context>

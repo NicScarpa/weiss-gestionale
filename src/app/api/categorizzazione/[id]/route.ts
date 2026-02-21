@@ -21,7 +21,7 @@ const updateRuleSchema = z.object({
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth()
@@ -30,25 +30,22 @@ export async function PATCH(
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
+    const { id } = await params
+
     const current = await prisma.categorizationRule.findUnique({
-      where: { id: params.id },
-      select: { venueId: true },
+      where: { id },
+      select: { id: true },
     })
 
     if (!current) {
       return NextResponse.json({ error: 'Regola non trovata' }, { status: 404 })
     }
 
-    // Verifica autorizzazione sede
-    if (session.user.role !== 'admin' && current.venueId !== session.user.venueId) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 })
-    }
-
     const body = await request.json()
     const validated = updateRuleSchema.parse(body)
 
     const updated = await prisma.categorizationRule.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         ...validated,
         updatedAt: new Date(),
@@ -86,7 +83,7 @@ export async function PATCH(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth()
@@ -95,22 +92,19 @@ export async function DELETE(
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
+    const { id } = await params
+
     const current = await prisma.categorizationRule.findUnique({
-      where: { id: params.id },
-      select: { venueId: true },
+      where: { id },
+      select: { id: true },
     })
 
     if (!current) {
       return NextResponse.json({ error: 'Regola non trovata' }, { status: 404 })
     }
 
-    // Verifica autorizzazione sede
-    if (session.user.role !== 'admin' && current.venueId !== session.user.venueId) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 })
-    }
-
     await prisma.categorizationRule.delete({
-      where: { id: params.id },
+      where: { id },
     })
 
     return NextResponse.json({ success: true })

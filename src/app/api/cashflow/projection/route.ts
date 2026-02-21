@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getVenueId } from '@/lib/venue'
 
 // GET /api/cashflow/projection - Genera proiezione cash flow
 export async function GET(request: NextRequest) {
@@ -10,7 +11,7 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url)
-  const venueId = session.user.venueId!
+  const venueId = await getVenueId()
 
   const from = searchParams.get('from') || new Date().toISOString().split('T')[0]
   const days = parseInt(searchParams.get('days') || '30')

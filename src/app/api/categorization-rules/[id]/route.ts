@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getVenueId } from '@/lib/venue'
+import { Prisma } from '@prisma/client'
 
 // GET /api/categorization-rules/[id] - Dettaglio regola
 export async function GET(
   request: NextRequest,
-  context: { params },
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await context.params as { id: string }
   try {
     const session = await getServerSession()
     if (!session?.user) {
@@ -29,8 +30,8 @@ export async function GET(
       return NextResponse.json({ error: 'Rule not found' }, { status: 404 })
     }
 
-    const userVenues = session.user.venues || []
-    if (!userVenues.includes(rule.venueId)) {
+    const venueId = await getVenueId()
+    if (rule.venueId !== venueId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -44,7 +45,7 @@ export async function GET(
 // PATCH /api/categorization-rules/[id] - Aggiorna regola
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession()
@@ -65,8 +66,8 @@ export async function PATCH(
       return NextResponse.json({ error: 'Rule not found' }, { status: 404 })
     }
 
-    const userVenues = session.user.venues || []
-    if (!userVenues.includes(existing.venueId)) {
+    const venueId = await getVenueId()
+    if (existing.venueId !== venueId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -75,7 +76,7 @@ export async function PATCH(
       'name', 'direction', 'keywords', 'priority', 'isActive',
       'budgetCategoryId', 'accountId', 'autoVerify', 'autoHide',
     ]
-    const data: any = {}
+    const data: Prisma.CategorizationRuleUpdateInput = {}
     for (const field of updatable) {
       if (body[field] !== undefined) {
         data[field] = body[field]
@@ -102,7 +103,7 @@ export async function PATCH(
 // DELETE /api/categorization-rules/[id] - Elimina regola
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession()
@@ -122,8 +123,8 @@ export async function DELETE(
       return NextResponse.json({ error: 'Rule not found' }, { status: 404 })
     }
 
-    const userVenues = session.user.venues || []
-    if (!userVenues.includes(existing.venueId)) {
+    const venueId = await getVenueId()
+    if (existing.venueId !== venueId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

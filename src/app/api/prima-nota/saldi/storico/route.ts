@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { Prisma } from '@prisma/client'
+import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
 const storicoFiltersSchema = z.object({
@@ -31,13 +32,7 @@ export async function GET(request: NextRequest) {
     })
 
     // Determina la sede da filtrare
-    let venueId: string | undefined
-
-    if (session.user.role !== 'admin') {
-      venueId = session.user.venueId || undefined
-    } else if (searchParams.get('venueId')) {
-      venueId = searchParams.get('venueId') || undefined
-    }
+    const venueId = await getVenueId()
 
     // Costruisci where clause
     const where: Prisma.JournalEntryWhereInput = {}

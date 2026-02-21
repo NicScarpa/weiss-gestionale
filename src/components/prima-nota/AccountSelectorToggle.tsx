@@ -11,8 +11,9 @@ export function AccountSelectorToggle() {
   const currentRegister = searchParams.get('register') as 'CASH' | 'BANK' | null
 
   const handleToggle = (value: 'CASH' | 'BANK') => {
-    searchParams.set('register', value)
-    router.push(`?${searchParams.toString()}`)
+    const newSearchParams = new URLSearchParams(searchParams)
+    newSearchParams.set('register', value)
+    router.push(`?${newSearchParams.toString()}`)
   }
 
   return (
