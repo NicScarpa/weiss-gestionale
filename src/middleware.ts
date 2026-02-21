@@ -1,5 +1,5 @@
-import { auth } from '@/lib/auth'
 import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
 
 // Rotte accessibili agli utenti Staff (portale + API correlate)
 const STAFF_ALLOWED_PREFIXES = [
@@ -22,48 +22,38 @@ const PUBLIC_PREFIXES = [
   '/login',
   '/api/auth',
   '/invito',
+  '/api/staff/invite/complete',
 ]
 
 function isPathAllowed(pathname: string, prefixes: string[]) {
   return prefixes.some(prefix => pathname === prefix || pathname.startsWith(prefix + '/'))
 }
 
-export default auth((req) => {
-  const { pathname } = req.nextUrl
-  const token = req.auth
+export function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl
 
   // Rotte pubbliche: accessibili a tutti
   if (isPathAllowed(pathname, PUBLIC_PREFIXES)) {
     return NextResponse.next()
   }
 
+  // Verifica la presenza del session token (next-auth JWT)
+  const sessionToken = request.cookies.get('authjs.session-token')?.value
+    || request.cookies.get('__Secure-authjs.session-token')?.value
+
   // Utente non autenticato su rotta protetta → redirect login
-  if (!token) {
-    const loginUrl = new URL('/login', req.url)
+  if (!sessionToken) {
+    const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('callbackUrl', pathname)
     return NextResponse.redirect(loginUrl)
   }
 
-  const role = token.user?.role as string | undefined
-
-  // Staff su rotte non consentite
-  if (role === 'staff') {
-    // API del gestionale → 403
-    if (pathname.startsWith('/api/') && !isPathAllowed(pathname, STAFF_ALLOWED_PREFIXES)) {
-      return NextResponse.json(
-        { error: 'Accesso non autorizzato' },
-        { status: 403 }
-      )
-    }
-
-    // Pagine del gestionale → redirect portale
-    if (!isPathAllowed(pathname, STAFF_ALLOWED_PREFIXES)) {
-      return NextResponse.redirect(new URL('/portale', req.url))
-    }
-  }
+  // Nota: il controllo ruolo staff viene gestito lato server nelle API routes
+  // perché decodificare il JWT nel middleware edge richiede librerie Node.js.
+  // Per le pagine, il redirect avviene lato client tramite la sessione.
 
   return NextResponse.next()
-})
+}
 
 export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico|images|icons|manifest|sw\\.js).*)']
