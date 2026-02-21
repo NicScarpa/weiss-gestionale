@@ -51,18 +51,20 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      // Invia email (async, non blocca la risposta)
-      sendPasswordResetEmail(user.email, resetToken, user.username).catch((error) => {
-        logger.error('[ForgotPassword] Errore invio email', {
-          error,
-          userId: user.id
-        })
-      })
+      // Invia email in modo sincrono per poter loggare eventuali errori
+      const emailSent = await sendPasswordResetEmail(user.email, resetToken, user.username)
 
-      logger.info('[ForgotPassword] Token generato', {
-        userId: user.id,
-        email: user.email
-      })
+      if (emailSent) {
+        logger.info('[ForgotPassword] Token generato e email inviata', {
+          userId: user.id,
+          email: user.email
+        })
+      } else {
+        logger.error('[ForgotPassword] Token generato ma invio email fallito', {
+          userId: user.id,
+          email: user.email
+        })
+      }
     } else {
       // Log per debug (utente non trovato o inattivo)
       logger.info('[ForgotPassword] Richiesta per email non valida', {

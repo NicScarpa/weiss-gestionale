@@ -20,6 +20,8 @@ const STAFF_ALLOWED_PREFIXES = [
 // Rotte pubbliche (non richiedono autenticazione)
 const PUBLIC_PREFIXES = [
   '/login',
+  '/forgot-password',
+  '/reset-password',
   '/api/auth',
   '/invito',
   '/api/staff/invite/complete',
