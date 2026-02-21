@@ -149,7 +149,7 @@ export default function PortalFeriePage() {
             Gestisci le tue richieste di ferie e permessi
           </p>
         </div>
-        <Button asChild className="bg-portal-primary hover:bg-portal-primary-dark text-white rounded-xl">
+        <Button asChild className="bg-gray-900 hover:bg-black text-white rounded-xl">
           <Link href="/portale/ferie/nuova">
             <Plus className="h-4 w-4 mr-2" />
             Nuova

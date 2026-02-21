@@ -50,14 +50,14 @@ export function PortalNavigation() {
               className={cn(
                 'flex flex-col items-center justify-center min-w-[64px] h-full px-3 transition-colors duration-200',
                 isActive
-                  ? 'text-portal-primary'
+                  ? 'text-gray-900'
                   : 'text-gray-400 hover:text-gray-600'
               )}
             >
               <div className={cn(
                 'flex items-center justify-center mb-1 transition-all duration-200',
                 isActive
-                  ? 'bg-portal-primary-bg rounded-full h-10 w-10'
+                  ? 'bg-gray-100 rounded-full h-10 w-10'
                   : 'h-5 w-5'
               )}>
                 <item.icon className={cn(

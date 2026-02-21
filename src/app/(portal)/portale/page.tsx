@@ -54,7 +54,7 @@ export default function PortalDashboardPage() {
     <div className="space-y-6">
       {/* Saluto semplice */}
       <div className="flex items-center gap-2">
-        <GreetingIcon className="h-5 w-5 text-portal-primary" />
+        <GreetingIcon className="h-5 w-5 text-gray-700" />
         <span className="text-lg font-semibold text-gray-900">
           {greeting}, {session?.user?.firstName || 'Utente'}!
         </span>
@@ -69,8 +69,8 @@ export default function PortalDashboardPage() {
             href={action.href}
             className="flex flex-col items-center gap-2 py-3"
           >
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-portal-primary-bg">
-              <action.icon className="h-6 w-6 text-portal-primary" />
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100">
+              <action.icon className="h-6 w-6 text-gray-700" />
             </div>
             <span className="text-xs font-medium text-gray-700">{action.label}</span>
           </Link>

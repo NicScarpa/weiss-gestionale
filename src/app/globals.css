@@ -50,14 +50,14 @@
   --color-portal-gradient-end: var(--portal-gradient-end);
 }
 
-/* Portal (Sesame HR) Palette */
+/* Portal (JetHR B&W) Palette */
 :root {
-  --portal-primary: #7C3AED;
-  --portal-primary-light: #A78BFA;
-  --portal-primary-dark: #6D28D9;
-  --portal-primary-bg: #EDE9FE;
-  --portal-gradient-start: #7C3AED;
-  --portal-gradient-end: #5B21B6;
+  --portal-primary: #111111;
+  --portal-primary-light: #444444;
+  --portal-primary-dark: #000000;
+  --portal-primary-bg: #F5F5F5;
+  --portal-gradient-start: #111111;
+  --portal-gradient-end: #111111;
 }
 
 /* Sibill Palette */
