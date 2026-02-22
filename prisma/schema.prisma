@@ -46,6 +46,12 @@ model User {
   workDaysPerWeek         Int?                         @map("work_days_per_week")
   address                 String?
   birthDate               DateTime?                    @map("birth_date") @db.Date
+  gender                  String?
+  birthPlace              String?                      @map("birth_place")
+  birthProvince           String?                      @map("birth_province")
+  zipCode                 String?                      @map("zip_code")
+  city                    String?
+  province                String?
   createdById             String?                      @map("created_by_id")
   lastLoginAt             DateTime?                    @map("last_login_at")
   mustChangePassword      Boolean                      @default(true) @map("must_change_password")
@@ -252,7 +258,7 @@ model CashStation {
   floatAmount      Decimal      @default(114.00) @map("float_amount") @db.Decimal(10, 2)
   createdAt        DateTime     @default(now()) @map("created_at")
   cashCount        CashCount?
-  closure          DailyClosure @relation(fields: [closureId], references: [id], onDelete: Cascade)
+  closure          DailyClosure @relation(fields: [closureId], references: [id], onDelete: Restrict)
 
   @@map("cash_stations")
 }
@@ -279,7 +285,7 @@ model CashCount {
   expectedTotal Decimal     @default(0) @map("expected_total") @db.Decimal(10, 2)
   difference    Decimal     @default(0) @db.Decimal(10, 2)
   createdAt     DateTime    @default(now()) @map("created_at")
-  station       CashStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  station       CashStation @relation(fields: [stationId], references: [id], onDelete: Restrict)
 
   @@map("cash_counts")
 }
@@ -294,7 +300,7 @@ model HourlyPartial {
   coffeeDelta        Int?         @map("coffee_delta")
   weather            String?
   createdAt          DateTime     @default(now()) @map("created_at")
-  closure            DailyClosure @relation(fields: [closureId], references: [id], onDelete: Cascade)
+  closure            DailyClosure @relation(fields: [closureId], references: [id], onDelete: Restrict)
 
   @@unique([closureId, timeSlot])
   @@map("hourly_partials")
@@ -315,7 +321,7 @@ model DailyExpense {
   position     Int          @default(0)
   createdAt    DateTime     @default(now()) @map("created_at")
   account      Account?     @relation(fields: [accountId], references: [id])
-  closure      DailyClosure @relation(fields: [closureId], references: [id], onDelete: Cascade)
+  closure      DailyClosure @relation(fields: [closureId], references: [id], onDelete: Restrict)
 
   @@map("daily_expenses")
 }
@@ -332,7 +338,7 @@ model DailyAttendance {
   isPaid     Boolean      @default(false) @map("is_paid")
   notes      String?
   createdAt  DateTime     @default(now()) @map("created_at")
-  closure    DailyClosure @relation(fields: [closureId], references: [id], onDelete: Cascade)
+  closure    DailyClosure @relation(fields: [closureId], references: [id], onDelete: Restrict)
   user       User         @relation(fields: [userId], references: [id])
 
   @@unique([closureId, userId, shift])
@@ -531,7 +537,7 @@ model SchedulePayment {
   riferimento    String?
   note           String?
   createdAt      DateTime  @default(now()) @map("created_at")
-  schedule       Schedule  @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  schedule       Schedule  @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
 
   @@index([scheduleId])
   @@index([dataPagamento])
@@ -548,7 +554,7 @@ model ScheduleAttachment {
   fileSize         Int       @map("file_size") // dimensione in bytes
   uploadedByUserId String?   @map("uploaded_by_user_id")
   createdAt        DateTime  @default(now()) @map("created_at")
-  schedule         Schedule  @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  schedule         Schedule  @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
   uploadedBy       User?     @relation("ScheduleAttachmentUploader", fields: [uploadedByUserId], references: [id])
 
   @@index([scheduleId])
@@ -565,7 +571,7 @@ model ScheduleReminder {
   inviato     Boolean   @default(false)
   dataInvio   DateTime? @map("data_invio")
   createdAt   DateTime  @default(now()) @map("created_at")
-  schedule    Schedule  @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  schedule    Schedule  @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
 
   @@index([scheduleId])
   @@index([inviato])
@@ -667,7 +673,7 @@ model AccountBudgetMapping {
   createdBy        String?        @map("created_by")
   createdAt        DateTime       @default(now()) @map("created_at")
   account          Account        @relation(fields: [accountId], references: [id])
-  budgetCategory   BudgetCategory @relation(fields: [budgetCategoryId], references: [id], onDelete: Cascade)
+  budgetCategory   BudgetCategory @relation(fields: [budgetCategoryId], references: [id], onDelete: Restrict)
 
   @@index([budgetCategoryId])
   @@map("account_budget_mappings")
@@ -696,7 +702,7 @@ model BudgetLine {
   budgetCategoryId String?         @map("budget_category_id")
   account          Account         @relation(fields: [accountId], references: [id])
   budgetCategory   BudgetCategory? @relation(fields: [budgetCategoryId], references: [id])
-  budget           Budget          @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  budget           Budget          @relation(fields: [budgetId], references: [id], onDelete: Restrict)
 
   @@unique([budgetId, accountId])
   @@index([budgetCategoryId])
@@ -719,7 +725,7 @@ model BudgetAlert {
   message         String?
   createdAt       DateTime        @default(now()) @map("created_at")
   categoryId      String?         @map("category_id")
-  budget          Budget          @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  budget          Budget          @relation(fields: [budgetId], references: [id], onDelete: Restrict)
   category        BudgetCategory? @relation(fields: [categoryId], references: [id])
 
   @@index([categoryId])
@@ -1156,7 +1162,7 @@ model InvoiceDeadline {
   paymentMethod String?           @map("payment_method")
   createdAt     DateTime          @default(now()) @map("created_at")
   iban          String?
-  invoice       ElectronicInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice       ElectronicInvoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
 
   @@index([dueDate])
   @@index([isPaid])
@@ -1426,7 +1432,7 @@ model CashFlowForecastLine {
   saldoProgressivo Decimal?         @map("saldo_progressivo") @db.Decimal(12, 2)
   isRealizzata     Boolean          @default(false) @map("is_realizzata")
   createdAt        DateTime         @default(now()) @map("created_at")
-  forecast         CashFlowForecast @relation(fields: [forecastId], references: [id], onDelete: Cascade)
+  forecast         CashFlowForecast @relation(fields: [forecastId], references: [id], onDelete: Restrict)
 
   @@index([forecastId, data])
   @@map("cash_flow_forecast_lines")
@@ -1441,7 +1447,7 @@ model CashFlowScenario {
   importiModificati Boolean          @default(false) @map("importi_modificati")
   dateModificate    Boolean          @default(false) @map("date_modificate")
   createdAt         DateTime         @default(now()) @map("created_at")
-  forecast          CashFlowForecast @relation(fields: [forecastId], references: [id], onDelete: Cascade)
+  forecast          CashFlowForecast @relation(fields: [forecastId], references: [id], onDelete: Restrict)
 
   @@map("cash_flow_scenarios")
 }

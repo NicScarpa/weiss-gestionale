@@ -13,6 +13,26 @@ import Image from 'next/image'
 
 const STAFF_HOSTNAME = 'staff.weisscafe.com'
 
+// Mappa errori NextAuth a messaggi leggibili in italiano
+function getErrorMessage(errorCode: string): string {
+  switch (errorCode) {
+    case 'CredentialsSignin':
+      return 'Username/Email o password non corretti. Verifica le credenziali e riprova.'
+    case 'Configuration':
+      return 'Errore di configurazione del server. Contatta l\'amministratore.'
+    case 'AccessDenied':
+      return 'Accesso negato. Il tuo account potrebbe essere disattivato.'
+    case 'Verification':
+      return 'Il link di verifica è scaduto o non valido.'
+    case 'SessionRequired':
+      return 'Sessione scaduta. Effettua nuovamente il login.'
+    case 'OAuthAccountNotLinked':
+      return 'Questo account è già collegato con un altro metodo di accesso.'
+    default:
+      return `Errore di autenticazione (${errorCode}). Riprova o contatta l'amministratore.`
+  }
+}
+
 export default function LoginPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -61,9 +81,7 @@ export default function LoginPage() {
       })
 
       if (result?.error) {
-        setLoginError(result.error === 'CredentialsSignin'
-          ? 'Username/Email o password non validi'
-          : result.error)
+        setLoginError(getErrorMessage(result.error))
       } else if (result?.ok) {
         // Fetch session per determinare il ruolo
         const sessionRes = await fetch('/api/auth/session')
@@ -131,7 +149,7 @@ export default function LoginPage() {
             {(loginError || error) && (
               <div className="flex items-center gap-2 p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
                 <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                <span>{loginError || 'Errore di autenticazione'}</span>
+                <span>{loginError || (error ? getErrorMessage(error) : 'Errore di autenticazione')}</span>
               </div>
             )}
 

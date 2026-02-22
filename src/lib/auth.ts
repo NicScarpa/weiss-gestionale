@@ -1,7 +1,15 @@
-import NextAuth, { type DefaultSession } from 'next-auth'
+import NextAuth, { type DefaultSession, CredentialsSignin } from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 import { compare } from 'bcryptjs'
 import { prisma } from './prisma'
+
+class InvalidCredentials extends CredentialsSignin {
+  code = 'CredentialsSignin'
+}
+
+class AccountDisabled extends CredentialsSignin {
+  code = 'AccessDenied'
+}
 
 // Extend NextAuth types
 declare module 'next-auth' {
@@ -46,6 +54,7 @@ export async function getServerSession() {
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  secret: process.env.NEXTAUTH_SECRET,
   providers: [
     Credentials({
       name: 'credentials',
@@ -55,7 +64,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
       async authorize(credentials) {
         if (!credentials?.identifier || !credentials?.password) {
-          throw new Error('Username/Email e password richiesti')
+          throw new InvalidCredentials()
         }
 
         const identifier = credentials.identifier as string
@@ -81,11 +90,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
 
         if (!user) {
-          throw new Error('Credenziali non valide')
+          throw new InvalidCredentials()
         }
 
         if (!user.isActive) {
-          throw new Error('Account disattivato')
+          throw new AccountDisabled()
         }
 
         const isValidPassword = await compare(
@@ -94,7 +103,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         )
 
         if (!isValidPassword) {
-          throw new Error('Credenziali non valide')
+          throw new InvalidCredentials()
         }
 
         // Aggiorna lastLoginAt
