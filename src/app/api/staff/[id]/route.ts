@@ -25,6 +25,12 @@ const fieldLabels: Record<string, string> = {
   fiscalCode: 'Codice Fiscale',
   birthDate: 'Data di nascita',
   address: 'Indirizzo',
+  gender: 'Genere',
+  birthPlace: 'Luogo di nascita',
+  birthProvince: 'Provincia di nascita',
+  zipCode: 'CAP',
+  city: 'Città',
+  province: 'Provincia',
   availableDays: 'Giorni disponibilità',
   availableHolidays: 'Disponibilità festivi',
   hourlyRateBase: 'Compenso base',
@@ -129,6 +135,12 @@ const updateStaffSchema = z.object({
   // Dati anagrafici aggiuntivi
   birthDate: z.string().nullable().optional(),
   address: z.string().nullable().optional(),
+  gender: z.enum(['M', 'F', 'X', '']).nullable().optional().transform(val => val === '' ? null : val),
+  birthPlace: z.string().nullable().optional(),
+  birthProvince: z.string().max(2).nullable().optional(),
+  zipCode: z.string().max(5).nullable().optional(),
+  city: z.string().nullable().optional(),
+  province: z.string().max(2).nullable().optional(),
 
   // Disponibilità EXTRA
   availableDays: z.array(z.number().min(0).max(6)).optional(),
@@ -204,6 +216,12 @@ export async function GET(
         // Dati anagrafici aggiuntivi
         birthDate: true,
         address: true,
+        gender: true,
+        birthPlace: true,
+        birthProvince: true,
+        zipCode: true,
+        city: true,
+        province: true,
 
         // Disponibilità EXTRA
         availableDays: true,
@@ -350,6 +368,12 @@ export async function PUT(
       updateData.birthDate = validatedData.birthDate ? new Date(validatedData.birthDate) : null
     }
     if (validatedData.address !== undefined) updateData.address = validatedData.address
+    if (validatedData.gender !== undefined) updateData.gender = validatedData.gender
+    if (validatedData.birthPlace !== undefined) updateData.birthPlace = validatedData.birthPlace
+    if (validatedData.birthProvince !== undefined) updateData.birthProvince = validatedData.birthProvince
+    if (validatedData.zipCode !== undefined) updateData.zipCode = validatedData.zipCode
+    if (validatedData.city !== undefined) updateData.city = validatedData.city
+    if (validatedData.province !== undefined) updateData.province = validatedData.province
 
     // Disponibilità EXTRA
     if (validatedData.availableDays !== undefined) updateData.availableDays = validatedData.availableDays
@@ -402,6 +426,12 @@ export async function PUT(
         fiscalCode: true,
         birthDate: true,
         address: true,
+        gender: true,
+        birthPlace: true,
+        birthProvince: true,
+        zipCode: true,
+        city: true,
+        province: true,
         availableDays: true,
         availableHolidays: true,
         hourlyRateBase: true,

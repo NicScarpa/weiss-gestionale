@@ -1,41 +1,35 @@
 'use client'
 
 import { use } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSession } from 'next-auth/react'
 import Link from 'next/link'
+import { Suspense } from 'react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
-import { EmployeeProfileForm } from '@/components/staff/EmployeeProfileForm'
+import { EmployeeDetailTabs } from '@/components/staff/EmployeeDetailTabs'
 import { ArrowLeft } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface PageProps {
   params: Promise<{ id: string }>
 }
 
-export default function StaffDetailPage({ params }: PageProps) {
-  const resolvedParams = use(params)
+function StaffDetailContent({ id }: { id: string }) {
   const { data: session } = useSession()
   const isAdmin = session?.user?.role === 'admin'
+  const queryClient = useQueryClient()
 
   const { data: staffData, isLoading, error } = useQuery({
-    queryKey: ['staff', resolvedParams.id],
+    queryKey: ['staff', id],
     queryFn: async () => {
-      const res = await fetch(`/api/staff/${resolvedParams.id}`)
+      const res = await fetch(`/api/staff/${id}`)
       if (!res.ok) {
         const err = await res.json()
         throw new Error(err.error || 'Errore nel caricamento')
       }
-      return res.json()
-    },
-  })
-
-  // Carica venues e roles per i dropdown
-  const { data: venuesData } = useQuery({
-    queryKey: ['venues'],
-    queryFn: async () => {
-      const res = await fetch('/api/venues')
-      if (!res.ok) return { venues: [] }
       return res.json()
     },
   })
@@ -49,16 +43,37 @@ export default function StaffDetailPage({ params }: PageProps) {
     },
   })
 
-  const venues = venuesData?.venues || []
   const roles = rolesData?.data || []
+
+  const toggleActiveMutation = useMutation({
+    mutationFn: async (isActive: boolean) => {
+      const res = await fetch(`/api/staff/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive }),
+      })
+      if (!res.ok) throw new Error('Errore nel salvataggio')
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['staff', id] })
+      queryClient.invalidateQueries({ queryKey: ['staff-list'] })
+      toast.success('Stato aggiornato')
+    },
+    onError: () => {
+      toast.error('Errore nell\'aggiornamento dello stato')
+    },
+  })
 
   if (isLoading) {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
           <Skeleton className="h-10 w-10" />
+          <Skeleton className="h-12 w-12 rounded-full" />
           <Skeleton className="h-8 w-48" />
         </div>
+        <Skeleton className="h-10 w-full" />
         <Skeleton className="h-96 w-full" />
       </div>
     )
@@ -80,32 +95,72 @@ export default function StaffDetailPage({ params }: PageProps) {
     )
   }
 
+  // Iniziali per avatar
+  const initials = `${staffData.firstName?.[0] || ''}${staffData.lastName?.[0] || ''}`.toUpperCase()
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Link href="/staff">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold">
-            {staffData.firstName} {staffData.lastName}
-          </h1>
-          <p className="text-muted-foreground">{staffData.email}</p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Link href="/staff">
+            <Button variant="ghost" size="icon">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </Link>
+          {/* Avatar con iniziali */}
+          <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-lg">
+            {initials}
+          </div>
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold">
+                {staffData.firstName} {staffData.lastName}
+              </h1>
+              <Badge variant="secondary">
+                {staffData.role?.name?.charAt(0).toUpperCase() + staffData.role?.name?.slice(1) || 'Staff'}
+              </Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">{staffData.email}</p>
+          </div>
         </div>
+        {isAdmin && (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">
+              {staffData.isActive ? 'Attivo' : 'Disattivato'}
+            </span>
+            <Switch
+              checked={staffData.isActive}
+              onCheckedChange={(checked) => toggleActiveMutation.mutate(checked)}
+              disabled={toggleActiveMutation.isPending}
+            />
+          </div>
+        )}
       </div>
 
-      {/* Profilo */}
-      <EmployeeProfileForm
+      {/* Tab */}
+      <EmployeeDetailTabs
         employee={staffData}
         isAdmin={isAdmin}
-        venues={venues}
-        roles={roles}
-        userId={resolvedParams.id}
         userRole={session?.user?.role || 'staff'}
+        userId={id}
+        roles={roles}
       />
     </div>
+  )
+}
+
+export default function StaffDetailPage({ params }: PageProps) {
+  const resolvedParams = use(params)
+
+  return (
+    <Suspense fallback={
+      <div className="space-y-6">
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-96 w-full" />
+      </div>
+    }>
+      <StaffDetailContent id={resolvedParams.id} />
+    </Suspense>
   )
 }
