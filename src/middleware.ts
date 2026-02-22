@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { decodeJwt } from 'jose'
 
 // Rotte accessibili agli utenti Staff (portale + API correlate)
 const STAFF_ALLOWED_PREFIXES = [
@@ -55,26 +54,14 @@ export function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Verifica la presenza del session token (next-auth JWT)
+  // Verifica la presenza del session token (NextAuth v5 usa JWE, non JWT plain)
+  // La validazione completa (scadenza, claims, mustChangePassword) viene fatta
+  // da auth() nelle API routes e dal ForcePasswordChangeModal lato client.
   const sessionToken = request.cookies.get('authjs.session-token')?.value
     || request.cookies.get('__Secure-authjs.session-token')?.value
 
   // Utente non autenticato su rotta protetta → redirect login
   if (!sessionToken) {
-    const loginUrl = new URL('/login', request.url)
-    loginUrl.searchParams.set('callbackUrl', pathname)
-    return NextResponse.redirect(loginUrl)
-  }
-
-  // Verifica scadenza JWT (decode senza verifica firma — Edge runtime limitation)
-  try {
-    const payload = decodeJwt(sessionToken)
-    if (payload.exp && payload.exp * 1000 < Date.now()) {
-      const loginUrl = new URL('/login', request.url)
-      loginUrl.searchParams.set('callbackUrl', pathname)
-      return NextResponse.redirect(loginUrl)
-    }
-  } catch {
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('callbackUrl', pathname)
     return NextResponse.redirect(loginUrl)
