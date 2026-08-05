@@ -81,3 +81,15 @@ test-results/
 # Internal docs and plans
 modifiche/
 weiss-docs/
+
+# uploads locali (cedolini, allegati) - mai nel repo
+uploads/
+
+# screenshot di lavoro nella root
+/*.png
+
+# dati operativi del bar (excel)
+Piano dei conti/
+
+# artefatti browser automation
+.playwright-mcp/
