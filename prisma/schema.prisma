@@ -502,10 +502,18 @@ model Schedule {
   venueId                 String                      @map("venue_id")
   tipo                    String                      // 'attiva' (da incassare) o 'passiva' (da pagare)
   stato                   String                      @default("aperta") // 'aperta', 'parzialmente_pagata', 'pagata', 'scaduta', 'annullata'
+  /// "Un umano ha guardato": asse ortogonale a pagamento e riconciliazione,
+  /// come il verificationStatus di Sibill. Speculare a JournalEntry.verified.
+  verificata              Boolean                     @default(false)
   descrizione             String
   importoTotale           Decimal                     @map("importo_totale") @db.Decimal(10, 2)
   importoPagato           Decimal                     @default(0) @map("importo_pagato") @db.Decimal(10, 2)
   dataScadenza            DateTime                    @map("data_scadenza") @db.Date
+  /// Data attesa di cassa (l'expectedPaymentDate di Sibill). Null significa
+  /// "coincide con dataScadenza": si valorizza solo quando diverge davvero,
+  /// cioè al riallineamento sulla data del movimento quando la riconciliazione
+  /// salda la scadenza. Il previsionale legge sempre dataAttesa ?? dataScadenza.
+  dataAttesa              DateTime?                   @map("data_attesa") @db.Date
   dataEmissione           DateTime?                   @map("data_emissione") @db.Date
   dataPagamento           DateTime?                   @map("data_pagamento") @db.Date
   tipoDocumento           String?                     @map("tipo_documento")

@@ -54,11 +54,20 @@ export async function GET(request: NextRequest) {
       _sum: { importoTotale: true },
     })
 
-    // Scadute (oggi e non pagate)
+    // Scadute (oggi e non pagate). Lo scaduto si giudica sulla data attesa di
+    // cassa (dataAttesa null = coincide con la contrattuale); il filtro sta in
+    // AND per non sovrascrivere l'OR di base sulle ricorrenze
     const scaduteAggregate = await prisma.schedule.aggregate({
       where: {
         ...where,
-        dataScadenza: { lte: today },
+        AND: [
+          {
+            OR: [
+              { dataAttesa: { lte: today } },
+              { dataAttesa: null, dataScadenza: { lte: today } },
+            ],
+          },
+        ],
         stato: { notIn: ['pagata', 'annullata'] },
       },
       _sum: { importoTotale: true },
@@ -66,10 +75,18 @@ export async function GET(request: NextRequest) {
     })
 
     // In scadenza prosimi 7 giorni
+    const finestra7Giorni = { gte: today, lte: nextWeek }
     const inScadenzaAggregate = await prisma.schedule.aggregate({
       where: {
         ...where,
-        dataScadenza: { gte: today, lte: nextWeek },
+        AND: [
+          {
+            OR: [
+              { dataAttesa: finestra7Giorni },
+              { dataAttesa: null, dataScadenza: finestra7Giorni },
+            ],
+          },
+        ],
         stato: { notIn: ['pagata', 'annullata'] },
       },
       _sum: { importoTotale: true },

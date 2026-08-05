@@ -37,16 +37,25 @@ export async function GET(request: NextRequest) {
       importoTotale: true,
       importoPagato: true,
       dataScadenza: true,
+      dataAttesa: true,
       isRicorrente: true,
       stato: true,
     } as const
+
+    // Il previsionale lavora sulla data attesa di cassa, non su quella
+    // contrattuale (modello Sibill). dataAttesa null = coincide con
+    // dataScadenza, da cui il fallback nelle due condizioni
+    const finestraFutura = { gte: today, lte: endDate }
 
     // Future schedules (within range, not cancelled)
     const schedulesInRange = await prisma.schedule.findMany({
       where: {
         ...venueFilter,
         stato: { not: 'annullata' },
-        dataScadenza: { gte: today, lte: endDate },
+        OR: [
+          { dataAttesa: finestraFutura },
+          { dataAttesa: null, dataScadenza: finestraFutura },
+        ],
       },
       select: selectFields,
       orderBy: { dataScadenza: 'asc' },
@@ -57,7 +66,10 @@ export async function GET(request: NextRequest) {
       where: {
         ...venueFilter,
         stato: { notIn: ['annullata', 'pagata'] },
-        dataScadenza: { lt: today },
+        OR: [
+          { dataAttesa: { lt: today } },
+          { dataAttesa: null, dataScadenza: { lt: today } },
+        ],
       },
       select: selectFields,
     })
@@ -94,7 +106,7 @@ export async function GET(request: NextRequest) {
     // Group schedules by date for chart
     const schedulesByDate = new Map<string, typeof schedulesInRange>()
     for (const s of schedulesInRange) {
-      const dateKey = format(new Date(s.dataScadenza), 'yyyy-MM-dd')
+      const dateKey = format(new Date(s.dataAttesa ?? s.dataScadenza), 'yyyy-MM-dd')
       if (!schedulesByDate.has(dateKey)) {
         schedulesByDate.set(dateKey, [])
       }

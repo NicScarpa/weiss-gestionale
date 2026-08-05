@@ -1,6 +1,6 @@
 # Il ciclo di tesoreria: modello Sibill e stato dell'implementazione
 
-**Ultimo aggiornamento:** 5 agosto 2026
+**Ultimo aggiornamento:** 5 agosto 2026 (pomeriggio: completate le fasi 3 e 4)
 
 Questo documento spiega il modello di ragionamento su cui è costruito il ciclo
 fattura → scadenza → movimento → riconciliazione, cosa è già implementato e
@@ -131,7 +131,7 @@ filtra anche esplicitamente le scadenze pagate.
 
 ---
 
-## Fase 3 — La seconda data ⬜ da fare
+## Fase 3 — La seconda data ✅
 
 In Sibill la scadenza ha due date: `paymentDate` (scadenza contrattuale) e
 `expectedPaymentDate` (data attesa di cassa), e quest'ultima viene
@@ -142,16 +142,35 @@ Verificato sui dati: sulle scadenze riconciliate `expectedPaymentDate` coincide
 con la data del movimento in 50 casi su 50, mentre `paymentDate` conserva
 l'originale e diverge fino a 29 giorni.
 
-**Da fare**: aggiungere `dataAttesa` a `Schedule`, inizializzata uguale a
-`dataScadenza` e riallineata dentro `reconcileScheduleWithEntry`. Poi far usare
-quella al saldo scalare (`src/app/api/scadenzario/saldo-scalare/route.ts`) e
-all'aging.
+**Com'è stato implementato**:
+
+- **`Schedule.dataAttesa`, nullable con semantica "null = coincide con
+  `dataScadenza`"**. Non viene materializzata alla creazione: si valorizza solo
+  quando diverge davvero. Il comportamento osservabile è identico
+  all'inizializzazione "uguale a dataScadenza" di Sibill, ma senza migrazione
+  NOT NULL sul database condiviso con la produzione (il codice vecchio avrebbe
+  rotto gli insert nell'intervallo fra push dello schema e deploy) e senza il
+  problema della data "congelata" quando si modifica `dataScadenza` di una
+  scadenza mai divergita.
+- **Riallineamento in `reconcileScheduleWithEntry`**, ma solo quando la
+  riconciliazione **salda** la scadenza. Su un acconto parziale il residuo
+  resta atteso alla data contrattuale: in Sibill il caso non esiste (il
+  parziale genera una nuova scadenza che eredita la data originale), quindi
+  riallineare anche sui parziali avrebbe spostato il residuo nel passato.
+  L'annullamento della riconciliazione riporta `dataAttesa` a null.
+- **Il previsionale legge `dataAttesa ?? dataScadenza`**: saldo scalare, aging
+  e anche `summary` (i contatori "scadute" e "in scadenza 7 giorni" sarebbero
+  rimasti incoerenti con l'aging). Nei `where` Prisma il fallback è un `OR`
+  sulle due colonne; in `summary` sta dentro un `AND` per non sovrascrivere
+  l'`OR` di base sulle ricorrenze.
 
 **Perché conta**: rende onesto il previsionale. Se un fornitore paga sempre con
 dieci giorni di ritardo, il grafico lo riflette invece di continuare a
-promettere la data contrattuale.
+promettere la data contrattuale. Nota: oggi `dataAttesa` diverge solo alla
+riconciliazione; la stima preventiva (dai termini di pagamento del fornitore o
+manuale) è il naturale passo successivo, insieme all'esposizione in UI.
 
-## Fase 4 — La verifica come asse ortogonale ⬜ da fare
+## Fase 4 — La verifica come asse ortogonale ✅
 
 In Sibill `verificationStatus` (VERIFIED / TO_VERIFY) è indipendente da
 pagamento e riconciliazione: dice *"un umano ha guardato"*, non *"è pagato"*.
@@ -159,8 +178,18 @@ Esiste sia sul movimento sia sulla scadenza, e nei match automatici la
 transazione passa a VERIFIED mentre la scadenza resta TO_VERIFY: i due assi
 sono trattati separatamente.
 
-**Da fare**: `JournalEntry.verified` esiste già; aggiungere `verificata` a
-`Schedule` con i filtri corrispondenti, riusando il pattern della prima nota.
+**Com'è stato implementato**, riusando il pattern della prima nota
+(`JournalEntry.verified`):
+
+- **`Schedule.verificata`** (`Boolean @default(false)`): le scadenze nascono
+  da verificare, comprese quelle generate da fatture, ricorrenze e regole —
+  coerente con Sibill, dove i flow restano TO_VERIFY anche nei match
+  automatici.
+- **`PATCH /api/scadenzario/[id]/verifica`**: toggle, speculare a
+  `PATCH /api/prima-nota/[id]/verify`, con isolamento sede e audit log.
+- **Filtro `verificata`** su `GET /api/scadenzario` (true/false/assente).
+- **UI**: select "Verifica" nei filtri dello scadenzario, colonna con toggle
+  ✓/○ nella lista, badge cliccabile nel dettaglio scadenza.
 
 ---
 

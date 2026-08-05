@@ -38,17 +38,23 @@ export async function GET(request: NextRequest) {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    // Recupera tutte le scadenze scadute non pagate e non annullate
+    // Recupera tutte le scadenze scadute non pagate e non annullate.
+    // "Scaduta" si giudica sulla data attesa di cassa: dataAttesa null
+    // significa che coincide con la contrattuale, da cui il fallback
     const schedules = await prisma.schedule.findMany({
       where: {
         venueId,
         stato: { notIn: ['pagata', 'annullata'] },
-        dataScadenza: { lt: today },
+        OR: [
+          { dataAttesa: { lt: today } },
+          { dataAttesa: null, dataScadenza: { lt: today } },
+        ],
       },
       select: {
         id: true,
         tipo: true,
         dataScadenza: true,
+        dataAttesa: true,
         importoTotale: true,
         importoPagato: true,
       },
@@ -71,7 +77,7 @@ export async function GET(request: NextRequest) {
 
     schedules.forEach(s => {
       const giorniScaduti = Math.floor(
-        (today.getTime() - new Date(s.dataScadenza).getTime()) / (1000 * 60 * 60 * 24)
+        (today.getTime() - new Date(s.dataAttesa ?? s.dataScadenza).getTime()) / (1000 * 60 * 60 * 24)
       )
       const importoTotale = Number(s.importoTotale)
       const importoResiduo = importoTotale - Number(s.importoPagato)

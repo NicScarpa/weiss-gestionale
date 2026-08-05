@@ -158,6 +158,10 @@ export async function reconcileScheduleWithEntry({
         stato: nuovoStato,
         // La data di pagamento è quella del movimento reale, non di oggi
         ...(saldata && !schedule.dataPagamento ? { dataPagamento: entry.date } : {}),
+        // La data attesa di cassa si riallinea al movimento reale, come
+        // l'expectedPaymentDate di Sibill. Solo a saldo completo: su un
+        // acconto il residuo resta atteso alla data contrattuale
+        ...(saldata ? { dataAttesa: entry.date } : {}),
       },
     })
 
@@ -276,7 +280,9 @@ export async function undoScheduleReconciliation({
         importoPagato: new Prisma.Decimal(nuovoPagato.toFixed(2)),
         stato: nuovoStato,
         // La scadenza non è più saldata: la data di pagamento non ha più senso
+        // e la data attesa torna a seguire quella contrattuale (null = coincide)
         dataPagamento: null,
+        dataAttesa: null,
       },
     })
   })

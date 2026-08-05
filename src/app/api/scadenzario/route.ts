@@ -61,6 +61,7 @@ export async function GET(request: NextRequest) {
     const dataInizio = searchParams.get('dataInizio')
     const dataFine = searchParams.get('dataFine')
     const isRicorrente = searchParams.get('isRicorrente')
+    const verificata = searchParams.get('verificata')
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '50')
     const sortBy = searchParams.get('sortBy') || 'dataScadenza'
@@ -96,6 +97,13 @@ export async function GET(request: NextRequest) {
       where.isRicorrente = true
     } else if (isRicorrente === 'false') {
       where.isRicorrente = false
+    }
+
+    // Filtro verifica: "un umano ha guardato", ortogonale allo stato
+    if (verificata === 'true') {
+      where.verificata = true
+    } else if (verificata === 'false') {
+      where.verificata = false
     }
 
     // Ricerca testuale
@@ -172,6 +180,7 @@ export async function GET(request: NextRequest) {
         dataInizio,
         dataFine,
         isRicorrente,
+        verificata,
       },
     })
   } catch (error) {

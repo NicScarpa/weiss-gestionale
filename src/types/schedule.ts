@@ -70,12 +70,17 @@ export interface Schedule {
   venueId: string
   tipo: ScheduleType
   stato: ScheduleStatus
+  /** "Un umano ha guardato": ortogonale a stato di pagamento e riconciliazione */
+  verificata: boolean
   descrizione: string
   importoTotale: number
   importoPagato: number
   importoResiduo: number  // calcolato = totale - pagato
   valuta: string
   dataScadenza: Date
+  /** Data attesa di cassa: null = coincide con dataScadenza. Si valorizza al
+   *  riallineamento sulla data del movimento quando la riconciliazione salda */
+  dataAttesa: Date | null
   dataEmissione: Date | null
   dataPagamento: Date | null
   tipoDocumento: ScheduleDocumentType
@@ -168,6 +173,7 @@ export interface ScheduleFilters {
   dataInizio?: Date
   dataFine?: Date
   isRicorrente?: boolean
+  verificata?: boolean
 }
 
 export interface CreateScheduleInput {

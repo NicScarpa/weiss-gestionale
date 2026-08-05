@@ -290,6 +290,22 @@ export default function ScadenzarioDetailPage() {
     }
   }
 
+  const handleToggleVerifica = async () => {
+    if (!schedule) return
+    try {
+      const resp = await fetch(`/api/scadenzario/${schedule.id}/verifica`, { method: 'PATCH' })
+      if (resp.ok) {
+        const result = await resp.json()
+        toast.success(result.verificata ? 'Scadenza verificata' : 'Scadenza da verificare')
+        await fetchSchedule()
+      } else {
+        toast.error('Errore nell\'aggiornamento della verifica')
+      }
+    } catch {
+      toast.error('Errore nell\'aggiornamento della verifica')
+    }
+  }
+
   if (isLoading || !schedule) {
     return (
       <div className="flex-1 p-8">
@@ -327,6 +343,19 @@ export default function ScadenzarioDetailPage() {
               </Badge>
               <ScheduleStatusBadge stato={schedule.stato} />
               <PriorityBadge priorita={schedule.priorita} showIcon />
+              <Badge
+                variant="outline"
+                title="Un umano ha controllato questa scadenza: indipendente dallo stato di pagamento"
+                className={cn(
+                  'cursor-pointer select-none text-sm',
+                  schedule.verificata
+                    ? 'border-green-600 text-green-700'
+                    : 'text-muted-foreground'
+                )}
+                onClick={handleToggleVerifica}
+              >
+                {schedule.verificata ? '✓ Verificata' : '○ Da verificare'}
+              </Badge>
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-slate-900">
               {schedule.descrizione}

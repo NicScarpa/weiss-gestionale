@@ -18,6 +18,7 @@ interface ScheduleFiltersProps {
     dataInizio?: Date
     dataFine?: Date
     isRicorrente?: boolean
+    verificata?: boolean
   }
   onFiltriChange: (filtri: ScheduleFiltersProps['filtri']) => void
   onReset: () => void
@@ -35,7 +36,7 @@ export function ScheduleFilters({
   const haFiltriAttivi = () => {
     return !!filtri.stato || !!filtri.tipo || !!filtri.priorita || !!filtri.source ||
            !!filtri.search || !!filtri.dataInizio || !!filtri.dataFine ||
-           filtri.isRicorrente !== undefined
+           filtri.isRicorrente !== undefined || filtri.verificata !== undefined
   }
 
   const handleReset = () => {
@@ -130,6 +131,22 @@ export function ScheduleFilters({
               {SCHEDULE_SOURCE_LABELS[source]}
             </SelectItem>
           ))}
+        </SelectContent>
+      </Select>
+
+      {/* Filtro Verifica: "un umano ha guardato", ortogonale allo stato */}
+      <Select
+        value={filtri.verificata === undefined ? '__all__' : String(filtri.verificata)}
+        onValueChange={(v) => onFiltriChange({ ...filtri, verificata: v === '__all__' ? undefined : v === 'true' })}
+        disabled={isLoading}
+      >
+        <SelectTrigger className="w-[150px]">
+          <SelectValue placeholder="Verifica" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__all__">Tutte</SelectItem>
+          <SelectItem value="false">Da verificare</SelectItem>
+          <SelectItem value="true">Verificate</SelectItem>
         </SelectContent>
       </Select>
 

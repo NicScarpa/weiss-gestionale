@@ -73,6 +73,7 @@ export default function ScadenzarioPage() {
         if (filtri.dataInizio) params.append('dataInizio', filtri.dataInizio.toISOString())
         if (filtri.dataFine) params.append('dataFine', filtri.dataFine.toISOString())
         if (filtri.isRicorrente !== undefined) params.append('isRicorrente', String(filtri.isRicorrente))
+        if (filtri.verificata !== undefined) params.append('verificata', String(filtri.verificata))
         params.append('page', String(page))
         params.append('sortBy', sortBy)
         params.append('sortOrder', sortOrder)
@@ -126,6 +127,20 @@ export default function ScadenzarioPage() {
     }
     fetchCalendar()
   }, [view, calMonth, calYear])
+
+  const handleToggleVerifica = async (schedule: Schedule) => {
+    try {
+      const resp = await fetch(`/api/scadenzario/${schedule.id}/verifica`, { method: 'PATCH' })
+      if (resp.ok) {
+        const result = await resp.json()
+        setSchedules(prev => prev.map(s =>
+          s.id === schedule.id ? { ...s, verificata: result.verificata } : s
+        ))
+      }
+    } catch (error) {
+      console.error('Errore toggle verifica:', error)
+    }
+  }
 
   const handlePayment = async (data: PaymentFormData) => {
     if (!selectedSchedule) return
@@ -332,19 +347,20 @@ export default function ScadenzarioPage() {
                     </TableHead>
                     <TableHead className="text-right">Residuo</TableHead>
                     <TableHead>Priorità</TableHead>
+                    <TableHead className="text-center">Verifica</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {isLoading ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center text-muted-foreground">
+                      <TableCell colSpan={10} className="text-center text-muted-foreground">
                         Caricamento...
                       </TableCell>
                     </TableRow>
                   ) : schedules.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-12">
+                      <TableCell colSpan={10} className="text-center py-12">
                         <div className="flex flex-col items-center gap-2 text-muted-foreground">
                           <CalendarClock className="h-10 w-10 opacity-30" />
                           <p className="font-medium">Nessuna scadenza trovata</p>
@@ -434,6 +450,22 @@ export default function ScadenzarioPage() {
                           </TableCell>
                           <TableCell>
                             <PriorityBadge priorita={schedule.priorita} showIcon />
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <button
+                              type="button"
+                              title={schedule.verificata ? 'Verificata: clicca per riportarla da verificare' : 'Da verificare: clicca per confermare'}
+                              className={cn(
+                                'text-base leading-none px-2 py-1 rounded hover:bg-muted',
+                                schedule.verificata ? 'text-green-600' : 'text-muted-foreground'
+                              )}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleToggleVerifica(schedule)
+                              }}
+                            >
+                              {schedule.verificata ? '✓' : '○'}
+                            </button>
                           </TableCell>
                           <TableCell>
                             {!isPagata && !isAnnullata && (
