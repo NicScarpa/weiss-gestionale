@@ -15,7 +15,6 @@ function policyRow(overrides: Record<string, unknown> = {}) {
     dayEndMinutes: at(18),
     lunchStartMinutes: at(13),
     lunchEndMinutes: at(14),
-    lunchWindowMinutes: 30,
     flexMinutes: 15,
     roundingMinutes: 15,
     roundingToleranceMinutes: 5,
@@ -114,6 +113,21 @@ describe('toPolicyRules', () => {
 
     expect(regole.contractDailyMinutes).toBe(at(6))
   })
+
+  it('se la regola non fissa le ore settimanali valgono quelle del dipendente', () => {
+    // Una regola predefinita salvata senza ore settimanali non deve azzerare
+    // lo straordinario di chi un contratto ce l'ha: 40 ore su 6 giorni = 400 min
+    const regole = toPolicyRules(policyRow({ contractWeeklyHours: null }), 40)
+
+    expect(regole.contractDailyMinutes).toBe(400)
+  })
+
+  it('senza ore né sulla regola né sul contratto vale il default di 8 ore', () => {
+    // È il comportamento del calcolo paghe prima delle regole orario
+    const regole = toPolicyRules(policyRow({ contractWeeklyHours: null }), null)
+
+    expect(regole.contractDailyMinutes).toBe(at(8))
+  })
 })
 
 describe('neutralPolicy', () => {
@@ -123,11 +137,18 @@ describe('neutralPolicy', () => {
     expect(regole.dayStartMinutes).toBeNull()
     expect(regole.entryRounding.intervalMinutes).toBe(1)
     expect(regole.lunch).toBeNull()
-    expect(regole.contractDailyMinutes).toBeNull()
   })
 
   it('usa le ore di contratto del dipendente quando ci sono', () => {
     const regole = neutralPolicy(48)
+
+    expect(regole.contractDailyMinutes).toBe(at(8))
+  })
+
+  it('senza contratto usa il default storico di 8 ore al giorno', () => {
+    // Il vecchio calcolo paghe usava 8 ore quando il contratto mancava: chi
+    // non ha regole deve continuare a essere calcolato esattamente come prima
+    const regole = neutralPolicy(null)
 
     expect(regole.contractDailyMinutes).toBe(at(8))
   })
@@ -164,5 +185,13 @@ describe('resolvePolicyRules', () => {
     const { policyName } = resolvePolicyRules(contesto, 'user-9', null, null)
 
     expect(policyName).toBe('Predefinita')
+  })
+
+  it('il contratto del dipendente completa la regola che non fissa le ore', () => {
+    // La predefinita del contesto non ha ore settimanali: per un dipendente
+    // con 40 ore di contratto lo straordinario scatta comunque a 400 min
+    const { rules } = resolvePolicyRules(contesto, 'user-9', null, 40)
+
+    expect(rules.contractDailyMinutes).toBe(400)
   })
 })

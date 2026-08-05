@@ -6,6 +6,8 @@ vi.mock('@/lib/prisma', () => ({
     attendanceRecord: { findMany: vi.fn() },
     leaveRequest: { findMany: vi.fn() },
     attendanceAnomaly: { findMany: vi.fn() },
+    timekeepingPolicy: { findFirst: vi.fn() },
+    workLocation: { findMany: vi.fn() },
   },
 }))
 
@@ -78,6 +80,87 @@ describe('generatePayrollData', () => {
 
     expect(giornoDi(records, '2026-01-15')?.hours.total).toBe(4)
     expect(giornoDi(records, '2026-01-15')?.hours.night).toBe(3)
+  })
+
+  it('carica anche le ore oltre i confini del mese, per il turno che li scavalca', async () => {
+    // Turno 31 agosto 22:00 -> 1 settembre 03:00 italiane. Le 5 ore
+    // appartengono al 31 agosto, ma l'uscita è un istante di settembre: se la
+    // query si fermasse alla mezzanotte del 1°, la notte sparirebbe dal mese.
+    vi.mocked(prisma.attendanceRecord.findMany).mockResolvedValue([
+      punch('IN', '2026-08-31T20:00:00Z'),
+      punch('OUT', '2026-09-01T01:00:00Z'),
+    ] as never)
+
+    const { records } = await generatePayrollData(8, 2026)
+
+    expect(giornoDi(records, '2026-08-31')?.hours.total).toBe(5)
+
+    const query = vi.mocked(prisma.attendanceRecord.findMany).mock.calls[0][0] as {
+      where: { punchedAt: { gte: Date; lt: Date } }
+    }
+    // La finestra deve estendersi oltre la fine del mese (per l'uscita di
+    // settembre) e prima del suo inizio (per l'entrata del turno di luglio
+    // che finisce il 1° agosto).
+    expect(query.where.punchedAt.lt.getTime()).toBeGreaterThan(
+      new Date('2026-09-01T01:00:00Z').getTime()
+    )
+    expect(query.where.punchedAt.gte.getTime()).toBeLessThan(
+      new Date('2026-07-31T22:00:00Z').getTime()
+    )
+  })
+
+  it('con una regola, entrata e uscita esportate sono quelle riconosciute', async () => {
+    // Regola predefinita 09:00-18:00 con arrotondamento entrata 30/tolleranza
+    // 5: chi timbra alle 9:06 viene riconosciuto dalle 9:30, e l'export deve
+    // mostrare 09:30, altrimenti le colonne del foglio non tornano con le ore.
+    vi.mocked(prisma.timekeepingPolicy.findFirst).mockResolvedValue({
+      id: 'pol-default',
+      name: 'Full time',
+      dayStartMinutes: 9 * 60,
+      dayEndMinutes: 18 * 60,
+      lunchStartMinutes: null,
+      lunchEndMinutes: null,
+      flexMinutes: 0,
+      roundingMinutes: 30,
+      roundingToleranceMinutes: 5,
+      roundingOutMinutes: null,
+      roundingOutToleranceMinutes: null,
+      maxDailyMinutes: null,
+      contractWeeklyHours: null,
+      saturdayAsOvertime: false,
+      blockSunday: false,
+      singlePunchMode: false,
+      extraBreaks: [],
+    } as never)
+    vi.mocked(prisma.workLocation.findMany).mockResolvedValue([] as never)
+    vi.mocked(prisma.user.findMany).mockReset()
+    vi.mocked(prisma.user.findMany)
+      .mockResolvedValueOnce([] as never) // dipendenti con una regola propria
+      .mockResolvedValueOnce([dipendente] as never) // organico
+    vi.mocked(prisma.attendanceRecord.findMany).mockResolvedValue([
+      punch('IN', '2026-08-20T07:06:00Z'), // 09:06 italiane
+      punch('OUT', '2026-08-20T16:00:00Z'), // 18:00 italiane
+    ] as never)
+
+    const { records } = await generatePayrollData(8, 2026, 'venue-1')
+    const giorno = giornoDi(records, '2026-08-20')
+
+    expect(giorno?.clockIn?.toISOString()).toBe('2026-08-20T07:30:00.000Z')
+    expect(giorno?.hours.total).toBe(8.5)
+    // La regola non fissa le ore settimanali: valgono le 40 del contratto,
+    // quindi oltre 400 minuti scatta lo straordinario.
+    expect(giorno?.hours.overtime).toBeCloseTo(110 / 60, 5)
+  })
+
+  it('con userIds calcola solo le persone richieste', async () => {
+    vi.mocked(prisma.attendanceRecord.findMany).mockResolvedValue([] as never)
+
+    await generatePayrollData(8, 2026, undefined, { userIds: ['user-1'] })
+
+    const query = vi.mocked(prisma.user.findMany).mock.calls[0][0] as {
+      where: { id?: { in: string[] } }
+    }
+    expect(query.where.id).toEqual({ in: ['user-1'] })
   })
 
   it('nella notte in cui scatta l ora legale conta le ore realmente lavorate', async () => {

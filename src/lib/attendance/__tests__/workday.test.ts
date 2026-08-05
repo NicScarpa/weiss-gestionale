@@ -88,6 +88,34 @@ describe('groupPunchesByWorkday', () => {
     expect([...giorni.keys()].sort()).toEqual(['2026-08-20', '2026-08-22'])
   })
 
+  it("l'uscita chiude la giornata: un'uscita orfana del giorno dopo resta nel proprio giorno", () => {
+    // Turno regolare 17:00 -> 23:00 del 5, poi il 6 un'uscita senza entrata
+    // (entrata dimenticata): non deve attaccarsi alla giornata già chiusa,
+    // altrimenti il motore leggerebbe 23 ore di lavoro nel giorno 5.
+    const giorni = groupPunchesByWorkday([
+      p('IN', '2026-08-05T15:00:00Z'),
+      p('OUT', '2026-08-05T21:00:00Z'),
+      p('OUT', '2026-08-06T14:00:00Z'),
+    ])
+
+    expect([...giorni.keys()].sort()).toEqual(['2026-08-05', '2026-08-06'])
+    expect(giorni.get('2026-08-05')).toHaveLength(2)
+    expect(giorni.get('2026-08-06')).toHaveLength(1)
+  })
+
+  it('tiene insieme il turno spezzato, anche se la seconda parte scavalca la mezzanotte', () => {
+    // 07:00-13:00 e 17:00-01:00 italiane: una sola giornata lavorativa
+    const giorni = groupPunchesByWorkday([
+      p('IN', '2026-08-05T05:00:00Z'),
+      p('OUT', '2026-08-05T11:00:00Z'),
+      p('IN', '2026-08-05T15:00:00Z'),
+      p('OUT', '2026-08-05T23:00:00Z'),
+    ])
+
+    expect([...giorni.keys()]).toEqual(['2026-08-05'])
+    expect(giorni.get('2026-08-05')).toHaveLength(4)
+  })
+
   it('apre una nuova giornata quando arriva una seconda entrata', () => {
     // Entrata di lunedì mai chiusa, poi entrata di martedì: sono due giornate
     const giorni = groupPunchesByWorkday([

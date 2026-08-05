@@ -3,9 +3,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
-import { getCurrentPosition, GeolocationError } from '@/lib/geolocation'
+import { getCurrentPosition, formatDistance, GeolocationError } from '@/lib/geolocation'
 import { savePunchOffline, syncAllPendingPunches, getPendingPunchCount } from '@/lib/offline'
-import { LogIn, LogOut, Coffee, Loader2, WifiOff, CloudUpload } from 'lucide-react'
+import type { AssignedLocation } from '@/lib/attendance/work-location'
+import { LogIn, LogOut, Coffee, Loader2, WifiOff, CloudUpload, Info } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { AttendanceStatus } from './PunchStatus'
@@ -33,6 +34,13 @@ export interface PunchVenue {
 const GPS_PERMISSION_HINT =
   'Hai negato l’accesso alla posizione. Riattivalo dalle impostazioni del browser (icona accanto all’indirizzo del sito) e ricarica la pagina.'
 
+const TYPE_LABELS: Record<PunchType, string> = {
+  IN: 'Entrata',
+  OUT: 'Uscita',
+  BREAK_START: 'Inizio pausa',
+  BREAK_END: 'Fine pausa',
+}
+
 function isPermissionDenied(error: unknown): boolean {
   return (
     typeof error === 'object' &&
@@ -41,11 +49,89 @@ function isPermissionDenied(error: unknown): boolean {
   )
 }
 
+/**
+ * Rifiuto della route di timbratura.
+ *
+ * Il messaggio da solo non basta: "Sei fuori dal raggio di Villa Varda" non
+ * dice di quanto, e chi legge non sa se deve fare due passi o cambiare paese.
+ */
+class PunchError extends Error {
+  readonly code?: string
+  readonly distance?: number
+  readonly maxRadius?: number
+
+  constructor(
+    message: string,
+    dettagli: { code?: string; distance?: number; maxRadius?: number } = {}
+  ) {
+    super(message)
+    this.name = 'PunchError'
+    this.code = dettagli.code
+    this.distance = dettagli.distance
+    this.maxRadius = dettagli.maxRadius
+  }
+}
+
+async function readPunchError(res: Response): Promise<PunchError> {
+  const body = await res.json().catch(() => ({}))
+
+  return new PunchError(body.error || 'Errore nella timbratura', {
+    code: body.code,
+    distance: body.distance,
+    maxRadius: body.maxRadius,
+  })
+}
+
+/** Spiegazione da mettere sotto al messaggio del server, quando ce n'è una. */
+function descrizioneErrore(err: unknown, gpsError: unknown): string | undefined {
+  if (
+    err instanceof PunchError &&
+    err.distance !== undefined &&
+    err.maxRadius !== undefined
+  ) {
+    return `Sei a ${formatDistance(err.distance)} dal punto di timbratura, il raggio consentito è ${err.maxRadius} m`
+  }
+
+  if (isPermissionDenied(gpsError)) return GPS_PERMISSION_HINT
+
+  // Il permesso c'è ma la posizione non è arrivata: il server chiede il GPS e
+  // il dispositivo non lo ha ancora agganciato.
+  if (err instanceof PunchError && err.code === 'GEOLOCATION_REQUIRED') {
+    return 'Il dispositivo non ha fornito la posizione: controlla che il GPS sia acceso e riprova, meglio se all’aperto.'
+  }
+
+  return undefined
+}
+
 interface PunchButtonProps {
   status: AttendanceStatus
   venue: PunchVenue | null
+  /**
+   * Luoghi di lavoro assegnati: dove nessuno consente di timbrare col GPS il
+   * pulsante non deve nemmeno provarci, altrimenti l'unico modo per scoprirlo
+   * è premerlo e leggere un rifiuto.
+   */
+  workLocations?: AssignedLocation[]
   disabled?: boolean
   className?: string
+}
+
+/**
+ * Perché la timbratura non è possibile in nessuno dei luoghi assegnati, oppure
+ * `null` se almeno uno la consente. Senza luoghi assegnati vale la sede, e il
+ * pulsante resta attivo come prima dei luoghi di lavoro.
+ */
+function motivoBlocco(workLocations: AssignedLocation[]): string | null {
+  if (workLocations.length === 0) return null
+
+  const modalita = new Set(workLocations.map((l) => l.trackingMode))
+  if (modalita.has('GPS_GEOFENCE')) return null
+
+  if (!modalita.has('MANUAL_HOURS')) return 'Non sei abilitato a timbrare'
+
+  return workLocations.length === 1
+    ? 'Presso il tuo luogo di lavoro le ore si dichiarano, non si timbrano'
+    : 'Nei tuoi luoghi di lavoro le ore si dichiarano, non si timbrano'
 }
 
 const buttonConfig: Record<
@@ -91,6 +177,7 @@ const buttonConfig: Record<
 export function PunchButton({
   status,
   venue,
+  workLocations = [],
   disabled = false,
   className,
 }: PunchButtonProps) {
@@ -144,6 +231,19 @@ export function PunchButton({
         queryClient.invalidateQueries({ queryKey: ['attendance-current'] })
         queryClient.invalidateQueries({ queryKey: ['attendance-today'] })
       }
+      // Una timbratura rifiutata è stata tolta dalla coda: se non se ne dà il
+      // motivo qui, sparisce senza che nessuno sappia perché.
+      for (const scartata of result.rejected) {
+        const ora = new Date(scartata.timestamp).toLocaleTimeString('it-IT', {
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+
+        toast.error(
+          `${TYPE_LABELS[scartata.punchType]} delle ${ora} non registrata`,
+          { description: scartata.reason, duration: 10000 }
+        )
+      }
       if (result.failed > 0) {
         toast.warning(`${result.failed} timbrature non sincronizzate`)
       }
@@ -196,8 +296,7 @@ export function PunchButton({
       })
 
       if (!res.ok) {
-        const error = await res.json()
-        throw new Error(error.error || 'Errore nella timbratura')
+        throw await readPunchError(res)
       }
 
       return res.json()
@@ -207,21 +306,14 @@ export function PunchButton({
       queryClient.invalidateQueries({ queryKey: ['attendance-current'] })
       queryClient.invalidateQueries({ queryKey: ['attendance-today'] })
 
-      const typeLabels: Record<PunchType, string> = {
-        IN: 'Entrata',
-        OUT: 'Uscita',
-        BREAK_START: 'Inizio pausa',
-        BREAK_END: 'Fine pausa',
-      }
-
       // Con più luoghi di lavoro non basta dire "registrata": chi timbra deve
       // vedere dove il sistema lo ha collocato, per accorgersi subito di uno
       // sbaglio invece di scoprirlo a fine mese.
       const luogo = data.data.workLocation?.name
       const dove = luogo ? ` presso ${luogo}` : ''
       const message = data.data.isWithinRadius
-        ? `${typeLabels[config.punchType]} registrata${dove}`
-        : `${typeLabels[config.punchType]} registrata${dove} (fuori raggio)`
+        ? `${TYPE_LABELS[config.punchType]} registrata${dove}`
+        : `${TYPE_LABELS[config.punchType]} registrata${dove} (fuori raggio)`
 
       toast.success(message)
     },
@@ -261,14 +353,7 @@ export function PunchButton({
           accuracy: position.accuracy,
         })
 
-        const typeLabels: Record<PunchType, string> = {
-          IN: 'Entrata',
-          OUT: 'Uscita',
-          BREAK_START: 'Inizio pausa',
-          BREAK_END: 'Fine pausa',
-        }
-
-        toast.success(`${typeLabels[config.punchType]} salvata offline`, {
+        toast.success(`${TYPE_LABELS[config.punchType]} salvata offline`, {
           description: 'Verrà sincronizzata quando tornerai online',
           icon: <WifiOff className="h-4 w-4" />,
         })
@@ -345,12 +430,8 @@ export function PunchButton({
       } else {
         const message =
           (err as { message?: string })?.message || 'Errore nella timbratura'
-        toast.error(
-          message,
-          isPermissionDenied(gpsError)
-            ? { description: GPS_PERMISSION_HINT }
-            : undefined
-        )
+        const description = descrizioneErrore(err, gpsError)
+        toast.error(message, description ? { description } : undefined)
       }
     } finally {
       setIsGettingLocation(false)
@@ -358,6 +439,7 @@ export function PunchButton({
   }
 
   const isLoading = isGettingLocation || punchMutation.isPending
+  const blocco = motivoBlocco(workLocations)
 
   return (
     <div className="space-y-2">
@@ -366,6 +448,14 @@ export function PunchButton({
         <div className="flex items-center justify-center gap-2 text-amber-600 bg-amber-50 rounded-lg py-2 px-3">
           <WifiOff className="h-4 w-4" />
           <span className="text-sm font-medium">Modalità offline</span>
+        </div>
+      )}
+
+      {/* Perché il pulsante è spento */}
+      {blocco && (
+        <div className="flex items-center justify-center gap-2 text-muted-foreground bg-muted rounded-lg py-2 px-3">
+          <Info className="h-4 w-4 shrink-0" />
+          <span className="text-sm font-medium">{blocco}</span>
         </div>
       )}
 
@@ -390,7 +480,7 @@ export function PunchButton({
 
       <Button
         onClick={handlePunch}
-        disabled={disabled || isLoading || !venue}
+        disabled={disabled || isLoading || !venue || blocco !== null}
         className={cn(
           'w-full h-24 text-xl font-bold text-white shadow-md rounded-2xl',
           !isOnline ? 'bg-amber-600 hover:bg-amber-700' : config.bgColor,
@@ -446,16 +536,19 @@ export function BreakButton({
       })
 
       if (!res.ok) {
-        const error = await res.json()
-        throw new Error(error.error || 'Errore nella timbratura')
+        throw await readPunchError(res)
       }
 
       return res.json()
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['attendance-current'] })
       queryClient.invalidateQueries({ queryKey: ['attendance-today'] })
-      toast.success('Pausa iniziata')
+
+      // Anche la pausa va attribuita a un luogo: se il sistema ha scelto quello
+      // sbagliato è meglio accorgersene adesso, non a fine mese.
+      const luogo = data.data.workLocation?.name
+      toast.success(luogo ? `Pausa iniziata presso ${luogo}` : 'Pausa iniziata')
     },
     // L'errore viene mostrato da handleBreak insieme all'eventuale
     // suggerimento sul permesso GPS negato.
@@ -486,12 +579,8 @@ export function BreakButton({
     } catch (err) {
       const message =
         (err as { message?: string })?.message || 'Errore nella timbratura'
-      toast.error(
-        message,
-        isPermissionDenied(gpsError)
-          ? { description: GPS_PERMISSION_HINT }
-          : undefined
-      )
+      const description = descrizioneErrore(err, gpsError)
+      toast.error(message, description ? { description } : undefined)
     } finally {
       setIsGettingLocation(false)
     }

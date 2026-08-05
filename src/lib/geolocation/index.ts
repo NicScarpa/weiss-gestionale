@@ -10,7 +10,7 @@ import {
   UseGeolocationOptions,
   DEFAULT_GEOLOCATION_OPTIONS,
 } from './types'
-import { calculateDistance, isWithinRadius } from './haversine'
+import { calculateDistance } from './haversine'
 
 // Re-export utilities
 export { calculateDistance, isWithinRadius, formatDistance } from './haversine'
@@ -179,51 +179,6 @@ export function useGeolocation(
   return {
     ...state,
     refresh: updatePosition,
-  }
-}
-
-/**
- * React hook for checking distance from a venue
- */
-export function useVenueDistance(
-  venue: VenueLocation | null,
-  options: UseGeolocationOptions = DEFAULT_GEOLOCATION_OPTIONS
-): {
-  distanceCheck: DistanceCheckResult | null
-  isLoading: boolean
-  error: GeolocationError | null
-  refresh: () => void
-} {
-  const geo = useGeolocation(options)
-
-  const distanceCheck: DistanceCheckResult | null =
-    geo.position && venue
-      ? {
-          distanceMeters: Math.round(
-            calculateDistance(
-              geo.position.latitude,
-              geo.position.longitude,
-              venue.latitude,
-              venue.longitude
-            )
-          ),
-          isWithinRadius: isWithinRadius(
-            geo.position.latitude,
-            geo.position.longitude,
-            venue.latitude,
-            venue.longitude,
-            venue.geoFenceRadius
-          ).isWithin,
-          venue,
-          userPosition: geo.position,
-        }
-      : null
-
-  return {
-    distanceCheck,
-    isLoading: geo.isLoading,
-    error: geo.error,
-    refresh: geo.refresh,
   }
 }
 

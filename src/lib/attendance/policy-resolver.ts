@@ -51,8 +51,25 @@ export function pickEffectivePolicy(
   return input.locationPolicy ?? input.userPolicy ?? input.defaultPolicy ?? null
 }
 
-/** Traduce una riga di regola nei termini che il motore di calcolo capisce. */
-export function toPolicyRules(row: TimekeepingPolicyRow): PolicyRules {
+/**
+ * Ore giornaliere quando né la regola né il contratto le fissano: è il default
+ * che il calcolo paghe usava da sempre, e chi non ha nulla di configurato deve
+ * continuare a essere calcolato così.
+ */
+const DEFAULT_DAILY_MINUTES = 8 * 60
+
+/**
+ * Traduce una riga di regola nei termini che il motore di calcolo capisce.
+ *
+ * Le ore da contratto seguono una catena di fallback: quelle fissate dalla
+ * regola, altrimenti quelle del contratto del dipendente, altrimenti il
+ * default storico di 8 ore. Senza fallback, una regola predefinita salvata
+ * senza ore settimanali azzererebbe lo straordinario di tutto l'organico.
+ */
+export function toPolicyRules(
+  row: TimekeepingPolicyRow,
+  employeeContractWeeklyHours: number | null = null
+): PolicyRules {
   const weeklyHours =
     row.contractWeeklyHours === null || row.contractWeeklyHours === undefined
       ? null
@@ -81,7 +98,10 @@ export function toPolicyRules(row: TimekeepingPolicyRow): PolicyRules {
         row.roundingOutToleranceMinutes ?? row.roundingToleranceMinutes,
     },
     maxDailyMinutes: row.maxDailyMinutes,
-    contractDailyMinutes: toDailyMinutes(weeklyHours),
+    contractDailyMinutes:
+      toDailyMinutes(weeklyHours) ??
+      toDailyMinutes(employeeContractWeeklyHours) ??
+      DEFAULT_DAILY_MINUTES,
     saturdayAsOvertime: row.saturdayAsOvertime,
     singlePunchMode: row.singlePunchMode,
   }
@@ -102,7 +122,8 @@ export function neutralPolicy(contractWeeklyHours: number | null): PolicyRules {
     entryRounding: { intervalMinutes: 1, toleranceMinutes: 0 },
     exitRounding: { intervalMinutes: 1, toleranceMinutes: 0 },
     maxDailyMinutes: null,
-    contractDailyMinutes: toDailyMinutes(contractWeeklyHours),
+    contractDailyMinutes:
+      toDailyMinutes(contractWeeklyHours) ?? DEFAULT_DAILY_MINUTES,
     saturdayAsOvertime: false,
     singlePunchMode: false,
   }
@@ -157,12 +178,22 @@ export async function loadPolicyResolutionContext(
       where: { venueId, isDefault: true, isActive: true },
       select: policySelect,
     }),
+    // Una regola disattivata non si applica a nessuno, nemmeno a chi ce
+    // l'ha assegnata: chi la aveva ricade sulla predefinita o sul neutro.
     prisma.user.findMany({
-      where: { venueId, timekeepingPolicyId: { not: null } },
+      where: {
+        venueId,
+        timekeepingPolicyId: { not: null },
+        timekeepingPolicy: { isActive: true },
+      },
       select: { id: true, timekeepingPolicy: { select: policySelect } },
     }),
     prisma.workLocation.findMany({
-      where: { venueId, timekeepingPolicyId: { not: null } },
+      where: {
+        venueId,
+        timekeepingPolicyId: { not: null },
+        timekeepingPolicy: { isActive: true },
+      },
       select: { id: true, timekeepingPolicy: { select: policySelect } },
     }),
   ])
@@ -207,7 +238,7 @@ export function resolvePolicyRules(
     return { rules: neutralPolicy(contractWeeklyHours), policyName: null }
   }
 
-  return { rules: toPolicyRules(row), policyName: row.name }
+  return { rules: toPolicyRules(row, contractWeeklyHours), policyName: row.name }
 }
 
 /** Le regole in vigore per una singola persona, quando serve fuori dal calcolo mensile. */
@@ -245,7 +276,7 @@ export async function getEffectiveTimekeepingPolicy(
   }
 
   return {
-    rules: toPolicyRules(row),
+    rules: toPolicyRules(row, contractWeeklyHours),
     policyName: row.name,
     blockSunday: row.blockSunday,
   }

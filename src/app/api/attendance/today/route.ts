@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
 import { logger } from '@/lib/logger'
+import { romeDateKey, romeDayRange } from '@/lib/timezone'
 // GET /api/attendance/today - Timbrature di oggi
 export async function GET(request: NextRequest) {
   try {
@@ -15,18 +16,16 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const venueId = searchParams.get('venueId')
 
-    // Data di oggi
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
+    // Giornata italiana di oggi: sul server, che gira in UTC, il confine
+    // cadrebbe altrimenti alle 02:00 e il turno serale sparirebbe a metà notte.
+    const oggi = romeDayRange(romeDateKey(new Date()))
 
     const punches = await prisma.attendanceRecord.findMany({
       where: {
         userId: session.user.id,
         punchedAt: {
-          gte: today,
-          lt: tomorrow,
+          gte: oggi.start,
+          lt: oggi.end,
         },
         ...(venueId && { venueId }),
       },

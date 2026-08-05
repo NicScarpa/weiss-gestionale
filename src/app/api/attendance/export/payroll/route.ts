@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 import ExcelJS from 'exceljs'
+import { romeTimeString } from '@/lib/timezone'
 import {
   generatePayrollData,
   PayrollRecord,
@@ -137,9 +138,9 @@ function generateCSV(records: PayrollRecord[], includeLeaves: boolean): string {
       r.employeeCode,
       r.lastName,
       r.firstName,
-      format(new Date(r.date), 'dd/MM/yyyy'),
-      r.clockIn ? format(new Date(r.clockIn), 'HH:mm') : '',
-      r.clockOut ? format(new Date(r.clockOut), 'HH:mm') : '',
+      formatDateOnly(r.date),
+      r.clockIn ? romeTimeString(new Date(r.clockIn)) : '',
+      r.clockOut ? romeTimeString(new Date(r.clockOut)) : '',
       formatNumber(r.hours.ordinary),
       formatNumber(r.hours.overtime),
       formatNumber(r.hours.night),
@@ -197,10 +198,10 @@ async function generateExcel(
       r.employeeCode,
       r.lastName,
       r.firstName,
-      format(new Date(r.date), 'dd/MM/yyyy'),
-      format(new Date(r.date), 'EEEE', { locale: it }),
-      r.clockIn ? format(new Date(r.clockIn), 'HH:mm') : '',
-      r.clockOut ? format(new Date(r.clockOut), 'HH:mm') : '',
+      formatDateOnly(r.date),
+      WEEKDAYS_IT[r.date.getUTCDay()],
+      r.clockIn ? romeTimeString(new Date(r.clockIn)) : '',
+      r.clockOut ? romeTimeString(new Date(r.clockOut)) : '',
       r.hours.ordinary > 0 ? r.hours.ordinary.toFixed(2) : '',
       r.hours.overtime > 0 ? r.hours.overtime.toFixed(2) : '',
       r.hours.night > 0 ? r.hours.night.toFixed(2) : '',
@@ -343,6 +344,22 @@ async function generateExcel(
 
   const arrayBuffer = await wb.xlsx.writeBuffer()
   return Buffer.from(arrayBuffer)
+}
+
+// La data dei record è la mezzanotte UTC del giorno: si legge in UTC, così il
+// giorno non slitta qualunque sia il fuso della macchina.
+const WEEKDAYS_IT = [
+  'domenica',
+  'lunedì',
+  'martedì',
+  'mercoledì',
+  'giovedì',
+  'venerdì',
+  'sabato',
+]
+
+function formatDateOnly(date: Date): string {
+  return date.toISOString().slice(0, 10).split('-').reverse().join('/')
 }
 
 function formatNumber(value: number): string {

@@ -12,7 +12,6 @@ import { notifyAnomalyCreated } from '@/lib/notifications'
 import { format, isValid, parseISO } from 'date-fns'
 import {
   romeDateKey,
-  romeDayRange,
   toDateOnlyUtc,
   toRomeParts,
 } from '@/lib/timezone'
@@ -21,17 +20,20 @@ import { it } from 'date-fns/locale'
 
 import { logger } from '@/lib/logger'
 // Schema validazione input
+// I limiti numerici ricalcano le colonne del database (Decimal(9,6) per le
+// coordinate, Decimal(6,2) per l'accuratezza): un valore fuori scala andrebbe
+// in overflow su Postgres e produrrebbe un 500 opaco.
 const punchSchema = z.object({
   punchType: z.enum(['IN', 'OUT', 'BREAK_START', 'BREAK_END']),
   venueId: z.string().min(1, 'Sede richiesta'),
-  latitude: z.number().optional(),
-  longitude: z.number().optional(),
-  accuracy: z.number().optional(),
-  notes: z.string().optional(),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  accuracy: z.number().min(0).max(9999).optional(),
+  notes: z.string().max(500).optional(),
   // Orario reale della timbratura registrata offline (ISO 8601).
   // Validato manualmente per poter degradare all'ora corrente invece di
   // rifiutare l'intera timbratura quando il valore non è utilizzabile.
-  offlineTimestamp: z.string().optional(),
+  offlineTimestamp: z.string().max(64).optional(),
 })
 
 // Il timestamp offline può precedere di poco l'ora del server (orologi non
@@ -121,6 +123,21 @@ export async function POST(request: NextRequest) {
       ? pickWorkLocation(luoghiAssegnati, coordinates)
       : { location: null, distanceMeters: null, isWithinRadius: true }
 
+    // Con più luoghi assegnati e nessuna posizione non si può stabilire né il
+    // luogo né la modalità con cui la persona è abilitata a timbrare: si
+    // rifiuta, non si accetta al buio. Accettare qui aprirebbe la porta a chi
+    // ha solo luoghi in sola visualizzazione e timbra spegnendo il GPS.
+    if (usaLuoghi && !scelta.location) {
+      return NextResponse.json(
+        {
+          error:
+            'Non riesco a stabilire in quale luogo stai timbrando. Attiva il GPS e riprova.',
+          code: 'GEOLOCATION_REQUIRED',
+        },
+        { status: 422 }
+      )
+    }
+
     // Chi ha un luogo in sola visualizzazione, o dichiara le ore invece di
     // timbrarle, non passa da qui.
     if (scelta.location) {
@@ -141,6 +158,25 @@ export async function POST(request: NextRequest) {
           {
             error: `Presso ${scelta.location.name} le ore si dichiarano, non si timbrano.`,
             code: 'TRACKING_MANUAL_HOURS',
+          },
+          { status: 422 }
+        )
+      }
+
+      // La modalità GPS con geofence configurato richiede la posizione per
+      // definizione: senza, il controllo del raggio non si può eseguire.
+      // La decisione non dipende da AttendancePolicy, che potrebbe non essere
+      // mai stata salvata: qui il default è chiudere, non aprire.
+      if (
+        modalita === 'GPS_GEOFENCE' &&
+        scelta.location.latitude !== null &&
+        scelta.location.longitude !== null &&
+        !hasCoordinates
+      ) {
+        return NextResponse.json(
+          {
+            error: `Per timbrare presso ${scelta.location.name} serve la posizione. Attiva il GPS e riprova.`,
+            code: 'GEOLOCATION_REQUIRED',
           },
           { status: 422 }
         )
@@ -177,6 +213,9 @@ export async function POST(request: NextRequest) {
 
     if (usaLuoghi) {
       distanceFromVenue = scelta.distanceMeters
+      // Distanza ignota con un luogo scelto significa geofence non
+      // configurato (luogo senza coordinate): non c'è un raggio da violare.
+      // Il caso "coordinate non inviate" non arriva qui: è già stato rifiutato.
       isWithinRadius = scelta.distanceMeters === null ? true : scelta.isWithinRadius
       maxRadius = scelta.location?.geofenceRadiusMeters ?? maxRadius
     } else if (coordinates && venue.latitude && venue.longitude) {
@@ -189,6 +228,12 @@ export async function POST(request: NextRequest) {
         )
       )
       isWithinRadius = distanceFromVenue <= maxRadius
+    }
+
+    // La colonna è Decimal(8,2): una distanza intercontinentale la manderebbe
+    // in overflow. Oltre i 999 km il numero esatto non aggiunge informazione.
+    if (distanceFromVenue !== null) {
+      distanceFromVenue = Math.min(distanceFromVenue, 999999)
     }
 
     // Se la policy blocca le timbrature fuori sede
@@ -256,7 +301,6 @@ export async function POST(request: NextRequest) {
     // Il giorno è quello civile italiano: sul server, che gira in UTC, le
     // timbrature serali cadrebbero altrimenti nel giorno successivo.
     const punchDateKey = romeDateKey(punchedAt)
-    const punchDay = romeDayRange(punchDateKey)
 
     // Riposo domenicale: se la regola in vigore lo prevede, la domenica non si
     // timbra. Il controllo sta sul server perché è una regola, non un consiglio.
@@ -278,18 +322,82 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // La giornata lavorativa di un'uscita è quella dell'entrata che l'ha
+    // aperta: per il turno 18:00-01:00 l'uscita dopo mezzanotte appartiene al
+    // giorno prima, e il turno pianificato va cercato lì — altrimenti
+    // l'uscita non troverebbe il suo turno e nascerebbe una "mancata uscita"
+    // inesistente.
+    let matchingClockIn: { id: string; punchedAt: Date } | null = null
+    let workdayKey = punchDateKey
+    if (validatedData.punchType === 'OUT') {
+      matchingClockIn = await prisma.attendanceRecord.findFirst({
+        where: {
+          userId: session.user.id,
+          venueId: validatedData.venueId,
+          punchType: 'IN',
+          punchedAt: {
+            gte: new Date(punchedAt.getTime() - 24 * 60 * 60 * 1000),
+            lt: punchedAt,
+          },
+        },
+        orderBy: { punchedAt: 'desc' },
+        select: { id: true, punchedAt: true },
+      })
+
+      if (matchingClockIn) {
+        workdayKey = romeDateKey(matchingClockIn.punchedAt)
+      }
+    }
+
     const todayAssignment = await prisma.shiftAssignment.findFirst({
       where: {
         userId: session.user.id,
         venueId: validatedData.venueId,
         // `date` è una colonna @db.Date: si confronta con la mezzanotte UTC
         // del giorno, non con l'istante in cui inizia la giornata italiana.
-        date: toDateOnlyUtc(punchDateKey),
+        date: toDateOnlyUtc(workdayKey),
         schedule: {
           status: 'PUBLISHED',
         },
       },
     })
+
+    // Una timbratura sincronizzata da offline può arrivare due volte: la coda
+    // del dispositivo ritenta e il server potrebbe aver già registrato il
+    // primo invio. Stessa persona, stesso tipo, stesso istante: è la stessa
+    // timbratura, si risponde con quella senza crearne un doppione.
+    if (isOfflineSync && !offlineTimestampRejected) {
+      const esistente = await prisma.attendanceRecord.findFirst({
+        where: {
+          userId: session.user.id,
+          venueId: validatedData.venueId,
+          punchType: validatedData.punchType as PunchType,
+          punchedAt,
+        },
+        include: {
+          venue: { select: { id: true, name: true, code: true } },
+        },
+      })
+
+      if (esistente) {
+        return NextResponse.json({
+          success: true,
+          data: {
+            id: esistente.id,
+            punchType: esistente.punchType,
+            punchedAt: esistente.punchedAt,
+            venue: esistente.venue,
+            workLocation: scelta.location
+              ? { id: scelta.location.id, name: scelta.location.name }
+              : null,
+            isWithinRadius: esistente.isWithinRadius,
+            distanceFromVenue: esistente.distanceFromVenue,
+            isOfflineSync,
+            offlineTimestampRejected,
+          },
+        })
+      }
+    }
 
     // Crea la timbratura
     const record = await prisma.attendanceRecord.create({
@@ -346,24 +454,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Se timbrata OUT, aggiorna actualEnd e calcola ore lavorate
+    // sull'entrata che ha aperto la giornata, anche se era ieri.
     if (todayAssignment && validatedData.punchType === 'OUT') {
-      // Trova l'entrata dello stesso giorno per calcolare le ore
-      const clockIn = await prisma.attendanceRecord.findFirst({
-        where: {
-          userId: session.user.id,
-          venueId: validatedData.venueId,
-          punchType: 'IN',
-          punchedAt: {
-            gte: punchDay.start,
-            lt: punchDay.end,
-          },
-        },
-        orderBy: { punchedAt: 'asc' },
-      })
-
       let hoursWorked: number | null = null
-      if (clockIn) {
-        const diffMs = punchedAt.getTime() - clockIn.punchedAt.getTime()
+      if (matchingClockIn) {
+        const diffMs = punchedAt.getTime() - matchingClockIn.punchedAt.getTime()
         hoursWorked = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100
       }
 

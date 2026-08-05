@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
+import { getVenueId } from '@/lib/venue'
 // Mappatura nomi campi per messaggi di errore leggibili
 const fieldLabels: Record<string, string> = {
   firstName: 'Nome',
@@ -332,6 +334,23 @@ export async function PUT(
       }
     }
 
+    // La regola oraria decide come si calcolano le ore, cioè la busta paga:
+    // un id inesistente o di un'altra sede non deve arrivare al database.
+    if (validatedData.timekeepingPolicyId) {
+      const venueId = await getVenueId()
+      const regola = await prisma.timekeepingPolicy.findFirst({
+        where: { id: validatedData.timekeepingPolicyId, ...(venueId && { venueId }) },
+        select: { id: true },
+      })
+
+      if (!regola) {
+        return NextResponse.json(
+          { error: 'Regola orario non trovata' },
+          { status: 400 }
+        )
+      }
+    }
+
     // Prepara dati per update
     const updateData: Record<string, unknown> = {}
 
@@ -408,6 +427,13 @@ export async function PUT(
       if (validatedData.canHandleCash !== undefined) updateData.canHandleCash = validatedData.canHandleCash
     }
 
+    // Fotografia dei valori precedenti per l'audit: qui passano parametri
+    // retributivi (tariffe, regola oraria) e senza traccia non si potrebbe
+    // ricostruire chi ha cambiato cosa.
+    const precedente = (await prisma.user.findUnique({
+      where: { id },
+    })) as Record<string, unknown> | null
+
     const updatedStaff = await prisma.user.update({
       where: { id },
       data: updateData,
@@ -466,6 +492,33 @@ export async function PUT(
         },
       },
     })
+
+    // Solo i campi effettivamente toccati, con il PIN oscurato: l'audit deve
+    // dire che è cambiato, non quanto vale.
+    const campiOscurati = new Set(['portalPin'])
+    const oldValues: Record<string, unknown> = {}
+    const newValues: Record<string, unknown> = {}
+    for (const campo of Object.keys(updateData)) {
+      if (campiOscurati.has(campo)) {
+        oldValues[campo] = '•••'
+        newValues[campo] = '•••'
+      } else {
+        oldValues[campo] = precedente?.[campo] ?? null
+        newValues[campo] = updateData[campo] ?? null
+      }
+    }
+
+    if (Object.keys(newValues).length > 0) {
+      await createAuditLog({
+        userId: session.user.id,
+        action: 'UPDATE',
+        entityType: 'User',
+        entityId: id,
+        venueId: (precedente?.venueId as string | undefined) ?? undefined,
+        oldValues,
+        newValues,
+      })
+    }
 
     return NextResponse.json(updatedStaff)
   } catch (error) {

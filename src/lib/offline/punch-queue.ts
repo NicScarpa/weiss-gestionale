@@ -152,6 +152,26 @@ export async function markPunchSynced(id: string): Promise<void> {
 }
 
 /**
+ * Elimina una timbratura dalla coda.
+ *
+ * Serve per le timbrature che il server ha rifiutato definitivamente: lasciarle
+ * in coda significherebbe ritentarle a ogni ritorno online senza che nulla
+ * possa cambiare l'esito.
+ */
+export async function deletePunch(id: string): Promise<void> {
+  const database = await openDB()
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction([STORE_NAME], 'readwrite')
+    const store = transaction.objectStore(STORE_NAME)
+    const request = store.delete(id)
+
+    request.onsuccess = () => resolve()
+    request.onerror = () => reject(new Error('Errore eliminazione punch offline'))
+  })
+}
+
+/**
  * Aggiorna il contatore tentativi sync e l'errore
  */
 export async function updatePunchSyncAttempt(id: string, error?: string): Promise<void> {
@@ -209,9 +229,37 @@ export async function cleanupSyncedPunches(daysOld: number = 7): Promise<number>
 }
 
 /**
+ * Esito della sincronizzazione di una timbratura.
+ *
+ * La distinzione fra `rejected` e `retry` è la ragione per cui questa funzione
+ * non restituisce più un booleano: un rifiuto del server (domenica bloccata,
+ * luogo in sola visualizzazione, posizione mancante) non diventerà mai un
+ * successo ritentandolo, mentre un errore di rete sì.
+ */
+export type SyncOutcome =
+  | { status: 'synced' }
+  | { status: 'rejected'; reason: string }
+  | { status: 'retry'; reason: string }
+
+/** Timbratura scartata dal server, con il motivo da mostrare a chi l'ha fatta. */
+export interface RejectedPunch {
+  punchType: OfflinePunch['punchType']
+  timestamp: string
+  reason: string
+}
+
+/**
+ * Codici 4xx che non sono un giudizio sulla timbratura ma sul momento in cui è
+ * stata inviata: sessione scaduta, richiesta troppo lenta, troppe richieste.
+ * Queste si ritentano, altrimenti una sessione scaduta cancellerebbe una
+ * timbratura buona.
+ */
+const RITENTABILI = new Set([401, 408, 429])
+
+/**
  * Sincronizza una singola timbratura con il server
  */
-export async function syncPunch(punch: OfflinePunch): Promise<boolean> {
+export async function syncPunch(punch: OfflinePunch): Promise<SyncOutcome> {
   try {
     const response = await fetch('/api/attendance/punch', {
       method: 'POST',
@@ -232,25 +280,40 @@ export async function syncPunch(punch: OfflinePunch): Promise<boolean> {
 
     if (response.ok) {
       await markPunchSynced(punch.id)
-      return true
-    } else {
-      const error = await response.json()
-      await updatePunchSyncAttempt(punch.id, error.error || 'Errore sconosciuto')
-      return false
+      return { status: 'synced' }
     }
+
+    const body = await response.json().catch(() => ({}))
+    const reason = body.error || 'Timbratura rifiutata dal server'
+
+    // Rifiuto definitivo: si toglie dalla coda, altrimenti resterebbe lì per
+    // sempre e il dipendente vedrebbe un contatore che non scende mai.
+    if (response.status < 500 && !RITENTABILI.has(response.status)) {
+      await deletePunch(punch.id)
+      return { status: 'rejected', reason }
+    }
+
+    await updatePunchSyncAttempt(punch.id, reason)
+    return { status: 'retry', reason }
   } catch (error) {
-    await updatePunchSyncAttempt(punch.id, (error as Error).message)
-    return false
+    const reason = (error as Error).message
+    await updatePunchSyncAttempt(punch.id, reason)
+    return { status: 'retry', reason }
   }
 }
 
 /**
  * Sincronizza tutte le timbrature pendenti
  */
-export async function syncAllPendingPunches(): Promise<{ synced: number; failed: number }> {
+export async function syncAllPendingPunches(): Promise<{
+  synced: number
+  failed: number
+  rejected: RejectedPunch[]
+}> {
   const unsyncedPunches = await getUnsyncedPunches()
   let synced = 0
   let failed = 0
+  const rejected: RejectedPunch[] = []
 
   // Ordina per timestamp per sincronizzare in ordine cronologico
   unsyncedPunches.sort((a, b) => a.timestamp.localeCompare(b.timestamp))
@@ -262,15 +325,21 @@ export async function syncAllPendingPunches(): Promise<{ synced: number; failed:
       continue
     }
 
-    const success = await syncPunch(punch)
-    if (success) {
+    const esito = await syncPunch(punch)
+    if (esito.status === 'synced') {
       synced++
+    } else if (esito.status === 'rejected') {
+      rejected.push({
+        punchType: punch.punchType,
+        timestamp: punch.timestamp,
+        reason: esito.reason,
+      })
     } else {
       failed++
     }
   }
 
-  return { synced, failed }
+  return { synced, failed, rejected }
 }
 
 /**

@@ -29,6 +29,13 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
+
+    // Il calcolatore serve a capire i parametri PRIMA di impegnarsi: si può
+    // provare una regola che non ha ancora un nome.
+    if (body?.policy && !body.policy.name) {
+      body.policy.name = 'Prova'
+    }
+
     const dati = provaCalcoloSchema.parse(body)
 
     const rules = toPolicyRules({

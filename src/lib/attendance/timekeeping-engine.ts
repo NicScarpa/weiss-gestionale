@@ -126,12 +126,110 @@ function emptyDay(warnings: DayWarning[], steps: string[]): RecognizedDay {
   }
 }
 
+interface Interval {
+  start: number
+  end: number
+}
+
+/**
+ * Accoppia le timbrature in turni [entrata, uscita]. Una giornata può averne
+ * più d'uno — il turno spezzato del bar, 07:00-13:00 e 17:00-22:00 — e il
+ * buco fra i turni non è lavoro.
+ *
+ * Regole di tolleranza sui dati sporchi: un'entrata doppia dentro un turno
+ * aperto si ignora (vale la prima); un'uscita doppia dopo un turno chiuso lo
+ * estende (vale l'ultima); un'uscita senza nessuna entrata prima si ignora.
+ */
+function pairPunches(ordered: DayPunch[]): {
+  segments: Interval[]
+  punchedBreaks: Interval[]
+  hasIn: boolean
+  danglingIn: number | null
+} {
+  const segments: Interval[] = []
+  const punchedBreaks: Interval[] = []
+  let openIn: number | null = null
+  let openBreak: number | null = null
+  let hasIn = false
+
+  for (const punch of ordered) {
+    if (punch.type === 'IN') {
+      hasIn = true
+      if (openIn === null) {
+        openIn = punch.minutes
+      }
+    } else if (punch.type === 'OUT') {
+      if (openIn !== null) {
+        segments.push({ start: openIn, end: Math.max(punch.minutes, openIn) })
+        openIn = null
+      } else if (segments.length > 0) {
+        const lastSegment = segments[segments.length - 1]
+        lastSegment.end = Math.max(lastSegment.end, punch.minutes)
+      }
+    } else if (punch.type === 'BREAK_START') {
+      openBreak = punch.minutes
+    } else if (punch.type === 'BREAK_END' && openBreak !== null) {
+      if (punch.minutes > openBreak) {
+        punchedBreaks.push({ start: openBreak, end: punch.minutes })
+      }
+      openBreak = null
+    }
+  }
+
+  return { segments, punchedBreaks, hasIn, danglingIn: openIn }
+}
+
+/** Minuti dell'intervallo [start, end] che cadono dentro i segmenti. */
+function overlapWithSegments(start: number, end: number, segments: Interval[]): number {
+  return segments.reduce((sum, s) => sum + overlap(start, end, s.start, s.end), 0)
+}
+
+/** Parte di [start, end] coperta sia da una pausa timbrata sia da un segmento. */
+function overlapWithPunchedBreaks(
+  start: number,
+  end: number,
+  punchedBreaks: Interval[],
+  segments: Interval[]
+): number {
+  let total = 0
+  for (const b of punchedBreaks) {
+    for (const s of segments) {
+      total += Math.max(
+        0,
+        Math.min(end, b.end, s.end) - Math.max(start, b.start, s.start)
+      )
+    }
+  }
+  return total
+}
+
+/**
+ * Le finestre di pausa della regola sono scritte come orari del giorno
+ * (0-1439), ma in un turno che scavalca la mezzanotte la stessa pausa cade
+ * "domani": la cena delle 00:30 di una giornata 18:00-03:00 è il minuto 1470,
+ * non il 30. Si sceglie la posizione che interseca davvero l'orario lavorato.
+ */
+function placeBreakWindow(
+  startMinutes: number,
+  endMinutes: number,
+  segments: Interval[]
+): Interval {
+  const plain = { start: startMinutes, end: endMinutes }
+  const shifted = { start: startMinutes + DAY_MINUTES, end: endMinutes + DAY_MINUTES }
+
+  const plainOverlap = overlapWithSegments(plain.start, plain.end, segments)
+  const shiftedOverlap = overlapWithSegments(shifted.start, shifted.end, segments)
+
+  return shiftedOverlap > plainOverlap ? shifted : plain
+}
+
 /**
  * Ore riconosciute per una giornata lavorativa.
  *
- * L'ordine dei passaggi conta: prima la finestra della giornata con la
- * flessibilità, poi gli arrotondamenti, poi le pause, poi il tetto giornaliero,
- * infine la classificazione. Invertirli darebbe risultati diversi.
+ * L'ordine dei passaggi conta: prima l'accoppiamento delle timbrature in
+ * turni, poi la finestra della giornata con la flessibilità, poi gli
+ * arrotondamenti, poi le pause, poi il tetto giornaliero, infine la
+ * classificazione. Invertirli darebbe risultati diversi.
  */
 export function computeRecognizedDay(
   punches: DayPunch[],
@@ -142,10 +240,9 @@ export function computeRecognizedDay(
   const warnings: DayWarning[] = []
 
   const ordered = [...punches].sort((a, b) => a.minutes - b.minutes)
-  const first = ordered.find((p) => p.type === 'IN')
-  const last = [...ordered].reverse().find((p) => p.type === 'OUT')
+  const paired = pairPunches(ordered)
 
-  if (!first) {
+  if (!paired.hasIn) {
     warnings.push('ENTRATA_MANCANTE')
     return emptyDay(warnings, ['Nessuna entrata registrata.'])
   }
@@ -153,99 +250,152 @@ export function computeRecognizedDay(
   const dayStart = policy.dayStartMinutes
   const dayEnd = dayEndOf(policy)
 
-  // In modalità timbratura singola l'uscita non esiste: vale la fine giornata.
-  let rawOut: number
-  if (last) {
-    rawOut = last.minutes
-  } else if (policy.singlePunchMode && dayEnd !== null) {
-    rawOut = dayEnd
-    steps.push(
-      `Timbratura singola: la giornata si chiude d'ufficio alle ${formatMinutes(dayEnd)}.`
-    )
-  } else {
-    warnings.push('USCITA_MANCANTE')
-    return emptyDay(warnings, ['Entrata senza uscita: nessuna ora riconosciuta.'])
+  let segments = paired.segments
+
+  if (paired.danglingIn !== null) {
+    if (segments.length === 0 && policy.singlePunchMode && dayEnd !== null) {
+      // In modalità timbratura singola l'uscita non esiste: vale la fine giornata.
+      segments = [{ start: paired.danglingIn, end: Math.max(dayEnd, paired.danglingIn) }]
+      steps.push(
+        `Timbratura singola: la giornata si chiude d'ufficio alle ${formatMinutes(dayEnd)}.`
+      )
+    } else {
+      warnings.push('USCITA_MANCANTE')
+      if (segments.length === 0) {
+        return emptyDay(warnings, ['Entrata senza uscita: nessuna ora riconosciuta.'])
+      }
+      steps.push(
+        `Entrata delle ${formatMinutes(paired.danglingIn)} senza uscita: quel turno non si conta.`
+      )
+    }
   }
 
-  const rawIn = first.minutes
-  steps.push(
-    `Timbrature: entrata ${formatMinutes(rawIn)}, uscita ${formatMinutes(rawOut)}.`
-  )
-
-  if (rawOut <= rawIn) {
+  segments = segments.filter((s) => s.end > s.start)
+  if (segments.length === 0) {
     warnings.push('FUORI_FINESTRA')
     return emptyDay(warnings, [...steps, "L'uscita precede l'entrata: nessuna ora riconosciuta."])
+  }
+
+  if (segments.length === 1) {
+    steps.push(
+      `Timbrature: entrata ${formatMinutes(segments[0].start)}, uscita ${formatMinutes(segments[0].end)}.`
+    )
+  } else {
+    steps.push(
+      'Turni timbrati: ' +
+        segments
+          .map((s) => `${formatMinutes(s.start)}-${formatMinutes(s.end)}`)
+          .join(', ') +
+        '.'
+    )
   }
 
   // Finestra della giornata, allargata dalla flessibilità. Se la regola non ne
   // definisce una, si contano le ore così come sono state timbrate.
   const hasWindow = dayStart !== null && dayEnd !== null
-  const windowStart = hasWindow ? dayStart! - policy.flexMinutes : rawIn
-  const windowEnd = hasWindow ? dayEnd! + policy.flexMinutes : rawOut
+  if (hasWindow) {
+    const windowStart = dayStart! - policy.flexMinutes
+    const windowEnd = dayEnd! + policy.flexMinutes
+    const clipped = segments
+      .map((s) => ({
+        start: Math.max(s.start, windowStart),
+        end: Math.min(s.end, windowEnd),
+      }))
+      .filter((s) => s.end > s.start)
 
-  let effectiveIn = Math.max(rawIn, windowStart)
-  let effectiveOut = Math.min(rawOut, windowEnd)
+    const clippedChanged =
+      clipped.length !== segments.length ||
+      clipped.some((s, i) => s.start !== segments[i].start || s.end !== segments[i].end)
 
-  if (effectiveIn !== rawIn || effectiveOut !== rawOut) {
-    warnings.push('FUORI_FINESTRA')
-    steps.push(
-      `Finestra della giornata con flessibilità di ${policy.flexMinutes} min: ` +
-        `si conta da ${formatMinutes(effectiveIn)} a ${formatMinutes(effectiveOut)}.`
-    )
+    if (clippedChanged) {
+      warnings.push('FUORI_FINESTRA')
+      if (clipped.length > 0) {
+        steps.push(
+          `Finestra della giornata con flessibilità di ${policy.flexMinutes} min: ` +
+            `si conta da ${formatMinutes(clipped[0].start)} a ${formatMinutes(clipped[clipped.length - 1].end)}.`
+        )
+      }
+    }
+
+    if (clipped.length === 0) {
+      return emptyDay(warnings, [...steps, 'Nessuna ora dentro la finestra della giornata.'])
+    }
+
+    segments = clipped
   }
 
-  if (effectiveOut <= effectiveIn) {
-    return emptyDay(warnings, [...steps, 'Nessuna ora dentro la finestra della giornata.'])
+  // Arrotondamenti: l'entrata di ogni turno sale, l'uscita di ogni turno
+  // scende. In un turno spezzato anche la seconda entrata in ritardo si
+  // arrotonda, non solo la prima della giornata.
+  segments = segments.map((s) => {
+    const roundedIn = roundEntry(s.start, policy.entryRounding)
+    const roundedOut = roundExit(s.end, policy.exitRounding)
+
+    if (roundedIn !== s.start) {
+      steps.push(
+        `Arrotondamento entrata: ${formatMinutes(s.start)} diventa ${formatMinutes(roundedIn)}.`
+      )
+    }
+    if (roundedOut !== s.end) {
+      steps.push(
+        `Arrotondamento uscita: ${formatMinutes(s.end)} diventa ${formatMinutes(roundedOut)}.`
+      )
+    }
+
+    return { start: roundedIn, end: Math.max(roundedOut, roundedIn) }
+  })
+
+  const grossMinutes = segments.reduce((sum, s) => sum + (s.end - s.start), 0)
+
+  // Pause timbrate, limitate alla parte dentro l'orario di lavoro.
+  const punchedBreakMinutes = paired.punchedBreaks.reduce(
+    (sum, b) => sum + overlapWithSegments(b.start, b.end, segments),
+    0
+  )
+  let breakMinutes = punchedBreakMinutes
+  if (punchedBreakMinutes > 0) {
+    steps.push(`Pause timbrate: ${punchedBreakMinutes} min.`)
   }
 
-  // Arrotondamenti.
-  const roundedIn = roundEntry(effectiveIn, policy.entryRounding)
-  const roundedOut = roundExit(effectiveOut, policy.exitRounding)
-
-  if (roundedIn !== effectiveIn) {
-    steps.push(
-      `Arrotondamento entrata: ${formatMinutes(effectiveIn)} diventa ${formatMinutes(roundedIn)}.`
-    )
-  }
-  if (roundedOut !== effectiveOut) {
-    steps.push(
-      `Arrotondamento uscita: ${formatMinutes(effectiveOut)} diventa ${formatMinutes(roundedOut)}.`
-    )
-  }
-
-  effectiveIn = roundedIn
-  effectiveOut = Math.max(roundedOut, roundedIn)
-
-  const grossMinutes = effectiveOut - effectiveIn
-
-  // Pause.
-  const punchedBreaks = collectPunchedBreaks(ordered, effectiveIn, effectiveOut)
-  let breakMinutes = punchedBreaks.minutes
-  if (punchedBreaks.minutes > 0) {
-    steps.push(`Pause timbrate: ${punchedBreaks.minutes} min.`)
-  }
-
-  if (policy.lunch && !punchedBreaks.coversLunch) {
-    const lunchMinutes = overlap(
-      effectiveIn,
-      effectiveOut,
+  // Pausa pranzo dedotta dalla regola, se nessuna pausa timbrata la copre.
+  // Una pausa timbrata "copre" il pranzo solo se interseca la sua finestra:
+  // il caffè delle 10:00 non è la pausa pranzo.
+  if (policy.lunch) {
+    const lunchWindow = placeBreakWindow(
       policy.lunch.startMinutes,
-      policy.lunch.endMinutes
+      policy.lunch.endMinutes,
+      segments
     )
-    if (lunchMinutes > 0) {
-      breakMinutes += lunchMinutes
-      warnings.push('PAUSA_PRANZO_NON_TIMBRATA')
-      steps.push(`Pausa pranzo non timbrata: dedotti ${lunchMinutes} min dalla regola.`)
+    const coveredByPunched = overlapWithPunchedBreaks(
+      lunchWindow.start,
+      lunchWindow.end,
+      paired.punchedBreaks,
+      segments
+    )
+
+    if (coveredByPunched === 0) {
+      const lunchMinutes = overlapWithSegments(lunchWindow.start, lunchWindow.end, segments)
+      if (lunchMinutes > 0) {
+        breakMinutes += lunchMinutes
+        warnings.push('PAUSA_PRANZO_NON_TIMBRATA')
+        steps.push(`Pausa pranzo non timbrata: dedotti ${lunchMinutes} min dalla regola.`)
+      }
     }
   }
 
+  // Pause aggiuntive della regola: si deduce solo la parte non già coperta da
+  // una pausa timbrata, altrimenti gli stessi minuti si toglierebbero due volte.
   for (const extra of policy.extraBreaks) {
-    const extraMinutes = overlap(
-      effectiveIn,
-      effectiveOut,
-      extra.startMinutes,
-      extra.endMinutes
+    const window = placeBreakWindow(extra.startMinutes, extra.endMinutes, segments)
+    const inWork = overlapWithSegments(window.start, window.end, segments)
+    const alreadyPunched = overlapWithPunchedBreaks(
+      window.start,
+      window.end,
+      paired.punchedBreaks,
+      segments
     )
+    const extraMinutes = Math.max(0, inWork - alreadyPunched)
+
     if (extraMinutes > 0) {
       breakMinutes += extraMinutes
       steps.push(`Pausa "${extra.name}": dedotti ${extraMinutes} min.`)
@@ -280,19 +430,21 @@ export function computeRecognizedDay(
   // fascia notturna, e va scontato anche qui.
   const nightClockMinutes = Math.max(
     0,
-    nightMinutesIn(effectiveIn, effectiveOut) - dstShift
+    segments.reduce((sum, s) => sum + nightMinutesIn(s.start, s.end), 0) - dstShift
   )
   const netGrossMinutes = Math.max(0, grossMinutes - dstShift)
-  const nightMinutes =
+  const proratedNightMinutes =
     netGrossMinutes > 0
       ? Math.round((nightClockMinutes * workedMinutes) / netGrossMinutes)
       : 0
 
-  // Classificazione.
+  // Classificazione. Ogni minuto sta in una sola categoria — la somma delle
+  // quattro dà sempre le ore lavorate — e quando un minuto ne meriterebbe due
+  // vince quella pagata meglio: festive, poi straordinario, poi notturne,
+  // poi ordinarie.
   const isHoliday = context.isHoliday || context.weekday === 0
   const isSaturdayOvertime = policy.saturdayAsOvertime && context.weekday === 6
 
-  let ordinaryMinutes = 0
   let overtimeMinutes = 0
   let holidayMinutes = 0
 
@@ -304,11 +456,14 @@ export function computeRecognizedDay(
     steps.push('Sabato conteggiato interamente come straordinario.')
   } else {
     const contract = policy.contractDailyMinutes ?? workedMinutes
-    const withinContract = Math.min(workedMinutes, contract)
     overtimeMinutes = Math.max(0, workedMinutes - contract)
-    // Le notturne si scorporano dalle ordinarie: sommate danno il totale.
-    ordinaryMinutes = Math.max(0, withinContract - nightMinutes)
   }
+
+  const nightMinutes = Math.min(
+    proratedNightMinutes,
+    workedMinutes - overtimeMinutes - holidayMinutes
+  )
+  const ordinaryMinutes = workedMinutes - overtimeMinutes - holidayMinutes - nightMinutes
 
   steps.push(
     `Ore riconosciute: ${formatMinutes(workedMinutes)} ` +
@@ -316,8 +471,8 @@ export function computeRecognizedDay(
   )
 
   return {
-    clockIn: effectiveIn,
-    clockOut: effectiveOut,
+    clockIn: segments[0].start,
+    clockOut: segments[segments.length - 1].end,
     workedMinutes,
     ordinaryMinutes,
     overtimeMinutes,
@@ -328,33 +483,4 @@ export function computeRecognizedDay(
     steps,
     warnings,
   }
-}
-
-/**
- * Pause effettivamente timbrate, limitate alla parte dentro l'orario di lavoro.
- * Segnala anche se coprono la pausa pranzo prevista, per non dedurla due volte.
- */
-function collectPunchedBreaks(
-  ordered: DayPunch[],
-  from: number,
-  to: number
-): { minutes: number; coversLunch: boolean } {
-  let minutes = 0
-  let coversLunch = false
-  let openBreak: number | null = null
-
-  for (const punch of ordered) {
-    if (punch.type === 'BREAK_START') {
-      openBreak = punch.minutes
-    } else if (punch.type === 'BREAK_END' && openBreak !== null) {
-      const clipped = overlap(from, to, openBreak, punch.minutes)
-      if (clipped > 0) {
-        minutes += clipped
-        coversLunch = true
-      }
-      openBreak = null
-    }
-  }
-
-  return { minutes, coversLunch }
 }

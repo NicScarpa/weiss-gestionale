@@ -17,7 +17,6 @@ export const politicaSelect = {
   dayEndMinutes: true,
   lunchStartMinutes: true,
   lunchEndMinutes: true,
-  lunchWindowMinutes: true,
   flexMinutes: true,
   roundingMinutes: true,
   roundingToleranceMinutes: true,
@@ -34,7 +33,10 @@ export const politicaSelect = {
     select: { id: true, name: true, startMinutes: true, endMinutes: true },
     orderBy: { startMinutes: 'asc' },
   },
-  _count: { select: { users: true } },
+  // Il conteggio deve combaciare con la guardia dell'eliminazione, che conta
+  // dipendenti E luoghi: mostrare solo i dipendenti fa cercare assegnazioni
+  // che non esistono.
+  _count: { select: { users: true, workLocations: true } },
 } as const
 
 // GET /api/politiche-orario - Elenco delle regole orario
