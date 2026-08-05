@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { ScheduleReconciliationPanel } from '@/components/scadenzario/schedule-reconciliation-panel'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -404,6 +405,7 @@ export default function ScadenzarioDetailPage() {
           <TabsTrigger value="pagamenti">
             Pagamenti {payments.length > 0 && `(${payments.length})`}
           </TabsTrigger>
+          <TabsTrigger value="riconciliazione">Riconciliazione</TabsTrigger>
           <TabsTrigger value="allegati">
             Allegati {attachments.length > 0 && `(${attachments.length})`}
           </TabsTrigger>
@@ -663,6 +665,14 @@ export default function ScadenzarioDetailPage() {
             </Card>
           </TabsContent>
         )}
+
+        {/* Tab Riconciliazione */}
+        <TabsContent value="riconciliazione" className="mt-4">
+          <ScheduleReconciliationPanel
+            scheduleId={id}
+            onChange={fetchSchedule}
+          />
+        </TabsContent>
 
         {/* Tab Allegati */}
         <TabsContent value="allegati" className="mt-4">

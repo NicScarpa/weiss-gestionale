@@ -23,7 +23,7 @@ interface JournalEntry {
 /**
  * Calcola la similarità tra due stringhe usando Levenshtein distance
  */
-function stringSimilarity(str1: string, str2: string): number {
+export function stringSimilarity(str1: string, str2: string): number {
   const s1 = str1.toLowerCase().trim()
   const s2 = str2.toLowerCase().trim()
 
@@ -66,7 +66,7 @@ function stringSimilarity(str1: string, str2: string): number {
 /**
  * Calcola i giorni di differenza tra due date
  */
-function daysDifference(date1: Date, date2: Date): number {
+export function daysDifference(date1: Date, date2: Date): number {
   const d1 = new Date(date1)
   const d2 = new Date(date2)
   d1.setHours(0, 0, 0, 0)

@@ -78,6 +78,7 @@ model User {
   createdBy               User?                        @relation("CreatedByUser", fields: [createdById], references: [id])
   createdUsers            User[]                       @relation("CreatedByUser")
   schedulesCreated        Schedule[]                   @relation("ScheduleCreatedBy")
+  scheduleReconciliations ScheduleReconciliation[]     @relation("ScheduleReconciliationCreatedBy")
   scheduleAttachments     ScheduleAttachment[]         @relation("ScheduleAttachmentUploader")
   recurrencesCreated      Recurrence[]                 @relation("RecurrenceCreatedBy")
   scheduleRulesCreated    ScheduleRule[]               @relation("ScheduleRuleCreatedBy")
@@ -415,6 +416,7 @@ model JournalEntry {
   createdBy            User?               @relation(fields: [createdById], references: [id])
   venue                Venue               @relation(fields: [venueId], references: [id])
   payment              Payment?
+  scheduleReconciliations ScheduleReconciliation[]
 
   @@index([venueId, date])
   @@index([venueId, registerType, date])
@@ -532,6 +534,7 @@ model Schedule {
   createdAt              DateTime                    @default(now()) @map("created_at")
   updatedAt              DateTime                    @updatedAt @map("updated_at")
   payments                SchedulePayment[]
+  reconciliations         ScheduleReconciliation[]
   attachments             ScheduleAttachment[]
   reminders               ScheduleReminder[]
   ricorrenzaFigli         Schedule[]                  @relation("ScheduleRecurrence")
@@ -553,6 +556,38 @@ model Schedule {
 }
 
 // Pagamenti associati a una scadenza
+/// Riconciliazione fra un movimento di prima nota e una scadenza.
+///
+/// È il ponte che chiude il ciclo: la scadenza dice cosa va pagato, il
+/// movimento porta l'imputazione contabile, la riconciliazione li unisce.
+/// La relazione è N:M: un movimento può coprire più scadenze (bonifico
+/// cumulativo) e una scadenza può essere saldata da più movimenti (acconti).
+model ScheduleReconciliation {
+  id             String                       @id @default(cuid())
+  scheduleId     String                       @map("schedule_id")
+  journalEntryId String                       @map("journal_entry_id")
+  status         ScheduleReconciliationStatus @default(VERIFIED)
+  source         ScheduleReconciliationSource @default(MANUAL)
+  /// Quota del movimento imputata a questa scadenza: con i match multipli
+  /// non coincide necessariamente con l'importo del movimento
+  amount         Decimal                      @db.Decimal(10, 2)
+  /// Punteggio del match automatico, assente nelle riconciliazioni manuali
+  confidence     Decimal?                     @db.Decimal(3, 2)
+  /// Pagamento generato sulla scadenza, per poterlo annullare al dis-abbinamento
+  paymentId      String?                      @unique @map("payment_id")
+  createdById    String?                      @map("created_by")
+  createdAt      DateTime                     @default(now()) @map("created_at")
+
+  schedule     Schedule         @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
+  journalEntry JournalEntry     @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+  payment      SchedulePayment? @relation(fields: [paymentId], references: [id])
+  createdBy    User?            @relation("ScheduleReconciliationCreatedBy", fields: [createdById], references: [id])
+
+  @@index([scheduleId, status])
+  @@index([journalEntryId, status])
+  @@map("schedule_reconciliations")
+}
+
 model SchedulePayment {
   id             String    @id @default(cuid())
   scheduleId     String    @map("schedule_id")
@@ -563,6 +598,7 @@ model SchedulePayment {
   note           String?
   createdAt      DateTime  @default(now()) @map("created_at")
   schedule       Schedule  @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
+  reconciliation ScheduleReconciliation?
 
   @@index([scheduleId])
   @@index([dataPagamento])
@@ -1818,6 +1854,22 @@ enum ImportSource {
   MANUAL
   CBI_XML
   CBI_TXT
+}
+
+/// Esito della riconciliazione fra un movimento e una scadenza.
+/// Il rifiuto non cancella il record: resta come traccia di una proposta
+/// scartata dall'utente, come in Sibill.
+enum ScheduleReconciliationStatus {
+  VERIFIED
+  REJECTED
+}
+
+/// Chi ha creato la riconciliazione.
+enum ScheduleReconciliationSource {
+  MANUAL
+  AUTOMATIC
+  PROPOSAL
+  RULE
 }
 
 enum ReconciliationStatus {
