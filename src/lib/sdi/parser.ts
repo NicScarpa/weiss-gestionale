@@ -275,6 +275,7 @@ function parseDettaglioLinee(datiBeniServizi: Record<string, unknown>): Dettagli
       prezzoUnitario: parseDecimal(l.PrezzoUnitario),
       prezzoTotale: parseDecimal(l.PrezzoTotale),
       aliquotaIVA: parseDecimal(l.AliquotaIVA),
+      codiceArticolo: parseCodiceArticolo(l.CodiceArticolo)?.codiceValore,
     }
   })
 }

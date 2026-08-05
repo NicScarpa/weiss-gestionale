@@ -41,6 +41,10 @@ export interface DettaglioLinea {
   prezzoUnitario: number
   prezzoTotale: number
   aliquotaIVA: number
+  // Primo CodiceValore della riga, se presente (usato dalla Fase 4 per il
+  // matching della memoria fornitore+prodotto). La variante estesa
+  // (DettaglioLineaEsteso) espone l'oggetto completo {codiceTipo, codiceValore}.
+  codiceArticolo?: string | null
 }
 
 // Riepilogo IVA
@@ -97,8 +101,10 @@ export interface CodiceArticolo {
   codiceValore: string
 }
 
-// Linea dettaglio fattura estesa (con codice articolo)
-export interface DettaglioLineaEsteso extends DettaglioLinea {
+// Linea dettaglio fattura estesa (con codice articolo completo, non solo il
+// valore): Omit necessario perché qui codiceArticolo è l'oggetto
+// {codiceTipo, codiceValore}, non la stringa del parse base.
+export interface DettaglioLineaEsteso extends Omit<DettaglioLinea, 'codiceArticolo'> {
   codiceArticolo?: CodiceArticolo
 }
 

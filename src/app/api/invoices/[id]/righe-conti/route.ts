@@ -88,9 +88,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
             invoiceId: id,
             numeroLinea: riga.numeroLinea,
             descrizione: linea.descrizione,
-            // Lo standard DettaglioLinea (parseFatturaPA) non porta il codice
-            // articolo: resta null finché il parser non lo espone qui.
-            codiceArticolo: null,
+            codiceArticolo: linea.codiceArticolo ?? null,
             importo: linea.prezzoTotale,
             accountId: riga.accountId,
             stato: 'confermata',
@@ -100,7 +98,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           },
           update: {
             descrizione: linea.descrizione,
-            codiceArticolo: null,
+            codiceArticolo: linea.codiceArticolo ?? null,
             importo: linea.prezzoTotale,
             accountId: riga.accountId,
             stato: 'confermata',
@@ -125,14 +123,18 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       tutteConfermate = risultato.count
     }
 
-    await createAuditLog({
-      userId: session.user.id,
-      action: 'UPDATE',
-      entityType: 'ElectronicInvoice',
-      entityId: id,
-      venueId,
-      newValues: { righe: validated.righe, confermaTutte: validated.confermaTutte },
-    })
+    // Audit solo se è stata scritta almeno una riga: niente rumore sui no-op
+    // (body vuoto, o confermaTutte senza righe in stato 'proposta').
+    if (righeConfermate > 0 || tutteConfermate > 0) {
+      await createAuditLog({
+        userId: session.user.id,
+        action: 'UPDATE',
+        entityType: 'ElectronicInvoice',
+        entityId: id,
+        venueId,
+        newValues: { righe: validated.righe, confermaTutte: validated.confermaTutte },
+      })
+    }
 
     return NextResponse.json({ esito: 'ok', righeConfermate, tutteConfermate })
   } catch (error) {

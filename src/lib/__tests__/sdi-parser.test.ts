@@ -1073,8 +1073,13 @@ describe('sdi/parser - parseFatturaPA', () => {
       expect(result.dettaglioLinee[0].numeroLinea).toBe(1)
       expect(result.dettaglioLinee[0].descrizione).toBe('Prodotto A')
       expect(result.dettaglioLinee[0].unitaMisura).toBe('PZ')
+      // Il codice articolo (primo CodiceValore) è nel parse base: serve alla
+      // Fase 4 per il matching della memoria fornitore+prodotto.
+      expect(result.dettaglioLinee[0].codiceArticolo).toBe('ABC123')
       expect(result.dettaglioLinee[1].numeroLinea).toBe(2)
       expect(result.dettaglioLinee[1].aliquotaIVA).toBe(10.00)
+      // Linea senza CodiceArticolo: il campo resta assente
+      expect(result.dettaglioLinee[1].codiceArticolo).toBeUndefined()
 
       // Verifica riepilogo IVA multiplo
       expect(result.datiRiepilogo.length).toBe(2)

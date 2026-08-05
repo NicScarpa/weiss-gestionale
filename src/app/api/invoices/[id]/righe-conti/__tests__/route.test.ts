@@ -42,7 +42,14 @@ const fatturaEsistente = {
 }
 
 const dettaglioLineeFisse = [
-  { numeroLinea: 1, descrizione: 'Farina 00', prezzoUnitario: 25.5, prezzoTotale: 25.5, aliquotaIVA: 4 },
+  {
+    numeroLinea: 1,
+    descrizione: 'Farina 00',
+    prezzoUnitario: 25.5,
+    prezzoTotale: 25.5,
+    aliquotaIVA: 4,
+    codiceArticolo: 'ABC123',
+  },
   { numeroLinea: 2, descrizione: 'Zucchero', prezzoUnitario: 10, prezzoTotale: 10, aliquotaIVA: 4 },
 ]
 
@@ -112,6 +119,7 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
         invoiceId: 'fatt-1',
         numeroLinea: 1,
         descrizione: 'Farina 00',
+        codiceArticolo: 'ABC123',
         importo: 25.5,
         accountId: 'conto-1',
         stato: 'confermata',
@@ -121,6 +129,7 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
       }),
       update: expect.objectContaining({
         descrizione: 'Farina 00',
+        codiceArticolo: 'ABC123',
         importo: 25.5,
         accountId: 'conto-1',
         stato: 'confermata',
@@ -179,5 +188,30 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
         entityId: 'fatt-1',
       })
     )
+  })
+
+  it('no-op (nessuna riga, confermaTutte assente o senza righe in proposta): non scrive audit', async () => {
+    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
+
+    const { request, context } = richiesta({})
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(200)
+    expect(prisma.invoiceLineAccount.upsert).not.toHaveBeenCalled()
+    expect(prisma.invoiceLineAccount.updateMany).not.toHaveBeenCalled()
+    expect(createAuditLog).not.toHaveBeenCalled()
+  })
+
+  it('no-op: confermaTutte:true ma updateMany non trova righe in proposta (count 0) → non scrive audit', async () => {
+    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
+    vi.mocked(prisma.invoiceLineAccount.updateMany).mockResolvedValue({ count: 0 } as never)
+
+    const { request, context } = richiesta({ righe: [], confermaTutte: true })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(200)
+    expect(createAuditLog).not.toHaveBeenCalled()
   })
 })
