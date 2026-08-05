@@ -84,6 +84,7 @@ export async function POST(
         importoPagato: true,
         stato: true,
         dataPagamento: true,
+        invoiceId: true,
       },
     })
 
@@ -136,6 +137,24 @@ export async function POST(
         }),
       },
     })
+
+    // Se la scadenza nasce da una fattura, la fattura risulta pagata solo
+    // quando tutte le sue rate sono state saldate
+    if (schedule.invoiceId && nuovoStato === ScheduleStatus.PAGATA) {
+      const rateAperte = await prisma.schedule.count({
+        where: {
+          invoiceId: schedule.invoiceId,
+          stato: { not: ScheduleStatus.PAGATA },
+        },
+      })
+
+      if (rateAperte === 0) {
+        await prisma.electronicInvoice.update({
+          where: { id: schedule.invoiceId },
+          data: { status: 'PAID' },
+        })
+      }
+    }
 
     await createAuditLog({
       userId: session.user.id,

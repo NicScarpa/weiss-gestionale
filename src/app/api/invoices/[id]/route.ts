@@ -84,6 +84,18 @@ export async function GET(request: NextRequest, context: RouteContext) {
         deadlines: {
           orderBy: { dueDate: 'asc' },
         },
+        // Le scadenze generate nello scadenzario sono la fonte di verità sui
+        // pagamenti: InvoiceDeadline.isPaid resta al valore iniziale
+        schedules: {
+          select: {
+            id: true,
+            invoiceDeadlineId: true,
+            stato: true,
+            importoTotale: true,
+            importoPagato: true,
+            dataPagamento: true,
+          },
+        },
       },
     })
 

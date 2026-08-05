@@ -542,24 +542,55 @@ interface PaymentSectionProps {
     paymentMethod?: string
     iban?: string
   }>
+  /**
+   * Scadenze generate nello scadenzario da questa fattura: sono la fonte di
+   * verità sui pagamenti, mentre InvoiceDeadline.isPaid resta al valore
+   * iniziale perché nessun flusso lo aggiorna.
+   */
+  schedules?: Array<{
+    id: string
+    invoiceDeadlineId: string | null
+    stato: string
+    importoTotale: string | number
+    importoPagato: string | number
+  }>
 }
 
-export function PaymentSection({ datiPagamento, deadlines }: PaymentSectionProps) {
+export function PaymentSection({ datiPagamento, deadlines, schedules }: PaymentSectionProps) {
   // Use parsed data if available, otherwise fall back to deadlines from DB
   const payments = datiPagamento?.dettagliPagamento || []
 
-  // Merge parsed data with deadlines for IBAN and isPaid info
+  const scheduleByDeadline = new Map(
+    (schedules ?? [])
+      .filter((s) => s.invoiceDeadlineId)
+      .map((s) => [s.invoiceDeadlineId as string, s])
+  )
+
+  /** Stato di pagamento della rata, letto dalla scadenza quando esiste. */
+  function statoRata(deadlineId: string | undefined, fallback: boolean) {
+    const schedule = deadlineId ? scheduleByDeadline.get(deadlineId) : undefined
+    if (!schedule) return { isPaid: fallback, parziale: false, pagato: 0 }
+
+    const pagato = Number(schedule.importoPagato)
+    return {
+      isPaid: schedule.stato === 'pagata',
+      parziale: schedule.stato === 'parzialmente_pagata' || (pagato > 0 && schedule.stato !== 'pagata'),
+      pagato,
+    }
+  }
+
+  // Merge parsed data with deadlines for IBAN and payment status
   const paymentItems = payments.length > 0
     ? payments.map((p, idx) => ({
         ...p,
-        isPaid: deadlines?.[idx]?.isPaid || false,
+        ...statoRata(deadlines?.[idx]?.id, deadlines?.[idx]?.isPaid || false),
       }))
     : deadlines?.map(d => ({
         modalitaPagamento: d.paymentMethod || 'NON_SPECIFICATO',
         dataScadenzaPagamento: d.dueDate,
         importoPagamento: parseFloat(d.amount),
         iban: d.iban,
-        isPaid: d.isPaid,
+        ...statoRata(d.id, d.isPaid),
       })) || []
 
   if (paymentItems.length === 0) {
@@ -621,6 +652,10 @@ export function PaymentSection({ datiPagamento, deadlines }: PaymentSectionProps
                         {payment.isPaid ? (
                           <Badge className="bg-green-100 text-green-700 text-xs">
                             Pagato
+                          </Badge>
+                        ) : payment.parziale ? (
+                          <Badge className="bg-amber-100 text-amber-700 text-xs">
+                            Pagato {formatCurrency(payment.pagato)}
                           </Badge>
                         ) : (
                           <Badge variant="outline" className="text-xs">

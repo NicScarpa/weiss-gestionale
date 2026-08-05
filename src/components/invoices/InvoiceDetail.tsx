@@ -93,6 +93,14 @@ interface Invoice {
     paymentMethod?: string
     iban?: string
   }>
+  /** Scadenze generate nello scadenzario: fonte di verità sui pagamenti */
+  schedules?: Array<{
+    id: string
+    invoiceDeadlineId: string | null
+    stato: string
+    importoTotale: string | number
+    importoPagato: string | number
+  }>
   // Parsed XML data from API
   parsedData?: ParsedInvoiceData
 }
@@ -310,6 +318,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       <PaymentSection
         datiPagamento={parsedData?.datiPagamento}
         deadlines={invoice.deadlines}
+        schedules={invoice.schedules}
       />
 
       {/* Categorization card */}

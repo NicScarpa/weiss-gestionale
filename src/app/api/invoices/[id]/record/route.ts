@@ -46,6 +46,28 @@ export async function POST(request: NextRequest, context: RouteContext) {
       )
     }
 
+    // Le scadenze generate da questa fattura possono già avere pagamenti
+    // registrati: quel movimento uscirà anche dalla riconciliazione bancaria,
+    // quindi registrarla di nuovo qui significherebbe contarla due volte.
+    const scadenzePagate = await prisma.schedule.count({
+      where: {
+        invoiceId: id,
+        OR: [{ importoPagato: { gt: 0 } }, { stato: 'pagata' }],
+      },
+    })
+
+    if (scadenzePagate > 0) {
+      return NextResponse.json(
+        {
+          error:
+            'Su questa fattura risultano già pagamenti registrati nello scadenzario. Registrarla anche in prima nota conterebbe l\'uscita due volte.',
+          code: 'ALREADY_PAID_IN_SCHEDULE',
+          scadenzePagate,
+        },
+        { status: 409 }
+      )
+    }
+
     // Verifica che sia categorizzata
     if (!invoice.accountId) {
       return NextResponse.json(
