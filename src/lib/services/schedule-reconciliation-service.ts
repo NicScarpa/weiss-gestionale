@@ -349,6 +349,7 @@ export async function undoScheduleReconciliation({
     select: {
       id: true,
       scheduleId: true,
+      journalEntryId: true,
       paymentId: true,
       amount: true,
       schedule: { select: { importoTotale: true, importoPagato: true, tipo: true, supplierId: true } },
@@ -364,6 +365,14 @@ export async function undoScheduleReconciliation({
   const nuovoStato = nuovoPagato <= 0.01 ? 'aperta' : 'parzialmente_pagata'
 
   await prisma.$transaction(async (tx) => {
+    // Le fette ereditate (Fase 3) vanno ritirate PRIMA di cancellare la
+    // riconciliazione: la FK JournalEntryAllocation.reconciliationId è
+    // onDelete: SetNull, quindi cancellando prima la riconciliazione il DB
+    // azzera solo il riferimento e le fette restano orfane invece di sparire.
+    const fetteRitirate = await tx.journalEntryAllocation.deleteMany({
+      where: { reconciliationId },
+    })
+
     await tx.scheduleReconciliation.delete({ where: { id: reconciliationId } })
 
     if (reconciliation.paymentId) {
@@ -382,6 +391,20 @@ export async function undoScheduleReconciliation({
         dataAttesaSource: null,
       },
     })
+
+    // Nessuna fetta ritirata: niente è cambiato sul movimento, non si tocca
+    // (stesso principio del no-op di setEntryAllocations).
+    if (fetteRitirate.count === 0) return
+
+    const numeroFette = await aggiornaContoDominante(tx, reconciliation.journalEntryId)
+    if (numeroFette === 0) {
+      // Fette ereditate ritirate e nessuna residua: il movimento torna alla
+      // categorizzazione semplice, accountId resta l'ultimo valorizzato.
+      await tx.journalEntry.update({
+        where: { id: reconciliation.journalEntryId },
+        data: { categorizationSource: 'manual' },
+      })
+    }
   })
 
   // La scadenza è di nuovo aperta: se il fornitore ha una storia, la data

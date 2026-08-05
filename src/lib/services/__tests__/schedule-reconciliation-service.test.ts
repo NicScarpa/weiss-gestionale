@@ -10,7 +10,7 @@ vi.mock('@/lib/prisma', () => ({
     schedulePayment: { create: vi.fn(), delete: vi.fn() },
     electronicInvoice: { update: vi.fn(), findUnique: vi.fn() },
     invoiceLineAccount: { findMany: vi.fn(), createMany: vi.fn() },
-    journalEntryAllocation: { findMany: vi.fn(), createMany: vi.fn() },
+    journalEntryAllocation: { findMany: vi.fn(), createMany: vi.fn(), deleteMany: vi.fn() },
     $transaction: vi.fn(),
   },
 }))
@@ -77,6 +77,9 @@ beforeEach(() => {
     { id: 'rec-1' } as never
   )
   vi.mocked(prisma.scheduleReconciliation.findFirst).mockResolvedValue(null)
+  // Default: nessuna fetta ereditata da ritirare, così i test che non
+  // riguardano l'ereditarietà non devono preoccuparsene.
+  vi.mocked(prisma.journalEntryAllocation.deleteMany).mockResolvedValue({ count: 0 } as never)
 })
 
 describe('reconcileScheduleWithEntry - dataAttesa', () => {
@@ -423,5 +426,101 @@ describe('reconcileScheduleWithEntry - ereditarietà pro-quota dalla fattura (Fa
     expect(prisma.electronicInvoice.findUnique).not.toHaveBeenCalled()
     expect(prisma.invoiceLineAccount.findMany).not.toHaveBeenCalled()
     expect(prisma.journalEntryAllocation.createMany).not.toHaveBeenCalled()
+  })
+})
+
+describe('undoScheduleReconciliation - ritiro delle fette ereditate (Fase 3)', () => {
+  function riconciliazione(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'rec-1',
+      scheduleId: 'sched-1',
+      journalEntryId: 'entry-1',
+      paymentId: 'pay-1',
+      amount: new Prisma.Decimal(100),
+      schedule: {
+        importoTotale: new Prisma.Decimal(100),
+        importoPagato: new Prisma.Decimal(100),
+        tipo: 'passiva',
+        supplierId: null,
+      },
+      ...overrides,
+    }
+  }
+
+  it("rimuove SOLO le fette della propria riconciliazione (deleteMany con il reconciliationId giusto)", async () => {
+    vi.mocked(prisma.scheduleReconciliation.findFirst).mockResolvedValue(riconciliazione() as never)
+    vi.mocked(prisma.journalEntryAllocation.deleteMany).mockResolvedValue({ count: 0 } as never)
+
+    const esito = await undoScheduleReconciliation({ reconciliationId: 'rec-1', venueId: VENUE })
+
+    expect(esito.outcome).toBe('ok')
+    expect(prisma.journalEntryAllocation.deleteMany).toHaveBeenCalledWith({
+      where: { reconciliationId: 'rec-1' },
+    })
+  })
+
+  it('la deleteMany delle fette avviene PRIMA della cancellazione della riconciliazione (la FK è onDelete: SetNull)', async () => {
+    vi.mocked(prisma.scheduleReconciliation.findFirst).mockResolvedValue(riconciliazione() as never)
+    vi.mocked(prisma.journalEntryAllocation.deleteMany).mockResolvedValue({ count: 2 } as never)
+    vi.mocked(prisma.journalEntryAllocation.findMany).mockResolvedValue([])
+
+    await undoScheduleReconciliation({ reconciliationId: 'rec-1', venueId: VENUE })
+
+    const ordineDelete = vi.mocked(prisma.journalEntryAllocation.deleteMany).mock
+      .invocationCallOrder[0]
+    const ordineCancellazioneRiconciliazione = vi.mocked(prisma.scheduleReconciliation.delete).mock
+      .invocationCallOrder[0]
+    expect(ordineDelete).toBeLessThan(ordineCancellazioneRiconciliazione)
+  })
+
+  it('con fette residue dopo il ritiro: il dominante si ricalcola su quelle rimaste', async () => {
+    vi.mocked(prisma.scheduleReconciliation.findFirst).mockResolvedValue(riconciliazione() as never)
+    vi.mocked(prisma.journalEntryAllocation.deleteMany).mockResolvedValue({ count: 1 } as never)
+    vi.mocked(prisma.journalEntryAllocation.findMany).mockResolvedValue([
+      { accountId: 'conto-manuale', importo: new Prisma.Decimal(60) },
+      { accountId: 'conto-b', importo: new Prisma.Decimal(40) },
+    ] as never)
+    vi.mocked(derivaBudgetCategoryDaConto).mockResolvedValue('cat-manuale')
+
+    const esito = await undoScheduleReconciliation({ reconciliationId: 'rec-1', venueId: VENUE })
+
+    expect(esito.outcome).toBe('ok')
+    expect(prisma.journalEntry.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'entry-1' },
+        data: expect.objectContaining({
+          accountId: 'conto-manuale',
+          categorizationSource: 'split',
+        }),
+      })
+    )
+  })
+
+  it('senza fette residue dopo il ritiro: il movimento torna a source "manual" senza cambiare accountId', async () => {
+    vi.mocked(prisma.scheduleReconciliation.findFirst).mockResolvedValue(riconciliazione() as never)
+    vi.mocked(prisma.journalEntryAllocation.deleteMany).mockResolvedValue({ count: 2 } as never)
+    vi.mocked(prisma.journalEntryAllocation.findMany).mockResolvedValue([])
+
+    const esito = await undoScheduleReconciliation({ reconciliationId: 'rec-1', venueId: VENUE })
+
+    expect(esito.outcome).toBe('ok')
+    expect(prisma.journalEntry.update).toHaveBeenCalledWith({
+      where: { id: 'entry-1' },
+      data: { categorizationSource: 'manual' },
+    })
+    expect(prisma.journalEntry.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ accountId: expect.anything() }) })
+    )
+  })
+
+  it('nessuna fetta da ritirare (deleteMany count 0): il movimento non viene toccato', async () => {
+    vi.mocked(prisma.scheduleReconciliation.findFirst).mockResolvedValue(riconciliazione() as never)
+    vi.mocked(prisma.journalEntryAllocation.deleteMany).mockResolvedValue({ count: 0 } as never)
+
+    const esito = await undoScheduleReconciliation({ reconciliationId: 'rec-1', venueId: VENUE })
+
+    expect(esito.outcome).toBe('ok')
+    expect(prisma.journalEntryAllocation.findMany).not.toHaveBeenCalled()
+    expect(prisma.journalEntry.update).not.toHaveBeenCalled()
   })
 })
