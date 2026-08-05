@@ -62,3 +62,15 @@ export function isEncrypted(value: string): boolean {
     return false
   }
 }
+
+/**
+ * Deterministic lookup hash (HMAC-SHA256) for searching encrypted fields.
+ * The value is normalized (trim + uppercase) so lookups are case-insensitive.
+ * Stored alongside the ciphertext (e.g. fiscalCodeHash) to allow equality
+ * searches and unique constraints that AES-GCM's random IV makes impossible.
+ */
+export function lookupHash(value: string): string {
+  const key = getEncryptionKey()
+  const normalized = value.trim().toUpperCase()
+  return crypto.createHmac('sha256', key).update(`lookup:${normalized}`).digest('hex')
+}

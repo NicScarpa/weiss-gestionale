@@ -179,6 +179,7 @@ model BankAccount {
   accountType      RegisterType @map("account_type")
   bankName         String?      @map("bank_name")
   iban             String?
+  ibanHash         String?      @map("iban_hash")
   bic              String?
   initialBalance   Decimal      @default(0) @map("initial_balance") @db.Decimal(12, 2)
   currency         String       @default("EUR")
@@ -193,6 +194,7 @@ model BankAccount {
 
   @@unique([venueId, iban])
   @@index([venueId, accountType])
+  @@index([ibanHash])
   @@map("bank_accounts")
 }
 
@@ -447,6 +449,7 @@ model Supplier {
   createdAt          DateTime            @default(now()) @map("created_at")
   city               String?
   fiscalCode         String?             @map("fiscal_code")
+  fiscalCodeHash     String?             @map("fiscal_code_hash")
   postalCode         String?             @map("postal_code")
   province           String?
   updatedAt          DateTime            @default(now()) @updatedAt @map("updated_at")
@@ -459,6 +462,7 @@ model Supplier {
   defaultAccount     Account?            @relation(fields: [defaultAccountId], references: [id])
   schedules          Schedule[]          @relation("ScheduleSupplier")
 
+  @@index([fiscalCodeHash])
   @@map("suppliers")
 }
 

@@ -4,6 +4,7 @@
  */
 
 import { prisma } from '@/lib/prisma'
+import { lookupHash } from '@/lib/encryption'
 import type { Supplier } from '@prisma/client'
 import type { FatturaParsata } from './types'
 
@@ -87,14 +88,17 @@ export async function findSupplierByVat(
     if (byVat) return byVat
   }
 
-  // Cerca per Codice Fiscale se non trovato per P.IVA
+  // Cerca per Codice Fiscale se non trovato per P.IVA.
+  // Il campo fiscalCode è cifrato (AES-GCM, IV casuale): l'uguaglianza sul
+  // ciphertext non funziona. Si cerca sull'hash deterministico, con fallback
+  // sul valore in chiaro per i record legacy non ancora migrati.
   if (normalizedCf) {
     const byCf = await prisma.supplier.findFirst({
       where: {
-        fiscalCode: {
-          equals: normalizedCf,
-          mode: 'insensitive',
-        },
+        OR: [
+          { fiscalCodeHash: lookupHash(normalizedCf) },
+          { fiscalCode: { equals: normalizedCf, mode: 'insensitive' } },
+        ],
         isActive: true,
       },
     })
