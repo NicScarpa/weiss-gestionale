@@ -6,6 +6,7 @@ import { upsertBudgetLinesSchema } from '@/lib/validations/budget'
 import { calculateAnnualTotal } from '@/lib/budget-utils'
 
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 // GET /api/budget/[id]/lines - Lista righe budget
 export async function GET(
   request: NextRequest,
@@ -215,6 +216,14 @@ export async function POST(
       account: line.account,
     }))
 
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'CREATE',
+      entityType: 'BudgetLine',
+      entityId: id,
+      newValues: { linesCount: formattedLines.length },
+    })
+
     return NextResponse.json({ data: formattedLines }, { status: 201 })
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -297,6 +306,13 @@ export async function DELETE(
         },
       })
     }
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'DELETE',
+      entityType: 'BudgetLine',
+      entityId: lineId || accountId || id,
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {

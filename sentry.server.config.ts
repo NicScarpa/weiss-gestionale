@@ -31,7 +31,12 @@ Sentry.init({
     if (event.breadcrumbs) {
       event.breadcrumbs = event.breadcrumbs.map(b => {
         if (b.data) {
-          const sensitiveKeys = ['email', 'password', 'token', 'iban', 'fiscalCode', 'vatNumber', 'hourlyRate', 'resetToken']
+          const sensitiveKeys = [
+            'email', 'password', 'token', 'iban', 'fiscalCode', 'vatNumber',
+            'hourlyRate', 'resetToken', 'phoneNumber', 'phone', 'address',
+            'indirizzo', 'whatsappNumber', 'codiceFiscale', 'partitaIva',
+            'beneficiarioIban', 'controparteIban', 'portalPin',
+          ]
           for (const key of sensitiveKeys) {
             if (key in b.data) b.data[key] = '[REDACTED]'
           }
@@ -39,10 +44,28 @@ Sentry.init({
         return b
       })
     }
+
+    // Scrub request body data
+    if (event.request?.data) {
+      const bodyKeys = [
+        'email', 'password', 'token', 'iban', 'fiscalCode', 'vatNumber',
+        'hourlyRate', 'resetToken', 'phoneNumber', 'phone', 'address',
+        'indirizzo', 'whatsappNumber', 'codiceFiscale', 'partitaIva',
+        'beneficiarioIban', 'controparteIban', 'portalPin',
+      ]
+      if (typeof event.request.data === 'object' && event.request.data !== null) {
+        const data = event.request.data as Record<string, unknown>
+        for (const key of bodyKeys) {
+          if (key in data) data[key] = '[REDACTED]'
+        }
+      }
+    }
+
     // Scrub user context
     if (event.user) {
       delete event.user.email
       delete event.user.ip_address
+      delete event.user.username
     }
 
     return event

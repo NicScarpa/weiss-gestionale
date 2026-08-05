@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 import { ScheduleStatus, SchedulePriority, ScheduleDocumentType } from '@/types/schedule'
 
 const updateScheduleSchema = z.object({
@@ -156,6 +157,13 @@ export async function PATCH(
       },
     })
 
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'UPDATE',
+      entityType: 'Schedule',
+      entityId: id,
+    })
+
     return NextResponse.json({
       schedule: {
         ...schedule,
@@ -206,6 +214,13 @@ export async function DELETE(
     const schedule = await prisma.schedule.update({
       where: { id: id },
       data: { stato: 'annullata' },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'DELETE',
+      entityType: 'Schedule',
+      entityId: id,
     })
 
     return NextResponse.json({

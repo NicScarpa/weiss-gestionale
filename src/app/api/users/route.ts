@@ -265,11 +265,13 @@ export async function POST(request: NextRequest) {
     })
 
     // Restituisci utente con credenziali temporanee (una tantum)
+    // VULN-047: La password temporanea viene restituita una sola volta all'admin che crea l'utente
+    // per comunicarla al nuovo utente. Non viene mai persistita in chiaro.
     return NextResponse.json({
       user: filterUserFields(newUser as unknown as Record<string, unknown>, userRole),
       credentials: {
         username,
-        password: temporaryPassword,
+        temporaryPassword,
         mustChangePassword: true,
       },
     }, { status: 201 })

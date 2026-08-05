@@ -6,6 +6,7 @@ import { bankDepositSchema } from '@/lib/validations/prima-nota'
 import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 // POST /api/prima-nota/versamento - Versamento cassa → banca
 export async function POST(request: NextRequest) {
   try {
@@ -61,6 +62,15 @@ export async function POST(request: NextRequest) {
         },
       }),
     ])
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'CREATE',
+      entityType: 'JournalEntry',
+      entityId: cashEntry.id,
+      venueId,
+      newValues: { type: 'versamento', amount: Number(validatedData.amount), date: validatedData.date },
+    })
 
     return NextResponse.json(
       {

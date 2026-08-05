@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 // POST /api/chiusure/[id]/submit - Invia chiusura per validazione
 export async function POST(
   request: NextRequest,
@@ -94,6 +95,14 @@ export async function POST(
         status: true,
         submittedAt: true,
       },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'UPDATE',
+      entityType: 'DailyClosure',
+      entityId: id,
+      newValues: { status: 'SUBMITTED' },
     })
 
     return NextResponse.json({

@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { updateBudgetSchema } from '@/lib/validations/budget'
 
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 // GET /api/budget/[id] - Dettaglio budget con righe
 export async function GET(
   request: NextRequest,
@@ -188,6 +189,13 @@ export async function PUT(
       },
     })
 
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'UPDATE',
+      entityType: 'Budget',
+      entityId: id,
+    })
+
     return NextResponse.json(budget)
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -246,6 +254,13 @@ export async function DELETE(
     // Elimina il budget (le righe e gli alert vengono eliminati in cascade)
     await prisma.budget.delete({
       where: { id },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'DELETE',
+      entityType: 'Budget',
+      entityId: id,
     })
 
     return NextResponse.json({ success: true })

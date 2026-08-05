@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     logger.error('Errore generazione alert', error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Errore interno' },
+      { error: 'Errore nella generazione degli alert' },
       { status: 500 }
     )
   }

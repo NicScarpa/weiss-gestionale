@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 import { ScheduleStatus } from '@/types/schedule'
 
 const createPaymentSchema = z.object({
@@ -126,6 +127,14 @@ export async function POST(
           dataPagamento: dataPagamento,
         }),
       },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'CREATE',
+      entityType: 'SchedulePayment',
+      entityId: payment.id,
+      newValues: { scheduleId: id, importo: validatedData.importo },
     })
 
     return NextResponse.json({

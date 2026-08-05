@@ -4,11 +4,10 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 import bcrypt from 'bcryptjs'
+import crypto from 'crypto'
 import { generateUniqueUsername } from '@/lib/utils/username'
 
 import { logger } from '@/lib/logger'
-// Password iniziale di default
-const DEFAULT_PASSWORD = '1234567890'
 
 // Schema per creazione staff
 const createStaffSchema = z.object({
@@ -267,8 +266,9 @@ export async function POST(request: NextRequest) {
     // Genera username unico (NomeCognome)
     const username = await generateUniqueUsername(prisma, validatedData.firstName, validatedData.lastName)
 
-    // Hash password iniziale
-    const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 12)
+    // Genera password temporanea sicura
+    const temporaryPassword = crypto.randomBytes(16).toString('hex')
+    const passwordHash = await bcrypt.hash(temporaryPassword, 12)
 
     // Crea il nuovo dipendente
     const newStaff = await prisma.user.create({

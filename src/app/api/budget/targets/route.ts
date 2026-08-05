@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { MONTH_NUMBER_TO_KEY, MONTH_KEYS } from '@/types/budget'
 
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 // Schema validazione
 const getTargetsSchema = z.object({
   venueId: z.string(),
@@ -181,6 +182,15 @@ export async function PUT(request: NextRequest) {
       (sum: number, t: { targetRevenue: unknown }) => sum + Number(t.targetRevenue),
       0
     )
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'UPDATE',
+      entityType: 'BudgetTarget',
+      entityId: `${venueId}-${year}`,
+      venueId,
+      newValues: { year, annualTotal },
+    })
 
     return NextResponse.json({
       success: true,

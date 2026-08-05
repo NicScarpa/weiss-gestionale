@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 
 // POST /api/scadenzario/[id]/genera-prossima - Genera prossima occorrenza ricorrente
 export async function POST(
@@ -85,6 +86,14 @@ export async function POST(
     await prisma.schedule.update({
       where: { id: parent.id },
       data: { ricorrenzaProssimaGenerazione: prossimaGenerazione },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'CREATE',
+      entityType: 'Schedule',
+      entityId: newSchedule.id,
+      newValues: { source: 'ricorrenza_auto', parentId: id },
     })
 
     return NextResponse.json({

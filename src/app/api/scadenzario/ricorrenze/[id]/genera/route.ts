@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 import { calcolaProssimaGenerazione, calcolaDataDallaRicorrenza } from '@/lib/recurrence-utils'
 
 // POST /api/scadenzario/ricorrenze/[id]/genera - Genera prossimo schedule dalla ricorrenza
@@ -76,6 +77,14 @@ export async function POST(
         prossimaGenerazione: nuovaProssimaGenerazione,
         ...(shouldDeactivate ? { isActive: false } : {}),
       },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'CREATE',
+      entityType: 'Schedule',
+      entityId: schedule.id,
+      newValues: { source: 'ricorrenza_auto', recurrenceId: id },
     })
 
     return NextResponse.json({

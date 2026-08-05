@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 import { ScheduleStatus } from '@/types/schedule'
 
 // DELETE /api/scadenzario/[id]/pagamenti/[paymentId] - Elimina pagamento
@@ -75,6 +76,14 @@ export async function DELETE(
           dataPagamento: null,
         }),
       },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'DELETE',
+      entityType: 'SchedulePayment',
+      entityId: paymentId,
+      newValues: { scheduleId: id },
     })
 
     return NextResponse.json({ message: 'Pagamento eliminato' })

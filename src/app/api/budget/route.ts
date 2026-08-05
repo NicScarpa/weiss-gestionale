@@ -10,6 +10,7 @@ import {
 import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 // GET /api/budget - Lista budget con filtri
 export async function GET(request: NextRequest) {
   try {
@@ -230,6 +231,15 @@ export async function POST(request: NextRequest) {
           select: { lines: true },
         },
       },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'CREATE',
+      entityType: 'Budget',
+      entityId: budget.id,
+      venueId: validatedData.venueId,
+      newValues: { name: validatedData.name, year: validatedData.year },
     })
 
     return NextResponse.json(

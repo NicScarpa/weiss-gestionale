@@ -9,6 +9,7 @@ import {
 import { generateAlertsForVenue } from '@/lib/budget/alert-generator'
 
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 // Schema per validazione/rifiuto
 const validateSchema = z.object({
   action: z.enum(['approve', 'reject']),
@@ -95,6 +96,14 @@ export async function POST(
         },
       })
 
+      await createAuditLog({
+        userId: session.user.id,
+        action: 'UPDATE',
+        entityType: 'DailyClosure',
+        entityId: id,
+        newValues: { status: 'DRAFT', action: 'reject', rejectionNotes },
+      })
+
       return NextResponse.json({
         ...updated,
         deletedJournalEntries: deletedEntries,
@@ -165,6 +174,14 @@ export async function POST(
       // Log ma non blocca la validazione
       logger.error('Errore generazione alert budget', alertError)
     }
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'UPDATE',
+      entityType: 'DailyClosure',
+      entityId: id,
+      newValues: { status: 'VALIDATED', action: 'approve' },
+    })
 
     return NextResponse.json({
       ...updated,

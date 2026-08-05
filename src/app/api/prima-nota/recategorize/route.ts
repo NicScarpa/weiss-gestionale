@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { getVenueId } from '@/lib/venue'
+import { createAuditLog } from '@/lib/audit'
 
 /**
  * POST /api/prima-nota/recategorize
@@ -86,6 +87,15 @@ export async function POST(request: NextRequest) {
         }
       }
     }
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'UPDATE',
+      entityType: 'JournalEntry',
+      entityId: 'bulk-recategorize',
+      venueId,
+      newValues: { processed: entries.length, updated, rules: rules.length },
+    })
 
     return NextResponse.json({
       processed: entries.length,

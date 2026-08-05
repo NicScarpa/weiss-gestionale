@@ -4,6 +4,7 @@ import { reconcileVenueTransactions } from '@/lib/reconciliation'
 import { reconcileSchema } from '@/lib/validations/reconciliation'
 import { getVenueId } from '@/lib/venue'
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 // POST /api/reconciliation - Avvia riconciliazione automatica
 export async function POST(request: NextRequest) {
   try {
@@ -21,6 +22,15 @@ export async function POST(request: NextRequest) {
     const result = await reconcileVenueTransactions(venueId, {
       dateFrom: data.dateFrom ? new Date(data.dateFrom) : undefined,
       dateTo: data.dateTo ? new Date(data.dateTo) : undefined,
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'CREATE',
+      entityType: 'Reconciliation',
+      entityId: venueId,
+      venueId,
+      newValues: { dateFrom: data.dateFrom, dateTo: data.dateTo },
     })
 
     return NextResponse.json(result)

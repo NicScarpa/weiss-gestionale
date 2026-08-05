@@ -6,8 +6,7 @@ import { logger } from '@/lib/logger'
 import { generateUniqueUsername } from '@/lib/utils/username'
 import { getVenueId } from '@/lib/venue'
 
-// Password iniziale di default (non puo essere usata)
-const DEFAULT_PASSWORD = '1234567890'
+import { passwordSchema as passwordValidation } from '@/lib/validations/password'
 
 const completeSchema = z.object({
   token: z.string().min(1, 'Token obbligatorio'),
@@ -18,13 +17,7 @@ const completeSchema = z.object({
   birthDate: z.string().optional().nullable(),
   address: z.string().optional().nullable(),
   fiscalCode: z.string().max(16).optional().nullable(),
-  password: z
-    .string()
-    .min(8, 'La password deve essere di almeno 8 caratteri')
-    .refine(
-      (pwd) => pwd !== DEFAULT_PASSWORD,
-      'Non puoi usare la password iniziale'
-    ),
+  password: passwordValidation,
   confirmPassword: z.string(),
 }).refine(
   (data) => data.password === data.confirmPassword,

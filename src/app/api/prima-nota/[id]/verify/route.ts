@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { createAuditLog } from '@/lib/audit'
 
 /**
  * PATCH /api/prima-nota/[id]/verify
@@ -32,6 +33,14 @@ export async function PATCH(
     const updated = await prisma.journalEntry.update({
       where: { id: id },
       data: { verified: !current.verified },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'UPDATE',
+      entityType: 'JournalEntry',
+      entityId: id,
+      newValues: { verified: updated.verified },
     })
 
     return NextResponse.json({

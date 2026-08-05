@@ -81,6 +81,7 @@ export async function GET() {
 
 const regenerateSchema = z.object({
   action: z.literal('regenerate'),
+  email: z.string().email('Email non valida').optional(),
 })
 
 /**
@@ -101,7 +102,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    regenerateSchema.parse(body)
+    const { email } = regenerateSchema.parse(body)
 
     // Disattiva tutti i token generici attivi
     await prisma.invitationToken.updateMany({
@@ -115,20 +116,22 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Crea nuovo token generico
+    // Crea nuovo token (con email vincolata se specificata)
     const token = globalThis.crypto.randomUUID()
     const expiresAt = new Date(Date.now() + TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000)
 
     const invitation = await prisma.invitationToken.create({
       data: {
         token,
+        email: email?.toLowerCase() || null,
         invitedById: session.user.id,
         expiresAt,
       },
     })
 
-    logger.info('[StaffInvite] Link generico rigenerato', {
+    logger.info('[StaffInvite] Link invito rigenerato', {
       token,
+      email: email || null,
       invitedBy: session.user.id,
     })
 
@@ -136,6 +139,7 @@ export async function POST(request: NextRequest) {
       token: invitation.token,
       url: buildInviteUrl(invitation.token),
       expiresAt: invitation.expiresAt,
+      email: invitation.email || null,
     })
   } catch (error) {
     if (error instanceof z.ZodError) {

@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { updateJournalEntrySchema } from '@/lib/validations/prima-nota'
 import { getVenueId } from '@/lib/venue'
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 // GET /api/prima-nota/[id] - Dettaglio singolo movimento
 export async function GET(
   request: NextRequest,
@@ -136,6 +137,15 @@ export async function PUT(
       select: { id: true, updatedAt: true },
     })
 
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'UPDATE',
+      entityType: 'JournalEntry',
+      entityId: id,
+      venueId,
+      newValues: validatedData,
+    })
+
     return NextResponse.json(updated)
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -200,6 +210,14 @@ export async function DELETE(
     // Elimina
     await prisma.journalEntry.delete({
       where: { id },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'DELETE',
+      entityType: 'JournalEntry',
+      entityId: id,
+      venueId,
     })
 
     return NextResponse.json({ success: true })

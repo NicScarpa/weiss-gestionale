@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 import { getVenueId } from '@/lib/venue'
 
 const reorderSchema = z.object({
@@ -71,6 +72,15 @@ export async function PATCH(request: NextRequest) {
           select: { id: true, firstName: true, lastName: true },
         },
       },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'UPDATE',
+      entityType: 'ScheduleRule',
+      entityId: 'reorder',
+      venueId,
+      newValues: { orderedIds },
     })
 
     return NextResponse.json({ data: updatedRules })

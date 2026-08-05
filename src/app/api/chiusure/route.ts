@@ -6,6 +6,7 @@ import { Prisma } from '@prisma/client'
 
 import { checkRequestRateLimit, RATE_LIMIT_CONFIGS, requireRole } from '@/lib/api-utils'
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 import { getVenueId } from '@/lib/venue'
 import { buildStationCreateData } from '@/lib/closure-calculations'
 
@@ -489,6 +490,15 @@ export async function POST(request: NextRequest) {
           select: { stations: true, expenses: true, attendance: true },
         },
       },
+    })
+
+    await createAuditLog({
+      userId: session!.user.id,
+      action: 'CREATE',
+      entityType: 'DailyClosure',
+      entityId: closure.id,
+      venueId,
+      newValues: { date: validatedData.date, isEvent: validatedData.isEvent },
     })
 
     return NextResponse.json(closure, { status: 201 })

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 import { getVenueId } from '@/lib/venue'
 import { writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
@@ -149,6 +150,14 @@ export async function POST(
         fileSize: file.size,
         uploadedByUserId: session.user.id,
       },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'CREATE',
+      entityType: 'ScheduleAttachment',
+      entityId: attachment.id,
+      newValues: { scheduleId: id, filename: file.name, contentType: file.type },
     })
 
     return NextResponse.json({ attachment })

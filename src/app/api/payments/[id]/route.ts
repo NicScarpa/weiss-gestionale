@@ -3,6 +3,7 @@ import { getServerSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { getVenueId } from '@/lib/venue'
 import { PaymentStatus, Prisma } from '@prisma/client'
+import { createAuditLog } from '@/lib/audit'
 
 // GET /api/payments/[id] - Dettaglio pagamento
 export async function GET(
@@ -98,6 +99,15 @@ export async function PATCH(
       },
     })
 
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'UPDATE',
+      entityType: 'Payment',
+      entityId: id,
+      venueId,
+      newValues: data,
+    })
+
     return NextResponse.json(payment)
   } catch (error) {
     console.error('Error updating payment:', error)
@@ -142,6 +152,14 @@ export async function DELETE(
     }
 
     await prisma.payment.delete({ where: { id } })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'DELETE',
+      entityType: 'Payment',
+      entityId: id,
+      venueId,
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {

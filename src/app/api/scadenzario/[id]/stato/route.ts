@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 import { ScheduleStatus } from '@/types/schedule'
 
 const updateStatusSchema = z.object({
@@ -57,6 +58,14 @@ export async function PATCH(
     const schedule = await prisma.schedule.update({
       where: { id: id },
       data: updateData,
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'UPDATE',
+      entityType: 'Schedule',
+      entityId: id,
+      newValues: { stato },
     })
 
     return NextResponse.json({

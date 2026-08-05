@@ -137,7 +137,7 @@ export default function DettaglioUtentePage({ params }: { params: Promise<{ id: 
         const data = await response.json()
         throw new Error(data.error || 'Errore reset password')
       }
-      toast.success('Password resettata a 1234567890')
+      toast.success('Password resettata. Comunica la nuova password temporanea all\'utente.')
     } catch {
       toast.error('Errore durante il reset della password')
     } finally {
@@ -426,8 +426,8 @@ export default function DettaglioUtentePage({ params }: { params: Promise<{ id: 
             <AlertDialogDescription>
               {actionDialog === 'reset-password' ? (
                 <>
-                  Stai per resettare la password di <strong>{user.firstName} {user.lastName}</strong>
-                  {' '}al valore iniziale <code className="bg-muted px-1 rounded">1234567890</code>.
+                  Stai per resettare la password di <strong>{user.firstName} {user.lastName}</strong>.
+                  Verrà generata una nuova password temporanea sicura.
                   <br />
                   L&apos;utente dovrà cambiarla al prossimo accesso.
                 </>

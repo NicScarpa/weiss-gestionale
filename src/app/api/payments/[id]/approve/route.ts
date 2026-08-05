@@ -3,6 +3,7 @@ import { getServerSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { getVenueId } from '@/lib/venue'
 import { PaymentStatus } from '@prisma/client'
+import { createAuditLog } from '@/lib/audit'
 
 // POST /api/payments/[id]/approve - Approva pagamento (da BOZZA → DA_APPROVARE → DISPOSTO)
 export async function POST(
@@ -71,6 +72,15 @@ export async function POST(
         venue: { select: { id: true, name: true, code: true } },
         journalEntry: { select: { id: true, description: true } },
       },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'UPDATE',
+      entityType: 'Payment',
+      entityId: id,
+      venueId,
+      newValues: { stato: targetStato, previousStato: existing.stato },
     })
 
     return NextResponse.json(payment)

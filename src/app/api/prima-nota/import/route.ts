@@ -6,6 +6,7 @@ import { getVenueId } from '@/lib/venue'
 
 import { checkRequestRateLimit, RATE_LIMIT_CONFIGS } from '@/lib/api-utils'
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 
 const importSchema = z.object({
     batchId: z.string().min(1, 'batchId è richiesto'),
@@ -91,6 +92,15 @@ export async function POST(request: NextRequest) {
             }
 
             return { created, total: transactions.length, errors }
+        })
+
+        await createAuditLog({
+            userId: session.user.id,
+            action: 'CREATE',
+            entityType: 'JournalEntry',
+            entityId: batchId,
+            venueId,
+            newValues: { batchId, created: result.created, total: result.total },
         })
 
         return NextResponse.json(result)

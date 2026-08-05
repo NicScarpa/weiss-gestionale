@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 import { calcolaProssimaGenerazione } from '@/lib/recurrence-utils'
 
 const updateRecurrenceSchema = z.object({
@@ -128,6 +129,13 @@ export async function PATCH(
       },
     })
 
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'UPDATE',
+      entityType: 'Recurrence',
+      entityId: id,
+    })
+
     return NextResponse.json({ recurrence })
   } catch (error) {
     logger.error('Errore PATCH /api/scadenzario/ricorrenze/[id]', error)
@@ -167,6 +175,13 @@ export async function DELETE(
     await prisma.recurrence.update({
       where: { id },
       data: { isActive: false },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'DELETE',
+      entityType: 'Recurrence',
+      entityId: id,
     })
 
     return NextResponse.json({ success: true })

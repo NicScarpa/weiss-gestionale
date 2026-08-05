@@ -11,6 +11,7 @@ import {
 import { monthNumberToKey } from '@/lib/budget-utils'
 
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 // GET /api/budget/alerts - Lista alert budget
 export async function GET(request: NextRequest) {
   try {
@@ -170,6 +171,14 @@ export async function POST(request: NextRequest) {
         acknowledgedBy: session.user.id,
         acknowledgedAt: new Date(),
       },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'UPDATE',
+      entityType: 'BudgetAlert',
+      entityId: alertId,
+      newValues: { status: 'ACKNOWLEDGED' },
     })
 
     return NextResponse.json({

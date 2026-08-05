@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { getVenueId } from '@/lib/venue'
 import { PaymentType, PaymentStatus, Prisma } from '@prisma/client'
 import { checkRequestRateLimit, RATE_LIMIT_CONFIGS } from '@/lib/api-utils'
+import { createAuditLog } from '@/lib/audit'
 
 // GET /api/payments - Lista pagamenti con filtri
 export async function GET(request: NextRequest) {
@@ -143,6 +144,15 @@ export async function POST(request: NextRequest) {
         journalEntry: { select: { id: true, description: true } },
         createdBy: { select: { id: true, firstName: true, lastName: true } },
       },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'CREATE',
+      entityType: 'Payment',
+      entityId: payment.id,
+      venueId,
+      newValues: { tipo, importo, beneficiarioNome },
     })
 
     return NextResponse.json(payment, { status: 201 })

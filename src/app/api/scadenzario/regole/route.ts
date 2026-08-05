@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 import { getVenueId } from '@/lib/venue'
 
 const createRuleSchema = z.object({
@@ -106,6 +107,15 @@ export async function POST(request: NextRequest) {
           select: { id: true, firstName: true, lastName: true },
         },
       },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'CREATE',
+      entityType: 'ScheduleRule',
+      entityId: rule.id,
+      venueId,
+      newValues: { direzione: validated.direzione, contoId: validated.contoId },
     })
 
     return NextResponse.json({ rule }, { status: 201 })

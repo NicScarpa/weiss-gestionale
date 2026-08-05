@@ -96,7 +96,7 @@ export function UserTable({ users, isLoading, onResetPassword, onToggleActive }:
     try {
       if (actionDialog.type === 'reset-password') {
         await onResetPassword(actionDialog.user.id)
-        toast.success('Password resettata a 1234567890')
+        toast.success('Password resettata. Comunica la nuova password temporanea all\'utente.')
       } else if (actionDialog.type === 'toggle-active') {
         await onToggleActive(actionDialog.user.id, !actionDialog.user.isActive)
         toast.success(
@@ -282,8 +282,8 @@ export function UserTable({ users, isLoading, onResetPassword, onToggleActive }:
             <AlertDialogDescription>
               {actionDialog?.type === 'reset-password' ? (
                 <>
-                  Stai per resettare la password di <strong>{actionDialog?.user.firstName} {actionDialog?.user.lastName}</strong>
-                  {' '}al valore iniziale <code className="bg-muted px-1 rounded">1234567890</code>.
+                  Stai per resettare la password di <strong>{actionDialog?.user.firstName} {actionDialog?.user.lastName}</strong>.
+                  Verrà generata una nuova password temporanea sicura.
                   <br />
                   L&apos;utente dovrà cambiarla al prossimo accesso.
                 </>

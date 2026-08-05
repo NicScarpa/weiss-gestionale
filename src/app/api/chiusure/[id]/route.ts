@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 import { getVenueId } from '@/lib/venue'
 import { buildStationCreateData } from '@/lib/closure-calculations'
 
@@ -477,6 +478,14 @@ export async function PUT(
       return closure
     })
 
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'UPDATE',
+      entityType: 'DailyClosure',
+      entityId: id,
+      venueId,
+    })
+
     return NextResponse.json(updated)
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -559,6 +568,14 @@ export async function DELETE(
     // Elimina (cascade elimina anche stazioni, parziali, uscite, presenze)
     await prisma.dailyClosure.delete({
       where: { id },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'DELETE',
+      entityType: 'DailyClosure',
+      entityId: id,
+      venueId,
     })
 
     return NextResponse.json({ success: true })

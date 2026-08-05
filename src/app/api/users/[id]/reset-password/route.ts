@@ -2,11 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
+import crypto from 'crypto'
 import { canPerformAction, type UserRole } from '@/lib/utils/permissions'
 
 import { logger } from '@/lib/logger'
-// Password iniziale di default
-const DEFAULT_PASSWORD = '1234567890'
 
 // POST /api/users/[id]/reset-password - Reset password a valore iniziale
 export async function POST(
@@ -51,8 +50,9 @@ export async function POST(
       )
     }
 
-    // Hash nuova password
-    const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 12)
+    // Genera password temporanea sicura
+    const temporaryPassword = crypto.randomBytes(16).toString('hex')
+    const passwordHash = await bcrypt.hash(temporaryPassword, 12)
 
     // Aggiorna password e forza cambio al prossimo login
     await prisma.user.update({
@@ -67,7 +67,7 @@ export async function POST(
       message: 'Password resettata con successo',
       credentials: {
         username: targetUser.username,
-        password: DEFAULT_PASSWORD,
+        temporaryPassword,
         mustChangePassword: true,
       },
     })

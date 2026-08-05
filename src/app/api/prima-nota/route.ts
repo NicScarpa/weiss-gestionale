@@ -12,6 +12,7 @@ import type { JournalEntry } from '@/types/prima-nota'
 import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 /**
  * @swagger
  * /api/prima-nota:
@@ -404,6 +405,15 @@ export async function POST(request: NextRequest) {
           select: { id: true, code: true, name: true },
         },
       },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'CREATE',
+      entityType: 'JournalEntry',
+      entityId: entry.id,
+      venueId,
+      newValues: { registerType: validatedData.registerType, description: validatedData.description, amount: validatedData.amount },
     })
 
     return NextResponse.json(

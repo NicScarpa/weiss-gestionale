@@ -68,8 +68,11 @@ const passwordFormSchema = z.object({
   currentPassword: z.string().min(1, 'Password attuale richiesta'),
   newPassword: z
     .string()
-    .min(8, 'La password deve avere almeno 8 caratteri')
-    .refine((pwd) => pwd !== '1234567890', 'Non puoi usare la password iniziale'),
+    .min(10, 'Minimo 10 caratteri')
+    .regex(/[A-Z]/, 'Almeno una maiuscola')
+    .regex(/[a-z]/, 'Almeno una minuscola')
+    .regex(/[0-9]/, 'Almeno un numero')
+    .regex(/[^A-Za-z0-9]/, 'Almeno un carattere speciale'),
   confirmPassword: z.string(),
 }).refine((data) => data.newPassword === data.confirmPassword, {
   message: 'Le password non coincidono',

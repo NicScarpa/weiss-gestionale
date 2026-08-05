@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 import { ScheduleStatus, ScheduleType, SchedulePriority, ScheduleDocumentType, ScheduleSource } from '@/types/schedule'
 import { getVenueId } from '@/lib/venue'
 
@@ -243,6 +244,15 @@ export async function POST(request: NextRequest) {
           },
         },
       },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'CREATE',
+      entityType: 'Schedule',
+      entityId: schedule.id,
+      venueId,
+      newValues: { tipo: validatedData.tipo, descrizione: validatedData.descrizione, importoTotale: validatedData.importoTotale },
     })
 
     return NextResponse.json({

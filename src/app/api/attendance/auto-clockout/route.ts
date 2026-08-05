@@ -163,7 +163,16 @@ export async function POST(request: NextRequest) {
 }
 
 // GET per verificare lo stato del job (solo info)
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const cronSecret = process.env.CRON_SECRET
+  if (!cronSecret) {
+    return NextResponse.json({ error: 'Errore di configurazione server' }, { status: 500 })
+  }
+  const authHeader = request.headers.get('authorization')
+  if (authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
+  }
+
   return NextResponse.json({
     name: 'Auto Clock-Out Job',
     description: 'Crea automaticamente clock-out per dipendenti che hanno dimenticato di timbrare l\'uscita',

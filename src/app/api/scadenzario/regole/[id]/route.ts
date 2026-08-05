@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 import { getVenueId } from '@/lib/venue'
 
 const updateRuleSchema = z.object({
@@ -115,6 +116,13 @@ export async function PATCH(
       },
     })
 
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'UPDATE',
+      entityType: 'ScheduleRule',
+      entityId: id,
+    })
+
     return NextResponse.json({ rule })
   } catch (error) {
     logger.error('Errore PATCH /api/scadenzario/regole/[id]', error)
@@ -163,6 +171,13 @@ export async function DELETE(
         data: { ordine: { decrement: 1 } },
       }),
     ])
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'DELETE',
+      entityType: 'ScheduleRule',
+      entityId: id,
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {

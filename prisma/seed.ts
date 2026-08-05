@@ -130,7 +130,7 @@ async function main() {
       roleId: adminRole.id,
       venueId: weiss.id,
       isFixedStaff: true,
-      mustChangePassword: false // Per test
+      mustChangePassword: true
     }
   })
 
@@ -145,7 +145,7 @@ async function main() {
       roleId: managerRole.id,
       venueId: weiss.id,
       isFixedStaff: true,
-      mustChangePassword: false // Per test
+      mustChangePassword: true
     }
   })
 
@@ -170,7 +170,7 @@ async function main() {
         roleId: staffRole.id,
         venueId: weiss.id,
         isFixedStaff: true,
-        mustChangePassword: false // Per test
+        mustChangePassword: true
       }
     })
   }
@@ -196,7 +196,7 @@ async function main() {
         venueId: weiss.id,
         isFixedStaff: false,
         hourlyRate: extra.hourlyRate,
-        mustChangePassword: false // Per test
+        mustChangePassword: true
       }
     })
   }

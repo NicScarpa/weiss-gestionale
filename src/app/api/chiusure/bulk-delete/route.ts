@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 import { getVenueId } from '@/lib/venue'
 const bulkDeleteSchema = z.object({
   ids: z.array(z.string()).min(1, 'Seleziona almeno una chiusura'),
@@ -100,6 +101,15 @@ export async function POST(request: NextRequest) {
       await tx.dailyClosure.deleteMany({
         where: { id: { in: toDelete } },
       })
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'DELETE',
+      entityType: 'DailyClosure',
+      entityId: toDelete.join(','),
+      venueId: userVenueId,
+      newValues: { deletedCount: toDelete.length, ids: toDelete },
     })
 
     return NextResponse.json({

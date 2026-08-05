@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { createAuditLog } from '@/lib/audit'
 
 const categorizeSchema = z.object({
   budgetCategoryId: z.string().optional(),
@@ -47,6 +48,14 @@ export async function PATCH(
         notes: validated.notes || undefined,
         verified: true, // Auto-verify su categorizzazione manuale
       },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'UPDATE',
+      entityType: 'JournalEntry',
+      entityId: id,
+      newValues: { budgetCategoryId: validated.budgetCategoryId, accountId: validated.accountId },
     })
 
     return NextResponse.json({

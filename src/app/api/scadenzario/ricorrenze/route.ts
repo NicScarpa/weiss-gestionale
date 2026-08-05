@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 import { calcolaProssimaGenerazione, isFrequenzaSettimanale, isFrequenzaMensile } from '@/lib/recurrence-utils'
 import { getVenueId } from '@/lib/venue'
 
@@ -186,6 +187,15 @@ export async function POST(request: NextRequest) {
           },
         },
       },
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'CREATE',
+      entityType: 'Recurrence',
+      entityId: recurrence.id,
+      venueId,
+      newValues: { tipo: validated.tipo, descrizione: validated.descrizione, frequenza: validated.frequenza },
     })
 
     return NextResponse.json({ recurrence }, { status: 201 })

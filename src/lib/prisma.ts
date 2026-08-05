@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { Pool } from 'pg'
+import { fieldEncryptionExtension } from './prisma-encryption'
 
 const globalForPrisma = globalThis as unknown as {
   prisma: ReturnType<typeof createPrismaClient> | undefined
@@ -24,8 +25,11 @@ function createPrismaClient() {
   const adapter = new PrismaPg(pool)
   const baseClient = new PrismaClient({ adapter })
 
+  // Add field encryption extension for sensitive data (IBAN, fiscal code, etc.)
+  const encryptedClient = baseClient.$extends(fieldEncryptionExtension)
+
   // Add soft delete extension - automatically filter deleted records
-  return baseClient.$extends({
+  return encryptedClient.$extends({
     query: {
       $allModels: {
         async findMany({ args, query, model }: { args: Record<string, unknown>; query: (args: Record<string, unknown>) => Promise<unknown>; model: string }) {

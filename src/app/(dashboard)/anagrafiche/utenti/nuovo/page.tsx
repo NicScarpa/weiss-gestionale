@@ -55,8 +55,8 @@ export default function NuovoUtentePage() {
 
     // Mostra le credenziali generate
     setCreatedCredentials({
-      username: result.data.username,
-      password: result.credentials.password,
+      username: result.credentials.username,
+      password: result.credentials.temporaryPassword,
       firstName: data.firstName,
       lastName: data.lastName,
     })
