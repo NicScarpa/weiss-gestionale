@@ -20,8 +20,10 @@ import {
 } from '@/components/ui/popover'
 import {
   CalendarIcon,
+  CalendarCheck,
   ChevronLeft,
   ChevronRight,
+  ClipboardCheck,
   Plus,
   AlertTriangle,
   Settings,
@@ -119,6 +121,18 @@ export default function PresenzePage() {
 
   const pendingAnomalies = anomaliesData?.pagination?.total || 0
 
+  // Contatore delle richieste di correzione in attesa
+  const { data: richiesteData } = useQuery({
+    queryKey: ['richieste-correzione-pending-count'],
+    queryFn: async () => {
+      const response = await fetch('/api/richieste-correzione?status=PENDING')
+      if (!response.ok) throw new Error('Errore')
+      return response.json()
+    },
+  })
+
+  const pendingRichieste = richiesteData?.data?.length || 0
+
   const goToPreviousDay = () => setSelectedDate((d) => subDays(d, 1))
   const goToNextDay = () => setSelectedDate((d) => addDays(d, 1))
   const goToToday = () => setSelectedDate(new Date())
@@ -157,6 +171,20 @@ export default function PresenzePage() {
             )}
           </Link>
 
+          {/* Richieste di correzione Button */}
+          <Link
+            href="/presenze/richieste"
+            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground relative"
+          >
+            <ClipboardCheck className="h-4 w-4" />
+            Richieste
+            {pendingRichieste > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full h-4 w-4 flex items-center justify-center font-bold border-2 border-white">
+                {pendingRichieste}
+              </span>
+            )}
+          </Link>
+
           {/* Policy Button */}
           <Link
             href="/presenze/policy"
@@ -182,6 +210,15 @@ export default function PresenzePage() {
           >
             <Clock className="h-4 w-4" />
             Regole orario
+          </Link>
+
+          {/* Cartellino Button */}
+          <Link
+            href="/presenze/cartellino"
+            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <CalendarCheck className="h-4 w-4" />
+            Cartellino
           </Link>
 
           {/* Export Button */}

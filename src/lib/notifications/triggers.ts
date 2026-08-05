@@ -505,3 +505,123 @@ export async function notifySwapRejected(
     },
   })
 }
+
+/**
+ * Nuova richiesta di correzione timbrature: avvisa i responsabili della sede.
+ */
+export async function notifyNewCorrectionRequest(
+  requestId: string
+): Promise<void> {
+  const request = await prisma.attendanceCorrectionRequest.findUnique({
+    where: { id: requestId },
+    include: {
+      user: {
+        include: {
+          venue: {
+            include: {
+              users: {
+                where: {
+                  role: {
+                    name: { in: ['admin', 'manager'] },
+                  },
+                },
+                select: { id: true },
+              },
+            },
+          },
+        },
+      },
+    },
+  })
+
+  if (!request || !request.user.venue) return
+
+  const managerIds = request.user.venue.users.map((u) => u.id)
+  if (managerIds.length === 0) return
+
+  const giorno = format(request.date, 'd MMMM', { locale: it })
+
+  await sendBulkNotification({
+    userIds: managerIds,
+    payload: {
+      type: 'NEW_CORRECTION_REQUEST',
+      title: 'Richiesta di Correzione Timbrature',
+      body: `${request.user.firstName} ${request.user.lastName} chiede una correzione per il ${giorno}`,
+      url: '/presenze/richieste',
+      referenceId: requestId,
+      referenceType: 'AttendanceCorrectionRequest',
+      data: {
+        requestId,
+        date: request.date.toISOString(),
+        employeeName: `${request.user.firstName} ${request.user.lastName}`,
+      },
+    },
+  })
+}
+
+/**
+ * Richiesta di correzione approvata: avvisa chi l'aveva chiesta.
+ */
+export async function notifyCorrectionApproved(
+  requestId: string
+): Promise<void> {
+  const request = await prisma.attendanceCorrectionRequest.findUnique({
+    where: { id: requestId },
+  })
+
+  if (!request) return
+
+  const giorno = format(request.date, 'd MMMM', { locale: it })
+
+  await sendNotification({
+    userId: request.userId,
+    payload: {
+      type: 'CORRECTION_APPROVED',
+      title: 'Correzione Approvata',
+      body: `La correzione delle timbrature del ${giorno} è stata approvata`,
+      url: '/portale/correzioni',
+      referenceId: requestId,
+      referenceType: 'AttendanceCorrectionRequest',
+      data: {
+        requestId,
+        date: request.date.toISOString(),
+        status: 'APPROVED',
+      },
+    },
+  })
+}
+
+/**
+ * Richiesta di correzione rifiutata: avvisa chi l'aveva chiesta, con il motivo.
+ */
+export async function notifyCorrectionRejected(
+  requestId: string,
+  reason?: string
+): Promise<void> {
+  const request = await prisma.attendanceCorrectionRequest.findUnique({
+    where: { id: requestId },
+  })
+
+  if (!request) return
+
+  const giorno = format(request.date, 'd MMMM', { locale: it })
+
+  await sendNotification({
+    userId: request.userId,
+    payload: {
+      type: 'CORRECTION_REJECTED',
+      title: 'Correzione Rifiutata',
+      body: reason
+        ? `La correzione del ${giorno} è stata rifiutata: ${reason}`
+        : `La correzione delle timbrature del ${giorno} è stata rifiutata`,
+      url: '/portale/correzioni',
+      referenceId: requestId,
+      referenceType: 'AttendanceCorrectionRequest',
+      data: {
+        requestId,
+        date: request.date.toISOString(),
+        status: 'REJECTED',
+      },
+    },
+  })
+}
