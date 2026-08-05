@@ -6,6 +6,7 @@ import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
 import { ScheduleStatus, SchedulePriority, ScheduleDocumentType } from '@/types/schedule'
+import { applicaStimaSuScadenza } from '@/lib/scadenzario/stima-data-attesa'
 
 const updateScheduleSchema = z.object({
   descrizione: z.string().min(1).optional(),
@@ -14,6 +15,7 @@ const updateScheduleSchema = z.object({
   dataScadenza: z.coerce.date().or(z.string()).optional(),
   dataEmissione: z.coerce.date().or(z.string()).optional(),
   dataPagamento: z.coerce.date().or(z.string()).optional(),
+  dataAttesa: z.coerce.date().or(z.string()).nullable().optional(),
   tipoDocumento: z.nativeEnum(ScheduleDocumentType).optional(),
   numeroDocumento: z.string().optional(),
   riferimentoDocumento: z.string().optional(),
@@ -115,7 +117,7 @@ export async function PATCH(
     // Verifica esistenza e permessi
     const existing = await prisma.schedule.findFirst({
       where: { id: id },
-      select: { id: true, venueId: true },
+      select: { id: true, venueId: true, tipo: true, dataAttesaSource: true },
     })
 
     if (!existing) {
@@ -136,9 +138,27 @@ export async function PATCH(
     }
 
     // Aggiorna automaticamente stato se pagato interamente
-    const updateData: Prisma.ScheduleUpdateInput = { ...validatedData }
+    const { dataAttesa: dataAttesaInput, ...datiScadenza } = validatedData
+    const updateData: Prisma.ScheduleUpdateInput = { ...datiScadenza }
     if (validatedData.dataPagamento && !validatedData.stato) {
       updateData.stato = ScheduleStatus.PAGATA
+    }
+
+    if (dataAttesaInput !== undefined) {
+      if (existing.tipo !== 'passiva') {
+        return NextResponse.json(
+          { error: 'La data attesa si imposta solo sulle scadenze passive' },
+          { status: 400 }
+        )
+      }
+      if (dataAttesaInput === null) {
+        // Svuotare = tornare alla stima automatica (ricalcolo dopo l'update)
+        updateData.dataAttesa = null
+        updateData.dataAttesaSource = null
+      } else {
+        updateData.dataAttesa = new Date(dataAttesaInput)
+        updateData.dataAttesaSource = 'manuale'
+      }
     }
 
     const schedule = await prisma.schedule.update({
@@ -165,6 +185,29 @@ export async function PATCH(
       },
     })
 
+    // La stima si riapplica se la data attesa è stata svuotata, o se è
+    // cambiata la scadenza contrattuale di una scadenza non gestita a mano
+    const daRistimare =
+      dataAttesaInput === null ||
+      (validatedData.dataScadenza !== undefined &&
+        dataAttesaInput === undefined &&
+        (existing.dataAttesaSource === null || existing.dataAttesaSource === 'stima'))
+
+    if (daRistimare) {
+      await applicaStimaSuScadenza(id, existing.venueId)
+    }
+
+    const finale = daRistimare
+      ? (await prisma.schedule.findUnique({
+          where: { id },
+          include: {
+            supplier: { select: { id: true, name: true } },
+            createdBy: { select: { id: true, firstName: true, lastName: true } },
+            payments: { orderBy: { dataPagamento: 'desc' }, take: 5 },
+          },
+        })) ?? schedule
+      : schedule
+
     await createAuditLog({
       userId: session.user.id,
       action: 'UPDATE',
@@ -174,8 +217,8 @@ export async function PATCH(
 
     return NextResponse.json({
       schedule: {
-        ...schedule,
-        importoResiduo: Number(schedule.importoTotale) - Number(schedule.importoPagato),
+        ...finale,
+        importoResiduo: Number(finale.importoTotale) - Number(finale.importoPagato),
       },
     })
   } catch (error) {
