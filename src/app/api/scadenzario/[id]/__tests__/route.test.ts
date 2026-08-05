@@ -35,6 +35,7 @@ function esistente(overrides: Record<string, unknown> = {}) {
     id: 'sched-1',
     venueId: 'venue-1',
     tipo: 'passiva',
+    stato: 'aperta',
     dataAttesaSource: null,
     ...overrides,
   }
@@ -124,5 +125,29 @@ describe('PATCH /api/scadenzario/[id] - data attesa manuale', () => {
     await PATCH(request, context)
 
     expect(applicaStimaSuScadenza).not.toHaveBeenCalled()
+  })
+
+  it('la data attesa non si modifica su una scadenza pagata', async () => {
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      esistente({ stato: 'pagata' }) as never
+    )
+
+    const { request, context } = patchCon({ dataAttesa: '2026-09-15' })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(400)
+    expect(prisma.schedule.update).not.toHaveBeenCalled()
+  })
+
+  it('la data attesa non si sovrascrive se riallineata al movimento riconciliato', async () => {
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      esistente({ dataAttesaSource: 'riconciliazione' }) as never
+    )
+
+    const { request, context } = patchCon({ dataAttesa: '2026-09-15' })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(400)
+    expect(prisma.schedule.update).not.toHaveBeenCalled()
   })
 })

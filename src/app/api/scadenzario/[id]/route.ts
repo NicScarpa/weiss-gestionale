@@ -117,7 +117,7 @@ export async function PATCH(
     // Verifica esistenza e permessi
     const existing = await prisma.schedule.findFirst({
       where: { id: id },
-      select: { id: true, venueId: true, tipo: true, dataAttesaSource: true },
+      select: { id: true, venueId: true, tipo: true, stato: true, dataAttesaSource: true },
     })
 
     if (!existing) {
@@ -148,6 +148,18 @@ export async function PATCH(
       if (existing.tipo !== 'passiva') {
         return NextResponse.json(
           { error: 'La data attesa si imposta solo sulle scadenze passive' },
+          { status: 400 }
+        )
+      }
+      if (existing.stato === 'pagata' || existing.stato === 'annullata') {
+        return NextResponse.json(
+          { error: 'La data attesa non si modifica su una scadenza chiusa' },
+          { status: 400 }
+        )
+      }
+      if (existing.dataAttesaSource === 'riconciliazione') {
+        return NextResponse.json(
+          { error: 'La data attesa è riallineata al movimento riconciliato: non si sovrascrive' },
           { status: 400 }
         )
       }

@@ -470,17 +470,19 @@ export default function ScadenzarioDetailPage() {
                 <DetailRow label="Data scadenza" value={
                   format(new Date(schedule.dataScadenza), 'dd/MM/yyyy', { locale: it })
                 } bold />
-                <DetailRow label="Data attesa" value={
-                  schedule.dataAttesa
-                    ? `${format(new Date(schedule.dataAttesa), 'dd/MM/yyyy', { locale: it })} — ${
-                        schedule.dataAttesaSource === 'stima'
-                          ? descriviStima(schedule)
-                          : schedule.dataAttesaSource === 'manuale'
-                            ? 'impostata manualmente'
-                            : 'riallineata al pagamento'
-                      }`
-                    : 'coincide con la scadenza'
-                } />
+                {schedule.tipo === 'passiva' && (
+                  <DetailRow label="Data attesa" value={
+                    schedule.dataAttesa
+                      ? `${format(new Date(schedule.dataAttesa), 'dd/MM/yyyy', { locale: it })} — ${
+                          schedule.dataAttesaSource === 'stima'
+                            ? descriviStima(schedule)
+                            : schedule.dataAttesaSource === 'manuale'
+                              ? 'impostata manualmente'
+                              : 'riallineata al pagamento'
+                        }`
+                      : 'coincide con la scadenza'
+                  } />
+                )}
                 <DetailRow label="Data pagamento" value={
                   schedule.dataPagamento
                     ? format(new Date(schedule.dataPagamento), 'dd/MM/yyyy', { locale: it })
