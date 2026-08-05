@@ -115,6 +115,11 @@ const anomalyTypeConfig: Record<
     icon: Clock,
     color: 'text-yellow-600',
   },
+  INVALID_TIMESTAMP: {
+    label: 'Orario offline non valido',
+    icon: AlertTriangle,
+    color: 'text-amber-600',
+  },
 }
 
 const statusConfig = {

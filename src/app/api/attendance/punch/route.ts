@@ -148,8 +148,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Traccia la provenienza offline nelle note: il modello AttendanceRecord non
-    // ha un campo dedicato e PunchMethod non prevede un valore OFFLINE.
+    // La provenienza offline è tracciata su punchMethod (OFFLINE_SYNC); le note
+    // riportano l'orario di sincronizzazione, utile in caso di verifica.
     const noteParts: string[] = []
     if (isOfflineSync) {
       noteParts.push(
@@ -191,7 +191,7 @@ export async function POST(request: NextRequest) {
         venueId: validatedData.venueId,
         assignmentId: todayAssignment?.id ?? null,
         punchType: validatedData.punchType as PunchType,
-        punchMethod: PunchMethod.APP,
+        punchMethod: isOfflineSync ? PunchMethod.OFFLINE_SYNC : PunchMethod.APP,
         punchedAt,
         latitude: validatedData.latitude ?? null,
         longitude: validatedData.longitude ?? null,
@@ -283,6 +283,31 @@ export async function POST(request: NextRequest) {
       // Notifica anomalia creata (async)
       notifyAnomalyCreated(anomaly.id).catch((err) =>
         logger.error('Errore invio notifica anomalia creata', err)
+      )
+    }
+
+    // Orario dichiarato dal dispositivo non plausibile: la timbratura è stata
+    // registrata con l'ora di arrivo, ma il responsabile deve poterlo sapere
+    // perché l'orario reale del turno potrebbe essere un altro.
+    if (offlineTimestampRejected) {
+      const anomaly = await prisma.attendanceAnomaly.create({
+        data: {
+          userId: session.user.id,
+          venueId: validatedData.venueId,
+          recordId: record.id,
+          assignmentId: todayAssignment?.id ?? null,
+          anomalyType: 'INVALID_TIMESTAMP',
+          status: 'PENDING',
+          date: punchDayStart,
+          description:
+            'Timbratura sincronizzata da offline con un orario non plausibile: registrata con l\'ora di ricezione',
+          actualValue: validatedData.offlineTimestamp ?? null,
+          expectedValue: `tra ${format(new Date(now.getTime() - OFFLINE_MAX_AGE_MS), 'dd/MM/yyyy HH:mm', { locale: it })} e ora`,
+        },
+      })
+
+      notifyAnomalyCreated(anomaly.id).catch((err) =>
+        logger.error('Errore invio notifica anomalia timestamp', err)
       )
     }
 

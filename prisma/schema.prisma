@@ -1714,6 +1714,9 @@ enum PunchMethod {
   WEB
   QR_CODE
   MANUAL
+  /// Timbratura registrata offline dal dispositivo e sincronizzata in seguito:
+  /// punchedAt è l'orario dichiarato dal dispositivo, non quello di arrivo al server
+  OFFLINE_SYNC
 }
 
 enum AnomalyType {
@@ -1726,6 +1729,9 @@ enum AnomalyType {
   OVERTIME
   MISSING_BREAK
   SHORT_BREAK
+  /// Sincronizzazione offline con orario dichiarato non plausibile
+  /// (nel futuro o più vecchio di 24h): registrata con l'ora di arrivo
+  INVALID_TIMESTAMP
 }
 
 enum AnomalyStatus {
