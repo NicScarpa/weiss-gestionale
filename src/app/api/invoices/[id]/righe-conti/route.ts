@@ -77,14 +77,17 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         }
       }
 
+      // Solo conti di tipo COSTO possono ricevere l'imputazione di una riga
+      // fattura: via API si potrebbe altrimenti imputare a un conto RICAVO,
+      // inquinando anche la memoria fornitore-prodotto e le future proposte.
       const accountIds = new Set(validated.righe.map((riga) => riga.accountId))
       const conti = await prisma.account.findMany({
-        where: { id: { in: [...accountIds] }, isActive: true },
+        where: { id: { in: [...accountIds] }, isActive: true, type: 'COSTO' },
         select: { id: true },
       })
       if (conti.length !== accountIds.size) {
         return NextResponse.json(
-          { error: 'Uno o più conti non esistono o non sono attivi' },
+          { error: 'Uno o più conti non esistono, non sono attivi o non sono di tipo COSTO' },
           { status: 400 }
         )
       }

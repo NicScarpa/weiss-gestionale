@@ -321,7 +321,7 @@ describe('categorizzaRigheFattura', () => {
     mockAnthropicParse.mockRejectedValue(new Error('API down'))
 
     await expect(
-      categorizzaRigheFattura({ invoiceId: INVOICE_ID, venueId: VENUE_ID })
+      categorizzaRigheFattura({ invoiceId: INVOICE_ID })
     ).resolves.toBeUndefined()
 
     expect(logger.error).toHaveBeenCalled()

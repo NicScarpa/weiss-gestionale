@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { format } from 'date-fns'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
+import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
 interface RouteContext {
@@ -26,8 +27,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const { id } = await context.params
 
     // Trova fattura con tutte le relazioni
-    const invoice = await prisma.electronicInvoice.findUnique({
-      where: { id },
+    const invoice = await prisma.electronicInvoice.findFirst({
+      where: { id, venueId: await getVenueId() },
       include: {
         supplier: true,
         account: true,

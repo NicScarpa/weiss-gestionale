@@ -76,7 +76,7 @@ beforeEach(() => {
   vi.mocked(parseFatturaPA).mockReturnValue({
     dettaglioLinee: dettaglioLineeFisse,
   } as never)
-  vi.mocked(prisma.account.findMany).mockResolvedValue([{ id: 'conto-1' }] as never)
+  vi.mocked(prisma.account.findMany).mockResolvedValue([{ id: 'conto-1', type: 'COSTO' }] as never)
   vi.mocked(prisma.supplierProductAccount.upsert).mockResolvedValue({} as never)
 })
 
@@ -172,7 +172,31 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
     const data = await response.json()
 
     expect(response.status).toBe(400)
-    expect(data.error).toBe('Uno o più conti non esistono o non sono attivi')
+    expect(data.error).toBe('Uno o più conti non esistono, non sono attivi o non sono di tipo COSTO')
+    expect(prisma.invoiceLineAccount.upsert).not.toHaveBeenCalled()
+    expect(createAuditLog).not.toHaveBeenCalled()
+  })
+
+  it('conto esistente e attivo ma non di tipo COSTO → 400 senza upsert (la validazione filtra per type)', async () => {
+    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
+    // Il conto esiste ed è attivo, ma è di tipo RICAVO: la query di
+    // validazione filtra per type COSTO, quindi non lo trova.
+    vi.mocked(prisma.account.findMany).mockResolvedValue([])
+
+    const { request, context } = richiesta({
+      righe: [{ numeroLinea: 1, accountId: 'conto-ricavo' }],
+    })
+    const response = await PATCH(request, context)
+    const data = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(data.error).toBe('Uno o più conti non esistono, non sono attivi o non sono di tipo COSTO')
+    expect(prisma.account.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ type: 'COSTO' }),
+      })
+    )
     expect(prisma.invoiceLineAccount.upsert).not.toHaveBeenCalled()
     expect(createAuditLog).not.toHaveBeenCalled()
   })
