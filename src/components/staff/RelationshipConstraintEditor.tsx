@@ -40,39 +40,136 @@ import { Plus, Pencil, Trash2, Users, Heart, Ban, Calendar } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
+import {
+  REL_CONSTRAINT_LIMITS,
+  type RelConstraintType,
+} from '@/lib/validations/relationship-constraints'
 
-// Tipi di vincolo relazionale (devono corrispondere all'enum Prisma RelConstraintType)
-const REL_CONSTRAINT_TYPES = {
+/**
+ * Parametro numerico configurabile di un tipo di vincolo.
+ *
+ * `configKey` è la chiave scritta in `config`: deve restare quella che il
+ * solver legge come prima scelta (vedi `getMinOverlapMinutes` e
+ * `getMaxTogetherLimit` in `src/lib/shift-generation/constraints.ts`).
+ * `fallbackKeys` sono le varianti che il solver accetta comunque e che possono
+ * trovarsi su vincoli salvati in passato: servono a precompilare il campo.
+ */
+interface ConstraintParam {
+  configKey: 'minOverlapMinutes' | 'maxShiftsTogether'
+  fallbackKeys: string[]
+  label: string
+  hint: string
+  unit: string
+  min: number
+  max: number
+  step: number
+  default: number
+}
+
+// Tipi di vincolo relazionale (devono corrispondere all'enum Prisma RelConstraintType).
+// Le descrizioni riflettono il comportamento reale del solver: se cambia
+// `checkRelationshipConstraints`/`checkWeeklyRelationshipConstraints`, vanno aggiornate.
+const REL_CONSTRAINT_TYPES: Record<RelConstraintType, {
+  label: string
+  description: string
+  icon: typeof Users
+  color: string
+  param?: ConstraintParam
+}> = {
   SAME_DAY_OFF: {
     label: 'Stesso giorno libero',
-    description: 'I dipendenti devono avere lo stesso giorno di riposo',
+    description:
+      'Devono avere almeno un giorno di riposo in comune ogni settimana, valutato solo sulle settimane interamente pianificate',
     icon: Calendar,
     color: 'bg-blue-100 text-blue-700',
   },
   NEVER_TOGETHER: {
     label: 'Mai insieme',
-    description: 'I dipendenti non devono lavorare nello stesso turno',
+    description: 'Non devono essere assegnati allo stesso turno nello stesso giorno',
     icon: Ban,
     color: 'bg-red-100 text-red-700',
   },
   ALWAYS_TOGETHER: {
     label: 'Sempre insieme',
-    description: 'I dipendenti devono lavorare nello stesso turno',
+    description: 'Se lavorano lo stesso giorno devono stare nello stesso turno',
     icon: Users,
     color: 'bg-green-100 text-green-700',
   },
   MIN_OVERLAP: {
-    label: 'Sovrapposizione minima',
-    description: 'Preferenza per lavorare insieme (soft constraint)',
+    label: 'Passaggio di consegne',
+    description: 'Lo stesso giorno in turni diversi i turni devono sovrapporsi di N minuti',
     icon: Heart,
     color: 'bg-pink-100 text-pink-700',
+    param: {
+      configKey: 'minOverlapMinutes',
+      fallbackKeys: ['minutes', 'value'],
+      label: 'Minuti di sovrapposizione minima',
+      hint: 'Minuti in cui i due turni devono essere entrambi in corso per consentire il passaggio di consegne.',
+      unit: 'minuti',
+      min: REL_CONSTRAINT_LIMITS.minOverlapMinutes.min,
+      max: REL_CONSTRAINT_LIMITS.minOverlapMinutes.max,
+      step: REL_CONSTRAINT_LIMITS.minOverlapMinutes.step,
+      default: REL_CONSTRAINT_LIMITS.minOverlapMinutes.default,
+    },
   },
   MAX_TOGETHER: {
-    label: 'Massimo tempo insieme',
-    description: 'Limite massimo di turni insieme (soft constraint)',
+    label: 'Massimo turni insieme',
+    description: 'Limita quanti turni possono svolgere fianco a fianco in una settimana',
     icon: Users,
     color: 'bg-amber-100 text-amber-700',
+    param: {
+      configKey: 'maxShiftsTogether',
+      fallbackKeys: ['maxTogether', 'value'],
+      label: 'Massimo turni insieme a settimana',
+      hint: 'Contano solo i turni identici nello stesso giorno, cioè il tempo passato davvero insieme.',
+      unit: 'turni/settimana',
+      min: REL_CONSTRAINT_LIMITS.maxShiftsTogether.min,
+      max: REL_CONSTRAINT_LIMITS.maxShiftsTogether.max,
+      step: REL_CONSTRAINT_LIMITS.maxShiftsTogether.step,
+      default: REL_CONSTRAINT_LIMITS.maxShiftsTogether.default,
+    },
   },
+}
+
+/**
+ * Come il solver applica ciascun tipo quando il vincolo è marcato rigido.
+ * SAME_DAY_OFF non entra nella scelta dei candidati: il greedy solver lo
+ * verifica solo a schedulazione conclusa, quindi produce una segnalazione, non
+ * un blocco.
+ */
+const HARD_ENFORCEMENT_NOTE: Record<RelConstraintType, string> = {
+  SAME_DAY_OFF:
+    'Questo vincolo non blocca l\'assegnazione: viene verificato a generazione conclusa e segnalato fra le violazioni.',
+  NEVER_TOGETHER: 'Se rigido, il generatore non assegna mai i due dipendenti allo stesso turno.',
+  ALWAYS_TOGETHER:
+    'Se rigido, il generatore scarta le assegnazioni che li metterebbero in turni diversi lo stesso giorno.',
+  MIN_OVERLAP:
+    'Se rigido, il generatore scarta le assegnazioni che non raggiungono la sovrapposizione richiesta.',
+  MAX_TOGETHER: 'Se rigido, il generatore si ferma prima di superare il tetto settimanale.',
+}
+
+/** Valore da mostrare nel campo numerico aprendo un vincolo esistente. */
+function readParamValue(
+  param: ConstraintParam,
+  config: Record<string, unknown> | undefined
+): string {
+  for (const key of [param.configKey, ...param.fallbackKeys]) {
+    const raw = config?.[key]
+    if (raw === undefined || raw === null || raw === '') continue
+    const parsed = Number(raw)
+    if (Number.isFinite(parsed)) return String(parsed)
+  }
+  return String(param.default)
+}
+
+/** Soglia effettiva di un vincolo, per il riepilogo in elenco. */
+function describeParam(
+  constraintType: RelConstraintType,
+  config: Record<string, unknown>
+): string | null {
+  const param = REL_CONSTRAINT_TYPES[constraintType]?.param
+  if (!param) return null
+  return `${readParamValue(param, config)} ${param.unit}`
 }
 
 interface User {
@@ -89,7 +186,7 @@ interface RelConstraintUser {
 
 interface RelConstraint {
   id: string
-  constraintType: keyof typeof REL_CONSTRAINT_TYPES
+  constraintType: RelConstraintType
   config: Record<string, unknown>
   validFrom: string | null
   validTo: string | null
@@ -108,16 +205,46 @@ interface RelationshipConstraintEditorProps {
   venueId?: string
 }
 
+/**
+ * Messaggio da mostrare quando l'API rifiuta la richiesta. Gli errori di
+ * validazione arrivano come `{ error, details }`: senza il primo dettaglio
+ * l'utente leggerebbe solo "Dati non validi".
+ */
+async function readApiError(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = await res.json()
+    const detail = Array.isArray(body?.details) ? body.details[0]?.message : undefined
+    if (body?.error && detail) return `${body.error}: ${detail}`
+    return body?.error || fallback
+  } catch {
+    return fallback
+  }
+}
+
+/** Corpo inviato all'API: `config` contiene solo la soglia del tipo scelto. */
+interface ConstraintPayload {
+  constraintType: RelConstraintType
+  config: Record<string, number>
+  validFrom: string | null
+  validTo: string | null
+  priority: number
+  isHardConstraint: boolean
+  notes: string | null
+  userIds: string[]
+}
+
 export function RelationshipConstraintEditor({ venueId }: RelationshipConstraintEditorProps) {
   const queryClient = useQueryClient()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingConstraint, setEditingConstraint] = useState<RelConstraint | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
-  // Form state
+  // Form state. `paramValue` è la soglia del tipo selezionato, tenuta come
+  // stringa perché l'input possa restare temporaneamente vuoto durante la
+  // digitazione; viene convertita in `config` solo al salvataggio.
   const [formData, setFormData] = useState({
-    constraintType: '' as keyof typeof REL_CONSTRAINT_TYPES | '',
-    config: {} as Record<string, unknown>,
+    constraintType: '' as RelConstraintType | '',
+    paramValue: '',
     validFrom: '',
     validTo: '',
     priority: 5,
@@ -125,6 +252,11 @@ export function RelationshipConstraintEditor({ venueId }: RelationshipConstraint
     notes: '',
     userIds: [] as string[],
   })
+
+  const selectedType = formData.constraintType
+    ? REL_CONSTRAINT_TYPES[formData.constraintType]
+    : null
+  const selectedParam = selectedType?.param ?? null
 
   // Fetch constraints
   const { data: constraintsData, isLoading } = useQuery({
@@ -154,21 +286,17 @@ export function RelationshipConstraintEditor({ venueId }: RelationshipConstraint
 
   // Create mutation
   const createMutation = useMutation({
-    mutationFn: async (data: typeof formData) => {
+    mutationFn: async (data: ConstraintPayload) => {
       const res = await fetch('/api/relationship-constraints', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...data,
           venueId: venueId || undefined,
-          validFrom: data.validFrom || null,
-          validTo: data.validTo || null,
-          notes: data.notes || null,
         }),
       })
       if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Errore nella creazione')
+        throw new Error(await readApiError(res, 'Errore nella creazione'))
       }
       return res.json()
     },
@@ -184,20 +312,14 @@ export function RelationshipConstraintEditor({ venueId }: RelationshipConstraint
 
   // Update mutation
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: typeof formData }) => {
+    mutationFn: async ({ id, data }: { id: string; data: ConstraintPayload }) => {
       const res = await fetch(`/api/relationship-constraints/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...data,
-          validFrom: data.validFrom || null,
-          validTo: data.validTo || null,
-          notes: data.notes || null,
-        }),
+        body: JSON.stringify(data),
       })
       if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Errore nell\'aggiornamento')
+        throw new Error(await readApiError(res, 'Errore nell\'aggiornamento'))
       }
       return res.json()
     },
@@ -218,8 +340,7 @@ export function RelationshipConstraintEditor({ venueId }: RelationshipConstraint
         method: 'DELETE',
       })
       if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Errore nell\'eliminazione')
+        throw new Error(await readApiError(res, 'Errore nell\'eliminazione'))
       }
       return res.json()
     },
@@ -235,10 +356,11 @@ export function RelationshipConstraintEditor({ venueId }: RelationshipConstraint
 
   const handleOpenDialog = (constraint?: RelConstraint) => {
     if (constraint) {
+      const param = REL_CONSTRAINT_TYPES[constraint.constraintType]?.param
       setEditingConstraint(constraint)
       setFormData({
         constraintType: constraint.constraintType,
-        config: constraint.config || {},
+        paramValue: param ? readParamValue(param, constraint.config) : '',
         validFrom: constraint.validFrom?.split('T')[0] || '',
         validTo: constraint.validTo?.split('T')[0] || '',
         priority: constraint.priority,
@@ -250,7 +372,7 @@ export function RelationshipConstraintEditor({ venueId }: RelationshipConstraint
       setEditingConstraint(null)
       setFormData({
         constraintType: '',
-        config: {},
+        paramValue: '',
         validFrom: '',
         validTo: '',
         priority: 5,
@@ -271,10 +393,40 @@ export function RelationshipConstraintEditor({ venueId }: RelationshipConstraint
     e.preventDefault()
     if (!formData.constraintType || formData.userIds.length < 2) return
 
+    // La soglia va nel Json `config` con la chiave letta dal solver; per i tipi
+    // senza parametri resta vuoto
+    const config: Record<string, number> = {}
+    if (selectedParam) {
+      const parsed = Number(formData.paramValue)
+      if (
+        formData.paramValue.trim() === '' ||
+        !Number.isInteger(parsed) ||
+        parsed < selectedParam.min ||
+        parsed > selectedParam.max
+      ) {
+        toast.error(
+          `${selectedParam.label}: inserisci un numero intero fra ${selectedParam.min} e ${selectedParam.max}`
+        )
+        return
+      }
+      config[selectedParam.configKey] = parsed
+    }
+
+    const payload: ConstraintPayload = {
+      constraintType: formData.constraintType,
+      config,
+      validFrom: formData.validFrom || null,
+      validTo: formData.validTo || null,
+      priority: formData.priority,
+      isHardConstraint: formData.isHardConstraint,
+      notes: formData.notes || null,
+      userIds: formData.userIds,
+    }
+
     if (editingConstraint) {
-      updateMutation.mutate({ id: editingConstraint.id, data: formData })
+      updateMutation.mutate({ id: editingConstraint.id, data: payload })
     } else {
-      createMutation.mutate(formData)
+      createMutation.mutate(payload)
     }
   }
 
@@ -346,7 +498,17 @@ export function RelationshipConstraintEditor({ venueId }: RelationshipConstraint
                           <Badge variant="outline" className="text-xs">
                             Priorità: {constraint.priority}
                           </Badge>
+                          {describeParam(constraint.constraintType, constraint.config) && (
+                            <Badge variant="outline" className="text-xs">
+                              {describeParam(constraint.constraintType, constraint.config)}
+                            </Badge>
+                          )}
                         </div>
+                        {typeInfo?.description && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {typeInfo.description}
+                          </p>
+                        )}
 
                         {/* Dipendenti coinvolti */}
                         <div className="flex items-center gap-1 mt-2">
@@ -422,10 +584,16 @@ export function RelationshipConstraintEditor({ venueId }: RelationshipConstraint
               <Label>Tipo vincolo</Label>
               <Select
                 value={formData.constraintType}
-                onValueChange={v => setFormData(prev => ({
-                  ...prev,
-                  constraintType: v as keyof typeof REL_CONSTRAINT_TYPES,
-                }))}
+                onValueChange={v => {
+                  const type = v as RelConstraintType
+                  const param = REL_CONSTRAINT_TYPES[type]?.param
+                  setFormData(prev => ({
+                    ...prev,
+                    constraintType: type,
+                    // Cambiando tipo la soglia precedente non ha più significato
+                    paramValue: param ? String(param.default) : '',
+                  }))
+                }}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Seleziona tipo" />
@@ -444,7 +612,31 @@ export function RelationshipConstraintEditor({ venueId }: RelationshipConstraint
                   ))}
                 </SelectContent>
               </Select>
+              {selectedType && (
+                <p className="text-xs text-muted-foreground">{selectedType.description}</p>
+              )}
             </div>
+
+            {/* Soglia numerica, solo per i tipi che ne hanno una */}
+            {selectedParam && (
+              <div className="space-y-2">
+                <Label htmlFor="constraint-param">{selectedParam.label}</Label>
+                <Input
+                  id="constraint-param"
+                  type="number"
+                  inputMode="numeric"
+                  min={selectedParam.min}
+                  max={selectedParam.max}
+                  step={selectedParam.step}
+                  value={formData.paramValue}
+                  onChange={e => setFormData(prev => ({ ...prev, paramValue: e.target.value }))}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {selectedParam.hint} Valore consentito: da {selectedParam.min} a{' '}
+                  {selectedParam.max} (predefinito {selectedParam.default}).
+                </p>
+              </div>
+            )}
 
             {/* Selezione dipendenti */}
             <div className="space-y-2">
@@ -519,12 +711,19 @@ export function RelationshipConstraintEditor({ venueId }: RelationshipConstraint
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={formData.isHardConstraint}
-                onCheckedChange={v => setFormData(prev => ({ ...prev, isHardConstraint: v }))}
-              />
-              <Label>Vincolo rigido (non violabile)</Label>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={formData.isHardConstraint}
+                  onCheckedChange={v => setFormData(prev => ({ ...prev, isHardConstraint: v }))}
+                />
+                <Label>Vincolo rigido (non violabile)</Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {formData.constraintType && formData.isHardConstraint
+                  ? HARD_ENFORCEMENT_NOTE[formData.constraintType]
+                  : 'Come preferenza il vincolo non blocca la generazione: le violazioni compaiono fra le segnalazioni della schedulazione.'}
+              </p>
             </div>
 
             <div className="space-y-2">

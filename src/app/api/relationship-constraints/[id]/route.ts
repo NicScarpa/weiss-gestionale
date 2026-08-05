@@ -3,18 +3,17 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
+import {
+  RelConstraintConfigSchema,
+  RelConstraintTypeSchema,
+  validateRelConstraintConfig,
+} from '@/lib/validations/relationship-constraints'
 
 import { logger } from '@/lib/logger'
 // Schema per aggiornamento vincolo relazionale
 const updateRelConstraintSchema = z.object({
-  constraintType: z.enum([
-    'SAME_DAY_OFF',
-    'NEVER_TOGETHER',
-    'ALWAYS_TOGETHER',
-    'MIN_OVERLAP',
-    'MAX_TOGETHER',
-  ]).optional(),
-  config: z.record(z.string(), z.unknown()).optional(),
+  constraintType: RelConstraintTypeSchema.optional(),
+  config: RelConstraintConfigSchema.optional(),
   venueId: z.string().nullable().optional(),
   validFrom: z.string().nullable().optional(),
   validTo: z.string().nullable().optional(),
@@ -113,6 +112,16 @@ export async function PUT(
 
     if (!existingConstraint) {
       return NextResponse.json({ error: 'Vincolo non trovato' }, { status: 404 })
+    }
+
+    // La coerenza dei parametri si valuta sul tipo che il vincolo avrà dopo
+    // l'update: una PUT può cambiare il tipo, lasciare il config, o entrambi
+    if (validatedData.config !== undefined) {
+      const effectiveType = validatedData.constraintType ?? existingConstraint.constraintType
+      const configError = validateRelConstraintConfig(effectiveType, validatedData.config)
+      if (configError) {
+        return NextResponse.json({ error: configError }, { status: 400 })
+      }
     }
 
     // Prepara dati per update

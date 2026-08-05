@@ -4,18 +4,17 @@ import { getVenueId } from '@/lib/venue'
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
+import {
+  RelConstraintConfigSchema,
+  RelConstraintTypeSchema,
+  validateRelConstraintConfig,
+} from '@/lib/validations/relationship-constraints'
 
 import { logger } from '@/lib/logger'
 // Schema per creazione vincolo relazionale
 const createRelConstraintSchema = z.object({
-  constraintType: z.enum([
-    'SAME_DAY_OFF',
-    'NEVER_TOGETHER',
-    'ALWAYS_TOGETHER',
-    'MIN_OVERLAP',
-    'MAX_TOGETHER',
-  ]),
-  config: z.record(z.string(), z.unknown()).default({}),
+  constraintType: RelConstraintTypeSchema,
+  config: RelConstraintConfigSchema.default({}),
   venueId: z.string().optional(),
   validFrom: z.string().nullable().optional(),
   validTo: z.string().nullable().optional(),
@@ -105,6 +104,16 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const validatedData = createRelConstraintSchema.parse(body)
+
+    // I parametri devono appartenere al tipo scelto, altrimenti il solver li
+    // ignorerebbe e resterebbe attivo il valore di default
+    const configError = validateRelConstraintConfig(
+      validatedData.constraintType,
+      validatedData.config
+    )
+    if (configError) {
+      return NextResponse.json({ error: configError }, { status: 400 })
+    }
 
     // Verifica che tutti gli utenti esistano
     const users = await prisma.user.findMany({
