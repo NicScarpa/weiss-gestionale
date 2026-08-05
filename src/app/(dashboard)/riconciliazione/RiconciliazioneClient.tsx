@@ -25,11 +25,17 @@ type StatusFilter = 'all' | ReconciliationStatus
 export function RiconciliazioneClient() {
   const [venueId, setVenueId] = useState<string>('')
 
+  // Sede unica dell'installazione: l'API ne restituisce una sola
+  // (architettura single-venue, vedi src/lib/venue.ts)
   useEffect(() => {
-    fetch('/api/venues').then(r => r.json()).then(data => {
-      const venue = data.venues?.[0] || data.data?.[0]
-      if (venue) setVenueId(venue.id)
-    })
+    fetch('/api/venues')
+      .then(r => r.json())
+      .then(data => {
+        const venues = data.venues ?? data.data ?? []
+        const active = venues.find((v: { isActive?: boolean }) => v.isActive !== false) ?? venues[0]
+        if (active) setVenueId(active.id)
+      })
+      .catch(err => logger.error('Impossibile caricare la sede', err))
   }, [])
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')

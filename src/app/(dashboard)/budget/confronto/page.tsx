@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
+import { getVenue } from '@/lib/venue'
 import { BudgetConfrontoClient } from './BudgetConfrontoClient'
 
 export const metadata = {
@@ -14,15 +15,8 @@ export default async function BudgetConfrontoPage() {
     redirect('/login')
   }
 
-  // Recupera la prima sede disponibile
-  const venue = await prisma.venue.findFirst({
-    select: {
-      id: true,
-      name: true,
-      code: true,
-    },
-    orderBy: { name: 'asc' },
-  })
+  // Sede unica dell'installazione (architettura single-venue, vedi src/lib/venue.ts)
+  const venue = await getVenue()
 
   const venueId = venue?.id || ''
 

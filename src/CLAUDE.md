@@ -5,3 +5,46 @@
 
 *No recent activity*
 </claude-mem-context>
+# Convenzioni del codice sorgente
+
+Regole nate dal consolidamento di agosto 2026, dopo aver trovato ~20 route API
+senza consumer e quattro varianti dello stesso concetto. Rispettarle evita di
+ricostruire lo stesso debito.
+
+## API
+
+- **Una sola lingua: l'italiano** per i nuovi percorsi (`/api/pagamenti`,
+  `/api/chiusure`, `/api/scadenzario`). Non creare la variante inglese di una
+  route che esiste già in italiano, né viceversa.
+- **Cerca prima di creare.** Prima di aggiungere una route, `grep` sul dominio:
+  spesso l'endpoint esiste già e manca solo il collegamento dalla UI.
+- **Niente codice irraggiungibile.** Una route senza consumer o una pagina non
+  raggiungibile dalla navigazione non è "pronta per dopo": o si collega nella
+  stessa sessione, o non si scrive. A fine lavoro chiediti: si arriva a questo
+  codice dalla UI?
+- **Niente UI che promette automazioni inesistenti.** Se il motore dietro una
+  schermata non c'è, la schermata non si mostra.
+
+## Autorizzazione
+
+- Ogni route chiama `auth()`. Le uniche eccezioni sono gli endpoint
+  volutamente pubblici (NextAuth, recupero password, completamento invito).
+- Le route con dati finanziari (prima nota, scadenzario, budget, pagamenti,
+  report, riconciliazione, cash flow, movimenti bancari) richiedono ruolo
+  `admin` o `manager`. Il middleware NON può filtrare per ruolo: il token è JWE
+  e non è decodificabile in edge runtime.
+
+## Dati
+
+- Importi sempre `Decimal` in Prisma, mai `Float`.
+- Sede: sempre `getVenueId()` / `getVenue()` da `src/lib/venue.ts`, mai
+  `venue.findFirst()` o `venues[0]` sparsi nel codice. L'app è single-venue:
+  leggi il commento in cima a quel file prima di toccare il tema.
+- Le scritture contabili non si cancellano: `deletedAt`, mai `delete()`. I
+  modelli interessati sono elencati in `SOFT_DELETE_MODELS` (`src/lib/prisma.ts`).
+- Campi sensibili (IBAN, codice fiscale): cifrati automaticamente
+  dall'estensione Prisma. Per cercarli serve la colonna hash affiancata
+  (`fiscalCodeHash`, `ibanHash`) — mai un `where` sul campo cifrato, non
+  troverebbe mai nulla.
+- File caricati: solo tramite `src/lib/storage.ts`, mai `fs` diretto. Vedi
+  `docs/storage.md`.
