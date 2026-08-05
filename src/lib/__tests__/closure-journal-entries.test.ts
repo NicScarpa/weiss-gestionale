@@ -7,6 +7,7 @@ vi.mock('../prisma', () => ({
     journalEntry: {
       createMany: vi.fn().mockResolvedValue({ count: 0 }),
       deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
   },
 }))
@@ -399,21 +400,24 @@ describe('deleteJournalEntriesForClosure', () => {
     vi.clearAllMocks()
   })
 
-  it('should delete entries by closureId', async () => {
+  it('should soft delete entries by closureId', async () => {
     const closureId = 'closure-to-delete'
 
-    vi.mocked(prisma.journalEntry.deleteMany).mockResolvedValue({ count: 5 })
+    vi.mocked(prisma.journalEntry.updateMany).mockResolvedValue({ count: 5 })
 
     const result = await deleteJournalEntriesForClosure(closureId)
 
-    expect(prisma.journalEntry.deleteMany).toHaveBeenCalledWith({
-      where: { closureId },
+    // Cancellazione logica: le scritture restano tracciabili
+    expect(prisma.journalEntry.updateMany).toHaveBeenCalledWith({
+      where: { closureId, deletedAt: null },
+      data: { deletedAt: expect.any(Date) },
     })
+    expect(prisma.journalEntry.deleteMany).not.toHaveBeenCalled()
     expect(result).toBe(5)
   })
 
   it('should return 0 when no entries found', async () => {
-    vi.mocked(prisma.journalEntry.deleteMany).mockResolvedValue({ count: 0 })
+    vi.mocked(prisma.journalEntry.updateMany).mockResolvedValue({ count: 0 })
 
     const result = await deleteJournalEntriesForClosure('non-existent')
 

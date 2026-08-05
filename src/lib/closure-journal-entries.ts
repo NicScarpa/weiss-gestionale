@@ -1,5 +1,11 @@
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
+
+/**
+ * Client Prisma o transazione: permette di generare le scritture dentro la
+ * stessa transazione che aggiorna lo stato della chiusura.
+ */
+type PrismaLike = Pick<typeof prisma, 'journalEntry'>
 import { generateClosureDescription } from '@/lib/prima-nota-utils'
 
 interface CashStation {
@@ -30,7 +36,8 @@ interface Closure {
  */
 export async function generateJournalEntriesFromClosure(
   closure: Closure,
-  userId: string
+  userId: string,
+  client: PrismaLike = prisma
 ): Promise<{ entriesCreated: number; totalDebits: number; totalCredits: number }> {
   const entries: Prisma.JournalEntryCreateManyInput[] = []
   let totalDebits = 0
@@ -141,9 +148,8 @@ export async function generateJournalEntriesFromClosure(
     totalDebits += bankDeposit
   }
 
-  // Crea tutti i movimenti in una transazione
   if (entries.length > 0) {
-    await prisma.journalEntry.createMany({
+    await client.journalEntry.createMany({
       data: entries,
     })
   }
@@ -159,9 +165,15 @@ export async function generateJournalEntriesFromClosure(
  * Elimina i movimenti prima nota generati da una chiusura
  * (utile se la chiusura viene riportata a DRAFT dopo rifiuto)
  */
-export async function deleteJournalEntriesForClosure(closureId: string) {
-  const result = await prisma.journalEntry.deleteMany({
-    where: { closureId },
+export async function deleteJournalEntriesForClosure(
+  closureId: string,
+  client: PrismaLike = prisma
+) {
+  // Cancellazione logica: le scritture restano tracciabili anche quando la
+  // chiusura che le ha generate torna in bozza (inalterabilità contabile)
+  const result = await client.journalEntry.updateMany({
+    where: { closureId, deletedAt: null },
+    data: { deletedAt: new Date() },
   })
 
   return result.count
