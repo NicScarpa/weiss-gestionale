@@ -86,6 +86,12 @@ export type RelConstraintType =
   | 'MIN_OVERLAP'
   | 'MAX_TOGETHER'
 
+/**
+ * Fascia oraria di un turno, derivata dall'orario di inizio.
+ * ShiftDefinition non ha un campo "tipo": la fascia si deduce da startTime.
+ */
+export type ShiftBand = 'MORNING' | 'AFTERNOON' | 'EVENING'
+
 export interface ShiftRequirement {
   date: Date
   shiftDefinition: ShiftDefinition
@@ -127,21 +133,42 @@ export interface GenerationResult {
 }
 
 export interface GenerationWarning {
-  type: 'UNDERSTAFFED' | 'SOFT_CONSTRAINT_VIOLATED' | 'HIGH_COST' | 'UNBALANCED_HOURS'
+  type:
+    | 'UNDERSTAFFED'
+    | 'SOFT_CONSTRAINT_VIOLATED'
+    | 'HARD_CONSTRAINT_VIOLATED'
+    | 'HIGH_COST'
+    | 'UNBALANCED_HOURS'
+    | 'MISSING_RATE'
   message: string
   date: Date
   shiftDefinitionId?: string
   employeeId?: string
   severity: 'low' | 'medium' | 'high'
+  /** Tipo di vincolo relazionale/dipendente all'origine del warning, se applicabile */
+  constraintType?: ConstraintType | RelConstraintType
+  /** Tutti i dipendenti coinvolti (i vincoli relazionali ne coinvolgono almeno due) */
+  employeeIds?: string[]
 }
 
 export interface GenerationStats {
   totalShifts: number
   totalHours: number
+  /**
+   * Costo dei soli dipendenti con tariffa oraria nota. I dipendenti senza
+   * `hourlyRateBase` sono esclusi (nessuna tariffa inventata): quando
+   * `costIncomplete` è true questo totale è una sottostima.
+   */
   totalCost: number
   employeeStats: EmployeeStats[]
   coveragePercentage: number
   softConstraintsViolated: number
+  /** true se almeno un dipendente assegnato non ha tariffa oraria */
+  costIncomplete: boolean
+  /** Dipendenti assegnati senza tariffa oraria, esclusi da `totalCost` */
+  employeesWithoutRate: { userId: string; name: string }[]
+  /** Ore assegnate a dipendenti senza tariffa, quindi non valorizzate */
+  unpricedHours: number
 }
 
 export interface EmployeeStats {
@@ -152,6 +179,8 @@ export interface EmployeeStats {
   costEstimated: number
   contractHoursWeek: number | null
   utilizationPercentage: number
+  /** false se manca `hourlyRateBase`: `costEstimated` vale 0 ma non è il costo reale */
+  hasHourlyRate: boolean
 }
 
 export interface EmployeeAvailability {

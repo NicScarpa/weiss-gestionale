@@ -25,12 +25,16 @@ import {
   GenerationStats,
   EmployeeStats,
   LeaveRequest,
+  ConstraintViolation,
 } from './types'
 import {
   canEmployeeWorkShift,
   calculateShiftHours,
   checkRelationshipConstraints,
+  checkWeeklyRelationshipConstraints,
   calculateEmployeeScore,
+  formatDateKey,
+  getWeekKey,
 } from './constraints'
 
 interface SolverContext {
@@ -44,31 +48,6 @@ interface SolverContext {
 }
 
 /**
- * Format date to YYYY-MM-DD using local timezone (not UTC)
- * This ensures consistency with the frontend's date formatting
- */
-function formatDateKey(date: Date): string {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-/**
- * Get the Monday of the week for a given date
- * Used to track weekly work days for fixed staff
- */
-function getWeekStart(date: Date): string {
-  const d = new Date(date)
-  const day = d.getDay()
-  // Calculate Monday (0=SUN, 1=MON, ..., 6=SAT)
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1)
-  d.setDate(diff)
-  d.setHours(0, 0, 0, 0)
-  return d.toISOString().split('T')[0]
-}
-
-/**
  * Count unique days worked by an employee in a specific week
  */
 function countDaysWorkedInWeek(
@@ -77,13 +56,13 @@ function countDaysWorkedInWeek(
   existingAssignments: ShiftAssignment[],
   currentAssignments: ShiftAssignment[]
 ): number {
-  const weekStart = getWeekStart(date)
+  const weekStart = getWeekKey(date)
   const uniqueDays = new Set<string>()
 
   // Check existing assignments
   for (const assignment of existingAssignments) {
     if (assignment.userId !== employeeId) continue
-    const assignmentWeek = getWeekStart(assignment.date)
+    const assignmentWeek = getWeekKey(assignment.date)
     if (assignmentWeek === weekStart) {
       uniqueDays.add(formatDateKey(assignment.date))
     }
@@ -92,7 +71,7 @@ function countDaysWorkedInWeek(
   // Check current iteration assignments
   for (const assignment of currentAssignments) {
     if (assignment.userId !== employeeId) continue
-    const assignmentWeek = getWeekStart(assignment.date)
+    const assignmentWeek = getWeekKey(assignment.date)
     if (assignmentWeek === weekStart) {
       uniqueDays.add(formatDateKey(assignment.date))
     }
@@ -136,7 +115,8 @@ export function generateShiftsGreedy(context: SolverContext): GenerationResult {
         leaveRequests,
         assignments,
         params,
-        scheduleId
+        scheduleId,
+        shiftDefinitions
       )
 
       assignments.push(...shiftAssignments.assignments)
@@ -145,11 +125,23 @@ export function generateShiftsGreedy(context: SolverContext): GenerationResult {
   }
 
   // Validate relationship constraints across all assignments
-  const relWarnings = validateRelationshipConstraints(assignments, relationshipConstraints)
+  const relWarnings = validateRelationshipConstraints(
+    assignments,
+    relationshipConstraints,
+    shiftDefinitions,
+    dates
+  )
   warnings.push(...relWarnings)
+
+  // Segnala i dipendenti assegnati senza tariffa oraria: il loro costo non è
+  // stimabile e resta fuori dal totale
+  warnings.push(...buildMissingRateWarnings(assignments, employees))
 
   // Calculate stats
   const stats = calculateStats(assignments, employees, params)
+  stats.softConstraintsViolated = warnings.filter(
+    w => w.type === 'SOFT_CONSTRAINT_VIOLATED'
+  ).length
 
   return {
     success: warnings.filter(w => w.severity === 'high').length === 0,
@@ -157,6 +149,37 @@ export function generateShiftsGreedy(context: SolverContext): GenerationResult {
     warnings,
     stats,
   }
+}
+
+/**
+ * Un warning per ogni dipendente assegnato che non ha `hourlyRateBase`.
+ * La stima costi lo esclude invece di usare una tariffa inventata.
+ */
+function buildMissingRateWarnings(
+  assignments: ShiftAssignment[],
+  employees: Employee[]
+): GenerationWarning[] {
+  const employeeMap = new Map(employees.map(e => [e.id, e]))
+  const reported = new Set<string>()
+  const warnings: GenerationWarning[] = []
+
+  for (const assignment of assignments) {
+    if (reported.has(assignment.userId)) continue
+    const employee = employeeMap.get(assignment.userId)
+    if (!employee || employee.hourlyRateBase) continue
+
+    reported.add(assignment.userId)
+    warnings.push({
+      type: 'MISSING_RATE',
+      message: `Tariffa oraria mancante per ${employee.firstName} ${employee.lastName}: i suoi turni sono esclusi dalla stima costi`,
+      date: assignment.date,
+      employeeId: employee.id,
+      employeeIds: [employee.id],
+      severity: 'medium',
+    })
+  }
+
+  return warnings
 }
 
 /**
@@ -171,7 +194,8 @@ function assignEmployeesToShift(
   leaveRequests: LeaveRequest[],
   existingAssignments: ShiftAssignment[],
   params: GenerationParams,
-  scheduleId: string
+  scheduleId: string,
+  shiftDefinitions: ShiftDefinition[]
 ): { assignments: ShiftAssignment[]; warnings: GenerationWarning[] } {
   const assignments: ShiftAssignment[] = []
   const warnings: GenerationWarning[] = []
@@ -287,13 +311,33 @@ function assignEmployeesToShift(
   for (const candidate of candidatesWithScores) {
     if (assigned >= targetStaff) break
 
-    // Check relationship constraints with already assigned employees
+    const shiftHours = calculateShiftHours(shift)
+    const candidateAssignment: ShiftAssignment = {
+      scheduleId,
+      userId: candidate.employee.id,
+      shiftDefinitionId: shift.id,
+      date,
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+      breakMinutes: shift.breakMinutes,
+      venueId: shift.venueId,
+      hoursScheduled: shiftHours,
+      costEstimated: 0,
+    }
+
+    // Check relationship constraints with already assigned employees.
+    // Il confronto include le assegnazioni degli altri turni dello stesso
+    // giorno (existingAssignments), non solo quelle del turno corrente:
+    // MIN_OVERLAP e ALWAYS_TOGETHER mettono in relazione turni diversi.
     let hasHardViolation = false
-    for (const existingAssignment of assignments) {
+    for (const otherAssignment of [...existingAssignments, ...assignments]) {
+      if (otherAssignment.userId === candidate.employee.id) continue
+
       const violations = checkRelationshipConstraints(
         { userId: candidate.employee.id, date, shiftDefinitionId: shift.id },
-        { userId: existingAssignment.userId, date: existingAssignment.date, shiftDefinitionId: existingAssignment.shiftDefinitionId },
-        relationshipConstraints
+        { userId: otherAssignment.userId, date: otherAssignment.date, shiftDefinitionId: otherAssignment.shiftDefinitionId },
+        relationshipConstraints,
+        shiftDefinitions
       )
 
       const hardViolations = violations.filter(v => v.severity === 'hard')
@@ -305,10 +349,17 @@ function assignEmployeesToShift(
 
     if (hasHardViolation) continue
 
-    // Create assignment
-    const shiftHours = calculateShiftHours(shift)
-    const hourlyRate = candidate.employee.hourlyRateBase || 10
-    const costEstimated = shiftHours * hourlyRate * Number(shift.rateMultiplier)
+    // MAX_TOGETHER è settimanale: si verifica simulando l'aggiunta del candidato
+    const weeklyViolations = checkWeeklyRelationshipConstraints(
+      [...existingAssignments, ...assignments, candidateAssignment],
+      relationshipConstraints.filter(c => c.constraintType === 'MAX_TOGETHER' && c.isHardConstraint)
+    )
+    if (weeklyViolations.some(v => v.severity === 'hard')) continue
+
+    // Create assignment. Senza tariffa oraria il costo non si stima: resta 0 e
+    // viene segnalato come MISSING_RATE, mai sostituito da un valore inventato.
+    const hourlyRate = candidate.employee.hourlyRateBase
+    const costEstimated = hourlyRate ? shiftHours * hourlyRate * Number(shift.rateMultiplier) : 0
 
     const assignment: ShiftAssignment = {
       scheduleId,
@@ -354,47 +405,69 @@ function assignEmployeesToShift(
 
 /**
  * Validate relationship constraints across all assignments
+ *
+ * Ripassa il piano completo: i vincoli a coppie (NEVER_TOGETHER,
+ * ALWAYS_TOGETHER, MIN_OVERLAP) sullo stesso giorno e quelli settimanali
+ * (SAME_DAY_OFF, MAX_TOGETHER). I hard violati qui sopravvivono al greedy solo
+ * quando erano inevitabili, quindi vanno riportati con severità alta.
  */
-function validateRelationshipConstraints(
+export function validateRelationshipConstraints(
   assignments: ShiftAssignment[],
-  constraints: RelationshipConstraint[]
+  constraints: RelationshipConstraint[],
+  shiftDefinitions: ShiftDefinition[] = [],
+  daysInPeriod: Date[] = []
 ): GenerationWarning[] {
-  const warnings: GenerationWarning[] = []
+  if (constraints.length === 0) return []
 
-  // Group assignments by date
+  const violations: ConstraintViolation[] = []
+
+  // Vincoli a coppie: solo assegnazioni dello stesso giorno
   const byDate = new Map<string, ShiftAssignment[]>()
   for (const assignment of assignments) {
-    const key = new Date(assignment.date).toDateString()
-    if (!byDate.has(key)) {
-      byDate.set(key, [])
-    }
+    const key = formatDateKey(new Date(assignment.date))
+    if (!byDate.has(key)) byDate.set(key, [])
     byDate.get(key)!.push(assignment)
   }
 
-  // Check each constraint
-  for (const constraint of constraints) {
-    if (constraint.constraintType === 'SAME_DAY_OFF') {
-      // Check if all constrained users have the same days off
-      const userIds = constraint.userIds
-
-      for (const [dateStr, dayAssignments] of byDate) {
-        const workingUsers = dayAssignments
-          .filter(a => userIds.includes(a.userId))
-          .map(a => a.userId)
-
-        const notWorkingUsers = userIds.filter(id => !workingUsers.includes(id))
-
-        // If some work and some don't, it's a violation
-        if (workingUsers.length > 0 && notWorkingUsers.length > 0) {
-          warnings.push({
-            type: 'SOFT_CONSTRAINT_VIOLATED',
-            message: 'Alcuni dipendenti lavorano mentre altri no (vincolo stesso giorno libero)',
-            date: new Date(dateStr),
-            severity: constraint.isHardConstraint ? 'high' : 'low',
-          })
-        }
+  for (const [, dayAssignments] of byDate) {
+    for (let i = 0; i < dayAssignments.length; i++) {
+      for (let j = i + 1; j < dayAssignments.length; j++) {
+        const a1 = dayAssignments[i]
+        const a2 = dayAssignments[j]
+        violations.push(
+          ...checkRelationshipConstraints(
+            { userId: a1.userId, date: new Date(a1.date), shiftDefinitionId: a1.shiftDefinitionId },
+            { userId: a2.userId, date: new Date(a2.date), shiftDefinitionId: a2.shiftDefinitionId },
+            constraints,
+            shiftDefinitions
+          )
+        )
       }
     }
+  }
+
+  // Vincoli settimanali
+  violations.push(
+    ...checkWeeklyRelationshipConstraints(assignments, constraints, { daysInPeriod })
+  )
+
+  // Deduplica: la stessa violazione può emergere da più coppie dello stesso turno
+  const seen = new Set<string>()
+  const warnings: GenerationWarning[] = []
+
+  for (const violation of violations) {
+    const key = `${violation.constraintId}_${formatDateKey(violation.date)}_${[...violation.employeeIds].sort().join('-')}`
+    if (seen.has(key)) continue
+    seen.add(key)
+
+    warnings.push({
+      type: violation.severity === 'hard' ? 'HARD_CONSTRAINT_VIOLATED' : 'SOFT_CONSTRAINT_VIOLATED',
+      message: violation.message,
+      date: violation.date,
+      severity: violation.severity === 'hard' ? 'high' : 'low',
+      constraintType: violation.constraintType,
+      employeeIds: violation.employeeIds,
+    })
   }
 
   return warnings
@@ -410,11 +483,12 @@ function calculateStats(
 ): GenerationStats {
   const totalShifts = assignments.length
   const totalHours = assignments.reduce((sum, a) => sum + a.hoursScheduled, 0)
-  const totalCost = assignments.reduce((sum, a) => sum + a.costEstimated, 0)
 
   // Calculate per-employee stats
   const employeeStats: EmployeeStats[] = []
   const employeeMap = new Map(employees.map(e => [e.id, e]))
+  const employeesWithoutRate: { userId: string; name: string }[] = []
+  let unpricedHours = 0
 
   const assignmentsByEmployee = new Map<string, ShiftAssignment[]>()
   for (const assignment of assignments) {
@@ -441,6 +515,15 @@ function calculateStats(
     const expectedHours = contractHoursWeek ? contractHoursWeek * weeks : 40 * weeks
     const utilizationPercentage = (hoursAssigned / expectedHours) * 100
 
+    const hasHourlyRate = Boolean(employee.hourlyRateBase)
+    if (!hasHourlyRate) {
+      employeesWithoutRate.push({
+        userId,
+        name: `${employee.firstName} ${employee.lastName}`,
+      })
+      unpricedHours += hoursAssigned
+    }
+
     employeeStats.push({
       userId,
       name: `${employee.firstName} ${employee.lastName}`,
@@ -449,6 +532,7 @@ function calculateStats(
       costEstimated,
       contractHoursWeek,
       utilizationPercentage,
+      hasHourlyRate,
     })
   }
 
@@ -459,6 +543,9 @@ function calculateStats(
   // A more accurate calculation would need shift requirements
   const coveragePercentage = 100 // Assume 100% for now, adjust based on warnings
 
+  // Somma i soli costi stimabili: le assegnazioni senza tariffa valgono 0
+  const totalCost = assignments.reduce((sum, a) => sum + a.costEstimated, 0)
+
   return {
     totalShifts,
     totalHours,
@@ -466,6 +553,9 @@ function calculateStats(
     employeeStats,
     coveragePercentage,
     softConstraintsViolated: 0, // Will be updated based on warnings
+    costIncomplete: employeesWithoutRate.length > 0,
+    employeesWithoutRate,
+    unpricedHours,
   }
 }
 
