@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { notifyAnomalyCreated } from '@/lib/notifications'
 
 import { logger } from '@/lib/logger'
+import { romeDateKey, toDateOnlyUtc } from '@/lib/timezone'
 // POST /api/attendance/auto-clockout - Job automatico per clock-out mancanti
 export async function POST(request: NextRequest) {
   try {
@@ -23,8 +24,6 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date()
-    const today = new Date(now)
-    today.setHours(0, 0, 0, 0)
 
     // Trova tutte le sedi con le loro policy
     const venues = await prisma.venue.findMany({
@@ -100,9 +99,9 @@ export async function POST(request: NextRequest) {
             },
           })
 
-          // Crea anomalia
-          const dateForAnomaly = new Date(clockIn.punchedAt)
-          dateForAnomaly.setHours(0, 0, 0, 0)
+          // Crea anomalia. La data è il giorno italiano dell'entrata: il cron
+          // gira in UTC e per un'entrata serale segnerebbe il giorno dopo.
+          const dateForAnomaly = toDateOnlyUtc(romeDateKey(clockIn.punchedAt))
 
           const anomaly = await prisma.attendanceAnomaly.create({
             data: {

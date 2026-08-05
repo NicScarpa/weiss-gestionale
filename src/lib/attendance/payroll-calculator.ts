@@ -7,16 +7,16 @@
 
 import { prisma } from '@/lib/prisma'
 import { Prisma, PunchType, LeaveStatus } from '@prisma/client'
+import { format, eachDayOfInterval } from 'date-fns'
+import { computeRecognizedDay } from './timekeeping-engine'
+import type { DayPunch, PolicyRules } from './timekeeping-types'
 import {
-  format,
-  startOfMonth,
-  endOfMonth,
-  eachDayOfInterval,
-  isSunday,
-  getHours,
-  differenceInMinutes,
-  addMinutes,
-} from 'date-fns'
+  loadPolicyResolutionContext,
+  neutralPolicy,
+  resolvePolicyRules,
+} from './policy-resolver'
+import { dstShiftBetween, groupPunchesByWorkday, toWorkdayMinutes } from './workday'
+import { romeDayStart, romeMonthRange, toRomeParts } from '@/lib/timezone'
 
 // Festività italiane fisse
 const ITALIAN_HOLIDAYS = [
@@ -123,97 +123,44 @@ interface AttendanceRecordData {
 }
 
 /**
- * Calcola le ore notturne in un intervallo
- * Le ore notturne sono quelle tra le 22:00 e le 06:00
- */
-function calculateNightHours(start: Date, end: Date): number {
-  let nightMinutes = 0
-  let current = new Date(start)
-
-  while (current < end) {
-    const hour = getHours(current)
-    // Notturno: 22, 23, 0, 1, 2, 3, 4, 5
-    if (hour >= 22 || hour < 6) {
-      nightMinutes++
-    }
-    current = addMinutes(current, 1)
-  }
-
-  return nightMinutes / 60
-}
-
-/**
- * Calcola le ore lavorate da un set di timbrature
+ * Ore di una giornata, applicando le regole orario in vigore.
+ *
+ * Il calcolo vero sta nel motore (`timekeeping-engine.ts`), che è puro e
+ * testato: qui si traducono le timbrature in minuti della giornata lavorativa,
+ * si chiama il motore e si riportano i minuti in ore.
  */
 function calculateHoursFromPunches(
   records: AttendanceRecordData[],
+  workdayKey: string,
   date: Date,
-  contractHoursDay: number
+  rules: PolicyRules
 ): DailyHours {
-  // Trova IN e OUT del giorno
-  const inRecords = records.filter((r) => r.punchType === 'IN')
-  const outRecords = records.filter((r) => r.punchType === 'OUT')
-  const breakStartRecords = records.filter((r) => r.punchType === 'BREAK_START')
-  const breakEndRecords = records.filter((r) => r.punchType === 'BREAK_END')
+  const punches: DayPunch[] = records.map((record) => ({
+    type: record.punchType as DayPunch['type'],
+    minutes: toWorkdayMinutes(record.punchedAt, workdayKey),
+  }))
 
-  if (inRecords.length === 0 || outRecords.length === 0) {
-    return {
-      ordinary: 0,
-      overtime: 0,
-      night: 0,
-      holiday: 0,
-      total: 0,
-      breakMinutes: 0,
-    }
-  }
-
-  // Primo ingresso e ultima uscita
-  const firstIn = new Date(
-    Math.min(...inRecords.map((r) => new Date(r.punchedAt).getTime()))
+  const sorted = [...records].sort(
+    (a, b) => a.punchedAt.getTime() - b.punchedAt.getTime()
   )
-  const lastOut = new Date(
-    Math.max(...outRecords.map((r) => new Date(r.punchedAt).getTime()))
-  )
+  const dstShiftMinutes =
+    sorted.length > 1
+      ? dstShiftBetween(sorted[0].punchedAt, sorted[sorted.length - 1].punchedAt)
+      : 0
 
-  // Calcola minuti totali
-  const totalMinutes = differenceInMinutes(lastOut, firstIn)
-
-  // Sottrai pause
-  let breakMinutes = 0
-  for (let i = 0; i < breakStartRecords.length; i++) {
-    const breakStart = breakStartRecords[i]
-    // Trova il BREAK_END corrispondente
-    const breakEnd = breakEndRecords.find(
-      (be) => new Date(be.punchedAt) > new Date(breakStart.punchedAt)
-    )
-    if (breakEnd) {
-      breakMinutes += differenceInMinutes(
-        new Date(breakEnd.punchedAt),
-        new Date(breakStart.punchedAt)
-      )
-    }
-  }
-
-  const workedMinutes = Math.max(0, totalMinutes - breakMinutes)
-  const totalHours = workedMinutes / 60
-
-  // Calcola ore notturne
-  const nightHours = calculateNightHours(firstIn, lastOut)
-
-  // Determina se festivo
-  const isHoliday = isItalianHoliday(date) || isSunday(date)
-
-  // Calcola straordinario (oltre ore contratto giornaliero)
-  const ordinaryHours = Math.min(totalHours, contractHoursDay)
-  const overtimeHours = Math.max(0, totalHours - contractHoursDay)
+  const day = computeRecognizedDay(punches, rules, {
+    weekday: toRomeParts(romeDayStart(workdayKey)).weekday,
+    isHoliday: isItalianHoliday(date),
+    dstShiftMinutes,
+  })
 
   return {
-    ordinary: isHoliday ? 0 : Math.max(0, ordinaryHours - nightHours),
-    overtime: isHoliday ? 0 : overtimeHours,
-    night: nightHours,
-    holiday: isHoliday ? totalHours : 0,
-    total: totalHours,
-    breakMinutes,
+    ordinary: day.ordinaryMinutes / 60,
+    overtime: day.overtimeMinutes / 60,
+    night: day.nightMinutes / 60,
+    holiday: day.holidayMinutes / 60,
+    total: day.workedMinutes / 60,
+    breakMinutes: day.breakMinutes,
   }
 }
 
@@ -231,10 +178,13 @@ export async function generatePayrollData(
 }> {
   const warnings: string[] = []
 
-  // Periodo
-  const startDate = startOfMonth(new Date(year, month - 1))
-  const endDate = endOfMonth(new Date(year, month - 1))
-  const days = eachDayOfInterval({ start: startDate, end: endDate })
+  // Periodo. Due rappresentazioni, perché servono a due cose diverse:
+  // gli istanti delimitano le timbrature (colonna timestamp), le date pure
+  // delimitano assenze e anomalie (colonne @db.Date) e scandiscono i giorni.
+  const period = romeMonthRange(year, month)
+  const firstDay = new Date(Date.UTC(year, month - 1, 1))
+  const lastDay = new Date(Date.UTC(year, month, 0))
+  const days = eachDayOfInterval({ start: firstDay, end: lastDay })
 
   // Carica dipendenti attivi
   const usersWhere: Prisma.UserWhereInput = {
@@ -244,6 +194,11 @@ export async function generatePayrollData(
   if (venueId) {
     usersWhere.venueId = venueId
   }
+
+  // Le regole si caricano una volta sola per tutto l'organico: interrogare il
+  // database per ogni dipendente moltiplicherebbe le query per il numero di
+  // persone.
+  const policyContext = venueId ? await loadPolicyResolutionContext(venueId) : null
 
   const users = await prisma.user.findMany({
     where: usersWhere,
@@ -265,8 +220,8 @@ export async function generatePayrollData(
   const attendanceRecords = await prisma.attendanceRecord.findMany({
     where: {
       punchedAt: {
-        gte: startDate,
-        lte: endDate,
+        gte: period.start,
+        lt: period.end,
       },
       ...(venueId && { venueId }),
     },
@@ -282,8 +237,8 @@ export async function generatePayrollData(
   const leaveRequests = await prisma.leaveRequest.findMany({
     where: {
       status: LeaveStatus.APPROVED,
-      startDate: { lte: endDate },
-      endDate: { gte: startDate },
+      startDate: { lte: lastDay },
+      endDate: { gte: firstDay },
     },
     include: {
       leaveType: {
@@ -299,8 +254,8 @@ export async function generatePayrollData(
   const unresolvedAnomalies = await prisma.attendanceAnomaly.findMany({
     where: {
       date: {
-        gte: startDate,
-        lte: endDate,
+        gte: firstDay,
+        lte: lastDay,
       },
       status: 'PENDING',
       ...(venueId && { venueId }),
@@ -312,15 +267,24 @@ export async function generatePayrollData(
     },
   })
 
-  // Organizza timbrature per utente e giorno
-  const punchesByUserDay = new Map<string, AttendanceRecordData[]>()
+  // Organizza le timbrature per utente e giornata lavorativa. Non per giorno
+  // civile: un turno che finisce dopo la mezzanotte appartiene per intero al
+  // giorno in cui è iniziato.
+  const punchesByUser = new Map<string, AttendanceRecordData[]>()
   attendanceRecords.forEach((record) => {
-    const dateKey = format(new Date(record.punchedAt), 'yyyy-MM-dd')
-    const key = `${record.userId}_${dateKey}`
-    if (!punchesByUserDay.has(key)) {
-      punchesByUserDay.set(key, [])
+    const list = punchesByUser.get(record.userId)
+    if (list) {
+      list.push(record)
+    } else {
+      punchesByUser.set(record.userId, [record])
     }
-    punchesByUserDay.get(key)!.push(record)
+  })
+
+  const punchesByUserDay = new Map<string, AttendanceRecordData[]>()
+  punchesByUser.forEach((userPunches, userId) => {
+    groupPunchesByWorkday(userPunches).forEach((dayPunches, dateKey) => {
+      punchesByUserDay.set(`${userId}_${dateKey}`, dayPunches)
+    })
   })
 
   // Organizza assenze per utente e giorno
@@ -329,8 +293,8 @@ export async function generatePayrollData(
     const leaveStart = new Date(leave.startDate)
     const leaveEnd = new Date(leave.endDate)
     const leaveDays = eachDayOfInterval({
-      start: leaveStart > startDate ? leaveStart : startDate,
-      end: leaveEnd < endDate ? leaveEnd : endDate,
+      start: leaveStart > firstDay ? leaveStart : firstDay,
+      end: leaveEnd < lastDay ? leaveEnd : lastDay,
     })
     leaveDays.forEach((day) => {
       const key = `${leave.userId}_${format(day, 'yyyy-MM-dd')}`
@@ -373,10 +337,15 @@ export async function generatePayrollData(
       estimatedCost: 0,
     })
 
-    // Calcola ore contratto giornaliere (settimanali / 6 giorni)
-    const contractHoursDay = user.contractHoursWeek
-      ? Number(user.contractHoursWeek) / 6
-      : 8
+    // Regole in vigore per questa persona: quelle del locale se ne impone una,
+    // altrimenti le sue, altrimenti la predefinita aziendale. Chi non ne ha
+    // nessuna viene calcolato come prima che le regole esistessero.
+    const contractWeeklyHours = user.contractHoursWeek
+      ? Number(user.contractHoursWeek)
+      : null
+    const { rules } = policyContext
+      ? resolvePolicyRules(policyContext, user.id, contractWeeklyHours)
+      : { rules: neutralPolicy(contractWeeklyHours) }
 
     // Processa ogni giorno
     days.forEach((day) => {
@@ -415,7 +384,7 @@ export async function generatePayrollData(
         summary.leaveSummary[leaveCode] =
           (summary.leaveSummary[leaveCode] || 0) + 1
       } else if (punches.length > 0) {
-        hours = calculateHoursFromPunches(punches, day, contractHoursDay)
+        hours = calculateHoursFromPunches(punches, dateKey, day, rules)
 
         // Aggiorna summary
         const summary = summariesMap.get(user.id)!

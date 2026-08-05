@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -45,6 +45,22 @@ export function ContractTab({ employee, isAdmin, userId, userRole }: ContractTab
     hourlyRateExtra: employee.hourlyRateExtra !== null ? Number(employee.hourlyRateExtra) : null,
     hourlyRateHoliday: employee.hourlyRateHoliday !== null ? Number(employee.hourlyRateHoliday) : null,
     hourlyRateNight: employee.hourlyRateNight !== null ? Number(employee.hourlyRateNight) : null,
+    timekeepingPolicyId: employee.timekeepingPolicyId ?? null,
+  })
+
+  // Regole orario disponibili, per assegnarne una a questa persona.
+  const { data: regoleOrario } = useQuery<
+    { id: string; name: string; isDefault: boolean }[]
+  >({
+    queryKey: ['politiche-orario'],
+    queryFn: async () => {
+      const res = await fetch('/api/politiche-orario')
+      if (!res.ok) throw new Error('Errore nel caricamento delle regole orario')
+      const dati = await res.json()
+
+      return dati.data ?? []
+    },
+    enabled: isAdmin,
   })
 
   const showDates = formData.contractType === 'TEMPO_DETERMINATO' ||
@@ -209,6 +225,39 @@ export function ContractTab({ employee, isAdmin, userId, userRole }: ContractTab
               />
             </div>
           )}
+
+          <div className="space-y-2">
+            <Label>Regola orario</Label>
+            <Select
+              value={formData.timekeepingPolicyId ?? '__nessuna__'}
+              onValueChange={(v) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  timekeepingPolicyId: v === '__nessuna__' ? null : v,
+                }))
+              }
+              disabled={!isAdmin}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Nessuna regola" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__nessuna__">
+                  Nessuna: usa la regola predefinita
+                </SelectItem>
+                {(regoleOrario ?? []).map((regola) => (
+                  <SelectItem key={regola.id} value={regola.id}>
+                    {regola.name}
+                    {regola.isDefault ? ' (predefinita)' : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-sm text-muted-foreground">
+              Determina arrotondamenti, pause e tetto giornaliero nel calcolo delle
+              ore. Se il locale ne impone una propria, quella ha la precedenza.
+            </p>
+          </div>
 
           <div className="space-y-2">
             <Label>Turno predefinito</Label>

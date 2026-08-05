@@ -59,6 +59,8 @@ DECLARE
         'products',
         'price_history',
         'price_alerts',
+        'timekeeping_policies',
+        'timekeeping_policy_breaks',
         'users'
     ];
 BEGIN
