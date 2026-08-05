@@ -423,7 +423,15 @@ describe('validateRelationshipConstraints', () => {
 })
 
 describe('optimizeSchedule', () => {
-  it('non altera l insieme di assegnazioni né introduce duplicati', () => {
+  /** Preferenza soft per la mattina: lo scambio con un turno serale migliora il punteggio */
+  const prefersMorningSoft = (userId: string) =>
+    makeEmployeeConstraint(
+      'PREFERRED_SHIFT',
+      { preference: 'PREFER', shiftType: 'mattina' },
+      { userId, isHardConstraint: false, id: `pref-${userId}` }
+    )
+
+  it('senza margini di miglioramento il piano resta identico', () => {
     const context = makeContext()
     const result = generateShiftsGreedy(context)
 
@@ -434,5 +442,129 @@ describe('optimizeSchedule', () => {
 
     const key = (a: ShiftAssignment) => `${a.userId}_${formatDateKey(a.date)}_${a.shiftDefinitionId}`
     expect(optimized.assignments.map(key).sort()).toEqual(result.assignments.map(key).sort())
+  })
+
+  it('scambia due dipendenti fra turni diversi quando le preferenze migliorano', () => {
+    const constraints = new Map<string, EmployeeConstraint[]>([
+      ['emp-1', [prefersMorningSoft('emp-1')]],
+    ])
+    const assignments = [
+      makeAssignment('emp-1', day(0), EVENING),
+      makeAssignment('emp-2', day(0), MORNING),
+    ]
+
+    const optimized = optimizeSchedule(assignments, makeContext({ employeeConstraints: constraints }))
+
+    expect(optimized.improved).toBe(true)
+    expect(optimized.assignments.find(a => a.shiftDefinitionId === MORNING.id)?.userId).toBe('emp-1')
+    expect(optimized.assignments.find(a => a.shiftDefinitionId === EVENING.id)?.userId).toBe('emp-2')
+  })
+
+  it('ricalcola il costo con la tariffa del nuovo assegnatario', () => {
+    const constraints = new Map<string, EmployeeConstraint[]>([
+      ['emp-1', [prefersMorningSoft('emp-1')]],
+    ])
+    const assignments = [
+      makeAssignment('emp-1', day(0), EVENING),
+      makeAssignment('emp-2', day(0), MORNING),
+    ]
+
+    const optimized = optimizeSchedule(assignments, makeContext({ employeeConstraints: constraints }))
+
+    // Mattina 06-14 = 8h a 12€/h (emp-1); sera 17-23 = 6h a 11€/h (emp-2)
+    expect(optimized.assignments.find(a => a.shiftDefinitionId === MORNING.id)?.costEstimated).toBe(96)
+    expect(optimized.assignments.find(a => a.shiftDefinitionId === EVENING.id)?.costEstimated).toBe(66)
+  })
+
+  it('rifiuta lo scambio che violerebbe il riposo minimo', () => {
+    const constraints = new Map<string, EmployeeConstraint[]>([
+      ['emp-1', [
+        prefersMorningSoft('emp-1'),
+        makeEmployeeConstraint('MIN_REST', { minRestHours: 11 }, { userId: 'emp-1', id: 'rest-emp-1' }),
+      ]],
+    ])
+    // emp-1 chiude lunedì sera alle 23: la mattina di martedì alle 06 sono solo 7 ore di riposo
+    const assignments = [
+      makeAssignment('emp-1', day(0), EVENING),
+      makeAssignment('emp-1', day(1), EVENING),
+      makeAssignment('emp-2', day(1), MORNING),
+    ]
+
+    const optimized = optimizeSchedule(assignments, makeContext({ employeeConstraints: constraints }))
+
+    expect(optimized.improved).toBe(false)
+    expect(optimized.assignments).toEqual(assignments)
+  })
+
+  it('rifiuta lo scambio che violerebbe un NEVER_TOGETHER hard', () => {
+    const constraints = new Map<string, EmployeeConstraint[]>([
+      ['emp-1', [prefersMorningSoft('emp-1')]],
+    ])
+    // emp-1 non può stare né con emp-3 né con emp-4: ogni strada verso la mattina è chiusa
+    const relationshipConstraints = [
+      makeRelConstraint('NEVER_TOGETHER', ['emp-1', 'emp-3'], { id: 'nt-1-3' }),
+      makeRelConstraint('NEVER_TOGETHER', ['emp-1', 'emp-4'], { id: 'nt-1-4' }),
+    ]
+    const assignments = [
+      makeAssignment('emp-3', day(0), MORNING),
+      makeAssignment('emp-4', day(0), MORNING),
+      makeAssignment('emp-1', day(0), EVENING),
+      makeAssignment('emp-2', day(0), EVENING),
+    ]
+
+    const optimized = optimizeSchedule(
+      assignments,
+      makeContext({ employeeConstraints: constraints, relationshipConstraints })
+    )
+
+    expect(optimized.improved).toBe(false)
+    expect(optimized.assignments).toEqual(assignments)
+  })
+
+  it('non sposta un turno su chi è in ferie approvate', () => {
+    const constraints = new Map<string, EmployeeConstraint[]>([
+      ['emp-1', [prefersMorningSoft('emp-1')]],
+    ])
+    const assignments = [
+      makeAssignment('emp-1', day(0), EVENING),
+      makeAssignment('emp-2', day(1), MORNING),
+    ]
+    const context = {
+      ...makeContext({ employeeConstraints: constraints }),
+      leaveRequests: [
+        {
+          id: 'leave-1',
+          userId: 'emp-2',
+          startDate: day(0),
+          endDate: day(0),
+          status: 'APPROVED' as const,
+        },
+      ],
+    }
+
+    const optimized = optimizeSchedule(assignments, context)
+
+    expect(optimized.improved).toBe(false)
+    expect(optimized.assignments).toEqual(assignments)
+  })
+
+  it('non scambia assegnazioni di settimane diverse', () => {
+    // Uno scambio fra settimane cambierebbe i giorni lavorati per settimana,
+    // che il greedy garantisce (workDaysPerWeek, ore massime settimanali)
+    const constraints = new Map<string, EmployeeConstraint[]>([
+      ['emp-1', [prefersMorningSoft('emp-1')]],
+    ])
+    const assignments = [
+      makeAssignment('emp-1', day(0), EVENING),
+      makeAssignment('emp-2', day(7), MORNING),
+    ]
+
+    const optimized = optimizeSchedule(
+      assignments,
+      makeContext({ employeeConstraints: constraints, params: { endDate: day(13) } })
+    )
+
+    expect(optimized.improved).toBe(false)
+    expect(optimized.assignments).toEqual(assignments)
   })
 })

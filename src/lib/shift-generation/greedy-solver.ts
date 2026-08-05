@@ -560,63 +560,183 @@ function calculateStats(
 }
 
 /**
+ * Tetto alle passate di local search: ogni scambio è accettato solo se migliora
+ * il punteggio, ma i punteggi sono locali alla coppia e in teoria potrebbero
+ * ciclare. Il limite garantisce la terminazione.
+ */
+const MAX_OPTIMIZATION_PASSES = 5
+
+/**
+ * Assegnazione con un nuovo dipendente sullo stesso slot (giorno + turno).
+ * Il costo va ricalcolato con la tariffa del nuovo assegnatario; senza tariffa
+ * resta 0, coerente con il greedy (MISSING_RATE, mai valori inventati).
+ */
+function reassignSlot(
+  slot: ShiftAssignment,
+  employee: Employee,
+  shift: ShiftDefinition
+): ShiftAssignment {
+  const costEstimated = employee.hourlyRateBase
+    ? slot.hoursScheduled * employee.hourlyRateBase * Number(shift.rateMultiplier)
+    : 0
+
+  return { ...slot, userId: employee.id, costEstimated }
+}
+
+/**
+ * Tutte le assegnazioni di un dipendente nel piano candidato restano valide?
+ *
+ * Rivalida ogni suo turno contro il resto del piano, non solo quello appena
+ * spostato: canEmployeeWorkShift guarda solo indietro (riposo minimo, giorni
+ * consecutivi), quindi uno scambio potrebbe invalidare retroattivamente un
+ * turno dei giorni successivi. Ricontrollandoli tutti la falla si chiude.
+ */
+function employeePlanIsValid(
+  employee: Employee,
+  constraints: EmployeeConstraint[],
+  plan: ShiftAssignment[],
+  shiftsById: Map<string, ShiftDefinition>,
+  leaveRequests: LeaveRequest[]
+): boolean {
+  for (let k = 0; k < plan.length; k++) {
+    const assignment = plan[k]
+    if (assignment.userId !== employee.id) continue
+
+    const shift = shiftsById.get(assignment.shiftDefinitionId)
+    if (!shift) continue
+
+    const others = plan.filter((_, idx) => idx !== k)
+    const check = canEmployeeWorkShift(
+      employee,
+      shift,
+      new Date(assignment.date),
+      constraints,
+      others,
+      leaveRequests
+    )
+    if (!check.canWork) return false
+  }
+
+  return true
+}
+
+/**
+ * L'assegnazione candidata viola un vincolo relazionale hard con qualcuno?
+ */
+function hasHardRelationshipViolation(
+  candidate: ShiftAssignment,
+  others: ShiftAssignment[],
+  constraints: RelationshipConstraint[],
+  shiftsById: Map<string, ShiftDefinition>
+): boolean {
+  for (const other of others) {
+    if (other.userId === candidate.userId) continue
+
+    const violations = checkRelationshipConstraints(
+      { userId: candidate.userId, date: new Date(candidate.date), shiftDefinitionId: candidate.shiftDefinitionId },
+      { userId: other.userId, date: new Date(other.date), shiftDefinitionId: other.shiftDefinitionId },
+      constraints,
+      shiftsById
+    )
+
+    if (violations.some(v => v.severity === 'hard')) return true
+  }
+
+  return false
+}
+
+/**
  * Optimize an existing schedule (local search)
+ *
+ * Prova a scambiare i dipendenti fra slot diversi (giorno o turno differente)
+ * della stessa settimana e accetta lo scambio solo se migliora il punteggio
+ * complessivo senza violare vincoli hard. Lo scambio dentro lo stesso slot è
+ * l'identità e non viene considerato; quello fra settimane diverse è escluso
+ * perché altererebbe i conteggi settimanali (workDaysPerWeek) che il greedy
+ * garantisce e che canEmployeeWorkShift non ricontrolla.
  */
 export function optimizeSchedule(
   assignments: ShiftAssignment[],
   context: SolverContext
 ): { assignments: ShiftAssignment[]; improved: boolean } {
-  // Simple local search: try swapping assignments
+  const { employees, shiftDefinitions, employeeConstraints, relationshipConstraints, leaveRequests, params } = context
+
+  const employeesById = new Map(employees.map(e => [e.id, e]))
+  const shiftsById = new Map(shiftDefinitions.map(s => [s.id, s]))
+  const hardMaxTogether = relationshipConstraints.filter(
+    c => c.constraintType === 'MAX_TOGETHER' && c.isHardConstraint
+  )
+  const scoreParams = {
+    preferFixedStaff: params.preferFixedStaff,
+    balanceHours: params.balanceHours,
+    minimizeCost: params.minimizeCost,
+  }
+
+  const newAssignments = assignments.map(a => ({ ...a }))
   let improved = false
-  const newAssignments = [...assignments]
 
-  for (let i = 0; i < newAssignments.length; i++) {
-    for (let j = i + 1; j < newAssignments.length; j++) {
-      const a1 = newAssignments[i]
-      const a2 = newAssignments[j]
+  for (let pass = 0; pass < MAX_OPTIMIZATION_PASSES; pass++) {
+    let passImproved = false
 
-      // Only consider swapping same-day, same-shift assignments
-      if (
-        a1.date.toDateString() !== a2.date.toDateString() ||
-        a1.shiftDefinitionId !== a2.shiftDefinitionId
-      ) {
-        continue
-      }
+    for (let i = 0; i < newAssignments.length; i++) {
+      for (let j = i + 1; j < newAssignments.length; j++) {
+        const a1 = newAssignments[i]
+        const a2 = newAssignments[j]
 
-      // Try swap
-      const temp = { ...a1, userId: a2.userId }
-      const temp2 = { ...a2, userId: a1.userId }
+        if (a1.userId === a2.userId) continue
 
-      // Check if swap is valid
-      const e1 = context.employees.find(e => e.id === a2.userId)
-      const e2 = context.employees.find(e => e.id === a1.userId)
-      if (!e1 || !e2) continue
+        // Stesso slot: lo scambio è l'identità (era il no-op storico)
+        const sameDay = formatDateKey(a1.date) === formatDateKey(a2.date)
+        if (sameDay && a1.shiftDefinitionId === a2.shiftDefinitionId) continue
 
-      const shift = context.shiftDefinitions.find(s => s.id === a1.shiftDefinitionId)
-      if (!shift) continue
+        if (getWeekKey(a1.date) !== getWeekKey(a2.date)) continue
 
-      const constraints1 = context.employeeConstraints.get(a2.userId) || []
-      const constraints2 = context.employeeConstraints.get(a1.userId) || []
+        const emp1 = employeesById.get(a1.userId)
+        const emp2 = employeesById.get(a2.userId)
+        const shift1 = shiftsById.get(a1.shiftDefinitionId)
+        const shift2 = shiftsById.get(a2.shiftDefinitionId)
+        if (!emp1 || !emp2 || !shift1 || !shift2) continue
 
-      const canSwap1 = canEmployeeWorkShift(e1, shift, a1.date, constraints1, newAssignments.filter((_, idx) => idx !== i && idx !== j))
-      const canSwap2 = canEmployeeWorkShift(e2, shift, a2.date, constraints2, newAssignments.filter((_, idx) => idx !== i && idx !== j))
+        const constraints1 = employeeConstraints.get(emp1.id) || []
+        const constraints2 = employeeConstraints.get(emp2.id) || []
 
-      if (canSwap1.canWork && canSwap2.canWork) {
-        // Calculate old and new scores
-        const oldScore1 = calculateEmployeeScore(context.employees.find(e => e.id === a1.userId)!, shift, a1.date, context.employeeConstraints.get(a1.userId) || [], newAssignments, context.params)
-        const oldScore2 = calculateEmployeeScore(context.employees.find(e => e.id === a2.userId)!, shift, a2.date, context.employeeConstraints.get(a2.userId) || [], newAssignments, context.params)
+        const rest = newAssignments.filter((_, idx) => idx !== i && idx !== j)
 
-        const newScore1 = calculateEmployeeScore(e1, shift, a1.date, constraints1, newAssignments, context.params)
-        const newScore2 = calculateEmployeeScore(e2, shift, a2.date, constraints2, newAssignments, context.params)
+        // emp2 prende lo slot di emp1 e viceversa
+        const swapped1 = reassignSlot(a1, emp2, shift1)
+        const swapped2 = reassignSlot(a2, emp1, shift2)
+        const candidatePlan = [...rest, swapped1, swapped2]
 
-        if (newScore1 + newScore2 > oldScore1 + oldScore2) {
-          // Accept swap
-          newAssignments[i] = temp
-          newAssignments[j] = temp2
+        // Vincoli del singolo dipendente (disponibilità, ferie, riposo, ore max)
+        if (!employeePlanIsValid(emp1, constraints1, candidatePlan, shiftsById, leaveRequests)) continue
+        if (!employeePlanIsValid(emp2, constraints2, candidatePlan, shiftsById, leaveRequests)) continue
+
+        // Vincoli relazionali hard a coppie (NEVER_TOGETHER, ALWAYS_TOGETHER, MIN_OVERLAP)
+        if (hasHardRelationshipViolation(swapped1, candidatePlan, relationshipConstraints, shiftsById)) continue
+        if (hasHardRelationshipViolation(swapped2, candidatePlan, relationshipConstraints, shiftsById)) continue
+
+        // Vincoli relazionali settimanali hard (MAX_TOGETHER), come nel greedy
+        const weeklyViolations = checkWeeklyRelationshipConstraints(candidatePlan, hardMaxTogether)
+        if (weeklyViolations.some(v => v.severity === 'hard')) continue
+
+        // Punteggi prima e dopo, entrambi calcolati sul piano senza i due slot
+        const oldScore =
+          calculateEmployeeScore(emp1, shift1, a1.date, constraints1, rest, scoreParams) +
+          calculateEmployeeScore(emp2, shift2, a2.date, constraints2, rest, scoreParams)
+        const newScore =
+          calculateEmployeeScore(emp2, shift1, a1.date, constraints2, rest, scoreParams) +
+          calculateEmployeeScore(emp1, shift2, a2.date, constraints1, rest, scoreParams)
+
+        if (newScore > oldScore) {
+          newAssignments[i] = swapped1
+          newAssignments[j] = swapped2
           improved = true
+          passImproved = true
         }
       }
     }
+
+    if (!passImproved) break
   }
 
   return { assignments: newAssignments, improved }
