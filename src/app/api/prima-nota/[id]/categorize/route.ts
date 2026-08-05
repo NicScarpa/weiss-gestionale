@@ -37,11 +37,20 @@ export async function PATCH(
     // Recupera la entry corrente
     const current = await prisma.journalEntry.findUnique({
       where: { id: id },
-      select: { id: true },
+      select: { id: true, _count: { select: { allocations: true } } },
     })
 
     if (!current) {
       return NextResponse.json({ error: 'Movimento non trovato' }, { status: 404 })
+    }
+
+    // Un movimento suddiviso in fette (Allocation) è governato dalla
+    // suddivisione: la categorizzazione manuale non deve poterla scavalcare.
+    if (current._count.allocations > 0) {
+      return NextResponse.json(
+        { error: 'Il movimento è suddiviso in fette: rimuovi prima la suddivisione' },
+        { status: 409 }
+      )
     }
 
     // Il conto è l'asse di imputazione: se arriva, la categoria si deriva
@@ -67,7 +76,7 @@ export async function PATCH(
       action: 'UPDATE',
       entityType: 'JournalEntry',
       entityId: id,
-      newValues: { budgetCategoryId: validated.budgetCategoryId, accountId: validated.accountId },
+      newValues: { budgetCategoryId, accountId: validated.accountId },
     })
 
     return NextResponse.json({

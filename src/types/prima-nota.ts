@@ -58,7 +58,7 @@ export interface JournalEntry {
   // === Estensioni Sibill ===
   verified?: boolean
   hiddenAt?: Date
-  categorizationSource?: 'manual' | 'automatic' | 'rule' | 'import'
+  categorizationSource?: 'manual' | 'automatic' | 'rule' | 'import' | 'split'
   counterpartName?: string
   notes?: string
   budgetCategoryId?: string
@@ -167,7 +167,7 @@ export interface JournalEntryFilters {
   accountId?: string
   budgetCategoryId?: string  // Sibill: filtra per categoria budget
   verified?: boolean           // Sibill: filtra per stato verifica
-  categorizationSource?: 'manual' | 'automatic' | 'rule' | 'import'  // Sibill: origine categorizzazione
+  categorizationSource?: 'manual' | 'automatic' | 'rule' | 'import' | 'split'  // Sibill: origine categorizzazione
   search?: string
 }
 
@@ -366,13 +366,14 @@ export interface CategorizationRuleTestResponse {
 
 // ==================== BADGE STATO CATEGORIZZAZIONE ====================
 
-export type CategorizationSource = 'manual' | 'automatic' | 'rule' | 'import'
+export type CategorizationSource = 'manual' | 'automatic' | 'rule' | 'import' | 'split'
 
 export const CATEGORIZATION_SOURCE_LABELS: Record<CategorizationSource, string> = {
   manual: 'Manuale',
   automatic: 'Automatica',
   rule: 'Regola',
   import: 'Import',
+  split: 'Suddiviso',
 }
 
 export const CATEGORIZATION_SOURCE_ICONS: Record<CategorizationSource, string> = {
@@ -380,6 +381,7 @@ export const CATEGORIZATION_SOURCE_ICONS: Record<CategorizationSource, string> =
   automatic: '🤖',
   rule: '📋',
   import: '📥',
+  split: '✂️',
 }
 
 export const CATEGORIZATION_SOURCE_COLORS: Record<CategorizationSource, string> = {
@@ -387,6 +389,7 @@ export const CATEGORIZATION_SOURCE_COLORS: Record<CategorizationSource, string> 
   automatic: 'bg-blue-100 text-blue-700 border-blue-300',
   rule: 'bg-purple-100 text-purple-700 border-purple-300',
   import: 'bg-green-100 text-green-700 border-green-300',
+  split: 'bg-amber-100 text-amber-700 border-amber-300',
 }
 
 // ==================== MOVIMENTO ROW ACTIONS ====================

@@ -22,6 +22,7 @@ vi.mock('@/lib/accounts/mapping', () => ({
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
+import { createAuditLog } from '@/lib/audit'
 
 const sessione = { user: { id: 'user-1', role: 'admin' } } as unknown as Session
 
@@ -36,7 +37,10 @@ function patchCon(body: Record<string, unknown>) {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(auth).mockResolvedValue(sessione as never)
-  vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({ id: 'entry-1' } as never)
+  vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
+    id: 'entry-1',
+    _count: { allocations: 0 },
+  } as never)
 })
 
 describe('PATCH /api/prima-nota/[id]/categorize - la categoria si deriva dal conto', () => {
@@ -55,6 +59,11 @@ describe('PATCH /api/prima-nota/[id]/categorize - la categoria si deriva dal con
           budgetCategoryId: 'cat-derivata',
           categorizationSource: 'manual',
         }),
+      })
+    )
+    expect(createAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        newValues: expect.objectContaining({ budgetCategoryId: 'cat-derivata' }),
       })
     )
   })
@@ -89,5 +98,22 @@ describe('PATCH /api/prima-nota/[id]/categorize - la categoria si deriva dal con
     const data = vi.mocked(prisma.journalEntry.update).mock.calls[0][0].data
     expect(data.budgetCategoryId).toBe('cat-1')
     expect(derivaBudgetCategoryDaConto).not.toHaveBeenCalled()
+  })
+})
+
+describe('PATCH /api/prima-nota/[id]/categorize - un movimento suddiviso in fette è protetto', () => {
+  it('movimento con fette: 409 e update mai chiamato', async () => {
+    vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
+      id: 'entry-1',
+      _count: { allocations: 2 },
+    } as never)
+
+    const { request, context } = patchCon({ budgetCategoryId: 'cat-1' })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(409)
+    const body = await response.json()
+    expect(body.error).toBe('Il movimento è suddiviso in fette: rimuovi prima la suddivisione')
+    expect(prisma.journalEntry.update).not.toHaveBeenCalled()
   })
 })

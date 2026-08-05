@@ -40,12 +40,15 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Recupera entry da ricategorizzare
+    // Recupera entry da ricategorizzare. I movimenti suddivisi in fette
+    // (allocations) sono esclusi: la loro categoria/conto è governata dalla
+    // suddivisione, non dal batch di regole (vedi finding review allocation).
     const entries = await prisma.journalEntry.findMany({
       where: {
         venueId,
         verified: false,
         hiddenAt: null,
+        allocations: { none: {} },
       },
       take: 100, // Batch processing
     })
