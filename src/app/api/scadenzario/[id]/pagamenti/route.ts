@@ -6,6 +6,7 @@ import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
 import { ScheduleStatus } from '@/types/schedule'
+import { ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
 
 const createPaymentSchema = z.object({
   importo: z.number().positive('Importo deve essere positivo'),
@@ -80,6 +81,8 @@ export async function POST(
       select: {
         id: true,
         venueId: true,
+        tipo: true,
+        supplierId: true,
         importoTotale: true,
         importoPagato: true,
         stato: true,
@@ -154,6 +157,16 @@ export async function POST(
           data: { status: 'PAID' },
         })
       }
+    }
+
+    // La storia del fornitore è cambiata: aggiorna le stime delle sue
+    // scadenze aperte. Best-effort: non blocca la registrazione
+    if (
+      nuovoStato === ScheduleStatus.PAGATA &&
+      schedule.tipo === 'passiva' &&
+      schedule.supplierId
+    ) {
+      await ricalcolaStimeFornitore(schedule.supplierId, schedule.venueId)
     }
 
     await createAuditLog({
