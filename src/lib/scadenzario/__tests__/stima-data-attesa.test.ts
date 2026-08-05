@@ -1,5 +1,14 @@
-import { describe, it, expect } from 'vitest'
-import { calcolaRitardoTipico } from '../stima-data-attesa'
+import { vi, beforeEach, describe, it, expect } from 'vitest'
+
+vi.mock('@/lib/prisma', () => ({
+  prisma: { schedule: { findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn() } },
+}))
+vi.mock('@/lib/logger', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}))
+
+import { prisma } from '@/lib/prisma'
+import { calcolaRitardoTipico, stimaRitardoFornitore } from '../stima-data-attesa'
 
 describe('calcolaRitardoTipico', () => {
   it('restituisce la mediana dei ritardi con campione dispari', () => {
@@ -32,5 +41,34 @@ describe('calcolaRitardoTipico', () => {
     const ritardi = [9, 5, 12]
     calcolaRitardoTipico(ritardi)
     expect(ritardi).toEqual([9, 5, 12])
+  })
+})
+
+describe('stimaRitardoFornitore', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('calcola il ritardo dalle scadenze passive pagate del fornitore', async () => {
+    vi.mocked(prisma.schedule.findMany).mockResolvedValue([
+      { dataScadenza: new Date('2026-05-01'), dataPagamento: new Date('2026-05-11') },
+      { dataScadenza: new Date('2026-06-01'), dataPagamento: new Date('2026-06-09') },
+      { dataScadenza: new Date('2026-07-01'), dataPagamento: new Date('2026-07-13') },
+    ] as never)
+
+    await expect(stimaRitardoFornitore('sup-1', 'venue-1')).resolves.toBe(10)
+
+    const where = vi.mocked(prisma.schedule.findMany).mock.calls[0][0]?.where
+    expect(where).toMatchObject({
+      venueId: 'venue-1',
+      supplierId: 'sup-1',
+      tipo: 'passiva',
+      stato: 'pagata',
+    })
+    // la finestra: solo pagamenti recenti
+    expect(where?.dataPagamento).toHaveProperty('gte')
+  })
+
+  it('senza storia sufficiente restituisce null', async () => {
+    vi.mocked(prisma.schedule.findMany).mockResolvedValue([] as never)
+    await expect(stimaRitardoFornitore('sup-1', 'venue-1')).resolves.toBeNull()
   })
 })

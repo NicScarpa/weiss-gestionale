@@ -10,6 +10,9 @@
  * Vedi docs/superpowers/specs/2026-08-05-stima-data-attesa-design.md.
  */
 
+import { prisma } from '@/lib/prisma'
+import { differenceInCalendarDays, subDays } from 'date-fns'
+
 export const STIMA_MIN_CAMPIONE = 3
 export const STIMA_SOGLIA_GIORNI = 2
 export const STIMA_FINESTRA_GIORNI = 365
@@ -25,4 +28,26 @@ export function calcolaRitardoTipico(ritardiGiorni: number[]): number | null {
   const giorni = Math.round(mediana)
   if (Math.abs(giorni) < STIMA_SOGLIA_GIORNI) return null
   return giorni
+}
+
+export async function stimaRitardoFornitore(
+  supplierId: string,
+  venueId: string
+): Promise<number | null> {
+  const pagate = await prisma.schedule.findMany({
+    where: {
+      venueId,
+      supplierId,
+      tipo: 'passiva',
+      stato: 'pagata',
+      dataPagamento: { not: null, gte: subDays(new Date(), STIMA_FINESTRA_GIORNI) },
+    },
+    select: { dataScadenza: true, dataPagamento: true },
+  })
+
+  const ritardi = pagate
+    .filter((s): s is typeof s & { dataPagamento: Date } => s.dataPagamento !== null)
+    .map((s) => differenceInCalendarDays(s.dataPagamento, s.dataScadenza))
+
+  return calcolaRitardoTipico(ritardi)
 }
