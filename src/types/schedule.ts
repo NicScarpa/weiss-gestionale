@@ -442,8 +442,11 @@ export enum ScheduleRuleAction {
   CREA_RICONCILIA_MOVIMENTO = 'crea_riconcilia_movimento',
 }
 
+// La label descrive ciò che il motore fa davvero oggi (`src/lib/schedule-rules/engine.ts`):
+// assegnare il conto contabile al documento importato. Il valore persistito resta
+// `crea_riconcilia_movimento` per non toccare i dati esistenti.
 export const SCHEDULE_RULE_ACTION_LABELS: Record<ScheduleRuleAction, string> = {
-  [ScheduleRuleAction.CREA_RICONCILIA_MOVIMENTO]: 'Crea e Riconcilia Movimento',
+  [ScheduleRuleAction.CREA_RICONCILIA_MOVIMENTO]: 'Assegna conto contabile',
 } as const
 
 export interface ScheduleRule {

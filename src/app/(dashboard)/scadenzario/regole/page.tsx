@@ -123,7 +123,7 @@ export default function RegolePage() {
             Regole
           </h1>
           <p className="text-muted-foreground">
-            Automazioni per la riconciliazione delle scadenze
+            Assegnazione automatica del conto contabile ai documenti importati
           </p>
         </div>
         <Button
@@ -162,7 +162,11 @@ export default function RegolePage() {
       {/* Nota ordine */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Info className="h-4 w-4 shrink-0" />
-        <span>Le regole sono applicate nell&apos;ordine visualizzato. La prima regola che corrisponde viene applicata.</span>
+        <span>
+          Le regole sono valutate all&apos;import delle fatture elettroniche, nell&apos;ordine
+          visualizzato: la prima che corrisponde assegna il conto al documento. Se il conto è
+          già stato indicato manualmente o ereditato dal fornitore, le regole non intervengono.
+        </span>
       </div>
 
       {/* Tabella */}

@@ -5,9 +5,16 @@ import { parseFatturaPASafe, calcolaImporti, estraiScadenze, estraiDatiEstesi } 
 import type { ParseWarning } from '@/lib/sdi/types'
 import { matchSupplier, createSupplierFromData, type SuggestedSupplierData } from '@/lib/sdi/matcher'
 import { trackPricesFromInvoice } from '@/lib/price-tracking'
+import {
+  risolviContoDaRegole,
+  tipoDocumentoDaCodiceSdi,
+  tipoPagamentoDaCodiceSdi,
+} from '@/lib/schedule-rules/engine'
+import { ScheduleRuleDirection } from '@/types/schedule'
 import { Prisma, InvoiceStatus } from '@prisma/client'
 import { z } from 'zod'
 import { getVenueId } from '@/lib/venue'
+import { createAuditLog } from '@/lib/audit'
 
 import { logger } from '@/lib/logger'
 // Schema validazione import
@@ -326,14 +333,44 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Se c'è un accountId, status diventa CATEGORIZED
-    if (validatedData.accountId) {
+    // Categorizzazione: la scelta dell'utente ha sempre la precedenza sulle regole
+    let accountId: string | null = validatedData.accountId || null
+    let regolaApplicata: { ruleId: string; azione: string } | null = null
+
+    if (accountId) {
       // Verifica che il conto esista
       const account = await prisma.account.findUnique({
-        where: { id: validatedData.accountId },
+        where: { id: accountId },
       })
       if (account) {
         status = 'CATEGORIZED'
+      }
+    } else {
+      // Nessun conto indicato: decidono le regole dello scadenzario.
+      // Le fatture elettroniche importate qui sono documenti ricevuti
+      // (il cedente/prestatore è il fornitore).
+      const direzione = ScheduleRuleDirection.RICEVUTI
+      // Con più rate si usa la modalità della prima: le regole ragionano sul
+      // documento, non sulla singola scadenza.
+      const modalitaPagamento = fattura.datiPagamento?.dettagliPagamento?.[0]?.modalitaPagamento
+
+      const contoDaRegola = await risolviContoDaRegole({
+        venueId: validatedData.venueId,
+        direzione,
+        tipoDocumento: tipoDocumentoDaCodiceSdi(fattura.tipoDocumento, direzione),
+        tipoPagamento: tipoPagamentoDaCodiceSdi(modalitaPagamento),
+      })
+
+      if (contoDaRegola) {
+        accountId = contoDaRegola.contoId
+        status = 'CATEGORIZED'
+        regolaApplicata = { ruleId: contoDaRegola.ruleId, azione: contoDaRegola.azione }
+        logger.info('Conto assegnato da regola scadenzario', {
+          invoiceNumber: fattura.numero,
+          ruleId: contoDaRegola.ruleId,
+          contoId: contoDaRegola.contoId,
+          azione: contoDaRegola.azione,
+        })
       }
     }
 
@@ -374,7 +411,7 @@ export async function POST(request: NextRequest) {
         netAmount: new Prisma.Decimal(importi.netAmount.toFixed(2)),
         status,
         supplierId,
-        accountId: validatedData.accountId || null,
+        accountId,
         xmlContent: validatedData.xmlContent,
         fileName: validatedData.fileName || null,
         venueId: validatedData.venueId,
@@ -401,6 +438,23 @@ export async function POST(request: NextRequest) {
         deadlines: true,
       },
     })
+
+    // Traccia l'automatismo: il conto non è stato scelto da chi ha importato
+    if (regolaApplicata) {
+      await createAuditLog({
+        userId: session.user.id,
+        action: 'UPDATE',
+        entityType: 'ElectronicInvoice',
+        entityId: invoice.id,
+        venueId: validatedData.venueId,
+        newValues: {
+          accountId,
+          appliedScheduleRuleId: regolaApplicata.ruleId,
+          azione: regolaApplicata.azione,
+          origine: 'regola_scadenzario',
+        },
+      })
+    }
 
     // Track prezzi articoli dalla fattura (se c'è un fornitore associato)
     let priceTrackingResult = null
