@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
 import { calcolaProssimaGenerazione, calcolaDataDallaRicorrenza } from '@/lib/recurrence-utils'
+import { applicaStimaSuScadenza } from '@/lib/scadenzario/stima-data-attesa'
 
 // POST /api/scadenzario/ricorrenze/[id]/genera - Genera prossimo schedule dalla ricorrenza
 export async function POST(
@@ -65,6 +66,8 @@ export async function POST(
         note: recurrence.note,
       },
     })
+
+    await applicaStimaSuScadenza(schedule.id, recurrence.venueId)
 
     // Aggiorna prossimaGenerazione della ricorrenza
     const nuovaProssimaGenerazione = calcolaProssimaGenerazione(

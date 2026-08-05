@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
+import { applicaStimaSuScadenza } from '@/lib/scadenzario/stima-data-attesa'
 
 // POST /api/scadenzario/[id]/genera-prossima - Genera prossima occorrenza ricorrente
 export async function POST(
@@ -80,6 +81,8 @@ export async function POST(
         createdById: session.user.id,
       },
     })
+
+    await applicaStimaSuScadenza(newSchedule.id, parent.venueId)
 
     // Aggiorna prossima generazione del padre
     const prossimaGenerazione = calcolaProssimaGenerazione(

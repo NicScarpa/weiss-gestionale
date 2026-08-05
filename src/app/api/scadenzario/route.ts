@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { applicaRegolaCreaMovimento } from '@/lib/schedule-rules/engine'
+import { applicaStimaSuScadenza } from '@/lib/scadenzario/stima-data-attesa'
 import { createAuditLog } from '@/lib/audit'
 import { ScheduleStatus, ScheduleType, SchedulePriority, ScheduleDocumentType, ScheduleSource } from '@/types/schedule'
 import { getVenueId } from '@/lib/venue'
@@ -294,9 +295,11 @@ export async function POST(request: NextRequest) {
       userId: session.user.id,
     })
 
-    const aggiornata = regola.applicata
-      ? await prisma.schedule.findUnique({ where: { id: schedule.id } })
-      : null
+    // La data attesa di cassa si stima dal ritardo storico del fornitore
+    await applicaStimaSuScadenza(schedule.id, venueId)
+
+    // Le automazioni possono aver toccato la scadenza: si rilegge sempre
+    const aggiornata = await prisma.schedule.findUnique({ where: { id: schedule.id } })
 
     const finale = aggiornata ?? schedule
 

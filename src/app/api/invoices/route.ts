@@ -18,6 +18,7 @@ import { createAuditLog } from '@/lib/audit'
 
 import { logger } from '@/lib/logger'
 import { generateSchedulesFromInvoice } from '@/lib/services/invoice-schedule-service'
+import { ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
 // Schema validazione import
 const importInvoiceSchema = z.object({
   xmlContent: z.string().min(100, 'Contenuto XML non valido'),
@@ -488,6 +489,11 @@ export async function POST(request: NextRequest) {
       logger.error('Errore generazione scadenze da fattura', scheduleError, {
         invoiceId: invoice.id,
       })
+    }
+
+    // Le nuove rate del fornitore ereditano la stima del suo ritardo storico
+    if (schedulesResult?.created && invoice.supplierId) {
+      await ricalcolaStimeFornitore(invoice.supplierId, invoice.venueId)
     }
 
     // Traccia l'automatismo: il conto non è stato scelto da chi ha importato
