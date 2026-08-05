@@ -44,6 +44,21 @@ export async function PUT(
     const body = await request.json()
     const dati = luogoLavoroSchema.parse(body)
 
+    // La regola oraria collegata deve esistere ed essere della stessa sede.
+    if (dati.timekeepingPolicyId) {
+      const regola = await prisma.timekeepingPolicy.findFirst({
+        where: { id: dati.timekeepingPolicyId, venueId },
+        select: { id: true },
+      })
+
+      if (!regola) {
+        return NextResponse.json(
+          { error: 'Regola orario non trovata' },
+          { status: 400 }
+        )
+      }
+    }
+
     const luogo = await prisma.workLocation.update({
       where: { id },
       data: dati,

@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
 import { logger } from '@/lib/logger'
+import { romeDayRange } from '@/lib/timezone'
 // GET /api/attendance/history - Storico timbrature personali
 export async function GET(request: NextRequest) {
   try {
@@ -23,15 +24,18 @@ export async function GET(request: NextRequest) {
       ? parseInt(searchParams.get('offset')!)
       : 0
 
-    // Costruisci filtro date
+    // Costruisci filtro date: i giorni sono giornate civili italiane.
+    const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
     const dateFilter: Record<string, Date> = {}
     if (from) {
-      dateFilter.gte = new Date(from)
+      dateFilter.gte = DATE_ONLY.test(from) ? romeDayRange(from).start : new Date(from)
     }
     if (to) {
-      const toDate = new Date(to)
-      toDate.setHours(23, 59, 59, 999)
-      dateFilter.lte = toDate
+      if (DATE_ONLY.test(to)) {
+        dateFilter.lt = romeDayRange(to).end
+      } else {
+        dateFilter.lte = new Date(to)
+      }
     }
 
     const [punches, total] = await Promise.all([

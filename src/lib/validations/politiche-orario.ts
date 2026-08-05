@@ -34,7 +34,6 @@ export const politicaOrarioSchema = z
     dayEndMinutes: minuteOfDay,
     lunchStartMinutes: minuteOfDay.nullable().default(null),
     lunchEndMinutes: minuteOfDay.nullable().default(null),
-    lunchWindowMinutes: z.number().int().min(0).max(240).default(0),
     flexMinutes: z.number().int().min(0).max(240).default(0),
     roundingMinutes: z.number().int().min(1).max(120).default(1),
     roundingToleranceMinutes: z.number().int().min(0).max(120).default(0),
@@ -74,6 +73,11 @@ export const politicaOrarioSchema = z
   .refine((p) => p.roundingToleranceMinutes < p.roundingMinutes || p.roundingMinutes === 1, {
     message: "La tolleranza deve essere minore dell'intervallo di arrotondamento",
     path: ['roundingToleranceMinutes'],
+  })
+  .refine((p) => p.dayEndMinutes !== p.dayStartMinutes, {
+    message:
+      'Inizio e fine giornata non possono coincidere: una giornata di 24 ore non è una finestra',
+    path: ['dayEndMinutes'],
   })
 
 export type PoliticaOrarioInput = z.infer<typeof politicaOrarioSchema>

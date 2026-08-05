@@ -73,6 +73,22 @@ export async function POST(request: NextRequest) {
     const dati = luogoLavoroSchema.parse(body)
     const venueId = await getVenueId()
 
+    // La regola oraria collegata deve esistere ed essere della stessa sede:
+    // un id qualsiasi cambierebbe il calcolo delle ore di chi timbra qui.
+    if (dati.timekeepingPolicyId) {
+      const regola = await prisma.timekeepingPolicy.findFirst({
+        where: { id: dati.timekeepingPolicyId, ...(venueId && { venueId }) },
+        select: { id: true },
+      })
+
+      if (!regola) {
+        return NextResponse.json(
+          { error: 'Regola orario non trovata' },
+          { status: 400 }
+        )
+      }
+    }
+
     const luogo = await prisma.workLocation.create({
       data: { ...dati, venueId },
       select: luogoSelect,

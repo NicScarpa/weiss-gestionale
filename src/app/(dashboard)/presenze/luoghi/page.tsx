@@ -26,8 +26,28 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { ChevronLeft, Plus, Pencil, Trash2, MapPin, UserPlus, X } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
+  ChevronLeft,
+  Plus,
+  Pencil,
+  Trash2,
+  MapPin,
+  UserPlus,
+  X,
+  AlertTriangle,
+} from 'lucide-react'
 import { toast } from 'sonner'
+import { messaggioErroreApi } from '@/lib/utils/api-error'
 
 interface Assegnazione {
   id: string
@@ -72,12 +92,13 @@ export default function LuoghiLavoroPage() {
   const queryClient = useQueryClient()
   const [inModifica, setInModifica] = useState<BozzaLuogo | null>(null)
   const [assegnaA, setAssegnaA] = useState<Luogo | null>(null)
+  const [daEliminare, setDaEliminare] = useState<Luogo | null>(null)
   const [nuovaAssegnazione, setNuovaAssegnazione] = useState({
     userId: '',
     trackingMode: 'GPS_GEOFENCE' as Assegnazione['trackingMode'],
   })
 
-  const { data: luoghi, isLoading } = useQuery<Luogo[]>({
+  const { data: luoghi, isLoading, isError } = useQuery<Luogo[]>({
     queryKey: ['luoghi-lavoro'],
     queryFn: async () => {
       const response = await fetch('/api/luoghi-lavoro')
@@ -128,13 +149,18 @@ export default function LuoghiLavoroPage() {
         }
       )
       const dati = await response.json()
-      if (!response.ok) throw new Error(dati.error || 'Errore nel salvataggio')
+      if (!response.ok) {
+        throw new Error(messaggioErroreApi(dati, 'Errore nel salvataggio'))
+      }
 
       return dati.data
     },
     onSuccess: () => {
       toast.success('Luogo salvato')
       queryClient.invalidateQueries({ queryKey: ['luoghi-lavoro'] })
+      // Il conteggio sulla card della regola comprende i luoghi: cambiare la
+      // regola di un luogo lo sposta da una regola all'altra.
+      queryClient.invalidateQueries({ queryKey: ['politiche-orario'] })
       setInModifica(null)
     },
     onError: (errore: Error) => toast.error(errore.message),
@@ -144,15 +170,22 @@ export default function LuoghiLavoroPage() {
     mutationFn: async (id: string) => {
       const response = await fetch(`/api/luoghi-lavoro/${id}`, { method: 'DELETE' })
       const dati = await response.json()
-      if (!response.ok) throw new Error(dati.error || "Errore nell'eliminazione")
+      if (!response.ok) {
+        throw new Error(messaggioErroreApi(dati, "Errore nell'eliminazione"))
+      }
 
       return dati
     },
     onSuccess: (dati) => {
       toast.success(dati.message ?? 'Luogo eliminato')
       queryClient.invalidateQueries({ queryKey: ['luoghi-lavoro'] })
+      queryClient.invalidateQueries({ queryKey: ['politiche-orario'] })
+      setDaEliminare(null)
     },
-    onError: (errore: Error) => toast.error(errore.message),
+    onError: (errore: Error) => {
+      toast.error(errore.message)
+      setDaEliminare(null)
+    },
   })
 
   const assegna = useMutation({
@@ -163,7 +196,9 @@ export default function LuoghiLavoroPage() {
         body: JSON.stringify(corpo),
       })
       const dati = await response.json()
-      if (!response.ok) throw new Error(dati.error || "Errore nell'assegnazione")
+      if (!response.ok) {
+        throw new Error(messaggioErroreApi(dati, "Errore nell'assegnazione"))
+      }
 
       return dati.data
     },
@@ -183,7 +218,9 @@ export default function LuoghiLavoroPage() {
         { method: 'DELETE' }
       )
       const dati = await response.json()
-      if (!response.ok) throw new Error(dati.error || 'Errore nella revoca')
+      if (!response.ok) {
+        throw new Error(messaggioErroreApi(dati, 'Errore nella revoca'))
+      }
 
       return dati
     },
@@ -222,6 +259,28 @@ export default function LuoghiLavoroPage() {
           <Skeleton className="h-28 w-full" />
           <Skeleton className="h-28 w-full" />
         </div>
+      ) : isError ? (
+        // "Nessun luogo configurato" davanti a un errore di rete farebbe
+        // ricreare luoghi che esistono già, con le loro abilitazioni.
+        <Card>
+          <CardContent className="py-12 text-center space-y-3">
+            <AlertTriangle className="h-10 w-10 mx-auto text-destructive" />
+            <div>
+              <p className="font-medium">Non è stato possibile caricare i luoghi</p>
+              <p className="text-sm text-muted-foreground">
+                Riprova fra poco: i luoghi configurati restano attivi.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() =>
+                queryClient.invalidateQueries({ queryKey: ['luoghi-lavoro'] })
+              }
+            >
+              Riprova
+            </Button>
+          </CardContent>
+        </Card>
       ) : !luoghi || luoghi.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center space-y-3">
@@ -284,7 +343,7 @@ export default function LuoghiLavoroPage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => elimina.mutate(luogo.id)}
+                      onClick={() => setDaEliminare(luogo)}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -564,6 +623,38 @@ export default function LuoghiLavoroPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Conferma di eliminazione */}
+      <AlertDialog
+        open={daEliminare !== null}
+        onOpenChange={(aperto) => !aperto && setDaEliminare(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminare il luogo?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se su {daEliminare?.name} sono già state registrate timbrature, il
+              luogo viene disattivato: sparisce dalle scelte future ma le
+              timbrature conservano il posto in cui sono avvenute. Se invece non
+              ne ha nessuna, viene eliminato
+              {daEliminare && daEliminare.assignments.length > 0
+                ? ` insieme alle abilitazioni di ${daEliminare.assignments.length} ${
+                    daEliminare.assignments.length === 1 ? 'dipendente' : 'dipendenti'
+                  }`
+                : ' con le sue abilitazioni'}
+              .
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => daEliminare && elimina.mutate(daEliminare.id)}
+            >
+              Elimina
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

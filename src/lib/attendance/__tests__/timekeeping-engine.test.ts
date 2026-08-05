@@ -348,6 +348,183 @@ describe('computeRecognizedDay', () => {
     expect(giorno.nightMinutes).toBe(at(6))
   })
 
+  it('non paga il buco fra i due turni di un turno spezzato', () => {
+    // 07:00-13:00 e 17:00-22:00: undici ore, non quindici. È il caso
+    // quotidiano del bar, e il buco del pomeriggio non è lavoro.
+    const giorno = computeRecognizedDay(
+      [inAt(at(7)), outAt(at(13)), inAt(at(17)), outAt(at(22))],
+      makePolicy({ dayStartMinutes: at(6), dayEndMinutes: at(23), lunch: null }),
+      makeContext()
+    )
+
+    expect(giorno.workedMinutes).toBe(at(11))
+    expect(giorno.ordinaryMinutes).toBe(at(8))
+    expect(giorno.overtimeMinutes).toBe(at(3))
+  })
+
+  it('un secondo turno rimasto aperto non annulla il primo', () => {
+    const giorno = computeRecognizedDay(
+      [inAt(at(7)), outAt(at(13)), inAt(at(17))],
+      makePolicy({ dayStartMinutes: at(6), dayEndMinutes: at(23), lunch: null }),
+      makeContext()
+    )
+
+    expect(giorno.workedMinutes).toBe(at(6))
+    expect(giorno.warnings).toContain('USCITA_MANCANTE')
+  })
+
+  it("una doppia uscita estende il turno invece di restare orfana", () => {
+    const giorno = computeRecognizedDay(
+      [inAt(at(17)), outAt(at(22)), outAt(at(22, 5))],
+      makePolicy({ dayStartMinutes: at(6), dayEndMinutes: at(23), lunch: null }),
+      makeContext()
+    )
+
+    expect(giorno.clockOut).toBe(at(22, 5))
+    expect(giorno.workedMinutes).toBe(at(5) + 5)
+  })
+
+  it("arrotonda l'entrata di ciascun turno, non solo la prima", () => {
+    // 9:06 -> 9:30 e 17:06 -> 17:30 con intervallo 30 e tolleranza 5
+    const giorno = computeRecognizedDay(
+      [inAt(at(9, 6)), outAt(at(13)), inAt(at(17, 6)), outAt(at(22))],
+      makePolicy({
+        dayStartMinutes: at(6),
+        dayEndMinutes: at(23),
+        lunch: null,
+        entryRounding: { intervalMinutes: 30, toleranceMinutes: 5 },
+      }),
+      makeContext()
+    )
+
+    expect(giorno.workedMinutes).toBe(210 + 270)
+  })
+
+  it('nel feriale lo straordinario prevale sulle notturne, e la somma torna', () => {
+    // 22:00 -> 06:00, contratto 400 min: ogni minuto in una sola categoria
+    const giorno = computeRecognizedDay(
+      [inAt(at(22)), outAt(at(30))],
+      makePolicy({
+        dayStartMinutes: null,
+        dayEndMinutes: null,
+        lunch: null,
+        contractDailyMinutes: 400,
+      }),
+      makeContext()
+    )
+
+    expect(giorno.workedMinutes).toBe(480)
+    expect(giorno.overtimeMinutes).toBe(80)
+    expect(giorno.nightMinutes).toBe(400)
+    expect(giorno.ordinaryMinutes).toBe(0)
+    expect(
+      giorno.ordinaryMinutes +
+        giorno.overtimeMinutes +
+        giorno.nightMinutes +
+        giorno.holidayMinutes
+    ).toBe(480)
+  })
+
+  it('il sabato da straordinario non paga il turno notturno due volte', () => {
+    const giorno = computeRecognizedDay(
+      [inAt(at(22)), outAt(at(30))],
+      makePolicy({
+        dayStartMinutes: null,
+        dayEndMinutes: null,
+        lunch: null,
+        contractDailyMinutes: 400,
+        saturdayAsOvertime: true,
+      }),
+      makeContext({ weekday: 6 })
+    )
+
+    expect(giorno.overtimeMinutes).toBe(480)
+    expect(giorno.nightMinutes).toBe(0)
+    expect(
+      giorno.ordinaryMinutes +
+        giorno.overtimeMinutes +
+        giorno.nightMinutes +
+        giorno.holidayMinutes
+    ).toBe(480)
+  })
+
+  it('nel festivo le ore notturne sono festive una volta sola', () => {
+    const giorno = computeRecognizedDay(
+      [inAt(at(22)), outAt(at(30))],
+      makePolicy({
+        dayStartMinutes: null,
+        dayEndMinutes: null,
+        lunch: null,
+        contractDailyMinutes: 400,
+      }),
+      makeContext({ isHoliday: true })
+    )
+
+    expect(giorno.holidayMinutes).toBe(480)
+    expect(giorno.nightMinutes).toBe(0)
+    expect(
+      giorno.ordinaryMinutes +
+        giorno.overtimeMinutes +
+        giorno.nightMinutes +
+        giorno.holidayMinutes
+    ).toBe(480)
+  })
+
+  it('una pausa caffè timbrata non vale come pausa pranzo', () => {
+    const giorno = computeRecognizedDay(
+      [
+        inAt(at(9)),
+        punch('BREAK_START', at(10)),
+        punch('BREAK_END', at(10, 15)),
+        outAt(at(18)),
+      ],
+      makePolicy(),
+      makeContext()
+    )
+
+    expect(giorno.breakMinutes).toBe(75)
+    expect(giorno.workedMinutes).toBe(465)
+    expect(giorno.warnings).toContain('PAUSA_PRANZO_NON_TIMBRATA')
+  })
+
+  it('la pausa timbrata dentro una pausa della regola non si deduce due volte', () => {
+    const giorno = computeRecognizedDay(
+      [
+        inAt(at(9)),
+        punch('BREAK_START', at(16)),
+        punch('BREAK_END', at(16, 15)),
+        outAt(at(18)),
+      ],
+      makePolicy({
+        lunch: null,
+        extraBreaks: [{ name: 'Merenda', startMinutes: at(16), endMinutes: at(16, 15) }],
+      }),
+      makeContext()
+    )
+
+    expect(giorno.breakMinutes).toBe(15)
+    expect(giorno.workedMinutes).toBe(at(8) + 45)
+  })
+
+  it('deduce la pausa della regola che cade dopo la mezzanotte', () => {
+    // Giornata 18:00-03:00 con pausa cena 00:30-01:00: la finestra della pausa
+    // è scritta come orario del mattino, ma cade dentro il turno notturno.
+    const giorno = computeRecognizedDay(
+      [inAt(at(18)), outAt(at(27))],
+      makePolicy({
+        dayStartMinutes: at(18),
+        dayEndMinutes: at(3),
+        lunch: null,
+        contractDailyMinutes: null,
+        extraBreaks: [{ name: 'Cena', startMinutes: at(0, 30), endMinutes: at(1) }],
+      }),
+      makeContext()
+    )
+
+    expect(giorno.breakMinutes).toBe(30)
+    expect(giorno.workedMinutes).toBe(at(8) + 30)
+  })
+
   it('lascia una traccia leggibile dei passaggi, per il calcolatore di prova', () => {
     const giorno = computeRecognizedDay(
       [inAt(at(8)), outAt(at(18, 20))],

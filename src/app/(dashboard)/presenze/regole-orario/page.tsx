@@ -17,8 +17,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { ChevronLeft, Plus, Pencil, Trash2, Clock } from 'lucide-react'
+import { ChevronLeft, Plus, Pencil, Trash2, Clock, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
+import { messaggioErroreApi } from '@/lib/utils/api-error'
 import {
   TimekeepingPolicyForm,
   politicaVuota,
@@ -28,7 +29,28 @@ import {
 
 interface PoliticaSalvata extends PoliticaOrario {
   id: string
-  _count: { users: number }
+  // Il conteggio combacia con la guardia dell'eliminazione, che conta
+  // dipendenti e luoghi insieme.
+  _count: { users: number; workLocations: number }
+}
+
+/**
+ * " · 2 dipendenti · 1 luogo": chi usa la regola, omettendo la metà che è a
+ * zero. Comprende i luoghi perché è il numero su cui l'eliminazione si blocca.
+ */
+function descriviAssegnazioni(conteggio: PoliticaSalvata['_count']): string {
+  const parti: string[] = []
+
+  if (conteggio.users > 0) {
+    parti.push(`${conteggio.users} ${conteggio.users === 1 ? 'dipendente' : 'dipendenti'}`)
+  }
+  if (conteggio.workLocations > 0) {
+    parti.push(
+      `${conteggio.workLocations} ${conteggio.workLocations === 1 ? 'luogo' : 'luoghi'}`
+    )
+  }
+
+  return parti.length > 0 ? ` · ${parti.join(' · ')}` : ''
 }
 
 export default function RegoleOrarioPage() {
@@ -36,7 +58,7 @@ export default function RegoleOrarioPage() {
   const [inModifica, setInModifica] = useState<PoliticaOrario | null>(null)
   const [daEliminare, setDaEliminare] = useState<PoliticaSalvata | null>(null)
 
-  const { data: politiche, isLoading } = useQuery<PoliticaSalvata[]>({
+  const { data: politiche, isLoading, isError } = useQuery<PoliticaSalvata[]>({
     queryKey: ['politiche-orario'],
     queryFn: async () => {
       const response = await fetch('/api/politiche-orario')
@@ -59,13 +81,18 @@ export default function RegoleOrarioPage() {
         }
       )
       const dati = await response.json()
-      if (!response.ok) throw new Error(dati.error || 'Errore nel salvataggio')
+      if (!response.ok) {
+        throw new Error(messaggioErroreApi(dati, 'Errore nel salvataggio'))
+      }
 
       return dati.data
     },
     onSuccess: () => {
       toast.success('Regola salvata')
       queryClient.invalidateQueries({ queryKey: ['politiche-orario'] })
+      // La card di ogni luogo mostra il nome della sua regola: senza questa
+      // invalidazione resta quello di prima della modifica.
+      queryClient.invalidateQueries({ queryKey: ['luoghi-lavoro'] })
       setInModifica(null)
     },
     onError: (errore: Error) => toast.error(errore.message),
@@ -75,13 +102,16 @@ export default function RegoleOrarioPage() {
     mutationFn: async (id: string) => {
       const response = await fetch(`/api/politiche-orario/${id}`, { method: 'DELETE' })
       const dati = await response.json()
-      if (!response.ok) throw new Error(dati.error || "Errore nell'eliminazione")
+      if (!response.ok) {
+        throw new Error(messaggioErroreApi(dati, "Errore nell'eliminazione"))
+      }
 
       return dati
     },
     onSuccess: () => {
       toast.success('Regola eliminata')
       queryClient.invalidateQueries({ queryKey: ['politiche-orario'] })
+      queryClient.invalidateQueries({ queryKey: ['luoghi-lavoro'] })
       setDaEliminare(null)
     },
     onError: (errore: Error) => {
@@ -147,6 +177,28 @@ export default function RegoleOrarioPage() {
           <Skeleton className="h-24 w-full" />
           <Skeleton className="h-24 w-full" />
         </div>
+      ) : isError ? (
+        // Un errore di caricamento non è "nessuna regola": invitare a creare la
+        // prima porterebbe a duplicare regole che esistono già.
+        <Card>
+          <CardContent className="py-12 text-center space-y-3">
+            <AlertTriangle className="h-10 w-10 mx-auto text-destructive" />
+            <div>
+              <p className="font-medium">Non è stato possibile caricare le regole</p>
+              <p className="text-sm text-muted-foreground">
+                Riprova fra poco: le regole esistenti restano in vigore.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() =>
+                queryClient.invalidateQueries({ queryKey: ['politiche-orario'] })
+              }
+            >
+              Riprova
+            </Button>
+          </CardContent>
+        </Card>
       ) : !politiche || politiche.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center space-y-3">
@@ -182,10 +234,7 @@ export default function RegoleOrarioPage() {
                       ` · arrotondamento ${politica.roundingMinutes} min`}
                     {politica.flexMinutes > 0 &&
                       ` · flessibilità ${politica.flexMinutes} min`}
-                    {politica._count.users > 0 &&
-                      ` · ${politica._count.users} ${
-                        politica._count.users === 1 ? 'dipendente' : 'dipendenti'
-                      }`}
+                    {descriviAssegnazioni(politica._count)}
                   </p>
                 </div>
 

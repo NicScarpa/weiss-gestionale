@@ -48,6 +48,19 @@ export function romeDateKey(instant: Date): string {
   return toRomeParts(instant).dateKey
 }
 
+/**
+ * L'orario italiano di un istante, in formato 'HH:mm'. Per le colonne
+ * leggibili di export e risposta API: `format(date, 'HH:mm')` userebbe il
+ * fuso della macchina, e in produzione sposterebbe ogni orario di 1-2 ore.
+ */
+export function romeTimeString(instant: Date): string {
+  const { minutesFromMidnight } = toRomeParts(instant)
+  const h = Math.floor(minutesFromMidnight / 60)
+  const m = minutesFromMidnight % 60
+
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
 /** L'istante assoluto in cui inizia il giorno italiano indicato. */
 export function romeDayStart(dateKey: string): Date {
   const [year, month, day] = dateKey.split('-').map(Number)

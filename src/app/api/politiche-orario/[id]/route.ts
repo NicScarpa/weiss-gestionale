@@ -22,36 +22,9 @@ async function guard() {
   return { session }
 }
 
-// GET /api/politiche-orario/[id]
-export async function GET(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { error } = await guard()
-    if (error) return error
-
-    const { id } = await params
-    const venueId = await getVenueId()
-
-    const politica = await prisma.timekeepingPolicy.findFirst({
-      where: { id, venueId },
-      select: politicaSelect,
-    })
-
-    if (!politica) {
-      return NextResponse.json({ error: 'Regola non trovata' }, { status: 404 })
-    }
-
-    return NextResponse.json({ data: politica })
-  } catch (err) {
-    logger.error('Errore GET /api/politiche-orario/[id]', err)
-    return NextResponse.json(
-      { error: 'Errore nel recupero della regola orario' },
-      { status: 500 }
-    )
-  }
-}
+// La lettura della singola regola non esiste: la lista di
+// GET /api/politiche-orario porta già tutti i campi, e il form di modifica
+// parte da quelli. Una route senza consumatore invecchierebbe in silenzio.
 
 // PUT /api/politiche-orario/[id]
 export async function PUT(

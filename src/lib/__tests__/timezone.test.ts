@@ -6,6 +6,7 @@ import {
   romeMonthRange,
   toDateOnlyUtc,
   romeDateKey,
+  romeTimeString,
   nextDateKey,
   romeInstant,
   timeColumnToMinutes,
@@ -127,6 +128,20 @@ describe('romeDateKey', () => {
     // Le 23:30 UTC del 4 agosto sono già l'1:30 del 5 agosto a Roma:
     // la timbratura appartiene al giorno 5.
     expect(romeDateKey(new Date('2026-08-04T23:30:00Z'))).toBe('2026-08-05')
+  })
+})
+
+describe('romeTimeString', () => {
+  it("d'estate le 19:00 UTC sono le 21:00 italiane", () => {
+    expect(romeTimeString(new Date('2026-08-20T19:00:00Z'))).toBe('21:00')
+  })
+
+  it("d'inverno le 20:00 UTC sono le 21:00 italiane", () => {
+    expect(romeTimeString(new Date('2026-01-15T20:00:00Z'))).toBe('21:00')
+  })
+
+  it('aggiunge lo zero iniziale ai minuti', () => {
+    expect(romeTimeString(new Date('2026-08-20T19:05:00Z'))).toBe('21:05')
   })
 })
 

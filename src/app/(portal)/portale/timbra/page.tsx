@@ -20,6 +20,7 @@ import {
 } from '@/components/portal/PunchButton'
 import { TodayPunches } from '@/components/portal/TodayPunches'
 import { VenueLocation } from '@/lib/geolocation'
+import type { AssignedLocation } from '@/lib/attendance/work-location'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 import { Calendar, Clock, MapPin } from 'lucide-react'
@@ -57,6 +58,13 @@ interface CurrentStatusResponse {
       } | null
     }
   } | null
+  /**
+   * Luoghi di lavoro su cui il dipendente è abilitato. Il server misura la
+   * distanza da qui, non dalle coordinate della sede: il portale deve usare lo
+   * stesso riferimento per non mostrare un semaforo verde su una timbratura
+   * che nascerà fuori sede.
+   */
+  workLocations: AssignedLocation[]
   hoursWorkedToday: number
   punchCount: number
 }
@@ -86,6 +94,7 @@ export default function TimbraPage() {
     })
 
   const todayAssignment = statusData?.todayAssignment ?? null
+  const luoghiAssegnati = statusData?.workLocations ?? []
   const needsVenueChoice = !isLoadingStatus && !todayAssignment
 
   // Senza turno pubblicato il dipendente sceglie la sede: chi viene chiamato
@@ -154,8 +163,10 @@ export default function TimbraPage() {
         }
       : null
 
-  // Il controllo distanza è possibile solo se la sede ha le coordinate
+  // Il controllo distanza sulla sede vale solo per chi non ha luoghi di lavoro
+  // assegnati, e solo se la sede ha le coordinate.
   const venue: VenueLocation | null =
+    luoghiAssegnati.length === 0 &&
     punchVenue &&
     punchVenue.latitude !== null &&
     punchVenue.latitude !== undefined &&
@@ -201,7 +212,7 @@ export default function TimbraPage() {
       </div>
 
       {/* Location status */}
-      <LocationStatus venue={venue} />
+      <LocationStatus venue={venue} workLocations={luoghiAssegnati} />
 
       {/* Turno di oggi (se presente) */}
       {todayAssignment && (
@@ -307,7 +318,11 @@ export default function TimbraPage() {
       />
 
       {/* Pulsante principale timbratura */}
-      <PunchButton status={status} venue={punchVenue} />
+      <PunchButton
+        status={status}
+        venue={punchVenue}
+        workLocations={luoghiAssegnati}
+      />
 
       {/* Pulsante pausa (solo se in servizio) */}
       {status === 'CLOCKED_IN' && (

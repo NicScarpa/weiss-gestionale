@@ -7,7 +7,6 @@
 
 import { prisma } from '@/lib/prisma'
 import { Prisma, PunchType, LeaveStatus } from '@prisma/client'
-import { format, eachDayOfInterval } from 'date-fns'
 import { computeRecognizedDay } from './timekeeping-engine'
 import type { DayPunch, PolicyRules } from './timekeeping-types'
 import {
@@ -16,7 +15,14 @@ import {
   resolvePolicyRules,
 } from './policy-resolver'
 import { dstShiftBetween, groupPunchesByWorkday, toWorkdayMinutes } from './workday'
-import { romeDayStart, romeMonthRange, toRomeParts } from '@/lib/timezone'
+import {
+  nextDateKey,
+  romeDayStart,
+  romeInstant,
+  romeMonthRange,
+  toDateOnlyUtc,
+  toRomeParts,
+} from '@/lib/timezone'
 
 // Festività italiane fisse
 const ITALIAN_HOLIDAYS = [
@@ -32,8 +38,10 @@ const ITALIAN_HOLIDAYS = [
   '12-26', // Santo Stefano
 ]
 
-// Pasqua e Lunedì dell'Angelo (calcolati per anno)
-function getEasterDates(year: number): string[] {
+// Pasqua e Lunedì dell'Angelo, come 'MM-dd'. Il calcolo passa da Date.UTC e
+// non dal fuso della macchina: su un server a ovest di Greenwich il giorno
+// non deve spostarsi.
+function getEasterMonthDays(year: number): string[] {
   // Algoritmo di Gauss per calcolo Pasqua
   const a = year % 19
   const b = Math.floor(year / 100)
@@ -50,28 +58,23 @@ function getEasterDates(year: number): string[] {
   const month = Math.floor((h + l - 7 * m + 114) / 31)
   const day = ((h + l - 7 * m + 114) % 31) + 1
 
-  const easter = new Date(year, month - 1, day)
-  const easterMonday = new Date(easter)
-  easterMonday.setDate(easter.getDate() + 1)
+  const easter = new Date(Date.UTC(year, month - 1, day))
+  const easterMonday = new Date(easter.getTime() + 24 * 60 * 60 * 1000)
 
   return [
-    format(easter, 'MM-dd'),
-    format(easterMonday, 'MM-dd'),
+    easter.toISOString().slice(5, 10),
+    easterMonday.toISOString().slice(5, 10),
   ]
 }
 
-function isItalianHoliday(date: Date): boolean {
-  const monthDay = format(date, 'MM-dd')
-  const year = date.getFullYear()
+function isItalianHoliday(dateKey: string): boolean {
+  const monthDay = dateKey.slice(5)
 
-  // Controlla festività fisse
   if (ITALIAN_HOLIDAYS.includes(monthDay)) {
     return true
   }
 
-  // Controlla Pasqua e Pasquetta
-  const easterDates = getEasterDates(year)
-  return easterDates.includes(monthDay)
+  return getEasterMonthDays(Number(dateKey.slice(0, 4))).includes(monthDay)
 }
 
 export interface DailyHours {
@@ -100,6 +103,10 @@ export interface PayrollRecord {
   hourlyRateExtra: number | null
   hourlyRateHoliday: number | null
   hourlyRateNight: number | null
+  /** Luogo della giornata (quello della prima timbratura), per il cartellino. */
+  workLocationName: string | null
+  /** Regola oraria applicata: senza questo nome i numeri sono inspiegabili. */
+  policyName: string | null
 }
 
 export interface PayrollSummary {
@@ -133,9 +140,12 @@ interface AttendanceRecordData {
 function calculateHoursFromPunches(
   records: AttendanceRecordData[],
   workdayKey: string,
-  date: Date,
   rules: PolicyRules
-): DailyHours {
+): {
+  hours: DailyHours
+  clockInMinutes: number | null
+  clockOutMinutes: number | null
+} {
   const punches: DayPunch[] = records.map((record) => ({
     type: record.punchType as DayPunch['type'],
     minutes: toWorkdayMinutes(record.punchedAt, workdayKey),
@@ -151,17 +161,21 @@ function calculateHoursFromPunches(
 
   const day = computeRecognizedDay(punches, rules, {
     weekday: toRomeParts(romeDayStart(workdayKey)).weekday,
-    isHoliday: isItalianHoliday(date),
+    isHoliday: isItalianHoliday(workdayKey),
     dstShiftMinutes,
   })
 
   return {
-    ordinary: day.ordinaryMinutes / 60,
-    overtime: day.overtimeMinutes / 60,
-    night: day.nightMinutes / 60,
-    holiday: day.holidayMinutes / 60,
-    total: day.workedMinutes / 60,
-    breakMinutes: day.breakMinutes,
+    hours: {
+      ordinary: day.ordinaryMinutes / 60,
+      overtime: day.overtimeMinutes / 60,
+      night: day.nightMinutes / 60,
+      holiday: day.holidayMinutes / 60,
+      total: day.workedMinutes / 60,
+      breakMinutes: day.breakMinutes,
+    },
+    clockInMinutes: day.clockIn,
+    clockOutMinutes: day.clockOut,
   }
 }
 
@@ -171,7 +185,8 @@ function calculateHoursFromPunches(
 export async function generatePayrollData(
   month: number,
   year: number,
-  venueId?: string
+  venueId?: string,
+  options?: { userIds?: string[] }
 ): Promise<{
   records: PayrollRecord[]
   summaries: PayrollSummary[]
@@ -183,9 +198,16 @@ export async function generatePayrollData(
   // gli istanti delimitano le timbrature (colonna timestamp), le date pure
   // delimitano assenze e anomalie (colonne @db.Date) e scandiscono i giorni.
   const period = romeMonthRange(year, month)
-  const firstDay = new Date(Date.UTC(year, month - 1, 1))
-  const lastDay = new Date(Date.UTC(year, month, 0))
-  const days = eachDayOfInterval({ start: firstDay, end: lastDay })
+
+  const monthPrefix = `${year}-${String(month).padStart(2, '0')}`
+  const dateKeys: string[] = []
+  for (let key = `${monthPrefix}-01`; key.startsWith(monthPrefix); key = nextDateKey(key)) {
+    dateKeys.push(key)
+  }
+  const firstKey = dateKeys[0]
+  const lastKey = dateKeys[dateKeys.length - 1]
+  const firstDay = toDateOnlyUtc(firstKey)
+  const lastDay = toDateOnlyUtc(lastKey)
 
   // Carica dipendenti attivi
   const usersWhere: Prisma.UserWhereInput = {
@@ -195,11 +217,26 @@ export async function generatePayrollData(
   if (venueId) {
     usersWhere.venueId = venueId
   }
+  if (options?.userIds?.length) {
+    usersWhere.id = { in: options.userIds }
+  }
 
   // Le regole si caricano una volta sola per tutto l'organico: interrogare il
   // database per ogni dipendente moltiplicherebbe le query per il numero di
   // persone.
   const policyContext = venueId ? await loadPolicyResolutionContext(venueId) : null
+
+  // Nomi dei luoghi di lavoro, per mostrare nel cartellino dove si è timbrato.
+  const workLocationNames = new Map<string, string>()
+  if (venueId) {
+    const luoghi = await prisma.workLocation.findMany({
+      where: { venueId },
+      select: { id: true, name: true },
+    })
+    for (const luogo of luoghi) {
+      workLocationNames.set(luogo.id, luogo.name)
+    }
+  }
 
   const users = await prisma.user.findMany({
     where: usersWhere,
@@ -217,12 +254,16 @@ export async function generatePayrollData(
     orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
   })
 
-  // Carica tutte le timbrature del periodo
+  // Carica le timbrature del periodo, più un margine oltre gli estremi: il
+  // turno del 31 sera ha l'uscita nel mese dopo, e quello del mese prima ha
+  // l'uscita il giorno 1. È il raggruppamento per giornata lavorativa a
+  // decidere poi a quale mese appartiene ciascun turno.
+  const QUERY_MARGIN_MS = 24 * 60 * 60 * 1000
   const attendanceRecords = await prisma.attendanceRecord.findMany({
     where: {
       punchedAt: {
-        gte: period.start,
-        lt: period.end,
+        gte: new Date(period.start.getTime() - QUERY_MARGIN_MS),
+        lt: new Date(period.end.getTime() + QUERY_MARGIN_MS),
       },
       ...(venueId && { venueId }),
     },
@@ -289,25 +330,28 @@ export async function generatePayrollData(
     })
   })
 
-  // Organizza assenze per utente e giorno
+  // Organizza assenze per utente e giorno. Le colonne @db.Date arrivano da
+  // Prisma come mezzanotti UTC: la chiave del giorno è la loro data ISO, senza
+  // passare dal fuso della macchina.
   const leavesByUserDay = new Map<string, string>()
   leaveRequests.forEach((leave) => {
-    const leaveStart = new Date(leave.startDate)
-    const leaveEnd = new Date(leave.endDate)
-    const leaveDays = eachDayOfInterval({
-      start: leaveStart > firstDay ? leaveStart : firstDay,
-      end: leaveEnd < lastDay ? leaveEnd : lastDay,
-    })
-    leaveDays.forEach((day) => {
-      const key = `${leave.userId}_${format(day, 'yyyy-MM-dd')}`
-      leavesByUserDay.set(key, leave.leaveType.code)
-    })
+    const startKey = leave.startDate.toISOString().slice(0, 10)
+    const endKey = leave.endDate.toISOString().slice(0, 10)
+    const stop = endKey < lastKey ? endKey : lastKey
+
+    for (
+      let key = startKey > firstKey ? startKey : firstKey;
+      key <= stop;
+      key = nextDateKey(key)
+    ) {
+      leavesByUserDay.set(`${leave.userId}_${key}`, leave.leaveType.code)
+    }
   })
 
   // Organizza anomalie per utente e giorno
   const anomaliesByUserDay = new Map<string, string[]>()
   unresolvedAnomalies.forEach((anomaly) => {
-    const dateKey = format(new Date(anomaly.date), 'yyyy-MM-dd')
+    const dateKey = anomaly.date.toISOString().slice(0, 10)
     const key = `${anomaly.userId}_${dateKey}`
     if (!anomaliesByUserDay.has(key)) {
       anomaliesByUserDay.set(key, [])
@@ -348,12 +392,11 @@ export async function generatePayrollData(
     const regolePerGiornata = (workLocationId: string | null) =>
       policyContext
         ? resolvePolicyRules(policyContext, user.id, workLocationId, contractWeeklyHours)
-            .rules
-        : neutralPolicy(contractWeeklyHours)
+        : { rules: neutralPolicy(contractWeeklyHours), policyName: null }
 
     // Processa ogni giorno
-    days.forEach((day) => {
-      const dateKey = format(day, 'yyyy-MM-dd')
+    dateKeys.forEach((dateKey) => {
+      const day = toDateOnlyUtc(dateKey)
       const key = `${user.id}_${dateKey}`
 
       const punches = punchesByUserDay.get(key) || []
@@ -365,12 +408,19 @@ export async function generatePayrollData(
       if (dayAnomalies.length > 0) {
         notes.push(`Anomalie: ${dayAnomalies.join(', ')}`)
         warnings.push(
-          `${user.lastName} ${user.firstName}: anomalie non risolte il ${format(day, 'dd/MM/yyyy')}`
+          `${user.lastName} ${user.firstName}: anomalie non risolte il ` +
+            dateKey.split('-').reverse().join('/')
         )
       }
 
       // Calcola ore
       let hours: DailyHours
+      let riconosciuto: {
+        clockInMinutes: number | null
+        clockOutMinutes: number | null
+      } | null = null
+      let workLocationName: string | null = null
+      let policyName: string | null = null
       if (leaveCode) {
         // Giorno di assenza
         hours = {
@@ -393,13 +443,16 @@ export async function generatePayrollData(
         // iniziato.
         const workLocationId =
           punches.find((p) => p.workLocationId)?.workLocationId ?? null
+        workLocationName = workLocationId
+          ? (workLocationNames.get(workLocationId) ?? null)
+          : null
 
-        hours = calculateHoursFromPunches(
-          punches,
-          dateKey,
-          day,
-          regolePerGiornata(workLocationId)
-        )
+        const regole = regolePerGiornata(workLocationId)
+        policyName = regole.policyName
+
+        const risultato = calculateHoursFromPunches(punches, dateKey, regole.rules)
+        hours = risultato.hours
+        riconosciuto = risultato
 
         // Aggiorna summary
         const summary = summariesMap.get(user.id)!
@@ -420,11 +473,14 @@ export async function generatePayrollData(
         }
       }
 
-      // Trova prima entrata e ultima uscita per il record
+      // Entrata e uscita del record: quelle riconosciute dal motore, così le
+      // colonne dell'export tornano con le ore conteggiate accanto. Quando il
+      // motore non riconosce nulla (uscita mancante), resta la timbratura
+      // grezza: nasconderla renderebbe invisibile proprio il dato da correggere.
       const inPunches = punches.filter((p) => p.punchType === 'IN')
       const outPunches = punches.filter((p) => p.punchType === 'OUT')
 
-      const clockIn =
+      const rawClockIn =
         inPunches.length > 0
           ? new Date(
               Math.min(
@@ -433,7 +489,7 @@ export async function generatePayrollData(
             )
           : null
 
-      const clockOut =
+      const rawClockOut =
         outPunches.length > 0
           ? new Date(
               Math.max(
@@ -441,6 +497,16 @@ export async function generatePayrollData(
               )
             )
           : null
+
+      const clockIn =
+        riconosciuto?.clockInMinutes != null
+          ? romeInstant(dateKey, riconosciuto.clockInMinutes)
+          : rawClockIn
+
+      const clockOut =
+        riconosciuto?.clockOutMinutes != null
+          ? romeInstant(dateKey, riconosciuto.clockOutMinutes)
+          : rawClockOut
 
       records.push({
         userId: user.id,
@@ -469,6 +535,8 @@ export async function generatePayrollData(
         hourlyRateNight: user.hourlyRateNight
           ? Number(user.hourlyRateNight)
           : null,
+        workLocationName,
+        policyName,
       })
     })
 

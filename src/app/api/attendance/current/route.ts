@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
 import { logger } from '@/lib/logger'
+import { romeDateKey, romeDayRange, toDateOnlyUtc } from '@/lib/timezone'
 // GET /api/attendance/current - Stato timbratura attuale
 export async function GET(request: NextRequest) {
   try {
@@ -15,19 +16,17 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const venueId = searchParams.get('venueId')
 
-    // Data di oggi
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
+    // Giornata italiana di oggi: sul server, che gira in UTC, il confine
+    // cadrebbe altrimenti alle 02:00 e il turno serale sparirebbe a metà notte.
+    const oggi = romeDayRange(romeDateKey(new Date()))
 
     // Recupera tutte le timbrature di oggi per questo utente
     const todayPunches = await prisma.attendanceRecord.findMany({
       where: {
         userId: session.user.id,
         punchedAt: {
-          gte: today,
-          lt: tomorrow,
+          gte: oggi.start,
+          lt: oggi.end,
         },
         ...(venueId && { venueId }),
       },
@@ -81,14 +80,12 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Recupera il turno di oggi
+    // Recupera il turno di oggi: `date` è una colonna @db.Date, si confronta
+    // con la mezzanotte UTC del giorno italiano.
     const todayAssignment = await prisma.shiftAssignment.findFirst({
       where: {
         userId: session.user.id,
-        date: {
-          gte: today,
-          lt: tomorrow,
-        },
+        date: toDateOnlyUtc(romeDateKey(new Date())),
         schedule: {
           status: 'PUBLISHED',
         },
@@ -122,6 +119,47 @@ export async function GET(request: NextRequest) {
       },
     })
 
+    // Luoghi di lavoro su cui la persona è abilitata. Servono al portale: il
+    // semaforo della distanza deve misurare dallo stesso punto da cui misura la
+    // route di timbratura, altrimenti dice "nel raggio" mentre il server
+    // registra una timbratura fuori sede.
+    const assegnazioni = await prisma.workLocationAssignment.findMany({
+      where: {
+        userId: session.user.id,
+        endedAt: null,
+        workLocation: {
+          isActive: true,
+          ...(venueId && { venueId }),
+        },
+      },
+      select: {
+        trackingMode: true,
+        workLocation: {
+          select: {
+            id: true,
+            name: true,
+            latitude: true,
+            longitude: true,
+            geofenceRadiusMeters: true,
+          },
+        },
+      },
+      orderBy: { workLocation: { name: 'asc' } },
+    })
+
+    // I Decimal di Prisma finiscono in JSON come stringhe: si convertono qui,
+    // così il client riceve numeri già utilizzabili nel calcolo della distanza.
+    const workLocations = assegnazioni.map((a) => ({
+      id: a.workLocation.id,
+      name: a.workLocation.name,
+      latitude:
+        a.workLocation.latitude === null ? null : Number(a.workLocation.latitude),
+      longitude:
+        a.workLocation.longitude === null ? null : Number(a.workLocation.longitude),
+      geofenceRadiusMeters: a.workLocation.geofenceRadiusMeters,
+      trackingMode: a.trackingMode,
+    }))
+
     // Calcola ore lavorate finora
     let hoursWorkedToday = 0
     if (clockInTime) {
@@ -153,6 +191,7 @@ export async function GET(request: NextRequest) {
             venue: todayAssignment.venue,
           }
         : null,
+      workLocations,
       hoursWorkedToday,
       punchCount: todayPunches.length,
     })

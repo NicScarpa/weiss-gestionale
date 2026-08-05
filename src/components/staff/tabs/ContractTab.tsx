@@ -48,7 +48,9 @@ export function ContractTab({ employee, isAdmin, userId, userRole }: ContractTab
     timekeepingPolicyId: employee.timekeepingPolicyId ?? null,
   })
 
-  // Regole orario disponibili, per assegnarne una a questa persona.
+  // Regole orario disponibili, per assegnarne una a questa persona. La lettura
+  // è aperta anche al manager, come la route: altrimenti chi non è admin
+  // leggerebbe "Nessuna regola" anche dove una regola c'è.
   const { data: regoleOrario } = useQuery<
     { id: string; name: string; isDefault: boolean }[]
   >({
@@ -60,7 +62,7 @@ export function ContractTab({ employee, isAdmin, userId, userRole }: ContractTab
 
       return dati.data ?? []
     },
-    enabled: isAdmin,
+    enabled: isAdmin || userRole === 'manager',
   })
 
   const showDates = formData.contractType === 'TEMPO_DETERMINATO' ||
@@ -95,6 +97,9 @@ export function ContractTab({ employee, isAdmin, userId, userRole }: ContractTab
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['staff', employee.id] })
+      // Il conteggio dei dipendenti su ogni regola cambia quando si sposta
+      // questa persona da una regola all'altra.
+      queryClient.invalidateQueries({ queryKey: ['politiche-orario'] })
       toast.success('Dati contrattuali aggiornati')
     },
     onError: (error: Error) => {

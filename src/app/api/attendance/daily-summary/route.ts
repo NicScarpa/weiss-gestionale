@@ -36,16 +36,26 @@ export async function GET(request: NextRequest) {
 
     // Data default: oggi in Italia. Senza passare dal fuso, 'yyyy-MM-dd'
     // verrebbe letto come istante UTC e la giornata risulterebbe sfasata.
+    // Un parametro malformato produrrebbe una Invalid Date e un 500 opaco.
+    if (dateParam && !/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      return NextResponse.json(
+        { error: 'Data non valida: usare il formato AAAA-MM-GG' },
+        { status: 400 }
+      )
+    }
     const dateKey = dateParam ?? romeDateKey(new Date())
     const targetDate = toDateOnlyUtc(dateKey)
     const nextDay = toDateOnlyUtc(nextDateKey(dateKey))
     const romeDay = romeDayRange(dateKey)
 
-    // Filtra per sede
+    // Filtra per sede: solo l'admin può indicarne una diversa dalla propria.
+    // Per gli altri il parametro si ignora, non si asseconda.
     const venueFilter: Record<string, unknown> = {}
-    if (venueId) {
-      venueFilter.venueId = venueId
-    } else if (user.role.name !== 'admin' && user.venueId) {
+    if (user.role.name === 'admin') {
+      if (venueId) {
+        venueFilter.venueId = venueId
+      }
+    } else if (user.venueId) {
       venueFilter.venueId = user.venueId
     }
 

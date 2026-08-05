@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
@@ -43,9 +44,29 @@ export async function POST(
     const body = await request.json()
     const dati = assegnazioneLuogoSchema.parse(body)
 
+    // Il dipendente deve esistere, essere attivo e della stessa sede: un id
+    // qualsiasi finirebbe dritto nella foreign key con un 500 opaco.
+    const dipendente = await prisma.user.findFirst({
+      where: { id: dati.userId, isActive: true, ...(venueId && { venueId }) },
+      select: { id: true },
+    })
+
+    if (!dipendente) {
+      return NextResponse.json(
+        { error: 'Dipendente non trovato' },
+        { status: 400 }
+      )
+    }
+
     // Riassegnare qualcuno già abilitato non crea un doppione: aggiorna la
     // modalità e riapre l'assegnazione se era stata chiusa.
-    const assegnazione = await prisma.workLocationAssignment.upsert({
+    const selezione = {
+      id: true,
+      trackingMode: true,
+      user: { select: { id: true, firstName: true, lastName: true } },
+    } as const
+
+    const argomenti = {
       where: {
         userId_workLocationId: { userId: dati.userId, workLocationId: id },
       },
@@ -55,12 +76,25 @@ export async function POST(
         trackingMode: dati.trackingMode,
       },
       update: { trackingMode: dati.trackingMode, endedAt: null },
-      select: {
-        id: true,
-        trackingMode: true,
-        user: { select: { id: true, firstName: true, lastName: true } },
-      },
-    })
+      select: selezione,
+    }
+
+    let assegnazione
+    try {
+      assegnazione = await prisma.workLocationAssignment.upsert(argomenti)
+    } catch (err) {
+      // L'upsert di Prisma non è atomico: due richieste simultanee sulla
+      // stessa coppia fanno fallire la seconda sul vincolo di unicità. A quel
+      // punto la riga esiste: si ritenta una volta e va in aggiornamento.
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        assegnazione = await prisma.workLocationAssignment.upsert(argomenti)
+      } else {
+        throw err
+      }
+    }
 
     await createAuditLog({
       userId: session!.user.id,

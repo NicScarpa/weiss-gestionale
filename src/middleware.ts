@@ -14,6 +14,10 @@ const PUBLIC_PREFIXES = [
   '/api/auth',
   '/invito',
   '/api/staff/invite/complete',
+  // Il cron non ha il cookie di sessione: senza questa eccezione verrebbe
+  // rediretto a /login prima di arrivare alla route, che si difende da sola
+  // con il segreto CRON_SECRET nell'header Authorization.
+  '/api/attendance/auto-clockout',
 ]
 
 function isPathAllowed(pathname: string, prefixes: string[]) {

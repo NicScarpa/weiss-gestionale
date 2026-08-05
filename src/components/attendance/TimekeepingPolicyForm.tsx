@@ -9,8 +9,16 @@ import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Plus, Trash2, Calculator } from 'lucide-react'
 import { toast } from 'sonner'
+import { messaggioErroreApi } from '@/lib/utils/api-error'
 
 /**
  * Form di una regola orario, con accanto il calcolatore di prova.
@@ -35,7 +43,6 @@ export interface PoliticaOrario {
   dayEndMinutes: number
   lunchStartMinutes: number | null
   lunchEndMinutes: number | null
-  lunchWindowMinutes: number
   flexMinutes: number
   roundingMinutes: number
   roundingToleranceMinutes: number
@@ -71,7 +78,6 @@ export const politicaVuota: PoliticaOrario = {
   dayEndMinutes: 18 * 60,
   lunchStartMinutes: null,
   lunchEndMinutes: null,
-  lunchWindowMinutes: 30,
   flexMinutes: 0,
   roundingMinutes: 1,
   roundingToleranceMinutes: 0,
@@ -110,6 +116,22 @@ function formatDurata(minuti: number): string {
   return `${h}h ${String(m).padStart(2, '0')}m`
 }
 
+/**
+ * Giorni provabili nel calcolatore.
+ *
+ * Il mercoledì rappresenta il giorno feriale qualunque; il festivo è un feriale
+ * che cade in un giorno di festa. Senza questa scelta "sabato come
+ * straordinario" e la domenica restano parametri di cui non si vede l'effetto.
+ */
+const GIORNI_PROVA = {
+  feriale: { etichetta: 'Giorno feriale', weekday: 3, isHoliday: false },
+  sabato: { etichetta: 'Sabato', weekday: 6, isHoliday: false },
+  domenica: { etichetta: 'Domenica', weekday: 0, isHoliday: false },
+  festivo: { etichetta: 'Festivo', weekday: 3, isHoliday: true },
+} as const
+
+type GiornoProva = keyof typeof GIORNI_PROVA
+
 const ETICHETTE_AVVISI: Record<string, string> = {
   ENTRATA_MANCANTE: 'Entrata mancante',
   USCITA_MANCANTE: 'Uscita mancante',
@@ -135,6 +157,7 @@ export function TimekeepingPolicyForm({
 }: Props) {
   const [provaEntrata, setProvaEntrata] = useState('09:00')
   const [provaUscita, setProvaUscita] = useState('18:00')
+  const [provaGiorno, setProvaGiorno] = useState<GiornoProva>('feriale')
   const [risultato, setRisultato] = useState<RisultatoProva | null>(null)
 
   const aggiorna = <K extends keyof PoliticaOrario>(
@@ -153,10 +176,14 @@ export function TimekeepingPolicyForm({
           policy: valore,
           clockInMinutes: orarioToMinuti(provaEntrata) ?? 0,
           clockOutMinutes: orarioToMinuti(provaUscita) ?? 0,
+          weekday: GIORNI_PROVA[provaGiorno].weekday,
+          isHoliday: GIORNI_PROVA[provaGiorno].isHoliday,
         }),
       })
       const dati = await response.json()
-      if (!response.ok) throw new Error(dati.error || 'Errore nel calcolo di prova')
+      if (!response.ok) {
+        throw new Error(messaggioErroreApi(dati, 'Errore nel calcolo di prova'))
+      }
 
       return dati.data as RisultatoProva
     },
@@ -192,6 +219,21 @@ export function TimekeepingPolicyForm({
                 id="predefinita"
                 checked={valore.isDefault}
                 onCheckedChange={(v) => aggiorna('isDefault', v)}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="attiva">Regola attiva</Label>
+                <p className="text-sm text-muted-foreground">
+                  Disattivandola smette di applicarsi a tutti: chi la aveva
+                  ricade sulla regola predefinita
+                </p>
+              </div>
+              <Switch
+                id="attiva"
+                checked={valore.isActive}
+                onCheckedChange={(v) => aggiorna('isActive', v)}
               />
             </div>
           </CardContent>
@@ -579,6 +621,32 @@ export function TimekeepingPolicyForm({
               </div>
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="prova-giorno">Giorno</Label>
+              <Select
+                value={provaGiorno}
+                onValueChange={(v) => setProvaGiorno(v as GiornoProva)}
+              >
+                <SelectTrigger id="prova-giorno">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(GIORNI_PROVA).map(([chiave, giorno]) => (
+                    <SelectItem key={chiave} value={chiave}>
+                      {giorno.etichetta}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {provaGiorno === 'domenica' && valore.blockSunday && (
+              <p className="text-sm text-amber-600">
+                Con questa regola la domenica non si può timbrare: le ore qui
+                sotto sono solo l&apos;ipotesi di come verrebbero contate.
+              </p>
+            )}
+
             <Button
               type="button"
               variant="secondary"
@@ -611,6 +679,10 @@ export function TimekeepingPolicyForm({
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Notturne</span>
                     <span>{formatDurata(risultato.nightMinutes)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Festive</span>
+                    <span>{formatDurata(risultato.holidayMinutes)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Pause</span>

@@ -62,6 +62,12 @@ export function groupPunchesByWorkday<T extends PunchLike>(
 
     if (withinOpenShift) {
       add(openDay!, punch)
+      // L'uscita chiude la giornata: quello che arriva dopo (un'uscita orfana
+      // del giorno successivo, per esempio) non le appartiene più.
+      if (punch.punchType === 'OUT') {
+        openDay = null
+        openedAt = null
+      }
     } else {
       openDay = null
       openedAt = null

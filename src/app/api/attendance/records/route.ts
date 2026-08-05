@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
 import { logger } from '@/lib/logger'
+import { romeDayRange } from '@/lib/timezone'
 // GET /api/attendance/records - Lista timbrature (manager)
 export async function GET(request: NextRequest) {
   try {
@@ -41,24 +42,34 @@ export async function GET(request: NextRequest) {
     if (venueId) where.venueId = venueId
     if (userId) where.userId = userId
 
-    // Filtro date
+    // Filtro date: i giorni sono giornate civili italiane, non del server.
+    const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
     if (date) {
-      const targetDate = new Date(date)
-      targetDate.setHours(0, 0, 0, 0)
-      const nextDay = new Date(targetDate)
-      nextDay.setDate(nextDay.getDate() + 1)
+      if (!DATE_ONLY.test(date)) {
+        return NextResponse.json(
+          { error: 'Data non valida: usare il formato AAAA-MM-GG' },
+          { status: 400 }
+        )
+      }
+      const giorno = romeDayRange(date)
 
       where.punchedAt = {
-        gte: targetDate,
-        lt: nextDay,
+        gte: giorno.start,
+        lt: giorno.end,
       }
     } else if (from || to) {
       where.punchedAt = {}
-      if (from) (where.punchedAt as Record<string, unknown>).gte = new Date(from)
+      if (from) {
+        ;(where.punchedAt as Record<string, unknown>).gte = DATE_ONLY.test(from)
+          ? romeDayRange(from).start
+          : new Date(from)
+      }
       if (to) {
-        const toDate = new Date(to)
-        toDate.setHours(23, 59, 59, 999)
-        ;(where.punchedAt as Record<string, unknown>).lte = toDate
+        if (DATE_ONLY.test(to)) {
+          ;(where.punchedAt as Record<string, unknown>).lt = romeDayRange(to).end
+        } else {
+          ;(where.punchedAt as Record<string, unknown>).lte = new Date(to)
+        }
       }
     }
 
