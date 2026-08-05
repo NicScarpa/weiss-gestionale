@@ -46,6 +46,16 @@ export async function GET(request: NextRequest) {
         code: true,
         name: true,
         type: true,
+        // Categoria derivata dalla mappatura budget (Fase 0), per raggruppare
+        // il conto nella select condivisa (AccountGroupedSelect, Fase 1).
+        budgetMapping: {
+          select: {
+            includeInBudget: true,
+            budgetCategory: {
+              select: { id: true, name: true },
+            },
+          },
+        },
         ...(full && {
           category: true,
           parentId: true,
@@ -71,7 +81,14 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ accounts })
+    // Appiattisce budgetMapping in budgetCategory: null se il conto non è
+    // mappato o è escluso dal budget (stessa regola di derivaBudgetCategoryDaConto).
+    const accountsConCategoria = accounts.map(({ budgetMapping, ...account }) => ({
+      ...account,
+      budgetCategory: budgetMapping?.includeInBudget ? budgetMapping.budgetCategory : null,
+    }))
+
+    return NextResponse.json({ accounts: accountsConCategoria })
   } catch (error) {
     logger.error('Errore GET /api/accounts', error)
     return NextResponse.json(

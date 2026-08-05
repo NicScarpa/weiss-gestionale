@@ -8,6 +8,7 @@ import {
   Verified,
   EyeOff,
   Tag,
+  SplitSquareHorizontal,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -27,6 +28,7 @@ interface MovimentoRowActionsProps {
   onVerify?: () => void
   onHide?: () => void
   onCategorize?: () => void
+  onSplit?: () => void
 }
 
 export function MovimentoRowActions({
@@ -38,6 +40,7 @@ export function MovimentoRowActions({
   onVerify,
   onHide,
   onCategorize,
+  onSplit,
 }: MovimentoRowActionsProps) {
   return (
     <div className="flex items-center gap-1">
@@ -71,6 +74,13 @@ export function MovimentoRowActions({
             <DropdownMenuItem onClick={onEdit}>
               <Pencil className="mr-2 h-4 w-4" />
               Modifica
+            </DropdownMenuItem>
+          )}
+
+          {onSplit && !hiddenAt && (
+            <DropdownMenuItem onClick={onSplit}>
+              <SplitSquareHorizontal className="mr-2 h-4 w-4" />
+              Suddividi importo
             </DropdownMenuItem>
           )}
 

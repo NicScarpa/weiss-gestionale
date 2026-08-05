@@ -26,6 +26,7 @@ interface MovimentiTableProps {
   onVerify?: (id: string, verified: boolean) => void
   onHide?: (id: string, hidden: boolean) => void
   onCategorize?: (entry: JournalEntry) => void
+  onSplit?: (entry: JournalEntry) => void
   isLoading?: boolean
 }
 
@@ -39,6 +40,7 @@ export function MovimentiTable({
   onVerify,
   onHide,
   onCategorize,
+  onSplit,
   isLoading = false,
 }: MovimentiTableProps) {
   // Format valuta italiana
@@ -217,16 +219,26 @@ export function MovimentiTable({
 
                     {/* Categoria */}
                     <td className="px-4 py-3 text-sm">
-                      {entry.budgetCategory ? (
-                        <div
-                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium"
-                          style={{ backgroundColor: entry.budgetCategory.color || '#6b7280' }}
-                        >
-                          {entry.budgetCategory.code}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {entry.budgetCategory ? (
+                          <div
+                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium"
+                            style={{ backgroundColor: entry.budgetCategory.color || '#6b7280' }}
+                          >
+                            {entry.budgetCategory.code}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                        {entry.allocations && entry.allocations.length > 0 && (
+                          <span
+                            className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border border-dashed text-muted-foreground"
+                            title={`Movimento suddiviso su ${entry.allocations.length} conti`}
+                          >
+                            Suddiviso ({entry.allocations.length})
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Stato Categorizzazione */}
@@ -257,6 +269,7 @@ export function MovimentiTable({
                         onVerify={() => onVerify?.(entry.id, !entry.verified)}
                         onHide={() => onHide?.(entry.id, !!entry.hiddenAt)}
                         onCategorize={() => onCategorize?.(entry)}
+                        onSplit={() => onSplit?.(entry)}
                       />
                     </td>
                   </tr>

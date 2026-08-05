@@ -7,6 +7,7 @@ import { MovimentiFilters } from '@/components/prima-nota/movimenti/MovimentiFil
 import { MovimentiTable } from '@/components/prima-nota/movimenti/MovimentiTable'
 import { MovimentoFormDialog } from '@/components/prima-nota/movimenti/MovimentoFormDialog'
 import { CaricaMovimentiDialog } from '@/components/prima-nota/movimenti/CaricaMovimentiDialog'
+import { SplitEntryDialog } from '@/components/prima-nota/movimenti/SplitEntryDialog'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -83,6 +84,7 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [categorizeEntry, setCategorizeEntry] = useState<JournalEntry | null>(null)
   const [categorizeCategoryId, setCategorizeCategoryId] = useState<string>('')
+  const [splitEntry, setSplitEntry] = useState<JournalEntry | null>(null)
 
   // Load data from API
   const loadData = useCallback(async () => {
@@ -328,6 +330,7 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
           setCategorizeEntry(entry)
           setCategorizeCategoryId(entry.budgetCategoryId || '')
         }}
+        onSplit={(entry) => setSplitEntry(entry)}
         isLoading={isLoading}
       />
 
@@ -448,6 +451,18 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
           </div>
         </DialogContent>
       </Dialog>
+
+      <SplitEntryDialog
+        entry={splitEntry}
+        open={!!splitEntry}
+        onOpenChange={(open) => {
+          if (!open) setSplitEntry(null)
+        }}
+        onSaved={() => {
+          setSplitEntry(null)
+          loadData()
+        }}
+      />
     </div>
   )
 }

@@ -252,6 +252,16 @@ export async function GET(request: NextRequest) {
               lastName: true,
             },
           },
+          // Fette di suddivisione manuale (Task 6-7): l'UI usa il conteggio
+          // per il badge "Suddiviso (N)" e i dettagli per precompilare l'editor.
+          allocations: {
+            select: {
+              id: true,
+              accountId: true,
+              importo: true,
+              note: true,
+            },
+          },
         },
         orderBy: [{ date: sortOrder }, { createdAt: sortOrder }],
         skip: (filters.page - 1) * filters.limit,
@@ -311,6 +321,12 @@ export async function GET(request: NextRequest) {
       appliedRule: entry.appliedRule,
       closure: entry.closure,
       createdBy: entry.createdBy,
+      allocations: entry.allocations.map((a) => ({
+        id: a.id,
+        accountId: a.accountId,
+        importo: Number(a.importo),
+        note: a.note ?? undefined,
+      })),
     }))
 
     return NextResponse.json({

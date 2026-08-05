@@ -64,6 +64,8 @@ export interface JournalEntry {
   budgetCategoryId?: string
   appliedRuleId?: string
   paymentId?: string
+  // Fette di suddivisione manuale (Allocation, Fase 1)
+  allocations?: JournalEntryAllocation[]
   // Relations (populated)
   venue?: {
     id: string
@@ -105,6 +107,16 @@ export interface JournalEntry {
     firstName: string
     lastName: string
   }
+}
+
+// ==================== SUDDIVISIONE MOVIMENTO (Allocation) ====================
+
+// Fetta di suddivisione manuale di un movimento su più conti (Fase 1)
+export interface JournalEntryAllocation {
+  id: string
+  accountId: string
+  importo: number
+  note?: string
 }
 
 // Saldo registro
