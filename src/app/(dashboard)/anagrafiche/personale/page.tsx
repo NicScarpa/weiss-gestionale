@@ -127,6 +127,8 @@ export default function StaffPage() {
   const [inviteLink, setInviteLink] = useState<string | null>(null)
   const [inviteLinkLoading, setInviteLinkLoading] = useState(false)
   const [inviteLinkCopied, setInviteLinkCopied] = useState(false)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteEmailSending, setInviteEmailSending] = useState(false)
 
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -241,6 +243,12 @@ export default function StaffPage() {
         invite: 'invitati',
       }
       toast.success(`${data.count} dipendenti ${actionLabels[data.action] || 'aggiornati'}`)
+
+      if (data.action === 'invite' && (data.emailsFailed > 0 || data.missingEmail > 0)) {
+        toast.warning(
+          `Invito non recapitato a ${data.emailsFailed + data.missingEmail} dipendenti (email mancante o invio fallito)`
+        )
+      }
     },
     onError: (error: Error) => {
       toast.error(error.message)
@@ -815,6 +823,61 @@ export default function StaffPage() {
                     Impossibile generare il link. Riprova.
                   </p>
                 )}
+
+                <div className={cn('space-y-2 rounded-lg border p-3', inviteLinkLoading && 'hidden')}>
+                  <p className="text-sm font-medium">Oppure invia l&apos;invito via email</p>
+                  <p className="text-xs text-muted-foreground">
+                    Il link viene vincolato a questa email e spedito al dipendente.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="email"
+                      placeholder="nome@esempio.it"
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      disabled={inviteEmailSending}
+                    />
+                    <Button
+                      className="shrink-0"
+                      disabled={!inviteEmail.trim() || inviteEmailSending}
+                      onClick={async () => {
+                        setInviteEmailSending(true)
+                        try {
+                          const res = await fetch('/api/staff/invite', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              action: 'regenerate',
+                              email: inviteEmail.trim(),
+                            }),
+                          })
+                          const data = await res.json()
+                          if (!res.ok) throw new Error(data.error)
+                          setInviteLink(data.url)
+                          setInviteLinkCopied(false)
+                          if (data.emailSent) {
+                            toast.success(`Invito inviato a ${inviteEmail.trim()}`)
+                            setInviteEmail('')
+                          } else {
+                            toast.warning(
+                              'Invito creato ma email non inviata: condividi il link manualmente'
+                            )
+                          }
+                        } catch (err) {
+                          toast.error(err instanceof Error ? err.message : 'Errore nell\'invio dell\'invito')
+                        } finally {
+                          setInviteEmailSending(false)
+                        }
+                      }}
+                    >
+                      {inviteEmailSending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        'Invia'
+                      )}
+                    </Button>
+                  </div>
+                </div>
               </div>
 
               <DialogFooter>
@@ -824,6 +887,7 @@ export default function StaffPage() {
                     setInviteStep('choose')
                     setInviteLink(null)
                     setInviteLinkCopied(false)
+                    setInviteEmail('')
                   }}
                 >
                   Indietro

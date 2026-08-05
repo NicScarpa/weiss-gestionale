@@ -15,6 +15,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { LogOut, User, Building2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { OfflineIndicator } from '@/components/OfflineIndicator'
+import { NotificationBell } from '@/components/notifications/NotificationBell'
 
 export function Header() {
   const { data: session } = useSession()
@@ -40,6 +41,7 @@ export function Header() {
 
       <div className="flex items-center gap-4">
         <OfflineIndicator />
+        <NotificationBell />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="relative h-10 w-10 rounded-full">

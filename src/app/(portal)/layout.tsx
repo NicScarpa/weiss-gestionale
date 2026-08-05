@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import { PortalNavigation } from '@/components/portal/PortalNavigation'
-import { Bell } from 'lucide-react'
+import { NotificationBell } from '@/components/notifications/NotificationBell'
 
 export default async function PortalLayout({
   children,
@@ -33,9 +33,7 @@ export default async function PortalLayout({
               <p className="text-sm text-gray-500">Weiss Srl</p>
             </div>
           </div>
-          <button className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-gray-100">
-            <Bell className="h-5 w-5 text-gray-600" />
-          </button>
+          <NotificationBell />
         </div>
       </header>
 

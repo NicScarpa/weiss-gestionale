@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 import { z } from 'zod'
 import { logger } from '@/lib/logger'
+import { sendStaffInvitationEmail } from '@/lib/email-invitation'
 
 // Token valido per 7 giorni
 const TOKEN_EXPIRY_DAYS = 7
@@ -45,6 +46,7 @@ export async function GET() {
         token: existing.token,
         url: buildInviteUrl(existing.token),
         expiresAt: existing.expiresAt,
+        emailSent: false,
       })
     }
 
@@ -69,6 +71,7 @@ export async function GET() {
       token: invitation.token,
       url: buildInviteUrl(invitation.token),
       expiresAt: invitation.expiresAt,
+      emailSent: false,
     })
   } catch (error) {
     logger.error('Errore GET /api/staff/invite', error)
@@ -82,6 +85,8 @@ export async function GET() {
 const regenerateSchema = z.object({
   action: z.literal('regenerate'),
   email: z.string().email('Email non valida').optional(),
+  firstName: z.string().trim().min(1).optional(),
+  lastName: z.string().trim().min(1).optional(),
 })
 
 /**
@@ -102,7 +107,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { email } = regenerateSchema.parse(body)
+    const { email, firstName, lastName } = regenerateSchema.parse(body)
 
     // Disattiva tutti i token generici attivi
     await prisma.invitationToken.updateMany({
@@ -124,6 +129,8 @@ export async function POST(request: NextRequest) {
       data: {
         token,
         email: email?.toLowerCase() || null,
+        firstName: firstName || null,
+        lastName: lastName || null,
         invitedById: session.user.id,
         expiresAt,
       },
@@ -135,11 +142,36 @@ export async function POST(request: NextRequest) {
       invitedBy: session.user.id,
     })
 
+    // Se l'invito è vincolato a un'email, spediscilo al dipendente.
+    // Un fallimento non blocca il flusso: la UI mostra comunque il link da copiare.
+    let emailSent = false
+    if (invitation.email) {
+      const invitedByName = [session.user.firstName, session.user.lastName]
+        .filter(Boolean)
+        .join(' ')
+        .trim()
+
+      emailSent = await sendStaffInvitationEmail({
+        email: invitation.email,
+        token: invitation.token,
+        firstName: invitation.firstName,
+        invitedByName: invitedByName || null,
+      })
+
+      if (!emailSent) {
+        logger.error('[StaffInvite] Invito creato ma invio email fallito', {
+          email: invitation.email,
+          invitedBy: session.user.id,
+        })
+      }
+    }
+
     return NextResponse.json({
       token: invitation.token,
       url: buildInviteUrl(invitation.token),
       expiresAt: invitation.expiresAt,
       email: invitation.email || null,
+      emailSent,
     })
   } catch (error) {
     if (error instanceof z.ZodError) {

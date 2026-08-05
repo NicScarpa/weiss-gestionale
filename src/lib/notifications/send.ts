@@ -286,7 +286,8 @@ async function logNotification(params: {
         type: payload.type,
         title: payload.title,
         body: payload.body,
-        data: payload.data || undefined,
+        // L'url viene persistito insieme ai data così la UI in-app può linkare la notifica
+        data: payload.url ? { ...payload.data, url: payload.url } : payload.data || undefined,
         channel,
         status: result.success ? 'SENT' : 'FAILED',
         errorMsg: result.error || undefined,

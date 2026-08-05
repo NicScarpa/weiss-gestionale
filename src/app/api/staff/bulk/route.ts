@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import crypto from 'crypto'
 import { logger } from '@/lib/logger'
+import { sendPortalAccessEmail, INVITE_EXPIRY_DAYS } from '@/lib/email-invitation'
 
 const bulkActionSchema = z.object({
   ids: z.array(z.string()).min(1, 'Seleziona almeno un dipendente'),
@@ -51,12 +53,72 @@ export async function POST(request: NextRequest) {
       }
 
       case 'invite': {
-        // Placeholder: imposta mustChangePassword e portalEnabled
-        const result = await prisma.user.updateMany({
+        // I dipendenti selezionati hanno già un account: l'invito abilita il portale
+        // e spedisce un link per impostare la password (non una registrazione ex novo).
+        const users = await prisma.user.findMany({
           where: { id: { in: ids } },
-          data: { mustChangePassword: true },
+          select: { id: true, email: true, firstName: true },
         })
-        return NextResponse.json({ count: result.count, action: 'invite' })
+
+        const invitedByName = [session.user.firstName, session.user.lastName]
+          .filter(Boolean)
+          .join(' ')
+          .trim()
+
+        let emailsSent = 0
+        let emailsFailed = 0
+        const missingEmail: string[] = []
+
+        for (const user of users) {
+          const token = crypto.randomBytes(32).toString('hex')
+          const expiresAt = new Date(Date.now() + INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000)
+
+          await prisma.user.update({
+            where: { id: user.id },
+            data: {
+              portalEnabled: true,
+              mustChangePassword: true,
+              resetToken: token,
+              resetTokenExpiry: expiresAt,
+            },
+          })
+
+          if (!user.email) {
+            missingEmail.push(user.id)
+            continue
+          }
+
+          // L'invio non deve bloccare il resto del batch
+          const sent = await sendPortalAccessEmail({
+            email: user.email,
+            token,
+            firstName: user.firstName,
+            invitedByName: invitedByName || null,
+          })
+
+          if (sent) {
+            emailsSent++
+          } else {
+            emailsFailed++
+            logger.error('[StaffBulk] Invito creato ma invio email fallito', {
+              userId: user.id,
+            })
+          }
+        }
+
+        if (missingEmail.length > 0) {
+          logger.warn('[StaffBulk] Dipendenti senza email, invito non spedito', {
+            userIds: missingEmail,
+          })
+        }
+
+        return NextResponse.json({
+          count: users.length,
+          action: 'invite',
+          emailsSent,
+          emailsFailed,
+          missingEmail: missingEmail.length,
+        })
       }
 
       default:
