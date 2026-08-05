@@ -450,6 +450,10 @@ model Supplier {
   city               String?
   fiscalCode         String?             @map("fiscal_code")
   fiscalCodeHash     String?             @map("fiscal_code_hash")
+  /// Giorni di dilazione concordati. Usati per stimare la scadenza quando la
+  /// fattura non riporta la data di pagamento; senza, si applica il termine
+  /// ordinario di 30 giorni.
+  paymentTermsDays   Int?                @map("payment_terms_days")
   postalCode         String?             @map("postal_code")
   province           String?
   updatedAt          DateTime            @default(now()) @updatedAt @map("updated_at")

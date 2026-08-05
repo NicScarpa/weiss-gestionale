@@ -47,6 +47,7 @@ interface Supplier {
   iban: string | null
   defaultAccountId: string | null
   defaultAccount: Account | null
+  paymentTermsDays: number | null
   isActive: boolean
 }
 
@@ -60,6 +61,7 @@ const initialFormData = {
   email: '',
   iban: '',
   defaultAccountId: 'none',
+  paymentTermsDays: '',
   isActive: true,
 }
 
@@ -169,6 +171,10 @@ export function SupplierManagement() {
       email: supplier.email || '',
       iban: supplier.iban || '',
       defaultAccountId: supplier.defaultAccountId || 'none',
+      paymentTermsDays:
+        supplier.paymentTermsDays !== null && supplier.paymentTermsDays !== undefined
+          ? String(supplier.paymentTermsDays)
+          : '',
       isActive: supplier.isActive,
     })
     setIsDialogOpen(true)
@@ -201,6 +207,9 @@ export function SupplierManagement() {
         email: formData.email.trim() || null,
         iban: formData.iban.trim() || null,
         defaultAccountId: formData.defaultAccountId === 'none' ? null : formData.defaultAccountId,
+        paymentTermsDays: formData.paymentTermsDays.trim()
+          ? Number(formData.paymentTermsDays)
+          : null,
         isActive: formData.isActive,
       }
 
@@ -563,6 +572,26 @@ export function SupplierManagement() {
               </Select>
               <p className="text-xs text-muted-foreground">
                 Conto utilizzato automaticamente nelle uscite
+              </p>
+            </div>
+
+            {/* Termini di pagamento */}
+            <div className="col-span-2 space-y-2">
+              <Label htmlFor="paymentTermsDays">Termini di pagamento (giorni)</Label>
+              <Input
+                id="paymentTermsDays"
+                type="number"
+                min={0}
+                max={365}
+                placeholder="30"
+                value={formData.paymentTermsDays}
+                onChange={(e) =>
+                  setFormData({ ...formData, paymentTermsDays: e.target.value })
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                Usati per stimare la scadenza quando la fattura non riporta la data di
+                pagamento. Se vuoto si applica il termine ordinario di 30 giorni.
               </p>
             </div>
 

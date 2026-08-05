@@ -16,6 +16,14 @@ const supplierSchema = z.object({
   email: z.string().email('Email non valida').optional().nullable(),
   iban: z.string().optional().nullable(),
   defaultAccountId: z.string().optional().nullable(),
+  /** Giorni di dilazione concordati, usati per stimare le scadenze delle fatture */
+  paymentTermsDays: z
+    .number()
+    .int('I giorni devono essere un numero intero')
+    .min(0, 'I giorni non possono essere negativi')
+    .max(365, 'I giorni non possono superare 365')
+    .optional()
+    .nullable(),
   isActive: z.boolean().default(true),
 })
 
@@ -67,6 +75,7 @@ export async function GET(request: NextRequest) {
           email: true,
           iban: true,
           defaultAccountId: true,
+          paymentTermsDays: true,
           defaultAccount: {
             select: {
               id: true,
@@ -157,6 +166,7 @@ export async function POST(request: NextRequest) {
         email: validatedData.email,
         iban: validatedData.iban,
         defaultAccountId: validatedData.defaultAccountId,
+        paymentTermsDays: validatedData.paymentTermsDays,
         isActive: validatedData.isActive,
       },
       include: {
@@ -228,6 +238,7 @@ export async function PUT(request: NextRequest) {
         ...(validatedData.email !== undefined && { email: validatedData.email }),
         ...(validatedData.iban !== undefined && { iban: validatedData.iban }),
         ...(validatedData.defaultAccountId !== undefined && { defaultAccountId: validatedData.defaultAccountId }),
+        ...(validatedData.paymentTermsDays !== undefined && { paymentTermsDays: validatedData.paymentTermsDays }),
         ...(validatedData.isActive !== undefined && { isActive: validatedData.isActive }),
       },
       include: {

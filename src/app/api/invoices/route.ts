@@ -378,8 +378,20 @@ export async function POST(request: NextRequest) {
     // Calcola importi
     const importi = calcolaImporti(fattura)
 
-    // Estrai scadenze
-    const scadenze = estraiScadenze(fattura)
+    // Estrai scadenze usando i termini di pagamento del fornitore, se noti:
+    // senza, la stima ricade sul termine ordinario di 30 giorni
+    const terminiFornitore = supplierId
+      ? (
+          await prisma.supplier.findUnique({
+            where: { id: supplierId },
+            select: { paymentTermsDays: true },
+          })
+        )?.paymentTermsDays ?? undefined
+      : undefined
+
+    const scadenze = estraiScadenze(fattura, {
+      giorniPagamento: terminiFornitore ?? undefined,
+    })
 
     // Estrai IBAN dai dati pagamento (se disponibile)
     const extractIban = (index: number): string | null => {
