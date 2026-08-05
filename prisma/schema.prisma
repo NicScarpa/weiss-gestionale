@@ -98,6 +98,7 @@ model User {
   auditLogs               AuditLog[]
   documents               EmployeeDocument[]           @relation("EmployeeDocuments")
   uploadedDocuments       EmployeeDocument[]           @relation("DocumentUploader")
+  journalEntryAllocations JournalEntryAllocation[]     @relation("JournalEntryAllocationCreatedBy")
 
   @@map("users")
 }
@@ -389,6 +390,7 @@ model Account {
   suppliers           Supplier[]
   customers           Customer[]
   scheduleRules       ScheduleRule[]
+  allocations         JournalEntryAllocation[]
 
   @@index([parentId])
   @@map("accounts")
@@ -436,6 +438,7 @@ model JournalEntry {
   venue                Venue               @relation(fields: [venueId], references: [id])
   payment              Payment?
   scheduleReconciliations ScheduleReconciliation[]
+  allocations          JournalEntryAllocation[]
 
   @@index([venueId, date])
   @@index([venueId, registerType, date])
@@ -443,6 +446,37 @@ model JournalEntry {
   @@index([budgetCategoryId])
   @@index([closureId])
   @@map("journal_entries")
+}
+
+/// Fetta di ripartizione di un movimento su un conto (allocation).
+/// Attributo replace-all del movimento: NON va in SOFT_DELETE_MODELS, il
+/// soft-delete vive sul JournalEntry. Invariante: somma fette ≤ importo utile
+/// del movimento; con fette presenti JournalEntry.accountId = conto dominante
+/// e categorizationSource = 'split'.
+/// Vedi docs/superpowers/specs/2026-08-05-allocation-design.md (Fase 1).
+model JournalEntryAllocation {
+  id               String   @id @default(cuid())
+  journalEntryId   String   @map("journal_entry_id")
+  accountId        String   @map("account_id")
+  importo          Decimal  @db.Decimal(10, 2)
+  /// 'manuale' (editor split) | 'ereditata' (pro-quota dalla riconciliazione, Fase 3)
+  origine          String
+  /// Riconciliazione che ha generato la fetta ereditata: chiave dell'undo (Fase 3)
+  reconciliationId String?  @map("reconciliation_id")
+  note             String?
+  createdById      String?  @map("created_by")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  journalEntry   JournalEntry            @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account        Account                 @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  reconciliation ScheduleReconciliation? @relation(fields: [reconciliationId], references: [id], onDelete: SetNull)
+  createdBy      User?                   @relation("JournalEntryAllocationCreatedBy", fields: [createdById], references: [id])
+
+  @@index([journalEntryId])
+  @@index([reconciliationId])
+  @@index([accountId])
+  @@map("journal_entry_allocations")
 }
 
 model RegisterBalance {
@@ -613,6 +647,7 @@ model ScheduleReconciliation {
   journalEntry JournalEntry     @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
   payment      SchedulePayment? @relation(fields: [paymentId], references: [id])
   createdBy    User?            @relation("ScheduleReconciliationCreatedBy", fields: [createdById], references: [id])
+  allocations  JournalEntryAllocation[]
 
   @@index([scheduleId, status])
   @@index([journalEntryId, status])
