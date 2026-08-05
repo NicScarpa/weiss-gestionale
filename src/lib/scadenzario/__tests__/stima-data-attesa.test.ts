@@ -8,7 +8,7 @@ vi.mock('@/lib/logger', () => ({
 }))
 
 import { prisma } from '@/lib/prisma'
-import { calcolaRitardoTipico, stimaRitardoFornitore } from '../stima-data-attesa'
+import { calcolaRitardoTipico, stimaRitardoFornitore, applicaStimaSuScadenza, ricalcolaStimeFornitore } from '../stima-data-attesa'
 
 describe('calcolaRitardoTipico', () => {
   it('restituisce la mediana dei ritardi con campione dispari', () => {
@@ -70,5 +70,111 @@ describe('stimaRitardoFornitore', () => {
   it('senza storia sufficiente restituisce null', async () => {
     vi.mocked(prisma.schedule.findMany).mockResolvedValue([] as never)
     await expect(stimaRitardoFornitore('sup-1', 'venue-1')).resolves.toBeNull()
+  })
+})
+
+function scadenzaAperta(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'sched-1',
+    tipo: 'passiva',
+    stato: 'aperta',
+    supplierId: 'sup-1',
+    dataScadenza: new Date('2026-09-01'),
+    dataAttesaSource: null,
+    ...overrides,
+  }
+}
+
+describe('applicaStimaSuScadenza', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('scrive dataAttesa = dataScadenza + ritardo con source stima', async () => {
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(scadenzaAperta() as never)
+    // storia: tre pagamenti con 10 giorni di ritardo
+    vi.mocked(prisma.schedule.findMany).mockResolvedValue([
+      { dataScadenza: new Date('2026-05-01'), dataPagamento: new Date('2026-05-11') },
+      { dataScadenza: new Date('2026-06-01'), dataPagamento: new Date('2026-06-11') },
+      { dataScadenza: new Date('2026-07-01'), dataPagamento: new Date('2026-07-11') },
+    ] as never)
+
+    await applicaStimaSuScadenza('sched-1', 'venue-1')
+
+    expect(prisma.schedule.update).toHaveBeenCalledWith({
+      where: { id: 'sched-1' },
+      data: { dataAttesa: new Date('2026-09-11'), dataAttesaSource: 'stima' },
+    })
+  })
+
+  it('non tocca una scadenza con data attesa manuale', async () => {
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      scadenzaAperta({ dataAttesaSource: 'manuale' }) as never
+    )
+    await applicaStimaSuScadenza('sched-1', 'venue-1')
+    expect(prisma.schedule.update).not.toHaveBeenCalled()
+  })
+
+  it('non tocca le scadenze attive né quelle senza fornitore', async () => {
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      scadenzaAperta({ tipo: 'attiva' }) as never
+    )
+    await applicaStimaSuScadenza('sched-1', 'venue-1')
+    expect(prisma.schedule.update).not.toHaveBeenCalled()
+
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      scadenzaAperta({ supplierId: null }) as never
+    )
+    await applicaStimaSuScadenza('sched-1', 'venue-1')
+    expect(prisma.schedule.update).not.toHaveBeenCalled()
+  })
+
+  it('se la stima non è più possibile, una source stima torna a null', async () => {
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      scadenzaAperta({ dataAttesaSource: 'stima' }) as never
+    )
+    vi.mocked(prisma.schedule.findMany).mockResolvedValue([] as never)
+
+    await applicaStimaSuScadenza('sched-1', 'venue-1')
+
+    expect(prisma.schedule.update).toHaveBeenCalledWith({
+      where: { id: 'sched-1' },
+      data: { dataAttesa: null, dataAttesaSource: null },
+    })
+  })
+
+  it('un errore del database non si propaga: best-effort', async () => {
+    vi.mocked(prisma.schedule.findFirst).mockRejectedValue(new Error('connessione persa'))
+    await expect(applicaStimaSuScadenza('sched-1', 'venue-1')).resolves.toBeUndefined()
+  })
+})
+
+describe('ricalcolaStimeFornitore', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('ricalcola le aperte del fornitore con source null o stima', async () => {
+    // prima findMany: storia pagata (ritardo 10); seconda: le aperte da aggiornare
+    vi.mocked(prisma.schedule.findMany)
+      .mockResolvedValueOnce([
+        { dataScadenza: new Date('2026-05-01'), dataPagamento: new Date('2026-05-11') },
+        { dataScadenza: new Date('2026-06-01'), dataPagamento: new Date('2026-06-11') },
+        { dataScadenza: new Date('2026-07-01'), dataPagamento: new Date('2026-07-11') },
+      ] as never)
+      .mockResolvedValueOnce([
+        { id: 'a', dataScadenza: new Date('2026-09-01'), dataAttesaSource: null },
+        { id: 'b', dataScadenza: new Date('2026-10-01'), dataAttesaSource: 'stima' },
+      ] as never)
+
+    await ricalcolaStimeFornitore('sup-1', 'venue-1')
+
+    expect(prisma.schedule.update).toHaveBeenCalledTimes(2)
+    expect(prisma.schedule.update).toHaveBeenCalledWith({
+      where: { id: 'a' },
+      data: { dataAttesa: new Date('2026-09-11'), dataAttesaSource: 'stima' },
+    })
+    // il filtro esclude manuale e riconciliazione già in query
+    const whereAperte = vi.mocked(prisma.schedule.findMany).mock.calls[1][0]?.where
+    expect(whereAperte?.OR).toEqual([
+      { dataAttesaSource: null },
+      { dataAttesaSource: 'stima' },
+    ])
   })
 })
