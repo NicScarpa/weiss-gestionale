@@ -108,13 +108,35 @@ export async function GET(request: NextRequest, context: RouteContext) {
     if (invoice.xmlContent) {
       try {
         const fattura = parseFatturaPA(invoice.xmlContent)
+
+        // Imputazioni per conto già salvate sulle righe: merge per numeroLinea
+        // (chiave stabile, indipendente dal riparsing dell'XML)
+        const lineAccounts = await prisma.invoiceLineAccount.findMany({
+          where: { invoiceId: id },
+        })
+        const imputazionePerLinea = new Map(lineAccounts.map((la) => [la.numeroLinea, la]))
+
         parsedData = {
           tipoDocumento: fattura.tipoDocumento,
           tipoDocumentoDesc: TIPI_DOCUMENTO[fattura.tipoDocumento] || fattura.tipoDocumento,
           causale: fattura.causale || [],
           cedentePrestatore: fattura.cedentePrestatore,
           cessionarioCommittente: fattura.cessionarioCommittente,
-          dettaglioLinee: fattura.dettaglioLinee || [],
+          dettaglioLinee: (fattura.dettaglioLinee || []).map((linea) => {
+            const imputazione = imputazionePerLinea.get(linea.numeroLinea)
+            return {
+              ...linea,
+              imputazione: imputazione
+                ? {
+                    accountId: imputazione.accountId,
+                    stato: imputazione.stato,
+                    fonte: imputazione.fonte,
+                    confidence: imputazione.confidence,
+                    motivazioneAi: imputazione.motivazioneAi,
+                  }
+                : null,
+            }
+          }),
           datiRiepilogo: fattura.datiRiepilogo || [],
           datiPagamento: fattura.datiPagamento,
           datiBollo: fattura.datiBollo,

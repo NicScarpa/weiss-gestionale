@@ -1,0 +1,152 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { auth } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
+import { z } from 'zod'
+import { getVenueId } from '@/lib/venue'
+import { createAuditLog } from '@/lib/audit'
+import { logger } from '@/lib/logger'
+import { parseFatturaPA } from '@/lib/sdi/parser'
+
+interface RouteContext {
+  params: Promise<{ id: string }>
+}
+
+const rigaSchema = z.object({
+  numeroLinea: z.number().int().positive(),
+  accountId: z.string().min(1),
+})
+
+const righeContiSchema = z.object({
+  righe: z.array(rigaSchema).optional(),
+  confermaTutte: z.boolean().optional(),
+})
+
+// PATCH /api/invoices/[id]/righe-conti - Conferma l'imputazione per conto delle righe fattura
+export async function PATCH(request: NextRequest, context: RouteContext) {
+  try {
+    const session = await auth()
+
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
+    }
+
+    if (!['admin', 'manager'].includes(session.user.role || '')) {
+      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
+    }
+
+    const { id } = await context.params
+    const body = await request.json()
+    const validated = righeContiSchema.parse(body)
+    const venueId = await getVenueId()
+
+    const invoice = await prisma.electronicInvoice.findFirst({
+      where: { id, venueId },
+    })
+
+    if (!invoice) {
+      return NextResponse.json({ error: 'Fattura non trovata' }, { status: 404 })
+    }
+
+    let righeConfermate = 0
+    let tutteConfermate = 0
+
+    if (validated.righe && validated.righe.length > 0) {
+      if (!invoice.xmlContent) {
+        return NextResponse.json(
+          { error: 'Fattura senza XML: impossibile ricavare le righe' },
+          { status: 400 }
+        )
+      }
+
+      // Un solo parse per la richiesta: le righe riparsate danno lo snapshot
+      // (descrizione, importo) da salvare insieme all'imputazione manuale.
+      const fattura = parseFatturaPA(invoice.xmlContent)
+      const righeXml = new Map(
+        (fattura.dettaglioLinee || []).map((linea) => [linea.numeroLinea, linea])
+      )
+
+      // Valida tutte le righe richieste PRIMA di scrivere: un numeroLinea
+      // inesistente nell'XML non deve produrre scritture parziali.
+      for (const riga of validated.righe) {
+        if (!righeXml.has(riga.numeroLinea)) {
+          return NextResponse.json(
+            { error: `La riga ${riga.numeroLinea} non esiste nella fattura` },
+            { status: 400 }
+          )
+        }
+      }
+
+      const adesso = new Date()
+
+      for (const riga of validated.righe) {
+        const linea = righeXml.get(riga.numeroLinea)!
+        await prisma.invoiceLineAccount.upsert({
+          where: {
+            invoiceId_numeroLinea: { invoiceId: id, numeroLinea: riga.numeroLinea },
+          },
+          create: {
+            invoiceId: id,
+            numeroLinea: riga.numeroLinea,
+            descrizione: linea.descrizione,
+            // Lo standard DettaglioLinea (parseFatturaPA) non porta il codice
+            // articolo: resta null finché il parser non lo espone qui.
+            codiceArticolo: null,
+            importo: linea.prezzoTotale,
+            accountId: riga.accountId,
+            stato: 'confermata',
+            fonte: 'manuale',
+            confirmedById: session.user.id,
+            confirmedAt: adesso,
+          },
+          update: {
+            descrizione: linea.descrizione,
+            codiceArticolo: null,
+            importo: linea.prezzoTotale,
+            accountId: riga.accountId,
+            stato: 'confermata',
+            fonte: 'manuale',
+            confirmedById: session.user.id,
+            confirmedAt: adesso,
+          },
+        })
+        righeConfermate++
+      }
+    }
+
+    if (validated.confermaTutte) {
+      const risultato = await prisma.invoiceLineAccount.updateMany({
+        where: { invoiceId: id, stato: 'proposta' },
+        data: {
+          stato: 'confermata',
+          confirmedById: session.user.id,
+          confirmedAt: new Date(),
+        },
+      })
+      tutteConfermate = risultato.count
+    }
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'UPDATE',
+      entityType: 'ElectronicInvoice',
+      entityId: id,
+      venueId,
+      newValues: { righe: validated.righe, confermaTutte: validated.confermaTutte },
+    })
+
+    return NextResponse.json({ esito: 'ok', righeConfermate, tutteConfermate })
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Dati non validi', details: error.issues },
+        { status: 400 }
+      )
+    }
+
+    logger.error('Errore PATCH /api/invoices/[id]/righe-conti', error)
+    return NextResponse.json(
+      { error: 'Errore nella conferma delle righe' },
+      { status: 500 }
+    )
+  }
+}
