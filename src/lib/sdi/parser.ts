@@ -561,32 +561,105 @@ export function calcolaImporti(fattura: FatturaParsata): {
 }
 
 /**
- * Estrae le scadenze di pagamento dalla fattura
+ * Giorni dalla data fattura usati come scadenza quando l'XML non la indica.
+ *
+ * Trenta giorni data fattura è il termine ordinario per le forniture fra
+ * imprese (art. 4 D.Lgs. 231/2002) ed è il compromesso meno dannoso: usare la
+ * data fattura, come si faceva prima, produceva scadenze già scadute al momento
+ * dell'import, che sporcavano aging e saldo scalare senza che nessuno avesse
+ * mancato un pagamento.
+ *
+ * Resta una stima: chi conosce i termini reali del fornitore li passa in
+ * `OpzioniEstrazioneScadenze.giorniPagamento`.
  */
-export function estraiScadenze(fattura: FatturaParsata): Array<{
+export const GIORNI_PAGAMENTO_DEFAULT = 30
+
+export interface OpzioniEstrazioneScadenze {
+  /**
+   * Termini di pagamento concordati col fornitore, in giorni dalla data
+   * fattura. Il parser lavora sul solo XML e non legge il database: se il
+   * chiamante conosce i termini (oggi non sono ancora anagrafati su
+   * `Supplier`) li passa qui, altrimenti si applica GIORNI_PAGAMENTO_DEFAULT.
+   */
+  giorniPagamento?: number
+}
+
+export interface ScadenzaEstratta {
   dueDate: Date
   amount: number
   paymentMethod: string
-}> {
+  /**
+   * true quando `dueDate` non compare nell'XML ed è stata calcolata dal parser.
+   * Chi crea la scadenza nello scadenzario deve riportare `notaStima` nella
+   * descrizione o nelle note, altrimenti la data stimata è indistinguibile da
+   * una scadenza contrattuale.
+   */
+  dataStimata: boolean
+  /** Testo pronto per la scadenza generata. Valorizzato solo se `dataStimata`. */
+  notaStima?: string
+}
+
+/** Marcatore persistito su InvoiceDeadline.paymentMethod quando manca DatiPagamento */
+const MODALITA_NON_SPECIFICATA = 'NON_SPECIFICATO'
+
+function aggiungiGiorni(data: Date, giorni: number): Date {
+  const result = new Date(data)
+  result.setDate(result.getDate() + giorni)
+  return result
+}
+
+/**
+ * Estrae le scadenze di pagamento dalla fattura.
+ *
+ * Due casi generano una data stimata: la fattura senza blocco `DatiPagamento`
+ * e il singolo `DettaglioPagamento` privo di `DataScadenzaPagamento`. Entrambi
+ * sono frequenti nelle fatture arretrate e nei fornitori che compilano l'XML al
+ * minimo indispensabile.
+ */
+export function estraiScadenze(
+  fattura: FatturaParsata,
+  opzioni: OpzioniEstrazioneScadenze = {}
+): ScadenzaEstratta[] {
+  const giorniPagamento = opzioni.giorniPagamento ?? GIORNI_PAGAMENTO_DEFAULT
+  const origineTermini = opzioni.giorniPagamento !== undefined
+    ? 'termini fornitore'
+    : 'termine di default'
+  const dataFattura = new Date(fattura.data)
+
+  const stima = () => ({
+    dueDate: aggiungiGiorni(dataFattura, giorniPagamento),
+    dataStimata: true as const,
+    notaStima: `Scadenza stimata a ${giorniPagamento} giorni dalla data fattura (${origineTermini}): l'XML non riporta la data di pagamento.`,
+  })
+
   if (!fattura.datiPagamento) {
-    // Nessun dato pagamento: crea scadenza unica alla data fattura
+    // Nessun blocco DatiPagamento: una rata unica per l'intero documento
     const { totalAmount } = calcolaImporti(fattura)
     return [
       {
-        dueDate: new Date(fattura.data),
+        ...stima(),
         amount: totalAmount,
-        paymentMethod: 'NON_SPECIFICATO',
+        paymentMethod: MODALITA_NON_SPECIFICATA,
       },
     ]
   }
 
-  return fattura.datiPagamento.dettagliPagamento.map((d) => ({
-    dueDate: d.dataScadenzaPagamento
-      ? new Date(d.dataScadenzaPagamento)
-      : new Date(fattura.data),
-    amount: d.importoPagamento,
-    paymentMethod: d.modalitaPagamento,
-  }))
+  return fattura.datiPagamento.dettagliPagamento.map((d) => {
+    if (!d.dataScadenzaPagamento) {
+      return {
+        ...stima(),
+        amount: d.importoPagamento,
+        paymentMethod: d.modalitaPagamento,
+      }
+    }
+
+    return {
+      dueDate: new Date(d.dataScadenzaPagamento),
+      amount: d.importoPagamento,
+      paymentMethod: d.modalitaPagamento,
+      dataStimata: false,
+    }
+  })
 }
 
 /**

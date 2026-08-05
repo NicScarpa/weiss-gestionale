@@ -163,6 +163,7 @@ export interface ScheduleFilters {
   stato?: ScheduleStatus | ScheduleStatus[]
   tipo?: ScheduleType | ScheduleType[]
   priorita?: SchedulePriority | SchedulePriority[]
+  source?: ScheduleSource
   search?: string
   dataInizio?: Date
   dataFine?: Date
@@ -275,6 +276,21 @@ export const SCHEDULE_PRIORITY_LABELS: Record<SchedulePriority, string> = {
   [SchedulePriority.NORMALE]: 'Normale',
   [SchedulePriority.ALTA]: 'Alta',
   [SchedulePriority.URGENTE]: 'Urgente',
+} as const
+
+export const SCHEDULE_SOURCE_LABELS: Record<ScheduleSource, string> = {
+  [ScheduleSource.MANUALE]: 'Manuale',
+  [ScheduleSource.IMPORT_CSV]: 'Import CSV',
+  [ScheduleSource.IMPORT_FATTURE_SDI]: 'Import fatture SDI',
+  [ScheduleSource.RICORRENZA_AUTO]: 'Ricorrenza automatica',
+} as const
+
+// Etichetta compatta per il badge in lista, dove la colonna è stretta
+export const SCHEDULE_SOURCE_SHORT_LABELS: Record<ScheduleSource, string> = {
+  [ScheduleSource.MANUALE]: 'Manuale',
+  [ScheduleSource.IMPORT_CSV]: 'Da CSV',
+  [ScheduleSource.IMPORT_FATTURE_SDI]: 'Da fattura',
+  [ScheduleSource.RICORRENZA_AUTO]: 'Da ricorrenza',
 } as const
 
 export const RECURRENCE_TYPE_LABELS: Record<RecurrenceType, string> = {

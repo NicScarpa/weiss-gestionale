@@ -203,6 +203,43 @@ describe('generateSchedulesFromInvoice', () => {
     )
   })
 
+  it('riporta sulla scadenza la nota quando la data è stimata', async () => {
+    // Una data stimata deve essere riconoscibile, altrimenti sembra un termine
+    // dichiarato dal fornitore
+    await generateSchedulesFromInvoice(
+      {
+        ...baseInvoice,
+        deadlines: [
+          {
+            ...deadline('dl-1', 500, '2026-08-31'),
+            notaStima: 'Scadenza stimata a 30 giorni dalla data fattura',
+          },
+        ],
+      },
+      'user-1'
+    )
+
+    expect(prisma.schedule.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          note: 'Scadenza stimata a 30 giorni dalla data fattura',
+        }),
+      })
+    )
+  })
+
+  it('non scrive note quando la data viene dal documento', async () => {
+    await generateSchedulesFromInvoice(
+      { ...baseInvoice, deadlines: [deadline('dl-1', 500, '2026-09-30')] },
+      'user-1'
+    )
+
+    const { data } = vi.mocked(prisma.schedule.create).mock.calls[0][0] as {
+      data: { note?: string }
+    }
+    expect(data.note).toBeUndefined()
+  })
+
   it('non lascia la controparte vuota se il fornitore non è identificato', async () => {
     await generateSchedulesFromInvoice(
       {

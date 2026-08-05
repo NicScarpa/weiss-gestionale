@@ -49,6 +49,12 @@ interface DeadlineInput {
   dueDate: Date
   amount: Prisma.Decimal | number
   paymentMethod: string | null
+  /**
+   * Valorizzata quando la data di scadenza è stata stimata perché l'XML non
+   * la riportava: va resa visibile sulla scadenza, altrimenti sembrerebbe un
+   * termine dichiarato dal fornitore.
+   */
+  notaStima?: string
 }
 
 interface InvoiceInput {
@@ -131,6 +137,7 @@ export async function generateSchedulesFromInvoice(
         supplierId: invoice.supplierId,
         controparteNome: invoice.supplierName,
         metodoPagamento: tipoPagamentoDaCodiceSdi(deadline.paymentMethod) ?? undefined,
+        note: deadline.notaStima,
         source: 'import_fatture_sdi',
         invoiceId: invoice.id,
         invoiceDeadlineId: deadline.id,

@@ -15,13 +15,13 @@ import { PriorityBadge } from '@/components/scadenzario/priority-badge'
 import { RecurrencePreview } from '@/components/scadenzario/recurrence-preview'
 import { ScheduleCalendar } from '@/components/scadenzario/schedule-calendar'
 import { SaldoScalarePanel } from '@/components/scadenzario/saldo-scalare-panel'
-import { Schedule, ScheduleSummary, ScheduleFilters as ScheduleFiltersType, CreateScheduleInput, ScheduleSource } from '@/types/schedule'
+import { ScheduleSourceBadge } from '@/components/scadenzario/schedule-source-badge'
+import { Schedule, ScheduleSummary, ScheduleFilters as ScheduleFiltersType, CreateScheduleInput } from '@/types/schedule'
 import { Switch } from '@/components/ui/switch'
-import { CalendarClock, CalendarDays, Plus, ArrowUpDown, ArrowUp, ArrowDown, FileText } from 'lucide-react'
-import { format, isAfter, addDays, startOfDay } from 'date-fns'
+import { CalendarClock, CalendarDays, Plus, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { format, isAfter, startOfDay } from 'date-fns'
 import { it } from 'date-fns/locale'
 import { formatCurrency, cn } from '@/lib/utils'
-import { Badge } from '@/components/ui/badge'
 
 function SortIcon({ column, sortBy, sortOrder }: { column: string; sortBy: string; sortOrder: 'asc' | 'desc' }) {
   if (sortBy !== column) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-30" />
@@ -68,6 +68,7 @@ export default function ScadenzarioPage() {
         if (filtri.stato) params.append('stato', filtri.stato as string)
         if (filtri.tipo) params.append('tipo', filtri.tipo as string)
         if (filtri.priorita) params.append('priorita', filtri.priorita as string)
+        if (filtri.source) params.append('source', filtri.source)
         if (filtri.search) params.append('search', filtri.search)
         if (filtri.dataInizio) params.append('dataInizio', filtri.dataInizio.toISOString())
         if (filtri.dataFine) params.append('dataFine', filtri.dataFine.toISOString())
@@ -232,6 +233,7 @@ export default function ScadenzarioPage() {
               if (filtri.stato) params.append('stato', filtri.stato as string)
               if (filtri.tipo) params.append('tipo', filtri.tipo as string)
               if (filtri.priorita) params.append('priorita', filtri.priorita as string)
+              if (filtri.source) params.append('source', filtri.source)
               if (filtri.search) params.append('search', filtri.search)
               window.open(`/api/scadenzario/export?${params}`, '_blank')
             }}
@@ -404,11 +406,8 @@ export default function ScadenzarioPage() {
                                   {schedule.riferimentoDocumento}
                                 </div>
                               )}
-                              {schedule.source === 'import_fatture_sdi' && (
-                                <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                                  <FileText className="h-2.5 w-2.5 mr-0.5" />
-                                  Da fattura
-                                </Badge>
+                              {schedule.source && (
+                                <ScheduleSourceBadge source={schedule.source} compact />
                               )}
                               <RecurrencePreview
                                 isRicorrente={schedule.isRicorrente}

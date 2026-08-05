@@ -37,8 +37,8 @@ import {
   SCHEDULE_PAYMENT_METHOD_LABELS,
   ScheduleDocumentType,
   SchedulePaymentMethod,
-  ScheduleSource,
 } from '@/types/schedule'
+import { ScheduleSourceBadge } from '@/components/scadenzario/schedule-source-badge'
 import { formatCurrency, cn } from '@/lib/utils'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
@@ -56,13 +56,6 @@ import {
   Download,
 } from 'lucide-react'
 import { toast } from 'sonner'
-
-const SOURCE_LABELS: Record<string, string> = {
-  manuale: 'Manuale',
-  import_csv: 'Import CSV',
-  import_fatture_sdi: 'Import fatture SDI',
-  ricorrenza_auto: 'Ricorrenza automatica',
-}
 
 export default function ScadenzarioDetailPage() {
   const params = useParams()
@@ -456,9 +449,14 @@ export default function ScadenzarioDetailPage() {
                     ? SCHEDULE_PAYMENT_METHOD_LABELS[schedule.metodoPagamento as SchedulePaymentMethod] || schedule.metodoPagamento
                     : null
                 } />
-                <DetailRow label="Origine" value={
-                  SOURCE_LABELS[schedule.source as string] || schedule.source
-                } />
+                <div>
+                  <p className="text-sm text-muted-foreground">Origine</p>
+                  <div className="mt-1">
+                    {schedule.source
+                      ? <ScheduleSourceBadge source={schedule.source} />
+                      : <p className="text-sm">—</p>}
+                  </div>
+                </div>
                 {schedule.invoiceId && (
                   <div className="text-sm">
                     <span className="text-muted-foreground">Fattura di origine</span>

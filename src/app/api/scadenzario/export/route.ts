@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
-import { ScheduleStatus, ScheduleType, SchedulePriority } from '@/types/schedule'
+import { ScheduleStatus, ScheduleType, SchedulePriority, ScheduleSource, SCHEDULE_SOURCE_LABELS } from '@/types/schedule'
 import { getVenueId } from '@/lib/venue'
 
 // GET /api/scadenzario/export - Export CSV scadenze
@@ -27,12 +27,17 @@ export async function GET(request: NextRequest) {
     const stato = searchParams.get('stato')
     const tipo = searchParams.get('tipo')
     const priorita = searchParams.get('priorita')
+    const sourceParam = searchParams.get('source')
+    const source = Object.values(ScheduleSource).includes(sourceParam as ScheduleSource)
+      ? (sourceParam as ScheduleSource)
+      : null
     const search = searchParams.get('search')
 
     const where: Prisma.ScheduleWhereInput = { venueId }
     if (stato) where.stato = stato as ScheduleStatus
     if (tipo) where.tipo = tipo as ScheduleType
     if (priorita) where.priorita = priorita as SchedulePriority
+    if (source) where.source = source
     if (search) {
       where.OR = [
         { descrizione: { contains: search, mode: 'insensitive' } },
@@ -53,7 +58,7 @@ export async function GET(request: NextRequest) {
     const headers = [
       'Tipo', 'Descrizione', 'Controparte', 'Importo Totale', 'Importo Pagato',
       'Residuo', 'Stato', 'Priorità', 'Data Scadenza', 'Data Emissione',
-      'Tipo Documento', 'Numero Documento', 'Metodo Pagamento',
+      'Tipo Documento', 'Numero Documento', 'Metodo Pagamento', 'Origine',
     ]
 
     const rows = schedules.map(s => [
@@ -70,6 +75,7 @@ export async function GET(request: NextRequest) {
       s.tipoDocumento || '',
       escapeCsv(s.numeroDocumento || ''),
       s.metodoPagamento || '',
+      SCHEDULE_SOURCE_LABELS[s.source as ScheduleSource] || s.source || '',
     ])
 
     const csv = [

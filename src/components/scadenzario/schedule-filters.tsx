@@ -3,7 +3,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ScheduleStatus, ScheduleType, SchedulePriority, SCHEDULE_STATUS_LABELS, SCHEDULE_TYPE_LABELS, SCHEDULE_PRIORITY_LABELS } from '@/types/schedule'
+import { ScheduleStatus, ScheduleType, SchedulePriority, ScheduleSource, SCHEDULE_STATUS_LABELS, SCHEDULE_TYPE_LABELS, SCHEDULE_PRIORITY_LABELS, SCHEDULE_SOURCE_LABELS } from '@/types/schedule'
 import { CalendarIcon, Filter, X } from 'lucide-react'
 import { format } from 'date-fns'
 import { useState } from 'react'
@@ -13,6 +13,7 @@ interface ScheduleFiltersProps {
     stato?: ScheduleStatus | ScheduleStatus[]
     tipo?: ScheduleType | ScheduleType[]
     priorita?: SchedulePriority | SchedulePriority[]
+    source?: ScheduleSource
     search?: string
     dataInizio?: Date
     dataFine?: Date
@@ -32,7 +33,7 @@ export function ScheduleFilters({
   const [calendarOpen, setCalendarOpen] = useState(false)
 
   const haFiltriAttivi = () => {
-    return !!filtri.stato || !!filtri.tipo || !!filtri.priorita ||
+    return !!filtri.stato || !!filtri.tipo || !!filtri.priorita || !!filtri.source ||
            !!filtri.search || !!filtri.dataInizio || !!filtri.dataFine ||
            filtri.isRicorrente !== undefined
   }
@@ -108,6 +109,25 @@ export function ScheduleFilters({
           {Object.values(SchedulePriority).map((priorita) => (
             <SelectItem key={priorita} value={priorita}>
               {SCHEDULE_PRIORITY_LABELS[priorita]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {/* Filtro Origine */}
+      <Select
+        value={filtri.source ?? '__all__'}
+        onValueChange={(v) => onFiltriChange({ ...filtri, source: v === '__all__' ? undefined : v as ScheduleSource })}
+        disabled={isLoading}
+      >
+        <SelectTrigger className="w-[180px]">
+          <SelectValue placeholder="Origine" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__all__">Tutte le origini</SelectItem>
+          {Object.values(ScheduleSource).map((source) => (
+            <SelectItem key={source} value={source}>
+              {SCHEDULE_SOURCE_LABELS[source]}
             </SelectItem>
           ))}
         </SelectContent>

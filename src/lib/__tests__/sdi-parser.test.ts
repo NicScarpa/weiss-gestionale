@@ -657,6 +657,110 @@ describe('sdi/parser - parseFatturaPA', () => {
       const scadenze = estraiScadenze(result)
       expect(scadenze.length).toBe(3)
       expect(scadenze.reduce((sum, s) => sum + s.amount, 0)).toBe(300.00)
+      expect(scadenze.every((s) => s.dataStimata)).toBe(false)
+    })
+  })
+
+  describe('estraiScadenze - date di pagamento assenti nell XML', () => {
+    // Fattura del 09/01/2025 da 122,00: il blocco DatiPagamento è opzionale e
+    // viene iniettato solo dai test che lo richiedono
+    const fatturaXml = (datiPagamento = '') => `<?xml version="1.0" encoding="UTF-8"?>
+<FatturaElettronica>
+  <FatturaElettronicaHeader>
+    <CedentePrestatore>
+      <DatiAnagrafici>
+        <IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>01234567890</IdCodice></IdFiscaleIVA>
+        <Anagrafica><Denominazione>Fornitore</Denominazione></Anagrafica>
+      </DatiAnagrafici>
+    </CedentePrestatore>
+    <CessionarioCommittente>
+      <DatiAnagrafici>
+        <IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>09876543210</IdCodice></IdFiscaleIVA>
+        <Anagrafica><Denominazione>Cliente</Denominazione></Anagrafica>
+      </DatiAnagrafici>
+    </CessionarioCommittente>
+  </FatturaElettronicaHeader>
+  <FatturaElettronicaBody>
+    <DatiGenerali>
+      <DatiGeneraliDocumento>
+        <TipoDocumento>TD01</TipoDocumento>
+        <Divisa>EUR</Divisa>
+        <Data>2025-01-09</Data>
+        <Numero>123</Numero>
+        <ImportoTotaleDocumento>122.00</ImportoTotaleDocumento>
+      </DatiGeneraliDocumento>
+    </DatiGenerali>
+    <DatiBeniServizi>
+      <DatiRiepilogo>
+        <AliquotaIVA>22.00</AliquotaIVA>
+        <ImponibileImporto>100.00</ImponibileImporto>
+        <Imposta>22.00</Imposta>
+      </DatiRiepilogo>
+    </DatiBeniServizi>
+    ${datiPagamento}
+  </FatturaElettronicaBody>
+</FatturaElettronica>`
+
+    const isoDay = (d: Date) => d.toISOString().slice(0, 10)
+
+    it('senza DatiPagamento stima la scadenza a 30 giorni dalla data fattura', () => {
+      const result = parseFatturaPA(fatturaXml())
+      expect(result.datiPagamento).toBeUndefined()
+
+      const scadenze = estraiScadenze(result)
+      expect(scadenze.length).toBe(1)
+      expect(scadenze[0].amount).toBe(122.00)
+      expect(scadenze[0].paymentMethod).toBe('NON_SPECIFICATO')
+      // Prima si usava la data fattura, che creava scadenze già scadute
+      expect(isoDay(scadenze[0].dueDate)).toBe('2025-02-08')
+      expect(scadenze[0].dataStimata).toBe(true)
+      expect(scadenze[0].notaStima).toContain('30 giorni')
+      expect(scadenze[0].notaStima).toContain('default')
+    })
+
+    it('applica i termini di pagamento del fornitore quando forniti', () => {
+      const result = parseFatturaPA(fatturaXml())
+
+      const scadenze = estraiScadenze(result, { giorniPagamento: 60 })
+      expect(isoDay(scadenze[0].dueDate)).toBe('2025-03-10')
+      expect(scadenze[0].dataStimata).toBe(true)
+      expect(scadenze[0].notaStima).toContain('60 giorni')
+      expect(scadenze[0].notaStima).toContain('termini fornitore')
+    })
+
+    it('stima anche la singola rata priva di DataScadenzaPagamento', () => {
+      const result = parseFatturaPA(fatturaXml(`
+    <DatiPagamento>
+      <CondizioniPagamento>TP02</CondizioniPagamento>
+      <DettaglioPagamento>
+        <ModalitaPagamento>MP05</ModalitaPagamento>
+        <ImportoPagamento>122.00</ImportoPagamento>
+      </DettaglioPagamento>
+    </DatiPagamento>`))
+
+      const scadenze = estraiScadenze(result)
+      expect(scadenze.length).toBe(1)
+      // La modalità resta quella dichiarata: manca solo la data
+      expect(scadenze[0].paymentMethod).toBe('MP05')
+      expect(isoDay(scadenze[0].dueDate)).toBe('2025-02-08')
+      expect(scadenze[0].dataStimata).toBe(true)
+    })
+
+    it('non marca come stimata la scadenza presente nell XML', () => {
+      const result = parseFatturaPA(fatturaXml(`
+    <DatiPagamento>
+      <CondizioniPagamento>TP02</CondizioniPagamento>
+      <DettaglioPagamento>
+        <ModalitaPagamento>MP05</ModalitaPagamento>
+        <DataScadenzaPagamento>2025-02-28</DataScadenzaPagamento>
+        <ImportoPagamento>122.00</ImportoPagamento>
+      </DettaglioPagamento>
+    </DatiPagamento>`))
+
+      const scadenze = estraiScadenze(result)
+      expect(isoDay(scadenze[0].dueDate)).toBe('2025-02-28')
+      expect(scadenze[0].dataStimata).toBe(false)
+      expect(scadenze[0].notaStima).toBeUndefined()
     })
   })
 

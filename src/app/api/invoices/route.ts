@@ -459,6 +459,13 @@ export async function POST(request: NextRequest) {
             dueDate: d.dueDate,
             amount: d.amount,
             paymentMethod: d.paymentMethod,
+            // InvoiceDeadline non ha una colonna per la stima: la nota si
+            // recupera dalle rate appena estratte, correlate per data e importo
+            notaStima: scadenze.find(
+              (s) =>
+                s.dueDate.getTime() === d.dueDate.getTime() &&
+                Math.abs(s.amount - Number(d.amount)) < 0.01
+            )?.notaStima,
           })),
         },
         session.user.id

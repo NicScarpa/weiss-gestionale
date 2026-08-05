@@ -50,6 +50,12 @@ export async function GET(request: NextRequest) {
     const stato = searchParams.get('stato')
     const tipo = searchParams.get('tipo')
     const priorita = searchParams.get('priorita')
+    // Origine: valore fuori enum ignorato, altrimenti la query non tornerebbe
+    // mai nulla senza spiegare il perché a chi guarda la lista vuota
+    const sourceParam = searchParams.get('source')
+    const source = Object.values(ScheduleSource).includes(sourceParam as ScheduleSource)
+      ? (sourceParam as ScheduleSource)
+      : null
     const search = searchParams.get('search')
     const dataInizio = searchParams.get('dataInizio')
     const dataFine = searchParams.get('dataFine')
@@ -77,6 +83,11 @@ export async function GET(request: NextRequest) {
     // Filro per priorità
     if (priorita) {
       where.priorita = priorita as SchedulePriority
+    }
+
+    // Filtro per origine
+    if (source) {
+      where.source = source
     }
 
     // Filro ricorrenze
@@ -155,6 +166,7 @@ export async function GET(request: NextRequest) {
         stato,
         tipo,
         priorita,
+        source,
         search,
         dataInizio,
         dataFine,
