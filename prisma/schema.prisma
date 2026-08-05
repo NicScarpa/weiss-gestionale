@@ -1543,11 +1543,21 @@ model EmployeeDocument {
   uploadBatchId    String?          @map("upload_batch_id")
   createdAt        DateTime         @default(now()) @map("created_at")
 
+  /// Pagina di cedolino il cui intestatario non è stato riconosciuto durante lo
+  /// split del PDF bulk. Finché è true il documento è intestato all'admin che ha
+  /// caricato il file (userId non è nullable) e va escluso dal portale dipendente:
+  /// diventa un cedolino normale solo dopo PATCH /api/documents/[id]/assign.
+  needsAssignment  Boolean          @default(false) @map("needs_assignment")
+  /// Estratto del testo delle pagine non riconosciute, mostrato all'admin per
+  /// capire di chi è il cedolino.
+  unmatchedText    String?          @map("unmatched_text")
+
   user       User @relation("EmployeeDocuments", fields: [userId], references: [id], onDelete: Cascade)
   uploadedBy User @relation("DocumentUploader", fields: [uploadedByUserId], references: [id])
 
   @@index([userId, category])
   @@index([userId, period])
+  @@index([needsAssignment])
   @@map("employee_documents")
 }
 

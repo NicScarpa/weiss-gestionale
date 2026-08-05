@@ -37,6 +37,8 @@ import {
   CheckCircle,
   AlertCircle,
   Loader2,
+  Eye,
+  UserPlus,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -65,6 +67,8 @@ interface Document {
   period: string | null
   periodLabel: string | null
   description: string | null
+  needsAssignment: boolean
+  unmatchedText: string | null
   createdAt: string
   user: { id: string; firstName: string; lastName: string }
   uploadedBy: { id: string; firstName: string; lastName: string }
@@ -79,11 +83,33 @@ interface Employee {
 
 interface BulkResult {
   matched: Array<{ userId: string; name: string; documentId: string; pages: number[] }>
-  unmatched: Array<{ pages: number[]; textSnippet: string }>
-  summary: { totalPages: number; matchedCount: number; unmatchedCount: number }
+  unmatched: Array<{ documentId: string; pages: number[]; textSnippet: string }>
+  summary: {
+    totalPages: number
+    matchedCount: number
+    matchedPages: number
+    unmatchedCount: number
+    unmatchedPages: number
+  }
+}
+
+/** Cedolini salvati ma ancora senza intestatario riconosciuto. */
+function usePendingDocuments() {
+  return useQuery<{ documents: Document[] }>({
+    queryKey: ['documents', 'da-assegnare'],
+    queryFn: async () => {
+      const res = await fetch('/api/documents?needsAssignment=true&limit=200')
+      if (!res.ok) throw new Error('Errore nel recupero dei documenti da assegnare')
+      return res.json()
+    },
+  })
 }
 
 export default function DocumentiDipendentiPage() {
+  const [tab, setTab] = useState('upload-bulk')
+  const { data: pendingData } = usePendingDocuments()
+  const pendingCount = pendingData?.documents?.length ?? 0
+
   return (
     <div className="space-y-6">
       <div>
@@ -93,15 +119,27 @@ export default function DocumentiDipendentiPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="upload-bulk">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="upload-bulk">Upload Cedolini</TabsTrigger>
+          <TabsTrigger value="da-assegnare">
+            Da Assegnare
+            {pendingCount > 0 && (
+              <Badge variant="destructive" className="ml-2">
+                {pendingCount}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="tutti">Tutti i Documenti</TabsTrigger>
           <TabsTrigger value="upload-singolo">Upload Singolo</TabsTrigger>
         </TabsList>
 
         <TabsContent value="upload-bulk" className="mt-6">
-          <BulkUploadTab />
+          <BulkUploadTab onGoToPending={() => setTab('da-assegnare')} />
+        </TabsContent>
+
+        <TabsContent value="da-assegnare" className="mt-6">
+          <PendingAssignmentTab />
         </TabsContent>
 
         <TabsContent value="tutti" className="mt-6">
@@ -117,11 +155,12 @@ export default function DocumentiDipendentiPage() {
 }
 
 // ========== TAB: Upload Bulk Cedolini ==========
-function BulkUploadTab() {
+function BulkUploadTab({ onGoToPending }: { onGoToPending: () => void }) {
   const [file, setFile] = useState<File | null>(null)
   const [month, setMonth] = useState('')
   const [year, setYear] = useState(new Date().getFullYear().toString())
   const [result, setResult] = useState<BulkResult | null>(null)
+  const queryClient = useQueryClient()
 
   const uploadMutation = useMutation({
     mutationFn: async () => {
@@ -143,9 +182,16 @@ function BulkUploadTab() {
       }
       return res.json()
     },
-    onSuccess: (data) => {
+    onSuccess: (data: BulkResult) => {
       setResult(data)
-      toast.success(`${data.summary.matchedCount} cedolini salvati con successo`)
+      queryClient.invalidateQueries({ queryKey: ['documents'] })
+      if (data.summary.unmatchedCount > 0) {
+        toast.warning(
+          `${data.summary.matchedCount} cedolini abbinati, ${data.summary.unmatchedPages} pagine in attesa di assegnazione`
+        )
+      } else {
+        toast.success(`${data.summary.matchedCount} cedolini salvati con successo`)
+      }
     },
     onError: (err: Error) => {
       toast.error(err.message)
@@ -234,7 +280,7 @@ function BulkUploadTab() {
               {result.summary.unmatchedCount > 0 && (
                 <Badge variant="destructive" className="text-sm">
                   <AlertCircle className="h-3 w-3 mr-1" />
-                  {result.summary.unmatchedCount} non abbinati
+                  {result.summary.unmatchedPages} pagine da assegnare
                 </Badge>
               )}
               <Badge variant="secondary" className="text-sm">
@@ -261,24 +307,202 @@ function BulkUploadTab() {
 
             {result.unmatched.length > 0 && (
               <div>
-                <h4 className="font-medium text-sm mb-2">Non abbinati:</h4>
+                <h4 className="font-medium text-sm mb-2">
+                  In attesa di assegnazione:
+                </h4>
+                <p className="text-sm text-slate-600 mb-2">
+                  Il PDF di queste pagine è stato salvato ma nessun dipendente vi
+                  è stato riconosciuto. Nessuno le vede nel portale finché non le
+                  assegni dal tab <strong>Da Assegnare</strong>.
+                </p>
                 <div className="space-y-2">
-                  {result.unmatched.map((u, i) => (
-                    <div key={i} className="p-3 bg-red-50 rounded-lg text-sm">
-                      <p className="font-medium text-red-700">
+                  {result.unmatched.map((u) => (
+                    <div key={u.documentId} className="p-3 bg-amber-50 rounded-lg text-sm">
+                      <p className="font-medium text-amber-800">
                         Pagine {u.pages.map((p) => p + 1).join(', ')}
                       </p>
-                      <p className="text-red-600 text-xs mt-1 truncate">
+                      <p className="text-amber-700 text-xs mt-1 truncate">
                         {u.textSnippet}
                       </p>
                     </div>
                   ))}
                 </div>
+                <Button variant="outline" className="mt-3" onClick={onGoToPending}>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Assegna ora
+                </Button>
               </div>
             )}
           </CardContent>
         </Card>
       )}
+    </div>
+  )
+}
+
+// ========== TAB: Da Assegnare ==========
+function PendingAssignmentTab() {
+  const queryClient = useQueryClient()
+  const { data, isLoading } = usePendingDocuments()
+  // Un selettore per riga: la scelta va tenuta per documento.
+  const [selection, setSelection] = useState<Record<string, string>>({})
+
+  const { data: employeesData } = useQuery<{ users: Employee[] }>({
+    queryKey: ['employees-list'],
+    queryFn: async () => {
+      const res = await fetch('/api/users?active=true&limit=200')
+      return res.json()
+    },
+  })
+
+  const assignMutation = useMutation({
+    mutationFn: async ({ id, userId }: { id: string; userId: string }) => {
+      const res = await fetch(`/api/documents/${id}/assign`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || 'Errore nell\'assegnazione')
+      }
+      return res.json()
+    },
+    onSuccess: (_data, variables) => {
+      setSelection((prev) => {
+        const next = { ...prev }
+        delete next[variables.id]
+        return next
+      })
+      queryClient.invalidateQueries({ queryKey: ['documents'] })
+      toast.success('Cedolino assegnato, il dipendente è stato notificato')
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
+  const documents = data?.documents ?? []
+
+  if (isLoading) {
+    return (
+      <div className="py-12 text-center">
+        <Loader2 className="h-5 w-5 animate-spin mx-auto" />
+      </div>
+    )
+  }
+
+  if (documents.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center text-slate-500">
+          <CheckCircle className="h-6 w-6 mx-auto mb-2 text-green-500" />
+          Nessun cedolino in attesa di assegnazione.
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-slate-600">
+        Queste pagine sono state estratte da un PDF bulk ma il nome del
+        dipendente non è stato riconosciuto. Sono salvate e scaricabili, ma
+        nessun dipendente le vede finché non le assegni.
+      </p>
+
+      {documents.map((doc) => {
+        const selected = selection[doc.id] || ''
+        const isAssigning =
+          assignMutation.isPending && assignMutation.variables?.id === doc.id
+
+        return (
+          <Card key={doc.id}>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-amber-500" />
+                {doc.description || doc.originalFilename}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
+                <span>{doc.periodLabel || doc.period || 'Periodo non indicato'}</span>
+                <span>{formatFileSize(doc.fileSize)}</span>
+                <span>
+                  Caricato il {new Date(doc.createdAt).toLocaleDateString('it-IT')} da{' '}
+                  {doc.uploadedBy.lastName} {doc.uploadedBy.firstName}
+                </span>
+              </div>
+
+              {doc.unmatchedText && (
+                <div>
+                  <Label className="text-xs text-slate-500">
+                    Testo estratto dalla pagina
+                  </Label>
+                  <pre className="mt-1 p-3 bg-slate-50 rounded-lg text-xs text-slate-700 whitespace-pre-wrap max-h-40 overflow-y-auto">
+                    {doc.unmatchedText}
+                  </pre>
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    window.open(`/api/documents/${doc.id}?inline=1`, '_blank')
+                  }
+                >
+                  <Eye className="h-4 w-4 mr-2" />
+                  Anteprima
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.open(`/api/documents/${doc.id}`, '_blank')}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Scarica
+                </Button>
+
+                <div className="flex-1 min-w-[220px]">
+                  <Label className="text-xs text-slate-500">Assegna a</Label>
+                  <Select
+                    value={selected}
+                    onValueChange={(value) =>
+                      setSelection((prev) => ({ ...prev, [doc.id]: value }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleziona dipendente" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {employeesData?.users?.map((e) => (
+                        <SelectItem key={e.id} value={e.id}>
+                          {e.lastName} {e.firstName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Button
+                  size="sm"
+                  disabled={!selected || isAssigning}
+                  onClick={() =>
+                    assignMutation.mutate({ id: doc.id, userId: selected })
+                  }
+                >
+                  {isAssigning ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <UserPlus className="h-4 w-4 mr-2" />
+                  )}
+                  Assegna
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )
+      })}
     </div>
   )
 }
@@ -304,9 +528,12 @@ function AllDocumentsTab() {
   }>({
     queryKey: ['documents', filterUser, filterCategory, filterPeriod],
     queryFn: async () => {
-      const params = new URLSearchParams()
-      if (filterUser) params.set('userId', filterUser)
-      if (filterCategory) params.set('category', filterCategory)
+      // I documenti ancora da assegnare hanno un tab dedicato: qui si mostrano
+      // solo quelli già intestati al dipendente giusto.
+      const params = new URLSearchParams({ needsAssignment: 'false' })
+      // 'all' è il valore della voce "Tutti": non è un filtro.
+      if (filterUser && filterUser !== 'all') params.set('userId', filterUser)
+      if (filterCategory && filterCategory !== 'all') params.set('category', filterCategory)
       if (filterPeriod) params.set('period', filterPeriod)
       const res = await fetch(`/api/documents?${params}`)
       return res.json()

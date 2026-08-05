@@ -12,6 +12,7 @@ export interface MatchedDocument {
 export interface UnmatchedDocument {
   pages: number[]
   textSnippet: string
+  pdfBuffer: Buffer
 }
 
 export interface SplitResult {
@@ -26,33 +27,29 @@ interface EmployeeLookup {
 }
 
 /**
- * Carica pdf-parse dinamicamente per evitare errori DOMMatrix a build time.
- * L'uso di eval('require') impedisce a Turbopack di analizzare il modulo staticamente.
- */
-async function loadPdfParse() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any, no-eval
-  const pdfParse = eval('require')('pdf-parse') as any
-  return pdfParse
-}
-
-/**
- * Estrae il testo da ogni pagina del PDF usando pdf-parse
+ * Estrae il testo da ogni pagina del PDF usando pdf-parse.
+ *
+ * L'import è dinamico perché pdf-parse tira dentro pdfjs-dist, che a build time
+ * tocca API di browser (DOMMatrix) non disponibili in Node: caricandolo solo
+ * quando la funzione viene invocata, il modulo non finisce nel grafo del build.
+ * pdf-parse è anche in `serverExternalPackages` (next.config.ts) perché resti
+ * esterno al bundle del server.
  */
 async function extractPageTexts(pdfBuffer: Buffer): Promise<string[]> {
-  const pdf = await loadPdfParse()
-  const pageTexts: string[] = []
+  const { PDFParse } = await import('pdf-parse')
+  const parser = new PDFParse({ data: new Uint8Array(pdfBuffer) })
 
-  // pdf-parse con pagerender custom per ottenere testo per pagina
-  await pdf(pdfBuffer, {
-    pagerender: async (pageData: { getTextContent: () => Promise<{ items: Array<{ str: string }> }> }) => {
-      const textContent = await pageData.getTextContent()
-      const text = textContent.items.map((item: { str: string }) => item.str).join(' ')
-      pageTexts.push(text)
-      return text
-    },
-  })
-
-  return pageTexts
+  try {
+    const result = await parser.getText()
+    // `pages` è ordinato per numero di pagina (1-based); riportiamo a 0-based.
+    const pageTexts: string[] = new Array(result.total).fill('')
+    for (const page of result.pages) {
+      pageTexts[page.num - 1] = page.text
+    }
+    return pageTexts
+  } finally {
+    await parser.destroy()
+  }
 }
 
 /**
@@ -152,7 +149,9 @@ export async function splitBulkPdf(pdfBuffer: Buffer): Promise<SplitResult> {
       groups.push({
         employee: assignment.employee,
         pages: [assignment.pageIndex],
-        textSnippet: pageTexts[assignment.pageIndex].substring(0, 200),
+        // Snippet generoso: è l'unico indizio che l'admin ha per capire di chi
+        // sia il cedolino quando deve assegnarlo a mano.
+        textSnippet: pageTexts[assignment.pageIndex].substring(0, 600).trim(),
       })
     }
   }
@@ -183,6 +182,7 @@ export async function splitBulkPdf(pdfBuffer: Buffer): Promise<SplitResult> {
       unmatched.push({
         pages: group.pages,
         textSnippet: group.textSnippet,
+        pdfBuffer: Buffer.from(pdfBytes),
       })
     }
   }

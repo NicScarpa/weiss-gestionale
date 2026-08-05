@@ -25,8 +25,9 @@ export async function GET(
       return NextResponse.json({ error: 'Documento non trovato' }, { status: 404 })
     }
 
-    // Verifica ownership
-    if (document.userId !== session.user.id) {
+    // Verifica ownership. Un documento ancora da assegnare è intestato solo
+    // tecnicamente all'admin che l'ha caricato: dal portale non si scarica.
+    if (document.userId !== session.user.id || document.needsAssignment) {
       return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 

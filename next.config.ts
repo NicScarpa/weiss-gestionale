@@ -9,7 +9,9 @@ const withSerwist = withSerwistInit({
 });
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ['pg'],
+  // pdf-parse trascina pdfjs-dist, che al bundling tocca API di browser
+  // (DOMMatrix) assenti in Node: va lasciato esterno e caricato a runtime.
+  serverExternalPackages: ['pg', 'pdf-parse'],
   async headers() {
     return [
       {

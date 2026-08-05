@@ -17,6 +17,10 @@ export async function GET(request: NextRequest) {
 
     const where: Record<string, unknown> = {
       userId: session.user.id,
+      // I cedolini non abbinati sono intestati provvisoriamente all'admin che ha
+      // caricato il PDF: non devono comparire nel suo portale finché non sono
+      // assegnati al dipendente giusto.
+      needsAssignment: false,
     }
     if (category) where.category = category
     if (period) where.period = period

@@ -52,9 +52,10 @@ export async function POST(request: NextRequest) {
     const splitBulkPdf = await loadSplitter()
     const result = await splitBulkPdf(fileBuffer)
 
-    // Salva i PDF matched sullo storage e crea record DB
+    // Salva i PDF sullo storage e crea record DB
     const batchId = randomUUID()
     const savedDocuments: Array<{ userId: string; name: string; documentId: string; pages: number[] }> = []
+    const pendingDocuments: Array<{ documentId: string; pages: number[]; textSnippet: string }> = []
 
     for (const doc of result.matched) {
       const filename = `${randomUUID()}.pdf`
@@ -83,6 +84,40 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // Le pagine di cui non si è riconosciuto l'intestatario vengono salvate lo
+    // stesso, intestate provvisoriamente all'admin che ha caricato il file e
+    // marcate needsAssignment: restano invisibili nel portale dipendenti finché
+    // qualcuno non le assegna da /documenti-dipendenti.
+    for (const doc of result.unmatched) {
+      const filename = `${randomUUID()}.pdf`
+      await putFile(`documents/cedolini/${filename}`, doc.pdfBuffer, 'application/pdf')
+
+      const pageLabel = doc.pages.map((p) => p + 1).join(', ')
+      const dbDoc = await prisma.employeeDocument.create({
+        data: {
+          userId: session.user.id,
+          category: 'CEDOLINI',
+          filename,
+          originalFilename: `da_assegnare_pag_${doc.pages.map((p) => p + 1).join('-')}.pdf`,
+          contentType: 'application/pdf',
+          fileSize: doc.pdfBuffer.length,
+          period: period || undefined,
+          periodLabel: periodLabel || undefined,
+          description: `Intestatario non riconosciuto (pagine ${pageLabel} di ${file.name})`,
+          uploadedByUserId: session.user.id,
+          uploadBatchId: batchId,
+          needsAssignment: true,
+          unmatchedText: doc.textSnippet,
+        },
+      })
+
+      pendingDocuments.push({
+        documentId: dbDoc.id,
+        pages: doc.pages,
+        textSnippet: doc.textSnippet,
+      })
+    }
+
     // Invia notifiche push ai dipendenti
     if (savedDocuments.length > 0) {
       const userIds = savedDocuments.map((d) => d.userId)
@@ -104,14 +139,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const matchedPages = result.matched.reduce((sum, d) => sum + d.pages.length, 0)
+    const unmatchedPages = result.unmatched.reduce((sum, d) => sum + d.pages.length, 0)
+
     return NextResponse.json({
       batchId,
       matched: savedDocuments,
-      unmatched: result.unmatched,
+      unmatched: pendingDocuments,
       summary: {
-        totalPages: result.matched.reduce((sum, d) => sum + d.pages.length, 0) + result.unmatched.reduce((sum, d) => sum + d.pages.length, 0),
-        matchedCount: result.matched.length,
-        unmatchedCount: result.unmatched.length,
+        totalPages: matchedPages + unmatchedPages,
+        matchedCount: savedDocuments.length,
+        matchedPages,
+        unmatchedCount: pendingDocuments.length,
+        unmatchedPages,
       },
     })
   } catch (error) {

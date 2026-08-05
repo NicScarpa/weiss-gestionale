@@ -23,6 +23,9 @@ export async function GET(request: NextRequest) {
     const userId = searchParams.get('userId')
     const category = searchParams.get('category')
     const period = searchParams.get('period')
+    // 'true' → solo i cedolini in attesa di assegnazione, 'false' → solo quelli
+    // già intestati al dipendente giusto, assente → tutti.
+    const needsAssignment = searchParams.get('needsAssignment')
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '50')
 
@@ -30,6 +33,8 @@ export async function GET(request: NextRequest) {
     if (userId) where.userId = userId
     if (category) where.category = category
     if (period) where.period = period
+    if (needsAssignment === 'true') where.needsAssignment = true
+    if (needsAssignment === 'false') where.needsAssignment = false
 
     const [documents, total] = await Promise.all([
       prisma.employeeDocument.findMany({
