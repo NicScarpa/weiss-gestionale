@@ -25,13 +25,19 @@ const RispostaAi = z.object({
 
 interface CategorizzaRigheFatturaInput {
   invoiceId: string
-  venueId: string
 }
 
 /**
  * Pipeline di categorizzazione delle righe fattura (Fase 4, ondata B):
  * memoria del fornitore prima, AI poi. Best-effort assoluto — non lancia mai,
  * chiamata dopo l'import/parse della fattura (Task 9).
+ *
+ * Il venue è letto dalla fattura stessa (`invoice.venueId`), unica fonte di
+ * verità: Supplier è un anagrafico globale (dedup per P.IVA), quindi lo
+ * stesso supplierId è condiviso fra venue diversi. La memoria fornitore-
+ * prodotto va sempre scoping per venue, altrimenti una mappatura confermata
+ * in un venue verrebbe applicata come 'confermata' anche a un altro venue
+ * senza che nessuno l'abbia mai confermata lì.
  *
  * Vedi docs/superpowers/specs/2026-08-05-allocation-design.md (Fase 4).
  */
@@ -58,12 +64,15 @@ export async function categorizzaRigheFattura({
     if (righeDaProcessare.length === 0) return
 
     // Memoria prima: match per codiceArticolo esatto, poi per nomeNormalizzato.
+    // Scoping obbligatorio per venueId (vedi doc del modulo): Supplier è
+    // globale, senza questo filtro la memoria di un altro venue matcherebbe.
     const memorie = invoice.supplierId
-      ? await prisma.supplierProductAccount.findMany({ where: { supplierId: invoice.supplierId } })
+      ? await prisma.supplierProductAccount.findMany({
+          where: { supplierId: invoice.supplierId, venueId: invoice.venueId },
+        })
       : []
 
     const righeMatchate = new Map<number, { accountId: string }>()
-    const righeScoperte: DettaglioLinea[] = []
 
     for (const riga of righeDaProcessare) {
       const nomeNormalizzato = normalizeProductName(riga.descrizione)
@@ -74,8 +83,6 @@ export async function categorizzaRigheFattura({
 
       if (memoria) {
         righeMatchate.set(riga.numeroLinea, { accountId: memoria.accountId })
-      } else {
-        righeScoperte.push(riga)
       }
     }
 
@@ -208,10 +215,11 @@ async function costruisciPrompt({
 }): Promise<string> {
   const nomeConto = new Map(conti.map((c) => [c.id, c.name]))
 
-  const categoriaPerConto = new Map<string, string | null>()
-  for (const conto of conti) {
-    categoriaPerConto.set(conto.id, await derivaBudgetCategoryDaConto(conto.id))
-  }
+  // Nessuna dipendenza d'ordine fra i conti: le query si eseguono in parallelo.
+  const categorieDerivate = await Promise.all(
+    conti.map((conto) => derivaBudgetCategoryDaConto(conto.id))
+  )
+  const categoriaPerConto = new Map(conti.map((conto, i) => [conto.id, categorieDerivate[i]]))
   const idCategorie = [...new Set([...categoriaPerConto.values()].filter((id): id is string => !!id))]
   const categorie = idCategorie.length > 0
     ? await prisma.budgetCategory.findMany({ where: { id: { in: idCategorie } }, select: { id: true, name: true } })

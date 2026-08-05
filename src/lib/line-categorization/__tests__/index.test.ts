@@ -110,7 +110,7 @@ describe('categorizzaRigheFattura', () => {
       },
     ] as never)
 
-    await categorizzaRigheFattura({ invoiceId: INVOICE_ID, venueId: VENUE_ID })
+    await categorizzaRigheFattura({ invoiceId: INVOICE_ID })
 
     expect(prisma.invoiceLineAccount.create).toHaveBeenCalledWith({
       data: {
@@ -134,6 +134,40 @@ describe('categorizzaRigheFattura', () => {
     expect(promptInviato).toContain('acc-pane')
   })
 
+  it('la memoria è scoping per venue: una mappatura confermata in un altro venue non deve mai matchare una riga di questa fattura', async () => {
+    // Il mock si comporta come farebbe una vera query Prisma filtrata per
+    // where: se il codice sotto test non passa venueId nel where, questa
+    // memoria di un ALTRO venue (stesso supplierId, stesso codiceArticolo)
+    // verrebbe restituita comunque e la riga 1 finirebbe 'confermata' con
+    // l'accountId sbagliato — esattamente il leak cross-venue segnalato in
+    // review.
+    const memoriaDiUnAltroVenue = {
+      id: 'mem-altro-venue',
+      venueId: 'venue-diverso',
+      supplierId: 'fornitore-1',
+      nomeNormalizzato: 'pane comune',
+      codiceArticolo: 'ART001',
+      accountId: 'acc-venue-diverso',
+      conferme: 10,
+    }
+    vi.mocked(prisma.supplierProductAccount.findMany).mockImplementation(async (args) => {
+      const where = (args as { where: { supplierId: string; venueId?: string } }).where
+      // Replica il comportamento reale di Prisma: se il where non porta la
+      // chiave venueId, il filtro semplicemente non la considera (leak); se
+      // la porta, deve corrispondere esattamente.
+      const filtraPerVenue = 'venueId' in where
+      return [memoriaDiUnAltroVenue].filter(
+        (m) => m.supplierId === where.supplierId && (!filtraPerVenue || m.venueId === where.venueId)
+      ) as never
+    })
+
+    await categorizzaRigheFattura({ invoiceId: INVOICE_ID })
+
+    expect(prisma.invoiceLineAccount.create).not.toHaveBeenCalledWith({
+      data: expect.objectContaining({ numeroLinea: 1, fonte: 'regola-appresa' }),
+    })
+  })
+
   it('righe scoperte: chiama parse col modello previsto e crea la riga proposta/ai con confidence e motivo', async () => {
     mockAnthropicParse.mockResolvedValue({
       stop_reason: 'end_turn',
@@ -150,7 +184,7 @@ describe('categorizzaRigheFattura', () => {
       },
     })
 
-    await categorizzaRigheFattura({ invoiceId: INVOICE_ID, venueId: VENUE_ID })
+    await categorizzaRigheFattura({ invoiceId: INVOICE_ID })
 
     expect(mockAnthropicParse).toHaveBeenCalledWith(
       expect.objectContaining({ model: 'claude-haiku-4-5', max_tokens: 4096 })
@@ -187,7 +221,7 @@ describe('categorizzaRigheFattura', () => {
       },
     })
 
-    await categorizzaRigheFattura({ invoiceId: INVOICE_ID, venueId: VENUE_ID })
+    await categorizzaRigheFattura({ invoiceId: INVOICE_ID })
 
     expect(prisma.invoiceLineAccount.create).not.toHaveBeenCalled()
     expect(prisma.invoiceLineAccount.update).not.toHaveBeenCalled()
@@ -210,7 +244,7 @@ describe('categorizzaRigheFattura', () => {
       },
     })
 
-    await categorizzaRigheFattura({ invoiceId: INVOICE_ID, venueId: VENUE_ID })
+    await categorizzaRigheFattura({ invoiceId: INVOICE_ID })
 
     expect(prisma.invoiceLineAccount.create).not.toHaveBeenCalled()
     expect(prisma.invoiceLineAccount.update).not.toHaveBeenCalled()
@@ -244,7 +278,7 @@ describe('categorizzaRigheFattura', () => {
       },
     })
 
-    await categorizzaRigheFattura({ invoiceId: INVOICE_ID, venueId: VENUE_ID })
+    await categorizzaRigheFattura({ invoiceId: INVOICE_ID })
 
     // La riga 1 viene prima scritta dalla memoria...
     expect(prisma.invoiceLineAccount.create).toHaveBeenCalledWith({
@@ -274,7 +308,7 @@ describe('categorizzaRigheFattura', () => {
       },
     ] as never)
 
-    await categorizzaRigheFattura({ invoiceId: INVOICE_ID, venueId: VENUE_ID })
+    await categorizzaRigheFattura({ invoiceId: INVOICE_ID })
 
     expect(mockAnthropicParse).not.toHaveBeenCalled()
     expect(prisma.invoiceLineAccount.create).toHaveBeenCalledWith({
@@ -323,7 +357,7 @@ describe('categorizzaRigheFattura', () => {
       },
     })
 
-    await categorizzaRigheFattura({ invoiceId: INVOICE_ID, venueId: VENUE_ID })
+    await categorizzaRigheFattura({ invoiceId: INVOICE_ID })
 
     // La riga 1 è già in tabella: nessuna create/update la riguarda.
     expect(prisma.invoiceLineAccount.create).not.toHaveBeenCalledWith(
@@ -344,7 +378,7 @@ describe('categorizzaRigheFattura', () => {
       xmlContent: null,
     } as never)
 
-    await categorizzaRigheFattura({ invoiceId: INVOICE_ID, venueId: VENUE_ID })
+    await categorizzaRigheFattura({ invoiceId: INVOICE_ID })
 
     expect(parseFatturaPA).not.toHaveBeenCalled()
     expect(prisma.invoiceLineAccount.create).not.toHaveBeenCalled()
