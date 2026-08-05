@@ -4,6 +4,7 @@ import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { ProfileTab } from './tabs/ProfileTab'
 import { AttendanceTab } from './tabs/AttendanceTab'
+import { MonthlyTimesheet } from '@/components/attendance/MonthlyTimesheet'
 import { LeaveTab } from './tabs/LeaveTab'
 import { StatisticsTab } from './tabs/StatisticsTab'
 import { ContractTab } from './tabs/ContractTab'
@@ -14,6 +15,7 @@ import { SettingsTab } from './tabs/SettingsTab'
 const TABS = [
   { id: 'profilo', label: 'Profilo' },
   { id: 'timbrature', label: 'Timbrature' },
+  { id: 'cartellino', label: 'Cartellino' },
   { id: 'ferie', label: 'Ferie e Permessi' },
   { id: 'statistiche', label: 'Statistiche' },
   { id: 'contratto', label: 'Contratto' },
@@ -75,6 +77,10 @@ export function EmployeeDetailTabs({ employee, isAdmin, userRole, userId, roles 
         )}
         {activeTab === 'timbrature' && (
           <AttendanceTab userId={userId} isAdmin={isAdmin} />
+        )}
+        {activeTab === 'cartellino' && (
+          // Il nome è già nell'intestazione della scheda: non si ripete
+          <MonthlyTimesheet userId={userId} showName={false} />
         )}
         {activeTab === 'ferie' && (
           <LeaveTab userId={userId} isAdmin={isAdmin} />
