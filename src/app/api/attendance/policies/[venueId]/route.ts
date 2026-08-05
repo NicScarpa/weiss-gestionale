@@ -60,6 +60,7 @@ const policySchema = z.object({
   autoClockOutEnabled: z.boolean().default(true),
   autoClockOutHours: z.number().min(4).max(24).default(12),
   requireBreakPunch: z.boolean().default(false),
+  requireExitNote: z.boolean().default(false),
   minBreakMinutes: z.number().min(0).max(120).default(30),
   notifyOnAnomaly: z.boolean().default(true),
   notifyManagerEmail: z.string().email().nullable().optional(),

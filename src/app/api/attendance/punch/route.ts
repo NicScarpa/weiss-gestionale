@@ -42,6 +42,11 @@ const OFFLINE_FUTURE_TOLERANCE_MS = 5 * 60 * 1000
 const OFFLINE_MAX_AGE_MS = 24 * 60 * 60 * 1000
 const OFFLINE_SYNC_PREFIX = '[offline-sync]'
 
+/** Una richiesta con l'orario offline è una sincronizzazione, non un'azione dal vivo. */
+function isOfflineSyncRequest(offlineTimestamp: string | undefined): boolean {
+  return offlineTimestamp !== undefined
+}
+
 // POST /api/attendance/punch - Registra timbratura
 export async function POST(request: NextRequest) {
   try {
@@ -186,6 +191,24 @@ export async function POST(request: NextRequest) {
     const puntoDiRiferimentoHaCoordinate = usaLuoghi
       ? luoghiAssegnati.some((l) => l.latitude !== null && l.longitude !== null)
       : venue.latitude !== null && venue.longitude !== null
+
+    // Nota obbligatoria all'uscita, se la policy della sede lo prevede: è la
+    // traccia più economica del perché di una giornata anomala. Le timbrature
+    // sincronizzate da offline portano già una nota d'ufficio e passano.
+    if (
+      validatedData.punchType === 'OUT' &&
+      venue.attendancePolicy?.requireExitNote &&
+      !validatedData.notes?.trim() &&
+      !isOfflineSyncRequest(validatedData.offlineTimestamp)
+    ) {
+      return NextResponse.json(
+        {
+          error: "All'uscita serve una nota sulla giornata. Scrivila e riprova.",
+          code: 'EXIT_NOTE_REQUIRED',
+        },
+        { status: 422 }
+      )
+    }
 
     // La geolocalizzazione obbligatoria è una decisione del server: senza
     // coordinate la timbratura viene rifiutata, altrimenti basterebbe negare il

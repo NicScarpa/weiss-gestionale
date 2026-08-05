@@ -60,6 +60,7 @@ export async function GET(_request: NextRequest) {
         autoClockOutEnabled: true,
         autoClockOutHours: 12,
         requireBreakPunch: false,
+        requireExitNote: false,
         minBreakMinutes: 30,
         notifyOnAnomaly: true,
         notifyManagerEmail: null,

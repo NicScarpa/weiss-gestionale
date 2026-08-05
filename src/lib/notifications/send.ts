@@ -243,6 +243,8 @@ function shouldSendNotification(
     correctionApproved?: boolean
     correctionRejected?: boolean
     newCorrectionRequest?: boolean
+    clockReminder?: boolean
+    companyCommunication?: boolean
     staffAnomaly?: boolean
     newDocument?: boolean
   } | null | undefined
@@ -266,6 +268,8 @@ function shouldSendNotification(
     CORRECTION_APPROVED: preferences.correctionApproved,
     CORRECTION_REJECTED: preferences.correctionRejected,
     NEW_CORRECTION_REQUEST: preferences.newCorrectionRequest,
+    CLOCK_REMINDER: preferences.clockReminder,
+    COMPANY_COMMUNICATION: preferences.companyCommunication,
     STAFF_ANOMALY: preferences.staffAnomaly,
     NEW_DOCUMENT: preferences.newDocument,
     GENERAL: true, // Sempre abilitate

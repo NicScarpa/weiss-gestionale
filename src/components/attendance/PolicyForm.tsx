@@ -16,7 +16,14 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
-import { Loader2, MapPin, Clock, AlertTriangle, Coffee } from 'lucide-react'
+import {
+  Loader2,
+  MapPin,
+  Clock,
+  AlertTriangle,
+  Coffee,
+  MessageSquare,
+} from 'lucide-react'
 
 interface Policy {
   geoFenceRadius: number
@@ -29,6 +36,7 @@ interface Policy {
   autoClockOutEnabled: boolean
   autoClockOutHours: number
   requireBreakPunch: boolean
+  requireExitNote: boolean
   minBreakMinutes: number
   notifyOnAnomaly: boolean
   notifyManagerEmail: string | null
@@ -304,6 +312,33 @@ export function PolicyForm({
               value={policy.minBreakMinutes}
               onChange={(e) =>
                 updateField('minBreakMinutes', parseInt(e.target.value) || 0)
+              }
+            />
+          </div>
+        </div>
+
+        <Separator />
+
+        {/* Nota all'uscita */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-muted-foreground" />
+            <h3 className="font-medium">Fine giornata</h3>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <Label>Nota obbligatoria all&apos;uscita</Label>
+              <p className="text-sm text-muted-foreground">
+                Chi timbra l&apos;uscita deve scrivere com&apos;è andata: è la
+                traccia più economica del perché di una giornata anomala. Le
+                timbrature sincronizzate da offline restano esentate.
+              </p>
+            </div>
+            <Switch
+              checked={policy.requireExitNote}
+              onCheckedChange={(checked) =>
+                updateField('requireExitNote', checked)
               }
             />
           </div>

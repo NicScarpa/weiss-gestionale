@@ -18,6 +18,7 @@ const PUBLIC_PREFIXES = [
   // rediretto a /login prima di arrivare alla route, che si difende da sola
   // con il segreto CRON_SECRET nell'header Authorization.
   '/api/attendance/auto-clockout',
+  '/api/promemoria-timbratura/cron',
 ]
 
 function isPathAllowed(pathname: string, prefixes: string[]) {

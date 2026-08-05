@@ -2,7 +2,8 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
+import { BellRing, ChevronLeft } from 'lucide-react'
 import { PolicyForm } from '@/components/attendance/PolicyForm'
 import Link from 'next/link'
 
@@ -24,6 +25,7 @@ interface PolicyData {
     autoClockOutEnabled: boolean
     autoClockOutHours: number
     requireBreakPunch: boolean
+    requireExitNote: boolean
     minBreakMinutes: number
     notifyOnAnomaly: boolean
     notifyManagerEmail: string | null
@@ -59,6 +61,25 @@ export default function PolicyPage() {
           </p>
         </div>
       </div>
+
+      {/* I promemoria stanno accanto alle policy: sono l'altra metà della
+          stessa domanda, cosa succede quando qualcuno non timbra. */}
+      <Card>
+        <CardContent className="flex items-center justify-between gap-4 py-4">
+          <div className="flex items-center gap-3">
+            <BellRing className="h-5 w-5 text-muted-foreground" />
+            <div>
+              <p className="font-medium">Promemoria di timbratura</p>
+              <p className="text-sm text-muted-foreground">
+                Notifiche push che ricordano di timbrare entrata e uscita
+              </p>
+            </div>
+          </div>
+          <Button variant="outline" asChild>
+            <Link href="/presenze/promemoria">Configura</Link>
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* Policy Forms */}
       {isLoading ? (

@@ -15,6 +15,7 @@ import {
   RefreshCw,
   CalendarClock,
   ListChecks,
+  Megaphone,
 } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { useState, useEffect, useMemo } from 'react'
@@ -102,6 +103,7 @@ const navigationItems = [
           { name: 'Ferie/Permessi', href: '/ferie-permessi' },
           { name: 'Presenze', href: '/presenze' },
           { name: 'Documenti', href: '/documenti-dipendenti' },
+          { name: 'Comunicazioni', href: '/comunicazioni', icon: Megaphone },
         ],
       },
     ],

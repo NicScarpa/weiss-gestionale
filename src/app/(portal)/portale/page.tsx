@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { UpcomingShifts } from '@/components/portal/UpcomingShifts'
 import { LeaveBalanceCard } from '@/components/portal/LeaveBalanceCard'
 import { MonthHoursCard } from '@/components/portal/MonthHoursCard'
+import { CommunicationsCard } from '@/components/portal/CommunicationsCard'
 
 function getGreeting(): string {
   const hour = new Date().getHours()
@@ -77,6 +78,9 @@ export default function PortalDashboardPage() {
           </Link>
         ))}
       </div>
+
+      {/* Comunicazioni aziendali */}
+      <CommunicationsCard />
 
       {/* Prossimi turni */}
       <UpcomingShifts />
