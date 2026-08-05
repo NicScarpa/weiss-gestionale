@@ -1,6 +1,7 @@
 # Il ciclo di tesoreria: modello Sibill e stato dell'implementazione
 
-**Ultimo aggiornamento:** 5 agosto 2026 (pomeriggio: completate le fasi 3 e 4)
+**Ultimo aggiornamento:** 6 agosto 2026 (completata l'allocation: split per
+conto, righe fattura, ereditarietà pro-quota, memoria + AI)
 
 Questo documento spiega il modello di ragionamento su cui è costruito il ciclo
 fattura → scadenza → movimento → riconciliazione, cosa è già implementato e
@@ -209,11 +210,73 @@ sono trattati separatamente.
 
 ---
 
+## Allocation — lo split del movimento per conto ✅
+
+Spec: `docs/superpowers/specs/2026-08-05-allocation-design.md`. Costruita in
+due tratte: rifiniture e split manuale (fasi 0-2), poi ereditarietà e AI
+(fasi 3-4, commit da `0270f0d` a `ed056bb`).
+
+Sibill può spezzare un movimento su più categorie; ora anche qui, con una
+scelta di raccordo rispetto al modello originale: **il conto del piano dei
+conti è l'unico asse di imputazione**, la categoria di budget si deriva
+sempre da `AccountBudgetMapping` (`src/lib/accounts/mapping.ts`) invece di
+essere scritta a mano — `JournalEntry.budgetCategoryId` è in pensione
+graduale.
+
+- **Split manuale**: `JournalEntryAllocation` mette fette (`origine`
+  'manuale'|'ereditata') su un `JournalEntry`. `setEntryAllocations`
+  (`src/lib/services/allocation-service.ts`) valida che la somma non superi
+  l'importo utile del movimento, sostituisce in transazione le sole fette
+  manuali (array vuoto = rimuove lo split) e tiene `accountId` sempre sul
+  **conto dominante** (la fetta maggiore) con `categorizationSource='split'`:
+  i report per conto esistenti non perdono mai il movimento. Route
+  `PUT/DELETE /api/prima-nota/[id]/suddivisione`, dialog "Suddividi importo"
+  e badge "Suddiviso (N)" in prima nota.
+- **Righe fattura**: `InvoiceLineAccount` ancora ogni riga della fattura
+  elettronica (via `numeroLinea`) a un conto, con stato
+  'proposta'/'confermata' e fonte 'ai'/'regola-appresa'/'manuale'.
+  `GET /api/invoices/[id]` fa il merge fra XML riparsato e categorizzazioni
+  salvate; `PATCH /api/invoices/[id]/righe-conti` aggiorna riga per riga o in
+  blocco ("Accetta tutte").
+- **Ereditarietà pro-quota alla riconciliazione**: aggancio dentro la stessa
+  transazione di `reconcileScheduleWithEntry`, che copre gratis anche le
+  regole scadenzario (riconciliano con lo stesso service). Scatta solo con
+  copertura totale delle righe fattura (proposte incluse) e solo se il
+  movimento non ha già fette manuali, che vincono sempre. I pesi sono gli
+  importi di riga per conto normalizzati sulla **somma righe effettiva**, non
+  su `netAmount`: sconti e abbuoni globali non distorcono lo split, l'IVA si
+  ripartisce pro-quota. `ripartisciProQuota` (pura: arrotonda al centesimo e
+  quadra la differenza sull'ultima fetta) genera le fette con
+  `origine='ereditata'` legate alla riconciliazione — pagamento parziale e
+  saldo pieno sono lo stesso codice, e il multi-rata accumula una fetta per
+  riconciliazione. L'undo rimuove solo le fette della propria
+  riconciliazione (`reconciliationId`) e ricalcola il conto dominante sulle
+  fette residue.
+- **Memoria delle overrule + proposta AI**: `SupplierProductAccount`
+  (fornitore + prodotto → conto, scoping per sede) si aggiorna a ogni
+  conferma manuale delle righe fattura e ha sempre precedenza sull'AI. La
+  pipeline `categorizzaRigheFattura` (`src/lib/line-categorization/index.ts`),
+  agganciata all'import delle fatture passive, applica prima la memoria
+  (match su `codiceArticolo`, poi nome normalizzato) e propone con
+  `claude-haiku-4-5` in structured output solo per le righe non coperte; può
+  dichiarare `dubbioSuMemoria` quando l'AI dissente da una mappatura già
+  confermata, che torna così in stato 'proposta' invece di essere imposta.
+  Anti-allucinazione su `accountId` e `numeroLinea` inesistenti (scartati con
+  log). Come il price tracking a cui è affiancata, è **best-effort**: non fa
+  mai fallire l'import; **richiede `ANTHROPIC_API_KEY` in env** — se assente,
+  salta con un log e resta il flusso manuale.
+
+La fase di reportistica per categoria che somma le fette resta rimandata: la
+spec disegna un helper unico di lettura (fette se presenti, altrimenti il
+conto singolo del movimento, residuo non allocato esplicito) per quando
+servirà, ma non è stato ancora costruito — non c'è un consumer oggi.
+`category-aggregator.ts` e i report attuali restano intoccati.
+
+---
+
 ## Altre cose aperte
 
 - **`ScheduleRule.contoId`** deprecato: rimuovere dopo la migrazione dei dati.
-- **Allocation**: Sibill può spezzare un singolo movimento su più categorie. Il
-  gestionale non ha questo concetto.
 - **Regole sui movimenti**: in Sibill una regola può avere più azioni insieme
   (imposta categoria, nascondi, segna verificato, crea e riconcilia) e c'è un
   suggeritore che propone quali regole scrivere guardando dove si accumula
