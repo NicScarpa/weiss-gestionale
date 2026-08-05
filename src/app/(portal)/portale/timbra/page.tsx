@@ -65,6 +65,8 @@ interface CurrentStatusResponse {
    * che nascerà fuori sede.
    */
   workLocations: AssignedLocation[]
+  /** La sede chiede una nota all'uscita: vale anche senza turno programmato. */
+  requireExitNote: boolean
   hoursWorkedToday: number
   punchCount: number
 }
@@ -322,6 +324,7 @@ export default function TimbraPage() {
         status={status}
         venue={punchVenue}
         workLocations={luoghiAssegnati}
+        requireExitNote={statusData?.requireExitNote ?? false}
       />
 
       {/* Pulsante pausa (solo se in servizio) */}

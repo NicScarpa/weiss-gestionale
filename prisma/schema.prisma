@@ -62,6 +62,9 @@ model User {
   attendancePunches       AttendanceRecord[]
   correctionRequests      AttendanceCorrectionRequest[] @relation("CorrectionRequestedBy")
   reviewedCorrections     AttendanceCorrectionRequest[] @relation("CorrectionReviewedBy")
+  clockReminders          ClockReminderRecipient[]
+  communicationsCreated   Communication[]              @relation("CommunicationsCreated")
+  communicationReads      CommunicationRead[]          @relation("CommunicationReads")
   /// Regola oraria del dipendente: vale se il luogo non ne impone una propria.
   timekeepingPolicyId     String?                      @map("timekeeping_policy_id")
   timekeepingPolicy       TimekeepingPolicy?           @relation(fields: [timekeepingPolicyId], references: [id])
@@ -178,6 +181,8 @@ model Venue {
   timekeepingPolicies     TimekeepingPolicy[]
   workLocations           WorkLocation[]
   correctionRequests      AttendanceCorrectionRequest[]
+  clockReminders          ClockReminder[]
+  communications          Communication[]
 
   @@map("venues")
 }
@@ -1098,6 +1103,9 @@ model AttendancePolicy {
   autoClockOutEnabled  Boolean  @default(true) @map("auto_clock_out_enabled")
   autoClockOutHours    Int      @default(12) @map("auto_clock_out_hours")
   requireBreakPunch    Boolean  @default(false) @map("require_break_punch")
+  /// L'uscita richiede una nota: la traccia più economica del perché di una
+  /// giornata anomala.
+  requireExitNote      Boolean  @default(false) @map("require_exit_note")
   minBreakMinutes      Int      @default(30) @map("min_break_minutes")
   notifyOnAnomaly      Boolean  @default(true) @map("notify_on_anomaly")
   notifyManagerEmail   String?  @map("notify_manager_email")
@@ -1257,6 +1265,84 @@ model AttendanceAnomaly {
   @@map("attendance_anomalies")
 }
 
+/// Promemoria push di timbratura: "sono le 8:55, ricordati di timbrare".
+///
+/// Un cron li passa in rassegna e invia la notifica nell'ora giusta dei
+/// giorni attivi, saltando chi ha già timbrato se così configurato.
+model ClockReminder {
+  id            String                   @id @default(cuid())
+  venueId       String                   @map("venue_id")
+  name          String
+  punchType     PunchType                @map("punch_type")
+  /// Orario dell'avviso, in minuti dalla mezzanotte italiana.
+  timeMinutes   Int                      @map("time_minutes")
+  /// Giorni attivi: 0 = domenica ... 6 = sabato.
+  daysOfWeek    Int[]                    @map("days_of_week")
+  skipIfPunched Boolean                  @default(true) @map("skip_if_punched")
+  title         String
+  body          String
+  isActive      Boolean                  @default(true) @map("is_active")
+  /// Ultima giornata italiana in cui è partito, per non inviarlo due volte.
+  lastSentDate  DateTime?                @map("last_sent_date") @db.Date
+  createdAt     DateTime                 @default(now()) @map("created_at")
+  updatedAt     DateTime                 @updatedAt @map("updated_at")
+  venue         Venue                    @relation(fields: [venueId], references: [id])
+  recipients    ClockReminderRecipient[]
+
+  @@index([venueId, isActive])
+  @@map("clock_reminders")
+}
+
+/// Destinatari scelti di un promemoria. Nessuna riga = tutto l'organico
+/// con accesso al portale.
+model ClockReminderRecipient {
+  id         String        @id @default(cuid())
+  reminderId String        @map("reminder_id")
+  userId     String        @map("user_id")
+  reminder   ClockReminder @relation(fields: [reminderId], references: [id], onDelete: Cascade)
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([reminderId, userId])
+  @@map("clock_reminder_recipients")
+}
+
+/// Comunicazione aziendale: bacheca del portale, con priorità e scadenza.
+model Communication {
+  id          String                @id @default(cuid())
+  venueId     String                @map("venue_id")
+  title       String
+  message     String
+  priority    CommunicationPriority @default(NORMAL)
+  /// Data dell'evento di cui parla, se ce n'è una.
+  eventDate   DateTime?             @map("event_date") @db.Date
+  /// Oltre questa data non compare più nel portale. Null = non scade.
+  expiresAt   DateTime?             @map("expires_at")
+  /// Nomi dei ruoli destinatari. Vuoto = tutti.
+  targetRoles String[]              @map("target_roles")
+  createdById String                @map("created_by_id")
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+  venue       Venue                 @relation(fields: [venueId], references: [id])
+  createdBy   User                  @relation("CommunicationsCreated", fields: [createdById], references: [id])
+  reads       CommunicationRead[]
+
+  @@index([venueId, expiresAt])
+  @@map("communications")
+}
+
+/// Chi ha letto cosa: serve al portale per il pallino "non letto".
+model CommunicationRead {
+  id              String        @id @default(cuid())
+  communicationId String        @map("communication_id")
+  userId          String        @map("user_id")
+  readAt          DateTime      @default(now()) @map("read_at")
+  communication   Communication @relation(fields: [communicationId], references: [id], onDelete: Cascade)
+  user            User          @relation("CommunicationReads", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([communicationId, userId])
+  @@map("communication_reads")
+}
+
 /// Richiesta di correzione delle timbrature, iniziata dal dipendente.
 ///
 /// È il percorso per la dimenticanza — il caso normale — e per chi dichiara
@@ -1307,6 +1393,8 @@ model NotificationPreference {
   correctionApproved   Boolean  @default(true) @map("correction_approved")
   correctionRejected   Boolean  @default(true) @map("correction_rejected")
   newCorrectionRequest Boolean  @default(true) @map("new_correction_request")
+  clockReminder        Boolean  @default(true) @map("clock_reminder")
+  companyCommunication Boolean  @default(true) @map("company_communication")
   leaveApproved        Boolean  @default(true) @map("leave_approved")
   leaveRejected        Boolean  @default(true) @map("leave_rejected")
   leaveReminder        Boolean  @default(true) @map("leave_reminder")
@@ -1940,6 +2028,12 @@ enum SwapStatus {
   REJECTED
 }
 
+enum CommunicationPriority {
+  NORMAL
+  IMPORTANT
+  URGENT
+}
+
 enum CorrectionRequestStatus {
   PENDING
   APPROVED
@@ -2020,6 +2114,8 @@ enum NotificationType {
   CORRECTION_APPROVED
   CORRECTION_REJECTED
   NEW_CORRECTION_REQUEST
+  CLOCK_REMINDER
+  COMPANY_COMMUNICATION
   STAFF_ANOMALY
   NEW_DOCUMENT
   GENERAL

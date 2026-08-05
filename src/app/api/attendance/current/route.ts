@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
 import { logger } from '@/lib/logger'
+import { getVenueId } from '@/lib/venue'
 import { romeDateKey, romeDayRange, toDateOnlyUtc } from '@/lib/timezone'
 // GET /api/attendance/current - Stato timbratura attuale
 export async function GET(request: NextRequest) {
@@ -119,6 +120,17 @@ export async function GET(request: NextRequest) {
       },
     })
 
+    // La nota obbligatoria all'uscita è una regola della sede, non del turno:
+    // va letta anche quando non c'è un turno programmato — è il caso di chi
+    // viene chiamato all'ultimo momento, e sarebbe l'unico a scoprire l'obbligo
+    // dal rifiuto del server invece che dal dialogo che chiede la nota.
+    const policySede = await prisma.attendancePolicy.findUnique({
+      where: {
+        venueId: venueId ?? todayAssignment?.venue.id ?? (await getVenueId()),
+      },
+      select: { requireExitNote: true },
+    })
+
     // Luoghi di lavoro su cui la persona è abilitata. Servono al portale: il
     // semaforo della distanza deve misurare dallo stesso punto da cui misura la
     // route di timbratura, altrimenti dice "nel raggio" mentre il server
@@ -192,6 +204,7 @@ export async function GET(request: NextRequest) {
           }
         : null,
       workLocations,
+      requireExitNote: policySede?.requireExitNote ?? false,
       hoursWorkedToday,
       punchCount: todayPunches.length,
     })

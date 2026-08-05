@@ -64,6 +64,10 @@ DECLARE
         'work_locations',
         'work_location_assignments',
         'attendance_correction_requests',
+        'clock_reminders',
+        'clock_reminder_recipients',
+        'communications',
+        'communication_reads',
         'users'
     ];
 BEGIN

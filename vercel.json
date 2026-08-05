@@ -3,6 +3,10 @@
     {
       "path": "/api/attendance/auto-clockout",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/promemoria-timbratura/cron",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

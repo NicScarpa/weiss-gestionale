@@ -1,8 +1,18 @@
 'use client'
 
+import Link from 'next/link'
 import { useState, useEffect, useCallback } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { getCurrentPosition, formatDistance, GeolocationError } from '@/lib/geolocation'
 import { savePunchOffline, syncAllPendingPunches, getPendingPunchCount } from '@/lib/offline'
 import type { AssignedLocation } from '@/lib/attendance/work-location'
@@ -112,6 +122,12 @@ interface PunchButtonProps {
    * è premerlo e leggere un rifiuto.
    */
   workLocations?: AssignedLocation[]
+  /**
+   * La sede chiede una nota all'uscita. Il controllo vero è del server, che
+   * rifiuta con `EXIT_NOTE_REQUIRED`: qui serve solo a chiedere la nota prima
+   * di partire, invece di far fallire il gesto e ricominciare.
+   */
+  requireExitNote?: boolean
   disabled?: boolean
   className?: string
 }
@@ -121,17 +137,27 @@ interface PunchButtonProps {
  * `null` se almeno uno la consente. Senza luoghi assegnati vale la sede, e il
  * pulsante resta attivo come prima dei luoghi di lavoro.
  */
-function motivoBlocco(workLocations: AssignedLocation[]): string | null {
+function motivoBlocco(
+  workLocations: AssignedLocation[]
+): { testo: string; conLinkCorrezioni: boolean } | null {
   if (workLocations.length === 0) return null
 
   const modalita = new Set(workLocations.map((l) => l.trackingMode))
   if (modalita.has('GPS_GEOFENCE')) return null
 
-  if (!modalita.has('MANUAL_HOURS')) return 'Non sei abilitato a timbrare'
+  if (!modalita.has('MANUAL_HOURS')) {
+    return { testo: 'Non sei abilitato a timbrare', conLinkCorrezioni: false }
+  }
 
-  return workLocations.length === 1
-    ? 'Presso il tuo luogo di lavoro le ore si dichiarano, non si timbrano'
-    : 'Nei tuoi luoghi di lavoro le ore si dichiarano, non si timbrano'
+  // Chi dichiara le ore passa dalle richieste di correzione: il link è la
+  // strada, non solo il divieto.
+  return {
+    testo:
+      workLocations.length === 1
+        ? 'Presso il tuo luogo di lavoro le ore si dichiarano, non si timbrano'
+        : 'Nei tuoi luoghi di lavoro le ore si dichiarano, non si timbrano',
+    conLinkCorrezioni: true,
+  }
 }
 
 const buttonConfig: Record<
@@ -178,6 +204,7 @@ export function PunchButton({
   status,
   venue,
   workLocations = [],
+  requireExitNote = false,
   disabled = false,
   className,
 }: PunchButtonProps) {
@@ -186,6 +213,8 @@ export function PunchButton({
   const [isOnline, setIsOnline] = useState(true)
   const [pendingCount, setPendingCount] = useState(0)
   const [isSyncing, setIsSyncing] = useState(false)
+  const [notaAperta, setNotaAperta] = useState(false)
+  const [nota, setNota] = useState('')
 
   // Rileva stato online/offline
   useEffect(() => {
@@ -288,6 +317,7 @@ export function PunchButton({
       latitude?: number
       longitude?: number
       accuracy?: number
+      notes?: string
     }) => {
       const res = await fetch('/api/attendance/punch', {
         method: 'POST',
@@ -305,6 +335,7 @@ export function PunchButton({
       // Invalida le query per aggiornare lo stato
       queryClient.invalidateQueries({ queryKey: ['attendance-current'] })
       queryClient.invalidateQueries({ queryKey: ['attendance-today'] })
+      setNota('')
 
       // Con più luoghi di lavoro non basta dire "registrata": chi timbra deve
       // vedere dove il sistema lo ha collocato, per accorgersi subito di uno
@@ -321,9 +352,23 @@ export function PunchButton({
     // il suggerimento sul permesso GPS negato.
   })
 
-  const handlePunch = async () => {
+  /**
+   * La nota si chiede solo online: la coda offline non porta testo libero — la
+   * sincronizzazione manda una nota d'ufficio col momento della timbratura, ed
+   * è per questo che il server esenta le richieste sincronizzate. Chiederla
+   * quando si è offline significherebbe buttarla via.
+   */
+  const serveNota =
+    isOnline && requireExitNote && config.punchType === 'OUT'
+
+  const handlePunch = async (notaUscita?: string) => {
     if (!venue) {
       toast.error('Nessuna sede selezionata')
+      return
+    }
+
+    if (serveNota && !notaUscita?.trim()) {
+      setNotaAperta(true)
       return
     }
 
@@ -387,8 +432,16 @@ export function PunchButton({
         latitude: position.latitude,
         longitude: position.longitude,
         accuracy: position.accuracy,
+        notes: notaUscita?.trim() || undefined,
       })
     } catch (err) {
+      // La policy chiede la nota e la richiesta è partita senza: la si domanda
+      // invece di mostrare un errore, così il gesto si completa da dov'era.
+      if (err instanceof PunchError && err.code === 'EXIT_NOTE_REQUIRED') {
+        setNotaAperta(true)
+        return
+      }
+
       // Se fallisce la rete, salva offline
       if (!isOnline || (err instanceof Error && err.message.includes('fetch'))) {
         try {
@@ -453,9 +506,19 @@ export function PunchButton({
 
       {/* Perché il pulsante è spento */}
       {blocco && (
-        <div className="flex items-center justify-center gap-2 text-muted-foreground bg-muted rounded-lg py-2 px-3">
-          <Info className="h-4 w-4 shrink-0" />
-          <span className="text-sm font-medium">{blocco}</span>
+        <div className="flex flex-col items-center justify-center gap-1 text-muted-foreground bg-muted rounded-lg py-2 px-3">
+          <div className="flex items-center gap-2">
+            <Info className="h-4 w-4 shrink-0" />
+            <span className="text-sm font-medium">{blocco.testo}</span>
+          </div>
+          {blocco.conLinkCorrezioni && (
+            <Link
+              href="/portale/correzioni"
+              className="text-sm font-medium text-gray-900 underline underline-offset-2"
+            >
+              Dichiara le ore da qui
+            </Link>
+          )}
         </div>
       )}
 
@@ -479,7 +542,7 @@ export function PunchButton({
       )}
 
       <Button
-        onClick={handlePunch}
+        onClick={() => handlePunch()}
         disabled={disabled || isLoading || !venue || blocco !== null}
         className={cn(
           'w-full h-24 text-xl font-bold text-white shadow-md rounded-2xl',
@@ -504,6 +567,46 @@ export function PunchButton({
           </>
         )}
       </Button>
+
+      <Dialog
+        open={notaAperta}
+        onOpenChange={(aperto) => !aperto && setNotaAperta(false)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Come è andata la giornata?</DialogTitle>
+            <DialogDescription>
+              Prima di timbrare l&apos;uscita scrivi due righe. È quello che
+              spiega le ore che non tornano, senza dover ricostruire la giornata
+              a fine mese.
+            </DialogDescription>
+          </DialogHeader>
+
+          <Textarea
+            value={nota}
+            onChange={(e) => setNota(e.target.value)}
+            placeholder="Nota obbligatoria"
+            maxLength={500}
+            rows={4}
+            autoFocus
+          />
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNotaAperta(false)}>
+              Annulla
+            </Button>
+            <Button
+              disabled={nota.trim().length === 0 || isLoading}
+              onClick={() => {
+                setNotaAperta(false)
+                handlePunch(nota)
+              }}
+            >
+              Timbra uscita
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
