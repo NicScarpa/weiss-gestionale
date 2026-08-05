@@ -1177,6 +1177,10 @@ model TimekeepingPolicy {
   dayEndMinutes               Int                      @map("day_end_minutes")
   lunchStartMinutes           Int?                     @map("lunch_start_minutes")
   lunchEndMinutes             Int?                     @map("lunch_end_minutes")
+  /// La giornata segue il turno pianificato invece della finestra fissa:
+  /// l'anticipo non conta, il ritardo si arrotonda dall'inizio del turno,
+  /// e le ore oltre la fine passano da una revisione umana.
+  useShiftAsWindow            Boolean                  @default(false) @map("use_shift_as_window")
   /// Margine entro cui l'arrivo anticipato o l'uscita posticipata contano come lavoro.
   flexMinutes                 Int                      @default(0) @map("flex_minutes")
   /// Intervallo di arrotondamento dell'entrata, in minuti. 1 = nessun arrotondamento.

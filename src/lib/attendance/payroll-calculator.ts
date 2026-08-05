@@ -20,6 +20,7 @@ import {
   romeDayStart,
   romeInstant,
   romeMonthRange,
+  timeColumnToMinutes,
   toDateOnlyUtc,
   toRomeParts,
 } from '@/lib/timezone'
@@ -140,7 +141,8 @@ interface AttendanceRecordData {
 function calculateHoursFromPunches(
   records: AttendanceRecordData[],
   workdayKey: string,
-  rules: PolicyRules
+  rules: PolicyRules,
+  shiftWindows?: { startMinutes: number; endMinutes: number }[]
 ): {
   hours: DailyHours
   clockInMinutes: number | null
@@ -163,6 +165,7 @@ function calculateHoursFromPunches(
     weekday: toRomeParts(romeDayStart(workdayKey)).weekday,
     isHoliday: isItalianHoliday(workdayKey),
     dstShiftMinutes,
+    shiftWindows,
   })
 
   return {
@@ -235,6 +238,50 @@ export async function generatePayrollData(
     })
     for (const luogo of luoghi) {
       workLocationNames.set(luogo.id, luogo.name)
+    }
+  }
+
+  // Turni pubblicati del mese, ma solo se almeno una regola li usa come
+  // finestra della giornata: per tutte le altre sarebbe una query sprecata.
+  const qualcunoSegueIlTurno =
+    policyContext !== null &&
+    (policyContext.defaultPolicy?.useShiftAsWindow === true ||
+      [...policyContext.userPolicyByUserId.values()].some((p) => p.useShiftAsWindow) ||
+      [...policyContext.locationPolicyByLocationId.values()].some(
+        (p) => p.useShiftAsWindow
+      ))
+
+  const turniPerUtenteGiorno = new Map<
+    string,
+    { startMinutes: number; endMinutes: number }[]
+  >()
+  if (qualcunoSegueIlTurno) {
+    const turni = await prisma.shiftAssignment.findMany({
+      where: {
+        date: { gte: firstDay, lte: lastDay },
+        schedule: { status: 'PUBLISHED' },
+        ...(venueId && { venueId }),
+      },
+      select: { userId: true, date: true, startTime: true, endTime: true },
+    })
+
+    for (const turno of turni) {
+      if (!turno.startTime || !turno.endTime) continue
+
+      const chiave = `${turno.userId}_${turno.date.toISOString().slice(0, 10)}`
+      const startMinutes = timeColumnToMinutes(turno.startTime)
+      let endMinutes = timeColumnToMinutes(turno.endTime)
+      // La fine "prima" dell'inizio è il giorno dopo: il turno serale.
+      if (endMinutes <= startMinutes) {
+        endMinutes += 24 * 60
+      }
+
+      const lista = turniPerUtenteGiorno.get(chiave)
+      if (lista) {
+        lista.push({ startMinutes, endMinutes })
+      } else {
+        turniPerUtenteGiorno.set(chiave, [{ startMinutes, endMinutes }])
+      }
     }
   }
 
@@ -450,7 +497,12 @@ export async function generatePayrollData(
         const regole = regolePerGiornata(workLocationId)
         policyName = regole.policyName
 
-        const risultato = calculateHoursFromPunches(punches, dateKey, regole.rules)
+        const risultato = calculateHoursFromPunches(
+          punches,
+          dateKey,
+          regole.rules,
+          turniPerUtenteGiorno.get(key)
+        )
         hours = risultato.hours
         riconosciuto = risultato
 

@@ -33,6 +33,7 @@ export interface TimekeepingPolicyRow {
   maxDailyMinutes: number | null
   contractWeeklyHours: unknown
   saturdayAsOvertime: boolean
+  useShiftAsWindow: boolean
   blockSunday: boolean
   singlePunchMode: boolean
   extraBreaks: { name: string; startMinutes: number; endMinutes: number }[]
@@ -104,6 +105,7 @@ export function toPolicyRules(
       DEFAULT_DAILY_MINUTES,
     saturdayAsOvertime: row.saturdayAsOvertime,
     singlePunchMode: row.singlePunchMode,
+    useShiftAsWindow: row.useShiftAsWindow,
   }
 }
 
@@ -126,6 +128,7 @@ export function neutralPolicy(contractWeeklyHours: number | null): PolicyRules {
       toDailyMinutes(contractWeeklyHours) ?? DEFAULT_DAILY_MINUTES,
     saturdayAsOvertime: false,
     singlePunchMode: false,
+    useShiftAsWindow: false,
   }
 }
 
@@ -154,6 +157,7 @@ const policySelect = {
   saturdayAsOvertime: true,
   blockSunday: true,
   singlePunchMode: true,
+  useShiftAsWindow: true,
   extraBreaks: {
     select: { name: true, startMinutes: true, endMinutes: true },
   },

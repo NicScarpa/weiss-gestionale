@@ -42,6 +42,14 @@ export interface PolicyRules {
   saturdayAsOvertime: boolean
   /** Si timbra una volta sola: la giornata vale le ore previste dalla regola. */
   singlePunchMode: boolean
+  /**
+   * La giornata segue il turno pianificato (context.shiftWindows) invece
+   * della finestra fissa: l'anticipo non conta, il ritardo si arrotonda a
+   * blocchi dall'inizio del turno, le ore oltre la fine si contano ma vanno
+   * in revisione. Senza turno pianificato quel giorno, le ore sono quelle
+   * timbrate.
+   */
+  useShiftAsWindow: boolean
 }
 
 export interface DayPunch {
@@ -53,6 +61,12 @@ export interface DayContext {
   /** 0 = domenica, come `Date.getDay`. */
   weekday: number
   isHoliday: boolean
+  /**
+   * Turni pianificati della giornata, in minuti della giornata lavorativa
+   * (oltre 1440 = dopo la mezzanotte). Due elementi per il turno spezzato.
+   * Usati solo dalle regole con `useShiftAsWindow`.
+   */
+  shiftWindows?: { startMinutes: number; endMinutes: number }[]
   /**
    * Scarto di fuso fra inizio e fine della giornata, in minuti: +60 nella notte
    * di fine marzo in cui l'orologio va avanti, -60 in quella di fine ottobre.
@@ -70,6 +84,8 @@ export type DayWarning =
   | 'PAUSA_PRANZO_NON_TIMBRATA'
   | 'FUORI_FINESTRA'
   | 'OLTRE_TETTO_GIORNALIERO'
+  /** Ore oltre la fine del turno pianificato: contate, ma da rivedere. */
+  | 'OLTRE_TURNO'
 
 export interface RecognizedDay {
   /** Entrata riconosciuta, dopo flessibilità e arrotondamento. */

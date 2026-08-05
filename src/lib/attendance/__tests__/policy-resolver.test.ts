@@ -25,6 +25,7 @@ function policyRow(overrides: Record<string, unknown> = {}) {
     saturdayAsOvertime: false,
     blockSunday: false,
     singlePunchMode: false,
+    useShiftAsWindow: false,
     extraBreaks: [],
     ...overrides,
   }

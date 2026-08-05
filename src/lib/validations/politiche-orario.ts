@@ -50,6 +50,8 @@ export const politicaOrarioSchema = z
     saturdayAsOvertime: z.boolean().default(false),
     blockSunday: z.boolean().default(false),
     singlePunchMode: z.boolean().default(false),
+    /** La giornata segue il turno pianificato invece della finestra fissa. */
+    useShiftAsWindow: z.boolean().default(false),
     extraBreaks: z.array(pausaSchema).max(5).default([]),
   })
   .refine(
@@ -96,6 +98,9 @@ export const provaCalcoloSchema = z.object({
   /** 0 = domenica. Per provare le regole del sabato e dei festivi. */
   weekday: z.number().int().min(0).max(6).default(3),
   isHoliday: z.boolean().default(false),
+  /** Turno pianificato simulato, per provare le regole che seguono il turno. */
+  shiftStartMinutes: z.number().int().min(0).max(2879).nullable().default(null),
+  shiftEndMinutes: z.number().int().min(0).max(2879).nullable().default(null),
 })
 
 export type ProvaCalcoloInput = z.infer<typeof provaCalcoloSchema>

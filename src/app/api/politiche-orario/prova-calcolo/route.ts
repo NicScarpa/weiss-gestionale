@@ -62,9 +62,24 @@ export async function POST(request: NextRequest) {
       punches.push({ type: 'BREAK_END', minutes: dati.breakEndMinutes })
     }
 
+    // Turno pianificato simulato: la fine "prima" dell'inizio è il giorno dopo.
+    let shiftWindows: { startMinutes: number; endMinutes: number }[] | undefined
+    if (dati.shiftStartMinutes !== null && dati.shiftEndMinutes !== null) {
+      shiftWindows = [
+        {
+          startMinutes: dati.shiftStartMinutes,
+          endMinutes:
+            dati.shiftEndMinutes <= dati.shiftStartMinutes
+              ? dati.shiftEndMinutes + 24 * 60
+              : dati.shiftEndMinutes,
+        },
+      ]
+    }
+
     const risultato = computeRecognizedDay(punches, rules, {
       weekday: dati.weekday,
       isHoliday: dati.isHoliday,
+      shiftWindows,
     })
 
     return NextResponse.json({ data: risultato })

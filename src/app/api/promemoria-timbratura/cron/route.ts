@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { sendBulkNotification } from '@/lib/notifications/send'
-import { romeDayRange, toDateOnlyUtc, toRomeParts } from '@/lib/timezone'
+import {
+  romeDayRange,
+  timeColumnToMinutes,
+  toDateOnlyUtc,
+  toRomeParts,
+} from '@/lib/timezone'
 import { valutaPromemoria } from '@/lib/promemoria-timbratura'
 
 /**
@@ -145,14 +150,98 @@ async function inviaPromemoriaDovuti() {
   return { inviati, saltati, dettagli, timestamp: adesso.toISOString() }
 }
 
+/**
+ * Guardrail di fine turno: chi risulta ancora "dentro" un quarto d'ora dopo
+ * la fine del turno pianificato riceve una spinta a timbrare l'uscita.
+ * Serve a distinguere lo straordinario vero dall'uscita dimenticata, prima
+ * che ci pensi l'auto clock-out. I turni serali che scavalcano la mezzanotte
+ * restano fuori: la loro fine reale non si conosce (la segnala la chiusura
+ * di cassa), e per la dimenticanza c'è comunque l'auto clock-out.
+ */
+const RITARDO_AVVISO_MINUTI = 15
+
+async function avvisaFineTurno() {
+  const adesso = new Date()
+  const { dateKey, minutesFromMidnight } = toRomeParts(adesso)
+  const oggi = toDateOnlyUtc(dateKey)
+  const giornata = romeDayRange(dateKey)
+
+  const turni = await prisma.shiftAssignment.findMany({
+    where: {
+      date: oggi,
+      schedule: { status: 'PUBLISHED' },
+      user: { isActive: true, portalEnabled: true },
+    },
+    select: { userId: true, startTime: true, endTime: true },
+  })
+
+  // L'avviso parte nel quarto d'ora in cui cade fine turno + ritardo: il cron
+  // gira ogni 15 minuti, quindi ogni turno viene avvisato una volta sola.
+  const daAvvisare = new Set<string>()
+  for (const turno of turni) {
+    if (!turno.startTime || !turno.endTime) continue
+
+    const inizio = timeColumnToMinutes(turno.startTime)
+    const fine = timeColumnToMinutes(turno.endTime)
+    if (fine <= inizio) continue
+
+    const momento = fine + RITARDO_AVVISO_MINUTI
+    if (momento > minutesFromMidnight - 15 && momento <= minutesFromMidnight) {
+      daAvvisare.add(turno.userId)
+    }
+  }
+
+  if (daAvvisare.size === 0) {
+    return { avvisati: 0 }
+  }
+
+  // È ancora "dentro" chi ha come ultima timbratura della giornata un'entrata.
+  const timbrature = await prisma.attendanceRecord.findMany({
+    where: {
+      userId: { in: [...daAvvisare] },
+      punchType: { in: ['IN', 'OUT'] },
+      punchedAt: { gte: giornata.start, lt: giornata.end },
+    },
+    select: { userId: true, punchType: true },
+    orderBy: { punchedAt: 'asc' },
+  })
+
+  const ultimaTimbratura = new Map<string, string>()
+  for (const t of timbrature) {
+    ultimaTimbratura.set(t.userId, t.punchType)
+  }
+
+  const ancoraDentro = [...daAvvisare].filter(
+    (id) => ultimaTimbratura.get(id) === 'IN'
+  )
+
+  if (ancoraDentro.length === 0) {
+    return { avvisati: 0 }
+  }
+
+  await sendBulkNotification({
+    userIds: ancoraDentro,
+    payload: {
+      type: 'CLOCK_REMINDER',
+      title: 'Il tuo turno è finito',
+      body: "Ricordati di timbrare l'uscita. Se stai ancora lavorando, le ore extra passeranno da una revisione.",
+      url: '/portale/timbra',
+      referenceType: 'ShiftAssignment',
+    },
+  })
+
+  return { avvisati: ancoraDentro.length }
+}
+
 async function esegui(request: NextRequest) {
   const rifiuto = verificaSegretoCron(request)
   if (rifiuto) return rifiuto
 
   try {
     const risultato = await inviaPromemoriaDovuti()
+    const fineTurno = await avvisaFineTurno()
 
-    return NextResponse.json({ success: true, ...risultato })
+    return NextResponse.json({ success: true, ...risultato, fineTurno })
   } catch (error) {
     logger.error('Errore job promemoria di timbratura', error)
     return NextResponse.json(
