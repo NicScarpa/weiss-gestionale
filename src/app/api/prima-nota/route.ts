@@ -252,13 +252,15 @@ export async function GET(request: NextRequest) {
               lastName: true,
             },
           },
-          // Fette di suddivisione manuale (Task 6-7): l'UI usa il conteggio
-          // per il badge "Suddiviso (N)" e i dettagli per precompilare l'editor.
+          // Fette di suddivisione (Task 6-7, origine Fase 3): l'UI usa il
+          // conteggio per il badge "Suddiviso (N)" e i dettagli per
+          // precompilare l'editor, distinguendo manuale da ereditata.
           allocations: {
             select: {
               id: true,
               accountId: true,
               importo: true,
+              origine: true,
               note: true,
             },
           },
@@ -325,6 +327,7 @@ export async function GET(request: NextRequest) {
         id: a.id,
         accountId: a.accountId,
         importo: Number(a.importo),
+        origine: a.origine as 'manuale' | 'ereditata',
         note: a.note ?? undefined,
       })),
     }))

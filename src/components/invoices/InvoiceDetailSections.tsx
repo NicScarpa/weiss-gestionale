@@ -425,6 +425,7 @@ export function LineItemsTable({
                               onAccountChange?.(linea.numeroLinea, accountId)
                             }
                             disabled={!canEditAccounts}
+                            accountType="COSTO"
                             placeholder={
                               !imputazione && defaultAccountLabel
                                 ? `Suggerito: ${defaultAccountLabel}`

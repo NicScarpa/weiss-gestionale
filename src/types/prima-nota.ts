@@ -111,11 +111,14 @@ export interface JournalEntry {
 
 // ==================== SUDDIVISIONE MOVIMENTO (Allocation) ====================
 
-// Fetta di suddivisione manuale di un movimento su più conti (Fase 1)
+// Fetta di suddivisione di un movimento su più conti (Fase 1); 'manuale' è
+// creata dall'editor SplitEntryDialog, 'ereditata' arriva pro-quota dalla
+// riconciliazione con le scadenze di fattura (Fase 3) ed è di sola lettura.
 export interface JournalEntryAllocation {
   id: string
   accountId: string
   importo: number
+  origine: 'manuale' | 'ereditata'
   note?: string
 }
 

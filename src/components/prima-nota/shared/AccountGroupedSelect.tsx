@@ -33,10 +33,15 @@ interface AccountGroupedSelectProps {
   onChange: (accountId: string) => void
   disabled?: boolean
   placeholder?: string
+  /** Filtra i conti per tipo (es. 'COSTO'); usa il parametro ?type= di /api/accounts. */
+  accountType?: string
 }
 
-async function fetchAccounts(): Promise<AccountOption[]> {
-  const res = await fetch('/api/accounts')
+async function fetchAccounts(accountType?: string): Promise<AccountOption[]> {
+  const url = accountType
+    ? `/api/accounts?type=${encodeURIComponent(accountType)}`
+    : '/api/accounts'
+  const res = await fetch(url)
   if (!res.ok) throw new Error('Errore nel caricamento dei conti')
   const json = await res.json()
   return json.accounts as AccountOption[]
@@ -52,10 +57,11 @@ export function AccountGroupedSelect({
   onChange,
   disabled,
   placeholder = 'Seleziona conto',
+  accountType,
 }: AccountGroupedSelectProps) {
   const { data: accounts = [], isLoading } = useQuery({
-    queryKey: ['accounts-grouped-by-category'],
-    queryFn: fetchAccounts,
+    queryKey: ['accounts-grouped-by-category', accountType ?? 'all'],
+    queryFn: () => fetchAccounts(accountType),
     staleTime: 60 * 1000,
   })
 

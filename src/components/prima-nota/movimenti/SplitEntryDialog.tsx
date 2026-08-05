@@ -76,10 +76,10 @@ export function SplitEntryDialog({ entry, open, onOpenChange, onSaved }: SplitEn
 
   React.useEffect(() => {
     if (!open || !entry) return
-    const existing = entry.allocations ?? []
+    const manuali = (entry.allocations ?? []).filter((a) => a.origine === 'manuale')
     setRows(
-      existing.length > 0
-        ? existing.map((a) => ({
+      manuali.length > 0
+        ? manuali.map((a) => ({
             key: nextRowKey(),
             accountId: a.accountId,
             importo: a.importo.toFixed(2),
@@ -89,6 +89,14 @@ export function SplitEntryDialog({ entry, open, onOpenChange, onSaved }: SplitEn
     )
   }, [open, entry])
 
+  // Fette ereditate dalla riconciliazione (Fase 3): sola lettura, non entrano
+  // mai nelle righe editabili né nel payload del PUT, ma pesano sul residuo.
+  const ereditate = React.useMemo(
+    () => (entry?.allocations ?? []).filter((a) => a.origine === 'ereditata'),
+    [entry]
+  )
+  const sommaEreditate = round2(ereditate.reduce((sum, a) => sum + a.importo, 0))
+
   const importoMovimento = entry ? Math.abs(entry.debitAmount || entry.creditAmount || 0) : 0
   const statuses = rows.map(rowStatus)
   const hasInvalidRow = statuses.includes('invalid')
@@ -96,9 +104,9 @@ export function SplitEntryDialog({ entry, open, onOpenChange, onSaved }: SplitEn
     (sum, row, i) => (statuses[i] === 'valid' ? sum + parseFloat(row.importo) : sum),
     0
   )
-  const residuo = round2(importoMovimento - sommaFette)
-  const sommaSupera = sommaFette > importoMovimento + 0.01
-  const hasExistingSplit = (entry?.allocations?.length ?? 0) > 0
+  const residuo = round2(importoMovimento - sommaFette - sommaEreditate)
+  const sommaSupera = sommaFette + sommaEreditate > importoMovimento + 0.01
+  const hasExistingSplit = (entry?.allocations ?? []).some((a) => a.origine === 'manuale')
   const isBusy = isSubmitting || isRemoving
 
   const updateRow = (key: string, patch: Partial<SplitRow>) => {
@@ -120,7 +128,7 @@ export function SplitEntryDialog({ entry, open, onOpenChange, onSaved }: SplitEn
         const n = parseFloat(r.importo)
         return sum + (isNaN(n) ? 0 : n)
       }, 0)
-      const target = Math.max(0, round2(importoMovimento - sumOthers))
+      const target = Math.max(0, round2(importoMovimento - sumOthers - sommaEreditate))
       return prev.map((r) => (r.key === key ? { ...r, importo: target.toFixed(2) } : r))
     })
   }
@@ -261,13 +269,26 @@ export function SplitEntryDialog({ entry, open, onOpenChange, onSaved }: SplitEn
           </Button>
         </div>
 
+        {ereditate.length > 0 && (
+          <div className="rounded-lg border border-dashed bg-muted/30 p-3 text-sm text-muted-foreground">
+            Fette ereditate dalla riconciliazione: {ereditate.length}, totale{' '}
+            {formatCurrency(sommaEreditate)}
+          </div>
+        )}
+
         <div className="bg-muted/50 rounded-lg p-4 space-y-1">
           <div className="flex items-center justify-between text-sm">
             <span>Importo movimento:</span>
             <span className="font-medium">{formatCurrency(importoMovimento)}</span>
           </div>
+          {ereditate.length > 0 && (
+            <div className="flex items-center justify-between text-sm">
+              <span>Fette ereditate:</span>
+              <span className="font-medium">{formatCurrency(sommaEreditate)}</span>
+            </div>
+          )}
           <div className="flex items-center justify-between text-sm">
-            <span>Somma fette:</span>
+            <span>{ereditate.length > 0 ? 'Somma fette manuali:' : 'Somma fette:'}</span>
             <span className="font-medium">{formatCurrency(sommaFette)}</span>
           </div>
           <div className="flex items-center justify-between text-sm">
