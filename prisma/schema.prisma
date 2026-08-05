@@ -99,6 +99,7 @@ model User {
   documents               EmployeeDocument[]           @relation("EmployeeDocuments")
   uploadedDocuments       EmployeeDocument[]           @relation("DocumentUploader")
   journalEntryAllocations JournalEntryAllocation[]     @relation("JournalEntryAllocationCreatedBy")
+  invoiceLineAccountsConfirmed InvoiceLineAccount[]    @relation("InvoiceLineAccountConfirmedBy")
 
   @@map("users")
 }
@@ -391,6 +392,7 @@ model Account {
   customers           Customer[]
   scheduleRules       ScheduleRule[]
   allocations         JournalEntryAllocation[]
+  invoiceLineAccounts InvoiceLineAccount[]
 
   @@index([parentId])
   @@map("accounts")
@@ -1519,6 +1521,7 @@ model ElectronicInvoice {
   deadlines      InvoiceDeadline[]
   /// Scadenze generate nello scadenzario da questa fattura
   schedules      Schedule[]          @relation("ScheduleFromInvoice")
+  lineAccounts   InvoiceLineAccount[]
 
   @@index([invoiceDate])
   @@index([supplierId])
@@ -1526,6 +1529,38 @@ model ElectronicInvoice {
   @@index([venueId])
   @@index([documentType])
   @@map("electronic_invoices")
+}
+
+/// Imputazione per conto di una singola riga di fattura elettronica.
+/// Ancorata a numeroLinea dell'XML (stabile); snapshot di descrizione,
+/// codice articolo e importo per matching e audit anche se l'XML cambia.
+/// stato: 'proposta' (pallino giallo) | 'confermata'.
+/// fonte: 'ai' | 'regola-appresa' | 'manuale'.
+/// Vedi docs/superpowers/specs/2026-08-05-allocation-design.md (Fase 2).
+model InvoiceLineAccount {
+  id             String    @id @default(cuid())
+  invoiceId      String    @map("invoice_id")
+  numeroLinea    Int       @map("numero_linea")
+  descrizione    String
+  codiceArticolo String?   @map("codice_articolo")
+  importo        Decimal   @db.Decimal(10, 2)
+  accountId      String    @map("account_id")
+  stato          String    @default("proposta")
+  fonte          String
+  confidence     Decimal?  @db.Decimal(3, 2)
+  motivazioneAi  String?   @map("motivazione_ai")
+  confirmedById  String?   @map("confirmed_by")
+  confirmedAt    DateTime? @map("confirmed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  invoice     ElectronicInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  account     Account           @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  confirmedBy User?             @relation("InvoiceLineAccountConfirmedBy", fields: [confirmedById], references: [id])
+
+  @@unique([invoiceId, numeroLinea])
+  @@index([invoiceId])
+  @@map("invoice_line_accounts")
 }
 
 model InvoiceDeadline {
