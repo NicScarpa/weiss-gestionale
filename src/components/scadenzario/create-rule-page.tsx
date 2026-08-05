@@ -46,7 +46,8 @@ export function CreateRulePage({ direzione, initialData }: CreateRulePageProps) 
 
   const [tipoDocumento, setTipoDocumento] = useState<string>(initialData?.tipoDocumento || '')
   const [tipoPagamento, setTipoPagamento] = useState<string>(initialData?.tipoPagamento || '')
-  const [contoId, setContoId] = useState<string>(initialData?.contoId || '')
+  // Il conto della regola è quello BANCARIO su cui creare il movimento
+  const [contoId, setContoId] = useState<string>(initialData?.bankAccountId || '')
   const [accounts, setAccounts] = useState<Account[]>([])
   const [accountSearch, setAccountSearch] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -58,9 +59,20 @@ export function CreateRulePage({ direzione, initialData }: CreateRulePageProps) 
   const isEditing = !!initialData
 
   useEffect(() => {
-    fetch('/api/accounts')
+    fetch('/api/bank-accounts')
       .then(res => res.json())
-      .then(data => setAccounts(data.accounts || []))
+      .then(data => {
+        const list = data.data ?? data.bankAccounts ?? data.accounts ?? []
+        // Riusa la forma attesa dal selettore: il codice mostra la banca
+        setAccounts(
+          list.map((b: { id: string; name: string; bankName?: string | null }) => ({
+            id: b.id,
+            code: b.bankName || 'Conto',
+            name: b.name,
+            type: 'BANK',
+          }))
+        )
+      })
       .catch(() => {})
   }, [])
 
@@ -87,13 +99,13 @@ export function CreateRulePage({ direzione, initialData }: CreateRulePageProps) 
         ? {
             tipoDocumento: tipoDocumento || null,
             tipoPagamento: tipoPagamento || null,
-            contoId,
+            bankAccountId: contoId,
           }
         : {
             direzione,
             tipoDocumento: tipoDocumento || undefined,
             tipoPagamento: tipoPagamento || undefined,
-            contoId,
+            bankAccountId: contoId,
           }
 
       const resp = await fetch(url, {

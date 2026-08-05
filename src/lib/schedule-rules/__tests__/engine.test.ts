@@ -196,7 +196,7 @@ describe('trovaRegolaApplicabile - regole disattivate', () => {
 })
 
 describe('trovaRegolaApplicabile - esito', () => {
-  it('riporta azione e conto della regola vincente', () => {
+  it('riporta azione e conti della regola vincente', () => {
     const rules = [
       regola({ id: 'a', ordine: 0, azione: 'crea_riconcilia_movimento', contoId: 'conto-1' }),
     ]
@@ -205,7 +205,18 @@ describe('trovaRegolaApplicabile - esito', () => {
       rule: rules[0],
       azione: 'crea_riconcilia_movimento',
       contoId: 'conto-1',
+      bankAccountId: null,
     })
+  })
+
+  it('riporta il conto bancario su cui creare il movimento', () => {
+    // È il conto della regola che conta: quello contabile viene dal fornitore
+    const rules = [
+      regola({ id: 'a', ordine: 0, azione: 'crea_riconcilia_movimento', bankAccountId: 'banca-1' }),
+    ]
+
+    const match = trovaRegolaApplicabile({ direzione: ScheduleRuleDirection.RICEVUTI }, rules)
+    expect(match?.bankAccountId).toBe('banca-1')
   })
 
   it('restituisce null con una lista vuota', () => {

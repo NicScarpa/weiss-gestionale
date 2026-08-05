@@ -464,12 +464,14 @@ export enum ScheduleRuleAction {
 // assegnare il conto contabile al documento importato. Il valore persistito resta
 // `crea_riconcilia_movimento` per non toccare i dati esistenti.
 export const SCHEDULE_RULE_ACTION_LABELS: Record<ScheduleRuleAction, string> = {
-  [ScheduleRuleAction.CREA_RICONCILIA_MOVIMENTO]: 'Assegna conto contabile',
+  [ScheduleRuleAction.CREA_RICONCILIA_MOVIMENTO]: 'Crea e riconcilia movimento',
 } as const
 
 export interface ScheduleRule {
   id: string
   venueId: string
+  /** Conto bancario su cui la regola crea il movimento */
+  bankAccountId?: string | null
   direzione: ScheduleRuleDirection
   tipoDocumento: ScheduleDocumentType | null
   tipoPagamento: SchedulePaymentMethod | null

@@ -11,7 +11,10 @@ const createRuleSchema = z.object({
   tipoDocumento: z.string().optional(),
   tipoPagamento: z.string().optional(),
   azione: z.string().default('crea_riconcilia_movimento'),
-  contoId: z.string().min(1, 'Conto obbligatorio'),
+  /** Conto contabile: residuo dell'interpretazione precedente, ora opzionale */
+  contoId: z.string().optional(),
+  /** Conto bancario su cui creare il movimento quando la regola si applica */
+  bankAccountId: z.string().min(1, 'Conto bancario obbligatorio'),
 }).refine(
   (data) => data.tipoDocumento || data.tipoPagamento,
   { message: 'Almeno un criterio (tipo documento o tipo pagamento) è obbligatorio' }
@@ -50,6 +53,9 @@ export async function GET(request: NextRequest) {
         conto: {
           select: { id: true, code: true, name: true, type: true },
         },
+        bankAccount: {
+          select: { id: true, name: true, bankName: true, accountType: true },
+        },
         createdBy: {
           select: { id: true, firstName: true, lastName: true },
         },
@@ -84,7 +90,9 @@ export async function POST(request: NextRequest) {
     const venueId = await getVenueId()
 
     // Verifica esistenza conto
-    const conto = await prisma.account.findUnique({ where: { id: validated.contoId } })
+    const conto = await prisma.bankAccount.findFirst({
+      where: { id: validated.bankAccountId, venueId, isActive: true },
+    })
     if (!conto) {
       return NextResponse.json({ error: 'Conto non trovato' }, { status: 404 })
     }
@@ -103,13 +111,17 @@ export async function POST(request: NextRequest) {
         tipoDocumento: validated.tipoDocumento || null,
         tipoPagamento: validated.tipoPagamento || null,
         azione: validated.azione,
-        contoId: validated.contoId,
+        contoId: validated.contoId ?? null,
+        bankAccountId: validated.bankAccountId,
         ordine,
         createdById: session.user.id,
       },
       include: {
         conto: {
           select: { id: true, code: true, name: true, type: true },
+        },
+        bankAccount: {
+          select: { id: true, name: true, bankName: true, accountType: true },
         },
         createdBy: {
           select: { id: true, firstName: true, lastName: true },
@@ -123,7 +135,7 @@ export async function POST(request: NextRequest) {
       entityType: 'ScheduleRule',
       entityId: rule.id,
       venueId,
-      newValues: { direzione: validated.direzione, contoId: validated.contoId },
+      newValues: { direzione: validated.direzione, bankAccountId: validated.bankAccountId },
     })
 
     return NextResponse.json({ rule }, { status: 201 })

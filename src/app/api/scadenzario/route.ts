@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
+import { applicaRegolaCreaMovimento } from '@/lib/schedule-rules/engine'
 import { createAuditLog } from '@/lib/audit'
 import { ScheduleStatus, ScheduleType, SchedulePriority, ScheduleDocumentType, ScheduleSource } from '@/types/schedule'
 import { getVenueId } from '@/lib/venue'
@@ -275,11 +276,27 @@ export async function POST(request: NextRequest) {
       newValues: { tipo: validatedData.tipo, descrizione: validatedData.descrizione, importoTotale: validatedData.importoTotale },
     })
 
+    // Le regole dello scadenzario possono saldare da sole la scadenza creando
+    // il movimento sul conto bancario indicato: serve per contanti, POS e
+    // addebiti automatici, che non arrivano mai da un estratto conto
+    const regola = await applicaRegolaCreaMovimento({
+      scheduleId: schedule.id,
+      venueId,
+      userId: session.user.id,
+    })
+
+    const aggiornata = regola.applicata
+      ? await prisma.schedule.findUnique({ where: { id: schedule.id } })
+      : null
+
+    const finale = aggiornata ?? schedule
+
     return NextResponse.json({
       schedule: {
-        ...schedule,
-        importoResiduo: Number(schedule.importoTotale),
+        ...finale,
+        importoResiduo: Number(finale.importoTotale) - Number(finale.importoPagato),
       },
+      regolaApplicata: regola.applicata,
     })
   } catch (error) {
     logger.error('Errore POST /api/scadenzario', error)

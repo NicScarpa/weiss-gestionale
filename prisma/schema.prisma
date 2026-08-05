@@ -193,6 +193,8 @@ model BankAccount {
   updatedAt        DateTime     @updatedAt @map("updated_at")
   venue            Venue        @relation(fields: [venueId], references: [id])
 
+  scheduleRules    ScheduleRule[] @relation("ScheduleRuleBankAccount")
+
   @@unique([venueId, iban])
   @@index([venueId, accountType])
   @@index([ibanHash])
@@ -1543,15 +1545,21 @@ model ScheduleRule {
   tipoDocumento String?  @map("tipo_documento")
   tipoPagamento String?  @map("tipo_pagamento")
   azione        String   @default("crea_riconcilia_movimento")
+  /// DEPRECATO: puntava al piano dei conti per un'interpretazione errata
+  /// dell'azione. Il conto della regola è quello BANCARIO su cui creare il
+  /// movimento (vedi bankAccountId). Rimuovere dopo la migrazione dei dati.
   contoId       String?  @map("conto_id")
+  /// Conto bancario su cui generare il movimento quando la regola si applica
+  bankAccountId String?  @map("bank_account_id")
   ordine        Int      @default(0)
   isActive      Boolean  @default(true) @map("is_active")
   createdById   String?  @map("created_by")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  venue     Venue    @relation(fields: [venueId], references: [id])
-  conto     Account? @relation(fields: [contoId], references: [id])
+  venue       Venue        @relation(fields: [venueId], references: [id])
+  conto       Account?     @relation(fields: [contoId], references: [id])
+  bankAccount BankAccount? @relation("ScheduleRuleBankAccount", fields: [bankAccountId], references: [id])
   createdBy User?    @relation("ScheduleRuleCreatedBy", fields: [createdById], references: [id])
 
   @@index([venueId, direzione, ordine])

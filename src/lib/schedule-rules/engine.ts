@@ -11,12 +11,21 @@
  * criteri più specifici NON scavalca una regola più generica messa sopra di
  * lei. La prima regola che corrisponde vince e la valutazione si ferma.
  *
- * Oggi l'unico consumatore è l'import delle fatture elettroniche
- * (`POST /api/invoices`), che usa il conto della regola quando chi importa non
- * ne ha indicato uno. Le scadenze (`Schedule`) non hanno un campo conto: fino a
- * quando non esisterà, il motore non ha nulla da valorizzare alla loro
- * creazione (le attive corrisponderebbero ai documenti emessi, le passive ai
- * ricevuti).
+ * L'azione `crea_riconcilia_movimento` fa esattamente quello che dice: quando
+ * una scadenza corrisponde ai criteri, genera il movimento di prima nota sul
+ * conto BANCARIO indicato dalla regola e lo riconcilia con la scadenza. Serve
+ * per ciò che non transita da un estratto conto importato — contanti, POS,
+ * addebiti ricorrenti — dove il movimento non arriverebbe mai da solo.
+ *
+ * Il conto CONTABILE del movimento generato non viene dalla regola: si eredita
+ * dal fornitore (`Supplier.defaultAccountId`) o dalle regole di
+ * categorizzazione della prima nota. La scadenza non porta imputazione
+ * contabile, è il movimento a portarla.
+ *
+ * Un secondo consumatore è l'import delle fatture elettroniche
+ * (`POST /api/invoices`), che usa il conto contabile della regola quando chi
+ * importa non ne ha indicato uno: è un residuo dell'interpretazione precedente
+ * del campo `contoId`, mantenuto finché i dati non sono migrati.
  */
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
@@ -38,6 +47,7 @@ export interface MatchableScheduleRule {
   tipoPagamento: string | null
   azione: string
   contoId: string | null
+  bankAccountId?: string | null
   ordine: number
   isActive?: boolean
 }
@@ -52,7 +62,10 @@ export interface ScheduleRuleContext {
 export interface ScheduleRuleMatch<T extends MatchableScheduleRule = MatchableScheduleRule> {
   rule: T
   azione: string
+  /** Conto contabile: residuo dell'interpretazione precedente del campo */
   contoId: string | null
+  /** Conto bancario su cui creare il movimento quando la regola si applica */
+  bankAccountId: string | null
 }
 
 /** Un criterio nullo sulla regola è un jolly; altrimenti serve uguaglianza esatta. */
@@ -84,7 +97,12 @@ export function trovaRegolaApplicabile<T extends MatchableScheduleRule>(
 
   if (!rule) return null
 
-  return { rule, azione: rule.azione, contoId: rule.contoId }
+  return {
+    rule,
+    azione: rule.azione,
+    contoId: rule.contoId,
+    bankAccountId: 'bankAccountId' in rule ? (rule.bankAccountId as string | null) : null,
+  }
 }
 
 /**
@@ -157,6 +175,7 @@ export async function risolviRegolaScadenza(
       tipoPagamento: true,
       azione: true,
       contoId: true,
+      bankAccountId: true,
       ordine: true,
       isActive: true,
     },
@@ -205,5 +224,136 @@ export async function risolviContoDaRegole(
       direzione: String(context.direzione),
     })
     return null
+  }
+}
+
+/**
+ * Applica l'azione `crea_riconcilia_movimento` a una scadenza.
+ *
+ * Genera il movimento di prima nota sul conto bancario indicato dalla regola e
+ * lo riconcilia con la scadenza, che risulta così saldata. È il meccanismo che
+ * serve per ciò che non transita da un estratto conto importato: contanti,
+ * POS, addebiti automatici. Senza, quei pagamenti resterebbero da registrare a
+ * mano uno per uno.
+ *
+ * Il conto contabile del movimento si eredita dal fornitore della scadenza,
+ * non dalla regola: l'imputazione appartiene al movimento, e il fornitore è
+ * chi la conosce meglio.
+ *
+ * Non solleva mai: un'automazione che si rompe non deve impedire la creazione
+ * della scadenza.
+ */
+export async function applicaRegolaCreaMovimento(params: {
+  scheduleId: string
+  venueId: string
+  userId: string | null
+}): Promise<{ applicata: boolean; motivo?: string; journalEntryId?: string }> {
+  try {
+    const schedule = await prisma.schedule.findFirst({
+      where: { id: params.scheduleId, venueId: params.venueId },
+      select: {
+        id: true,
+        tipo: true,
+        stato: true,
+        descrizione: true,
+        importoTotale: true,
+        importoPagato: true,
+        dataScadenza: true,
+        tipoDocumento: true,
+        metodoPagamento: true,
+        numeroDocumento: true,
+        controparteNome: true,
+        supplierId: true,
+        supplier: { select: { defaultAccountId: true } },
+      },
+    })
+
+    if (!schedule) return { applicata: false, motivo: 'scadenza non trovata' }
+    if (schedule.stato === 'pagata' || schedule.stato === 'annullata') {
+      return { applicata: false, motivo: `scadenza ${schedule.stato}` }
+    }
+
+    const direzione =
+      schedule.tipo === 'attiva' ? ScheduleRuleDirection.EMESSI : ScheduleRuleDirection.RICEVUTI
+
+    const match = await risolviRegolaScadenza({
+      venueId: params.venueId,
+      direzione,
+      tipoDocumento: schedule.tipoDocumento as ScheduleDocumentType | null,
+      tipoPagamento: schedule.metodoPagamento as SchedulePaymentMethod | null,
+    })
+
+    if (!match) return { applicata: false, motivo: 'nessuna regola corrispondente' }
+    if (!match.bankAccountId) {
+      return { applicata: false, motivo: 'la regola non indica un conto bancario' }
+    }
+
+    const bankAccount = await prisma.bankAccount.findFirst({
+      where: { id: match.bankAccountId, venueId: params.venueId, isActive: true },
+      select: { id: true, name: true, accountType: true },
+    })
+
+    if (!bankAccount) {
+      return { applicata: false, motivo: 'conto bancario della regola non disponibile' }
+    }
+
+    const residuo = Number(schedule.importoTotale) - Number(schedule.importoPagato)
+    if (residuo <= 0) return { applicata: false, motivo: 'nessun residuo da saldare' }
+
+    const isIncasso = schedule.tipo === 'attiva'
+
+    const entry = await prisma.journalEntry.create({
+      data: {
+        venueId: params.venueId,
+        date: schedule.dataScadenza,
+        registerType: bankAccount.accountType,
+        description: schedule.descrizione,
+        documentRef: schedule.numeroDocumento,
+        debitAmount: isIncasso ? residuo : null,
+        creditAmount: isIncasso ? null : residuo,
+        // L'imputazione contabile viene dal fornitore, non dalla regola
+        accountId: schedule.supplier?.defaultAccountId ?? null,
+        counterpartName: schedule.controparteNome,
+        categorizationSource: 'rule',
+        createdById: params.userId,
+      },
+    })
+
+    const { reconcileScheduleWithEntry } = await import(
+      '@/lib/services/schedule-reconciliation-service'
+    )
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: schedule.id,
+      journalEntryId: entry.id,
+      venueId: params.venueId,
+      userId: params.userId,
+      source: 'RULE',
+    })
+
+    if (esito.outcome !== 'ok') {
+      // Il movimento è stato creato ma non si è potuto riconciliare: lo si
+      // lascia in prima nota, dove resta visibile e riconciliabile a mano
+      logger.warn('Regola: movimento creato ma non riconciliato', {
+        scheduleId: schedule.id,
+        journalEntryId: entry.id,
+        esito: esito.outcome,
+      })
+      return { applicata: false, motivo: `riconciliazione fallita: ${esito.outcome}`, journalEntryId: entry.id }
+    }
+
+    logger.info('Regola scadenzario applicata: movimento creato e riconciliato', {
+      scheduleId: schedule.id,
+      journalEntryId: entry.id,
+      ruleId: match.rule.id,
+      bankAccountId: bankAccount.id,
+    })
+
+    return { applicata: true, journalEntryId: entry.id }
+  } catch (error) {
+    logger.error('Errore applicazione regola scadenzario', error, {
+      scheduleId: params.scheduleId,
+    })
+    return { applicata: false, motivo: 'errore interno' }
   }
 }

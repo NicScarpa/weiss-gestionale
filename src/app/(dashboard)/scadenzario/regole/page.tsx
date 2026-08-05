@@ -163,9 +163,11 @@ export default function RegolePage() {
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Info className="h-4 w-4 shrink-0" />
         <span>
-          Le regole sono valutate all&apos;import delle fatture elettroniche, nell&apos;ordine
-          visualizzato: la prima che corrisponde assegna il conto al documento. Se il conto è
-          già stato indicato manualmente o ereditato dal fornitore, le regole non intervengono.
+          Le regole sono valutate nell&apos;ordine visualizzato e la prima che corrisponde
+          vince. Quando una scadenza le soddisfa, il sistema crea il movimento sul conto
+          bancario indicato e lo riconcilia, saldandola: serve per ciò che non arriva
+          dall&apos;estratto conto, come contanti, POS o addebiti automatici. La voce contabile
+          del movimento viene dal fornitore, non dalla regola.
         </span>
       </div>
 
