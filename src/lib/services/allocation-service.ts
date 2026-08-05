@@ -79,7 +79,7 @@ export async function setEntryAllocations({
   }
 
   const risultato = await prisma.$transaction(async (tx) => {
-    await tx.journalEntryAllocation.deleteMany({
+    const deleted = await tx.journalEntryAllocation.deleteMany({
       where: { journalEntryId, origine: 'manuale' },
     })
     if (fette.length > 0) {
@@ -93,6 +93,10 @@ export async function setEntryAllocations({
           createdById: userId,
         })),
       })
+    }
+    // No-op se non è stato rimosso nulla e non stiamo scrivendo nuove fette
+    if (deleted.count === 0 && fette.length === 0) {
+      return 0
     }
     // Il dominante si calcola su TUTTE le fette rimaste (manuali + ereditate)
     const tutte = await tx.journalEntryAllocation.findMany({
@@ -111,8 +115,9 @@ export async function setEntryAllocations({
           categorizationSource: 'split',
         },
       })
-    } else {
+    } else if (deleted.count > 0) {
       // Split rimosso: il movimento torna alla categorizzazione semplice
+      // Solo se è stato effettivamente rimosso qualcosa
       await tx.journalEntry.update({
         where: { id: journalEntryId },
         data: { categorizationSource: 'manual' },

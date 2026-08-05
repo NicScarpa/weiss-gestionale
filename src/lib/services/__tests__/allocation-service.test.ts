@@ -70,6 +70,8 @@ describe('setEntryAllocations', () => {
     vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue({
       id: 'entry-1', creditAmount: new Prisma.Decimal(1000), debitAmount: null,
     } as never)
+    // Non c'erano allocazioni manuali preesistenti
+    vi.mocked(prisma.journalEntryAllocation.deleteMany).mockResolvedValue({ count: 0 } as never)
     vi.mocked(prisma.account.findMany).mockResolvedValue([
       { id: 'conto-a', isActive: true }, { id: 'conto-b', isActive: true },
     ] as never)
@@ -159,10 +161,36 @@ describe('setEntryAllocations', () => {
     expect(prisma.journalEntry.update).not.toHaveBeenCalled()
   })
 
+  it('array vuoto su movimento SENZA fette manuali preesistenti: no-op', async () => {
+    vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue({
+      id: 'entry-1', creditAmount: new Prisma.Decimal(1000), debitAmount: null,
+    } as never)
+    // deleteMany ritorna count: 0 perché il movimento non aveva allocazioni manuali
+    vi.mocked(prisma.journalEntryAllocation.deleteMany).mockResolvedValue({ count: 0 } as never)
+    // Nemmeno allocazioni ereditate: findMany non viene nemmeno chiamato in caso di no-op
+    vi.mocked(prisma.journalEntryAllocation.findMany).mockResolvedValue([] as never)
+
+    const esito = await setEntryAllocations({
+      journalEntryId: 'entry-1', venueId: 'venue-1', userId: 'user-1',
+      fette: [],
+    })
+
+    expect(esito).toEqual({ outcome: 'ok', allocazioni: 0 })
+    expect(prisma.account.findMany).not.toHaveBeenCalled()
+    expect(prisma.journalEntryAllocation.deleteMany).toHaveBeenCalledWith({
+      where: { journalEntryId: 'entry-1', origine: 'manuale' },
+    })
+    expect(prisma.journalEntryAllocation.createMany).not.toHaveBeenCalled()
+    // Il movimento non aveva fette manuali, quindi NON deve fare update (no-op)
+    expect(prisma.journalEntry.update).not.toHaveBeenCalled()
+  })
+
   it('array vuoto: rimuove le manuali e ripristina la source manual', async () => {
     vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue({
       id: 'entry-1', creditAmount: new Prisma.Decimal(1000), debitAmount: null,
     } as never)
+    // deleteMany ritorna count: 1 perché è stato rimosso 1 allocazione manuale
+    vi.mocked(prisma.journalEntryAllocation.deleteMany).mockResolvedValue({ count: 1 } as never)
     // Dopo la delete delle manuali non restano più fette (nessuna ereditata).
     vi.mocked(prisma.journalEntryAllocation.findMany).mockResolvedValue([] as never)
 
@@ -188,6 +216,8 @@ describe('setEntryAllocations', () => {
     vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue({
       id: 'entry-1', creditAmount: new Prisma.Decimal(1000), debitAmount: null,
     } as never)
+    // C'era una fetta manuale precedente che viene rimossa
+    vi.mocked(prisma.journalEntryAllocation.deleteMany).mockResolvedValue({ count: 1 } as never)
     vi.mocked(prisma.account.findMany).mockResolvedValue([
       { id: 'conto-a', isActive: true },
     ] as never)
