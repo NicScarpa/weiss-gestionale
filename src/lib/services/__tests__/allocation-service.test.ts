@@ -84,7 +84,7 @@ describe('setEntryAllocations', () => {
     const esito = await setEntryAllocations({
       journalEntryId: 'entry-1', venueId: 'venue-1', userId: 'user-1',
       fette: [
-        { accountId: 'conto-a', importo: 700 },
+        { accountId: 'conto-a', importo: 700, note: 'quota affitto' },
         { accountId: 'conto-b', importo: 300 },
       ],
     })
@@ -93,7 +93,12 @@ describe('setEntryAllocations', () => {
     expect(prisma.journalEntryAllocation.deleteMany).toHaveBeenCalledWith({
       where: { journalEntryId: 'entry-1', origine: 'manuale' },
     })
-    expect(prisma.journalEntryAllocation.createMany).toHaveBeenCalled()
+    expect(prisma.journalEntryAllocation.createMany).toHaveBeenCalledWith({
+      data: expect.arrayContaining([
+        expect.objectContaining({ accountId: 'conto-a', note: 'quota affitto' }),
+        expect.objectContaining({ accountId: 'conto-b', note: null }),
+      ]),
+    })
     expect(prisma.journalEntry.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({

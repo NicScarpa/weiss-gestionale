@@ -88,7 +88,7 @@ describe('PUT /api/prima-nota/[id]/suddivisione', () => {
       userId: 'user-1',
       fette: [
         { accountId: 'conto-1', importo: 30 },
-        { accountId: 'conto-2', importo: 20 },
+        { accountId: 'conto-2', importo: 20, note: 'quota affitto' },
       ],
     })
     expect(createAuditLog).toHaveBeenCalledWith(

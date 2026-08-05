@@ -6,6 +6,7 @@ import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
 export interface FettaInput {
   accountId: string
   importo: number
+  note?: string | null
 }
 
 /**
@@ -87,6 +88,7 @@ export async function setEntryAllocations({
           journalEntryId,
           accountId: f.accountId,
           importo: new Prisma.Decimal(f.importo.toFixed(2)),
+          note: f.note ?? null,
           origine: 'manuale',
           createdById: userId,
         })),

@@ -19,7 +19,6 @@ const suddivisioneSchema = z.object({
 /**
  * PUT /api/prima-nota/[id]/suddivisione
  * Split manuale del movimento in fette per conto (setEntryAllocations, Task 6).
- * La `note` di ogni fetta non è gestita dal service: si scarta nel mapping.
  */
 export async function PUT(
   request: NextRequest,
@@ -45,7 +44,7 @@ export async function PUT(
       journalEntryId: id,
       venueId,
       userId: session.user.id,
-      fette: validated.fette.map((f) => ({ accountId: f.accountId, importo: f.importo })),
+      fette: validated.fette.map((f) => ({ accountId: f.accountId, importo: f.importo, note: f.note })),
     })
 
     return await rispondi(risultato, { id, session, venueId })
