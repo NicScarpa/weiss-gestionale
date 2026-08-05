@@ -2,6 +2,12 @@ import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { applicaStimaSuScadenza, ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
+import {
+  aggiornaContoDominante,
+  calcolaPesiDaRighe,
+  ripartisciProQuota,
+  type TransactionClient,
+} from './allocation-service'
 
 /**
  * Riconciliazione fra movimenti di prima nota e scadenze.
@@ -49,6 +55,79 @@ function importoUtile(
   const entrata = entry.debitAmount ? Number(entry.debitAmount) : 0
   const uscita = entry.creditAmount ? Number(entry.creditAmount) : 0
   return tipo === 'attiva' ? entrata : uscita
+}
+
+/**
+ * Eredità pro-quota: se la scadenza viene da una fattura le cui righe sono
+ * TUTTE categorizzate per conto, il movimento che la salda eredita le stesse
+ * fette (Fase 3). Chiamata dentro la transazione di `reconcileScheduleWithEntry`:
+ * non è best-effort, se fallisce la riconciliazione fallisce con lei.
+ *
+ * Copertura totale: `lineItems` (snapshot JSON delle righe fattura) deve
+ * essere un array e ogni riga deve avere una imputazione in
+ * `invoice_line_accounts`, proposta o confermata che sia (una riga in
+ * tabella conta come categorizzata). Copertura parziale o fattura senza
+ * righe estratte → nessuna ereditarietà, silenziosa (solo un log info).
+ *
+ * Le fette 'manuale' già presenti sul movimento vincono sempre: se ce ne
+ * sono, questa funzione è un no-op.
+ */
+async function ereditaFetteDaFattura(
+  tx: TransactionClient,
+  {
+    journalEntryId,
+    invoiceId,
+    reconciliationId,
+    quota,
+  }: { journalEntryId: string; invoiceId: string; reconciliationId: string; quota: number }
+): Promise<void> {
+  const invoice = await tx.electronicInvoice.findUnique({
+    where: { id: invoiceId },
+    select: { lineItems: true },
+  })
+
+  if (!invoice || !Array.isArray(invoice.lineItems)) {
+    logger.info('Fattura senza righe estratte: nessuna ereditarietà pro-quota', { invoiceId })
+    return
+  }
+
+  const imputazioni = await tx.invoiceLineAccount.findMany({
+    where: { invoiceId },
+    select: { accountId: true, importo: true },
+  })
+
+  if (imputazioni.length < invoice.lineItems.length) {
+    logger.info('Righe fattura non tutte categorizzate: nessuna ereditarietà pro-quota', {
+      invoiceId,
+      righe: invoice.lineItems.length,
+      imputazioni: imputazioni.length,
+    })
+    return
+  }
+
+  const manuali = await tx.journalEntryAllocation.findMany({
+    where: { journalEntryId, origine: 'manuale' },
+    select: { id: true },
+  })
+  if (manuali.length > 0) return // le fette manuali vincono sempre
+
+  const pesi = calcolaPesiDaRighe(
+    imputazioni.map((r) => ({ accountId: r.accountId, importo: Number(r.importo) }))
+  )
+  const fette = ripartisciProQuota(pesi, quota)
+  if (fette.length === 0) return
+
+  await tx.journalEntryAllocation.createMany({
+    data: fette.map((f) => ({
+      journalEntryId,
+      accountId: f.accountId,
+      importo: new Prisma.Decimal(f.importo.toFixed(2)),
+      origine: 'ereditata',
+      reconciliationId,
+    })),
+  })
+
+  await aggiornaContoDominante(tx, journalEntryId)
 }
 
 /**
@@ -148,6 +227,16 @@ export async function reconcileScheduleWithEntry({
         createdById: userId,
       },
     })
+
+    // Aggancio pro-quota (Fase 3): dentro la transazione, non best-effort.
+    if (schedule.invoiceId) {
+      await ereditaFetteDaFattura(tx, {
+        journalEntryId,
+        invoiceId: schedule.invoiceId,
+        reconciliationId: reconciliation.id,
+        quota,
+      })
+    }
 
     const nuovoPagato = Number(schedule.importoPagato) + quota
     const saldata = nuovoPagato >= Number(schedule.importoTotale) - 0.01

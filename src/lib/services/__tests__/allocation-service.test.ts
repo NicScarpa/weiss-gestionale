@@ -6,7 +6,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     journalEntry: { findFirst: vi.fn(), update: vi.fn() },
-    journalEntryAllocation: { findMany: vi.fn(), deleteMany: vi.fn(), createMany: vi.fn() },
+    journalEntryAllocation: {
+      findMany: vi.fn(),
+      deleteMany: vi.fn(),
+      createMany: vi.fn(),
+      aggregate: vi.fn(),
+    },
     account: { findMany: vi.fn() },
     $transaction: vi.fn(),
   },
@@ -23,7 +28,7 @@ vi.mock('@/lib/accounts/mapping', () => ({
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
-import { ripartisciProQuota, setEntryAllocations } from '../allocation-service'
+import { calcolaPesiDaRighe, ripartisciProQuota, setEntryAllocations } from '../allocation-service'
 
 describe('ripartisciProQuota', () => {
   it('quota piena: le fette restano identiche', () => {
@@ -58,12 +63,34 @@ describe('ripartisciProQuota', () => {
   })
 })
 
+describe('calcolaPesiDaRighe', () => {
+  it('raggruppa per conto, scarta i totali a zero o negativi, ordina per importo decrescente', () => {
+    expect(
+      calcolaPesiDaRighe([
+        { accountId: 'b', importo: 100 },
+        { accountId: 'a', importo: 400 },
+        { accountId: 'b', importo: 200 },
+        { accountId: 'c', importo: 0 },
+        { accountId: 'd', importo: -50 },
+      ])
+    ).toEqual([
+      { accountId: 'a', importo: 400 },
+      { accountId: 'b', importo: 300 },
+    ])
+  })
+})
+
 describe('setEntryAllocations', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(prisma.$transaction).mockImplementation(
       async (cb: unknown) => (cb as (tx: typeof prisma) => Promise<unknown>)(prisma)
     )
+    // Di default il movimento non ha fette ereditate: la guardia di
+    // quadratura (manuali + ereditate ≤ importo utile) è un no-op silenzioso.
+    vi.mocked(prisma.journalEntryAllocation.aggregate).mockResolvedValue({
+      _sum: { importo: null },
+    } as never)
   })
 
   it('scrive le fette, il conto dominante e la source split', async () => {
@@ -133,6 +160,35 @@ describe('setEntryAllocations', () => {
     expect(prisma.journalEntryAllocation.deleteMany).not.toHaveBeenCalled()
     expect(prisma.journalEntryAllocation.createMany).not.toHaveBeenCalled()
     expect(prisma.journalEntry.update).not.toHaveBeenCalled()
+  })
+
+  it('somma manuali nuove + fette ereditate già a DB oltre l\'importo utile: invalid', async () => {
+    vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue({
+      id: 'entry-1', creditAmount: new Prisma.Decimal(1000), debitAmount: null,
+    } as never)
+    // Il movimento ha già 700 di fette ereditate dalla riconciliazione (Fase 3):
+    // da sole le fette manuali proposte (400) starebbero nel limite, ma sommate
+    // alle ereditate esistenti sforano l'importo utile.
+    vi.mocked(prisma.journalEntryAllocation.aggregate).mockResolvedValue({
+      _sum: { importo: new Prisma.Decimal(700) },
+    } as never)
+
+    const esito = await setEntryAllocations({
+      journalEntryId: 'entry-1', venueId: 'venue-1', userId: 'user-1',
+      fette: [{ accountId: 'conto-a', importo: 400 }],
+    })
+
+    expect(esito).toEqual({
+      outcome: 'invalid',
+      motivo: expect.stringContaining("supera l'importo del movimento"),
+    })
+    expect(prisma.journalEntryAllocation.aggregate).toHaveBeenCalledWith({
+      where: { journalEntryId: 'entry-1', origine: 'ereditata' },
+      _sum: { importo: true },
+    })
+    expect(prisma.account.findMany).not.toHaveBeenCalled()
+    expect(prisma.journalEntryAllocation.deleteMany).not.toHaveBeenCalled()
+    expect(prisma.journalEntryAllocation.createMany).not.toHaveBeenCalled()
   })
 
   it('conto inesistente o non attivo: invalid', async () => {

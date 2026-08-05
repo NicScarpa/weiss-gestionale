@@ -29,6 +29,68 @@ export function ripartisciProQuota(fette: FettaInput[], quota: number): FettaInp
   return out
 }
 
+/**
+ * Aggrega gli importi delle righe fattura per conto: l'input di
+ * `ripartisciProQuota` per l'ereditarietà pro-quota alla riconciliazione
+ * (Fase 3). Pura: raggruppa per accountId, scarta i totali non positivi e
+ * ordina per importo decrescente, così il dominante è stabile e nessuna
+ * fetta a zero finisce in coda a quadrare il residuo.
+ */
+export function calcolaPesiDaRighe(
+  righe: Array<{ accountId: string; importo: number }>
+): FettaInput[] {
+  const totali = new Map<string, number>()
+  for (const riga of righe) {
+    totali.set(riga.accountId, (totali.get(riga.accountId) ?? 0) + riga.importo)
+  }
+  return [...totali.entries()]
+    .filter(([, importo]) => importo > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([accountId, importo]) => ({ accountId, importo }))
+}
+
+/**
+ * Il client dentro `prisma.$transaction`: con il client esteso dall'adapter
+ * il tipo `Prisma.TransactionClient` di libreria non combacia, quindi lo si
+ * ricava da quello reale (stesso pattern di src/lib/attendance/manual-punch.ts).
+ */
+export type TransactionClient = Omit<
+  typeof prisma,
+  '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
+>
+
+/**
+ * Rilegge TUTTE le fette del movimento (manuali + ereditate) e allinea conto
+ * dominante, categoria derivata e `categorizationSource: 'split'`. Condiviso
+ * fra lo split manuale (setEntryAllocations) e l'ereditarietà pro-quota dalla
+ * fattura alla riconciliazione (Fase 3): stesso identico calcolo del
+ * dominante, un'unica verità. Ritorna il numero di fette rilette (0 se non
+ * ce n'è più nessuna, e in tal caso non scrive nulla).
+ */
+export async function aggiornaContoDominante(
+  tx: TransactionClient,
+  journalEntryId: string
+): Promise<number> {
+  const tutte = await tx.journalEntryAllocation.findMany({
+    where: { journalEntryId },
+    select: { accountId: true, importo: true },
+  })
+  if (tutte.length === 0) return 0
+
+  const dominante = tutte.reduce((max, f) =>
+    Number(f.importo) > Number(max.importo) ? f : max
+  )
+  await tx.journalEntry.update({
+    where: { id: journalEntryId },
+    data: {
+      accountId: dominante.accountId,
+      budgetCategoryId: await derivaBudgetCategoryDaConto(dominante.accountId),
+      categorizationSource: 'split',
+    },
+  })
+  return tutte.length
+}
+
 export type SetAllocationsOutcome =
   | { outcome: 'ok'; allocazioni: number }
   | { outcome: 'entry_not_found' }
@@ -62,10 +124,19 @@ export async function setEntryAllocations({
     return { outcome: 'invalid', motivo: 'Ogni fetta deve avere un importo positivo' }
   }
   const somma = fette.reduce((s, f) => s + f.importo, 0)
-  if (somma > importoUtile + 0.01) {
+  // Il vincolo di quadratura copre l'intero movimento: le fette manuali
+  // proposte più quelle già ereditate dalla riconciliazione (Fase 3) non
+  // possono superare l'importo utile, anche se le manuali da sole ci
+  // starebbero (altrimenti la somma delle fette eccede il movimento).
+  const aggregatoEreditate = await prisma.journalEntryAllocation.aggregate({
+    where: { journalEntryId, origine: 'ereditata' },
+    _sum: { importo: true },
+  })
+  const sommaEreditate = Number(aggregatoEreditate._sum.importo ?? 0)
+  if (somma + sommaEreditate > importoUtile + 0.01) {
     return {
       outcome: 'invalid',
-      motivo: `La somma delle fette (${somma.toFixed(2)} €) supera l'importo del movimento (${importoUtile.toFixed(2)} €)`,
+      motivo: `La somma delle fette (${(somma + sommaEreditate).toFixed(2)} €) supera l'importo del movimento (${importoUtile.toFixed(2)} €)`,
     }
   }
   if (fette.length > 0) {
@@ -99,31 +170,16 @@ export async function setEntryAllocations({
       return 0
     }
     // Il dominante si calcola su TUTTE le fette rimaste (manuali + ereditate)
-    const tutte = await tx.journalEntryAllocation.findMany({
-      where: { journalEntryId },
-      select: { accountId: true, importo: true },
-    })
-    if (tutte.length > 0) {
-      const dominante = tutte.reduce((max, f) =>
-        Number(f.importo) > Number(max.importo) ? f : max
-      )
-      await tx.journalEntry.update({
-        where: { id: journalEntryId },
-        data: {
-          accountId: dominante.accountId,
-          budgetCategoryId: await derivaBudgetCategoryDaConto(dominante.accountId),
-          categorizationSource: 'split',
-        },
-      })
-    } else if (deleted.count > 0) {
-      // Split rimosso: il movimento torna alla categorizzazione semplice
-      // Solo se è stato effettivamente rimosso qualcosa
+    const numeroFette = await aggiornaContoDominante(tx, journalEntryId)
+    if (numeroFette === 0 && deleted.count > 0) {
+      // Split rimosso e nessuna fetta ereditata a sostenerlo: il movimento
+      // torna alla categorizzazione semplice
       await tx.journalEntry.update({
         where: { id: journalEntryId },
         data: { categorizationSource: 'manual' },
       })
     }
-    return tutte.length
+    return numeroFette
   })
 
   logger.info('Fette del movimento aggiornate', { journalEntryId, allocazioni: risultato })
