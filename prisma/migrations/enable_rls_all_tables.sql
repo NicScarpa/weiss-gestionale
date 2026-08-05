@@ -61,6 +61,8 @@ DECLARE
         'price_alerts',
         'timekeeping_policies',
         'timekeeping_policy_breaks',
+        'work_locations',
+        'work_location_assignments',
         'users'
     ];
 BEGIN

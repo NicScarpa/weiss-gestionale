@@ -27,6 +27,7 @@ import {
   Settings,
   FileText,
   Clock,
+  MapPin,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AttendanceTable } from '@/components/attendance/AttendanceTable'
@@ -163,6 +164,15 @@ export default function PresenzePage() {
           >
             <Settings className="h-4 w-4" />
             Policy
+          </Link>
+
+          {/* Luoghi Button */}
+          <Link
+            href="/presenze/luoghi"
+            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <MapPin className="h-4 w-4" />
+            Luoghi
           </Link>
 
           {/* Regole orario Button */}

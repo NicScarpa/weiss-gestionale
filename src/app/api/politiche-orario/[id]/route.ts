@@ -145,7 +145,7 @@ export async function DELETE(
         id: true,
         name: true,
         isDefault: true,
-        _count: { select: { users: true, venuesAsDefault: true } },
+        _count: { select: { users: true, workLocations: true } },
       },
     })
 
@@ -155,11 +155,11 @@ export async function DELETE(
 
     // Cancellare una regola in uso cambierebbe in silenzio le ore già calcolate
     // di chi la sta usando: meglio costringere a riassegnare prima.
-    const assegnazioni = politica._count.users + politica._count.venuesAsDefault
+    const assegnazioni = politica._count.users + politica._count.workLocations
     if (assegnazioni > 0) {
       return NextResponse.json(
         {
-          error: `La regola è assegnata a ${assegnazioni} fra dipendenti e locali: riassegnali prima di eliminarla`,
+          error: `La regola è assegnata a ${assegnazioni} fra dipendenti e luoghi di lavoro: riassegnali prima di eliminarla`,
         },
         { status: 409 }
       )

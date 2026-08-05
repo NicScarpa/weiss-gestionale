@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { pickEffectivePolicy, toPolicyRules, neutralPolicy } from '../policy-resolver'
+import {
+  pickEffectivePolicy,
+  toPolicyRules,
+  neutralPolicy,
+  resolvePolicyRules,
+} from '../policy-resolver'
 import { at } from './fixtures'
 
 function policyRow(overrides: Record<string, unknown> = {}) {
@@ -27,23 +32,23 @@ function policyRow(overrides: Record<string, unknown> = {}) {
 }
 
 describe('pickEffectivePolicy', () => {
-  const dellaSede = policyRow({ id: 'sede' })
+  const delLuogo = policyRow({ id: 'luogo' })
   const delDipendente = policyRow({ id: 'dipendente' })
   const predefinita = policyRow({ id: 'predefinita' })
 
-  it('la regola del locale prevale su quella del dipendente', () => {
+  it('la regola del luogo di lavoro prevale su quella del dipendente', () => {
     const scelta = pickEffectivePolicy({
-      venuePolicy: dellaSede,
+      locationPolicy: delLuogo,
       userPolicy: delDipendente,
       defaultPolicy: predefinita,
     })
 
-    expect(scelta?.id).toBe('sede')
+    expect(scelta?.id).toBe('luogo')
   })
 
-  it('senza regola del locale vale quella del dipendente', () => {
+  it('senza regola del luogo vale quella del dipendente', () => {
     const scelta = pickEffectivePolicy({
-      venuePolicy: null,
+      locationPolicy: null,
       userPolicy: delDipendente,
       defaultPolicy: predefinita,
     })
@@ -53,7 +58,7 @@ describe('pickEffectivePolicy', () => {
 
   it('senza regole specifiche resta la predefinita aziendale', () => {
     const scelta = pickEffectivePolicy({
-      venuePolicy: null,
+      locationPolicy: null,
       userPolicy: null,
       defaultPolicy: predefinita,
     })
@@ -63,7 +68,7 @@ describe('pickEffectivePolicy', () => {
 
   it('se non c è nessuna regola non ne inventa una', () => {
     const scelta = pickEffectivePolicy({
-      venuePolicy: null,
+      locationPolicy: null,
       userPolicy: null,
       defaultPolicy: null,
     })
@@ -125,5 +130,39 @@ describe('neutralPolicy', () => {
     const regole = neutralPolicy(48)
 
     expect(regole.contractDailyMinutes).toBe(at(8))
+  })
+})
+
+describe('resolvePolicyRules', () => {
+  const contesto = {
+    defaultPolicy: policyRow({ id: 'predefinita', name: 'Predefinita' }),
+    userPolicyByUserId: new Map([['user-2', policyRow({ id: 'suo', name: 'Part time' })]]),
+    locationPolicyByLocationId: new Map([
+      ['loc-1', policyRow({ id: 'del-locale', name: 'Orario del bar' })],
+    ]),
+  }
+
+  it('usa la regola del luogo in cui si è timbrato', () => {
+    const { policyName } = resolvePolicyRules(contesto, 'user-2', 'loc-1', null)
+
+    expect(policyName).toBe('Orario del bar')
+  })
+
+  it('ricade sulla regola del dipendente se il luogo non ne ha una', () => {
+    const { policyName } = resolvePolicyRules(contesto, 'user-2', 'loc-senza-regola', null)
+
+    expect(policyName).toBe('Part time')
+  })
+
+  it('senza luogo indicato vale la regola del dipendente', () => {
+    const { policyName } = resolvePolicyRules(contesto, 'user-2', null, null)
+
+    expect(policyName).toBe('Part time')
+  })
+
+  it('per chi non ha regole proprie resta la predefinita', () => {
+    const { policyName } = resolvePolicyRules(contesto, 'user-9', null, null)
+
+    expect(policyName).toBe('Predefinita')
   })
 })

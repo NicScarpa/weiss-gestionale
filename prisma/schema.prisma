@@ -60,9 +60,10 @@ model User {
   resetTokenExpiry        DateTime?                    @map("reset_token_expiry")
   attendanceAnomalies     AttendanceAnomaly[]
   attendancePunches       AttendanceRecord[]
-  /// Regola oraria del dipendente: vale se il locale non ne impone una propria.
+  /// Regola oraria del dipendente: vale se il luogo non ne impone una propria.
   timekeepingPolicyId     String?                      @map("timekeeping_policy_id")
   timekeepingPolicy       TimekeepingPolicy?           @relation(fields: [timekeepingPolicyId], references: [id])
+  workLocations           WorkLocationAssignment[]
   budgetsCreated          Budget[]
   cashFlowForecasts       CashFlowForecast[]
   certifications          Certification[]
@@ -173,9 +174,7 @@ model Venue {
   bankAccounts            BankAccount[]
   auditLogs               AuditLog[]
   timekeepingPolicies     TimekeepingPolicy[]
-  /// Regola oraria del locale: se presente prevale su quella del dipendente.
-  timekeepingPolicyId     String?                  @map("timekeeping_policy_id")
-  timekeepingPolicy       TimekeepingPolicy?       @relation("VenueTimekeepingPolicy", fields: [timekeepingPolicyId], references: [id])
+  workLocations           WorkLocation[]
 
   @@map("venues")
 }
@@ -1050,6 +1049,8 @@ model AttendanceRecord {
   userId            String              @map("user_id")
   venueId           String              @map("venue_id")
   assignmentId      String?             @map("assignment_id")
+  /// Luogo in cui si è timbrato. Null per le timbrature precedenti ai luoghi.
+  workLocationId    String?             @map("work_location_id")
   punchType         PunchType           @map("punch_type")
   punchMethod       PunchMethod         @default(APP) @map("punch_method")
   punchedAt         DateTime            @default(now()) @map("punched_at")
@@ -1070,6 +1071,7 @@ model AttendanceRecord {
   assignment        ShiftAssignment?    @relation(fields: [assignmentId], references: [id])
   user              User                @relation(fields: [userId], references: [id])
   venue             Venue               @relation(fields: [venueId], references: [id])
+  workLocation      WorkLocation?       @relation(fields: [workLocationId], references: [id])
 
   @@index([userId, punchedAt])
   @@index([venueId, punchedAt])
@@ -1146,10 +1148,64 @@ model TimekeepingPolicy {
   venue                       Venue                    @relation(fields: [venueId], references: [id])
   extraBreaks                 TimekeepingPolicyBreak[]
   users                       User[]
-  venuesAsDefault             Venue[]                  @relation("VenueTimekeepingPolicy")
+  workLocations               WorkLocation[]
 
   @@index([venueId, isActive])
   @@map("timekeeping_policies")
+}
+
+/// Luogo fisico in cui si timbra: Weiss Cafè, Villa Varda, le Casette.
+///
+/// Non è la sede contabile. `Venue` resta unica per decisione architetturale
+/// (vedi src/lib/venue.ts) e continua a governare contabilità, cassa e
+/// scadenzario; i luoghi servono solo alle presenze, ognuno con le proprie
+/// coordinate e il proprio raggio. È il modo per distinguere dove ha lavorato
+/// una persona senza toccare l'isolamento dei dati contabili.
+model WorkLocation {
+  id                   String                   @id @default(cuid())
+  venueId              String                   @map("venue_id")
+  name                 String
+  address              String?
+  latitude             Decimal?                 @db.Decimal(10, 8)
+  longitude            Decimal?                 @db.Decimal(11, 8)
+  /// Raggio entro cui la timbratura è considerata in sede.
+  geofenceRadiusMeters Int                      @default(100) @map("geofence_radius_meters")
+  isActive             Boolean                  @default(true) @map("is_active")
+  /// Regola oraria del luogo: se presente prevale su quella del dipendente.
+  timekeepingPolicyId  String?                  @map("timekeeping_policy_id")
+  createdAt            DateTime                 @default(now()) @map("created_at")
+  updatedAt            DateTime                 @updatedAt @map("updated_at")
+  venue                Venue                    @relation(fields: [venueId], references: [id])
+  timekeepingPolicy    TimekeepingPolicy?       @relation(fields: [timekeepingPolicyId], references: [id])
+  assignments          WorkLocationAssignment[]
+  attendanceRecords    AttendanceRecord[]
+
+  @@index([venueId, isActive])
+  @@map("work_locations")
+}
+
+/// Chi lavora dove, e con quale modalità di rilevazione.
+///
+/// La modalità sta sull'assegnazione e non sulla persona né sul luogo: lo
+/// stesso dipendente può timbrare con il GPS al bar e dichiarare le ore per il
+/// lavoro amministrativo.
+model WorkLocationAssignment {
+  id             String       @id @default(cuid())
+  userId         String       @map("user_id")
+  workLocationId String       @map("work_location_id")
+  trackingMode   TrackingMode @default(GPS_GEOFENCE) @map("tracking_mode")
+  assignedAt     DateTime     @default(now()) @map("assigned_at")
+  /// Fine dell'assegnazione: valorizzata invece di cancellare la riga, così lo
+  /// storico delle timbrature resta interpretabile.
+  endedAt        DateTime?    @map("ended_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workLocation   WorkLocation @relation(fields: [workLocationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workLocationId])
+  @@index([workLocationId, endedAt])
+  @@map("work_location_assignments")
 }
 
 /// Pause non retribuite oltre alla pausa pranzo (es. pausa merenda).
@@ -1852,6 +1908,18 @@ enum PunchType {
   OUT
   BREAK_START
   BREAK_END
+}
+
+/// Come una persona rileva la presenza in un luogo di lavoro.
+/// Sono tre delle cinque modalità di NoBadge: il kiosk QR e la modalità libera
+/// senza restrizioni non sono state adottate.
+enum TrackingMode {
+  /// Timbra dal telefono, il server verifica la distanza dal luogo.
+  GPS_GEOFENCE
+  /// Non timbra: dichiara le ore e un responsabile approva.
+  MANUAL_HOURS
+  /// Vede il luogo nei propri dati ma non vi timbra.
+  VIEW_ONLY
 }
 
 enum PunchMethod {

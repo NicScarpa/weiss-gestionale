@@ -4,6 +4,10 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { PunchType, PunchMethod } from '@prisma/client'
 import { calculateDistance } from '@/lib/geolocation'
+import {
+  pickWorkLocation,
+  type AssignedLocation,
+} from '@/lib/attendance/work-location'
 import { notifyAnomalyCreated } from '@/lib/notifications'
 import { format, isValid, parseISO } from 'date-fns'
 import {
@@ -75,14 +79,84 @@ export async function POST(request: NextRequest) {
 
     const { latitude, longitude } = validatedData
     const hasCoordinates = latitude !== undefined && longitude !== undefined
-    const venueHasCoordinates = venue.latitude !== null && venue.longitude !== null
+    const coordinates = hasCoordinates
+      ? { latitude: latitude!, longitude: longitude! }
+      : null
+
+    // Luoghi di lavoro su cui questa persona è abilitata. Chi non ne ha
+    // nessuno ricade sul comportamento precedente ai luoghi: geofence sulle
+    // coordinate della sede.
+    const assegnazioni = await prisma.workLocationAssignment.findMany({
+      where: {
+        userId: session.user.id,
+        endedAt: null,
+        workLocation: { venueId: validatedData.venueId, isActive: true },
+      },
+      select: {
+        trackingMode: true,
+        workLocation: {
+          select: {
+            id: true,
+            name: true,
+            latitude: true,
+            longitude: true,
+            geofenceRadiusMeters: true,
+          },
+        },
+      },
+    })
+
+    const luoghiAssegnati: AssignedLocation[] = assegnazioni.map((a) => ({
+      id: a.workLocation.id,
+      name: a.workLocation.name,
+      latitude: a.workLocation.latitude === null ? null : Number(a.workLocation.latitude),
+      longitude:
+        a.workLocation.longitude === null ? null : Number(a.workLocation.longitude),
+      geofenceRadiusMeters: a.workLocation.geofenceRadiusMeters,
+      trackingMode: a.trackingMode,
+    }))
+
+    const usaLuoghi = luoghiAssegnati.length > 0
+    const scelta = usaLuoghi
+      ? pickWorkLocation(luoghiAssegnati, coordinates)
+      : { location: null, distanceMeters: null, isWithinRadius: true }
+
+    // Chi ha un luogo in sola visualizzazione, o dichiara le ore invece di
+    // timbrarle, non passa da qui.
+    if (scelta.location) {
+      const modalita = scelta.location.trackingMode
+
+      if (modalita === 'VIEW_ONLY') {
+        return NextResponse.json(
+          {
+            error: `Non sei abilitato a timbrare presso ${scelta.location.name}.`,
+            code: 'TRACKING_VIEW_ONLY',
+          },
+          { status: 403 }
+        )
+      }
+
+      if (modalita === 'MANUAL_HOURS') {
+        return NextResponse.json(
+          {
+            error: `Presso ${scelta.location.name} le ore si dichiarano, non si timbrano.`,
+            code: 'TRACKING_MANUAL_HOURS',
+          },
+          { status: 422 }
+        )
+      }
+    }
+
+    const puntoDiRiferimentoHaCoordinate = usaLuoghi
+      ? luoghiAssegnati.some((l) => l.latitude !== null && l.longitude !== null)
+      : venue.latitude !== null && venue.longitude !== null
 
     // La geolocalizzazione obbligatoria è una decisione del server: senza
     // coordinate la timbratura viene rifiutata, altrimenti basterebbe negare il
     // permesso GPS dal dispositivo per aggirare il geofencing.
     if (
       venue.attendancePolicy?.requireGeolocation &&
-      venueHasCoordinates &&
+      puntoDiRiferimentoHaCoordinate &&
       !hasCoordinates
     ) {
       return NextResponse.json(
@@ -95,39 +169,44 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Calcola distanza se coordinate fornite e sede ha coordinate
+    // Distanza dal punto di riferimento: il luogo di lavoro se ce n'è uno,
+    // altrimenti la sede.
     let distanceFromVenue: number | null = null
     let isWithinRadius = true
+    let maxRadius = venue.attendancePolicy?.geoFenceRadius ?? 100
 
-    if (
-      latitude !== undefined &&
-      longitude !== undefined &&
-      venue.latitude &&
-      venue.longitude
-    ) {
+    if (usaLuoghi) {
+      distanceFromVenue = scelta.distanceMeters
+      isWithinRadius = scelta.distanceMeters === null ? true : scelta.isWithinRadius
+      maxRadius = scelta.location?.geofenceRadiusMeters ?? maxRadius
+    } else if (coordinates && venue.latitude && venue.longitude) {
       distanceFromVenue = Math.round(
         calculateDistance(
-          latitude,
-          longitude,
+          coordinates.latitude,
+          coordinates.longitude,
           Number(venue.latitude),
           Number(venue.longitude)
         )
       )
+      isWithinRadius = distanceFromVenue <= maxRadius
+    }
 
-      const policyRadius = venue.attendancePolicy?.geoFenceRadius ?? 100
-      isWithinRadius = distanceFromVenue <= policyRadius
-
-      // Se la policy blocca le timbrature fuori sede
-      if (venue.attendancePolicy?.blockOutsideLocation && !isWithinRadius) {
-        return NextResponse.json(
-          {
-            error: 'Sei fuori dal raggio della sede',
-            distance: distanceFromVenue,
-            maxRadius: policyRadius,
-          },
-          { status: 400 }
-        )
-      }
+    // Se la policy blocca le timbrature fuori sede
+    if (
+      venue.attendancePolicy?.blockOutsideLocation &&
+      !isWithinRadius &&
+      distanceFromVenue !== null
+    ) {
+      return NextResponse.json(
+        {
+          error: scelta.location
+            ? `Sei fuori dal raggio di ${scelta.location.name}`
+            : 'Sei fuori dal raggio della sede',
+          distance: distanceFromVenue,
+          maxRadius,
+        },
+        { status: 400 }
+      )
     }
 
     // Timbratura sincronizzata da offline: si conserva l'orario reale in cui il
@@ -184,7 +263,8 @@ export async function POST(request: NextRequest) {
     if (toRomeParts(punchedAt).weekday === 0) {
       const { blockSunday } = await getEffectiveTimekeepingPolicy(
         session.user.id,
-        validatedData.venueId
+        validatedData.venueId,
+        scelta.location?.id ?? null
       )
 
       if (blockSunday) {
@@ -217,6 +297,7 @@ export async function POST(request: NextRequest) {
         userId: session.user.id,
         venueId: validatedData.venueId,
         assignmentId: todayAssignment?.id ?? null,
+        workLocationId: scelta.location?.id ?? null,
         punchType: validatedData.punchType as PunchType,
         punchMethod: isOfflineSync ? PunchMethod.OFFLINE_SYNC : PunchMethod.APP,
         punchedAt,
@@ -307,9 +388,9 @@ export async function POST(request: NextRequest) {
           anomalyType: 'OUTSIDE_LOCATION',
           status: 'PENDING',
           date: toDateOnlyUtc(punchDateKey),
-          description: `Timbratura effettuata a ${distanceFromVenue}m dalla sede (raggio: ${venue.attendancePolicy?.geoFenceRadius ?? 100}m)`,
+          description: `Timbratura effettuata a ${distanceFromVenue}m da ${scelta.location?.name ?? 'la sede'} (raggio: ${maxRadius}m)`,
           actualValue: `${distanceFromVenue}m`,
-          expectedValue: `<${venue.attendancePolicy?.geoFenceRadius ?? 100}m`,
+          expectedValue: `<${maxRadius}m`,
         },
       })
 
@@ -351,6 +432,9 @@ export async function POST(request: NextRequest) {
         punchType: record.punchType,
         punchedAt: record.punchedAt,
         venue: record.venue,
+        workLocation: scelta.location
+          ? { id: scelta.location.id, name: scelta.location.name }
+          : null,
         isWithinRadius: record.isWithinRadius,
         distanceFromVenue: distanceFromVenue,
         isOfflineSync,
