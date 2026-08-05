@@ -219,9 +219,11 @@ export async function DELETE(
       )
     }
 
-    // Elimina
-    await prisma.journalEntry.delete({
+    // Cancellazione logica: le scritture contabili non vengono mai rimosse
+    // dal database, restano tracciabili tramite deletedAt e l'audit log
+    await prisma.journalEntry.update({
       where: { id },
+      data: { deletedAt: new Date() },
     })
 
     await createAuditLog({

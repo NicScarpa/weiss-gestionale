@@ -147,8 +147,10 @@ export async function DELETE(
       )
     }
 
-    await prisma.bankTransaction.delete({
+    // Cancellazione logica (tracciabilità dei movimenti bancari)
+    await prisma.bankTransaction.update({
       where: { id },
+      data: { deletedAt: new Date() },
     })
 
     return NextResponse.json({ success: true })

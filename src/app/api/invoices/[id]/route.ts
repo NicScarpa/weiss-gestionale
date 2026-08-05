@@ -305,8 +305,10 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       )
     }
 
-    await prisma.electronicInvoice.delete({
+    // Cancellazione logica: il documento fiscale resta conservato
+    await prisma.electronicInvoice.update({
       where: { id },
+      data: { deletedAt: new Date() },
     })
 
     return NextResponse.json({ success: true })

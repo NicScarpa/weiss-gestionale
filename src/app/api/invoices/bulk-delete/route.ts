@@ -68,9 +68,10 @@ export async function POST(request: NextRequest) {
 
     const idsToDelete = invoicesToDelete.map((i) => i.id)
 
-    // Elimina le fatture
-    const deleteResult = await prisma.electronicInvoice.deleteMany({
+    // Cancellazione logica: i documenti fiscali restano conservati
+    const deleteResult = await prisma.electronicInvoice.updateMany({
       where: { id: { in: idsToDelete } },
+      data: { deletedAt: new Date() },
     })
 
     return NextResponse.json({

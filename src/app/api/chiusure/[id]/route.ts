@@ -558,16 +558,21 @@ export async function DELETE(
       )
     }
 
-    // Per chiusure VALIDATED, elimina anche le scritture contabili generate
-    if (existingClosure.status === 'VALIDATED') {
-      await prisma.journalEntry.deleteMany({
-        where: { closureId: id },
-      })
-    }
+    // Cancellazione logica in transazione: chiusura e scritture generate
+    // restano nel database con deletedAt valorizzato (inalterabilità contabile)
+    const deletedAt = new Date()
+    await prisma.$transaction(async (tx) => {
+      if (existingClosure.status === 'VALIDATED') {
+        await tx.journalEntry.updateMany({
+          where: { closureId: id },
+          data: { deletedAt },
+        })
+      }
 
-    // Elimina (cascade elimina anche stazioni, parziali, uscite, presenze)
-    await prisma.dailyClosure.delete({
-      where: { id },
+      await tx.dailyClosure.update({
+        where: { id },
+        data: { deletedAt },
+      })
     })
 
     await createAuditLog({

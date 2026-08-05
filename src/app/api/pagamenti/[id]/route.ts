@@ -137,8 +137,10 @@ export async function DELETE(
       )
     }
 
-    await prisma.payment.delete({
+    // Cancellazione logica (tracciabilità dei pagamenti)
+    await prisma.payment.update({
       where: { id: id },
+      data: { deletedAt: new Date() },
     })
 
     return NextResponse.json({ success: true })

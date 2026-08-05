@@ -88,18 +88,21 @@ export async function POST(request: NextRequest) {
       .filter((c) => c.status === 'VALIDATED' && toDelete.includes(c.id))
       .map((c) => c.id)
 
-    // Usa una transazione per garantire consistenza
+    // Cancellazione logica in transazione: i record restano nel database
+    // con deletedAt valorizzato (inalterabilità contabile)
+    const deletedAt = new Date()
     await prisma.$transaction(async (tx) => {
-      // Elimina scritture contabili per chiusure VALIDATED
+      // Scritture contabili delle chiusure VALIDATED
       if (validatedIds.length > 0) {
-        await tx.journalEntry.deleteMany({
+        await tx.journalEntry.updateMany({
           where: { closureId: { in: validatedIds } },
+          data: { deletedAt },
         })
       }
 
-      // Elimina le chiusure (cascade elimina stations, partials, expenses, attendance)
-      await tx.dailyClosure.deleteMany({
+      await tx.dailyClosure.updateMany({
         where: { id: { in: toDelete } },
+        data: { deletedAt },
       })
     })
 

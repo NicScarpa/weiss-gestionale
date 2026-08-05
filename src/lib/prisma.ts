@@ -8,6 +8,39 @@ const globalForPrisma = globalThis as unknown as {
   pool: Pool | undefined
 }
 
+/**
+ * Modelli con cancellazione logica: le loro righe non vengono mai rimosse,
+ * viene valorizzato `deletedAt`. Aggiungere qui un modello significa che
+ * TUTTE le letture lo filtrano automaticamente.
+ */
+export const SOFT_DELETE_MODELS = [
+  'JournalEntry',
+  'DailyClosure',
+  'BankTransaction',
+  'ElectronicInvoice',
+  'Payment',
+  'CashFlowForecast',
+  'Budget',
+  'Schedule',
+] as const
+
+type QueryHook = {
+  args: Record<string, unknown>
+  query: (args: Record<string, unknown>) => Promise<unknown>
+  model: string
+}
+
+/** Aggiunge `deletedAt: null` alla where, se il chiamante non l'ha già specificato. */
+function excludeDeleted({ args, query, model }: QueryHook) {
+  if ((SOFT_DELETE_MODELS as readonly string[]).includes(model)) {
+    const where = (args.where as Record<string, unknown>) || {}
+    if (!('deletedAt' in where)) {
+      args.where = { ...where, deletedAt: null }
+    }
+  }
+  return query(args)
+}
+
 function createPrismaClient() {
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
@@ -28,40 +61,18 @@ function createPrismaClient() {
   // Add field encryption extension for sensitive data (IBAN, fiscal code, etc.)
   const encryptedClient = baseClient.$extends(fieldEncryptionExtension)
 
-  // Add soft delete extension - automatically filter deleted records
+  // Add soft delete extension - automatically filter deleted records.
+  // Copre anche aggregate/groupBy: senza, i report sommerebbero i record cancellati.
   return encryptedClient.$extends({
     query: {
       $allModels: {
-        async findMany({ args, query, model }: { args: Record<string, unknown>; query: (args: Record<string, unknown>) => Promise<unknown>; model: string }) {
-          const softDeleteModels = ['JournalEntry', 'DailyClosure', 'BankTransaction', 'ElectronicInvoice', 'Payment', 'CashFlowForecast', 'Budget', 'Schedule']
-          if (softDeleteModels.includes(model)) {
-            const where = (args.where as Record<string, unknown>) || {}
-            if (!('deletedAt' in where)) {
-              args.where = { ...where, deletedAt: null }
-            }
-          }
-          return query(args)
-        },
-        async findFirst({ args, query, model }: { args: Record<string, unknown>; query: (args: Record<string, unknown>) => Promise<unknown>; model: string }) {
-          const softDeleteModels = ['JournalEntry', 'DailyClosure', 'BankTransaction', 'ElectronicInvoice', 'Payment', 'CashFlowForecast', 'Budget', 'Schedule']
-          if (softDeleteModels.includes(model)) {
-            const where = (args.where as Record<string, unknown>) || {}
-            if (!('deletedAt' in where)) {
-              args.where = { ...where, deletedAt: null }
-            }
-          }
-          return query(args)
-        },
-        async count({ args, query, model }: { args: Record<string, unknown>; query: (args: Record<string, unknown>) => Promise<unknown>; model: string }) {
-          const softDeleteModels = ['JournalEntry', 'DailyClosure', 'BankTransaction', 'ElectronicInvoice', 'Payment', 'CashFlowForecast', 'Budget', 'Schedule']
-          if (softDeleteModels.includes(model)) {
-            const where = (args.where as Record<string, unknown>) || {}
-            if (!('deletedAt' in where)) {
-              args.where = { ...where, deletedAt: null }
-            }
-          }
-          return query(args)
-        },
+        findMany: excludeDeleted,
+        findFirst: excludeDeleted,
+        findFirstOrThrow: excludeDeleted,
+        count: excludeDeleted,
+        aggregate: excludeDeleted,
+        groupBy: excludeDeleted,
+        updateMany: excludeDeleted,
       },
     },
   })
