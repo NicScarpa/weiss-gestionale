@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { getVenueId } from '@/lib/venue'
 import { createAuditLog } from '@/lib/audit'
+import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
 
 /**
  * POST /api/prima-nota/recategorize
@@ -77,13 +78,21 @@ export async function POST(request: NextRequest) {
         }
 
         if (match) {
+          // Se la regola indica un conto, è il conto a decidere la categoria
+          // (deriva da AccountBudgetMapping): vince su rule.budgetCategoryId.
+          // Senza conto sulla regola, resta il comportamento precedente.
+          const budgetCategoryId = rule.accountId
+            ? await derivaBudgetCategoryDaConto(rule.accountId)
+            : rule.budgetCategoryId
+
           await prisma.journalEntry.update({
             where: { id: entry.id },
             data: {
-              budgetCategoryId: rule.budgetCategoryId,
+              budgetCategoryId,
               accountId: rule.accountId,
               appliedRuleId: rule.id,
               verified: rule.autoVerify,
+              categorizationSource: 'rule',
             },
           })
           updated++

@@ -5,15 +5,33 @@ vi.mock('@/lib/prisma', () => ({
   prisma: {
     scheduleRule: { findMany: vi.fn() },
     account: { findUnique: vi.fn() },
+    schedule: { findFirst: vi.fn() },
+    bankAccount: { findFirst: vi.fn() },
+    journalEntry: { create: vi.fn() },
   },
 }))
 
+vi.mock('@/lib/logger', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}))
+
+vi.mock('@/lib/accounts/mapping', () => ({
+  derivaBudgetCategoryDaConto: vi.fn(),
+}))
+
+vi.mock('@/lib/services/schedule-reconciliation-service', () => ({
+  reconcileScheduleWithEntry: vi.fn(),
+}))
+
 import { prisma } from '@/lib/prisma'
+import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
+import { reconcileScheduleWithEntry } from '@/lib/services/schedule-reconciliation-service'
 import {
   trovaRegolaApplicabile,
   tipoDocumentoDaCodiceSdi,
   tipoPagamentoDaCodiceSdi,
   risolviContoDaRegole,
+  applicaRegolaCreaMovimento,
   type MatchableScheduleRule,
 } from '../engine'
 import {
@@ -345,5 +363,82 @@ describe('risolviContoDaRegole', () => {
     findManyMock.mockRejectedValue(new Error('connessione persa') as never)
 
     await expect(risolviContoDaRegole(contesto)).resolves.toBeNull()
+  })
+})
+
+describe('applicaRegolaCreaMovimento', () => {
+  const scheduleFindFirstMock = vi.mocked(prisma.schedule.findFirst)
+  const scheduleRuleFindManyMock = vi.mocked(prisma.scheduleRule.findMany)
+  const bankAccountFindFirstMock = vi.mocked(prisma.bankAccount.findFirst)
+  const journalEntryCreateMock = vi.mocked(prisma.journalEntry.create)
+  const derivaMock = vi.mocked(derivaBudgetCategoryDaConto)
+  const reconcileMock = vi.mocked(reconcileScheduleWithEntry)
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+
+    // Scadenza passiva con fornitore che ha un conto di default: è il caso
+    // che deve produrre un movimento con conto e categoria valorizzati.
+    scheduleFindFirstMock.mockResolvedValue({
+      id: 'sched-1',
+      tipo: 'passiva',
+      stato: 'aperta',
+      descrizione: 'Fattura fornitore',
+      importoTotale: 100,
+      importoPagato: 0,
+      dataScadenza: new Date('2026-08-05'),
+      tipoDocumento: null,
+      metodoPagamento: null,
+      numeroDocumento: 'FT-1',
+      controparteNome: 'Fornitore Srl',
+      supplierId: 'sup-1',
+      supplier: { defaultAccountId: 'conto-forn' },
+    } as never)
+
+    scheduleRuleFindManyMock.mockResolvedValue([
+      regola({
+        id: 'r1',
+        direzione: ScheduleRuleDirection.RICEVUTI,
+        azione: 'crea_riconcilia_movimento',
+        contoId: null,
+        bankAccountId: 'banca-1',
+      }),
+    ] as never)
+
+    bankAccountFindFirstMock.mockResolvedValue({
+      id: 'banca-1',
+      name: 'Banca principale',
+      accountType: 'BANK',
+    } as never)
+
+    journalEntryCreateMock.mockResolvedValue({ id: 'entry-1' } as never)
+
+    reconcileMock.mockResolvedValue({
+      outcome: 'ok',
+      reconciliationId: 'rec-1',
+      scheduleStato: 'pagata',
+      importoPagato: 100,
+    } as never)
+  })
+
+  it('il movimento creato dalla regola eredita la categoria derivata dal conto del fornitore', async () => {
+    derivaMock.mockResolvedValue('cat-forn')
+
+    const esito = await applicaRegolaCreaMovimento({
+      scheduleId: 'sched-1',
+      venueId: 'venue-1',
+      userId: 'user-1',
+    })
+
+    expect(esito.applicata).toBe(true)
+    expect(derivaMock).toHaveBeenCalledWith('conto-forn')
+    expect(prisma.journalEntry.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          accountId: 'conto-forn',
+          budgetCategoryId: 'cat-forn',
+        }),
+      })
+    )
   })
 })

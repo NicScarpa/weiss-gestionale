@@ -29,6 +29,7 @@
  */
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
 import {
   ScheduleDocumentType,
   SchedulePaymentMethod,
@@ -302,6 +303,14 @@ export async function applicaRegolaCreaMovimento(params: {
 
     const isIncasso = schedule.tipo === 'attiva'
 
+    // L'imputazione contabile viene dal fornitore, non dalla regola; la
+    // categoria di budget si deriva a sua volta dal conto (vedi
+    // derivaBudgetCategoryDaConto e docs/superpowers/specs/2026-08-05-allocation-design.md).
+    const contoMovimento = schedule.supplier?.defaultAccountId ?? null
+    const categoriaDerivata = contoMovimento
+      ? await derivaBudgetCategoryDaConto(contoMovimento)
+      : null
+
     const entry = await prisma.journalEntry.create({
       data: {
         venueId: params.venueId,
@@ -311,8 +320,8 @@ export async function applicaRegolaCreaMovimento(params: {
         documentRef: schedule.numeroDocumento,
         debitAmount: isIncasso ? residuo : null,
         creditAmount: isIncasso ? null : residuo,
-        // L'imputazione contabile viene dal fornitore, non dalla regola
-        accountId: schedule.supplier?.defaultAccountId ?? null,
+        accountId: contoMovimento,
+        budgetCategoryId: categoriaDerivata,
         counterpartName: schedule.controparteNome,
         categorizationSource: 'rule',
         createdById: params.userId,
