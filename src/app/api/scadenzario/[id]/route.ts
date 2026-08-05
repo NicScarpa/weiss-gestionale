@@ -6,7 +6,7 @@ import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
 import { ScheduleStatus, SchedulePriority, ScheduleDocumentType } from '@/types/schedule'
-import { applicaStimaSuScadenza } from '@/lib/scadenzario/stima-data-attesa'
+import { applicaStimaSuScadenza, ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
 
 const updateScheduleSchema = z.object({
   descrizione: z.string().min(1).optional(),
@@ -197,11 +197,20 @@ export async function PATCH(
       },
     })
 
+    // Se la PATCH ha saldato la scadenza, la storia del fornitore è cambiata:
+    // le stime delle sue altre scadenze aperte si aggiornano (stesso principio
+    // della route pagamenti). Best-effort: non blocca mai l'aggiornamento
+    const diventataPagata = schedule.stato === 'pagata' && existing.stato !== 'pagata'
+    if (diventataPagata && schedule.tipo === 'passiva' && schedule.supplierId) {
+      await ricalcolaStimeFornitore(schedule.supplierId, existing.venueId)
+    }
+
     // La stima si riapplica se la data attesa è stata svuotata, o se è
-    // cambiata la scadenza contrattuale di una scadenza non gestita a mano
+    // cambiata la scadenza contrattuale — o il fornitore — di una scadenza
+    // non gestita a mano
     const daRistimare =
       dataAttesaInput === null ||
-      (validatedData.dataScadenza !== undefined &&
+      ((validatedData.dataScadenza !== undefined || validatedData.supplierId !== undefined) &&
         dataAttesaInput === undefined &&
         (existing.dataAttesaSource === null || existing.dataAttesaSource === 'stima'))
 

@@ -177,9 +177,11 @@ con gerarchia `riconciliazione` > `manuale` > `stima`: il dato reale del
 movimento sovrascrive sempre, la mano dell'utente vince sulla stima, la stima
 non tocca mai le altre due. Il ricalcolo scatta alla creazione della
 scadenza, quando una scadenza dello stesso fornitore viene saldata
-(riconciliazione o pagamento manuale — ricalcola tutte le aperte con source
-null o stima), alla modifica di `dataScadenza`, e sull'annullamento di una
-riconciliazione (che ristima invece di tornare secco a null). Il campo è
+(riconciliazione, pagamento manuale o PATCH che imposta lo stato — ricalcola
+tutte le aperte con source null o stima), alla modifica di `dataScadenza` o
+del fornitore, e sull'annullamento di una riconciliazione (che ristima invece
+di tornare secco a null e ricalcola anche le altre aperte del fornitore,
+perché l'undo toglie un'osservazione dalla storia). Il campo è
 visibile e modificabile nel dettaglio scadenza; svuotarlo torna alla stima
 automatica. Dettagli su calcolo e casi limite in
 `docs/superpowers/specs/2026-08-05-stima-data-attesa-design.md`.

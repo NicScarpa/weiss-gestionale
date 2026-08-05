@@ -81,10 +81,10 @@ Tre funzioni:
 | Evento | Effetto |
 |---|---|
 | Creazione scadenza passiva con fornitore (POST /api/scadenzario, import fatture, generazione ricorrenze e genera-prossima) | Applica la stima alla nuova scadenza. Senza storia sufficiente resta null. |
-| Una scadenza passiva del fornitore diventa `pagata` (riconciliazione **o** pagamento manuale) | La storia è cambiata: ricalcola la stima su tutte le scadenze aperte del fornitore con source null o `stima`. |
-| Modifica di `dataScadenza` su scadenza con source null o `stima` (PATCH) | Riapplica la stima sulla nuova data contrattuale. |
+| Una scadenza passiva del fornitore diventa `pagata` (riconciliazione, pagamento manuale **o** PATCH che imposta lo stato) | La storia è cambiata: ricalcola la stima su tutte le scadenze aperte del fornitore con source null o `stima`. |
+| Modifica di `dataScadenza` **o del fornitore** su scadenza con source null o `stima` (PATCH) | Riapplica la stima sulla nuova data contrattuale (o con la storia del nuovo fornitore). |
 | Riconciliazione che salda la scadenza | `dataAttesa = data movimento`, source `riconciliazione` (comportamento fase 3, ora con provenienza). Sovrascrive anche il manuale. |
-| Annullamento della riconciliazione (undo) | Riapplica la stima da zero (risultato: stima o null). Non torna più secco a null. |
+| Annullamento della riconciliazione (undo) | Riapplica la stima da zero (risultato: stima o null) e, poiché l'undo toglie un'osservazione dalla storia, ricalcola anche le altre scadenze aperte del fornitore. |
 | Modifica manuale di `dataAttesa` (PATCH) | source `manuale`; da lì in poi la stima non la tocca. |
 | Svuotamento manuale di `dataAttesa` (PATCH con null esplicito) | Torna alla stima automatica: ricalcolo immediato (stima o null). |
 

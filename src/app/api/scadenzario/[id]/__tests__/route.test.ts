@@ -22,11 +22,12 @@ vi.mock('@/lib/logger', () => ({
 
 vi.mock('@/lib/scadenzario/stima-data-attesa', () => ({
   applicaStimaSuScadenza: vi.fn(),
+  ricalcolaStimeFornitore: vi.fn(),
 }))
 
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { applicaStimaSuScadenza } from '@/lib/scadenzario/stima-data-attesa'
+import { applicaStimaSuScadenza, ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
 
 const sessione = { user: { id: 'user-1', role: 'admin' } } as unknown as Session
 
@@ -149,5 +150,111 @@ describe('PATCH /api/scadenzario/[id] - data attesa manuale', () => {
 
     expect(response.status).toBe(400)
     expect(prisma.schedule.update).not.toHaveBeenCalled()
+  })
+
+  it('impostare dataAttesa e dataScadenza insieme: il manuale vince, nessuna ristima', async () => {
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      esistente({ dataAttesaSource: 'stima' }) as never
+    )
+    vi.mocked(prisma.schedule.update).mockResolvedValue({ id: 'sched-1' } as never)
+
+    const { request, context } = patchCon({
+      dataAttesa: '2026-09-15',
+      dataScadenza: '2026-10-01',
+    })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(200)
+    expect(prisma.schedule.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ dataAttesaSource: 'manuale' }),
+      })
+    )
+    expect(applicaStimaSuScadenza).not.toHaveBeenCalled()
+  })
+})
+
+describe('PATCH /api/scadenzario/[id] - il saldo e il cambio fornitore aggiornano le stime', () => {
+  it('la PATCH che rende pagata una passiva con fornitore ricalcola le stime del fornitore', async () => {
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(esistente() as never)
+    vi.mocked(prisma.schedule.update).mockResolvedValue({
+      id: 'sched-1',
+      stato: 'pagata',
+      tipo: 'passiva',
+      supplierId: 'sup-1',
+    } as never)
+
+    const { request, context } = patchCon({ stato: 'pagata' })
+    await PATCH(request, context)
+
+    expect(ricalcolaStimeFornitore).toHaveBeenCalledWith('sup-1', 'venue-1')
+  })
+
+  it('anche la PATCH con dataPagamento (che salda in automatico) ricalcola le stime', async () => {
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(esistente() as never)
+    vi.mocked(prisma.schedule.update).mockResolvedValue({
+      id: 'sched-1',
+      stato: 'pagata',
+      tipo: 'passiva',
+      supplierId: 'sup-1',
+    } as never)
+
+    const { request, context } = patchCon({ dataPagamento: '2026-08-01' })
+    await PATCH(request, context)
+
+    expect(ricalcolaStimeFornitore).toHaveBeenCalledWith('sup-1', 'venue-1')
+  })
+
+  it('una scadenza già pagata che resta pagata non ricalcola nulla', async () => {
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      esistente({ stato: 'pagata' }) as never
+    )
+    vi.mocked(prisma.schedule.update).mockResolvedValue({
+      id: 'sched-1',
+      stato: 'pagata',
+      tipo: 'passiva',
+      supplierId: 'sup-1',
+    } as never)
+
+    const { request, context } = patchCon({ note: 'aggiornata' })
+    await PATCH(request, context)
+
+    expect(ricalcolaStimeFornitore).not.toHaveBeenCalled()
+  })
+
+  it('cambiare fornitore su una scadenza con source stima la ristima', async () => {
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      esistente({ dataAttesaSource: 'stima' }) as never
+    )
+    vi.mocked(prisma.supplier.findFirst).mockResolvedValue({ id: 'sup-2' } as never)
+    vi.mocked(prisma.schedule.update).mockResolvedValue({
+      id: 'sched-1',
+      stato: 'aperta',
+      tipo: 'passiva',
+      supplierId: 'sup-2',
+    } as never)
+
+    const { request, context } = patchCon({ supplierId: 'sup-2' })
+    await PATCH(request, context)
+
+    expect(applicaStimaSuScadenza).toHaveBeenCalledWith('sched-1', 'venue-1')
+  })
+
+  it('cambiare fornitore con una data attesa manuale non la tocca', async () => {
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      esistente({ dataAttesaSource: 'manuale' }) as never
+    )
+    vi.mocked(prisma.supplier.findFirst).mockResolvedValue({ id: 'sup-2' } as never)
+    vi.mocked(prisma.schedule.update).mockResolvedValue({
+      id: 'sched-1',
+      stato: 'aperta',
+      tipo: 'passiva',
+      supplierId: 'sup-2',
+    } as never)
+
+    const { request, context } = patchCon({ supplierId: 'sup-2' })
+    await PATCH(request, context)
+
+    expect(applicaStimaSuScadenza).not.toHaveBeenCalled()
   })
 })

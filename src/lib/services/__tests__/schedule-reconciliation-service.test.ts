@@ -207,4 +207,43 @@ describe('reconcileScheduleWithEntry - provenienza e ricalcolo', () => {
     )
     expect(applicaStimaSuScadenza).toHaveBeenCalledWith('sched-1', VENUE)
   })
+
+  it("l'undo toglie un'osservazione dalla storia: ricalcola anche le altre scadenze del fornitore", async () => {
+    vi.mocked(prisma.scheduleReconciliation.findFirst).mockResolvedValue({
+      id: 'rec-1',
+      scheduleId: 'sched-1',
+      paymentId: 'pay-1',
+      amount: new Prisma.Decimal(100),
+      schedule: {
+        importoTotale: new Prisma.Decimal(100),
+        importoPagato: new Prisma.Decimal(100),
+        tipo: 'passiva',
+        supplierId: 'sup-1',
+      },
+    } as never)
+
+    await undoScheduleReconciliation({ reconciliationId: 'rec-1', venueId: VENUE })
+
+    expect(ricalcolaStimeFornitore).toHaveBeenCalledWith('sup-1', VENUE)
+  })
+
+  it("l'undo su una scadenza senza fornitore non ricalcola nulla", async () => {
+    vi.mocked(prisma.scheduleReconciliation.findFirst).mockResolvedValue({
+      id: 'rec-1',
+      scheduleId: 'sched-1',
+      paymentId: 'pay-1',
+      amount: new Prisma.Decimal(100),
+      schedule: {
+        importoTotale: new Prisma.Decimal(100),
+        importoPagato: new Prisma.Decimal(100),
+        tipo: 'passiva',
+        supplierId: null,
+      },
+    } as never)
+
+    await undoScheduleReconciliation({ reconciliationId: 'rec-1', venueId: VENUE })
+
+    expect(ricalcolaStimeFornitore).not.toHaveBeenCalled()
+    expect(applicaStimaSuScadenza).toHaveBeenCalledWith('sched-1', VENUE)
+  })
 })

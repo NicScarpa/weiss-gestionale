@@ -262,7 +262,7 @@ export async function undoScheduleReconciliation({
       scheduleId: true,
       paymentId: true,
       amount: true,
-      schedule: { select: { importoTotale: true, importoPagato: true } },
+      schedule: { select: { importoTotale: true, importoPagato: true, tipo: true, supplierId: true } },
     },
   })
 
@@ -298,6 +298,12 @@ export async function undoScheduleReconciliation({
   // La scadenza è di nuovo aperta: se il fornitore ha una storia, la data
   // attesa torna a essere stimata invece di restare secca sulla contrattuale
   await applicaStimaSuScadenza(reconciliation.scheduleId, venueId)
+
+  // L'undo toglie anche un'osservazione dalla storia del fornitore: le stime
+  // delle sue altre scadenze aperte non devono più incorporare il dato revocato
+  if (reconciliation.schedule.tipo === 'passiva' && reconciliation.schedule.supplierId) {
+    await ricalcolaStimeFornitore(reconciliation.schedule.supplierId, venueId)
+  }
 
   return { outcome: 'ok', scheduleStato: nuovoStato }
 }
