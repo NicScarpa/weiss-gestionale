@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { createAuditLog } from '@/lib/audit'
+import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
 
 const categorizeSchema = z.object({
   budgetCategoryId: z.string().optional(),
@@ -43,13 +44,20 @@ export async function PATCH(
       return NextResponse.json({ error: 'Movimento non trovato' }, { status: 404 })
     }
 
-    // Aggiorna categorizzazione
+    // Il conto è l'asse di imputazione: se arriva, la categoria si deriva
+    // sempre dalla mappatura (il conto vince su una categoria esplicita).
+    // Una categoria senza conto resta accettata durante la transizione
+    const budgetCategoryId = validated.accountId
+      ? await derivaBudgetCategoryDaConto(validated.accountId)
+      : validated.budgetCategoryId || null
+
     const updated = await prisma.journalEntry.update({
       where: { id: id },
       data: {
-        budgetCategoryId: validated.budgetCategoryId || null,
+        budgetCategoryId,
         accountId: validated.accountId || undefined,
         notes: validated.notes || undefined,
+        categorizationSource: 'manual',
         verified: true, // Auto-verify su categorizzazione manuale
       },
     })
