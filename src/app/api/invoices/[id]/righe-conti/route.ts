@@ -76,6 +76,18 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         }
       }
 
+      const accountIds = new Set(validated.righe.map((riga) => riga.accountId))
+      const conti = await prisma.account.findMany({
+        where: { id: { in: [...accountIds] }, isActive: true },
+        select: { id: true },
+      })
+      if (conti.length !== accountIds.size) {
+        return NextResponse.json(
+          { error: 'Uno o più conti non esistono o non sono attivi' },
+          { status: 400 }
+        )
+      }
+
       const adesso = new Date()
 
       for (const riga of validated.righe) {

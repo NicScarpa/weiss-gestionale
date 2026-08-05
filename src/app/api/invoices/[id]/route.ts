@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { InvoiceStatus } from '@prisma/client'
 import { z } from 'zod'
 import { parseFatturaPA, TIPI_DOCUMENTO } from '@/lib/sdi/parser'
+import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
 import {
@@ -42,8 +43,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     const { id } = await context.params
 
-    const invoice = await prisma.electronicInvoice.findUnique({
-      where: { id },
+    const invoice = await prisma.electronicInvoice.findFirst({
+      where: { id, venueId: await getVenueId() },
       include: {
         supplier: {
           select: {
@@ -182,8 +183,8 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const validatedData = updateInvoiceSchema.parse(body)
 
     // Trova fattura esistente
-    const existingInvoice = await prisma.electronicInvoice.findUnique({
-      where: { id },
+    const existingInvoice = await prisma.electronicInvoice.findFirst({
+      where: { id, venueId: await getVenueId() },
     })
 
     if (!existingInvoice) {
@@ -327,8 +328,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
     const { id } = await context.params
 
-    const invoice = await prisma.electronicInvoice.findUnique({
-      where: { id },
+    const invoice = await prisma.electronicInvoice.findFirst({
+      where: { id, venueId: await getVenueId() },
     })
 
     if (!invoice) {

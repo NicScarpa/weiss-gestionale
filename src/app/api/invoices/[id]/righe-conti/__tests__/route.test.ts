@@ -13,6 +13,7 @@ vi.mock('@/lib/prisma', () => ({
   prisma: {
     electronicInvoice: { findFirst: vi.fn() },
     invoiceLineAccount: { findMany: vi.fn(), upsert: vi.fn(), updateMany: vi.fn() },
+    account: { findMany: vi.fn() },
   },
 }))
 
@@ -66,6 +67,7 @@ beforeEach(() => {
   vi.mocked(parseFatturaPA).mockReturnValue({
     dettaglioLinee: dettaglioLineeFisse,
   } as never)
+  vi.mocked(prisma.account.findMany).mockResolvedValue([{ id: 'conto-1' }] as never)
 })
 
 describe('PATCH /api/invoices/[id]/righe-conti', () => {
@@ -146,6 +148,23 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
         entityId: 'fatt-1',
       })
     )
+  })
+
+  it('accountId inesistente o non attivo → 400 senza upsert', async () => {
+    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
+    vi.mocked(prisma.account.findMany).mockResolvedValue([])
+
+    const { request, context } = richiesta({
+      righe: [{ numeroLinea: 1, accountId: 'conto-inesistente' }],
+    })
+    const response = await PATCH(request, context)
+    const data = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(data.error).toBe('Uno o più conti non esistono o non sono attivi')
+    expect(prisma.invoiceLineAccount.upsert).not.toHaveBeenCalled()
+    expect(createAuditLog).not.toHaveBeenCalled()
   })
 
   it('numeroLinea inesistente nell\'XML → 400 senza scritture', async () => {

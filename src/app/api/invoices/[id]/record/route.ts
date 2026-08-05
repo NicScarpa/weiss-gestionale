@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { format } from 'date-fns'
+import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
 
 import { logger } from '@/lib/logger'
 interface RouteContext {
@@ -111,6 +112,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
         creditAmount: invoice.totalAmount,
         vatAmount: invoice.vatAmount,
         accountId: invoice.accountId,
+        budgetCategoryId: invoice.accountId
+          ? await derivaBudgetCategoryDaConto(invoice.accountId)
+          : null,
+        categorizationSource: invoice.accountId ? 'manual' : undefined,
         counterpartId: bankAccount.id,
         createdById: session.user.id,
       },
