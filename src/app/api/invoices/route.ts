@@ -17,6 +17,7 @@ import { getVenueId } from '@/lib/venue'
 import { createAuditLog } from '@/lib/audit'
 
 import { logger } from '@/lib/logger'
+import { generateSchedulesFromInvoice } from '@/lib/services/invoice-schedule-service'
 // Schema validazione import
 const importInvoiceSchema = z.object({
   xmlContent: z.string().min(100, 'Contenuto XML non valido'),
@@ -439,6 +440,37 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // Porta le rate della fattura nello scadenzario: senza questo passaggio
+    // resterebbero dentro il documento e non comparirebbero nel calendario,
+    // nel saldo scalare o nell'aging.
+    let schedulesResult: { created: number; skipped: number } | null = null
+    try {
+      schedulesResult = await generateSchedulesFromInvoice(
+        {
+          id: invoice.id,
+          venueId: invoice.venueId,
+          invoiceNumber: invoice.invoiceNumber,
+          invoiceDate: invoice.invoiceDate,
+          documentType: invoice.documentType,
+          supplierId: invoice.supplierId,
+          supplierName: invoice.supplierName,
+          deadlines: invoice.deadlines.map((d) => ({
+            id: d.id,
+            dueDate: d.dueDate,
+            amount: d.amount,
+            paymentMethod: d.paymentMethod,
+          })),
+        },
+        session.user.id
+      )
+    } catch (scheduleError) {
+      // La fattura è già stata importata: un errore qui non deve annullarla,
+      // ma va segnalato perché lo scadenzario resta incompleto.
+      logger.error('Errore generazione scadenze da fattura', scheduleError, {
+        invoiceId: invoice.id,
+      })
+    }
+
     // Traccia l'automatismo: il conto non è stato scelto da chi ha importato
     if (regolaApplicata) {
       await createAuditLog({
@@ -485,6 +517,7 @@ export async function POST(request: NextRequest) {
       {
         ...invoice,
         priceTracking: priceTrackingResult,
+        scadenzeGenerate: schedulesResult?.created ?? 0,
         // Warning dal parsing (tipo documento non riconosciuto, P.IVA non standard, etc.)
         parseWarnings: parseWarnings.length > 0 ? parseWarnings : undefined,
       },

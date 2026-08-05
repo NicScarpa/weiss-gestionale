@@ -159,7 +159,10 @@ async function recordInvoice(id: string): Promise<unknown> {
   return res.json()
 }
 
-async function bulkDeleteInvoices(ids: string[], password: string): Promise<{ deleted: number }> {
+async function bulkDeleteInvoices(
+  ids: string[],
+  password: string
+): Promise<{ deleted: number; bloccate?: string[]; scadenzeAnnullate?: number }> {
   const res = await fetch('/api/invoices/bulk-delete', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -250,7 +253,13 @@ export function InvoiceList() {
       bulkDeleteInvoices(ids, password),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] })
-      toast.success(`${result.deleted} fatture eliminate`)
+      if (result.bloccate && result.bloccate.length > 0) {
+        toast.warning(
+          `${result.deleted} fatture eliminate. ${result.bloccate.length} non eliminate: hanno pagamenti registrati nello scadenzario.`
+        )
+      } else {
+        toast.success(`${result.deleted} fatture eliminate`)
+      }
       setSelectedIds(new Set())
       setPasswordDialogOpen(false)
       setDeletePassword('')

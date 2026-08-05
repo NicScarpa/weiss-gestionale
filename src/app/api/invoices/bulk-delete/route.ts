@@ -5,6 +5,10 @@ import { z } from 'zod'
 import bcrypt from 'bcryptjs'
 
 import { logger } from '@/lib/logger'
+import {
+  checkInvoiceDeletable,
+  softDeleteSchedulesForInvoice,
+} from '@/lib/services/invoice-schedule-service'
 const bulkDeleteSchema = z.object({
   ids: z.array(z.string()).min(1, 'Seleziona almeno una fattura'),
   password: z.string().min(1, 'Password richiesta'),
@@ -66,17 +70,51 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const idsToDelete = invoicesToDelete.map((i) => i.id)
+    const candidateIds = invoicesToDelete.map((i) => i.id)
 
-    // Cancellazione logica: i documenti fiscali restano conservati
-    const deleteResult = await prisma.electronicInvoice.updateMany({
-      where: { id: { in: idsToDelete } },
-      data: { deletedAt: new Date() },
+    // Escludi le fatture con pagamenti registrati sulle scadenze generate:
+    // eliminarle scollegherebbe pagamenti reali dal documento che li giustifica
+    const checks = await Promise.all(
+      candidateIds.map(async (id) => ({ id, check: await checkInvoiceDeletable(id) }))
+    )
+    const blocked = checks.filter((c) => !c.check.canDelete).map((c) => c.id)
+    const idsToDelete = checks.filter((c) => c.check.canDelete).map((c) => c.id)
+
+    if (idsToDelete.length === 0) {
+      return NextResponse.json(
+        {
+          error:
+            'Nessuna fattura eliminabile: su tutte risultano pagamenti già registrati nello scadenzario.',
+          bloccate: blocked,
+        },
+        { status: 409 }
+      )
+    }
+
+    // Cancellazione logica in transazione: i documenti fiscali restano
+    // conservati e le scadenze che ne derivavano spariscono dallo scadenzario
+    const { deleted, schedules } = await prisma.$transaction(async (tx) => {
+      let schedules = 0
+      for (const id of idsToDelete) {
+        schedules += await softDeleteSchedulesForInvoice(id, session.user.id, tx)
+      }
+
+      const deleteResult = await tx.electronicInvoice.updateMany({
+        where: { id: { in: idsToDelete } },
+        data: { deletedAt: new Date() },
+      })
+
+      return { deleted: deleteResult.count, schedules }
     })
 
     return NextResponse.json({
-      deleted: deleteResult.count,
-      message: `${deleteResult.count} fatture eliminate con successo`,
+      deleted,
+      scadenzeAnnullate: schedules,
+      bloccate: blocked.length > 0 ? blocked : undefined,
+      message:
+        blocked.length > 0
+          ? `${deleted} fatture eliminate. ${blocked.length} non eliminate: hanno pagamenti registrati.`
+          : `${deleted} fatture eliminate con successo`,
     })
   } catch (error) {
     logger.error('Errore eliminazione in blocco', error)

@@ -6,6 +6,10 @@ import { z } from 'zod'
 import { parseFatturaPA, TIPI_DOCUMENTO } from '@/lib/sdi/parser'
 
 import { logger } from '@/lib/logger'
+import {
+  checkInvoiceDeletable,
+  softDeleteSchedulesForInvoice,
+} from '@/lib/services/invoice-schedule-service'
 // Schema per aggiornamento fattura
 const updateInvoiceSchema = z.object({
   // Categorizzazione
@@ -305,13 +309,35 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       )
     }
 
-    // Cancellazione logica: il documento fiscale resta conservato
-    await prisma.electronicInvoice.update({
-      where: { id },
-      data: { deletedAt: new Date() },
+    // Blocca se sulle scadenze generate risultano pagamenti registrati:
+    // cancellare la fattura scollegherebbe un pagamento realmente uscito dal
+    // conto dal documento che lo giustifica.
+    const deletionCheck = await checkInvoiceDeletable(id)
+    if (!deletionCheck.canDelete) {
+      return NextResponse.json(
+        {
+          error:
+            'Impossibile eliminare: su questa fattura risultano pagamenti già registrati nello scadenzario. Annulla prima i pagamenti, oppure lascia la fattura e annulla la scadenza.',
+          scadenzeConPagamenti: deletionCheck.schedulesWithPayments,
+        },
+        { status: 409 }
+      )
+    }
+
+    // Cancellazione logica in transazione: il documento fiscale resta
+    // conservato e le scadenze che ne derivavano spariscono dallo scadenzario
+    const deletedSchedules = await prisma.$transaction(async (tx) => {
+      const count = await softDeleteSchedulesForInvoice(id, session.user.id, tx)
+
+      await tx.electronicInvoice.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      })
+
+      return count
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, scadenzeAnnullate: deletedSchedules })
   } catch (error) {
     logger.error('Errore DELETE /api/invoices/[id]', error)
     return NextResponse.json(

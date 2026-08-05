@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -458,6 +459,19 @@ export default function ScadenzarioDetailPage() {
                 <DetailRow label="Origine" value={
                   SOURCE_LABELS[schedule.source as string] || schedule.source
                 } />
+                {schedule.invoiceId && (
+                  <div className="text-sm">
+                    <span className="text-muted-foreground">Fattura di origine</span>
+                    <div className="mt-1">
+                      <Link
+                        href={`/fatture/${schedule.invoiceId}`}
+                        className="text-primary hover:underline font-medium"
+                      >
+                        Apri la fattura {schedule.numeroDocumento ?? ''}
+                      </Link>
+                    </div>
+                  </div>
+                )}
                 {schedule.note && (
                   <div className="col-span-2">
                     <DetailRow label="Note" value={schedule.note} />

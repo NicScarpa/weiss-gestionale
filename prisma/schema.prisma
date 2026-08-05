@@ -517,6 +517,11 @@ model Schedule {
   recurrenceId            String?                     @map("recurrence_id")
   note                    String?
   source                  String                      @default("manuale") // 'manuale', 'import_csv', 'import_fatture_sdi', 'ricorrenza_auto'
+  // Origine della scadenza quando nasce da una fattura elettronica importata.
+  // invoiceDeadlineId è unique: una rata della fattura genera al massimo una
+  // scadenza, anche se l'import venisse rieseguito.
+  invoiceId               String?                     @map("invoice_id")
+  invoiceDeadlineId       String?                     @unique @map("invoice_deadline_id")
   createdById             String?                     @map("created_by")
   deletedAt              DateTime?                   @map("deleted_at")
   deletedById            String?                     @map("deleted_by_id")
@@ -528,6 +533,8 @@ model Schedule {
   ricorrenzaFigli         Schedule[]                  @relation("ScheduleRecurrence")
   ricorrenzaParent        Schedule?                   @relation("ScheduleRecurrence", fields: [ricorrenzaParentId], references: [id])
   supplier                Supplier?                   @relation("ScheduleSupplier", fields: [supplierId], references: [id])
+  invoice                 ElectronicInvoice?          @relation("ScheduleFromInvoice", fields: [invoiceId], references: [id])
+  invoiceDeadline         InvoiceDeadline?            @relation("ScheduleFromDeadline", fields: [invoiceDeadlineId], references: [id])
   recurrence              Recurrence?                 @relation("ScheduleFromRecurrence", fields: [recurrenceId], references: [id])
   createdBy               User?                       @relation("ScheduleCreatedBy", fields: [createdById], references: [id])
   venue                   Venue                       @relation(fields: [venueId], references: [id])
@@ -535,6 +542,7 @@ model Schedule {
   @@index([venueId, dataScadenza])
   @@index([stato])
   @@index([tipo])
+  @@index([invoiceId])
   @@index([supplierId])
   @@index([recurrenceId])
   @@map("schedules")
@@ -1156,6 +1164,8 @@ model ElectronicInvoice {
   supplier       Supplier?         @relation(fields: [supplierId], references: [id])
   venue          Venue             @relation(fields: [venueId], references: [id])
   deadlines      InvoiceDeadline[]
+  /// Scadenze generate nello scadenzario da questa fattura
+  schedules      Schedule[]          @relation("ScheduleFromInvoice")
 
   @@index([invoiceDate])
   @@index([supplierId])
@@ -1176,6 +1186,8 @@ model InvoiceDeadline {
   createdAt     DateTime          @default(now()) @map("created_at")
   iban          String?
   invoice       ElectronicInvoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  /// Scadenza generata nello scadenzario da questa rata (fonte di verità sui pagamenti)
+  schedule      Schedule?         @relation("ScheduleFromDeadline")
 
   @@index([dueDate])
   @@index([isPaid])

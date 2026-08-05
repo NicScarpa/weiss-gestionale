@@ -97,6 +97,8 @@ export interface Schedule {
   }
   ricorrenzaAttiva: boolean
   source: ScheduleSource
+  /** Fattura elettronica da cui la scadenza è stata generata (source = import_fatture_sdi) */
+  invoiceId?: string | null
   note: string | null
   createdById: string | null
   createdAt: Date
