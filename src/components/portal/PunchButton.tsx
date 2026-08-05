@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
-import { getCurrentPosition, VenueLocation } from '@/lib/geolocation'
+import { getCurrentPosition, GeolocationError } from '@/lib/geolocation'
 import { savePunchOffline, syncAllPendingPunches, getPendingPunchCount } from '@/lib/offline'
 import { LogIn, LogOut, Coffee, Loader2, WifiOff, CloudUpload } from 'lucide-react'
 import { toast } from 'sonner'
@@ -18,9 +18,32 @@ type ServiceWorkerRegistrationWithSync = ServiceWorkerRegistration & {
 
 type PunchType = 'IN' | 'OUT' | 'BREAK_START' | 'BREAK_END'
 
+/**
+ * Sede su cui timbrare: le coordinate sono opzionali perché si può timbrare
+ * anche su una sede senza geofencing configurato.
+ */
+export interface PunchVenue {
+  id: string
+  name: string
+  latitude?: number | null
+  longitude?: number | null
+  geoFenceRadius?: number
+}
+
+const GPS_PERMISSION_HINT =
+  'Hai negato l’accesso alla posizione. Riattivalo dalle impostazioni del browser (icona accanto all’indirizzo del sito) e ricarica la pagina.'
+
+function isPermissionDenied(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as GeolocationError).code === 'PERMISSION_DENIED'
+  )
+}
+
 interface PunchButtonProps {
   status: AttendanceStatus
-  venue: VenueLocation | null
+  venue: PunchVenue | null
   disabled?: boolean
   className?: string
 }
@@ -197,9 +220,8 @@ export function PunchButton({
 
       toast.success(message)
     },
-    onError: (error: Error) => {
-      toast.error(error.message)
-    },
+    // L'errore viene mostrato da handlePunch, che può arricchirlo con
+    // il suggerimento sul permesso GPS negato.
   })
 
   const handlePunch = async () => {
@@ -209,15 +231,17 @@ export function PunchButton({
     }
 
     setIsGettingLocation(true)
+    let gpsError: unknown = null
 
     try {
-      // Ottieni posizione GPS
+      // Ottieni posizione GPS: se fallisce si prosegue comunque, è il server a
+      // decidere se la sede richiede obbligatoriamente la posizione.
       let position: { latitude?: number; longitude?: number; accuracy?: number } = {}
       try {
         position = await getCurrentPosition()
-      } catch (gpsError) {
-        logger.warn('GPS error', { error: gpsError })
-        // Continua senza GPS
+      } catch (error) {
+        gpsError = error
+        logger.warn('GPS error', { error })
       }
 
       // Se offline, salva localmente
@@ -243,6 +267,14 @@ export function PunchButton({
           description: 'Verrà sincronizzata quando tornerai online',
           icon: <WifiOff className="h-4 w-4" />,
         })
+
+        // Senza posizione la sincronizzazione può essere rifiutata dal server
+        // se la sede richiede la geolocalizzazione: meglio avvisare subito.
+        if (isPermissionDenied(gpsError)) {
+          toast.warning('Salvata senza posizione', {
+            description: GPS_PERMISSION_HINT,
+          })
+        }
 
         // Registra Background Sync per sincronizzare quando torna online
         if ('serviceWorker' in navigator && 'sync' in ServiceWorkerRegistration.prototype) {
@@ -306,9 +338,13 @@ export function PunchButton({
           toast.error('Errore nel salvataggio offline')
         }
       } else {
+        const message =
+          (err as { message?: string })?.message || 'Errore nella timbratura'
         toast.error(
-          (err as { message?: string })?.message ||
-            'Errore nella timbratura'
+          message,
+          isPermissionDenied(gpsError)
+            ? { description: GPS_PERMISSION_HINT }
+            : undefined
         )
       }
     } finally {
@@ -383,7 +419,7 @@ export function BreakButton({
   disabled = false,
   className,
 }: {
-  venue: VenueLocation | null
+  venue: PunchVenue | null
   disabled?: boolean
   className?: string
 }) {
@@ -416,18 +452,24 @@ export function BreakButton({
       queryClient.invalidateQueries({ queryKey: ['attendance-today'] })
       toast.success('Pausa iniziata')
     },
-    onError: (error: Error) => {
-      toast.error(error.message)
-    },
+    // L'errore viene mostrato da handleBreak insieme all'eventuale
+    // suggerimento sul permesso GPS negato.
   })
 
   const handleBreak = async () => {
     if (!venue) return
 
     setIsGettingLocation(true)
+    let gpsError: unknown = null
 
     try {
-      const position = await getCurrentPosition()
+      let position: { latitude?: number; longitude?: number; accuracy?: number } = {}
+      try {
+        position = await getCurrentPosition()
+      } catch (error) {
+        gpsError = error
+        logger.warn('GPS error', { error })
+      }
 
       await punchMutation.mutateAsync({
         punchType: 'BREAK_START',
@@ -436,15 +478,15 @@ export function BreakButton({
         longitude: position.longitude,
         accuracy: position.accuracy,
       })
-    } catch {
-      try {
-        await punchMutation.mutateAsync({
-          punchType: 'BREAK_START',
-          venueId: venue.id,
-        })
-      } catch {
-        // Errore gestito da onError
-      }
+    } catch (err) {
+      const message =
+        (err as { message?: string })?.message || 'Errore nella timbratura'
+      toast.error(
+        message,
+        isPermissionDenied(gpsError)
+          ? { description: GPS_PERMISSION_HINT }
+          : undefined
+      )
     } finally {
       setIsGettingLocation(false)
     }

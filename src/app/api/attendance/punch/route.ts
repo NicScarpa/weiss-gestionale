@@ -5,6 +5,8 @@ import { z } from 'zod'
 import { PunchType, PunchMethod } from '@prisma/client'
 import { calculateDistance } from '@/lib/geolocation'
 import { notifyAnomalyCreated } from '@/lib/notifications'
+import { addDays, format, isValid, parseISO, startOfDay } from 'date-fns'
+import { it } from 'date-fns/locale'
 
 import { logger } from '@/lib/logger'
 // Schema validazione input
@@ -15,7 +17,17 @@ const punchSchema = z.object({
   longitude: z.number().optional(),
   accuracy: z.number().optional(),
   notes: z.string().optional(),
+  // Orario reale della timbratura registrata offline (ISO 8601).
+  // Validato manualmente per poter degradare all'ora corrente invece di
+  // rifiutare l'intera timbratura quando il valore non è utilizzabile.
+  offlineTimestamp: z.string().optional(),
 })
+
+// Il timestamp offline può precedere di poco l'ora del server (orologi non
+// sincronizzati) ma non può arrivare dal futuro né da oltre 24h prima.
+const OFFLINE_FUTURE_TOLERANCE_MS = 5 * 60 * 1000
+const OFFLINE_MAX_AGE_MS = 24 * 60 * 60 * 1000
+const OFFLINE_SYNC_PREFIX = '[offline-sync]'
 
 // POST /api/attendance/punch - Registra timbratura
 export async function POST(request: NextRequest) {
@@ -54,20 +66,42 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Sede non trovata' }, { status: 404 })
     }
 
+    const { latitude, longitude } = validatedData
+    const hasCoordinates = latitude !== undefined && longitude !== undefined
+    const venueHasCoordinates = venue.latitude !== null && venue.longitude !== null
+
+    // La geolocalizzazione obbligatoria è una decisione del server: senza
+    // coordinate la timbratura viene rifiutata, altrimenti basterebbe negare il
+    // permesso GPS dal dispositivo per aggirare il geofencing.
+    if (
+      venue.attendancePolicy?.requireGeolocation &&
+      venueHasCoordinates &&
+      !hasCoordinates
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            'La tua sede richiede la posizione per timbrare. Attiva il GPS e riprova.',
+          code: 'GEOLOCATION_REQUIRED',
+        },
+        { status: 422 }
+      )
+    }
+
     // Calcola distanza se coordinate fornite e sede ha coordinate
     let distanceFromVenue: number | null = null
     let isWithinRadius = true
 
     if (
-      validatedData.latitude !== undefined &&
-      validatedData.longitude !== undefined &&
+      latitude !== undefined &&
+      longitude !== undefined &&
       venue.latitude &&
       venue.longitude
     ) {
       distanceFromVenue = Math.round(
         calculateDistance(
-          validatedData.latitude,
-          validatedData.longitude,
+          latitude,
+          longitude,
           Number(venue.latitude),
           Number(venue.longitude)
         )
@@ -89,19 +123,60 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Trova il turno schedulato per oggi (opzionale)
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
+    // Timbratura sincronizzata da offline: si conserva l'orario reale in cui il
+    // dipendente ha timbrato, non quello in cui la coda è stata svuotata.
+    const now = new Date()
+    const isOfflineSync = validatedData.offlineTimestamp !== undefined
+    let punchedAt = now
+    let offlineTimestampRejected = false
+
+    if (validatedData.offlineTimestamp) {
+      const parsed = parseISO(validatedData.offlineTimestamp)
+      const isInTheFuture =
+        parsed.getTime() - now.getTime() > OFFLINE_FUTURE_TOLERANCE_MS
+      const isTooOld = now.getTime() - parsed.getTime() > OFFLINE_MAX_AGE_MS
+
+      if (!isValid(parsed) || isInTheFuture || isTooOld) {
+        offlineTimestampRejected = true
+        logger.warn('Timestamp offline non utilizzabile, uso ora corrente', {
+          userId: session.user.id,
+          venueId: validatedData.venueId,
+          offlineTimestamp: validatedData.offlineTimestamp,
+        })
+      } else {
+        punchedAt = parsed
+      }
+    }
+
+    // Traccia la provenienza offline nelle note: il modello AttendanceRecord non
+    // ha un campo dedicato e PunchMethod non prevede un valore OFFLINE.
+    const noteParts: string[] = []
+    if (isOfflineSync) {
+      noteParts.push(
+        `${OFFLINE_SYNC_PREFIX} sincronizzata il ${format(now, 'dd/MM/yyyy HH:mm', { locale: it })}`
+      )
+      if (offlineTimestampRejected) {
+        noteParts.push(
+          `[timestamp-non-valido] orario dichiarato dal dispositivo: ${validatedData.offlineTimestamp}`
+        )
+      }
+    }
+    if (validatedData.notes) {
+      noteParts.push(validatedData.notes)
+    }
+
+    // Le finestre temporali seguono il giorno della timbratura, non quello della
+    // sincronizzazione (una timbratura di ieri va agganciata al turno di ieri).
+    const punchDayStart = startOfDay(punchedAt)
+    const punchDayEnd = addDays(punchDayStart, 1)
 
     const todayAssignment = await prisma.shiftAssignment.findFirst({
       where: {
         userId: session.user.id,
         venueId: validatedData.venueId,
         date: {
-          gte: today,
-          lt: tomorrow,
+          gte: punchDayStart,
+          lt: punchDayEnd,
         },
         schedule: {
           status: 'PUBLISHED',
@@ -117,7 +192,7 @@ export async function POST(request: NextRequest) {
         assignmentId: todayAssignment?.id ?? null,
         punchType: validatedData.punchType as PunchType,
         punchMethod: PunchMethod.APP,
-        punchedAt: new Date(),
+        punchedAt,
         latitude: validatedData.latitude ?? null,
         longitude: validatedData.longitude ?? null,
         accuracy: validatedData.accuracy ?? null,
@@ -126,7 +201,7 @@ export async function POST(request: NextRequest) {
         deviceInfo: request.headers.get('user-agent') ?? null,
         ipAddress:
           request.headers.get('x-forwarded-for')?.split(',')[0] ?? null,
-        notes: validatedData.notes ?? null,
+        notes: noteParts.length > 0 ? noteParts.join(' — ') : null,
       },
       include: {
         venue: {
@@ -139,30 +214,34 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    const punchTimeOnly = new Date(
+      1970,
+      0,
+      1,
+      punchedAt.getHours(),
+      punchedAt.getMinutes(),
+      punchedAt.getSeconds()
+    )
+
     // Se timbrata IN, aggiorna actualStart sull'assignment
     if (todayAssignment && validatedData.punchType === 'IN') {
-      const now = new Date()
-      const timeOnly = new Date(1970, 0, 1, now.getHours(), now.getMinutes(), now.getSeconds())
       await prisma.shiftAssignment.update({
         where: { id: todayAssignment.id },
-        data: { actualStart: timeOnly },
+        data: { actualStart: punchTimeOnly },
       })
     }
 
     // Se timbrata OUT, aggiorna actualEnd e calcola ore lavorate
     if (todayAssignment && validatedData.punchType === 'OUT') {
-      const now = new Date()
-      const timeOnly = new Date(1970, 0, 1, now.getHours(), now.getMinutes(), now.getSeconds())
-
-      // Trova l'entrata di oggi per calcolare le ore
+      // Trova l'entrata dello stesso giorno per calcolare le ore
       const clockIn = await prisma.attendanceRecord.findFirst({
         where: {
           userId: session.user.id,
           venueId: validatedData.venueId,
           punchType: 'IN',
           punchedAt: {
-            gte: today,
-            lt: tomorrow,
+            gte: punchDayStart,
+            lt: punchDayEnd,
           },
         },
         orderBy: { punchedAt: 'asc' },
@@ -170,14 +249,14 @@ export async function POST(request: NextRequest) {
 
       let hoursWorked: number | null = null
       if (clockIn) {
-        const diffMs = now.getTime() - clockIn.punchedAt.getTime()
+        const diffMs = punchedAt.getTime() - clockIn.punchedAt.getTime()
         hoursWorked = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100
       }
 
       await prisma.shiftAssignment.update({
         where: { id: todayAssignment.id },
         data: {
-          actualEnd: timeOnly,
+          actualEnd: punchTimeOnly,
           hoursWorked: hoursWorked ?? null,
           status: 'WORKED',
         },
@@ -194,7 +273,7 @@ export async function POST(request: NextRequest) {
           assignmentId: todayAssignment?.id ?? null,
           anomalyType: 'OUTSIDE_LOCATION',
           status: 'PENDING',
-          date: today,
+          date: punchDayStart,
           description: `Timbratura effettuata a ${distanceFromVenue}m dalla sede (raggio: ${venue.attendancePolicy?.geoFenceRadius ?? 100}m)`,
           actualValue: `${distanceFromVenue}m`,
           expectedValue: `<${venue.attendancePolicy?.geoFenceRadius ?? 100}m`,
@@ -216,6 +295,8 @@ export async function POST(request: NextRequest) {
         venue: record.venue,
         isWithinRadius: record.isWithinRadius,
         distanceFromVenue: distanceFromVenue,
+        isOfflineSync,
+        offlineTimestampRejected,
       },
     })
   } catch (error) {

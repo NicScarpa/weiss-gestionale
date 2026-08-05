@@ -1,16 +1,28 @@
 'use client'
 
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { LocationStatus } from '@/components/portal/LocationStatus'
 import { PunchStatus, AttendanceStatus } from '@/components/portal/PunchStatus'
-import { PunchButton, BreakButton } from '@/components/portal/PunchButton'
+import {
+  PunchButton,
+  BreakButton,
+  type PunchVenue,
+} from '@/components/portal/PunchButton'
 import { TodayPunches } from '@/components/portal/TodayPunches'
 import { VenueLocation } from '@/lib/geolocation'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
-import { Calendar, Clock } from 'lucide-react'
+import { Calendar, Clock, MapPin } from 'lucide-react'
 
 interface CurrentStatusResponse {
   status: AttendanceStatus
@@ -49,6 +61,18 @@ interface CurrentStatusResponse {
   punchCount: number
 }
 
+interface VenuesResponse {
+  venues: Array<{
+    id: string
+    name: string
+    code: string
+    latitude: string | null
+    longitude: string | null
+  }>
+}
+
+const SELECTED_VENUE_STORAGE_KEY = 'portale-timbra-venue'
+
 export default function TimbraPage() {
   const { data: statusData, isLoading: isLoadingStatus } =
     useQuery<CurrentStatusResponse>({
@@ -61,19 +85,88 @@ export default function TimbraPage() {
       refetchInterval: 10000, // Aggiorna ogni 10 secondi
     })
 
-  // Costruisci l'oggetto venue per la geolocalizzazione
-  const venue: VenueLocation | null =
-    statusData?.todayAssignment?.venue &&
-    statusData.todayAssignment.venue.latitude &&
-    statusData.todayAssignment.venue.longitude
+  const todayAssignment = statusData?.todayAssignment ?? null
+  const needsVenueChoice = !isLoadingStatus && !todayAssignment
+
+  // Senza turno pubblicato il dipendente sceglie la sede: chi viene chiamato
+  // all'ultimo momento deve poter timbrare lo stesso.
+  const { data: venuesData, isLoading: isLoadingVenues } =
+    useQuery<VenuesResponse>({
+      queryKey: ['portal-venues'],
+      queryFn: async () => {
+        const res = await fetch('/api/venues')
+        if (!res.ok) throw new Error('Errore nel caricamento delle sedi')
+        return res.json()
+      },
+      enabled: needsVenueChoice,
+      staleTime: 5 * 60 * 1000,
+    })
+
+  const availableVenues = venuesData?.venues ?? []
+
+  // Preseleziona l'ultima sede usata sul dispositivo
+  const [venueChoice, setVenueChoice] = useState<string | null>(() =>
+    typeof window !== 'undefined'
+      ? window.localStorage.getItem(SELECTED_VENUE_STORAGE_KEY)
+      : null
+  )
+
+  const handleVenueChange = (venueId: string) => {
+    setVenueChoice(venueId)
+    window.localStorage.setItem(SELECTED_VENUE_STORAGE_KEY, venueId)
+  }
+
+  // Con una sola sede attiva la scelta è implicita
+  const selectedVenueId =
+    venueChoice && availableVenues.some((v) => v.id === venueChoice)
+      ? venueChoice
+      : availableVenues.length === 1
+        ? availableVenues[0].id
+        : null
+
+  const selectedVenue =
+    availableVenues.find((v) => v.id === selectedVenueId) ?? null
+
+  // Sede su cui timbrare: quella del turno oppure quella scelta manualmente
+  const punchVenue: PunchVenue | null = todayAssignment
+    ? {
+        id: todayAssignment.venue.id,
+        name: todayAssignment.venue.name,
+        latitude: todayAssignment.venue.latitude
+          ? parseFloat(todayAssignment.venue.latitude)
+          : null,
+        longitude: todayAssignment.venue.longitude
+          ? parseFloat(todayAssignment.venue.longitude)
+          : null,
+        geoFenceRadius:
+          todayAssignment.venue.attendancePolicy?.geoFenceRadius ?? 100,
+      }
+    : selectedVenue
       ? {
-          id: statusData.todayAssignment.venue.id,
-          name: statusData.todayAssignment.venue.name,
-          latitude: parseFloat(statusData.todayAssignment.venue.latitude),
-          longitude: parseFloat(statusData.todayAssignment.venue.longitude),
-          geoFenceRadius:
-            statusData.todayAssignment.venue.attendancePolicy?.geoFenceRadius ??
-            100,
+          id: selectedVenue.id,
+          name: selectedVenue.name,
+          latitude: selectedVenue.latitude
+            ? parseFloat(selectedVenue.latitude)
+            : null,
+          longitude: selectedVenue.longitude
+            ? parseFloat(selectedVenue.longitude)
+            : null,
+        }
+      : null
+
+  // Il controllo distanza è possibile solo se la sede ha le coordinate
+  const venue: VenueLocation | null =
+    punchVenue &&
+    punchVenue.latitude !== null &&
+    punchVenue.latitude !== undefined &&
+    punchVenue.longitude !== null &&
+    punchVenue.longitude !== undefined
+      ? {
+          id: punchVenue.id,
+          name: punchVenue.name,
+          latitude: punchVenue.latitude,
+          longitude: punchVenue.longitude,
+          geoFenceRadius: punchVenue.geoFenceRadius ?? 100,
         }
       : null
 
@@ -111,7 +204,7 @@ export default function TimbraPage() {
       <LocationStatus venue={venue} />
 
       {/* Turno di oggi (se presente) */}
-      {statusData?.todayAssignment && (
+      {todayAssignment && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
@@ -154,13 +247,44 @@ export default function TimbraPage() {
         </Card>
       )}
 
-      {/* Se non c'è turno oggi */}
-      {!statusData?.todayAssignment && (
+      {/* Se non c'è turno oggi: scelta manuale della sede */}
+      {!todayAssignment && (
         <Card>
-          <CardContent className="py-6">
-            <p className="text-center text-muted-foreground">
-              Nessun turno programmato per oggi
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <MapPin className="h-4 w-4" />
+              Sede
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Nessun turno programmato per oggi. Scegli la sede in cui stai
+              lavorando per poter timbrare.
             </p>
+
+            {isLoadingVenues ? (
+              <Skeleton className="h-10 w-full" />
+            ) : availableVenues.length === 0 ? (
+              <p className="text-sm text-destructive">
+                Nessuna sede disponibile. Contatta un responsabile.
+              </p>
+            ) : (
+              <Select
+                value={selectedVenueId ?? undefined}
+                onValueChange={handleVenueChange}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Seleziona la sede" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableVenues.map((v) => (
+                    <SelectItem key={v.id} value={v.id}>
+                      {v.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </CardContent>
         </Card>
       )}
@@ -183,17 +307,17 @@ export default function TimbraPage() {
       />
 
       {/* Pulsante principale timbratura */}
-      <PunchButton status={status} venue={venue} />
+      <PunchButton status={status} venue={punchVenue} />
 
       {/* Pulsante pausa (solo se in servizio) */}
       {status === 'CLOCKED_IN' && (
         <div className="flex gap-2">
-          <BreakButton venue={venue} className="flex-1" />
+          <BreakButton venue={punchVenue} className="flex-1" />
         </div>
       )}
 
       {/* Lista timbrature di oggi */}
-      <TodayPunches venueId={venue?.id} />
+      <TodayPunches venueId={punchVenue?.id} />
     </div>
   )
 }
