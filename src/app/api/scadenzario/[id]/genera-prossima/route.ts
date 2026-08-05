@@ -17,6 +17,10 @@ export async function POST(
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
+    if (!['admin', 'manager'].includes(session.user.role || '')) {
+      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
+    }
+
     // Recupera scadenza padre
     const parent = await prisma.schedule.findFirst({
       where: { id },

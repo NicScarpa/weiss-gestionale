@@ -18,6 +18,10 @@ export async function GET(
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
+    if (!['admin', 'manager'].includes(session.user.role || '')) {
+      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
+    }
+
     const payment = await prisma.payment.findUnique({
       where: { id: id },
       include: {
@@ -63,6 +67,10 @@ export async function PATCH(
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
+    if (!['admin', 'manager'].includes(session.user.role || '')) {
+      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
+    }
+
     const current = await prisma.payment.findUnique({
       where: { id: id },
       select: { id: true },
@@ -106,6 +114,10 @@ export async function DELETE(
 
     if (!session?.user) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
+    }
+
+    if (!['admin', 'manager'].includes(session.user.role || '')) {
+      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
     const current = await prisma.payment.findUnique({

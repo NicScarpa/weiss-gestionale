@@ -1,12 +1,29 @@
 'use client'
 
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { ChevronLeft, ChevronRight, Settings2 } from 'lucide-react'
 import { format, startOfMonth, endOfMonth, addMonths, subMonths } from 'date-fns'
 import { it } from 'date-fns/locale'
 
@@ -29,9 +46,65 @@ const STATUS_BADGE: Record<string, { label: string; variant: 'default' | 'second
   CANCELLED: { label: 'Annullata', variant: 'secondary' },
 }
 
-export function LeaveTab({ userId }: LeaveTabProps) {
+export function LeaveTab({ userId, isAdmin }: LeaveTabProps) {
+  const queryClient = useQueryClient()
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [statusFilter, setStatusFilter] = useState('all')
+
+  // Dialog "Imposta saldo" (solo admin)
+  const [balanceDialogOpen, setBalanceDialogOpen] = useState(false)
+  const [balanceForm, setBalanceForm] = useState({
+    leaveTypeId: '',
+    year: String(new Date().getFullYear()),
+    accrued: '',
+    carriedOver: '',
+  })
+  const [isSavingBalance, setIsSavingBalance] = useState(false)
+
+  // Tipi assenza (per il form saldo)
+  const { data: leaveTypesData } = useQuery({
+    queryKey: ['leave-types'],
+    enabled: isAdmin,
+    queryFn: async () => {
+      const res = await fetch('/api/leave-types')
+      if (!res.ok) return { data: [] }
+      return res.json()
+    },
+  })
+
+  const handleSaveBalance = async () => {
+    if (!balanceForm.leaveTypeId || !balanceForm.accrued) {
+      toast.error('Scegli il tipo di assenza e il maturato')
+      return
+    }
+    setIsSavingBalance(true)
+    try {
+      const res = await fetch('/api/leave-balance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          leaveTypeId: balanceForm.leaveTypeId,
+          year: Number(balanceForm.year),
+          accrued: Number(balanceForm.accrued),
+          carriedOver: balanceForm.carriedOver ? Number(balanceForm.carriedOver) : 0,
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Errore nel salvataggio del saldo')
+      }
+      toast.success('Saldo ferie aggiornato')
+      setBalanceDialogOpen(false)
+      setBalanceForm({ leaveTypeId: '', year: String(new Date().getFullYear()), accrued: '', carriedOver: '' })
+      queryClient.invalidateQueries({ queryKey: ['leave-balances', userId] })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Errore sconosciuto'
+      toast.error(message)
+    } finally {
+      setIsSavingBalance(false)
+    }
+  }
 
   // Fetch balances
   const { data: balancesData, isLoading: loadingBalances } = useQuery({
@@ -56,7 +129,7 @@ export function LeaveTab({ userId }: LeaveTabProps) {
     },
   })
 
-  const balances = balancesData?.balances || []
+  const balances = balancesData?.data || []
   const allRequests = requestsData?.requests || requestsData?.data || []
   const requests = statusFilter === 'all'
     ? allRequests
@@ -73,26 +146,106 @@ export function LeaveTab({ userId }: LeaveTabProps) {
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-          {balances.map((b: any) => (
-            <Card key={b.id || b.leaveTypeId}>
-              <CardContent className="p-4">
-                <p className="text-sm font-medium text-muted-foreground">
-                  {b.leaveType?.name || b.leaveTypeName || 'Tipo'}
-                </p>
-                <div className="mt-2 flex items-baseline gap-2">
-                  <span className="text-2xl font-bold">
-                    {Number(b.accrued) - Number(b.used) - Number(b.pending)}
-                  </span>
-                  <span className="text-xs text-muted-foreground">disponibili</span>
-                </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Maturati: {Number(b.accrued)} | Usati: {Number(b.used)}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+        <div className="space-y-2">
+          {isAdmin && (
+            <div className="flex justify-end">
+              <Dialog open={balanceDialogOpen} onOpenChange={setBalanceDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <Settings2 className="h-4 w-4 mr-2" />
+                    Imposta saldo
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[420px]">
+                  <DialogHeader>
+                    <DialogTitle>Imposta saldo ferie/permessi</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Tipo di assenza</Label>
+                      <Select
+                        value={balanceForm.leaveTypeId}
+                        onValueChange={(v) => setBalanceForm(f => ({ ...f, leaveTypeId: v }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Scegli il tipo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                          {(leaveTypesData?.data || []).map((lt: any) => (
+                            <SelectItem key={lt.id} value={lt.id}>
+                              {lt.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-2">
+                        <Label>Anno</Label>
+                        <Input
+                          type="number"
+                          value={balanceForm.year}
+                          onChange={(e) => setBalanceForm(f => ({ ...f, year: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Maturato</Label>
+                        <Input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          placeholder="es. 26"
+                          value={balanceForm.accrued}
+                          onChange={(e) => setBalanceForm(f => ({ ...f, accrued: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Residuo a.p.</Label>
+                        <Input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          placeholder="0"
+                          value={balanceForm.carriedOver}
+                          onChange={(e) => setBalanceForm(f => ({ ...f, carriedOver: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" onClick={() => setBalanceDialogOpen(false)}>
+                        Annulla
+                      </Button>
+                      <Button onClick={handleSaveBalance} disabled={isSavingBalance}>
+                        {isSavingBalance ? 'Salvataggio…' : 'Salva'}
+                      </Button>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+          )}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            {balances.map((b: any) => (
+              <Card key={b.leaveType?.id || b.leaveTypeId}>
+                <CardContent className="p-4">
+                  <p className="text-sm font-medium text-muted-foreground">
+                    {b.leaveType?.name || b.leaveTypeName || 'Tipo'}
+                  </p>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className="text-2xl font-bold">
+                      {Number(b.available ?? (Number(b.accrued) + Number(b.carriedOver || 0) - Number(b.used) - Number(b.pending)))}
+                    </span>
+                    <span className="text-xs text-muted-foreground">disponibili</span>
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    Maturati: {Number(b.accrued)} | Usati: {Number(b.used)}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
       )}
 

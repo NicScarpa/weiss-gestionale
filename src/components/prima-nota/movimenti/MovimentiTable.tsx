@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils'
 interface MovimentiTableProps {
   data: JournalEntry[]
   filters?: JournalEntryFilters
+  sortDirection?: 'asc' | 'desc'
   onSort?: (field: string, direction: 'asc' | 'desc') => void
   onEdit?: (entry: JournalEntry) => void
   onDelete?: (id: string) => void
@@ -31,6 +32,7 @@ interface MovimentiTableProps {
 export function MovimentiTable({
   data,
   filters,
+  sortDirection,
   onSort,
   onEdit,
   onDelete,
@@ -98,10 +100,14 @@ export function MovimentiTable({
                   <button
                     type="button"
                     className="flex items-center gap-1 group outline-none focus:outline-none"
-                    onClick={() => onSort?.('date', 'desc')}
+                    onClick={() => onSort?.('date', sortDirection === 'desc' ? 'asc' : 'desc')}
                   >
                     Data
-                    <ArrowUpDownIcon className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    {sortDirection ? (
+                      <span className="text-xs">{sortDirection === 'desc' ? '↓' : '↑'}</span>
+                    ) : (
+                      <ArrowUpDownIcon className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    )}
                   </button>
                 </th>
                 <th className="h-10 px-4 text-left">
@@ -114,14 +120,7 @@ export function MovimentiTable({
                   Documento
                 </th>
                 <th className="h-10 px-4 text-right">
-                  <button
-                    type="button"
-                    className="flex items-center justify-end gap-1 group outline-none focus:outline-none"
-                    onClick={() => onSort?.('amount', 'desc')}
-                  >
-                    Importo
-                    <ArrowUpDownIcon className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
-                  </button>
+                  Importo
                 </th>
                 <th className="h-10 px-4 text-left">
                   Conto

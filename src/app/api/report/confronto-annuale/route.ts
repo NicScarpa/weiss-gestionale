@@ -15,6 +15,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
+    if (!['admin', 'manager'].includes(session.user.role || '')) {
+      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
+    }
+
     const { searchParams } = new URL(request.url)
     const yearParam = searchParams.get('year')
     const venueId = searchParams.get('venueId')

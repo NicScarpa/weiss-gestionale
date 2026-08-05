@@ -13,6 +13,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    if (!['admin', 'manager'].includes(session.user.role || '')) {
+      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
+    }
+
     const { searchParams } = new URL(request.url)
     const stato = searchParams.get('stato')
     const tipo = searchParams.get('tipo')
@@ -56,6 +60,10 @@ export async function POST(request: NextRequest) {
     const session = await getServerSession()
     if (!session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!['admin', 'manager'].includes(session.user.role || '')) {
+      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
     const body = await request.json()

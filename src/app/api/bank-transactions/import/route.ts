@@ -15,6 +15,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
+    if (!['admin', 'manager'].includes(session.user.role || '')) {
+      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
+    }
+
     const formData = await request.formData()
     const file = formData.get('file') as File | null
     const venueId = await getVenueId()

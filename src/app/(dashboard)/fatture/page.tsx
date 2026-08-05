@@ -96,19 +96,6 @@ export default function FattureSituazionePage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Divisione</span>
-              <Select defaultValue="tutte">
-                <SelectTrigger className="w-[150px] h-9 text-sm font-medium border-none shadow-none focus:ring-0">
-                  <SelectValue placeholder="Tutte" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="tutte">Tutte le divisioni</SelectItem>
-                  <SelectItem value="cucina">Cucina</SelectItem>
-                  <SelectItem value="sala">Sala</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
           </div>
           <Button
             onClick={() => setImportDialogOpen(true)}

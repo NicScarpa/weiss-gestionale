@@ -19,6 +19,10 @@ export async function PATCH(
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
+    if (!['admin', 'manager'].includes(session.user.role || '')) {
+      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
+    }
+
     // Recupera la entry corrente
     const current = await prisma.journalEntry.findUnique({
       where: { id: id },

@@ -1,21 +1,10 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-// Rotte accessibili agli utenti Staff (portale + API correlate)
-const STAFF_ALLOWED_PREFIXES = [
-  '/portale',
-  '/login',
-  '/api/auth',
-  '/api/attendance',
-  '/api/leave-requests',
-  '/api/portal',
-  '/api/shift-swaps',
-  '/api/leave-balance',
-  '/api/leave-types',
-  '/api/shift-definitions',
-  '/api/shifts',
-  '/api/schedules',
-]
+// NOTA: il controllo del ruolo NON può avvenire qui — il token di sessione è
+// JWE e non è decodificabile in edge runtime. I controlli di ruolo vivono
+// nelle singole route API (guard admin/manager sulle route finanziarie) e nel
+// layout della dashboard (redirect dello staff al portale).
 
 // Rotte pubbliche (non richiedono autenticazione)
 const PUBLIC_PREFIXES = [

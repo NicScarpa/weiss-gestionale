@@ -18,6 +18,10 @@ export async function GET(
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
+    if (!['admin', 'manager'].includes(session.user.role || '')) {
+      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
+    }
+
     const { id } = await params
     const venueId = await getVenueId()
 
@@ -97,6 +101,10 @@ export async function PUT(
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
+    if (!['admin', 'manager'].includes(session.user.role || '')) {
+      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
+    }
+
     const { id } = await params
     const venueId = await getVenueId()
     const body = await request.json()
@@ -173,6 +181,10 @@ export async function DELETE(
 
     if (!session?.user) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
+    }
+
+    if (!['admin', 'manager'].includes(session.user.role || '')) {
+      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
     const { id } = await params

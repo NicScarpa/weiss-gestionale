@@ -260,6 +260,7 @@ model CashStation {
   cashCount        CashCount?
   closure          DailyClosure @relation(fields: [closureId], references: [id], onDelete: Restrict)
 
+  @@index([closureId])
   @@map("cash_stations")
 }
 
@@ -323,6 +324,8 @@ model DailyExpense {
   account      Account?     @relation(fields: [accountId], references: [id])
   closure      DailyClosure @relation(fields: [closureId], references: [id], onDelete: Restrict)
 
+  @@index([closureId])
+  @@index([accountId])
   @@map("daily_expenses")
 }
 
@@ -368,6 +371,7 @@ model Account {
   customers           Customer[]
   scheduleRules       ScheduleRule[]
 
+  @@index([parentId])
   @@map("accounts")
 }
 
@@ -410,6 +414,11 @@ model JournalEntry {
   venue                Venue               @relation(fields: [venueId], references: [id])
   payment              Payment?
 
+  @@index([venueId, date])
+  @@index([venueId, registerType, date])
+  @@index([accountId])
+  @@index([budgetCategoryId])
+  @@index([closureId])
   @@map("journal_entries")
 }
 

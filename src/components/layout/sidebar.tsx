@@ -71,6 +71,7 @@ const navigationItems = [
         title: 'Analisi',
         items: [
           { name: 'Situazione', href: '/budget' },
+          { name: 'Cash Flow', href: '/cash-flow' },
           { name: 'Report', href: '/report' },
         ],
       },

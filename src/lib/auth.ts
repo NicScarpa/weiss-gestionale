@@ -2,12 +2,17 @@ import NextAuth, { type DefaultSession, CredentialsSignin } from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 import { compare } from 'bcryptjs'
 import { prisma } from './prisma'
+import { checkRateLimitAsync, authRateLimit, RATE_LIMIT_CONFIGS, getClientIp } from './rate-limit'
 
 class InvalidCredentials extends CredentialsSignin {
   code = 'CredentialsSignin'
 }
 
 class AccountDisabled extends CredentialsSignin {
+  code = 'AccessDenied'
+}
+
+class TooManyAttempts extends CredentialsSignin {
   code = 'AccessDenied'
 }
 
@@ -62,12 +67,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         identifier: { label: 'Username o Email', type: 'text' },
         password: { label: 'Password', type: 'password' }
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         if (!credentials?.identifier || !credentials?.password) {
           throw new InvalidCredentials()
         }
 
         const identifier = credentials.identifier as string
+
+        // Rate limit: 5 tentativi/minuto per coppia IP+utente (anti brute-force)
+        const clientIp = request?.headers ? getClientIp(new Headers(request.headers)) : 'unknown'
+        const rl = await checkRateLimitAsync(
+          `login:${clientIp}:${identifier.toLowerCase()}`,
+          authRateLimit,
+          RATE_LIMIT_CONFIGS.AUTH
+        )
+        if (!rl.success) {
+          throw new TooManyAttempts()
+        }
 
         // Cerca prima per username, poi per email
         let user = await prisma.user.findUnique({

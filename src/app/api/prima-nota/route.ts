@@ -102,6 +102,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
+    if (!['admin', 'manager'].includes(session.user.role || '')) {
+      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
+    }
+
     const { searchParams } = new URL(request.url)
 
     // Parse filtri
@@ -117,6 +121,7 @@ export async function GET(request: NextRequest) {
     })
 
     // Nuovi filtri Sibill
+    const sortOrder = searchParams.get('sortOrder') === 'asc' ? 'asc' as const : 'desc' as const
     const verified = searchParams.get('verified') === 'true'
     const budgetCategoryId = searchParams.get('budgetCategoryId')
     const direction = searchParams.get('direction') as 'inflow' | 'outflow' | null
@@ -248,7 +253,7 @@ export async function GET(request: NextRequest) {
             },
           },
         },
-        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [{ date: sortOrder }, { createdAt: sortOrder }],
         skip: (filters.page - 1) * filters.limit,
         take: filters.limit,
       }),
@@ -369,6 +374,10 @@ export async function POST(request: NextRequest) {
 
     if (!session?.user) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
+    }
+
+    if (!['admin', 'manager'].includes(session.user.role || '')) {
+      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
     const body = await request.json()

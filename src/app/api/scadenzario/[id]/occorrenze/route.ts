@@ -16,6 +16,10 @@ export async function GET(
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
+    if (!['admin', 'manager'].includes(session.user.role || '')) {
+      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
+    }
+
     // Verifica esistenza scadenza padre
     const parentSchedule = await prisma.schedule.findFirst({
       where: { id },

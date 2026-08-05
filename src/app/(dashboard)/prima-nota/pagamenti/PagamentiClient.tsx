@@ -165,6 +165,17 @@ export function PagamentiClient() {
   // Active filter count for badge
   const filterCount = [filters.stato, filters.tipo, filters.dateFrom, filters.search].filter(Boolean).length
 
+  // Filtro ricerca applicato lato client (l'API non supporta search e la lista non è paginata)
+  const visibleData = filters.search
+    ? data.filter(p => {
+        const q = filters.search.toLowerCase()
+        return (
+          p.beneficiarioNome?.toLowerCase().includes(q) ||
+          p.causale?.toLowerCase().includes(q)
+        )
+      })
+    : data
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -190,7 +201,7 @@ export function PagamentiClient() {
       />
 
       <PagamentiTable
-        data={data.map(p => ({
+        data={visibleData.map(p => ({
           id: p.id,
           dataEsecuzione: new Date(p.dataEsecuzione),
           tipo: p.tipo,

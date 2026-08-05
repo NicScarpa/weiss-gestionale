@@ -37,10 +37,10 @@ interface PagamentoRowActionsProps {
 
 const STATUS_ACTIONS: Record<PaymentStatus, Array<{ key: string; label: string; icon: LucideIcon; action: 'approve' | 'dispose' | 'complete' | 'fail' | 'annul' }>> = {
   BOZZA: [
-    { key: 'approve', label: 'Approva', icon: Check, action: 'approve' },
+    { key: 'approve', label: 'Invia in approvazione', icon: Check, action: 'approve' },
   ],
   DA_APPROVARE: [
-    { key: 'dispose', label: 'Dispõni', icon: Send, action: 'dispose' },
+    { key: 'dispose', label: 'Approva e disponi', icon: Send, action: 'dispose' },
     { key: 'annul', label: 'Annulla', icon: XCircle, action: 'annul' },
   ],
   DISPOSTO: [

@@ -15,10 +15,7 @@ export default function FattureLayout({
     { value: '/fatture', label: 'Situazione' },
     { value: '/fatture/ricevute', label: 'Ricevute' },
     { value: '/fatture/emesse', label: 'Emesse' },
-    { value: '/fatture/bozze', label: 'Bozze' },
     { value: '/fatture/corrispettivi', label: 'Corrispettivi' },
-    { value: '/fatture/esterometro', label: 'Esterometro' },
-    { value: '/fatture/importa', label: 'Importa' },
   ]
 
   const isActive = (href: string) => pathname === href

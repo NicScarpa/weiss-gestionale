@@ -14,7 +14,20 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { PlusIcon, PenLineIcon, UploadIcon } from 'lucide-react'
+import { PlusIcon, PenLineIcon, UploadIcon, DownloadIcon } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { DangerousDeleteDialog } from '@/components/ui/dangerous-delete-dialog'
 import { usePrimaNota } from '@/components/prima-nota/PrimaNotaContext'
 import type { JournalEntry, RegisterType, EntryType } from '@/types/prima-nota'
@@ -66,6 +79,11 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
+  // Ordinamento e categorizzazione
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+  const [categorizeEntry, setCategorizeEntry] = useState<JournalEntry | null>(null)
+  const [categorizeCategoryId, setCategorizeCategoryId] = useState<string>('')
+
   // Load data from API
   const loadData = useCallback(async () => {
     setIsLoading(true)
@@ -83,6 +101,7 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
       if (filters.verified !== undefined) params.set('verified', String(filters.verified))
       if (filters.search) params.set('search', filters.search)
       if (venueId) params.set('venueId', venueId)
+      params.set('sortOrder', sortOrder)
       params.set('page', String(pagination.page))
       params.set('limit', '50')
 
@@ -109,7 +128,7 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
     } finally {
       setIsLoading(false)
     }
-  }, [filters, registerFromUrl, venueId, pagination.page])
+  }, [filters, registerFromUrl, venueId, pagination.page, sortOrder])
 
   // Reload on filter/register change
   useEffect(() => {
@@ -205,28 +224,76 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
     setDialogOpen(true)
   }
 
+  const handleExport = (format: 'pdf' | 'xlsx' | 'csv') => {
+    const params = new URLSearchParams()
+    const activeRegister = registerFromUrl || filters.registerType
+    if (activeRegister) params.set('registerType', activeRegister)
+    if (filters.dateFrom) params.set('dateFrom', filters.dateFrom.toISOString())
+    if (filters.dateTo) params.set('dateTo', filters.dateTo.toISOString())
+    if (venueId) params.set('venueId', venueId)
+    params.set('format', format)
+    window.open(`/api/prima-nota/export?${params.toString()}`, '_blank')
+  }
+
+  const handleCategorize = async () => {
+    if (!categorizeEntry) return
+    try {
+      const res = await fetch(`/api/prima-nota/${categorizeEntry.id}/categorize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ budgetCategoryId: categorizeCategoryId || undefined }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Errore categorizzazione')
+      }
+      toast.success('Movimento categorizzato')
+      setCategorizeEntry(null)
+      setCategorizeCategoryId('')
+      loadData()
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Errore sconosciuto'
+      toast.error(message)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Movimenti</h1>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button>
-              <PlusIcon className="h-4 w-4 mr-2" />
-              Nuovo
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem onClick={handleNewMovimento}>
-              <PenLineIcon className="h-4 w-4 mr-2" />
-              Crea movimento
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setImportDialogOpen(true)}>
-              <UploadIcon className="h-4 w-4 mr-2" />
-              Carica movimenti
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                <DownloadIcon className="h-4 w-4 mr-2" />
+                Esporta
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem onClick={() => handleExport('pdf')}>PDF</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport('xlsx')}>Excel</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport('csv')}>CSV</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button>
+                <PlusIcon className="h-4 w-4 mr-2" />
+                Nuovo
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={handleNewMovimento}>
+                <PenLineIcon className="h-4 w-4 mr-2" />
+                Crea movimento
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setImportDialogOpen(true)}>
+                <UploadIcon className="h-4 w-4 mr-2" />
+                Carica movimenti
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       <MovimentiFilters
@@ -251,11 +318,16 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
 
       <MovimentiTable
         data={data}
+        sortDirection={sortOrder}
+        onSort={(_field, direction) => setSortOrder(direction)}
         onEdit={handleEdit}
         onDelete={handleDelete}
         onVerify={handleVerify}
         onHide={handleHide}
-        onCategorize={(entry) => toast.info(`Categorizzazione per "${entry.description}" non ancora implementata`)}
+        onCategorize={(entry) => {
+          setCategorizeEntry(entry)
+          setCategorizeCategoryId(entry.budgetCategoryId || '')
+        }}
         isLoading={isLoading}
       />
 
@@ -328,6 +400,54 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
         confirmLabel="Elimina Movimento"
         onConfirm={confirmDeleteMovimento}
       />
+
+      {/* Dialog categorizzazione */}
+      <Dialog
+        open={!!categorizeEntry}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCategorizeEntry(null)
+            setCategorizeCategoryId('')
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Categorizza movimento</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground truncate">
+              {categorizeEntry?.description}
+            </p>
+            <Select value={categorizeCategoryId} onValueChange={setCategorizeCategoryId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Scegli una categoria budget" />
+              </SelectTrigger>
+              <SelectContent>
+                {budgetCategories.map((cat) => (
+                  <SelectItem key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCategorizeEntry(null)
+                  setCategorizeCategoryId('')
+                }}
+              >
+                Annulla
+              </Button>
+              <Button onClick={handleCategorize} disabled={!categorizeCategoryId}>
+                Salva
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
