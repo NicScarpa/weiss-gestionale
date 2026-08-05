@@ -10,7 +10,12 @@ vi.mock('@/lib/prisma', () => ({
     schedulePayment: { create: vi.fn(), delete: vi.fn() },
     electronicInvoice: { update: vi.fn(), findUnique: vi.fn() },
     invoiceLineAccount: { findMany: vi.fn(), createMany: vi.fn() },
-    journalEntryAllocation: { findMany: vi.fn(), createMany: vi.fn(), deleteMany: vi.fn() },
+    journalEntryAllocation: {
+      findMany: vi.fn(),
+      createMany: vi.fn(),
+      deleteMany: vi.fn(),
+      aggregate: vi.fn(),
+    },
     $transaction: vi.fn(),
   },
 }))
@@ -30,6 +35,7 @@ vi.mock('@/lib/accounts/mapping', () => ({
 
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
+import { logger } from '@/lib/logger'
 import { applicaStimaSuScadenza, ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
 import {
@@ -80,6 +86,11 @@ beforeEach(() => {
   // Default: nessuna fetta ereditata da ritirare, così i test che non
   // riguardano l'ereditarietà non devono preoccuparsene.
   vi.mocked(prisma.journalEntryAllocation.deleteMany).mockResolvedValue({ count: 0 } as never)
+  // Default: nessuna fetta preesistente sul movimento, così i test che non
+  // riguardano lo sforamento dell'importo utile non devono preoccuparsene.
+  vi.mocked(prisma.journalEntryAllocation.aggregate).mockResolvedValue({
+    _sum: { importo: null },
+  } as never)
 })
 
 describe('reconcileScheduleWithEntry - dataAttesa', () => {
@@ -409,6 +420,48 @@ describe('reconcileScheduleWithEntry - ereditarietà pro-quota dalla fattura (Fa
 
     expect(esito.outcome).toBe('ok')
     expect(prisma.journalEntryAllocation.createMany).not.toHaveBeenCalled()
+  })
+
+  it('movimento che riconcilia più scadenze: se le fette già ereditate più la nuova quota superano l\'importo utile del movimento, l\'ereditarietà si astiene (non scrive oltre l\'importo)', async () => {
+    // Il movimento vale 1000: una prima riconciliazione (altra scadenza,
+    // altra fattura) ha già ereditato fette per 600. Questa riconciliazione
+    // (scadenza-2, fattura inv-4) userebbe il disponibile pieno del
+    // movimento (1000) per calcolare la propria quota, non il residuo dopo
+    // la prima riconciliazione: quota 500, che sommata alle 600 già
+    // scritte (1100) sfora l'importo utile del movimento (1000).
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      scadenza({ id: 'sched-2', invoiceId: 'inv-4', importoTotale: new Prisma.Decimal(500) }) as never
+    )
+    vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue(
+      movimento({ creditAmount: new Prisma.Decimal(1000) }) as never
+    )
+    vi.mocked(prisma.electronicInvoice.findUnique).mockResolvedValue({
+      lineItems: [{ numeroLinea: 1 }],
+    } as never)
+    vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([
+      { accountId: 'conto-c', importo: new Prisma.Decimal(500) },
+    ] as never)
+    // Nessuna fetta 'manuale' sul movimento (la ereditaFetteDaFattura fa
+    // sempre questo controllo per prima)
+    vi.mocked(prisma.journalEntryAllocation.findMany).mockResolvedValue([])
+    // Ma il movimento ha già 600 di fette 'ereditata' da un'altra
+    // riconciliazione: è quello che l'aggregate deve intercettare.
+    vi.mocked(prisma.journalEntryAllocation.aggregate).mockResolvedValue({
+      _sum: { importo: new Prisma.Decimal(600) },
+    } as never)
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: 'sched-2',
+      journalEntryId: 'entry-1',
+      venueId: VENUE,
+      userId: 'user-1',
+    })
+
+    // La riconciliazione procede comunque (l'astensione riguarda solo
+    // l'ereditarietà, non il pagamento della scadenza)
+    expect(esito.outcome).toBe('ok')
+    expect(prisma.journalEntryAllocation.createMany).not.toHaveBeenCalled()
+    expect(logger.warn).toHaveBeenCalled()
   })
 
   it('scadenza senza invoiceId: nessuna lettura della fattura', async () => {

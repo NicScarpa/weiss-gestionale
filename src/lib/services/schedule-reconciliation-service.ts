@@ -79,7 +79,15 @@ async function ereditaFetteDaFattura(
     invoiceId,
     reconciliationId,
     quota,
-  }: { journalEntryId: string; invoiceId: string; reconciliationId: string; quota: number }
+    importoUtileMovimento,
+  }: {
+    journalEntryId: string
+    invoiceId: string
+    reconciliationId: string
+    quota: number
+    /** Importo utile del movimento (debit ?? credit): tetto che nessuna fetta, manuale o ereditata, può superare */
+    importoUtileMovimento: number
+  }
 ): Promise<void> {
   const invoice = await tx.electronicInvoice.findUnique({
     where: { id: invoiceId },
@@ -110,6 +118,30 @@ async function ereditaFetteDaFattura(
     select: { id: true },
   })
   if (manuali.length > 0) return // le fette manuali vincono sempre
+
+  // Un movimento può riconciliare più scadenze (es. un bonifico cumulativo):
+  // ogni riconciliazione calcola la propria quota sul disponibile pieno del
+  // movimento, senza sapere quanto le riconciliazioni precedenti hanno già
+  // ereditato. Senza questo controllo la somma delle fette può superare
+  // l'importo del movimento, rompendo l'invariante che setEntryAllocations
+  // difende sullo split manuale. Se sfora, l'ereditarietà si astiene (skip
+  // silenzioso, coerente con le altre guardie della funzione): la
+  // riconciliazione della scadenza procede comunque.
+  const aggregato = await tx.journalEntryAllocation.aggregate({
+    where: { journalEntryId },
+    _sum: { importo: true },
+  })
+  const sommaEsistenti = Number(aggregato._sum.importo ?? 0)
+  if (sommaEsistenti + quota > importoUtileMovimento + 0.01) {
+    logger.warn('Ereditarietà pro-quota: la quota sforerebbe l\'importo utile del movimento, si salta', {
+      journalEntryId,
+      invoiceId,
+      quota,
+      sommaEsistenti,
+      importoUtileMovimento,
+    })
+    return
+  }
 
   const pesi = calcolaPesiDaRighe(
     imputazioni.map((r) => ({ accountId: r.accountId, importo: Number(r.importo) }))
@@ -235,6 +267,7 @@ export async function reconcileScheduleWithEntry({
         invoiceId: schedule.invoiceId,
         reconciliationId: reconciliation.id,
         quota,
+        importoUtileMovimento: disponibile,
       })
     }
 
