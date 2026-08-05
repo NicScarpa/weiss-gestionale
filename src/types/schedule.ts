@@ -81,6 +81,8 @@ export interface Schedule {
   /** Data attesa di cassa: null = coincide con dataScadenza. Si valorizza al
    *  riallineamento sulla data del movimento quando la riconciliazione salda */
   dataAttesa: Date | null
+  /** Provenienza di dataAttesa; null se e solo se dataAttesa è null */
+  dataAttesaSource: 'stima' | 'manuale' | 'riconciliazione' | null
   dataEmissione: Date | null
   dataPagamento: Date | null
   tipoDocumento: ScheduleDocumentType
@@ -196,6 +198,8 @@ export interface CreateScheduleInput {
   ricorrenzaFine?: Date
   ricorrenzaAttiva?: boolean
   note?: string
+  /** Solo in modifica di scadenze passive: null esplicito = torna alla stima */
+  dataAttesa?: Date | null
 }
 
 export interface UpdateScheduleInput {

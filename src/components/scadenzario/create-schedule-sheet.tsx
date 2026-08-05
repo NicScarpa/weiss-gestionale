@@ -103,6 +103,10 @@ export function CreateScheduleDialog({
   const [ricorrenzaFine, setRicorrenzaFine] = useState<Date | undefined>(initialData?.ricorrenzaFine ? new Date(initialData.ricorrenzaFine) : undefined)
   const [ricorrenzaAttiva, setRicorrenzaAttiva] = useState(initialData?.ricorrenzaAttiva !== undefined ? initialData.ricorrenzaAttiva : true)
   const [note, setNote] = useState(initialData?.note || '')
+  const [dataAttesa, setDataAttesa] = useState<Date | undefined>(
+    initialData?.dataAttesa ? new Date(initialData.dataAttesa) : undefined
+  )
+  const [dataAttesaTouched, setDataAttesaTouched] = useState(false)
 
   // Collapsible state
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -110,6 +114,7 @@ export function CreateScheduleDialog({
   // Popover states
   const [emissionePopoverOpen, setEmissionePopoverOpen] = useState(false)
   const [ricorrenzaFinePopoverOpen, setRicorrenzaFinePopoverOpen] = useState(false)
+  const [dataAttesaPopoverOpen, setDataAttesaPopoverOpen] = useState(false)
 
   const updateScadenza = (index: number, updates: Partial<ScadenzaRow>) => {
     setScadenze(prev => prev.map((row, i) => i === index ? { ...row, ...updates } : row))
@@ -146,6 +151,8 @@ export function CreateScheduleDialog({
       setRicorrenzaFine(initialData.ricorrenzaFine ? new Date(initialData.ricorrenzaFine) : undefined)
       setRicorrenzaAttiva(initialData.ricorrenzaAttiva !== undefined ? initialData.ricorrenzaAttiva : true)
       setNote(initialData.note || '')
+      setDataAttesa(initialData.dataAttesa ? new Date(initialData.dataAttesa) : undefined)
+      setDataAttesaTouched(false)
       setAdvancedOpen(
         !!(initialData.controparteIban ||
           initialData.note ||
@@ -172,6 +179,8 @@ export function CreateScheduleDialog({
     setRicorrenzaFine(undefined)
     setRicorrenzaAttiva(true)
     setNote('')
+    setDataAttesa(undefined)
+    setDataAttesaTouched(false)
     setAdvancedOpen(false)
   }
 
@@ -193,6 +202,9 @@ export function CreateScheduleDialog({
       ricorrenzaFine,
       ricorrenzaAttiva,
       note: note || undefined,
+      ...(isEdit && dataAttesaTouched
+        ? { dataAttesa: dataAttesa ?? null }
+        : {}),
     }
     // Crea una schedule per ogni riga scadenza
     for (const row of scadenze) {
@@ -567,6 +579,51 @@ export function CreateScheduleDialog({
                       </div>
                     )}
                   </div>
+
+                  {tipo === ScheduleType.PASSIVA && (
+                    <div className="space-y-2">
+                      <Label>Data attesa di pagamento</Label>
+                      <div className="flex items-center gap-2">
+                        <Popover open={dataAttesaPopoverOpen} onOpenChange={setDataAttesaPopoverOpen}>
+                          <PopoverTrigger asChild>
+                            <Button type="button" variant="outline" className="justify-start font-normal flex-1">
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {dataAttesa ? format(dataAttesa, 'dd/MM/yyyy') : 'Stimata automaticamente'}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={dataAttesa}
+                              onSelect={(d) => {
+                                setDataAttesa(d || undefined)
+                                setDataAttesaTouched(true)
+                                setDataAttesaPopoverOpen(false)
+                              }}
+                              initialFocus
+                              locale={it}
+                            />
+                          </PopoverContent>
+                        </Popover>
+                        {dataAttesa && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setDataAttesa(undefined)
+                              setDataAttesaTouched(true)
+                            }}
+                          >
+                            ×
+                          </Button>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Se vuota, viene stimata dal ritardo storico del fornitore.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Note */}
                   <div className="space-y-2">

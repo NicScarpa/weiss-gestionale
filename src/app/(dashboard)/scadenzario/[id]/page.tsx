@@ -41,7 +41,7 @@ import {
 } from '@/types/schedule'
 import { ScheduleSourceBadge } from '@/components/scadenzario/schedule-source-badge'
 import { formatCurrency, cn } from '@/lib/utils'
-import { format } from 'date-fns'
+import { format, differenceInCalendarDays } from 'date-fns'
 import { it } from 'date-fns/locale'
 import {
   ArrowLeft,
@@ -470,6 +470,17 @@ export default function ScadenzarioDetailPage() {
                 <DetailRow label="Data scadenza" value={
                   format(new Date(schedule.dataScadenza), 'dd/MM/yyyy', { locale: it })
                 } bold />
+                <DetailRow label="Data attesa" value={
+                  schedule.dataAttesa
+                    ? `${format(new Date(schedule.dataAttesa), 'dd/MM/yyyy', { locale: it })} — ${
+                        schedule.dataAttesaSource === 'stima'
+                          ? descriviStima(schedule)
+                          : schedule.dataAttesaSource === 'manuale'
+                            ? 'impostata manualmente'
+                            : 'riallineata al pagamento'
+                      }`
+                    : 'coincide con la scadenza'
+                } />
                 <DetailRow label="Data pagamento" value={
                   schedule.dataPagamento
                     ? format(new Date(schedule.dataPagamento), 'dd/MM/yyyy', { locale: it })
@@ -834,6 +845,7 @@ export default function ScadenzarioDetailPage() {
             descrizione: schedule.descrizione,
             importoTotale: Number(schedule.importoTotale),
             dataScadenza: new Date(schedule.dataScadenza),
+            dataAttesa: schedule.dataAttesa ? new Date(schedule.dataAttesa) : undefined,
             dataEmissione: schedule.dataEmissione ? new Date(schedule.dataEmissione) : undefined,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             tipoDocumento: schedule.tipoDocumento as any,
@@ -854,6 +866,15 @@ export default function ScadenzarioDetailPage() {
       )}
     </div>
   )
+}
+
+function descriviStima(schedule: { dataAttesa: Date | string | null; dataScadenza: Date | string }) {
+  const giorni = differenceInCalendarDays(
+    new Date(schedule.dataAttesa as Date | string),
+    new Date(schedule.dataScadenza)
+  )
+  if (giorni >= 0) return `stimata: il fornitore paga con ~${giorni} giorni di ritardo`
+  return `stimata: il fornitore paga con ~${Math.abs(giorni)} giorni di anticipo`
 }
 
 function formatFileSize(bytes: number): string {
