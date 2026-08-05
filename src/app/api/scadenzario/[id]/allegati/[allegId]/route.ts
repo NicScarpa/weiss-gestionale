@@ -2,10 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
-import { readFile, unlink } from 'fs/promises'
-import { join } from 'path'
+import { getFile, deleteFile } from '@/lib/storage'
 
-const UPLOAD_DIR = join(process.cwd(), 'uploads', 'scadenzario')
 
 // GET /api/scadenzario/[id]/allegati/[allegId] - Download allegato
 export async function GET(
@@ -35,20 +33,19 @@ export async function GET(
       return NextResponse.json({ error: 'Allegato non trovato' }, { status: 404 })
     }
 
-    const filePath = join(UPLOAD_DIR, attachment.filename)
+    const buffer = await getFile(`scadenzario/${attachment.filename}`)
 
-    try {
-      const buffer = await readFile(filePath)
-      return new NextResponse(buffer, {
-        headers: {
-          'Content-Type': attachment.contentType,
-          'Content-Disposition': `attachment; filename="${attachment.originalFilename}"`,
-          'Content-Length': String(attachment.fileSize),
-        },
-      })
-    } catch {
-      return NextResponse.json({ error: 'File non trovato su disco' }, { status: 404 })
+    if (!buffer) {
+      return NextResponse.json({ error: 'File non trovato' }, { status: 404 })
     }
+
+    return new NextResponse(new Uint8Array(buffer), {
+      headers: {
+        'Content-Type': attachment.contentType,
+        'Content-Disposition': `attachment; filename="${attachment.originalFilename}"`,
+        'Content-Length': String(attachment.fileSize),
+      },
+    })
   } catch (error) {
     logger.error('Errore GET /api/scadenzario/[id]/allegati/[allegId]', error)
     return NextResponse.json(
@@ -92,12 +89,7 @@ export async function DELETE(
     })
 
     // Try to delete file from disk
-    const filePath = join(UPLOAD_DIR, attachment.filename)
-    try {
-      await unlink(filePath)
-    } catch {
-      // File might already be deleted, ignore
-    }
+    await deleteFile(`scadenzario/${attachment.filename}`)
 
     return NextResponse.json({ message: 'Allegato eliminato' })
   } catch (error) {

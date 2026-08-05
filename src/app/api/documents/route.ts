@@ -2,11 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
-import { writeFile, mkdir } from 'fs/promises'
-import { join } from 'path'
+import { putFile } from '@/lib/storage'
 import { randomUUID } from 'crypto'
 
-const UPLOAD_BASE = join(process.cwd(), 'uploads', 'documents')
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 
 // GET /api/documents - Lista documenti con filtri
@@ -107,9 +105,11 @@ export async function POST(request: NextRequest) {
 
     const ext = file.name.split('.').pop()?.toLowerCase() || 'pdf'
     const filename = `${randomUUID()}.${ext}`
-    const categoryDir = join(UPLOAD_BASE, category.toLowerCase())
-    await mkdir(categoryDir, { recursive: true })
-    await writeFile(join(categoryDir, filename), fileBuffer)
+    await putFile(
+      `documents/${category.toLowerCase()}/${filename}`,
+      fileBuffer,
+      file.type || 'application/octet-stream'
+    )
 
     const document = await prisma.employeeDocument.create({
       data: {

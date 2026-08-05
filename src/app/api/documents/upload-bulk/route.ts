@@ -4,14 +4,12 @@ import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 // Import dinamico per evitare errori DOMMatrix di pdf-parse durante il build
 const loadSplitter = () => import('@/lib/documents/pdf-splitter').then(m => m.splitBulkPdf)
-import { writeFile, mkdir } from 'fs/promises'
-import { join } from 'path'
+import { putFile } from '@/lib/storage'
 import { randomUUID } from 'crypto'
 import { sendBulkNotification } from '@/lib/notifications/send'
 
 export const maxDuration = 60
 
-const UPLOAD_DIR = join(process.cwd(), 'uploads', 'documents', 'cedolini')
 const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
 
 // POST /api/documents/upload-bulk - Upload bulk PDF cedolini
@@ -54,15 +52,13 @@ export async function POST(request: NextRequest) {
     const splitBulkPdf = await loadSplitter()
     const result = await splitBulkPdf(fileBuffer)
 
-    // Salva i PDF matched su disco e crea record DB
-    await mkdir(UPLOAD_DIR, { recursive: true })
+    // Salva i PDF matched sullo storage e crea record DB
     const batchId = randomUUID()
     const savedDocuments: Array<{ userId: string; name: string; documentId: string; pages: number[] }> = []
 
     for (const doc of result.matched) {
       const filename = `${randomUUID()}.pdf`
-      const filePath = join(UPLOAD_DIR, filename)
-      await writeFile(filePath, doc.pdfBuffer)
+      await putFile(`documents/cedolini/${filename}`, doc.pdfBuffer, 'application/pdf')
 
       const dbDoc = await prisma.employeeDocument.create({
         data: {

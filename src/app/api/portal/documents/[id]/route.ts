@@ -2,10 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
-import { readFile } from 'fs/promises'
-import { join } from 'path'
+import { getFile } from '@/lib/storage'
 
-const UPLOAD_BASE = join(process.cwd(), 'uploads', 'documents')
 
 // GET /api/portal/documents/[id] - Download documento (verifica ownership)
 export async function GET(
@@ -32,21 +30,20 @@ export async function GET(
       return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
-    const categoryDir = document.category.toLowerCase()
-    const filePath = join(UPLOAD_BASE, categoryDir, document.filename)
+    const key = `documents/${document.category.toLowerCase()}/${document.filename}`
+    const fileData = await getFile(key)
 
-    try {
-      const fileData = await readFile(filePath)
-      return new NextResponse(fileData, {
-        headers: {
-          'Content-Type': document.contentType,
-          'Content-Disposition': `inline; filename="${document.originalFilename}"`,
-          'Content-Length': fileData.length.toString(),
-        },
-      })
-    } catch {
+    if (!fileData) {
       return NextResponse.json({ error: 'File non trovato' }, { status: 404 })
     }
+
+    return new NextResponse(new Uint8Array(fileData), {
+      headers: {
+        'Content-Type': document.contentType,
+        'Content-Disposition': `inline; filename="${document.originalFilename}"`,
+        'Content-Length': fileData.length.toString(),
+      },
+    })
   } catch (error) {
     logger.error('Errore GET /api/portal/documents/[id]', error)
     return NextResponse.json({ error: 'Errore nel download' }, { status: 500 })

@@ -4,11 +4,9 @@ import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
 import { getVenueId } from '@/lib/venue'
-import { writeFile, mkdir } from 'fs/promises'
-import { join } from 'path'
+import { putFile } from '@/lib/storage'
 import { randomUUID } from 'crypto'
 
-const UPLOAD_DIR = join(process.cwd(), 'uploads', 'scadenzario')
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 const ALLOWED_TYPES = [
   'application/pdf',
@@ -140,13 +138,7 @@ export async function POST(
     // Generate unique filename
     const filename = `${randomUUID()}.${ext}`
 
-    // Ensure upload directory exists
-    await mkdir(UPLOAD_DIR, { recursive: true })
-
-    // Write file to disk
-    const buffer = fileBuffer
-    const filePath = join(UPLOAD_DIR, filename)
-    await writeFile(filePath, buffer)
+    await putFile(`scadenzario/${filename}`, fileBuffer, file.type || 'application/octet-stream')
 
     // Save to database
     const attachment = await prisma.scheduleAttachment.create({
