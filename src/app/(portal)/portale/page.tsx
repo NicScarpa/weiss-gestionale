@@ -7,6 +7,7 @@ import { Sun, Cloud, Moon, Clock, Palmtree, Calendar, ArrowLeftRight } from 'luc
 import Link from 'next/link'
 import { UpcomingShifts } from '@/components/portal/UpcomingShifts'
 import { LeaveBalanceCard } from '@/components/portal/LeaveBalanceCard'
+import { MonthHoursCard } from '@/components/portal/MonthHoursCard'
 
 function getGreeting(): string {
   const hour = new Date().getHours()
@@ -79,6 +80,9 @@ export default function PortalDashboardPage() {
 
       {/* Prossimi turni */}
       <UpcomingShifts />
+
+      {/* Ore del mese */}
+      <MonthHoursCard />
 
       {/* Saldo ferie */}
       <LeaveBalanceCard />

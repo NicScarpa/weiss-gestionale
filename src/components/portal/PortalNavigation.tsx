@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Clock, Calendar, Palmtree, ArrowLeftRight, FileText, Receipt } from 'lucide-react'
+import { Home, Clock, Calendar, CalendarCheck, Palmtree, ArrowLeftRight, FileText, Receipt } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -20,6 +20,11 @@ const navItems = [
     href: '/portale/turni',
     label: 'Turni',
     icon: Calendar,
+  },
+  {
+    href: '/portale/cartellino',
+    label: 'Cartellino',
+    icon: CalendarCheck,
   },
   {
     href: '/portale/ferie',
@@ -60,7 +65,9 @@ export function PortalNavigation() {
               key={item.href}
               href={item.href}
               className={cn(
-                'flex flex-col items-center justify-center min-w-[64px] h-full px-3 transition-colors duration-200',
+                // flex-1 e niente larghezza minima: con otto voci una barra a
+                // larghezza fissa traboccherebbe sugli schermi stretti
+                'flex flex-col items-center justify-center flex-1 min-w-0 h-full px-1 transition-colors duration-200',
                 isActive
                   ? 'text-gray-900'
                   : 'text-gray-400 hover:text-gray-600'
