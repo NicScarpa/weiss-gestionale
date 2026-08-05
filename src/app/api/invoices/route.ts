@@ -19,6 +19,7 @@ import { createAuditLog } from '@/lib/audit'
 import { logger } from '@/lib/logger'
 import { generateSchedulesFromInvoice } from '@/lib/services/invoice-schedule-service'
 import { ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
+import { categorizzaRigheFattura } from '@/lib/line-categorization'
 // Schema validazione import
 const importInvoiceSchema = z.object({
   xmlContent: z.string().min(100, 'Contenuto XML non valido'),
@@ -537,6 +538,10 @@ export async function POST(request: NextRequest) {
         // Non blocchiamo l'import se il tracking fallisce
       }
     }
+
+    // Proposta delle imputazioni per riga: memoria del fornitore + AI.
+    // Best-effort: la pipeline non lancia mai, non serve un try/catch qui.
+    await categorizzaRigheFattura({ invoiceId: invoice.id })
 
     return NextResponse.json(
       {
