@@ -23,6 +23,7 @@ export function makePolicy(overrides: Partial<PolicyRules> = {}): PolicyRules {
     contractDailyMinutes: at(8),
     saturdayAsOvertime: false,
     singlePunchMode: false,
+    useShiftAsWindow: false,
     ...overrides,
   }
 }

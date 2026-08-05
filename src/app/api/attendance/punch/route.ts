@@ -12,9 +12,12 @@ import { notifyAnomalyCreated } from '@/lib/notifications'
 import { format, isValid, parseISO } from 'date-fns'
 import {
   romeDateKey,
+  romeTimeString,
+  timeColumnToMinutes,
   toDateOnlyUtc,
   toRomeParts,
 } from '@/lib/timezone'
+import { toWorkdayMinutes } from '@/lib/attendance/workday'
 import { getEffectiveTimekeepingPolicy } from '@/lib/attendance/policy-resolver'
 import { it } from 'date-fns/locale'
 
@@ -493,6 +496,60 @@ export async function POST(request: NextRequest) {
           status: 'WORKED',
         },
       })
+    }
+
+    // Uscita ben oltre la fine del turno pianificato: le ore si contano, ma
+    // la giornata va rivista da un umano. Il guardrail push del cron ha già
+    // avvisato di timbrare; qui resta la traccia per chi approva.
+    if (
+      validatedData.punchType === 'OUT' &&
+      todayAssignment?.startTime &&
+      todayAssignment.endTime
+    ) {
+      const { rules } = await getEffectiveTimekeepingPolicy(
+        session.user.id,
+        validatedData.venueId,
+        scelta.location?.id ?? null
+      )
+
+      if (rules.useShiftAsWindow) {
+        const inizioTurno = timeColumnToMinutes(todayAssignment.startTime)
+        let fineTurno = timeColumnToMinutes(todayAssignment.endTime)
+        if (fineTurno <= inizioTurno) {
+          fineTurno += 24 * 60
+        }
+
+        const minutiUscita = toWorkdayMinutes(punchedAt, workdayKey)
+        const oltre = minutiUscita - fineTurno
+
+        if (oltre > rules.exitRounding.toleranceMinutes) {
+          const fineTurnoOrario =
+            `${String(Math.floor((fineTurno % 1440) / 60)).padStart(2, '0')}:` +
+            String(fineTurno % 60).padStart(2, '0')
+
+          const anomaly = await prisma.attendanceAnomaly.create({
+            data: {
+              userId: session.user.id,
+              venueId: validatedData.venueId,
+              recordId: record.id,
+              assignmentId: todayAssignment.id,
+              anomalyType: 'OVERTIME',
+              status: 'PENDING',
+              date: toDateOnlyUtc(workdayKey),
+              description:
+                `Uscita ${oltre} minuti oltre la fine del turno pianificato: ` +
+                'ore contate, da rivedere come straordinario',
+              actualValue: romeTimeString(punchedAt),
+              expectedValue: fineTurnoOrario,
+              differenceMinutes: oltre,
+            },
+          })
+
+          notifyAnomalyCreated(anomaly.id).catch((err) =>
+            logger.error('Errore invio notifica anomalia oltre turno', err)
+          )
+        }
+      }
     }
 
     // Crea anomalia se fuori sede

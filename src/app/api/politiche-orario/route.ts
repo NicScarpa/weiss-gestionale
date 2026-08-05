@@ -27,6 +27,7 @@ export const politicaSelect = {
   saturdayAsOvertime: true,
   blockSunday: true,
   singlePunchMode: true,
+  useShiftAsWindow: true,
   createdAt: true,
   updatedAt: true,
   extraBreaks: {

@@ -53,6 +53,7 @@ export interface PoliticaOrario {
   saturdayAsOvertime: boolean
   blockSunday: boolean
   singlePunchMode: boolean
+  useShiftAsWindow: boolean
   extraBreaks: PausaAggiuntiva[]
 }
 
@@ -88,6 +89,7 @@ export const politicaVuota: PoliticaOrario = {
   saturdayAsOvertime: false,
   blockSunday: false,
   singlePunchMode: false,
+  useShiftAsWindow: false,
   extraBreaks: [],
 }
 
@@ -138,6 +140,7 @@ const ETICHETTE_AVVISI: Record<string, string> = {
   PAUSA_PRANZO_NON_TIMBRATA: 'Pausa pranzo dedotta dalla regola',
   FUORI_FINESTRA: 'Orario fuori dalla finestra della giornata',
   OLTRE_TETTO_GIORNALIERO: 'Ore oltre il tetto giornaliero',
+  OLTRE_TURNO: 'Ore oltre il turno pianificato, da rivedere',
 }
 
 interface Props {
@@ -157,8 +160,15 @@ export function TimekeepingPolicyForm({
 }: Props) {
   const [provaEntrata, setProvaEntrata] = useState('09:00')
   const [provaUscita, setProvaUscita] = useState('18:00')
+  const [provaTurnoInizio, setProvaTurnoInizio] = useState('09:00')
+  const [provaTurnoFine, setProvaTurnoFine] = useState('17:00')
   const [provaGiorno, setProvaGiorno] = useState<GiornoProva>('feriale')
   const [risultato, setRisultato] = useState<RisultatoProva | null>(null)
+
+  // Con la giornata legata al turno, la finestra fissa e la flessibilità non
+  // vengono lette dal motore: restano visibili ma spente, perché chi configura
+  // deve vedere quali valori smettono di contare.
+  const seguiTurno = valore.useShiftAsWindow
 
   const aggiorna = <K extends keyof PoliticaOrario>(
     campo: K,
@@ -178,6 +188,10 @@ export function TimekeepingPolicyForm({
           clockOutMinutes: orarioToMinuti(provaUscita) ?? 0,
           weekday: GIORNI_PROVA[provaGiorno].weekday,
           isHoliday: GIORNI_PROVA[provaGiorno].isHoliday,
+          // Senza l'interruttore il turno non entra nel calcolo: mandarlo
+          // comunque farebbe credere che cambi qualcosa.
+          shiftStartMinutes: seguiTurno ? orarioToMinuti(provaTurnoInizio) : null,
+          shiftEndMinutes: seguiTurno ? orarioToMinuti(provaTurnoFine) : null,
         }),
       })
       const dati = await response.json()
@@ -244,12 +258,40 @@ export function TimekeepingPolicyForm({
             <CardTitle className="text-base">Giornata lavorativa</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="pr-4">
+                <Label htmlFor="segui-turno">
+                  La giornata segue il turno pianificato
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  L&apos;anticipo sul turno non conta, il ritardo si arrotonda
+                  dall&apos;orario del turno e le ore oltre la fine vanno in revisione.
+                  Senza turno pianificato valgono le ore timbrate.
+                </p>
+              </div>
+              <Switch
+                id="segui-turno"
+                checked={valore.useShiftAsWindow}
+                onCheckedChange={(v) => aggiorna('useShiftAsWindow', v)}
+              />
+            </div>
+
+            <Separator />
+
+            {seguiTurno && (
+              <p className="text-sm text-muted-foreground">
+                Con il turno pianificato questi tre valori non si applicano: la
+                finestra della giornata è quella del turno assegnato quel giorno.
+              </p>
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="inizio">Inizio</Label>
                 <Input
                   id="inizio"
                   type="time"
+                  disabled={seguiTurno}
                   value={minutiToOrario(valore.dayStartMinutes)}
                   onChange={(e) =>
                     aggiorna('dayStartMinutes', orarioToMinuti(e.target.value) ?? 0)
@@ -261,6 +303,7 @@ export function TimekeepingPolicyForm({
                 <Input
                   id="fine"
                   type="time"
+                  disabled={seguiTurno}
                   value={minutiToOrario(valore.dayEndMinutes)}
                   onChange={(e) =>
                     aggiorna('dayEndMinutes', orarioToMinuti(e.target.value) ?? 0)
@@ -268,7 +311,7 @@ export function TimekeepingPolicyForm({
                 />
               </div>
             </div>
-            {valore.dayEndMinutes <= valore.dayStartMinutes && (
+            {!seguiTurno && valore.dayEndMinutes <= valore.dayStartMinutes && (
               <p className="text-sm text-muted-foreground">
                 La giornata scavalca la mezzanotte: l&apos;uscita del mattino seguente
                 appartiene a questo turno.
@@ -281,6 +324,7 @@ export function TimekeepingPolicyForm({
                 type="number"
                 min={0}
                 max={240}
+                disabled={seguiTurno}
                 value={valore.flexMinutes}
                 onChange={(e) => aggiorna('flexMinutes', Number(e.target.value))}
               />
@@ -410,12 +454,16 @@ export function TimekeepingPolicyForm({
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Arrotondamenti</CardTitle>
+            <CardTitle className="text-base">
+              {seguiTurno ? 'Blocchi di ritardo dall’inizio del turno' : 'Arrotondamenti'}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="arr-entrata">Intervallo entrata (min)</Label>
+                <Label htmlFor="arr-entrata">
+                  {seguiTurno ? 'Blocco di ritardo (min)' : 'Intervallo entrata (min)'}
+                </Label>
                 <Input
                   id="arr-entrata"
                   type="number"
@@ -426,7 +474,9 @@ export function TimekeepingPolicyForm({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="toll-entrata">Tolleranza entrata (min)</Label>
+                <Label htmlFor="toll-entrata">
+                  {seguiTurno ? 'Tolleranza sul turno (min)' : 'Tolleranza entrata (min)'}
+                </Label>
                 <Input
                   id="toll-entrata"
                   type="number"
@@ -440,8 +490,9 @@ export function TimekeepingPolicyForm({
               </div>
             </div>
             <p className="text-sm text-muted-foreground">
-              Con intervallo 30 e tolleranza 5, chi entra alle 9:03 resta alle 9:03;
-              chi entra alle 9:06 viene registrato alle 9:30.
+              {seguiTurno
+                ? 'Con blocco 30 e tolleranza 5, chi timbra 3 minuti dopo l’inizio del turno lo conserva; chi timbra 6 minuti dopo si conta da mezz’ora dopo l’inizio del turno.'
+                : 'Con intervallo 30 e tolleranza 5, chi entra alle 9:03 resta alle 9:03; chi entra alle 9:06 viene registrato alle 9:30.'}
             </p>
 
             <div className="grid grid-cols-2 gap-4">
@@ -620,6 +671,35 @@ export function TimekeepingPolicyForm({
                 />
               </div>
             </div>
+
+            {seguiTurno && (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="prova-turno-inizio">Inizio turno pianificato</Label>
+                    <Input
+                      id="prova-turno-inizio"
+                      type="time"
+                      value={provaTurnoInizio}
+                      onChange={(e) => setProvaTurnoInizio(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="prova-turno-fine">Fine turno pianificato</Label>
+                    <Input
+                      id="prova-turno-fine"
+                      type="time"
+                      value={provaTurnoFine}
+                      onChange={(e) => setProvaTurnoFine(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Prova anche a timbrare in anticipo o in ritardo rispetto al turno
+                  per vedere l&apos;effetto dei blocchi.
+                </p>
+              </>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="prova-giorno">Giorno</Label>

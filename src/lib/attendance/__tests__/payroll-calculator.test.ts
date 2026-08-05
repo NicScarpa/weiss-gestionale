@@ -8,6 +8,7 @@ vi.mock('@/lib/prisma', () => ({
     attendanceAnomaly: { findMany: vi.fn() },
     timekeepingPolicy: { findFirst: vi.fn() },
     workLocation: { findMany: vi.fn() },
+    shiftAssignment: { findMany: vi.fn() },
   },
 }))
 
@@ -150,6 +151,56 @@ describe('generatePayrollData', () => {
     // La regola non fissa le ore settimanali: valgono le 40 del contratto,
     // quindi oltre 400 minuti scatta lo straordinario.
     expect(giorno?.hours.overtime).toBeCloseTo(110 / 60, 5)
+  })
+
+  it('con la regola che segue il turno, la finestra viene dai turni pubblicati', async () => {
+    // Regola predefinita con useShiftAsWindow e blocchi 30/tolleranza 10.
+    // Turno pianificato 9:00-17:00; Andrea timbra 8:51-17:00 (estate: 6:51Z).
+    // L'anticipo non conta: 8 ore esatte.
+    vi.mocked(prisma.timekeepingPolicy.findFirst).mockResolvedValue({
+      id: 'pol-turno',
+      name: 'Segue il turno',
+      dayStartMinutes: 0,
+      dayEndMinutes: 0,
+      lunchStartMinutes: null,
+      lunchEndMinutes: null,
+      flexMinutes: 0,
+      roundingMinutes: 30,
+      roundingToleranceMinutes: 10,
+      roundingOutMinutes: null,
+      roundingOutToleranceMinutes: null,
+      maxDailyMinutes: null,
+      contractWeeklyHours: null,
+      saturdayAsOvertime: false,
+      blockSunday: false,
+      singlePunchMode: false,
+      useShiftAsWindow: true,
+      extraBreaks: [],
+    } as never)
+    vi.mocked(prisma.workLocation.findMany).mockResolvedValue([] as never)
+    vi.mocked(prisma.user.findMany).mockReset()
+    vi.mocked(prisma.user.findMany)
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce([dipendente] as never)
+    // Colonne @db.Time: Prisma le restituisce come Date del 1970 in UTC
+    vi.mocked(prisma.shiftAssignment.findMany).mockResolvedValue([
+      {
+        userId: 'user-1',
+        date: new Date('2026-08-20T00:00:00Z'),
+        startTime: new Date('1970-01-01T09:00:00Z'),
+        endTime: new Date('1970-01-01T17:00:00Z'),
+      },
+    ] as never)
+    vi.mocked(prisma.attendanceRecord.findMany).mockResolvedValue([
+      punch('IN', '2026-08-20T06:51:00Z'),
+      punch('OUT', '2026-08-20T15:00:00Z'),
+    ] as never)
+
+    const { records } = await generatePayrollData(8, 2026, 'venue-1')
+    const giorno = giornoDi(records, '2026-08-20')
+
+    expect(giorno?.hours.total).toBe(8)
+    expect(giorno?.clockIn?.toISOString()).toBe('2026-08-20T07:00:00.000Z')
   })
 
   it('con userIds calcola solo le persone richieste', async () => {

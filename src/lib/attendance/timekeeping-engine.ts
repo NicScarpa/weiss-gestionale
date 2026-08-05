@@ -224,6 +224,97 @@ function placeBreakWindow(
 }
 
 /**
+ * Applica il turno pianificato come finestra della giornata.
+ *
+ * Le decisioni di prodotto che incarna: l'anticipo sul turno non conta; il
+ * ritardo entro la tolleranza resta quello timbrato, oltre salta a blocchi
+ * interi dall'orario del turno (8:30 + ritardo di 21 con blocchi da 30 →
+ * 9:00); le ore oltre la fine del turno — o del tutto fuori dal pianificato —
+ * si CONTANO ma la giornata viene segnalata per una revisione umana.
+ */
+function applyShiftWindows(
+  segments: Interval[],
+  windows: { startMinutes: number; endMinutes: number }[],
+  policy: PolicyRules,
+  steps: string[],
+  warnings: DayWarning[]
+): Interval[] {
+  if (windows.length === 0) {
+    steps.push('Nessun turno pianificato: le ore sono quelle timbrate.')
+    return segments
+  }
+
+  const ordinate = [...windows].sort((a, b) => a.startMinutes - b.startMinutes)
+  steps.push(
+    'Turno pianificato: ' +
+      ordinate
+        .map((w) => `${formatMinutes(w.startMinutes)}-${formatMinutes(w.endMinutes)}`)
+        .join(', ') +
+      '.'
+  )
+
+  let minutiOltreTurno = 0
+  let lavoroFuoriTurno = false
+
+  const result = segments
+    .map((s) => {
+      // Il turno di riferimento è quello con la sovrapposizione maggiore.
+      let migliore: { startMinutes: number; endMinutes: number } | null = null
+      let sovrapposizione = 0
+      for (const w of ordinate) {
+        const o = overlap(s.start, s.end, w.startMinutes, w.endMinutes)
+        if (o > sovrapposizione) {
+          sovrapposizione = o
+          migliore = w
+        }
+      }
+
+      if (!migliore) {
+        lavoroFuoriTurno = true
+        return s
+      }
+
+      let start = Math.max(s.start, migliore.startMinutes)
+      if (start !== s.start) {
+        steps.push(
+          `Anticipo sul turno: si conta dalle ${formatMinutes(migliore.startMinutes)}.`
+        )
+      }
+
+      const ritardo = start - migliore.startMinutes
+      const { intervalMinutes, toleranceMinutes } = policy.entryRounding
+      if (ritardo > 0 && intervalMinutes > 1 && ritardo > toleranceMinutes) {
+        const arrotondato =
+          migliore.startMinutes + Math.ceil(ritardo / intervalMinutes) * intervalMinutes
+        steps.push(
+          `Ritardo di ${ritardo} min oltre la tolleranza di ${toleranceMinutes}: ` +
+            `si conta dalle ${formatMinutes(arrotondato)}.`
+        )
+        start = arrotondato
+      }
+
+      const oltre = s.end - migliore.endMinutes
+      if (oltre > policy.exitRounding.toleranceMinutes) {
+        minutiOltreTurno += oltre
+      }
+
+      return { start, end: s.end }
+    })
+    .filter((s) => s.end > s.start)
+
+  if (minutiOltreTurno > 0 || lavoroFuoriTurno) {
+    warnings.push('OLTRE_TURNO')
+    steps.push(
+      minutiOltreTurno > 0
+        ? `${minutiOltreTurno} min oltre la fine del turno: contati, ma da rivedere.`
+        : 'Lavoro fuori dal turno pianificato: contato, ma da rivedere.'
+    )
+  }
+
+  return result
+}
+
+/**
  * Ore riconosciute per una giornata lavorativa.
  *
  * L'ordine dei passaggi conta: prima l'accoppiamento delle timbrature in
@@ -290,6 +381,27 @@ export function computeRecognizedDay(
     )
   }
 
+  if (policy.useShiftAsWindow) {
+    // La giornata segue il turno pianificato: l'anticipo non conta, il
+    // ritardo si arrotonda a blocchi dall'orario del turno, le ore oltre la
+    // fine si contano ma la giornata va in revisione. Senza turno pianificato
+    // le ore sono quelle timbrate: l'extra chiamato all'ultimo non deve
+    // perdere nulla per un difetto di pianificazione.
+    segments = applyShiftWindows(
+      segments,
+      context.shiftWindows ?? [],
+      policy,
+      steps,
+      warnings
+    )
+
+    if (segments.length === 0) {
+      return emptyDay(warnings, [...steps, 'Nessuna ora riconosciuta.'])
+    }
+
+    return finishDay(segments, paired.punchedBreaks, policy, context, steps, warnings)
+  }
+
   // Finestra della giornata, allargata dalla flessibilità. Se la regola non ne
   // definisce una, si contano le ore così come sono state timbrate.
   const hasWindow = dayStart !== null && dayEnd !== null
@@ -345,10 +457,25 @@ export function computeRecognizedDay(
     return { start: roundedIn, end: Math.max(roundedOut, roundedIn) }
   })
 
+  return finishDay(segments, paired.punchedBreaks, policy, context, steps, warnings)
+}
+
+/**
+ * La parte del calcolo comune a tutte le finestre: pause, ora legale, tetto,
+ * notturne e classificazione. Riceve i turni già ritagliati e arrotondati.
+ */
+function finishDay(
+  segments: Interval[],
+  punchedBreaks: Interval[],
+  policy: PolicyRules,
+  context: DayContext,
+  steps: string[],
+  warnings: DayWarning[]
+): RecognizedDay {
   const grossMinutes = segments.reduce((sum, s) => sum + (s.end - s.start), 0)
 
   // Pause timbrate, limitate alla parte dentro l'orario di lavoro.
-  const punchedBreakMinutes = paired.punchedBreaks.reduce(
+  const punchedBreakMinutes = punchedBreaks.reduce(
     (sum, b) => sum + overlapWithSegments(b.start, b.end, segments),
     0
   )
@@ -369,7 +496,7 @@ export function computeRecognizedDay(
     const coveredByPunched = overlapWithPunchedBreaks(
       lunchWindow.start,
       lunchWindow.end,
-      paired.punchedBreaks,
+      punchedBreaks,
       segments
     )
 
@@ -391,7 +518,7 @@ export function computeRecognizedDay(
     const alreadyPunched = overlapWithPunchedBreaks(
       window.start,
       window.end,
-      paired.punchedBreaks,
+      punchedBreaks,
       segments
     )
     const extraMinutes = Math.max(0, inWork - alreadyPunched)
