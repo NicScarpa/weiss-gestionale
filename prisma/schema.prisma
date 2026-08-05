@@ -60,6 +60,8 @@ model User {
   resetTokenExpiry        DateTime?                    @map("reset_token_expiry")
   attendanceAnomalies     AttendanceAnomaly[]
   attendancePunches       AttendanceRecord[]
+  correctionRequests      AttendanceCorrectionRequest[] @relation("CorrectionRequestedBy")
+  reviewedCorrections     AttendanceCorrectionRequest[] @relation("CorrectionReviewedBy")
   /// Regola oraria del dipendente: vale se il luogo non ne impone una propria.
   timekeepingPolicyId     String?                      @map("timekeeping_policy_id")
   timekeepingPolicy       TimekeepingPolicy?           @relation(fields: [timekeepingPolicyId], references: [id])
@@ -175,6 +177,7 @@ model Venue {
   auditLogs               AuditLog[]
   timekeepingPolicies     TimekeepingPolicy[]
   workLocations           WorkLocation[]
+  correctionRequests      AttendanceCorrectionRequest[]
 
   @@map("venues")
 }
@@ -1065,6 +1068,8 @@ model AttendanceRecord {
   isManual          Boolean             @default(false) @map("is_manual")
   manualEntryBy     String?             @map("manual_entry_by")
   manualEntryReason String?             @map("manual_entry_reason")
+  /// Richiesta di correzione approvata da cui questa timbratura è nata.
+  correctionRequestId String?           @map("correction_request_id")
   createdAt         DateTime            @default(now()) @map("created_at")
   updatedAt         DateTime            @updatedAt @map("updated_at")
   anomalies         AttendanceAnomaly[]
@@ -1072,6 +1077,7 @@ model AttendanceRecord {
   user              User                @relation(fields: [userId], references: [id])
   venue             Venue               @relation(fields: [venueId], references: [id])
   workLocation      WorkLocation?       @relation(fields: [workLocationId], references: [id])
+  correctionRequest AttendanceCorrectionRequest? @relation(fields: [correctionRequestId], references: [id])
 
   @@index([userId, punchedAt])
   @@index([venueId, punchedAt])
@@ -1123,9 +1129,6 @@ model TimekeepingPolicy {
   dayEndMinutes               Int                      @map("day_end_minutes")
   lunchStartMinutes           Int?                     @map("lunch_start_minutes")
   lunchEndMinutes             Int?                     @map("lunch_end_minutes")
-  /// Minuti prima dell'inizio pausa entro cui il dipendente vede il pulsante
-  /// "Inizia pausa pranzo".
-  lunchWindowMinutes          Int                      @default(0) @map("lunch_window_minutes")
   /// Margine entro cui l'arrivo anticipato o l'uscita posticipata contano come lavoro.
   flexMinutes                 Int                      @default(0) @map("flex_minutes")
   /// Intervallo di arrotondamento dell'entrata, in minuti. 1 = nessun arrotondamento.
@@ -1179,6 +1182,7 @@ model WorkLocation {
   timekeepingPolicy    TimekeepingPolicy?       @relation(fields: [timekeepingPolicyId], references: [id])
   assignments          WorkLocationAssignment[]
   attendanceRecords    AttendanceRecord[]
+  correctionRequests   AttendanceCorrectionRequest[]
 
   @@index([venueId, isActive])
   @@map("work_locations")
@@ -1246,10 +1250,47 @@ model AttendanceAnomaly {
   record            AttendanceRecord? @relation(fields: [recordId], references: [id])
   user              User              @relation(fields: [userId], references: [id])
   venue             Venue             @relation(fields: [venueId], references: [id])
+  correctionRequests AttendanceCorrectionRequest[]
 
   @@index([userId, date])
   @@index([venueId, status])
   @@map("attendance_anomalies")
+}
+
+/// Richiesta di correzione delle timbrature, iniziata dal dipendente.
+///
+/// È il percorso per la dimenticanza — il caso normale — e per chi dichiara
+/// le ore invece di timbrarle: il dipendente propone entrata e/o uscita di una
+/// giornata, un responsabile approva, e l'approvazione genera le timbrature
+/// manuali collegate.
+model AttendanceCorrectionRequest {
+  id                String                  @id @default(cuid())
+  userId            String                  @map("user_id")
+  venueId           String                  @map("venue_id")
+  workLocationId    String?                 @map("work_location_id")
+  date              DateTime                @db.Date
+  /// Orari proposti: almeno uno dei due (lo impone la validazione).
+  requestedClockIn  DateTime?               @map("requested_clock_in")
+  requestedClockOut DateTime?               @map("requested_clock_out")
+  reason            String
+  status            CorrectionRequestStatus @default(PENDING)
+  /// Anomalia che questa richiesta chiude, se esiste.
+  anomalyId         String?                 @map("anomaly_id")
+  reviewedById      String?                 @map("reviewed_by_id")
+  reviewedAt        DateTime?               @map("reviewed_at")
+  reviewNotes       String?                 @map("review_notes")
+  createdAt         DateTime                @default(now()) @map("created_at")
+  updatedAt         DateTime                @updatedAt @map("updated_at")
+  user              User                    @relation("CorrectionRequestedBy", fields: [userId], references: [id], onDelete: Cascade)
+  venue             Venue                   @relation(fields: [venueId], references: [id])
+  workLocation      WorkLocation?           @relation(fields: [workLocationId], references: [id])
+  anomaly           AttendanceAnomaly?      @relation(fields: [anomalyId], references: [id])
+  reviewedBy        User?                   @relation("CorrectionReviewedBy", fields: [reviewedById], references: [id])
+  records           AttendanceRecord[]
+
+  @@index([venueId, status])
+  @@index([userId, date])
+  @@map("attendance_correction_requests")
 }
 
 model NotificationPreference {
@@ -1263,6 +1304,9 @@ model NotificationPreference {
   shiftSwapRequest     Boolean  @default(true) @map("shift_swap_request")
   anomalyCreated       Boolean  @default(true) @map("anomaly_created")
   anomalyResolved      Boolean  @default(true) @map("anomaly_resolved")
+  correctionApproved   Boolean  @default(true) @map("correction_approved")
+  correctionRejected   Boolean  @default(true) @map("correction_rejected")
+  newCorrectionRequest Boolean  @default(true) @map("new_correction_request")
   leaveApproved        Boolean  @default(true) @map("leave_approved")
   leaveRejected        Boolean  @default(true) @map("leave_rejected")
   leaveReminder        Boolean  @default(true) @map("leave_reminder")
@@ -1896,6 +1940,13 @@ enum SwapStatus {
   REJECTED
 }
 
+enum CorrectionRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
 enum LeaveStatus {
   PENDING
   APPROVED
@@ -1966,6 +2017,9 @@ enum NotificationType {
   LEAVE_REJECTED
   LEAVE_REMINDER
   NEW_LEAVE_REQUEST
+  CORRECTION_APPROVED
+  CORRECTION_REJECTED
+  NEW_CORRECTION_REQUEST
   STAFF_ANOMALY
   NEW_DOCUMENT
   GENERAL

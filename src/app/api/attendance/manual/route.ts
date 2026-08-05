@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
-import { PunchType, PunchMethod } from '@prisma/client'
+import { PunchType } from '@prisma/client'
 
 import { logger } from '@/lib/logger'
+import { createManualPunch } from '@/lib/attendance/manual-punch'
 // Schema validazione input
 const manualPunchSchema = z.object({
   userId: z.string().min(1, 'Utente richiesto'),
@@ -61,108 +62,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Trova eventuale turno associato
-    const punchDate = validatedData.punchedAt
-    const dateStart = new Date(punchDate)
-    dateStart.setHours(0, 0, 0, 0)
-    const dateEnd = new Date(dateStart)
-    dateEnd.setDate(dateEnd.getDate() + 1)
-
-    const assignment = await prisma.shiftAssignment.findFirst({
-      where: {
+    // La creazione vera sta in `createManualPunch`, condivisa con
+    // l'approvazione delle richieste di correzione. In transazione: record e
+    // consuntivo del turno o entrano insieme o non entrano.
+    const record = await prisma.$transaction((tx) =>
+      createManualPunch(tx, {
         userId: validatedData.userId,
         venueId: validatedData.venueId,
-        date: {
-          gte: dateStart,
-          lt: dateEnd,
-        },
-        schedule: {
-          status: 'PUBLISHED',
-        },
-      },
-    })
-
-    // Crea la timbratura manuale
-    const record = await prisma.attendanceRecord.create({
-      data: {
-        userId: validatedData.userId,
-        venueId: validatedData.venueId,
-        assignmentId: assignment?.id ?? null,
         punchType: validatedData.punchType as PunchType,
-        punchMethod: PunchMethod.MANUAL,
         punchedAt: validatedData.punchedAt,
-        isManual: true,
-        manualEntryBy: session.user.id,
-        manualEntryReason: validatedData.reason,
+        enteredById: session.user.id,
+        reason: validatedData.reason,
         notes: validatedData.notes ?? null,
-        isWithinRadius: true, // Manuale = sempre valido
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-        venue: {
-          select: {
-            id: true,
-            name: true,
-            code: true,
-          },
-        },
-      },
-    })
-
-    // Se è un'entrata/uscita, aggiorna i dati dell'assignment
-    if (assignment) {
-      const timeOnly = new Date(
-        1970,
-        0,
-        1,
-        punchDate.getHours(),
-        punchDate.getMinutes(),
-        punchDate.getSeconds()
-      )
-
-      if (validatedData.punchType === 'IN') {
-        await prisma.shiftAssignment.update({
-          where: { id: assignment.id },
-          data: { actualStart: timeOnly },
-        })
-      } else if (validatedData.punchType === 'OUT') {
-        // Trova l'entrata per calcolare le ore
-        const clockIn = await prisma.attendanceRecord.findFirst({
-          where: {
-            userId: validatedData.userId,
-            venueId: validatedData.venueId,
-            punchType: 'IN',
-            punchedAt: {
-              gte: dateStart,
-              lt: dateEnd,
-            },
-          },
-          orderBy: { punchedAt: 'asc' },
-        })
-
-        let hoursWorked: number | null = null
-        if (clockIn) {
-          const diffMs =
-            validatedData.punchedAt.getTime() - clockIn.punchedAt.getTime()
-          hoursWorked = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100
-        }
-
-        await prisma.shiftAssignment.update({
-          where: { id: assignment.id },
-          data: {
-            actualEnd: timeOnly,
-            hoursWorked: hoursWorked,
-            status: 'WORKED',
-          },
-        })
-      }
-    }
+      })
+    )
 
     return NextResponse.json({
       success: true,

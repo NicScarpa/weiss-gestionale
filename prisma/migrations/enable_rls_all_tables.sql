@@ -63,6 +63,7 @@ DECLARE
         'timekeeping_policy_breaks',
         'work_locations',
         'work_location_assignments',
+        'attendance_correction_requests',
         'users'
     ];
 BEGIN

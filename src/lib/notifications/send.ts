@@ -240,6 +240,9 @@ function shouldSendNotification(
     leaveRejected?: boolean
     leaveReminder?: boolean
     newLeaveRequest?: boolean
+    correctionApproved?: boolean
+    correctionRejected?: boolean
+    newCorrectionRequest?: boolean
     staffAnomaly?: boolean
     newDocument?: boolean
   } | null | undefined
@@ -260,6 +263,9 @@ function shouldSendNotification(
     LEAVE_REJECTED: preferences.leaveRejected,
     LEAVE_REMINDER: preferences.leaveReminder,
     NEW_LEAVE_REQUEST: preferences.newLeaveRequest,
+    CORRECTION_APPROVED: preferences.correctionApproved,
+    CORRECTION_REJECTED: preferences.correctionRejected,
+    NEW_CORRECTION_REQUEST: preferences.newCorrectionRequest,
     STAFF_ANOMALY: preferences.staffAnomaly,
     NEW_DOCUMENT: preferences.newDocument,
     GENERAL: true, // Sempre abilitate
