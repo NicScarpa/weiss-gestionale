@@ -150,6 +150,24 @@ async function recordInvoice(id: string): Promise<unknown> {
   return res.json()
 }
 
+interface RigheContiPayload {
+  righe?: Array<{ numeroLinea: number; accountId: string }>
+  confermaTutte?: boolean
+}
+
+async function updateRigheConti(id: string, data: RigheContiPayload): Promise<unknown> {
+  const res = await fetch(`/api/invoices/${id}/righe-conti`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const errBody = await res.json()
+    throw new Error(errBody.error || "Errore nell'imputazione della riga")
+  }
+  return res.json()
+}
+
 export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const queryClient = useQueryClient()
   const [selectedAccountId, setSelectedAccountId] = useState<string>('')
@@ -195,9 +213,27 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     },
   })
 
+  const righeContiMutation = useMutation({
+    mutationFn: (data: RigheContiPayload) => updateRigheConti(invoiceId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoice', invoiceId] })
+    },
+    onError: (err: Error) => {
+      toast.error(err.message)
+    },
+  })
+
   const handleAccountChange = (accountId: string) => {
     setSelectedAccountId(accountId)
     updateMutation.mutate({ accountId: accountId === '_none' ? null : accountId || null })
+  }
+
+  const handleLineAccountChange = (numeroLinea: number, accountId: string) => {
+    righeContiMutation.mutate({ righe: [{ numeroLinea, accountId }] })
+  }
+
+  const handleConfirmAllLineAccounts = () => {
+    righeContiMutation.mutate({ confermaTutte: true })
   }
 
   // Loading state
@@ -236,6 +272,20 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const canEdit = invoice.status !== 'RECORDED' && invoice.status !== 'PAID'
   const canRecord = invoice.status === 'CATEGORIZED' && invoice.account
   const parsedData = invoice.parsedData
+
+  // ElectronicInvoice modella solo fatture ricevute (campi supplierId/
+  // supplierVat/supplierName, nessun dato cliente): l'import da SDI mappa
+  // sempre il cedentePrestatore sul fornitore. "Fatture Emesse" è un
+  // placeholder non collegato al DB (src/app/(dashboard)/fatture/emesse),
+  // quindi ogni fattura vista qui è passiva/ricevuta.
+  const isPassiva = true
+
+  // Suggerimento non salvato per le righe senza imputazione: usa la lista
+  // conti già caricata per la Categorizzazione, nessuna fetch aggiuntiva.
+  const defaultAccount = accounts?.find((a) => a.id === invoice.supplier?.defaultAccountId)
+  const defaultAccountLabel = defaultAccount
+    ? `${defaultAccount.code} - ${defaultAccount.name}`
+    : undefined
 
   return (
     <div className="container py-6 space-y-6">
@@ -295,7 +345,14 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       <CausaleSection causale={parsedData?.causale} />
 
       {/* Line items table */}
-      <LineItemsTable dettaglioLinee={parsedData?.dettaglioLinee} />
+      <LineItemsTable
+        dettaglioLinee={parsedData?.dettaglioLinee}
+        showAccountColumn={isPassiva}
+        canEditAccounts={canEdit && !righeContiMutation.isPending}
+        defaultAccountLabel={defaultAccountLabel}
+        onAccountChange={handleLineAccountChange}
+        onConfirmAllAccounts={handleConfirmAllLineAccounts}
+      />
 
       {/* VAT Summary and Totals - side by side */}
       <div className="grid gap-6 md:grid-cols-2">

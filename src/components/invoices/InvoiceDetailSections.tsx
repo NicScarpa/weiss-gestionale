@@ -5,8 +5,9 @@
  * Displays all XML parsed data: causale, linee, riepilogo IVA, pagamenti, trasmissione SDI
  */
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   Table,
   TableBody,
@@ -34,6 +35,7 @@ import {
   formatDateIT,
 } from '@/lib/invoice-utils'
 import { NATURA_OPERAZIONE } from '@/lib/sdi/types'
+import { AccountGroupedSelect } from '@/components/prima-nota/shared/AccountGroupedSelect'
 
 // Type definitions for parsed data from API
 interface CedentePrestatore {
@@ -62,6 +64,15 @@ interface CessionarioCommittente {
   }
 }
 
+/** Imputazione per conto salvata sulla riga (Task 9-10). */
+interface ImputazioneLinea {
+  accountId: string
+  stato: 'proposta' | 'confermata'
+  fonte: string
+  confidence?: number | string | null
+  motivazioneAi?: string | null
+}
+
 interface DettaglioLinea {
   numeroLinea: number
   descrizione: string
@@ -70,6 +81,7 @@ interface DettaglioLinea {
   prezzoUnitario: number
   prezzoTotale: number
   aliquotaIVA: number
+  imputazione?: ImputazioneLinea | null
 }
 
 interface DatiRiepilogo {
@@ -292,9 +304,24 @@ export function CausaleSection({ causale }: CausaleSectionProps) {
 // ==========================================
 interface LineItemsTableProps {
   dettaglioLinee?: DettaglioLinea[]
+  /** Mostra la colonna "Conto": solo per fatture passive/ricevute, decide il genitore. */
+  showAccountColumn?: boolean
+  /** false quando la fattura non è più modificabile (registrata/pagata) o durante una PATCH in corso. */
+  canEditAccounts?: boolean
+  /** Suggerimento non salvato (conto di default del fornitore) per le righe senza imputazione. */
+  defaultAccountLabel?: string
+  onAccountChange?: (numeroLinea: number, accountId: string) => void
+  onConfirmAllAccounts?: () => void
 }
 
-export function LineItemsTable({ dettaglioLinee }: LineItemsTableProps) {
+export function LineItemsTable({
+  dettaglioLinee,
+  showAccountColumn = false,
+  canEditAccounts = true,
+  defaultAccountLabel,
+  onAccountChange,
+  onConfirmAllAccounts,
+}: LineItemsTableProps) {
   if (!dettaglioLinee || dettaglioLinee.length === 0) {
     return null
   }
@@ -305,6 +332,9 @@ export function LineItemsTable({ dettaglioLinee }: LineItemsTableProps) {
     return `${aliquota}%`
   }
 
+  const hasProposte =
+    showAccountColumn && dettaglioLinee.some((l) => l.imputazione?.stato === 'proposta')
+
   return (
     <Card>
       <CardHeader className="py-4">
@@ -312,6 +342,18 @@ export function LineItemsTable({ dettaglioLinee }: LineItemsTableProps) {
           <Receipt className="h-4 w-4" />
           Dettaglio Linee
         </CardTitle>
+        {hasProposte && (
+          <CardAction>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!canEditAccounts}
+              onClick={onConfirmAllAccounts}
+            >
+              Accetta tutte
+            </Button>
+          </CardAction>
+        )}
       </CardHeader>
       <CardContent className="pt-0">
         <div className="overflow-x-auto">
@@ -324,42 +366,83 @@ export function LineItemsTable({ dettaglioLinee }: LineItemsTableProps) {
                 <TableHead className="w-24 text-right">Prezzo</TableHead>
                 <TableHead className="w-16 text-right">IVA</TableHead>
                 <TableHead className="w-28 text-right">Totale</TableHead>
+                {showAccountColumn && <TableHead className="min-w-[240px]">Conto</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {dettaglioLinee.map((linea) => (
-                <TableRow key={linea.numeroLinea}>
-                  <TableCell className="font-mono text-slate-500">
-                    {linea.numeroLinea}
-                  </TableCell>
-                  <TableCell className="max-w-xs truncate" title={linea.descrizione}>
-                    {linea.descrizione}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {linea.quantita !== undefined ? (
-                      <>
-                        {linea.quantita.toLocaleString('it-IT')}
-                        {linea.unitaMisura && (
-                          <span className="text-xs text-slate-500 ml-1">
-                            {linea.unitaMisura}
-                          </span>
-                        )}
-                      </>
-                    ) : (
-                      '-'
+              {dettaglioLinee.map((linea) => {
+                const imputazione = linea.imputazione
+                const dotClass =
+                  imputazione?.stato === 'confermata'
+                    ? 'bg-green-500'
+                    : imputazione?.stato === 'proposta'
+                      ? 'bg-amber-500'
+                      : undefined
+                const dotTitle =
+                  imputazione?.stato === 'confermata'
+                    ? 'Imputazione confermata'
+                    : imputazione?.stato === 'proposta'
+                      ? `Imputazione proposta automaticamente${imputazione.motivazioneAi ? ` — ${imputazione.motivazioneAi}` : ''}`
+                      : undefined
+
+                return (
+                  <TableRow key={linea.numeroLinea}>
+                    <TableCell className="font-mono text-slate-500">
+                      {linea.numeroLinea}
+                    </TableCell>
+                    <TableCell className="max-w-xs truncate" title={linea.descrizione}>
+                      {linea.descrizione}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {linea.quantita !== undefined ? (
+                        <>
+                          {linea.quantita.toLocaleString('it-IT')}
+                          {linea.unitaMisura && (
+                            <span className="text-xs text-slate-500 ml-1">
+                              {linea.unitaMisura}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        '-'
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {formatCurrency(linea.prezzoUnitario)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatIVA(linea.aliquotaIVA)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono font-medium">
+                      {formatCurrency(linea.prezzoTotale)}
+                    </TableCell>
+                    {showAccountColumn && (
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <AccountGroupedSelect
+                            value={imputazione?.accountId}
+                            onChange={(accountId) =>
+                              onAccountChange?.(linea.numeroLinea, accountId)
+                            }
+                            disabled={!canEditAccounts}
+                            placeholder={
+                              !imputazione && defaultAccountLabel
+                                ? `Suggerito: ${defaultAccountLabel}`
+                                : 'Seleziona conto'
+                            }
+                          />
+                          {dotClass && (
+                            <span
+                              className={`h-2.5 w-2.5 rounded-full shrink-0 ${dotClass}`}
+                              title={dotTitle}
+                            />
+                          )}
+                        </div>
+                      </TableCell>
                     )}
-                  </TableCell>
-                  <TableCell className="text-right font-mono">
-                    {formatCurrency(linea.prezzoUnitario)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {formatIVA(linea.aliquotaIVA)}
-                  </TableCell>
-                  <TableCell className="text-right font-mono font-medium">
-                    {formatCurrency(linea.prezzoTotale)}
-                  </TableCell>
-                </TableRow>
-              ))}
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
         </div>
