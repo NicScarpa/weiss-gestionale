@@ -10,7 +10,13 @@ const globalForPrisma = globalThis as unknown as {
 function createPrismaClient() {
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: true } : false,
+    // Supabase's pooler presents a chain signed by Supabase's private root CA,
+    // which is not in Node's trust store: strict verification needs DATABASE_CA_CERT
+    ssl: process.env.NODE_ENV === 'production'
+      ? process.env.DATABASE_CA_CERT
+        ? { ca: process.env.DATABASE_CA_CERT, rejectUnauthorized: true }
+        : { rejectUnauthorized: true }
+      : false,
     max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
