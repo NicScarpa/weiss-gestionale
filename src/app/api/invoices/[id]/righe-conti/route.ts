@@ -125,9 +125,13 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         // Best-effort: un'imputazione manuale con fornitore noto alimenta la
         // memoria fornitore-prodotto, riproposta in futuro per lo stesso articolo.
         // Un errore qui non deve invalidare la conferma già scritta sopra.
-        if (invoice.supplierId) {
+        // Descrizione vuota/whitespace/solo simboli normalizza a stringa
+        // vuota: senza guardia, prodotti diversi dello stesso fornitore
+        // collasserebbero sulla stessa chiave di memoria (come in
+        // trackPricesFromInvoice, price-tracking/index.ts).
+        const nomeNormalizzato = normalizeProductName(linea.descrizione)
+        if (invoice.supplierId && nomeNormalizzato) {
           try {
-            const nomeNormalizzato = normalizeProductName(linea.descrizione)
             await prisma.supplierProductAccount.upsert({
               where: {
                 venueId_supplierId_nomeNormalizzato: {

@@ -236,6 +236,26 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
     expect(prisma.supplierProductAccount.upsert).not.toHaveBeenCalled()
   })
 
+  it('riga confermata manualmente con descrizione vuota/solo simboli: non scrive memoria (la riga è comunque confermata)', async () => {
+    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
+    vi.mocked(prisma.invoiceLineAccount.upsert).mockResolvedValue({} as never)
+    vi.mocked(parseFatturaPA).mockReturnValue({
+      dettaglioLinee: [
+        { numeroLinea: 1, descrizione: '---', prezzoUnitario: 5, prezzoTotale: 5, aliquotaIVA: 4 },
+      ],
+    } as never)
+
+    const { request, context } = richiesta({ righe: [{ numeroLinea: 1, accountId: 'conto-1' }] })
+    const response = await PATCH(request, context)
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data.righeConfermate).toBe(1)
+    expect(prisma.invoiceLineAccount.upsert).toHaveBeenCalledTimes(1)
+    expect(prisma.supplierProductAccount.upsert).not.toHaveBeenCalled()
+  })
+
   it('memoria fornitore-prodotto: un errore nella scrittura non fa fallire la PATCH (best-effort)', async () => {
     vi.mocked(auth).mockResolvedValue(sessione as never)
     vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
