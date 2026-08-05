@@ -17,8 +17,14 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
 
+vi.mock('@/lib/scadenzario/stima-data-attesa', () => ({
+  applicaStimaSuScadenza: vi.fn(),
+  ricalcolaStimeFornitore: vi.fn(),
+}))
+
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
+import { applicaStimaSuScadenza, ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
 import {
   reconcileScheduleWithEntry,
   undoScheduleReconciliation,
@@ -35,6 +41,8 @@ function scadenza(overrides: Record<string, unknown> = {}) {
     importoPagato: new Prisma.Decimal(0),
     dataPagamento: null,
     invoiceId: null,
+    supplierId: 'sup-1',
+    dataScadenza: new Date('2026-07-20'),
     ...overrides,
   }
 }
@@ -135,5 +143,68 @@ describe('undoScheduleReconciliation - dataAttesa', () => {
         }),
       })
     )
+  })
+})
+
+describe('reconcileScheduleWithEntry - provenienza e ricalcolo', () => {
+  it('al saldo la source diventa riconciliazione e si ricalcolano le stime del fornitore', async () => {
+    const entry = movimento()
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(scadenza() as never)
+    vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue(entry as never)
+
+    await reconcileScheduleWithEntry({
+      scheduleId: 'sched-1',
+      journalEntryId: 'entry-1',
+      venueId: VENUE,
+      userId: 'user-1',
+    })
+
+    expect(prisma.schedule.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          dataAttesa: entry.date,
+          dataAttesaSource: 'riconciliazione',
+        }),
+      })
+    )
+    expect(ricalcolaStimeFornitore).toHaveBeenCalledWith('sup-1', VENUE)
+  })
+
+  it('su un acconto parziale non si ricalcola nulla', async () => {
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(scadenza() as never)
+    vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue(
+      movimento({ creditAmount: new Prisma.Decimal(40) }) as never
+    )
+
+    await reconcileScheduleWithEntry({
+      scheduleId: 'sched-1',
+      journalEntryId: 'entry-1',
+      venueId: VENUE,
+      userId: 'user-1',
+    })
+
+    expect(ricalcolaStimeFornitore).not.toHaveBeenCalled()
+  })
+
+  it("l'undo azzera la data attesa e poi la ristima", async () => {
+    vi.mocked(prisma.scheduleReconciliation.findFirst).mockResolvedValue({
+      id: 'rec-1',
+      scheduleId: 'sched-1',
+      paymentId: 'pay-1',
+      amount: new Prisma.Decimal(100),
+      schedule: {
+        importoTotale: new Prisma.Decimal(100),
+        importoPagato: new Prisma.Decimal(100),
+      },
+    } as never)
+
+    await undoScheduleReconciliation({ reconciliationId: 'rec-1', venueId: VENUE })
+
+    expect(prisma.schedule.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ dataAttesa: null, dataAttesaSource: null }),
+      })
+    )
+    expect(applicaStimaSuScadenza).toHaveBeenCalledWith('sched-1', VENUE)
   })
 })

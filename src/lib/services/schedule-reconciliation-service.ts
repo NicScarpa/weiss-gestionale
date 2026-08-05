@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
+import { applicaStimaSuScadenza, ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
 
 /**
  * Riconciliazione fra movimenti di prima nota e scadenze.
@@ -74,6 +75,7 @@ export async function reconcileScheduleWithEntry({
       importoPagato: true,
       dataPagamento: true,
       invoiceId: true,
+      supplierId: true,
     },
   })
 
@@ -158,10 +160,9 @@ export async function reconcileScheduleWithEntry({
         stato: nuovoStato,
         // La data di pagamento è quella del movimento reale, non di oggi
         ...(saldata && !schedule.dataPagamento ? { dataPagamento: entry.date } : {}),
-        // La data attesa di cassa si riallinea al movimento reale, come
-        // l'expectedPaymentDate di Sibill. Solo a saldo completo: su un
-        // acconto il residuo resta atteso alla data contrattuale
-        ...(saldata ? { dataAttesa: entry.date } : {}),
+        // La data attesa si riallinea al movimento reale, con la provenienza
+        // che vince su tutto (riconciliazione > manuale > stima)
+        ...(saldata ? { dataAttesa: entry.date, dataAttesaSource: 'riconciliazione' } : {}),
       },
     })
 
@@ -180,6 +181,12 @@ export async function reconcileScheduleWithEntry({
         data: { status: 'PAID' },
       })
     }
+  }
+
+  // La storia del fornitore è cambiata: le stime delle sue scadenze aperte
+  // si aggiornano. Best-effort: non blocca mai la riconciliazione
+  if (risultato.saldata && schedule.tipo === 'passiva' && schedule.supplierId) {
+    await ricalcolaStimeFornitore(schedule.supplierId, venueId)
   }
 
   logger.info('Scadenza riconciliata con movimento', {
@@ -283,9 +290,14 @@ export async function undoScheduleReconciliation({
         // e la data attesa torna a seguire quella contrattuale (null = coincide)
         dataPagamento: null,
         dataAttesa: null,
+        dataAttesaSource: null,
       },
     })
   })
+
+  // La scadenza è di nuovo aperta: se il fornitore ha una storia, la data
+  // attesa torna a essere stimata invece di restare secca sulla contrattuale
+  await applicaStimaSuScadenza(reconciliation.scheduleId, venueId)
 
   return { outcome: 'ok', scheduleStato: nuovoStato }
 }
