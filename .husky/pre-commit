@@ -1,6 +1,16 @@
-# Pre-commit hook: Lint and Type Check
+# Pre-commit hook: Secret Scan, Lint and Type Check
 
 echo "Running pre-commit checks..."
+
+# Secret scan (blocca commit di credenziali/chiavi)
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --redact || {
+    echo "BLOCCATO: gitleaks ha rilevato possibili segreti nei file in staging."
+    exit 1
+  }
+else
+  echo "ATTENZIONE: gitleaks non installato (brew install gitleaks) - scan segreti saltato"
+fi
 
 # Lint
 npm run lint || exit 1
