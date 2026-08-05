@@ -4,11 +4,11 @@ import type { PolicyRules } from './timekeeping-types'
 /**
  * Quale regola oraria si applica a chi.
  *
- * La precedenza è quella di NoBadge, che risolve bene il caso reale: il locale
- * può imporre le proprie regole a chiunque ci lavori (orari di apertura,
- * pause), altrimenti vale il contratto della singola persona, altrimenti la
- * regola predefinita dell'azienda. Se non ce n'è nessuna, il calcolo resta
- * quello che era prima che le regole esistessero.
+ * La precedenza è quella di NoBadge, che risolve bene il caso reale: il luogo
+ * di lavoro può imporre le proprie regole a chiunque ci lavori (orari di
+ * apertura, pause), altrimenti vale il contratto della singola persona,
+ * altrimenti la regola predefinita dell'azienda. Se non ce n'è nessuna, il
+ * calcolo resta quello che era prima che le regole esistessero.
  *
  * La precedenza è risolta in un punto solo: se venisse reinterpretata nelle
  * schermate, nell'export e nel calcolo, prima o poi darebbero risposte diverse.
@@ -39,7 +39,7 @@ export interface TimekeepingPolicyRow {
 }
 
 export interface PolicyResolutionInput {
-  venuePolicy: TimekeepingPolicyRow | null
+  locationPolicy: TimekeepingPolicyRow | null
   userPolicy: TimekeepingPolicyRow | null
   defaultPolicy: TimekeepingPolicyRow | null
 }
@@ -48,7 +48,7 @@ export interface PolicyResolutionInput {
 export function pickEffectivePolicy(
   input: PolicyResolutionInput
 ): TimekeepingPolicyRow | null {
-  return input.venuePolicy ?? input.userPolicy ?? input.defaultPolicy ?? null
+  return input.locationPolicy ?? input.userPolicy ?? input.defaultPolicy ?? null
 }
 
 /** Traduce una riga di regola nei termini che il motore di calcolo capisce. */
@@ -139,9 +139,9 @@ const policySelect = {
 } as const
 
 export interface PolicyResolutionContext {
-  venuePolicy: TimekeepingPolicyRow | null
   defaultPolicy: TimekeepingPolicyRow | null
   userPolicyByUserId: Map<string, TimekeepingPolicyRow>
+  locationPolicyByLocationId: Map<string, TimekeepingPolicyRow>
 }
 
 /**
@@ -152,16 +152,16 @@ export interface PolicyResolutionContext {
 export async function loadPolicyResolutionContext(
   venueId: string
 ): Promise<PolicyResolutionContext> {
-  const [venue, defaultPolicy, usersWithPolicy] = await Promise.all([
-    prisma.venue.findUnique({
-      where: { id: venueId },
-      select: { timekeepingPolicy: { select: policySelect } },
-    }),
+  const [defaultPolicy, usersWithPolicy, locationsWithPolicy] = await Promise.all([
     prisma.timekeepingPolicy.findFirst({
       where: { venueId, isDefault: true, isActive: true },
       select: policySelect,
     }),
     prisma.user.findMany({
+      where: { venueId, timekeepingPolicyId: { not: null } },
+      select: { id: true, timekeepingPolicy: { select: policySelect } },
+    }),
+    prisma.workLocation.findMany({
       where: { venueId, timekeepingPolicyId: { not: null } },
       select: { id: true, timekeepingPolicy: { select: policySelect } },
     }),
@@ -174,10 +174,17 @@ export async function loadPolicyResolutionContext(
     }
   }
 
+  const locationPolicyByLocationId = new Map<string, TimekeepingPolicyRow>()
+  for (const location of locationsWithPolicy) {
+    if (location.timekeepingPolicy) {
+      locationPolicyByLocationId.set(location.id, location.timekeepingPolicy)
+    }
+  }
+
   return {
-    venuePolicy: venue?.timekeepingPolicy ?? null,
     defaultPolicy: defaultPolicy ?? null,
     userPolicyByUserId,
+    locationPolicyByLocationId,
   }
 }
 
@@ -185,10 +192,13 @@ export async function loadPolicyResolutionContext(
 export function resolvePolicyRules(
   context: PolicyResolutionContext,
   userId: string,
+  workLocationId: string | null,
   contractWeeklyHours: number | null
 ): { rules: PolicyRules; policyName: string | null } {
   const row = pickEffectivePolicy({
-    venuePolicy: context.venuePolicy,
+    locationPolicy: workLocationId
+      ? (context.locationPolicyByLocationId.get(workLocationId) ?? null)
+      : null,
     userPolicy: context.userPolicyByUserId.get(userId) ?? null,
     defaultPolicy: context.defaultPolicy,
   })
@@ -203,7 +213,8 @@ export function resolvePolicyRules(
 /** Le regole in vigore per una singola persona, quando serve fuori dal calcolo mensile. */
 export async function getEffectiveTimekeepingPolicy(
   userId: string,
-  venueId: string
+  venueId: string,
+  workLocationId: string | null = null
 ): Promise<{ rules: PolicyRules; policyName: string | null; blockSunday: boolean }> {
   const [context, user] = await Promise.all([
     loadPolicyResolutionContext(venueId),
@@ -214,7 +225,9 @@ export async function getEffectiveTimekeepingPolicy(
   ])
 
   const row = pickEffectivePolicy({
-    venuePolicy: context.venuePolicy,
+    locationPolicy: workLocationId
+      ? (context.locationPolicyByLocationId.get(workLocationId) ?? null)
+      : null,
     userPolicy: context.userPolicyByUserId.get(userId) ?? null,
     defaultPolicy: context.defaultPolicy,
   })

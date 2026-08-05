@@ -120,6 +120,7 @@ export interface PayrollSummary {
 interface AttendanceRecordData {
   punchType: PunchType
   punchedAt: Date
+  workLocationId?: string | null
 }
 
 /**
@@ -229,6 +230,7 @@ export async function generatePayrollData(
       userId: true,
       punchType: true,
       punchedAt: true,
+      workLocationId: true,
     },
     orderBy: { punchedAt: 'asc' },
   })
@@ -343,9 +345,11 @@ export async function generatePayrollData(
     const contractWeeklyHours = user.contractHoursWeek
       ? Number(user.contractHoursWeek)
       : null
-    const { rules } = policyContext
-      ? resolvePolicyRules(policyContext, user.id, contractWeeklyHours)
-      : { rules: neutralPolicy(contractWeeklyHours) }
+    const regolePerGiornata = (workLocationId: string | null) =>
+      policyContext
+        ? resolvePolicyRules(policyContext, user.id, workLocationId, contractWeeklyHours)
+            .rules
+        : neutralPolicy(contractWeeklyHours)
 
     // Processa ogni giorno
     days.forEach((day) => {
@@ -384,7 +388,18 @@ export async function generatePayrollData(
         summary.leaveSummary[leaveCode] =
           (summary.leaveSummary[leaveCode] || 0) + 1
       } else if (punches.length > 0) {
-        hours = calculateHoursFromPunches(punches, dateKey, day, rules)
+        // Il luogo della giornata è quello della prima timbratura: se una
+        // persona si sposta fra i locali nella stessa giornata, vale dove ha
+        // iniziato.
+        const workLocationId =
+          punches.find((p) => p.workLocationId)?.workLocationId ?? null
+
+        hours = calculateHoursFromPunches(
+          punches,
+          dateKey,
+          day,
+          regolePerGiornata(workLocationId)
+        )
 
         // Aggiorna summary
         const summary = summariesMap.get(user.id)!

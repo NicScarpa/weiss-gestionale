@@ -214,9 +214,14 @@ export function PunchButton({
         BREAK_END: 'Fine pausa',
       }
 
+      // Con più luoghi di lavoro non basta dire "registrata": chi timbra deve
+      // vedere dove il sistema lo ha collocato, per accorgersi subito di uno
+      // sbaglio invece di scoprirlo a fine mese.
+      const luogo = data.data.workLocation?.name
+      const dove = luogo ? ` presso ${luogo}` : ''
       const message = data.data.isWithinRadius
-        ? `${typeLabels[config.punchType]} registrata`
-        : `${typeLabels[config.punchType]} registrata (fuori sede)`
+        ? `${typeLabels[config.punchType]} registrata${dove}`
+        : `${typeLabels[config.punchType]} registrata${dove} (fuori raggio)`
 
       toast.success(message)
     },
