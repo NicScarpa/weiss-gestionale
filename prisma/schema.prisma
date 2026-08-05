@@ -514,6 +514,10 @@ model Schedule {
   /// cioè al riallineamento sulla data del movimento quando la riconciliazione
   /// salda la scadenza. Il previsionale legge sempre dataAttesa ?? dataScadenza.
   dataAttesa              DateTime?                   @map("data_attesa") @db.Date
+  /// Provenienza di dataAttesa: 'stima' (ritardo storico del fornitore),
+  /// 'manuale' (impostata dall'utente), 'riconciliazione' (riallineata alla
+  /// data del movimento che ha saldato). Null se e solo se dataAttesa è null.
+  dataAttesaSource        String?                     @map("data_attesa_source")
   dataEmissione           DateTime?                   @map("data_emissione") @db.Date
   dataPagamento           DateTime?                   @map("data_pagamento") @db.Date
   tipoDocumento           String?                     @map("tipo_documento")
