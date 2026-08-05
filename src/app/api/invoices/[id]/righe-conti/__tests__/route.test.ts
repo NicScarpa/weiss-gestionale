@@ -14,6 +14,7 @@ vi.mock('@/lib/prisma', () => ({
     electronicInvoice: { findFirst: vi.fn() },
     invoiceLineAccount: { findMany: vi.fn(), upsert: vi.fn(), updateMany: vi.fn() },
     account: { findMany: vi.fn() },
+    supplierProductAccount: { upsert: vi.fn() },
   },
 }))
 
@@ -40,6 +41,14 @@ const fatturaEsistente = {
   id: 'fatt-1',
   venueId: 'venue-test-123',
   xmlContent: '<xml>contenuto</xml>',
+  supplierId: 'fornitore-1',
+}
+
+const fatturaSenzaFornitore = {
+  id: 'fatt-1',
+  venueId: 'venue-test-123',
+  xmlContent: '<xml>contenuto</xml>',
+  supplierId: null,
 }
 
 const dettaglioLineeFisse = [
@@ -68,6 +77,7 @@ beforeEach(() => {
     dettaglioLinee: dettaglioLineeFisse,
   } as never)
   vi.mocked(prisma.account.findMany).mockResolvedValue([{ id: 'conto-1' }] as never)
+  vi.mocked(prisma.supplierProductAccount.upsert).mockResolvedValue({} as never)
 })
 
 describe('PATCH /api/invoices/[id]/righe-conti', () => {
@@ -180,6 +190,66 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
     expect(createAuditLog).not.toHaveBeenCalled()
   })
 
+  it('riga confermata manualmente con fornitore: upsert della memoria fornitore-prodotto', async () => {
+    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
+    vi.mocked(prisma.invoiceLineAccount.upsert).mockResolvedValue({} as never)
+
+    const { request, context } = richiesta({ righe: [{ numeroLinea: 1, accountId: 'conto-1' }] })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(200)
+    expect(prisma.supplierProductAccount.upsert).toHaveBeenCalledTimes(1)
+    expect(prisma.supplierProductAccount.upsert).toHaveBeenCalledWith({
+      where: {
+        venueId_supplierId_nomeNormalizzato: {
+          venueId: 'venue-test-123',
+          supplierId: 'fornitore-1',
+          nomeNormalizzato: 'farina 00',
+        },
+      },
+      create: {
+        venueId: 'venue-test-123',
+        supplierId: 'fornitore-1',
+        nomeNormalizzato: 'farina 00',
+        codiceArticolo: 'ABC123',
+        accountId: 'conto-1',
+        conferme: 1,
+      },
+      update: {
+        accountId: 'conto-1',
+        codiceArticolo: 'ABC123',
+        conferme: { increment: 1 },
+      },
+    })
+  })
+
+  it('riga confermata manualmente senza fornitore sulla fattura: non scrive memoria', async () => {
+    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaSenzaFornitore as never)
+    vi.mocked(prisma.invoiceLineAccount.upsert).mockResolvedValue({} as never)
+
+    const { request, context } = richiesta({ righe: [{ numeroLinea: 1, accountId: 'conto-1' }] })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(200)
+    expect(prisma.supplierProductAccount.upsert).not.toHaveBeenCalled()
+  })
+
+  it('memoria fornitore-prodotto: un errore nella scrittura non fa fallire la PATCH (best-effort)', async () => {
+    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
+    vi.mocked(prisma.invoiceLineAccount.upsert).mockResolvedValue({} as never)
+    vi.mocked(prisma.supplierProductAccount.upsert).mockRejectedValue(new Error('db down'))
+
+    const { request, context } = richiesta({ righe: [{ numeroLinea: 1, accountId: 'conto-1' }] })
+    const response = await PATCH(request, context)
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data.righeConfermate).toBe(1)
+  })
+
   it('confermaTutte: aggiorna tutte le righe in stato proposta con updateMany', async () => {
     vi.mocked(auth).mockResolvedValue(sessione as never)
     vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
@@ -207,6 +277,9 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
         entityId: 'fatt-1',
       })
     )
+    // confermaTutte conferma proposte già esistenti: non è un'imputazione
+    // nuova dell'utente, quindi non alimenta la memoria fornitore-prodotto.
+    expect(prisma.supplierProductAccount.upsert).not.toHaveBeenCalled()
   })
 
   it('no-op (nessuna riga, confermaTutte assente o senza righe in proposta): non scrive audit', async () => {

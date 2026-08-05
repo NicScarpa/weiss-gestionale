@@ -6,6 +6,7 @@ import { getVenueId } from '@/lib/venue'
 import { createAuditLog } from '@/lib/audit'
 import { logger } from '@/lib/logger'
 import { parseFatturaPA } from '@/lib/sdi/parser'
+import { normalizeProductName } from '@/lib/price-tracking'
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -120,6 +121,39 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           },
         })
         righeConfermate++
+
+        // Best-effort: un'imputazione manuale con fornitore noto alimenta la
+        // memoria fornitore-prodotto, riproposta in futuro per lo stesso articolo.
+        // Un errore qui non deve invalidare la conferma già scritta sopra.
+        if (invoice.supplierId) {
+          try {
+            const nomeNormalizzato = normalizeProductName(linea.descrizione)
+            await prisma.supplierProductAccount.upsert({
+              where: {
+                venueId_supplierId_nomeNormalizzato: {
+                  venueId,
+                  supplierId: invoice.supplierId,
+                  nomeNormalizzato,
+                },
+              },
+              create: {
+                venueId,
+                supplierId: invoice.supplierId,
+                nomeNormalizzato,
+                codiceArticolo: linea.codiceArticolo ?? null,
+                accountId: riga.accountId,
+                conferme: 1,
+              },
+              update: {
+                accountId: riga.accountId,
+                codiceArticolo: linea.codiceArticolo ?? null,
+                conferme: { increment: 1 },
+              },
+            })
+          } catch (error) {
+            logger.error('Errore aggiornamento memoria fornitore-prodotto', error)
+          }
+        }
       }
     }
 
