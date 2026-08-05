@@ -125,6 +125,8 @@ const updateStaffSchema = z.object({
   ]).nullable().optional().transform(val => val === '' ? null : val),
   contractHoursWeek: z.number().min(0).max(60).nullable().optional(),
   workDaysPerWeek: z.number().min(1).max(7).nullable().optional(),
+  /** Regola con cui si calcolano le sue ore. Null = quella predefinita. */
+  timekeepingPolicyId: z.string().nullable().optional(),
   hireDate: z.string().nullable().optional(),
   terminationDate: z.string().nullable().optional(),
 
@@ -205,6 +207,7 @@ export async function GET(
         // Campi contratto
         contractType: true,
         contractHoursWeek: true,
+        timekeepingPolicyId: true,
         workDaysPerWeek: true,
         hireDate: true,
         terminationDate: true,
@@ -351,6 +354,7 @@ export async function PUT(
     // Campi contratto
     if (validatedData.contractType !== undefined) updateData.contractType = validatedData.contractType
     if (validatedData.contractHoursWeek !== undefined) updateData.contractHoursWeek = validatedData.contractHoursWeek
+    if (validatedData.timekeepingPolicyId !== undefined) updateData.timekeepingPolicyId = validatedData.timekeepingPolicyId
     if (validatedData.workDaysPerWeek !== undefined) updateData.workDaysPerWeek = validatedData.workDaysPerWeek
     if (validatedData.hireDate !== undefined) {
       updateData.hireDate = validatedData.hireDate ? new Date(validatedData.hireDate) : null
@@ -419,6 +423,7 @@ export async function PUT(
         isActive: true,
         contractType: true,
         contractHoursWeek: true,
+        timekeepingPolicyId: true,
         workDaysPerWeek: true,
         hireDate: true,
         terminationDate: true,

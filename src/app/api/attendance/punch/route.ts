@@ -5,7 +5,14 @@ import { z } from 'zod'
 import { PunchType, PunchMethod } from '@prisma/client'
 import { calculateDistance } from '@/lib/geolocation'
 import { notifyAnomalyCreated } from '@/lib/notifications'
-import { addDays, format, isValid, parseISO, startOfDay } from 'date-fns'
+import { format, isValid, parseISO } from 'date-fns'
+import {
+  romeDateKey,
+  romeDayRange,
+  toDateOnlyUtc,
+  toRomeParts,
+} from '@/lib/timezone'
+import { getEffectiveTimekeepingPolicy } from '@/lib/attendance/policy-resolver'
 import { it } from 'date-fns/locale'
 
 import { logger } from '@/lib/logger'
@@ -167,17 +174,37 @@ export async function POST(request: NextRequest) {
 
     // Le finestre temporali seguono il giorno della timbratura, non quello della
     // sincronizzazione (una timbratura di ieri va agganciata al turno di ieri).
-    const punchDayStart = startOfDay(punchedAt)
-    const punchDayEnd = addDays(punchDayStart, 1)
+    // Il giorno è quello civile italiano: sul server, che gira in UTC, le
+    // timbrature serali cadrebbero altrimenti nel giorno successivo.
+    const punchDateKey = romeDateKey(punchedAt)
+    const punchDay = romeDayRange(punchDateKey)
+
+    // Riposo domenicale: se la regola in vigore lo prevede, la domenica non si
+    // timbra. Il controllo sta sul server perché è una regola, non un consiglio.
+    if (toRomeParts(punchedAt).weekday === 0) {
+      const { blockSunday } = await getEffectiveTimekeepingPolicy(
+        session.user.id,
+        validatedData.venueId
+      )
+
+      if (blockSunday) {
+        return NextResponse.json(
+          {
+            error: 'La regola oraria in vigore non consente di timbrare la domenica.',
+            code: 'SUNDAY_BLOCKED',
+          },
+          { status: 422 }
+        )
+      }
+    }
 
     const todayAssignment = await prisma.shiftAssignment.findFirst({
       where: {
         userId: session.user.id,
         venueId: validatedData.venueId,
-        date: {
-          gte: punchDayStart,
-          lt: punchDayEnd,
-        },
+        // `date` è una colonna @db.Date: si confronta con la mezzanotte UTC
+        // del giorno, non con l'istante in cui inizia la giornata italiana.
+        date: toDateOnlyUtc(punchDateKey),
         schedule: {
           status: 'PUBLISHED',
         },
@@ -214,13 +241,19 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // `actualStart`/`actualEnd` sono colonne @db.Time: contengono un orario
+    // senza data, e dev'essere l'orario italiano — lo stesso metro con cui sono
+    // stati inseriti gli orari dei turni.
+    const punchMinutes = toRomeParts(punchedAt).minutesFromMidnight
     const punchTimeOnly = new Date(
-      1970,
-      0,
-      1,
-      punchedAt.getHours(),
-      punchedAt.getMinutes(),
-      punchedAt.getSeconds()
+      Date.UTC(
+        1970,
+        0,
+        1,
+        Math.floor(punchMinutes / 60),
+        punchMinutes % 60,
+        punchedAt.getUTCSeconds()
+      )
     )
 
     // Se timbrata IN, aggiorna actualStart sull'assignment
@@ -240,8 +273,8 @@ export async function POST(request: NextRequest) {
           venueId: validatedData.venueId,
           punchType: 'IN',
           punchedAt: {
-            gte: punchDayStart,
-            lt: punchDayEnd,
+            gte: punchDay.start,
+            lt: punchDay.end,
           },
         },
         orderBy: { punchedAt: 'asc' },
@@ -273,7 +306,7 @@ export async function POST(request: NextRequest) {
           assignmentId: todayAssignment?.id ?? null,
           anomalyType: 'OUTSIDE_LOCATION',
           status: 'PENDING',
-          date: punchDayStart,
+          date: toDateOnlyUtc(punchDateKey),
           description: `Timbratura effettuata a ${distanceFromVenue}m dalla sede (raggio: ${venue.attendancePolicy?.geoFenceRadius ?? 100}m)`,
           actualValue: `${distanceFromVenue}m`,
           expectedValue: `<${venue.attendancePolicy?.geoFenceRadius ?? 100}m`,
@@ -298,7 +331,7 @@ export async function POST(request: NextRequest) {
           assignmentId: todayAssignment?.id ?? null,
           anomalyType: 'INVALID_TIMESTAMP',
           status: 'PENDING',
-          date: punchDayStart,
+          date: toDateOnlyUtc(punchDateKey),
           description:
             'Timbratura sincronizzata da offline con un orario non plausibile: registrata con l\'ora di ricezione',
           actualValue: validatedData.offlineTimestamp ?? null,

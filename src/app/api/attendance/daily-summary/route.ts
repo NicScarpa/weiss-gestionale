@@ -3,6 +3,14 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
 import { logger } from '@/lib/logger'
+import {
+  nextDateKey,
+  romeDateKey,
+  romeDayRange,
+  romeInstant,
+  timeColumnToMinutes,
+  toDateOnlyUtc,
+} from '@/lib/timezone'
 // GET /api/attendance/daily-summary - Riepilogo giornaliero presenze
 export async function GET(request: NextRequest) {
   try {
@@ -26,11 +34,12 @@ export async function GET(request: NextRequest) {
     const venueId = searchParams.get('venueId')
     const dateParam = searchParams.get('date')
 
-    // Data default: oggi
-    const targetDate = dateParam ? new Date(dateParam) : new Date()
-    targetDate.setHours(0, 0, 0, 0)
-    const nextDay = new Date(targetDate)
-    nextDay.setDate(nextDay.getDate() + 1)
+    // Data default: oggi in Italia. Senza passare dal fuso, 'yyyy-MM-dd'
+    // verrebbe letto come istante UTC e la giornata risulterebbe sfasata.
+    const dateKey = dateParam ?? romeDateKey(new Date())
+    const targetDate = toDateOnlyUtc(dateKey)
+    const nextDay = toDateOnlyUtc(nextDateKey(dateKey))
+    const romeDay = romeDayRange(dateKey)
 
     // Filtra per sede
     const venueFilter: Record<string, unknown> = {}
@@ -76,9 +85,11 @@ export async function GET(request: NextRequest) {
         },
         attendanceRecords: {
           where: {
+            // `punchedAt` è un istante: si filtra sulla giornata italiana,
+            // non sulla mezzanotte UTC usata per la colonna `date`.
             punchedAt: {
-              gte: targetDate,
-              lt: nextDay,
+              gte: romeDay.start,
+              lt: romeDay.end,
             },
           },
           orderBy: { punchedAt: 'asc' },
@@ -104,13 +115,13 @@ export async function GET(request: NextRequest) {
       } else if (clockIn) {
         status = 'CLOCKED_IN'
       } else {
-        // Verifica se il turno è già passato
+        // Verifica se il turno è già passato. L'orario di fine è un orario
+        // italiano: va riportato all'istante assoluto di quel giorno, altrimenti
+        // il confronto con "adesso" sbaglia di una o due ore.
         const now = new Date()
-        const scheduledEnd = new Date(assignment.endTime)
-        scheduledEnd.setFullYear(
-          targetDate.getFullYear(),
-          targetDate.getMonth(),
-          targetDate.getDate()
+        const scheduledEnd = romeInstant(
+          dateKey,
+          timeColumnToMinutes(assignment.endTime)
         )
 
         if (now > scheduledEnd) {
@@ -188,7 +199,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({
-      date: targetDate.toISOString().split('T')[0],
+      date: dateKey,
       data: summary,
       stats,
     })

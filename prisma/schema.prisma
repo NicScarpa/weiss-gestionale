@@ -60,6 +60,9 @@ model User {
   resetTokenExpiry        DateTime?                    @map("reset_token_expiry")
   attendanceAnomalies     AttendanceAnomaly[]
   attendancePunches       AttendanceRecord[]
+  /// Regola oraria del dipendente: vale se il locale non ne impone una propria.
+  timekeepingPolicyId     String?                      @map("timekeeping_policy_id")
+  timekeepingPolicy       TimekeepingPolicy?           @relation(fields: [timekeepingPolicyId], references: [id])
   budgetsCreated          Budget[]
   cashFlowForecasts       CashFlowForecast[]
   certifications          Certification[]
@@ -169,6 +172,10 @@ model Venue {
   scheduleRules           ScheduleRule[]
   bankAccounts            BankAccount[]
   auditLogs               AuditLog[]
+  timekeepingPolicies     TimekeepingPolicy[]
+  /// Regola oraria del locale: se presente prevale su quella del dipendente.
+  timekeepingPolicyId     String?                  @map("timekeeping_policy_id")
+  timekeepingPolicy       TimekeepingPolicy?       @relation("VenueTimekeepingPolicy", fields: [timekeepingPolicyId], references: [id])
 
   @@map("venues")
 }
@@ -1091,6 +1098,72 @@ model AttendancePolicy {
   venue                Venue    @relation(fields: [venueId], references: [id])
 
   @@map("attendance_policies")
+}
+
+/// Regole con cui le timbrature grezze diventano ore riconosciute.
+///
+/// Da non confondere con AttendancePolicy, che è un'altra cosa: quella dice
+/// *se* e *dove* si può timbrare (geofence, tolleranze, chiusura automatica) ed
+/// è una per sede. Questa dice *quante ore ti conto*, ed è riusabile: un locale
+/// può averne una, un dipendente part-time un'altra.
+///
+/// Gli orari sono minuti dalla mezzanotte italiana (0-1439) invece di @db.Time,
+/// che è la fonte degli errori di fuso corretti ad agosto 2026. Quando la fine
+/// giornata è minore o uguale all'inizio, la giornata scavalca la mezzanotte:
+/// è il caso dei turni Weiss 06:00-03:00.
+model TimekeepingPolicy {
+  id                          String                   @id @default(cuid())
+  venueId                     String                   @map("venue_id")
+  name                        String
+  isDefault                   Boolean                  @default(false) @map("is_default")
+  isActive                    Boolean                  @default(true) @map("is_active")
+  dayStartMinutes             Int                      @map("day_start_minutes")
+  dayEndMinutes               Int                      @map("day_end_minutes")
+  lunchStartMinutes           Int?                     @map("lunch_start_minutes")
+  lunchEndMinutes             Int?                     @map("lunch_end_minutes")
+  /// Minuti prima dell'inizio pausa entro cui il dipendente vede il pulsante
+  /// "Inizia pausa pranzo".
+  lunchWindowMinutes          Int                      @default(0) @map("lunch_window_minutes")
+  /// Margine entro cui l'arrivo anticipato o l'uscita posticipata contano come lavoro.
+  flexMinutes                 Int                      @default(0) @map("flex_minutes")
+  /// Intervallo di arrotondamento dell'entrata, in minuti. 1 = nessun arrotondamento.
+  roundingMinutes             Int                      @default(1) @map("rounding_minutes")
+  /// Entro questi minuti dal confine dell'intervallo l'orario resta esatto.
+  roundingToleranceMinutes    Int                      @default(0) @map("rounding_tolerance_minutes")
+  /// Intervallo e tolleranza dell'uscita. Null = si usano quelli dell'entrata.
+  roundingOutMinutes          Int?                     @map("rounding_out_minutes")
+  roundingOutToleranceMinutes Int?                     @map("rounding_out_tolerance_minutes")
+  /// Tetto giornaliero: le ore oltre non entrano nel conteggio.
+  maxDailyMinutes             Int?                     @map("max_daily_minutes")
+  /// Ore settimanali da contratto, per il confronto con le ore lavorate.
+  contractWeeklyHours         Decimal?                 @map("contract_weekly_hours") @db.Decimal(4, 1)
+  saturdayAsOvertime          Boolean                  @default(false) @map("saturday_as_overtime")
+  blockSunday                 Boolean                  @default(false) @map("block_sunday")
+  /// Si timbra una volta sola e la giornata vale le ore riconosciute.
+  singlePunchMode             Boolean                  @default(false) @map("single_punch_mode")
+  createdAt                   DateTime                 @default(now()) @map("created_at")
+  updatedAt                   DateTime                 @updatedAt @map("updated_at")
+  venue                       Venue                    @relation(fields: [venueId], references: [id])
+  extraBreaks                 TimekeepingPolicyBreak[]
+  users                       User[]
+  venuesAsDefault             Venue[]                  @relation("VenueTimekeepingPolicy")
+
+  @@index([venueId, isActive])
+  @@map("timekeeping_policies")
+}
+
+/// Pause non retribuite oltre alla pausa pranzo (es. pausa merenda).
+model TimekeepingPolicyBreak {
+  id           String            @id @default(cuid())
+  policyId     String            @map("policy_id")
+  name         String
+  startMinutes Int               @map("start_minutes")
+  endMinutes   Int               @map("end_minutes")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  policy       TimekeepingPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([policyId])
+  @@map("timekeeping_policy_breaks")
 }
 
 model AttendanceAnomaly {
