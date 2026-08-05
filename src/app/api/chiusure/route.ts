@@ -392,8 +392,10 @@ export async function POST(request: NextRequest) {
 
     const session = await auth()
 
-    // Solo admin e manager possono creare chiusure
-    const roleCheck = requireRole(session, ['admin', 'manager'])
+    // Lo staff compila la chiusura a fine turno: è il flusso previsto dal
+    // prodotto. Il controllo che conta resta la validazione, riservata ad
+    // admin e manager, che è ciò che genera le scritture contabili.
+    const roleCheck = requireRole(session, ['admin', 'manager', 'staff'])
     if (!roleCheck.authorized) return roleCheck.response!
 
     const venueId = await getVenueId()

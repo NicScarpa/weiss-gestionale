@@ -56,7 +56,13 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl)
   }
 
-  const response = NextResponse.next()
+  // Il percorso richiesto non è leggibile dai Server Component: lo passiamo
+  // come header così i layout possono decidere in base alla rotta
+  // (es. il layout dashboard consente allo staff la sola chiusura cassa)
+  const requestHeaders = new Headers(request.headers)
+  requestHeaders.set('x-pathname', pathname)
+
+  const response = NextResponse.next({ request: { headers: requestHeaders } })
   if (pathname.startsWith('/api/')) {
     const origin = request.headers.get('origin') || ''
     const allowedOrigin = process.env.NEXT_PUBLIC_APP_URL || ''

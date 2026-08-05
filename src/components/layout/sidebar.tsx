@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { useState, useEffect, useMemo } from 'react'
+import { useSession } from 'next-auth/react'
 
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -134,7 +135,19 @@ const navigationItems = [
   },
 ]
 
+/**
+ * Voci visibili allo staff: può compilare la chiusura cassa, ma non ha
+ * accesso al resto della dashboard (le API finanziarie gli rispondono 403).
+ */
+const STAFF_NAV = [
+  { name: 'Chiusure Cassa', href: '/chiusura-cassa', icon: Receipt },
+  { name: 'Portale', href: '/portale', icon: Users },
+]
+
 export function Sidebar() {
+  const { data: session } = useSession()
+  const isStaff = session?.user?.role === 'staff'
+  const navItems = isStaff ? STAFF_NAV : navigationItems
   const pathname = usePathname()
   const [hoveredItem, setHoveredItem] = useState<string | null>(null)
   const [isSidebarHovered, setIsSidebarHovered] = useState(false)
@@ -191,7 +204,7 @@ export function Sidebar() {
 
         <nav className="flex-1 w-full flex flex-col px-2">
           <div className="space-y-2">
-            {navigationItems.filter(item => item.name !== 'Impostazioni').map((item) => {
+            {navItems.filter(item => item.name !== 'Impostazioni').map((item) => {
               const isActive = activeItem === item.name
               const isHovered = hoveredItem === item.name
               const showBadge = item.name === 'Scadenzario' && scaduteCount > 0
@@ -233,7 +246,7 @@ export function Sidebar() {
 
           {/* Impostazioni - ancorato in basso */}
           <div className="mt-auto pb-2">
-            {navigationItems.filter(item => item.name === 'Impostazioni').map((item) => {
+            {navItems.filter(item => item.name === 'Impostazioni').map((item) => {
               const isActive = activeItem === item.name
               const isHovered = hoveredItem === item.name
 

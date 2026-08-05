@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Clock, Calendar, Palmtree, ArrowLeftRight, FileText } from 'lucide-react'
+import { Home, Clock, Calendar, Palmtree, ArrowLeftRight, FileText, Receipt } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -35,6 +35,13 @@ const navItems = [
     href: '/portale/documenti',
     label: 'Documenti',
     icon: FileText,
+  },
+  {
+    // La chiusura cassa vive nella dashboard: è l'unica sezione fuori dal
+    // portale a cui lo staff ha accesso (vedi src/app/(dashboard)/layout.tsx)
+    href: '/chiusura-cassa',
+    label: 'Chiusura',
+    icon: Receipt,
   },
 ]
 

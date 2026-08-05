@@ -257,6 +257,26 @@ describe('POST /api/chiusure', () => {
   })
 
   describe('Authorization', () => {
+    it('should let staff create a closure', async () => {
+      // Lo staff compila la chiusura a fine turno: è il flusso previsto dal
+      // prodotto. Resta escluso dalla validazione, che genera le scritture.
+      vi.mocked(auth).mockResolvedValue(createMockSession({ role: 'staff' }))
+      vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(null)
+
+      const closureData = createTestClosure()
+      vi.mocked(prisma.dailyClosure.create).mockResolvedValue(
+        createMockDbClosure(closureData) as unknown as DailyClosure
+      )
+
+      const request = new NextRequest('http://localhost:3000/api/chiusure', {
+        method: 'POST',
+        body: JSON.stringify(closureData),
+      })
+      const response = await POST(request)
+
+      expect(response.status).toBe(201)
+    })
+
     it('should override a foreign venueId in the body with the installation venue', async () => {
       // Remediation anti-IDOR: il venueId inviato dal client viene sempre
       // sovrascritto, quindi non è possibile creare una chiusura per un'altra sede
