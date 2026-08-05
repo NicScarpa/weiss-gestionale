@@ -85,6 +85,37 @@ describe('generateSchedulesFromInvoice', () => {
     )
   })
 
+  it.each(['TD24', 'TD25'])(
+    'tratta la fattura differita %s come passiva, non come credito',
+    async (documentType) => {
+      // TD24/TD25 sono fatture differite ex art. 21 c. 4: il documento del
+      // fornitore che consegna con DDT e fattura a fine mese, quindi ricevute
+      await generateSchedulesFromInvoice(
+        { ...baseInvoice, documentType, deadlines: [deadline('dl-1', 500, '2026-09-30')] },
+        'user-1'
+      )
+
+      expect(prisma.schedule.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ tipo: 'passiva' }) })
+      )
+    }
+  )
+
+  it.each(['TD04', 'TD05'])(
+    'non genera scadenze per il documento di rettifica %s',
+    async (documentType) => {
+      // Una nota di credito riduce il debito verso il fornitore: generare una
+      // scadenza da pagare lo aumenterebbe
+      const result = await generateSchedulesFromInvoice(
+        { ...baseInvoice, documentType, deadlines: [deadline('dl-1', 500, '2026-09-30')] },
+        'user-1'
+      )
+
+      expect(result.created).toBe(0)
+      expect(prisma.schedule.create).not.toHaveBeenCalled()
+    }
+  )
+
   it('numera le rate nella descrizione quando sono più di una', async () => {
     await generateSchedulesFromInvoice(
       {

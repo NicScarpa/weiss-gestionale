@@ -21,7 +21,7 @@ const updateScheduleSchema = z.object({
   controparteIban: z.string().optional(),
   supplierId: z.string().optional(),
   priorita: z.nativeEnum(SchedulePriority).optional(),
-  metodoPagamento: z.enum(['bonifico', 'riba', 'sdd', 'carta', 'contanti', 'f24', 'altro']).optional(),
+  metodoPagamento: z.enum(['bonifico', 'riba', 'sdd', 'carta', 'contanti', 'f24', 'assegno', 'bollettino', 'credito_fiscale', 'senza_incasso', 'altro']).optional(),
   isRicorrente: z.boolean().optional(),
   ricorrenzaTipo: z.enum(['settimanale', 'mensile', 'bimestrale', 'trimestrale', 'semestrale', 'annuale']).nullable().optional(),
   ricorrenzaFine: z.coerce.date().or(z.string()).nullable().optional(),

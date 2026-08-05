@@ -10,7 +10,7 @@ import { ScheduleStatus } from '@/types/schedule'
 const createPaymentSchema = z.object({
   importo: z.number().positive('Importo deve essere positivo'),
   dataPagamento: z.coerce.date().or(z.string()),
-  metodo: z.enum(['bonifico', 'riba', 'sdd', 'carta', 'contanti', 'f24', 'altro']).optional(),
+  metodo: z.enum(['bonifico', 'riba', 'sdd', 'carta', 'contanti', 'f24', 'assegno', 'bollettino', 'credito_fiscale', 'senza_incasso', 'altro']).optional(),
   riferimento: z.string().optional(),
   note: z.string().optional(),
 })

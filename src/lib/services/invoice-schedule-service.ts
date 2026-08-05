@@ -24,14 +24,25 @@ import { logger } from '@/lib/logger'
  * partita IVA).
  */
 
-/** Le fatture di vendita generano scadenze da incassare, gli acquisti da pagare. */
-function direzioneDaTipoDocumento(documentType: string | null): ScheduleRuleDirection {
-  // TD01 e simili in ricezione sono acquisti; il gestionale importa oggi solo
-  // fatture passive, ma il tipo documento resta la fonte della distinzione.
-  return documentType === 'TD24' || documentType === 'TD25'
-    ? ScheduleRuleDirection.EMESSI
-    : ScheduleRuleDirection.RICEVUTI
-}
+/**
+ * Tipi documento che rettificano una fattura precedente invece di generare un
+ * nuovo debito: non producono una scadenza autonoma. Una nota di credito
+ * riduce quanto dovuto al fornitore, non è qualcosa da pagare a una data.
+ */
+const TIPI_DOCUMENTO_SENZA_SCADENZA = new Set(['TD04', 'TD05', 'TD08', 'TD09'])
+
+/**
+ * L'import legge sempre il cedente/prestatore come fornitore
+ * (`src/app/api/invoices/route.ts`), quindi tratta esclusivamente fatture
+ * ricevute: le scadenze generate sono sempre passive, da pagare.
+ *
+ * Attenzione: il tipo documento NON distingue attive da passive. TD24 e TD25
+ * sono fatture differite ex art. 21 c. 4 — il documento tipico del fornitore
+ * che consegna con DDT e fattura a fine mese, quindi ricevute a tutti gli
+ * effetti. Quando il gestionale emetterà fatture attive servirà un
+ * discriminante esplicito sul documento, non una lista di codici TD.
+ */
+const TIPO_SCADENZA_DA_IMPORT = 'passiva' as const
 
 interface DeadlineInput {
   id: string
@@ -69,9 +80,21 @@ export async function generateSchedulesFromInvoice(
     return { created: 0, skipped: 0 }
   }
 
-  const direzione = direzioneDaTipoDocumento(invoice.documentType)
-  const tipo = direzione === ScheduleRuleDirection.EMESSI ? 'attiva' : 'passiva'
-  const tipoDocumento = tipoDocumentoDaCodiceSdi(invoice.documentType, direzione)
+  // Note di credito e debito rettificano una fattura esistente: non generano
+  // una scadenza da pagare, altrimenti aumenterebbero il debito invece di ridurlo
+  if (invoice.documentType && TIPI_DOCUMENTO_SENZA_SCADENZA.has(invoice.documentType)) {
+    logger.info('Nessuna scadenza generata: documento di rettifica', {
+      invoiceId: invoice.id,
+      documentType: invoice.documentType,
+    })
+    return { created: 0, skipped: invoice.deadlines.length }
+  }
+
+  const tipo = TIPO_SCADENZA_DA_IMPORT
+  const tipoDocumento = tipoDocumentoDaCodiceSdi(
+    invoice.documentType,
+    ScheduleRuleDirection.RICEVUTI
+  )
 
   const alreadyLinked = await client.schedule.findMany({
     where: { invoiceDeadlineId: { in: invoice.deadlines.map((d) => d.id) } },

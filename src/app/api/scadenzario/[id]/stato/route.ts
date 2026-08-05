@@ -6,6 +6,7 @@ import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
 import { ScheduleStatus } from '@/types/schedule'
+import { getVenueId } from '@/lib/venue'
 
 const updateStatusSchema = z.object({
   stato: z.nativeEnum(ScheduleStatus),
@@ -29,8 +30,12 @@ export async function PATCH(
 
     const { id } = await params
 
-    // Verifica esistenza e permessi
+    // Verifica esistenza e permessi.
+    // Senza il filtro sull'id questa query restituiva una scadenza qualsiasi,
+    // e le decisioni sulla data di pagamento venivano prese sui dati di un
+    // altro record mentre l'update scriveva su quello giusto.
     const existing = await prisma.schedule.findFirst({
+      where: { id, venueId: await getVenueId() },
       select: { id: true, venueId: true, importoTotale: true, importoPagato: true, dataPagamento: true, stato: true },
     })
 
