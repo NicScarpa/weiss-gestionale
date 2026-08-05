@@ -18,6 +18,26 @@ vi.mock('@/lib/auth', () => ({
   auth: vi.fn(),
 }))
 
+// Il rate limiting usa uno store in-memory condiviso: senza mock scatterebbe
+// dopo poche richieste nella stessa suite, facendo fallire i test con 429
+vi.mock('@/lib/api-utils', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/api-utils')>('@/lib/api-utils')
+  return {
+    ...actual,
+    checkRequestRateLimit: vi.fn(() => ({
+      allowed: true,
+      result: { success: true, remaining: 99, reset: Date.now() + 60_000, limit: 100 },
+    })),
+  }
+})
+
+// Mock della sede: dopo la remediation anti-IDOR le route non leggono più
+// il venueId dal client, lo risolvono da getVenueId() (installazione single-venue)
+vi.mock('@/lib/venue', () => ({
+  getVenueId: vi.fn().mockResolvedValue('venue-test-123'),
+  getVenue: vi.fn().mockResolvedValue({ id: 'venue-test-123', name: 'Weiss Test' }),
+}))
+
 // Mock prisma
 vi.mock('@/lib/prisma', () => ({
   prisma: {
@@ -112,7 +132,9 @@ describe('GET /api/chiusure', () => {
       expect(data.pagination.total).toBe(1)
     })
 
-    it('should filter by venueId', async () => {
+    it('should ignore the venueId query param and use the installation venue', async () => {
+      // Remediation anti-IDOR: il venueId non è più preso dal client, così un
+      // utente non può leggere le chiusure di un'altra sede passandolo in query
       vi.mocked(auth).mockResolvedValue(createMockSession({ role: 'admin' }))
       vi.mocked(prisma.dailyClosure.findMany).mockResolvedValue([])
       vi.mocked(prisma.dailyClosure.count).mockResolvedValue(0)
@@ -125,7 +147,7 @@ describe('GET /api/chiusure', () => {
       expect(prisma.dailyClosure.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
-            venueId: 'venue-other',
+            venueId: 'venue-test-123',
           }),
         })
       )
@@ -235,21 +257,30 @@ describe('POST /api/chiusure', () => {
   })
 
   describe('Authorization', () => {
-    it('should return 403 if user cannot access venue', async () => {
+    it('should override a foreign venueId in the body with the installation venue', async () => {
+      // Remediation anti-IDOR: il venueId inviato dal client viene sempre
+      // sovrascritto, quindi non è possibile creare una chiusura per un'altra sede
       vi.mocked(auth).mockResolvedValue(
-        createMockSession({ role: 'staff', venueId: 'venue-staff' })
+        createMockSession({ role: 'manager', venueId: 'venue-altra' })
+      )
+      vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(null)
+      const closureData = createTestClosure({ venueId: 'venue-other' })
+      vi.mocked(prisma.dailyClosure.create).mockResolvedValue(
+        createMockDbClosure(closureData) as unknown as DailyClosure
       )
 
-      const closureData = createTestClosure({ venueId: 'venue-other' })
       const request = new NextRequest('http://localhost:3000/api/chiusure', {
         method: 'POST',
         body: JSON.stringify(closureData),
       })
       const response = await POST(request)
 
-      expect(response.status).toBe(403)
-      const data = await response.json()
-      expect(data.error).toContain('Non autorizzato')
+      expect(response.status).toBe(201)
+      expect(prisma.dailyClosure.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ venueId: 'venue-test-123' }),
+        })
+      )
     })
 
     it('should allow admin to create closure for any venue', async () => {

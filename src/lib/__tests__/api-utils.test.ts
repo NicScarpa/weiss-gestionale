@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { z } from 'zod'
 import type { Session } from 'next-auth'
+import { logger } from '../logger'
 import {
   errorResponse,
   badRequest,
@@ -22,7 +23,8 @@ import {
 } from '../api-utils'
 
 // Mock console.error for testing
-vi.spyOn(console, 'error').mockImplementation(() => {})
+// handleApiError logga tramite il logger strutturato, non console
+vi.spyOn(logger, 'error').mockImplementation(() => {})
 
 describe('api-utils', () => {
   describe('Error Response Builders', () => {
@@ -177,7 +179,7 @@ describe('api-utils', () => {
 
     it('should log error to console', () => {
       handleApiError(new Error('test'), 'GET /test')
-      expect(console.error).toHaveBeenCalled()
+      expect(logger.error).toHaveBeenCalled()
     })
   })
 

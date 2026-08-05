@@ -9,13 +9,15 @@ import {
   clearStoredMetrics,
   getPerformanceSummary,
 } from '../performance'
+import { logger } from '../logger'
 
 describe('performance', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     clearStoredMetrics()
-    vi.spyOn(console, 'warn').mockImplementation(() => {})
-    vi.spyOn(console, 'error').mockImplementation(() => {})
+    // performance.ts logga tramite il logger strutturato, non console
+    vi.spyOn(logger, 'warn').mockImplementation(() => {})
+    vi.spyOn(logger, 'error').mockImplementation(() => {})
   })
 
   afterEach(() => {
@@ -44,46 +46,49 @@ describe('performance', () => {
     })
 
     it('should warn for slow queries', () => {
-      logSlowOperation('query', 'User.findMany', 150)
+      logSlowOperation('query', 'User.findMany', 150, { venueId: 'v1' })
 
-      expect(console.warn).toHaveBeenCalledWith(
+      expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('Slow query'),
-        expect.anything()
+        { venueId: 'v1' }
       )
     })
 
     it('should error for very slow queries', () => {
-      logSlowOperation('query', 'User.findMany', 600)
+      logSlowOperation('query', 'User.findMany', 600, { venueId: 'v1' })
 
-      expect(console.error).toHaveBeenCalledWith(
+      // logger.error ha firma (message, error, metadata)
+      expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining('Very slow query'),
-        expect.anything()
+        undefined,
+        { venueId: 'v1' }
       )
     })
 
     it('should warn for slow API calls', () => {
-      logSlowOperation('api', 'GET /api/chiusure', 1500)
+      logSlowOperation('api', 'GET /api/chiusure', 1500, { route: '/api/chiusure' })
 
-      expect(console.warn).toHaveBeenCalledWith(
+      expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('Slow api'),
-        expect.anything()
+        { route: '/api/chiusure' }
       )
     })
 
     it('should error for very slow API calls', () => {
-      logSlowOperation('api', 'GET /api/chiusure', 4000)
+      logSlowOperation('api', 'GET /api/chiusure', 4000, { route: '/api/chiusure' })
 
-      expect(console.error).toHaveBeenCalledWith(
+      expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining('Very slow api'),
-        expect.anything()
+        undefined,
+        { route: '/api/chiusure' }
       )
     })
 
     it('should not log for fast operations', () => {
       logSlowOperation('query', 'User.findFirst', 20)
 
-      expect(console.warn).not.toHaveBeenCalled()
-      expect(console.error).not.toHaveBeenCalled()
+      expect(logger.warn).not.toHaveBeenCalled()
+      expect(logger.error).not.toHaveBeenCalled()
     })
 
     it('should include metadata in store', () => {
@@ -116,7 +121,7 @@ describe('performance', () => {
 
       await measureAsync('slowQuery', slowFn, 'query')
 
-      expect(console.warn).toHaveBeenCalled()
+      expect(logger.warn).toHaveBeenCalled()
     })
 
     it('should re-throw errors', async () => {
