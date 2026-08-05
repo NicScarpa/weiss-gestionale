@@ -185,6 +185,7 @@ model Venue {
   correctionRequests      AttendanceCorrectionRequest[]
   clockReminders          ClockReminder[]
   communications          Communication[]
+  supplierProductAccounts SupplierProductAccount[]
 
   @@map("venues")
 }
@@ -393,6 +394,7 @@ model Account {
   scheduleRules       ScheduleRule[]
   allocations         JournalEntryAllocation[]
   invoiceLineAccounts InvoiceLineAccount[]
+  supplierProductAccounts SupplierProductAccount[]
 
   @@index([parentId])
   @@map("accounts")
@@ -522,6 +524,7 @@ model Supplier {
   priceHistory       PriceHistory[]
   defaultAccount     Account?            @relation(fields: [defaultAccountId], references: [id])
   schedules          Schedule[]          @relation("ScheduleSupplier")
+  productAccounts    SupplierProductAccount[]
 
   @@index([fiscalCodeHash])
   @@map("suppliers")
@@ -1565,6 +1568,32 @@ model InvoiceLineAccount {
   @@unique([invoiceId, numeroLinea])
   @@index([invoiceId])
   @@map("invoice_line_accounts")
+}
+
+/// Memoria delle imputazioni per prodotto del fornitore: "il pane di questo
+/// fornitore va su questo conto". Scritta a ogni conferma/overrule manuale
+/// delle righe fattura; ha precedenza sull'AI (che può solo rimetterla in
+/// dubbio riportando la riga a 'proposta').
+/// Vedi docs/superpowers/specs/2026-08-05-allocation-design.md (Fase 4).
+model SupplierProductAccount {
+  id               String   @id @default(cuid())
+  venueId          String   @map("venue_id")
+  supplierId       String   @map("supplier_id")
+  /// Nome prodotto normalizzato (normalizeProductName di src/lib/price-tracking)
+  nomeNormalizzato String   @map("nome_normalizzato")
+  codiceArticolo   String?  @map("codice_articolo")
+  accountId        String   @map("account_id")
+  conferme         Int      @default(1)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  venue    Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  account  Account  @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@unique([venueId, supplierId, nomeNormalizzato])
+  @@index([supplierId, codiceArticolo])
+  @@map("supplier_product_accounts")
 }
 
 model InvoiceDeadline {
