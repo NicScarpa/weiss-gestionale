@@ -16,7 +16,7 @@
 - Invariante fette: somma ≤ importo utile del movimento (`debitAmount` per le entrate, `creditAmount` per le uscite); con fette presenti `accountId` = conto dominante (fetta di importo maggiore; a parità, la prima) e `categorizationSource='split'`.
 - Le fette NON entrano in `SOFT_DELETE_MODELS` (src/lib/prisma.ts): sono attributi replace-all del movimento.
 - Importi `Decimal(10,2)`; route in italiano; ogni route `auth()` + ruoli admin/manager; venue via `getVenueId()` dove serve (JournalEntry ha venueId; Account no).
-- Schema SOLO additivo, applicato con `npm run db:push` (mai migrazioni distruttive).
+- Schema SOLO additivo. **`npm run db:push` è VIETATO in questo piano**: il database condiviso contiene tabelle della sessione presenze che il nostro schema su main non ha — un push le cancellerebbe. Le tabelle nuove si creano con DDL esplicito via `npx prisma db execute --stdin` (script SQL fornito nel task), poi `npx prisma generate` per il client.
 - TDD: test PRIMA, RED osservato per il motivo giusto, GREEN, poi `npx tsc --noEmit`. Suite base attuale: 524 verdi.
 - Test di route/service: pattern mock-prisma esistenti (es. `src/lib/services/__tests__/schedule-reconciliation-service.test.ts`, `src/app/api/scadenzario/[id]/__tests__/route.test.ts`): vi.mock di @/lib/prisma, @/lib/auth, @/lib/audit, @/lib/logger, @/lib/venue.
 
@@ -329,9 +329,34 @@ model JournalEntryAllocation {
 }
 ```
 
-- [ ] **Step 2: Push e generate** — `npm run db:push && npx prisma generate` (additivo, sicuro).
+- [ ] **Step 2: Creazione tabella via DDL esplicito** (NO db push — vedi Global Constraints). Salvare questo SQL in un file dentro il workspace .superpowers e passarlo a `npx prisma db execute --stdin` (cwd nel worktree):
 
-- [ ] **Step 3: Typecheck** — `npx tsc --noEmit`.
+```sql
+CREATE TABLE IF NOT EXISTS "journal_entry_allocations" (
+  "id" TEXT NOT NULL,
+  "journal_entry_id" TEXT NOT NULL,
+  "account_id" TEXT NOT NULL,
+  "importo" DECIMAL(10,2) NOT NULL,
+  "origine" TEXT NOT NULL,
+  "reconciliation_id" TEXT,
+  "note" TEXT,
+  "created_by" TEXT,
+  "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "journal_entry_allocations_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX IF NOT EXISTS "journal_entry_allocations_journal_entry_id_idx" ON "journal_entry_allocations"("journal_entry_id");
+CREATE INDEX IF NOT EXISTS "journal_entry_allocations_reconciliation_id_idx" ON "journal_entry_allocations"("reconciliation_id");
+CREATE INDEX IF NOT EXISTS "journal_entry_allocations_account_id_idx" ON "journal_entry_allocations"("account_id");
+ALTER TABLE "journal_entry_allocations" ADD CONSTRAINT "journal_entry_allocations_journal_entry_id_fkey" FOREIGN KEY ("journal_entry_id") REFERENCES "journal_entries"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "journal_entry_allocations" ADD CONSTRAINT "journal_entry_allocations_account_id_fkey" FOREIGN KEY ("account_id") REFERENCES "accounts"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "journal_entry_allocations" ADD CONSTRAINT "journal_entry_allocations_reconciliation_id_fkey" FOREIGN KEY ("reconciliation_id") REFERENCES "schedule_reconciliations"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "journal_entry_allocations" ADD CONSTRAINT "journal_entry_allocations_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+```
+
+Nota: gli ALTER non hanno IF NOT EXISTS — se lo script viene rieseguito, gli errori "constraint already exists" sono attesi e innocui.
+
+- [ ] **Step 3: Generate + verifica** — `npx prisma generate`, poi verificare la tabella con una query su information_schema (script node/pg come .superpowers, o `psql` se disponibile): colonne e FK presenti. Infine `npx tsc --noEmit`.
 
 - [ ] **Step 4: Commit** — SOLO `prisma/schema.prisma`:
 
@@ -704,7 +729,7 @@ model InvoiceLineAccount {
 
 (relazioni inverse su ElectronicInvoice `lineAccounts InvoiceLineAccount[]`, Account, User).
 
-- [ ] **Step 2: Push + generate + typecheck.**
+- [ ] **Step 2: DDL esplicito + generate + typecheck** — stesso metodo del Task 4 (NO db push): CREATE TABLE "invoice_line_accounts" con colonne mappate dal modello (id PK, invoice_id, numero_linea INTEGER, descrizione, codice_articolo NULL, importo DECIMAL(10,2), account_id, stato DEFAULT 'proposta', fonte, confidence DECIMAL(3,2) NULL, motivazione_ai NULL, confirmed_by NULL, confirmed_at NULL, created_at/updated_at TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP), UNIQUE ("invoice_id","numero_linea") via CREATE UNIQUE INDEX "invoice_line_accounts_invoice_id_numero_linea_key", indice su invoice_id, FK verso "electronic_invoices"(id) ON DELETE CASCADE (verificare il @@map reale di ElectronicInvoice nello schema), "accounts"(id) RESTRICT, "users"(id) SET NULL. Poi `npx prisma generate` e `npx tsc --noEmit`.
 - [ ] **Step 3: Commit** — solo `prisma/schema.prisma`:
 
 ```bash
