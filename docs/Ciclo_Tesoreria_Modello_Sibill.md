@@ -166,9 +166,23 @@ l'originale e diverge fino a 29 giorni.
 
 **Perché conta**: rende onesto il previsionale. Se un fornitore paga sempre con
 dieci giorni di ritardo, il grafico lo riflette invece di continuare a
-promettere la data contrattuale. Nota: oggi `dataAttesa` diverge solo alla
-riconciliazione; la stima preventiva (dai termini di pagamento del fornitore o
-manuale) è il naturale passo successivo, insieme all'esposizione in UI.
+promettere la data contrattuale. La stima preventiva è ora implementata: sulle
+scadenze passive aperte, `dataAttesa` viene proiettata dalla **mediana dei
+ritardi di pagamento del fornitore negli ultimi 12 mesi** (scadenza per
+scadenza, `dataPagamento − dataScadenza`), con soglie di applicabilità —
+campione minimo di 3 osservazioni, mediana di almeno 2 giorni in valore
+assoluto — sotto le quali la stima non si applica e la data resta quella
+contrattuale. Una nuova colonna `dataAttesaSource` distingue la provenienza
+con gerarchia `riconciliazione` > `manuale` > `stima`: il dato reale del
+movimento sovrascrive sempre, la mano dell'utente vince sulla stima, la stima
+non tocca mai le altre due. Il ricalcolo scatta alla creazione della
+scadenza, quando una scadenza dello stesso fornitore viene saldata
+(riconciliazione o pagamento manuale — ricalcola tutte le aperte con source
+null o stima), alla modifica di `dataScadenza`, e sull'annullamento di una
+riconciliazione (che ristima invece di tornare secco a null). Il campo è
+visibile e modificabile nel dettaglio scadenza; svuotarlo torna alla stima
+automatica. Dettagli su calcolo e casi limite in
+`docs/superpowers/specs/2026-08-05-stima-data-attesa-design.md`.
 
 ## Fase 4 — La verifica come asse ortogonale ✅
 
