@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
 import { calcolaProssimaGenerazione, calcolaDataDallaRicorrenza } from '@/lib/recurrence-utils'
@@ -51,24 +52,6 @@ export async function POST(
       baseDate
     )
 
-    // Crea lo schedule dalla ricorrenza template
-    const schedule = await prisma.schedule.create({
-      data: {
-        venueId: recurrence.venueId,
-        tipo: recurrence.tipo,
-        descrizione: recurrence.descrizione,
-        importoTotale: recurrence.importo,
-        dataScadenza,
-        metodoPagamento: recurrence.metodoPagamento,
-        source: 'ricorrenza_auto',
-        recurrenceId: recurrence.id,
-        createdById: session.user.id,
-        note: recurrence.note,
-      },
-    })
-
-    await applicaStimaSuScadenza(schedule.id, recurrence.venueId)
-
     // Aggiorna prossimaGenerazione della ricorrenza
     const nuovaProssimaGenerazione = calcolaProssimaGenerazione(
       dataScadenza,
@@ -78,13 +61,40 @@ export async function POST(
     // Se la nuova data supera la data fine, disattiva la ricorrenza
     const shouldDeactivate = recurrence.dataFine && nuovaProssimaGenerazione > recurrence.dataFine
 
-    await prisma.recurrence.update({
-      where: { id },
-      data: {
-        prossimaGenerazione: nuovaProssimaGenerazione,
-        ...(shouldDeactivate ? { isActive: false } : {}),
-      },
+    // Creazione della scadenza e avanzamento della ricorrenza nella stessa
+    // transazione: erano due passi separati, e fra l'uno e l'altro un secondo
+    // click (o un cron sovrapposto) rigenerava la stessa occorrenza. Se il
+    // secondo passo fallisce, la ricorrenza non avanza e la scadenza non resta.
+    const schedule = await prisma.$transaction(async (tx) => {
+      const creata = await tx.schedule.create({
+        data: {
+          venueId: recurrence.venueId,
+          tipo: recurrence.tipo,
+          descrizione: recurrence.descrizione,
+          importoTotale: recurrence.importo,
+          dataScadenza,
+          metodoPagamento: recurrence.metodoPagamento,
+          source: 'ricorrenza_auto',
+          recurrenceId: recurrence.id,
+          createdById: session.user.id,
+          note: recurrence.note,
+        },
+      })
+
+      await tx.recurrence.update({
+        where: { id },
+        data: {
+          prossimaGenerazione: nuovaProssimaGenerazione,
+          ...(shouldDeactivate ? { isActive: false } : {}),
+        },
+      })
+
+      return creata
     })
+
+    // Fuori dalla transazione: la stima è best-effort e non deve poter far
+    // fallire (né allungare) la generazione
+    await applicaStimaSuScadenza(schedule.id, recurrence.venueId)
 
     await createAuditLog({
       userId: session.user.id,
@@ -100,6 +110,17 @@ export async function POST(
       ricorrenzaDisattivata: !!shouldDeactivate,
     })
   } catch (error) {
+    // `ux_schedules_ricorrenza_occorrenza` (indice parziale su recurrence_id +
+    // data_scadenza) è il lucchetto che impedisce la doppia occorrenza quando
+    // due richieste passano insieme il controllo applicativo. Intercettarlo
+    // qui trasforma il 500 in una risposta che descrive cosa è successo.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return NextResponse.json(
+        { error: 'Questa occorrenza è già stata generata' },
+        { status: 409 }
+      )
+    }
+
     logger.error('Errore POST /api/scadenzario/ricorrenze/[id]/genera', error)
     return NextResponse.json(
       { error: 'Errore nella generazione dello schedule' },
