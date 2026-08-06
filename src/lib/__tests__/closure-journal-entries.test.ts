@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { generateJournalEntriesFromClosure, deleteJournalEntriesForClosure } from '../closure-journal-entries'
+import {
+  generateJournalEntriesFromClosure,
+  deleteJournalEntriesForClosure,
+  JournalEntriesAlreadyExistError,
+} from '../closure-journal-entries'
 
 // Mock prisma
 vi.mock('../prisma', () => ({
@@ -8,6 +12,9 @@ vi.mock('../prisma', () => ({
       createMany: vi.fn().mockResolvedValue({ count: 0 }),
       deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      // Scritture già presenti per la chiusura: zero, salvo quando è il test a
+      // chiedere il contrario. Vedi la guardia in generateJournalEntriesFromClosure.
+      count: vi.fn().mockResolvedValue(0),
     },
   },
 }))
@@ -391,6 +398,40 @@ describe('generateJournalEntriesFromClosure', () => {
           }),
         ]),
       })
+    })
+  })
+})
+
+describe('guardia contro le scritture doppie', () => {
+  const closure = {
+    id: 'closure-1',
+    date: new Date('2024-03-15'),
+    venueId: 'venue-1',
+    bankDeposit: null,
+    stations: [{ cashAmount: 500, posAmount: 0, floatAmount: 114 }],
+    expenses: [],
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(prisma.journalEntry.count).mockResolvedValue(0)
+  })
+
+  it('non scrive nulla se la chiusura ha già scritture vive', async () => {
+    vi.mocked(prisma.journalEntry.count).mockResolvedValue(3)
+
+    await expect(
+      generateJournalEntriesFromClosure(closure, 'user-123')
+    ).rejects.toBeInstanceOf(JournalEntriesAlreadyExistError)
+
+    expect(prisma.journalEntry.createMany).not.toHaveBeenCalled()
+  })
+
+  it('conta solo le scritture non annullate della chiusura', async () => {
+    await generateJournalEntriesFromClosure(closure, 'user-123')
+
+    expect(prisma.journalEntry.count).toHaveBeenCalledWith({
+      where: { closureId: 'closure-1', deletedAt: null },
     })
   })
 })

@@ -1,8 +1,5 @@
-import Decimal from 'decimal.js'
+import { money, sumMoney, toApi } from '@/lib/money'
 import type { RegisterType, EntryType, JournalEntry } from '@/types/prima-nota'
-
-// Configura Decimal.js per precisione finanziaria
-Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP })
 
 /**
  * Determina se un movimento è DARE o AVERE in base al registro e tipo
@@ -43,13 +40,18 @@ export function getMovementDirection(
 }
 
 /**
- * Converte tipo movimento e importo in dare/avere
+ * Converte tipo movimento e importo in dare/avere.
+ *
+ * L'importo è generico perché la stessa decisione serve sia sui `number` della
+ * UI sia sui `Money` che vanno in colonna: costringerli a passare da `number`
+ * per attraversare questa funzione vanificherebbe la precisione (vedi
+ * `@/lib/money`). Il valore non viene toccato, solo messo dalla parte giusta.
  */
-export function toDebitCredit(
+export function toDebitCredit<T = number>(
   registerType: RegisterType,
   entryType: EntryType,
-  amount: number
-): { debitAmount: number | null; creditAmount: number | null } {
+  amount: T
+): { debitAmount: T | null; creditAmount: T | null } {
   const direction = getMovementDirection(registerType, entryType)
 
   if (direction === 'DEBIT') {
@@ -66,18 +68,15 @@ export function calculateRunningBalances(
   entries: JournalEntry[],
   openingBalance: number = 0
 ): JournalEntry[] {
-  let balance = new Decimal(openingBalance)
+  let balance = money(openingBalance)
 
   return entries.map((entry) => {
-    const debit = new Decimal(entry.debitAmount || 0)
-    const credit = new Decimal(entry.creditAmount || 0)
-
     // Saldo = precedente + dare - avere
-    balance = balance.plus(debit).minus(credit)
+    balance = balance.plus(money(entry.debitAmount)).minus(money(entry.creditAmount))
 
     return {
       ...entry,
-      runningBalance: balance.toNumber(),
+      runningBalance: toApi(balance),
     }
   })
 }
@@ -90,18 +89,13 @@ export function calculateTotals(entries: JournalEntry[]): {
   totalCredits: number
   netMovement: number
 } {
-  let totalDebits = new Decimal(0)
-  let totalCredits = new Decimal(0)
-
-  for (const entry of entries) {
-    totalDebits = totalDebits.plus(entry.debitAmount || 0)
-    totalCredits = totalCredits.plus(entry.creditAmount || 0)
-  }
+  const totalDebits = sumMoney(entries.map((entry) => entry.debitAmount))
+  const totalCredits = sumMoney(entries.map((entry) => entry.creditAmount))
 
   return {
-    totalDebits: totalDebits.toNumber(),
-    totalCredits: totalCredits.toNumber(),
-    netMovement: totalDebits.minus(totalCredits).toNumber(),
+    totalDebits: toApi(totalDebits),
+    totalCredits: toApi(totalCredits),
+    netMovement: toApi(totalDebits.minus(totalCredits)),
   }
 }
 
