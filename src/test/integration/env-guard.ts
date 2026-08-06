@@ -11,8 +11,27 @@
  * l'harness non parte affatto invece di partire e fare danni.
  */
 
-/** Prefisso obbligatorio dei database di test: su questo si basa `assertTestDb`. */
-export const TEST_DB_PREFIX = 'weiss_itest_'
+/**
+ * Prefisso obbligatorio dei database di test: su questo si basa `assertTestDb`.
+ *
+ * È personalizzabile con `TEST_DB_SUFFIX` perché più copie di lavoro del
+ * repository condividono lo stesso PostgreSQL locale: senza un nome distinto
+ * per copia, due suite in esecuzione insieme si distruggono il database a
+ * vicenda (una ricrea il modello mentre l'altra ci sta seminando sopra, e i
+ * test falliscono con "la tabella non esiste" per una causa che non ha nulla a
+ * che vedere con il codice in prova).
+ *
+ * Il suffisso viene ripulito e resta comunque ancorato a `weiss_itest_`, così
+ * la protezione di `assertTestDb` continua a valere qualunque cosa si passi.
+ */
+const SUFFISSO_AMBIENTE = (process.env.TEST_DB_SUFFIX ?? '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]/g, '')
+  .slice(0, 24)
+
+export const TEST_DB_PREFIX = SUFFISSO_AMBIENTE
+  ? `weiss_itest_${SUFFISSO_AMBIENTE}_`
+  : 'weiss_itest_'
 
 /** Database modello: schema + seed, clonato per ogni worker. */
 export const TEMPLATE_DB = `${TEST_DB_PREFIX}template`
