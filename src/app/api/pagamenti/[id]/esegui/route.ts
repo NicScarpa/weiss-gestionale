@@ -1,11 +1,50 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { Prisma } from '@prisma/client'
+import { logger } from '@/lib/logger'
+import { money, toDb, type MoneyInput } from '@/lib/money'
+import { toDebitCredit } from '@/lib/prima-nota-utils'
+import type { PaymentStatus } from '@prisma/client'
+
+/**
+ * Stati dai quali un pagamento può ancora entrare in contabilità.
+ *
+ * `DISPOSTO` e `COMPLETATO` sono esclusi di proposito: il movimento è già
+ * stato scritto e rieseguirli lo duplicherebbe. Il vero sigillo però è
+ * `journalEntryId: null` nella condizione di presa in carico — è il legame col
+ * movimento, non lo stato, a dire se il pagamento è già in prima nota.
+ */
+const STATI_ESEGUIBILI: PaymentStatus[] = ['BOZZA', 'DA_APPROVARE', 'FALLITO']
+
+type EsitoEsecuzione =
+  | { esito: 'assente' }
+  | { esito: 'conflitto'; motivo: string }
+  | {
+      esito: 'eseguito'
+      payment: Awaited<ReturnType<typeof prisma.payment.update>>
+      journalEntry: Awaited<ReturnType<typeof prisma.journalEntry.create>>
+    }
+
+/** Spiega perché la presa in carico non è andata a buon fine. */
+function motivoDelRifiuto(pagamento: {
+  stato: PaymentStatus
+  journalEntryId: string | null
+  importo: MoneyInput
+}): string {
+  if (pagamento.journalEntryId) {
+    return 'Pagamento già registrato in prima nota'
+  }
+
+  if (money(pagamento.importo).lessThanOrEqualTo(0)) {
+    return 'Importo del pagamento non valido'
+  }
+
+  return `Pagamento in stato ${pagamento.stato}: non è eseguibile`
+}
 
 /**
  * POST /api/pagamenti/[id]/esegui
- * Esegue un pagamento: crea journal entry e aggiorna stato
+ * Esegue un pagamento: scrive il movimento bancario e aggiorna lo stato.
  */
 export async function POST(
   request: NextRequest,
@@ -23,57 +62,86 @@ export async function POST(
       return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
-    const payment = await prisma.payment.findUnique({
-      where: { id: id },
-      include: {
-        venue: { select: { id: true, name: true, code: true } },
-      },
+    // Movimento e pagamento cambiano insieme o non cambiano affatto: senza
+    // transazione un errore fra le due scritture lascerebbe in prima nota un
+    // movimento che nessun pagamento rivendica.
+    const esito = await prisma.$transaction<EsitoEsecuzione>(async (tx) => {
+      // Presa in carico: è un aggiornamento condizionale, non una lettura
+      // seguita da una scrittura. Due richieste simultanee si serializzano sul
+      // lock di riga e la seconda rivaluta la condizione sullo stato appena
+      // scritto dalla prima, trovando zero righe da aggiornare.
+      const presoInCarico = await tx.payment.updateMany({
+        where: {
+          id,
+          deletedAt: null,
+          journalEntryId: null,
+          stato: { in: STATI_ESEGUIBILI },
+          importo: { gt: 0 },
+        },
+        data: { stato: 'DISPOSTO' },
+      })
+
+      if (presoInCarico.count === 0) {
+        const esistente = await tx.payment.findUnique({
+          where: { id },
+          select: { stato: true, journalEntryId: true, importo: true, deletedAt: true },
+        })
+
+        if (!esistente || esistente.deletedAt) return { esito: 'assente' }
+        return { esito: 'conflitto', motivo: motivoDelRifiuto(esistente) }
+      }
+
+      // Riga bloccata dalla presa in carico: quello che si legge qui è quello
+      // che finisce nel movimento.
+      const payment = await tx.payment.findUniqueOrThrow({ where: { id } })
+
+      // Un pagamento è un'uscita di banca: l'importo va in AVERE. La direzione
+      // non è scritta a mano qui ma decisa da getMovementDirection, l'unico
+      // posto in cui vive la convenzione dare/avere del progetto.
+      const { debitAmount, creditAmount } = toDebitCredit(
+        'BANK',
+        'USCITA',
+        toDb(payment.importo)
+      )
+
+      const journalEntry = await tx.journalEntry.create({
+        data: {
+          venueId: payment.venueId,
+          date: payment.dataEsecuzione,
+          registerType: 'BANK',
+          description: `Pagamento: ${payment.beneficiarioNome}${payment.causale ? ` - ${payment.causale}` : ''}`,
+          documentRef: payment.riferimentoInterno || null,
+          debitAmount,
+          creditAmount,
+          createdById: session.user.id,
+          paymentId: payment.id,
+          verified: true,
+          notes: payment.note,
+        },
+      })
+
+      const aggiornato = await tx.payment.update({
+        where: { id },
+        data: { journalEntryId: journalEntry.id },
+      })
+
+      return { esito: 'eseguito', payment: aggiornato, journalEntry }
     })
 
-    if (!payment) {
+    if (esito.esito === 'assente') {
       return NextResponse.json({ error: 'Pagamento non trovato' }, { status: 404 })
     }
 
-    // Verifica stato
-    if (payment.stato === 'COMPLETATO' || payment.stato === 'ANNULLATO') {
-      return NextResponse.json(
-        { error: 'Pagamento gi completato o annullato' },
-        { status: 400 }
-      )
+    if (esito.esito === 'conflitto') {
+      return NextResponse.json({ error: esito.motivo }, { status: 409 })
     }
 
-    // Crea journal entry per il pagamento
-    const journalEntry = await prisma.journalEntry.create({
-      data: {
-        venueId: payment.venueId,
-        date: payment.dataEsecuzione,
-        registerType: 'BANK',
-        description: `Pagamento: ${payment.beneficiarioNome}${payment.causale ? ` - ${payment.causale}` : ''}`,
-        documentRef: payment.riferimentoInterno || undefined,
-        debitAmount: Number(payment.importo),
-        creditAmount: undefined,
-        createdById: session.user.id,
-        paymentId: payment.id,
-        verified: true,
-        notes: payment.note,
-      },
-    })
-
-    // Aggiorna stato pagamento
-    const updated = await prisma.payment.update({
-      where: { id: id },
-      data: {
-        stato: 'DISPOSTO',
-        journalEntryId: journalEntry.id,
-      },
-    })
-
     return NextResponse.json({
-      payment: updated,
-      journalEntry,
+      payment: esito.payment,
+      journalEntry: esito.journalEntry,
     })
   } catch (error) {
-    console.error('Errore POST /api/pagamenti/[id]/esegui', error)
+    logger.error('Errore POST /api/pagamenti/[id]/esegui', error)
     return NextResponse.json(
       { error: 'Errore nell\'esecuzione del pagamento' },
       { status: 500 }
