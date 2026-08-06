@@ -406,13 +406,13 @@ export async function POST(request: NextRequest) {
     // Override venueId dal body con quello della sessione
     validatedData.venueId = venueId
 
-    // Verifica che non esista già una chiusura per questa data/sede
-    const existingClosure = await prisma.dailyClosure.findUnique({
+    // Verifica che non esista già una chiusura per questa data/sede.
+    // findFirst e non findUnique: solo findFirst passa dall'estensione soft
+    // delete, quindi una chiusura annullata non tiene più occupato il giorno.
+    const existingClosure = await prisma.dailyClosure.findFirst({
       where: {
-        venueId_date: {
-          venueId,
-          date: validatedData.date,
-        },
+        venueId,
+        date: validatedData.date,
       },
     })
 

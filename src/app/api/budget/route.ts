@@ -157,13 +157,13 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const validatedData = createBudgetSchema.parse(body)
 
-    // Verifica che non esista già un budget per la stessa sede e anno
-    const existing = await prisma.budget.findUnique({
+    // Verifica che non esista già un budget per la stessa sede e anno.
+    // findFirst e non findUnique: solo findFirst passa dall'estensione soft
+    // delete, quindi un budget cancellato non blocca più quell'anno.
+    const existing = await prisma.budget.findFirst({
       where: {
-        venueId_year: {
-          venueId: validatedData.venueId,
-          year: validatedData.year,
-        },
+        venueId: validatedData.venueId,
+        year: validatedData.year,
       },
     })
 
@@ -177,12 +177,12 @@ export async function POST(request: NextRequest) {
     // Se richiesto, copia da anno precedente
     let linesToCopy: Prisma.BudgetLineUncheckedCreateWithoutBudgetInput[] = []
     if (validatedData.copyFromYear) {
-      const previousBudget = await prisma.budget.findUnique({
+      // Un budget cancellato non è più una sorgente valida da cui copiare:
+      // findFirst lo esclude, findUnique lo avrebbe ancora trovato.
+      const previousBudget = await prisma.budget.findFirst({
         where: {
-          venueId_year: {
-            venueId: validatedData.venueId,
-            year: validatedData.copyFromYear,
-          },
+          venueId: validatedData.venueId,
+          year: validatedData.copyFromYear,
         },
         include: {
           lines: true,

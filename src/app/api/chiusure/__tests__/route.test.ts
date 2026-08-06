@@ -43,7 +43,7 @@ vi.mock('@/lib/prisma', () => ({
   prisma: {
     dailyClosure: {
       findMany: vi.fn(),
-      findUnique: vi.fn(),
+      findFirst: vi.fn(),
       count: vi.fn(),
       create: vi.fn(),
     },
@@ -261,7 +261,7 @@ describe('POST /api/chiusure', () => {
       // Lo staff compila la chiusura a fine turno: è il flusso previsto dal
       // prodotto. Resta escluso dalla validazione, che genera le scritture.
       vi.mocked(auth).mockResolvedValue(createMockSession({ role: 'staff' }))
-      vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(null)
+      vi.mocked(prisma.dailyClosure.findFirst).mockResolvedValue(null)
 
       const closureData = createTestClosure()
       vi.mocked(prisma.dailyClosure.create).mockResolvedValue(
@@ -283,7 +283,7 @@ describe('POST /api/chiusure', () => {
       vi.mocked(auth).mockResolvedValue(
         createMockSession({ role: 'manager', venueId: 'venue-altra' })
       )
-      vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(null)
+      vi.mocked(prisma.dailyClosure.findFirst).mockResolvedValue(null)
       const closureData = createTestClosure({ venueId: 'venue-other' })
       vi.mocked(prisma.dailyClosure.create).mockResolvedValue(
         createMockDbClosure(closureData) as unknown as DailyClosure
@@ -305,7 +305,7 @@ describe('POST /api/chiusure', () => {
 
     it('should allow admin to create closure for any venue', async () => {
       vi.mocked(auth).mockResolvedValue(createMockSession({ role: 'admin' }))
-      vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(null)
+      vi.mocked(prisma.dailyClosure.findFirst).mockResolvedValue(null)
 
       const closureData = createMinimalClosure({ venueId: 'any-venue' })
       const mockResult = createMockDbClosure(closureData as TestClosureData)
@@ -427,7 +427,7 @@ describe('POST /api/chiusure', () => {
       vi.mocked(auth).mockResolvedValue(createMockSession())
 
       const existingClosure = { id: 'existing-closure-id' }
-      vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(existingClosure as unknown as DailyClosure)
+      vi.mocked(prisma.dailyClosure.findFirst).mockResolvedValue(existingClosure as unknown as DailyClosure)
 
       const closureData = createTestClosure()
       const request = new NextRequest('http://localhost:3000/api/chiusure', {
@@ -446,7 +446,7 @@ describe('POST /api/chiusure', () => {
   describe('Successful Creation', () => {
     it('should create minimal closure successfully', async () => {
       vi.mocked(auth).mockResolvedValue(createMockSession())
-      vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(null)
+      vi.mocked(prisma.dailyClosure.findFirst).mockResolvedValue(null)
 
       const closureData = createMinimalClosure()
       const mockResult = createMockDbClosure(closureData as TestClosureData)
@@ -466,7 +466,7 @@ describe('POST /api/chiusure', () => {
 
     it('should create closure with stations', async () => {
       vi.mocked(auth).mockResolvedValue(createMockSession())
-      vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(null)
+      vi.mocked(prisma.dailyClosure.findFirst).mockResolvedValue(null)
 
       const closureData = createTestClosure()
       const mockResult = createMockDbClosure(closureData as TestClosureData)
@@ -494,7 +494,7 @@ describe('POST /api/chiusure', () => {
 
     it('should create complete closure with all relations', async () => {
       vi.mocked(auth).mockResolvedValue(createMockSession())
-      vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(null)
+      vi.mocked(prisma.dailyClosure.findFirst).mockResolvedValue(null)
 
       const closureData = createCompleteClosure()
       const mockResult = createMockDbClosure(closureData as TestClosureData)
@@ -517,7 +517,7 @@ describe('POST /api/chiusure', () => {
 
     it('should set default float amount to 114', async () => {
       vi.mocked(auth).mockResolvedValue(createMockSession())
-      vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(null)
+      vi.mocked(prisma.dailyClosure.findFirst).mockResolvedValue(null)
 
       const closureData = createTestClosure({
         stations: [
@@ -544,7 +544,7 @@ describe('POST /api/chiusure', () => {
 
     it('should calculate station totalAmount correctly', async () => {
       vi.mocked(auth).mockResolvedValue(createMockSession())
-      vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(null)
+      vi.mocked(prisma.dailyClosure.findFirst).mockResolvedValue(null)
 
       const closureData = createTestClosure({
         stations: [
@@ -575,7 +575,7 @@ describe('POST /api/chiusure', () => {
   describe('Event Closures', () => {
     it('should create event closure with eventName', async () => {
       vi.mocked(auth).mockResolvedValue(createMockSession())
-      vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(null)
+      vi.mocked(prisma.dailyClosure.findFirst).mockResolvedValue(null)
 
       const closureData = createTestClosure({
         isEvent: true,
@@ -604,7 +604,7 @@ describe('Edge Cases', () => {
 
   it('should handle database errors gracefully', async () => {
     vi.mocked(auth).mockResolvedValue(createMockSession())
-    vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(null)
+    vi.mocked(prisma.dailyClosure.findFirst).mockResolvedValue(null)
     vi.mocked(prisma.dailyClosure.create).mockRejectedValue(new Error('Database error'))
 
     const closureData = createTestClosure()
@@ -634,7 +634,7 @@ describe('Edge Cases', () => {
 
   it('should parse ISO date strings correctly', async () => {
     vi.mocked(auth).mockResolvedValue(createMockSession())
-    vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(null)
+    vi.mocked(prisma.dailyClosure.findFirst).mockResolvedValue(null)
 
     const testDate = '2024-03-15T00:00:00.000Z'
     const closureData = createMinimalClosure({ date: testDate })
