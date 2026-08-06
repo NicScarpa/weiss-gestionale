@@ -51,6 +51,17 @@ export async function POST(
           { status: 400 }
         )
 
+      case 'already_posted':
+        return NextResponse.json(
+          {
+            error:
+              'La chiusura ha già scritture di prima nota: validarla di nuovo ' +
+              'duplicherebbe gli incassi del giorno',
+            existingEntries: result.existingEntries,
+          },
+          { status: 409 }
+        )
+
       case 'rejected':
         return NextResponse.json({
           ...result.closure,
