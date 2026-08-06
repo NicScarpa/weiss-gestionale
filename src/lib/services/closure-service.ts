@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma'
 import {
   generateJournalEntriesFromClosure,
   deleteJournalEntriesForClosure,
+  JournalEntriesAlreadyExistError,
 } from '@/lib/closure-journal-entries'
 import { generateAlertsForVenue } from '@/lib/budget/alert-generator'
 import { createAuditLog } from '@/lib/audit'
@@ -52,6 +53,7 @@ export function calculateBankDeposit(
 export type ValidateClosureResult =
   | { outcome: 'not_found' }
   | { outcome: 'invalid_status'; currentStatus: string }
+  | { outcome: 'already_posted'; existingEntries: number }
   | {
       outcome: 'approved'
       closure: { id: string; status: string; validatedAt: Date | null }
@@ -71,12 +73,49 @@ interface ValidateClosureInput {
   rejectionNotes?: string
 }
 
+/** Quello che l'approvazione porta fuori dalla transazione. */
+interface ApprovedTransaction {
+  updated: { id: string; status: string; validatedAt: Date | null }
+  journalResult: { entriesCreated: number; totalDebits: number; totalCredits: number }
+}
+
+/**
+ * Perché la chiusura non è stata presa in carico.
+ *
+ * Ci si arriva quando l'aggiornamento condizionale non trova più una chiusura
+ * INVIATA: nel frattempo qualcun altro l'ha validata, rifiutata o cancellata.
+ * Lo stato si rilegge adesso, così il chiamante riceve la ragione vera e non
+ * quella fotografata prima della corsa.
+ */
+async function outcomeAfterLostRace(closureId: string): Promise<ValidateClosureResult> {
+  const closure = await prisma.dailyClosure.findUnique({
+    where: { id: closureId },
+    select: { status: true, deletedAt: true },
+  })
+
+  if (!closure || closure.deletedAt) {
+    return { outcome: 'not_found' }
+  }
+
+  return { outcome: 'invalid_status', currentStatus: closure.status }
+}
+
 /**
  * Approva o rifiuta una chiusura inviata.
  *
- * In approvazione, cambio di stato e generazione delle scritture avvengono
- * nella stessa transazione: se la generazione fallisce la chiusura non resta
- * validata a fronte di una prima nota vuota.
+ * Il passaggio di stato è un aggiornamento *condizionato* allo stato INVIATA,
+ * eseguito dentro la transazione: è lui a decidere chi procede. Due validazioni
+ * simultanee lo attraversano in fila (la seconda aspetta il commit della prima
+ * sulla stessa riga) e solo una trova ancora la condizione vera; l'altra non
+ * aggiorna nulla e si ferma. Un controllo letto prima della transazione, per
+ * quanto corretto al momento della lettura, non può impedire nulla: fra la
+ * lettura e la scrittura c'è tutto il tempo perché l'altra richiesta faccia il
+ * suo lavoro, e il risultato erano due serie complete di scritture per lo stesso
+ * giorno.
+ *
+ * In approvazione, cambio di stato e generazione delle scritture restano nella
+ * stessa transazione: se la generazione fallisce la chiusura non resta validata
+ * a fronte di una prima nota vuota.
  */
 export async function validateClosure({
   closureId,
@@ -97,27 +136,39 @@ export async function validateClosure({
     return { outcome: 'not_found' }
   }
 
+  // Controllo anticipato: risparmia il lavoro inutile nel caso normale. Non è
+  // lui a garantire l'unicità — quella la fa l'updateMany qui sotto.
   if (closure.status !== 'SUBMITTED') {
     return { outcome: 'invalid_status', currentStatus: closure.status }
   }
 
   if (action === 'reject') {
-    const { updated, deletedEntries } = await prisma.$transaction(async (tx) => {
-      const deletedEntries = await deleteJournalEntriesForClosure(closureId, tx)
-
-      const updated = await tx.dailyClosure.update({
-        where: { id: closureId },
+    const result = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.dailyClosure.updateMany({
+        where: { id: closureId, status: 'SUBMITTED', deletedAt: null },
         data: {
           status: 'DRAFT',
           rejectionNotes: rejectionNotes || 'Chiusura rifiutata',
           submittedById: null,
           submittedAt: null,
         },
+      })
+
+      if (claimed.count === 0) return null
+
+      const deletedEntries = await deleteJournalEntriesForClosure(closureId, tx)
+
+      const updated = await tx.dailyClosure.findUniqueOrThrow({
+        where: { id: closureId },
         select: { id: true, status: true, rejectionNotes: true },
       })
 
       return { updated, deletedEntries }
     })
+
+    if (!result) {
+      return outcomeAfterLostRace(closureId)
+    }
 
     await createAuditLog({
       userId,
@@ -127,48 +178,75 @@ export async function validateClosure({
       newValues: { status: 'DRAFT', action: 'reject', rejectionNotes },
     })
 
-    return { outcome: 'rejected', closure: updated, deletedJournalEntries: deletedEntries }
+    return {
+      outcome: 'rejected',
+      closure: result.updated,
+      deletedJournalEntries: result.deletedEntries,
+    }
   }
 
   const bankDeposit = calculateBankDeposit(closure.stations, closure.expenses)
 
-  const { updated, journalResult } = await prisma.$transaction(async (tx) => {
-    const updated = await tx.dailyClosure.update({
-      where: { id: closureId },
-      data: {
-        status: 'VALIDATED',
-        validatedById: userId,
-        validatedAt: new Date(),
-        rejectionNotes: null,
-      },
-      select: { id: true, status: true, validatedAt: true },
+  // `null` quando la corsa è stata persa: la transazione non ha aggiornato nulla
+  let result: ApprovedTransaction | null
+
+  try {
+    result = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.dailyClosure.updateMany({
+        where: { id: closureId, status: 'SUBMITTED', deletedAt: null },
+        data: {
+          status: 'VALIDATED',
+          validatedById: userId,
+          validatedAt: new Date(),
+          rejectionNotes: null,
+        },
+      })
+
+      if (claimed.count === 0) return null
+
+      const journalResult = await generateJournalEntriesFromClosure(
+        {
+          id: closure.id,
+          date: closure.date,
+          venueId: closure.venueId,
+          bankDeposit,
+          stations: closure.stations.map((s) => ({
+            cashAmount: s.cashAmount ? Number(s.cashAmount) : null,
+            posAmount: s.posAmount ? Number(s.posAmount) : null,
+            floatAmount: s.floatAmount ? Number(s.floatAmount) : null,
+          })),
+          expenses: closure.expenses.map((e) => ({
+            amount: Number(e.amount),
+            payee: e.payee,
+            description: e.description,
+            documentRef: e.documentRef,
+            accountId: e.accountId,
+          })),
+        },
+        userId,
+        tx
+      )
+
+      const updated = await tx.dailyClosure.findUniqueOrThrow({
+        where: { id: closureId },
+        select: { id: true, status: true, validatedAt: true },
+      })
+
+      return { updated, journalResult }
     })
+  } catch (error) {
+    // La chiusura aveva già le sue scritture: la transazione si è annullata da
+    // sola, quindi non è rimasta validata. Non è un errore del server, è uno
+    // stato che il chiamante deve poter distinguere.
+    if (error instanceof JournalEntriesAlreadyExistError) {
+      return { outcome: 'already_posted', existingEntries: error.existingEntries }
+    }
+    throw error
+  }
 
-    const journalResult = await generateJournalEntriesFromClosure(
-      {
-        id: closure.id,
-        date: closure.date,
-        venueId: closure.venueId,
-        bankDeposit,
-        stations: closure.stations.map((s) => ({
-          cashAmount: s.cashAmount ? Number(s.cashAmount) : null,
-          posAmount: s.posAmount ? Number(s.posAmount) : null,
-          floatAmount: s.floatAmount ? Number(s.floatAmount) : null,
-        })),
-        expenses: closure.expenses.map((e) => ({
-          amount: Number(e.amount),
-          payee: e.payee,
-          description: e.description,
-          documentRef: e.documentRef,
-          accountId: e.accountId,
-        })),
-      },
-      userId,
-      tx
-    )
-
-    return { updated, journalResult }
-  })
+  if (!result) {
+    return outcomeAfterLostRace(closureId)
+  }
 
   // Gli alert budget sono informativi: un errore qui non invalida la chiusura
   let alertsResult: unknown = null
@@ -188,8 +266,8 @@ export async function validateClosure({
 
   return {
     outcome: 'approved',
-    closure: updated,
-    journalEntries: journalResult,
+    closure: result.updated,
+    journalEntries: result.journalResult,
     budgetAlerts: alertsResult,
   }
 }
