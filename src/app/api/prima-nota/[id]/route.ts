@@ -193,7 +193,17 @@ export async function DELETE(
     // Verifica che il movimento esista e appartenga al venue
     const existingEntry = await prisma.journalEntry.findFirst({
       where: { id, venueId },
-      select: { id: true, closureId: true },
+      select: {
+        id: true,
+        closureId: true,
+        paymentId: true,
+        scheduleReconciliations: {
+          where: { status: 'VERIFIED' },
+          select: { id: true, scheduleId: true },
+        },
+        bankTransaction: { select: { id: true } },
+        payment: { select: { id: true } },
+      },
     })
 
     if (!existingEntry) {
@@ -216,6 +226,45 @@ export async function DELETE(
       return NextResponse.json(
         { error: 'I movimenti generati da chiusure non sono eliminabili' },
         { status: 400 }
+      )
+    }
+
+    // Non eliminabile se qualcosa ci si appoggia sopra. Il caso che fa più
+    // danno è la riconciliazione: cancellando il movimento la scadenza resta
+    // "pagata" verso qualcosa che non esiste più, e il residuo del fornitore
+    // sparisce dal previsionale senza che sia uscito un euro. La risposta dice
+    // cosa sganciare prima, perché l'operazione resti possibile in due passi.
+    if (existingEntry.scheduleReconciliations.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            'Il movimento è riconciliato con una o più scadenze: annulla prima le ' +
+            'riconciliazioni, poi elimina il movimento',
+          scadenze: existingEntry.scheduleReconciliations.map((r) => r.scheduleId),
+        },
+        { status: 409 }
+      )
+    }
+
+    if (existingEntry.payment || existingEntry.paymentId) {
+      return NextResponse.json(
+        {
+          error:
+            'Il movimento è collegato a un pagamento: annulla prima il pagamento, poi ' +
+            'elimina il movimento',
+        },
+        { status: 409 }
+      )
+    }
+
+    if (existingEntry.bankTransaction) {
+      return NextResponse.json(
+        {
+          error:
+            'Il movimento è abbinato a una transazione bancaria: sgancia prima ' +
+            'l\'abbinamento, poi elimina il movimento',
+        },
+        { status: 409 }
       )
     }
 
