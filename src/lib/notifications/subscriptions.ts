@@ -1,17 +1,11 @@
 /**
  * Accesso alle sottoscrizioni push.
  *
- * Questo modulo è l'unico punto che conosce come una sottoscrizione Web Push
- * è rappresentata nel database. Una sottoscrizione è una tripletta
- * (endpoint, chiave p256dh, chiave auth): senza le due chiavi il payload non è
- * cifrabile e la notifica non parte.
- *
- * Il modello Prisma `PushSubscription` ha però un solo campo utile, `fcmToken`,
- * eredità del percorso Firebase mai entrato in funzione. Finché quel campo non
- * viene sostituito da tre colonne dedicate, la tripletta ci viene serializzata
- * dentro in forma canonica (ordine delle chiavi deciso qui, non dal client, così
- * la stessa sottoscrizione produce sempre la stessa stringa). L'indice unique
- * continua a funzionare perché l'endpoint è di per sé unico.
+ * Una sottoscrizione Web Push è la tripletta (endpoint, chiave p256dh, chiave
+ * auth) prodotta dal browser: l'endpoint dice a quale push service consegnare
+ * il messaggio, le due chiavi servono a cifrarne il contenuto. Il modello
+ * Prisma le conserva in tre colonne dedicate, quindi qui non resta nessuna
+ * traduzione da fare.
  */
 
 import { prisma } from '@/lib/prisma'
@@ -31,42 +25,23 @@ export interface DatiSottoscrizione {
     p256dh: string
     auth: string
   }
+  /** Il browser può dichiarare una scadenza; nella pratica è quasi sempre assente. */
+  expirationTime?: number | null
 }
 
-/**
- * Forma canonica con cui la tripletta viene persistita.
- * L'ordine dei campi è fissato qui perché la stringa finisce in una colonna
- * unique: se dipendesse dall'ordine di serializzazione del client, la stessa
- * sottoscrizione potrebbe generare due righe diverse.
- */
-function serializza(dati: DatiSottoscrizione): string {
-  return JSON.stringify({
-    endpoint: dati.endpoint,
-    keys: { p256dh: dati.keys.p256dh, auth: dati.keys.auth },
-  })
-}
-
-function deserializza(
-  riga: { id: string; userId: string; fcmToken: string }
-): SottoscrizionePush | null {
-  try {
-    const dati = JSON.parse(riga.fcmToken) as DatiSottoscrizione
-    if (!dati?.endpoint || !dati.keys?.p256dh || !dati.keys?.auth) return null
-    return {
-      id: riga.id,
-      userId: riga.userId,
-      endpoint: dati.endpoint,
-      p256dh: dati.keys.p256dh,
-      auth: dati.keys.auth,
-    }
-  } catch {
-    // Righe nel vecchio formato (token FCM nudo): inutilizzabili per Web Push.
-    return null
-  }
-}
+const CAMPI_INVIO = {
+  id: true,
+  userId: true,
+  endpoint: true,
+  p256dh: true,
+  auth: true,
+} as const
 
 /**
  * Registra o aggiorna la sottoscrizione di un dispositivo.
+ *
+ * L'endpoint è la chiave naturale: se lo stesso dispositivo si risottoscrive,
+ * la riga esistente viene aggiornata invece che duplicata.
  */
 export async function salvaSottoscrizione(params: {
   userId: string
@@ -76,10 +51,12 @@ export async function salvaSottoscrizione(params: {
   browserName?: string
 }): Promise<{ id: string; deviceName: string | null; deviceType: string | null }> {
   const { userId, dati, deviceName, deviceType, browserName } = params
-  const chiave = serializza(dati)
 
   const comuni = {
     userId,
+    p256dh: dati.keys.p256dh,
+    auth: dati.keys.auth,
+    expiresAt: dati.expirationTime ? new Date(dati.expirationTime) : null,
     deviceName,
     deviceType,
     browserName,
@@ -88,8 +65,8 @@ export async function salvaSottoscrizione(params: {
   }
 
   const riga = await prisma.pushSubscription.upsert({
-    where: { fcmToken: chiave },
-    create: { ...comuni, fcmToken: chiave },
+    where: { endpoint: dati.endpoint },
+    create: { ...comuni, endpoint: dati.endpoint },
     update: comuni,
   })
 
@@ -97,13 +74,13 @@ export async function salvaSottoscrizione(params: {
 }
 
 /**
- * Sottoscrizioni attive e utilizzabili di un utente.
+ * Sottoscrizioni attive di un utente.
  */
 export async function sottoscrizioniAttive(userId: string): Promise<SottoscrizionePush[]> {
-  const righe = await prisma.pushSubscription.findMany({
+  return prisma.pushSubscription.findMany({
     where: { userId, isActive: true },
+    select: CAMPI_INVIO,
   })
-  return righe.map(deserializza).filter((s): s is SottoscrizionePush => s !== null)
 }
 
 /**
@@ -111,10 +88,10 @@ export async function sottoscrizioniAttive(userId: string): Promise<Sottoscrizio
  */
 export async function sottoscrizioniAttiveDi(userIds: string[]): Promise<SottoscrizionePush[]> {
   if (userIds.length === 0) return []
-  const righe = await prisma.pushSubscription.findMany({
+  return prisma.pushSubscription.findMany({
     where: { userId: { in: userIds }, isActive: true },
+    select: CAMPI_INVIO,
   })
-  return righe.map(deserializza).filter((s): s is SottoscrizionePush => s !== null)
 }
 
 /**
@@ -123,11 +100,10 @@ export async function sottoscrizioniAttiveDi(userIds: string[]): Promise<Sottosc
 export async function trovaPerEndpoint(
   endpoint: string
 ): Promise<{ id: string; userId: string } | null> {
-  const riga = await prisma.pushSubscription.findFirst({
-    where: { fcmToken: { contains: endpoint } },
+  return prisma.pushSubscription.findUnique({
+    where: { endpoint },
     select: { id: true, userId: true },
   })
-  return riga
 }
 
 /**

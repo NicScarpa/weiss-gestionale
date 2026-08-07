@@ -21,6 +21,7 @@ const subscribeSchema = z.object({
     p256dh: z.string().min(1),
     auth: z.string().min(1),
   }),
+  expirationTime: z.number().nullable().optional(),
   deviceName: z.string().optional(),
   deviceType: z.enum(['ios', 'android', 'web']).optional(),
   browserName: z.string().optional(),
@@ -44,7 +45,11 @@ export async function POST(request: NextRequest) {
 
     const subscription = await salvaSottoscrizione({
       userId: session.user.id,
-      dati: { endpoint: data.endpoint, keys: data.keys },
+      dati: {
+        endpoint: data.endpoint,
+        keys: data.keys,
+        expirationTime: data.expirationTime,
+      },
       deviceName: data.deviceName,
       deviceType: data.deviceType,
       browserName: data.browserName,

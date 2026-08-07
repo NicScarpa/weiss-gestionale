@@ -193,15 +193,16 @@ export async function attivaPush(): Promise<void> {
     applicationServerKey: base64UrlToUint8Array(config.publicKey) as BufferSource,
   })
 
-  const { endpoint, keys } = sottoscrizione.toJSON() as {
+  const { endpoint, keys, expirationTime } = sottoscrizione.toJSON() as {
     endpoint: string
     keys: { p256dh: string; auth: string }
+    expirationTime?: number | null
   }
 
   const res = await fetch('/api/notifications/subscribe', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ endpoint, keys, ...descriviDispositivo() }),
+    body: JSON.stringify({ endpoint, keys, expirationTime, ...descriviDispositivo() }),
   })
 
   if (!res.ok) {
