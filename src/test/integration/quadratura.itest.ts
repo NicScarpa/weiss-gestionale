@@ -10,6 +10,7 @@ import { setupIntegrationDb } from './db'
 import { loginAs } from './auth-mock'
 import { jsonRequest, callRoute } from './api'
 import { venueDiTest } from './fixtures/closures'
+import { creaScadenza } from './fixtures/scadenzario'
 
 /**
  * Quadratura della contabilità: la domanda "quanti soldi abbiamo" deve avere
@@ -170,9 +171,31 @@ describe('quadratura fra prima nota, budget e cash flow', () => {
     expect(budgetLiquidita).toBe(LIQUIDITA_ATTESA)
   })
 
-  // Una scadenza è una previsione, non un movimento: le regole dello scadenzario
-  // datano le scritture al giorno in cui il denaro uscirà, e per un attimo il
-  // saldo di oggi comprendeva anche il mese prossimo.
+  // Una scadenza è un impegno preso, non denaro già uscito: finché nessuno la
+  // paga non esiste alcun movimento, e nessuno dei tre saldi se ne deve
+  // accorgere.
+  it('creare una scadenza futura non muove i saldi', async () => {
+    const sessione = await loginAs('admin')
+    const venue = await venueDiTest()
+    await saldoInizialeDiApertura(venue.id)
+    const budget = await budgetDellAnno(venue.id)
+    await chiusuraValidata(venue.id, sessione.user.id)
+
+    await creaScadenza({
+      venueId: venue.id,
+      importoTotale: 2500,
+      dataScadenza: FRA_UN_MESE,
+      descrizione: 'Fattura fornitore da pagare il mese prossimo',
+    })
+
+    expect((await liquiditaDaPrimaNota()).totalAvailable).toBe(LIQUIDITA_ATTESA)
+    expect(await liquiditaDaCashFlow()).toBe(LIQUIDITA_ATTESA)
+    expect(await liquiditaDaBudget(budget.id, venue.id)).toBe(LIQUIDITA_ATTESA)
+  })
+
+  // Quando invece una regola dello scadenzario registra il pagamento, lo data al
+  // giorno in cui il denaro uscirà: la scrittura esiste già in prima nota ma
+  // appartiene al futuro, e per un attimo entrava nel saldo di oggi.
   it('un movimento datato nel futuro non cambia il saldo di oggi', async () => {
     const sessione = await loginAs('admin')
     const venue = await venueDiTest()
