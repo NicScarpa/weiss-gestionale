@@ -195,8 +195,27 @@ export function formatSignedAmount(
  * Verifica se un movimento è modificabile
  * (non modificabile se generato automaticamente da chiusura validata)
  */
-export function isEntryEditable(entry: JournalEntry): boolean {
+export function isEntryEditable(entry: Pick<JournalEntry, 'closureId'>): boolean {
   return !entry.closureId
+}
+
+export type MovimentoEditAction = 'completa' | 'riclassifica' | 'nessuna'
+
+/**
+ * Decide quale dialog di modifica proporre per un movimento (Task 15).
+ * Un movimento normale si apre sempre nel form completo ('completa'). Un
+ * movimento generato da chiusura (isEntryEditable false) è dato contabile
+ * intoccabile: solo l'admin può correggerlo, e solo per riclassificare
+ * conto/centro di costo (PUT /api/prima-nota/[id], ramo admin del Task 8) —
+ * per chiunque altro non c'è alcuna azione di modifica disponibile, perché
+ * il server la rifiuterebbe comunque con 403.
+ */
+export function resolveMovimentoEditAction(
+  entry: Pick<JournalEntry, 'closureId'>,
+  isAdmin: boolean
+): MovimentoEditAction {
+  if (isEntryEditable(entry)) return 'completa'
+  return isAdmin ? 'riclassifica' : 'nessuna'
 }
 
 /**

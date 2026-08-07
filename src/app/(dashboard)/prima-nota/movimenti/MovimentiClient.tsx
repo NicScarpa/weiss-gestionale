@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { MovimentiFilters } from '@/components/prima-nota/movimenti/MovimentiFilters'
 import { MovimentiTable } from '@/components/prima-nota/movimenti/MovimentiTable'
 import { MovimentoFormDialog } from '@/components/prima-nota/movimenti/MovimentoFormDialog'
+import { EditContoCentroDialog } from '@/components/prima-nota/movimenti/EditContoCentroDialog'
 import { CaricaMovimentiDialog } from '@/components/prima-nota/movimenti/CaricaMovimentiDialog'
 import { SplitEntryDialog } from '@/components/prima-nota/movimenti/SplitEntryDialog'
 import { Button } from '@/components/ui/button'
@@ -31,6 +32,7 @@ import {
 } from '@/components/ui/select'
 import { DangerousDeleteDialog } from '@/components/ui/dangerous-delete-dialog'
 import { usePrimaNota } from '@/components/prima-nota/PrimaNotaContext'
+import { resolveMovimentoEditAction } from '@/lib/prima-nota-utils'
 import type { JournalEntry, RegisterType, EntryType } from '@/types/prima-nota'
 
 interface MovimentiClientProps {
@@ -51,7 +53,7 @@ function deriveEntryType(entry: { registerType: string; debitAmount?: number | n
 
 export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientProps) {
   const searchParams = useSearchParams()
-  const { venueId } = usePrimaNota()
+  const { venueId, isAdmin } = usePrimaNota()
 
   // Register from URL (set by AccountSelectorToggle)
   const registerFromUrl = searchParams.get('register') as RegisterType | null
@@ -79,6 +81,7 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
   const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
+  const [reclassifyEntry, setReclassifyEntry] = useState<JournalEntry | null>(null)
 
   // Ordinamento e categorizzazione
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
@@ -140,6 +143,16 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
   // --- Handlers ---
 
   const handleEdit = (entry: JournalEntry) => {
+    // Il movimento da chiusura non passa mai dal form completo: la route
+    // (Task 8) rifiuterebbe con 400 qualunque campo diverso da conto/centro.
+    // 'nessuna' non dovrebbe arrivare qui (MovimentiTable non espone
+    // l'azione in quel caso), ma resta una difesa in profondità.
+    const action = resolveMovimentoEditAction(entry, isAdmin)
+    if (action === 'nessuna') return
+    if (action === 'riclassifica') {
+      setReclassifyEntry(entry)
+      return
+    }
     setSelectedEntry(entry)
     setDialogOpen(true)
   }
@@ -331,6 +344,7 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
           setCategorizeCategoryId(entry.budgetCategoryId || '')
         }}
         onSplit={(entry) => setSplitEntry(entry)}
+        isAdmin={isAdmin}
         isLoading={isLoading}
       />
 
@@ -390,6 +404,18 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
         }}
         onSave={handleSave}
         isSubmitting={isSubmitting}
+      />
+
+      <EditContoCentroDialog
+        entry={reclassifyEntry}
+        open={!!reclassifyEntry}
+        onOpenChange={(open) => {
+          if (!open) setReclassifyEntry(null)
+        }}
+        onSaved={() => {
+          setReclassifyEntry(null)
+          loadData()
+        }}
       />
 
       <CaricaMovimentiDialog

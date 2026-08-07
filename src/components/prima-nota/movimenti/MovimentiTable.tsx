@@ -14,6 +14,7 @@ import {
   type JournalEntry,
   type JournalEntryFilters,
 } from '@/types/prima-nota'
+import { resolveMovimentoEditAction } from '@/lib/prima-nota-utils'
 import { cn } from '@/lib/utils'
 
 interface MovimentiTableProps {
@@ -27,6 +28,8 @@ interface MovimentiTableProps {
   onHide?: (id: string, hidden: boolean) => void
   onCategorize?: (entry: JournalEntry) => void
   onSplit?: (entry: JournalEntry) => void
+  /** Admin: può riclassificare i movimenti da chiusura (Task 15). */
+  isAdmin?: boolean
   isLoading?: boolean
 }
 
@@ -41,6 +44,7 @@ export function MovimentiTable({
   onHide,
   onCategorize,
   onSplit,
+  isAdmin = false,
   isLoading = false,
 }: MovimentiTableProps) {
   // Format valuta italiana
@@ -141,6 +145,9 @@ export function MovimentiTable({
             <tbody>
               {data.map((entry, idx) => {
                 const dc = getDebitCredit(entry)
+                // Movimento da chiusura + non admin: nessuna azione di modifica
+                // (il server la rifiuterebbe comunque con 403, vedi Task 8/15).
+                const editAction = resolveMovimentoEditAction(entry, isAdmin)
 
                 return (
                   <tr
@@ -264,7 +271,7 @@ export function MovimentiTable({
                         entryId={entry.id}
                         verified={entry.verified}
                         hiddenAt={entry.hiddenAt}
-                        onEdit={() => onEdit?.(entry)}
+                        onEdit={editAction !== 'nessuna' ? () => onEdit?.(entry) : undefined}
                         onDelete={() => onDelete?.(entry.id)}
                         onVerify={() => onVerify?.(entry.id, !entry.verified)}
                         onHide={() => onHide?.(entry.id, !!entry.hiddenAt)}

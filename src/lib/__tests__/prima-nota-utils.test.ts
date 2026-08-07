@@ -9,6 +9,7 @@ import {
   formatSignedAmount,
   isEntryEditable,
   groupEntriesByDate,
+  resolveMovimentoEditAction,
 } from '../prima-nota-utils'
 
 describe('getMovementDirection', () => {
@@ -320,6 +321,21 @@ describe('isEntryEditable', () => {
   it('should return false for entry with closureId', () => {
     const entry = { id: '1', closureId: 'closure-123' } as unknown as JournalEntry
     expect(isEntryEditable(entry)).toBe(false)
+  })
+})
+
+describe('resolveMovimentoEditAction', () => {
+  it('propone il form completo per un movimento senza closureId, admin o no', () => {
+    expect(resolveMovimentoEditAction({ closureId: undefined }, true)).toBe('completa')
+    expect(resolveMovimentoEditAction({ closureId: undefined }, false)).toBe('completa')
+  })
+
+  it('propone la riclassifica per un movimento da chiusura quando l\'utente è admin', () => {
+    expect(resolveMovimentoEditAction({ closureId: 'closure-1' }, true)).toBe('riclassifica')
+  })
+
+  it('non propone alcuna azione per un movimento da chiusura a un utente non admin', () => {
+    expect(resolveMovimentoEditAction({ closureId: 'closure-1' }, false)).toBe('nessuna')
   })
 })
 
