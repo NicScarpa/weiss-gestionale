@@ -20,6 +20,48 @@ import { logger } from '@/lib/logger'
 import { generateSchedulesFromInvoice } from '@/lib/services/invoice-schedule-service'
 import { ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
 import { categorizzaRigheFattura } from '@/lib/line-categorization'
+/**
+ * Colonne su cui la lista fatture si lascia ordinare, e versi ammessi.
+ *
+ * Il campo era già filtrato, il verso no: `?sortOrder=pippo` finiva in Prisma e
+ * faceva rispondere 500. Entrambi ora sono elenchi chiusi, e un valore fuori
+ * elenco è una richiesta sbagliata — non un errore del server, che ripetuto
+ * basta a fare rumore nei log e a saturare le risorse.
+ */
+const CAMPI_ORDINABILI = [
+  'documentType',
+  'invoiceDate',
+  'invoiceNumber',
+  'supplierName',
+  'totalAmount',
+  'status',
+  'importedAt',
+] as const
+
+type CampoOrdinabile = (typeof CAMPI_ORDINABILI)[number]
+
+const VERSI_ORDINAMENTO = ['asc', 'desc'] as const
+
+type VersoOrdinamento = (typeof VERSI_ORDINAMENTO)[number]
+
+function isCampoOrdinabile(valore: string): valore is CampoOrdinabile {
+  return (CAMPI_ORDINABILI as readonly string[]).includes(valore)
+}
+
+function isVersoOrdinamento(valore: string): valore is VersoOrdinamento {
+  return (VERSI_ORDINAMENTO as readonly string[]).includes(valore)
+}
+
+/**
+ * Interi positivi della paginazione: `parseInt` su testo dà NaN, e un NaN in
+ * `skip`/`take` fa fallire la query come un ordinamento sbagliato.
+ */
+function interoPositivo(valore: string | null, predefinito: number): number {
+  const numero = Number(valore)
+  if (!Number.isInteger(numero) || numero < 1) return predefinito
+  return numero
+}
+
 // Schema validazione import
 const importInvoiceSchema = z.object({
   xmlContent: z.string().min(100, 'Contenuto XML non valido'),
@@ -63,8 +105,8 @@ export async function GET(request: NextRequest) {
     const supplierId = searchParams.get('supplierId')
     const fromDate = searchParams.get('from')
     const toDate = searchParams.get('to')
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '50')
+    const page = interoPositivo(searchParams.get('page'), 1)
+    const limit = interoPositivo(searchParams.get('limit'), 50)
 
     // Nuovi parametri per ricerca, filtro anno/mese, tipo documento e ordinamento
     const search = searchParams.get('search')
@@ -73,7 +115,27 @@ export async function GET(request: NextRequest) {
     const lastMonths = searchParams.get('lastMonths')
     const documentType = searchParams.get('documentType')
     const sortBy = searchParams.get('sortBy') || 'invoiceDate'
-    const sortOrder = (searchParams.get('sortOrder') || 'desc') as 'asc' | 'desc'
+    const sortOrder = searchParams.get('sortOrder') || 'desc'
+
+    if (!isCampoOrdinabile(sortBy)) {
+      return NextResponse.json(
+        {
+          error: `Ordinamento non valido: "${sortBy}" non è una colonna ordinabile`,
+          campiAmmessi: CAMPI_ORDINABILI,
+        },
+        { status: 400 }
+      )
+    }
+
+    if (!isVersoOrdinamento(sortOrder)) {
+      return NextResponse.json(
+        {
+          error: `Verso di ordinamento non valido: "${sortOrder}"`,
+          versiAmmessi: VERSI_ORDINAMENTO,
+        },
+        { status: 400 }
+      )
+    }
 
     // Costruisci filtri
     const where: Prisma.ElectronicInvoiceWhereInput = {}
@@ -146,13 +208,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Costruisci ordinamento dinamico
-    const validSortFields = ['documentType', 'invoiceDate', 'invoiceNumber', 'supplierName', 'totalAmount', 'status', 'importedAt']
-    const sortField = validSortFields.includes(sortBy) ? sortBy : 'invoiceDate'
     const orderBy: Prisma.ElectronicInvoiceOrderByWithRelationInput[] = [
-      { [sortField]: sortOrder },
+      { [sortBy]: sortOrder },
     ]
     // Aggiungi ordinamento secondario se non è già invoiceDate
-    if (sortField !== 'invoiceDate') {
+    if (sortBy !== 'invoiceDate') {
       orderBy.push({ invoiceDate: 'desc' })
     }
 
@@ -224,7 +284,7 @@ export async function GET(request: NextRequest) {
         year,
         month,
         documentType,
-        sortBy: sortField,
+        sortBy,
         sortOrder,
       },
     })
