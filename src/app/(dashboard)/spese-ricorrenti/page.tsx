@@ -153,9 +153,9 @@ export default function SpeseRicorrentiPage() {
 
       {/* Il legame con la previsione va detto, non lasciato intuire: è il
           motivo per cui questa pagina esiste. */}
-      <Card className="border-blue-200 bg-blue-50/60">
+      <Card className="border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/20">
         <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
-          <p className="flex items-start gap-3 text-sm text-slate-700">
+          <p className="flex items-start gap-3 text-sm text-foreground">
             <CalendarSync className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
             <span>
               Ogni spesa attiva viene sottratta dal saldo previsto nel giorno in cui cadrà:
