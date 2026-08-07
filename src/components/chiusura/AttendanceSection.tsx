@@ -150,13 +150,21 @@ async function fetchScheduledShifts(date: string, venueId?: string): Promise<Sch
   return data.data || []
 }
 
-// Fetch presenze effettive per data
+// Fetch presenze effettive per data.
+//
+// Un errore qui non si può ingoiare: senza queste ore il caricamento dai
+// turni ripiega su quelle pianificate, e nella chiusura finirebbero ore
+// diverse da quelle timbrate senza che nessuno se ne accorga.
 async function fetchActualAttendance(date: string, venueId?: string): Promise<ActualAttendance[]> {
   const params = new URLSearchParams({ date })
   if (venueId) params.append('venueId', venueId)
 
   const res = await fetch(`/api/attendance/daily-summary?${params}`)
-  if (!res.ok) return []
+  if (!res.ok) {
+    throw new Error(
+      'Non è stato possibile leggere le ore timbrate: le ore proposte sono quelle pianificate.'
+    )
+  }
   const data = await res.json()
 
   // Trasforma il formato API nel nostro tipo
@@ -260,10 +268,15 @@ export function AttendanceSection({
   })
 
   // Query per presenze effettive (timbrature)
-  const { data: actualAttendance } = useQuery({
+  const {
+    data: actualAttendance,
+    isError: erroreOreTimbrate,
+    error: erroreOreTimbrateDettaglio,
+  } = useQuery({
     queryKey: ['actual-attendance', closureDate, venueId],
     queryFn: () => fetchActualAttendance(closureDate!, venueId),
     enabled: !!closureDate && !hasLoadedFromSchedule,
+    retry: 1,
   })
 
   // Carica presenze da turni schedulati e timbrature effettive
@@ -278,7 +291,10 @@ export function AttendanceSection({
       // Cerca dati timbratura effettiva per questo utente
       const actual = actualAttendance?.find((a) => a.userId === shift.userId)
 
-      // Determina ore effettive: usa timbrature se disponibili, altrimenti schedulate
+      // Determina ore effettive: usa timbrature se disponibili, altrimenti
+      // schedulate. Chi è ancora dentro (o in pausa) non ha ore definitive:
+      // si tengono le pianificate, ma l'operatore deve saperlo — è lo stesso
+      // caso che il riquadro delle timbrature aperte gli chiede di chiudere.
       let effectiveHours = shift.scheduledHours
       let statusCode = 'P'
 
@@ -292,6 +308,8 @@ export function AttendanceSection({
           effectiveHours = 0
         }
       }
+      const oreProvvisorie =
+        actual?.status === 'CLOCKED_IN' || actual?.status === 'ON_BREAK'
 
       return {
         userId: shift.userId,
@@ -305,8 +323,21 @@ export function AttendanceSection({
         shiftCode: shift.shiftCode,
         shiftName: shift.shiftName,
         shiftColor: shift.shiftColor,
+        notes: oreProvvisorie
+          ? 'Ore pianificate: al caricamento non aveva ancora timbrato l\'uscita'
+          : undefined,
       }
     })
+
+    const provvisori = newAttendance.filter((r) => r.notes).length
+    if (provvisori > 0) {
+      toast.warning(
+        provvisori === 1
+          ? 'Per una persona valgono le ore pianificate: non aveva ancora timbrato l\'uscita'
+          : `Per ${provvisori} persone valgono le ore pianificate: non avevano ancora timbrato l'uscita`,
+        { description: 'Conferma le uscite qui sopra e ricarica per avere le ore vere.' }
+      )
+    }
 
     onChange(newAttendance)
     setHasLoadedFromSchedule(true)
@@ -537,6 +568,20 @@ export function AttendanceSection({
             <LogOut className="h-4 w-4" />
             {confermaUscite.isPending ? 'Registrazione…' : 'Conferma le uscite'}
           </Button>
+        </div>
+      )}
+
+      {/* Ore timbrate non leggibili: le ore proposte non sono quelle vere */}
+      {closureDate && !disabled && erroreOreTimbrate && (
+        <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+          <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+          <p>
+            <span className="font-medium">Ore timbrate non disponibili.</span>{' '}
+            {erroreOreTimbrateDettaglio instanceof Error
+              ? erroreOreTimbrateDettaglio.message
+              : 'Le ore proposte sono quelle pianificate.'}{' '}
+            Controllale prima di inviare.
+          </p>
         </div>
       )}
 
