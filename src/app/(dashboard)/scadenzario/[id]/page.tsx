@@ -40,7 +40,8 @@ import {
   SchedulePaymentMethod,
 } from '@/types/schedule'
 import { ScheduleSourceBadge } from '@/components/scadenzario/schedule-source-badge'
-import { formatCurrency, cn } from '@/lib/utils'
+import { cn } from '@/lib/utils'
+import { formatCurrency } from '@/lib/formatters'
 import { format, differenceInCalendarDays } from 'date-fns'
 import { it } from 'date-fns/locale'
 import {

@@ -10,7 +10,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency } from '@/lib/formatters'
 
 interface AgingBand {
   fascia: string

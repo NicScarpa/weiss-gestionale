@@ -19,7 +19,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ConfidenceBadge } from './ConfidenceBadge'
 import { cn } from '@/lib/utils'
-import { formatCurrency, formatDateShort } from '@/lib/constants'
+import { formatDateShort } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 import {
   CheckCircle2,
   MoreHorizontal,

@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { formatCurrency, formatPercentage } from '@/lib/formatters'
 
 interface ExpenseByAccount {
   id: string
@@ -126,17 +127,6 @@ export function RiepilogoMensileClient() {
 
     fetchData()
   }, [selectedYear])
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('it-IT', {
-      style: 'currency',
-      currency: 'EUR',
-    }).format(value)
-  }
-
-  const formatPercentage = (value: number) => {
-    return `${value.toFixed(1)}%`
-  }
 
   const exportCSV = () => {
     if (!data) return

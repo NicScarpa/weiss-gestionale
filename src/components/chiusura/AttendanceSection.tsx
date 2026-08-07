@@ -15,7 +15,7 @@ import {
 import { Users, UserPlus, Plus, Trash2, Calendar, RefreshCw, Banknote } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { formatCurrency } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 import { Badge } from '@/components/ui/badge'
 import {
   Tooltip,

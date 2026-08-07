@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { extractXmlFromP7m, isP7mFile } from '@/lib/p7m-utils'
+import { formatCurrency } from '@/lib/formatters'
 
 interface FileImportStatus {
     fileName: string
@@ -231,13 +232,6 @@ export function CaricaFattureDialog({
     const progressPercent = files.length > 0
         ? (fileStatuses.filter(s => ['success', 'error', 'duplicate'].includes(s.status)).length / files.length) * 100
         : 0
-
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat('it-IT', {
-            style: 'currency',
-            currency: 'EUR',
-        }).format(amount)
-    }
 
     const getStatusIcon = (status: FileImportStatus['status']) => {
         switch (status) {

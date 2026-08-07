@@ -3,7 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { CheckCircle2, Clock, AlertTriangle, Ban, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { formatCurrency } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 import type { ReconciliationSummary } from '@/types/reconciliation'
 
 interface ReconciliationSummaryCardsProps {
