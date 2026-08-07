@@ -7,6 +7,13 @@ import { getVenueId } from '@/lib/venue'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
 import { risolviCentroDiCosto } from '@/lib/services/cost-center-service'
+
+// Un movimento generato da chiusura è dato contabile intoccabile (importi,
+// date, registro, descrizione). L'unica eccezione ammessa, e solo per
+// l'admin, è la riclassifica: correggere conto e/o centro di costo quando la
+// chiusura è stata archiviata con l'imputazione sbagliata.
+const CAMPI_RICLASSIFICABILI: readonly string[] = ['accountId', 'costCenterId']
+
 // GET /api/prima-nota/[id] - Dettaglio singolo movimento
 export async function GET(
   request: NextRequest,
@@ -124,12 +131,77 @@ export async function PUT(
       )
     }
 
-    // Non modificabile se generato da chiusura
+    // Eccezione stretta al blocco dei movimenti da chiusura: SOLO l'admin, e
+    // SOLO per riclassificare conto/centro di costo. Importi, date, registro
+    // e descrizione restano intoccabili anche per l'admin — non allentare
+    // questo ramo per altri campi o altri ruoli.
     if (existingEntry.closureId) {
-      return NextResponse.json(
-        { error: 'I movimenti generati da chiusure non sono modificabili' },
-        { status: 400 }
+      if (session.user.role !== 'admin') {
+        return NextResponse.json(
+          { error: 'Solo un amministratore può riclassificare i movimenti generati da chiusura' },
+          { status: 403 }
+        )
+      }
+
+      const chiaviExtra = Object.keys(body).filter(
+        (chiave) => !CAMPI_RICLASSIFICABILI.includes(chiave)
       )
+      if (chiaviExtra.length > 0) {
+        return NextResponse.json(
+          {
+            error: 'Sui movimenti generati da chiusura si possono modificare solo conto e centro di costo.',
+            code: 'MOVIMENTO_DA_CHIUSURA_SOLO_RICLASSIFICA',
+          },
+          { status: 400 }
+        )
+      }
+
+      const cambiaContoRiclassifica = validatedData.accountId !== undefined
+      const cambiaCentroRiclassifica = validatedData.costCenterId !== undefined
+      let costCenterIdRiclassificato = existingEntry.costCenterId ?? undefined
+
+      if (cambiaContoRiclassifica || cambiaCentroRiclassifica) {
+        const centro = await risolviCentroDiCosto(prisma, {
+          accountId: cambiaContoRiclassifica ? validatedData.accountId : existingEntry.accountId,
+          costCenterId: cambiaCentroRiclassifica ? validatedData.costCenterId : existingEntry.costCenterId,
+        })
+        if (centro.outcome === 'invalid') {
+          return NextResponse.json(
+            { error: centro.motivo, code: centro.code },
+            { status: 400 }
+          )
+        }
+        costCenterIdRiclassificato = centro.costCenterId
+      }
+
+      const riclassificato = await prisma.journalEntry.update({
+        where: { id },
+        data: {
+          accountId: cambiaContoRiclassifica ? validatedData.accountId : undefined,
+          costCenterId: cambiaContoRiclassifica || cambiaCentroRiclassifica
+            ? costCenterIdRiclassificato
+            : undefined,
+        },
+        select: { id: true, updatedAt: true },
+      })
+
+      await createAuditLog({
+        userId: session.user.id,
+        action: 'UPDATE',
+        entityType: 'JournalEntry',
+        entityId: id,
+        venueId,
+        oldValues: {
+          accountId: existingEntry.accountId,
+          costCenterId: existingEntry.costCenterId,
+        },
+        newValues: {
+          accountId: cambiaContoRiclassifica ? validatedData.accountId : existingEntry.accountId,
+          costCenterId: costCenterIdRiclassificato,
+        },
+      })
+
+      return NextResponse.json(riclassificato)
     }
 
     // Cambiare conto o centro rimette in discussione la regola del centro di
