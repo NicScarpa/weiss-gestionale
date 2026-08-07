@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { Prisma, type AccountType } from '@prisma/client'
 
 import { logger } from '@/lib/logger'
+import { erroreCoerenzaGerarchia, erroreIncoerenzaConPianoUfficiale } from '@/lib/accounts/validate-account-hierarchy'
 // Schema validazione
 const accountSchema = z.object({
   code: z.string().min(1, 'Codice obbligatorio').max(20, 'Codice max 20 caratteri'),
@@ -147,11 +148,18 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const validatedData = accountSchema.parse(body)
 
-    if (validatedData.gruppoCode && !validatedData.mastroCode) {
-      return NextResponse.json(
-        { error: 'Il gruppo richiede un mastro' },
-        { status: 400 }
-      )
+    const datiGerarchia = {
+      code: validatedData.code,
+      mastroCode: validatedData.mastroCode ?? null,
+      gruppoCode: validatedData.gruppoCode ?? null,
+    }
+    const erroreGerarchia = erroreCoerenzaGerarchia(datiGerarchia)
+    if (erroreGerarchia) {
+      return NextResponse.json({ error: erroreGerarchia }, { status: 400 })
+    }
+    const errorePiano = erroreIncoerenzaConPianoUfficiale(datiGerarchia)
+    if (errorePiano) {
+      return NextResponse.json({ error: errorePiano }, { status: 400 })
     }
 
     // Verifica codice unico
@@ -237,18 +245,27 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Conto non trovato' }, { status: 404 })
     }
 
-    // Coerenza mastro/gruppo sullo stato risultante (esistente + patch), non
-    // solo sul payload: un PUT che tocca solo il gruppo deve comunque vedere
-    // il mastro già presente sul conto.
+    // Coerenza codice/mastro/gruppo sullo stato risultante (esistente +
+    // patch), non solo sul payload: un PUT che tocca solo il gruppo deve
+    // comunque vedere il mastro (e il code) già presenti sul conto.
+    const codeRisultante = validatedData.code !== undefined ? validatedData.code : existing.code
     const mastroCodeRisultante =
       validatedData.mastroCode !== undefined ? validatedData.mastroCode : existing.mastroCode
     const gruppoCodeRisultante =
       validatedData.gruppoCode !== undefined ? validatedData.gruppoCode : existing.gruppoCode
-    if (gruppoCodeRisultante && !mastroCodeRisultante) {
-      return NextResponse.json(
-        { error: 'Il gruppo richiede un mastro' },
-        { status: 400 }
-      )
+
+    const datiGerarchiaRisultanti = {
+      code: codeRisultante,
+      mastroCode: mastroCodeRisultante,
+      gruppoCode: gruppoCodeRisultante,
+    }
+    const erroreGerarchia = erroreCoerenzaGerarchia(datiGerarchiaRisultanti)
+    if (erroreGerarchia) {
+      return NextResponse.json({ error: erroreGerarchia }, { status: 400 })
+    }
+    const errorePiano = erroreIncoerenzaConPianoUfficiale(datiGerarchiaRisultanti)
+    if (errorePiano) {
+      return NextResponse.json({ error: errorePiano }, { status: 400 })
     }
 
     // Verifica codice unico se modificato

@@ -196,6 +196,108 @@ describe('POST /api/accounts - gerarchia piano v4', () => {
   })
 })
 
+// Fix round 1 (review Task 18): l'API accettava una voce con code
+// scollegato dal mastro/gruppo dichiarati (es. "99.99" dichiarata del
+// mastro "20"), perché niente legava il code alla gerarchia scelta.
+// L'albero e il report raggruppano per le colonne denormalizzate, non per
+// il prefisso del code: una voce incoerente finirebbe silenziosamente nel
+// ramo sbagliato.
+describe('POST /api/accounts - coerenza code/mastro/gruppo', () => {
+  beforeEach(() => {
+    vi.mocked(prisma.account.findUnique).mockResolvedValue(null as never)
+    vi.mocked(prisma.account.create).mockResolvedValue(CONTO_V4 as never)
+  })
+
+  it('un codice coerente col mastro (senza gruppo) viene creato', async () => {
+    const request = new NextRequest('http://localhost:3000/api/accounts', {
+      method: 'POST',
+      body: JSON.stringify({
+        code: '21.08',
+        name: 'Nuova voce attrezzatura',
+        type: 'COSTO',
+        mastroCode: '21',
+        mastroNome: 'Attrezzatura e beni strumentali minuti',
+      }),
+    })
+    const response = await POST(request)
+
+    expect(response.status).toBe(200)
+    expect(prisma.account.create).toHaveBeenCalled()
+  })
+
+  it('un codice che contraddice il mastro dichiarato viene rifiutato', async () => {
+    const request = new NextRequest('http://localhost:3000/api/accounts', {
+      method: 'POST',
+      body: JSON.stringify({
+        code: '99.99',
+        name: 'Voce incoerente',
+        type: 'COSTO',
+        mastroCode: '20',
+        mastroNome: 'Materie prime, sussidiarie e merci',
+      }),
+    })
+    const response = await POST(request)
+
+    expect(response.status).toBe(400)
+    expect(prisma.account.create).not.toHaveBeenCalled()
+  })
+
+  it('un codice che contraddice il gruppo dichiarato viene rifiutato', async () => {
+    const request = new NextRequest('http://localhost:3000/api/accounts', {
+      method: 'POST',
+      body: JSON.stringify({
+        code: '20.3.99',
+        name: 'Voce incoerente',
+        type: 'COSTO',
+        mastroCode: '20',
+        mastroNome: 'Materie prime, sussidiarie e merci',
+        gruppoCode: '20.1',
+        gruppoNome: 'Beverage alcolico',
+      }),
+    })
+    const response = await POST(request)
+
+    expect(response.status).toBe(400)
+    expect(prisma.account.create).not.toHaveBeenCalled()
+  })
+
+  it('un prefisso di stringa ingannevole ("201.01" col mastro "20") viene rifiutato', async () => {
+    const request = new NextRequest('http://localhost:3000/api/accounts', {
+      method: 'POST',
+      body: JSON.stringify({
+        code: '201.01',
+        name: 'Voce con codice ambiguo',
+        type: 'COSTO',
+        mastroCode: '20',
+        mastroNome: 'Materie prime, sussidiarie e merci',
+      }),
+    })
+    const response = await POST(request)
+
+    expect(response.status).toBe(400)
+    expect(prisma.account.create).not.toHaveBeenCalled()
+  })
+
+  it('un codice noto del piano ufficiale con mastro diverso da quello reale viene rifiutato', async () => {
+    // "20.1.01" è "Birra fusto" nel piano ufficiale: mastro 20, gruppo 20.1.
+    const request = new NextRequest('http://localhost:3000/api/accounts', {
+      method: 'POST',
+      body: JSON.stringify({
+        code: '20.1.01',
+        name: 'Birra fusto (duplicato con mastro sbagliato)',
+        type: 'COSTO',
+        mastroCode: '20',
+        mastroNome: 'Materie prime, sussidiarie e merci',
+        // gruppo omesso: mastro coerente col prefisso ma non col piano ufficiale, che vuole 20.1.
+      }),
+    })
+    const response = await POST(request)
+
+    expect(response.status).toBe(400)
+    expect(prisma.account.create).not.toHaveBeenCalled()
+  })
+})
+
 describe('PUT /api/accounts - gerarchia piano v4', () => {
   beforeEach(() => {
     vi.mocked(prisma.account.findUnique).mockResolvedValue({
@@ -207,11 +309,24 @@ describe('PUT /api/accounts - gerarchia piano v4', () => {
     vi.mocked(prisma.account.update).mockResolvedValue(CONTO_V4 as never)
   })
 
-  it('aggiorna mastro/gruppo/regola CdC quando presenti nel payload', async () => {
+  it('aggiorna mastro/gruppo/regola CdC quando presenti nel payload (con un code coerente col nuovo mastro)', async () => {
+    // Il code cambia rispetto all'esistente: la route fa una seconda
+    // findUnique (per codice) per la verifica di unicità. Il mock del
+    // beforeEach risponderebbe con lo stesso conto per qualunque chiamata,
+    // facendo fallire il test con "codice già esistente" — qui la seconda
+    // chiamata deve restituire null (nessun altro conto con quel codice).
+    vi.mocked(prisma.account.findUnique)
+      .mockResolvedValueOnce({ id: 'conto-1', code: '20.1.01', mastroCode: '20', gruppoCode: '20.1' } as never)
+      .mockResolvedValueOnce(null as never)
+
     const request = new NextRequest('http://localhost:3000/api/accounts', {
       method: 'PUT',
       body: JSON.stringify({
         id: 'conto-1',
+        // Il conto esistente ha code "20.1.01": spostarlo al mastro 21 senza
+        // cambiare code sarebbe proprio l'incoerenza che questo fix chiude,
+        // quindi il code cambia in coppia col mastro, come farebbe il form.
+        code: '21.01',
         mastroCode: '21',
         mastroNome: 'Attrezzatura e beni strumentali minuti',
         gruppoCode: null,
@@ -230,6 +345,36 @@ describe('PUT /api/accounts - gerarchia piano v4', () => {
       gruppoNome: null,
       costCenterRule: 'DEFAULT_STR',
     })
+  })
+
+  it('rifiuta di cambiare il mastro senza aggiornare il code coerentemente', async () => {
+    // Stesso scenario del test sopra, ma senza il nuovo code: il conto
+    // risultante avrebbe code "20.1.01" (esistente) e mastro "21" (nuovo).
+    const request = new NextRequest('http://localhost:3000/api/accounts', {
+      method: 'PUT',
+      body: JSON.stringify({
+        id: 'conto-1',
+        mastroCode: '21',
+        mastroNome: 'Attrezzatura e beni strumentali minuti',
+        gruppoCode: null,
+        gruppoNome: null,
+      }),
+    })
+    const response = await PUT(request)
+
+    expect(response.status).toBe(400)
+    expect(prisma.account.update).not.toHaveBeenCalled()
+  })
+
+  it('rifiuta un prefisso di stringa ingannevole sullo stato risultante ("201.01" col mastro "20")', async () => {
+    const request = new NextRequest('http://localhost:3000/api/accounts', {
+      method: 'PUT',
+      body: JSON.stringify({ id: 'conto-1', code: '201.01' }),
+    })
+    const response = await PUT(request)
+
+    expect(response.status).toBe(400)
+    expect(prisma.account.update).not.toHaveBeenCalled()
   })
 
   it('rifiuta di impostare un gruppo su un conto che resterebbe senza mastro', async () => {

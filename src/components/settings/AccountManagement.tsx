@@ -38,6 +38,7 @@ import { toast } from 'sonner'
 
 import { logger } from '@/lib/logger'
 import { AccountTree } from './AccountTree'
+import { erroreCoerenzaGerarchia } from '@/lib/accounts/validate-account-hierarchy'
 
 type AccountType = 'RICAVO' | 'COSTO' | 'ATTIVO' | 'PASSIVO'
 type CostCenterRule = 'OBBLIGATORIO' | 'DEFAULT_STR'
@@ -228,6 +229,26 @@ export function AccountManagement() {
       return
     }
 
+    const codeFinale = formData.code.trim()
+    // Solo i conti economici (RICAVO/COSTO) appartengono al piano v4: un
+    // conto patrimoniale ha sempre mastro/gruppo nulli, anche se erano
+    // valorizzati prima che il tipo venisse cambiato nel form.
+    const mastroCodeFinale = isTipoEconomico ? formData.mastroCode : null
+    const gruppoCodeFinale = isTipoEconomico ? formData.gruppoCode || null : null
+
+    // Specchio client della stessa validazione applicata dal server: qui
+    // l'utente vede l'errore prima di inviare, ma è il server (raggiungibile
+    // anche fuori da questo form) a restare l'unica difesa vera.
+    const erroreGerarchia = erroreCoerenzaGerarchia({
+      code: codeFinale,
+      mastroCode: mastroCodeFinale,
+      gruppoCode: gruppoCodeFinale,
+    })
+    if (erroreGerarchia) {
+      toast.error(erroreGerarchia)
+      return
+    }
+
     try {
       setSaving(true)
 
@@ -236,16 +257,13 @@ export function AccountManagement() {
 
       const payload = {
         ...(editingAccount && { id: editingAccount.id }),
-        code: formData.code.trim(),
+        code: codeFinale,
         name: formData.name.trim(),
         type: formData.type,
         isActive: formData.isActive,
-        // Solo i conti economici (RICAVO/COSTO) appartengono al piano v4: un
-        // conto patrimoniale ha sempre mastro/gruppo nulli, anche se erano
-        // valorizzati prima che il tipo venisse cambiato nel form.
-        mastroCode: isTipoEconomico ? formData.mastroCode : null,
+        mastroCode: mastroCodeFinale,
         mastroNome: isTipoEconomico ? mastro?.nome ?? null : null,
-        gruppoCode: isTipoEconomico ? formData.gruppoCode || null : null,
+        gruppoCode: gruppoCodeFinale,
         gruppoNome: isTipoEconomico ? gruppo?.nome ?? null : null,
         costCenterRule: formData.costCenterRule,
       }
