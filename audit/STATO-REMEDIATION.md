@@ -8,13 +8,17 @@ il contesto. Se stai leggendo questo file in una sessione nuova, **leggilo tutto
 ## 1. In una pagina
 
 Un audit completo (8 agenti, report in `audit/A1..A8-*.md`) ha diagnosticato ~112 problemi nel
-gestionale contabile di Weiss Cafè. Da lì è nato un piano di remediation in 6 ondate, di cui **tre
-sono complete e verificate** (W0 fondazioni, W1 fix contabili critici, W2 numeri/import/qualità/UI)
-e **tre restano da fare** (W3, W4, W5).
+gestionale contabile di Weiss Cafè. Da lì è nato un piano di remediation, di cui **quattro ondate
+sono complete e verificate** (W0 fondazioni, W1 fix contabili critici, W2 numeri/import/qualità/UI,
+W3 accessi/orfani/moduli) e **due restano da fare** (W4 e W5).
 
 **I tre problemi critici sono risolti (W1). Con la W2:** saldi, budget e cash-flow rispondono la
 stessa cifra (con un test permanente che lo pretende), gli import sono atomici e idempotenti, Sentry
 è attivo, la CI è bloccante, e chiusura/portale/tabelle funzionano da telefono a 390px.
+**Con la W3:** zero vulnerabilità critical e high, le route finanziarie hanno un guardiano unico,
+4.259 righe di codice morto in meno, le notifiche push funzionano davvero (e il service worker
+**esiste**, prima non veniva generato affatto), previsioni e spese ricorrenti hanno un'interfaccia,
+il tema scuro si accende.
 
 Tutto il lavoro vive sul branch `remediation/integrazione`, **non è ancora su `main`** per scelta
 del committente: si porta su main solo a revisione completata.
@@ -27,14 +31,14 @@ del committente: si porta su main solo a revisione completata.
 |---|---|
 | **Ramo con tutto il lavoro** | `remediation/integrazione` (worktree `~/Desktop/accounting-wt/integrazione`) |
 | Base di partenza | `main` = `fb99dce` |
-| Punti di rollback | tag `remediation/pre-W0`, `remediation/pre-W2` |
-| Fine ondate | tag `remediation/W0-completa`, `remediation/W1-completa`, `remediation/W2-completa` |
+| Punti di rollback | tag `remediation/pre-W0`, `remediation/pre-W2`, `remediation/pre-W3` |
+| Fine ondate | tag `remediation/W0-completa`, `W1-completa`, `W2-completa`, `W3-completa` |
 | Report dell'audit | `audit/*.md` + `audit/screenshots/` (committati sul ramo) |
 | Piano approvato | `~/.claude/plans/cryptic-wandering-flute.md` |
 | Screenshot verifica mobile W2 | `~/Desktop/accounting/.playwright-mcp/b5/` (gitignored, prima/dopo a 390px) |
 
-**Worktree attivi**: `integrazione` più i quattro della W3 (`c1-auth`, `c2-orfani`, `c3-moduli-a`,
-`c4-moduli-b`). Quelli di W0/W1/W2 e `c0-vulnerabilita` sono stati rimossi dopo l'integrazione.
+**Worktree attivi**: solo `integrazione`. Quelli di W0/W1/W2/W3 e `c0-vulnerabilita` sono stati
+rimossi dopo l'integrazione.
 
 **ATTENZIONE — tre sessioni parallele lavorano sullo stesso repository** (stato al 7 ago, ore 18):
 - `~/Desktop/accounting-presenze` su `presenze/chiusura-ore-timbrate` — **non toccarlo**;
@@ -100,7 +104,48 @@ audit critical 5 / high 16 alla baseline · build OK.
 
 Dettaglio in `~/.claude/plans/cryptic-wandering-flute.md` §4.
 
-### W3 — Auth, orfani, moduli (4 agenti)
+### ~~W3~~ — COMPLETA il 7 agosto 2026 (tag `remediation/W3-completa`)
+
+Riepilogo di ciò che è entrato; il dettaglio dei mandati originali resta sotto per riferimento.
+
+- **C0-VULNERABILITÀ** (lotto extra, deciso dal committente): da **5 critical + 16 high a 0 e 0**.
+  `jspdf` 4.2.1, `next-auth` beta.32, `firebase-admin` 13.10.0 (dentro il range, trascina
+  `websocket-driver` 0.7.5 e `protobufjs` 7.6.5), `next` 16.3.0, `axios` 1.19.0; unico `overrides`:
+  `js-yaml` 4.3.1 perché `swagger-ui-react` la pinna esatta. Login verificato a mano dal lead.
+- **C1-AUTH**: `withAuth` costruito sopra i guard esistenti; 8 famiglie di route finanziarie protette;
+  `venueId` sempre dalla sessione; `mustChangePassword` ora vale anche sulle API, non solo nella
+  modale. **Censimento** (`scripts/check-route-auth.mjs`, in CI come rapporto): su 200 route e 334
+  handler → 27 `withAuth`, **292 inline**, 11 pubbliche, 2 cron, 2 senza controllo (verificate
+  innocue). **294 handler da convertire in W4.** Decisione motivata e verificata dal lead: chiusure
+  `submit`/`pdf` e `payee-suggestions` restano allo staff (è lui che compila la chiusura ogni sera),
+  ma il PDF solo per le proprie chiusure e sempre dentro la sede; Excel ad admin/manager.
+- **C2-ORFANI**: **4.259 righe rimosse**, 30 file cancellati (4 librerie a zero import, 3 route senza
+  chiamanti, tipi/schemi/componenti morti, `vercel.json` inerte); `formatCurrency` da 16 definizioni
+  a una in `src/lib/formatters.ts`; `knip.json` configurato e verde. Ogni cancellazione provata sui
+  tre canali (consumatori in `src`, chiamanti esterni, chiamate interne).
+- **C3-MODULI-A**: **scoperta a monte — il service worker non veniva generato affatto**, perché
+  `withSerwist` è un plugin webpack e Next 16 compila con Turbopack, che lo ignorava in silenzio.
+  Nessun `public/sw.js`, nessuna registrazione: la PWA girava senza service worker (niente push,
+  presumibilmente niente offline). Compilazione spostata sulla CLI di Serwist. Push migrate a
+  **Web Push VAPID**, `firebase-admin` rimossa; prova end-to-end con payload decifrato. Tema scuro
+  comandabile e persistente, con la scala delle tinte ribaltata alla radice invece di 145 riquadri
+  toccati uno per uno.
+- **C4-MODULI-B**: interfacce per previsioni cash-flow e spese ricorrenti (route CRUD esistenti da
+  gennaio/febbraio e mai collegate). Nel farlo ha scoperto che **il CRUD previsioni non aveva mai
+  funzionato** (creazione con 30 righe fantasma, cancellazione bloccata da un vincolo) e un **IDOR**
+  sulle spese ricorrenti (`venueId` da body/query, nessun controllo di sede su PUT/DELETE).
+  `/api/dashboard/forecast` partiva da **49.100 € invece di 22.600 €** su dataset di prova (**+117%**).
+
+**Verifica per inversione fatta dal lead su ogni lotto**: C1 24 rossi · C2 verificato sui tre canali
++ conteggio test (809−67 esatti) · C4 13 rossi · C3 prova di consegna push decifrata.
+
+**Gate finale W3**: tsc 0 · lint 0 errori (70 warning, da 81) · **798 test unit** (57 file) ·
+**215 test di integrazione** (31 file, erano 68 a inizio remediation) · strict **24** (da 35) ·
+audit **0 critical / 0 high** · build OK. **106 commit sopra `main`.**
+
+---
+
+### W3 — mandati originali (riferimento storico)
 - **C1-AUTH**: `withAuth` sopra i `requireAuth`/`requireRole` esistenti; 17 route finanziarie senza
   guard di ruolo; `venueId` sempre da sessione. Aggiungere al suo perimetro: tetto sul `limit` di
   paginazione (A5-API-010, B1 ha solo tolto il NaN).
@@ -117,7 +162,26 @@ Dettaglio in `~/.claude/plans/cryptic-wandering-flute.md` §4.
   (oggi in 3 file); ignore di `coverage/` in `eslint.config.mjs`; soglie coverage in `vitest.config.ts`
   invece che nello script npm.
 
-### W4 — Coda seriale (mai in parallelo)
+### W4 — Coda seriale (mai in parallelo) — arricchita dagli esiti di W3
+- **294 handler ancora con auth scritta a mano** (numero esatto dal censimento di C1): convertirli a
+  `withAuth` e rendere `scripts/check-route-auth.mjs --strict` bloccante in CI.
+- **Il versamento manuale a riga singola** (§5 n.19): è un difetto contabile, va con test.
+- **Il debito React Compiler**: 29 `set-state-in-effect` + 8 `exhaustive-deps` + 2 singoli, elenco in
+  `audit/DEBITO-set-state-in-effect.md`. Il lotto che li corregge deve **anche alzare
+  `eslint-plugin-react-hooks` alla 7.1.x**, altrimenti il debito rientra di nascosto.
+- **Riscrivere le spec E2E e solo allora installare `@playwright/test`**: oggi 13 file e
+  `playwright.config.ts` la importano ma non è installata, e le spec contengono **34 asserzioni
+  finte** `expect(true).toBe(true)` più un login che cerca un'etichetta "Email" inesistente da
+  gennaio. Installarla senza riscriverle darebbe fiducia falsa.
+- **Verificare l'offline** ora che il service worker esiste (§5 n.22).
+- `next build --webpack` fallisce per simboli non consentiti esportati da
+  `api/luoghi-lavoro` e `api/promemoria-timbratura` (segnalato da C3).
+- `src/lib/prisma.ts:49` esige TLS quando `NODE_ENV=production`: chi vuole provare una build reale in
+  locale deve mettere un proxy TLS davanti a Postgres. Attrito noto, da valutare.
+- `DailyClosure` non ha un campo "creata da" (`submittedById` è null prima dell'invio): per
+  restringere `submit` all'autore serve lo schema.
+
+### W4 — mandato originale
 - **D1-SOFTDELETE**: estensione Prisma su `findUnique`/`update` (~40 call site).
 - **D2**: check bloccanti definitivi in CI, quadratura finale, **aggiornamento di
   `audit/00-REGISTRO.md` con gli esiti** (nota già acquisita: A8-UI-005 era già risolto dal commit
@@ -141,7 +205,11 @@ sessione parallela su `presenze/regole-orario`.
 | 5 | Tabella `register_balances` mai scritta: eliminarla? | Aperta; da W2 **nessun codice la legge più** — il DROP è ora senza rischi |
 | 6 | `Payment` di tipo `ALTRO` in entrata? | Aperta, emergerà dal censimento |
 | 7 | Cron `auto-clockout` solo su `vercel.json`, produzione su Railway | **CHIUSA — IL FINDING ERA SBAGLIATO** (verificato 7 ago sui log Railway): esiste un servizio dedicato **`cron-presenze`** che gira ogni ~15 minuti e chiama *entrambi* gli endpoint (`/api/promemoria-timbratura/cron` e `/api/attendance/auto-clockout`); ultima esecuzione riscontrata `2026-08-07T15:45Z`, risposte `success:true`. `vercel.json` è un residuo inerte che ha ingannato l'audit: **va cancellato** (assegnare a C2-ORFANI in W3) |
-| 8 | **`SENTRY_DSN` da configurare su Railway** e forzare un errore di prova | **IN CORSO** (7 ago): verificato che sul servizio `weiss-gestionale` la variabile **non esiste** (le variabili presenti sono DATABASE_URL, AUTH_SECRET, NEXTAUTH_*, ENCRYPTION_KEY, ANTHROPIC_API_KEY, CRON_SECRET, UPLOAD_ROOT, NEXT_PUBLIC_*). Non esiste alcun account Sentry: nessun DSN in codice, storia git o `.env`. Serve che il committente crei il progetto su sentry.io e fornisca il DSN; poi `railway variables --service weiss-gestionale --set 'SENTRY_DSN=...' --set 'NEXT_PUBLIC_SENTRY_DSN=...'` |
+| 8 | **`SENTRY_DSN` su Railway** | **FATTO** il 7 ago: progetto Sentry creato dal committente, `SENTRY_DSN` e `NEXT_PUBLIC_SENTRY_DSN` impostate sul servizio `weiss-gestionale` con `--skip-deploys` (il codice in produzione è ancora `main`, che non contiene l'inizializzazione: la variabile si attiva al primo rilascio dopo il merge). **Resta da fare a quel punto: forzare un errore e verificare che arrivi.** |
+| 20 | **Chiavi VAPID da generare e configurare su Railway** | **NUOVA, aperta.** È l'unica cosa che separa le notifiche push dal funzionare: `npx web-push generate-vapid-keys`, poi `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` e `VAPID_SUBJECT` (un `mailto:` reale) sul servizio `weiss-gestionale`. Finché mancano, la UI **lo dichiara** invece di mostrare "attivate" |
+| 21 | **Due sessioni hanno implementato le stesse notifiche push in parallelo** | **NUOVA, richiede una decisione.** Il ramo `sicurezza/dipendenze-ondata-a` (worktree `~/Desktop/accounting-presenze`, derivato da `main`) contiene un commit del 7 ago 20:18 che migra a Web Push VAPID, toglie `firebase-admin` e **cambia lo schema in modo pulito** (`fcmToken` → `endpoint` + `p256dh` + `auth`). La versione di C3 in W3 è più ampia (include il fix del service worker e il tema scuro) ma **evita lo schema**, serializzando la tripletta dentro `fcm_token` (contenuta in `src/lib/notifications/subscriptions.ts`). Proposta: tenere l'impianto di C3 e prendere da lì la sola modifica dello schema. **Causa di fondo: le sessioni parallele non hanno un perimetro dichiarato** |
+| 22 | **L'offline della PWA non è mai stato verificato** | **NUOVA, aperta.** Ora che il service worker esiste davvero (prima non veniva generato) il precache conta 149 URL, ma nessuno ha provato l'applicazione a rete staccata. La chiusura cassa promette di funzionare offline: va verificato in W4 |
+| 23 | Il versamento manuale cassa→banca scrive una riga sola (vedi n. 19) | Da correggere in W4 |
 | 9 | **5 vulnerabilità critical + 16 high nelle dipendenze di produzione** | **CHIUSA** (7 ago, merge `a0cd25f`): ora **0 critical / 0 high**, cricchetto CI a barriera. `jspdf` 4.2.1, `next-auth` beta.32, `firebase-admin` 13.10.0 (dentro il range, trascina `websocket-driver` 0.7.5 e `protobufjs` 7.6.5), `next` 16.3.0, `axios` 1.19.0; unico `overrides`: `js-yaml` 4.3.1 perché `swagger-ui-react` la pinna esatta. **Login verificato a mano dal lead** (dev server locale, sessione JWE valida su pagina protetta) più verifica indipendente dell'agente. Restano 9 moderate non risolvibili senza downgrade major: documentate nello script. Da tenere d'occhio: `next` 16.1.6→16.3.0 è il candidato per un giro in staging; l'override su `js-yaml` va tolto quando swagger allenterà il pin |
 | 10 | **Ricavi per categoria/conto a zero** finché le scritture di chiusura non portano un conto di ricavo | **RATIFICATA** (7 ago): per ora va bene l'approccio col KPI `unassignedRevenue`; l'imputazione a conto resta per dopo |
 | 11 | **Il margine del budget cambierà** (ora include i costi bancari che prima mancavano) | **RATIFICATA** (7 ago): il committente è avvisato e d'accordo |
@@ -218,7 +286,7 @@ sessione parallela su `presenze/regole-orario`.
 
 ### Gate di verifica (comandi esatti)
 ```bash
-cd ~/Desktop/accounting-wt/integrazione && source ~/.nvm/nvm.sh && nvm use 22
+./scripts/gate.sh   # verifica ogni passo e stampa un verdetto unico
 npm ci && npx prisma generate
 npx tsc --noEmit && npm run lint && npm run test:run
 TEST_DB_SUFFIX=int npm run test:integration
