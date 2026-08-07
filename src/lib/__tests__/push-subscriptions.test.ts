@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const pushSubscription = {
   upsert: vi.fn(),
   findMany: vi.fn(),
-  findFirst: vi.fn(),
+  findUnique: vi.fn(),
   update: vi.fn(),
   delete: vi.fn(),
 }
@@ -14,6 +14,7 @@ const {
   salvaSottoscrizione,
   sottoscrizioniAttive,
   sottoscrizioniAttiveDi,
+  trovaPerEndpoint,
   disattivaSottoscrizione,
 } = await import('@/lib/notifications/subscriptions')
 
@@ -25,75 +26,72 @@ const DATI = {
 describe('sottoscrizioni push', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-  })
-
-  /**
-   * La tripletta viaggia in una colonna sola: se l'ordine dei campi dipendesse
-   * dal client, lo stesso dispositivo potrebbe generare due righe diverse e
-   * ricevere ogni notifica due volte.
-   */
-  it('persiste la sottoscrizione in forma canonica, non nell\'ordine ricevuto', async () => {
     pushSubscription.upsert.mockResolvedValue({ id: '1', deviceName: null, deviceType: null })
-
-    await salvaSottoscrizione({ userId: 'u1', dati: DATI })
-    const primaChiamata = pushSubscription.upsert.mock.calls[0][0].where.fcmToken
-
-    // Stessa sottoscrizione, campi in ordine invertito.
-    await salvaSottoscrizione({
-      userId: 'u1',
-      dati: { keys: { auth: DATI.keys.auth, p256dh: DATI.keys.p256dh }, endpoint: DATI.endpoint },
-    })
-    const secondaChiamata = pushSubscription.upsert.mock.calls[1][0].where.fcmToken
-
-    expect(primaChiamata).toBe(secondaChiamata)
-    expect(JSON.parse(primaChiamata)).toEqual(DATI)
-  })
-
-  it('restituisce endpoint e chiavi separati a chi deve inviare', async () => {
-    pushSubscription.findMany.mockResolvedValue([
-      { id: 's1', userId: 'u1', fcmToken: JSON.stringify(DATI) },
-    ])
-
-    const attive = await sottoscrizioniAttive('u1')
-
-    expect(attive).toEqual([
-      {
-        id: 's1',
-        userId: 'u1',
-        endpoint: DATI.endpoint,
-        p256dh: DATI.keys.p256dh,
-        auth: DATI.keys.auth,
-      },
-    ])
   })
 
   /**
-   * In tabella restano i vecchi token Firebase, che non contengono le chiavi di
-   * cifratura. Vanno ignorati invece di far fallire l'invio a tutti gli altri.
+   * L'endpoint è la chiave naturale della sottoscrizione: un dispositivo che si
+   * risottoscrive deve aggiornare la propria riga, non aggiungerne una seconda,
+   * o si ritroverebbe ogni notifica in doppia copia.
    */
-  it('scarta le righe nel vecchio formato Firebase', async () => {
-    pushSubscription.findMany.mockResolvedValue([
-      { id: 'vecchia', userId: 'u1', fcmToken: 'token-fcm-nudo' },
-      { id: 'nuova', userId: 'u1', fcmToken: JSON.stringify(DATI) },
-    ])
+  it('usa l\'endpoint come chiave, così il dispositivo non si duplica', async () => {
+    await salvaSottoscrizione({ userId: 'u1', dati: DATI })
 
-    const attive = await sottoscrizioniAttive('u1')
-
-    expect(attive).toHaveLength(1)
-    expect(attive[0].id).toBe('nuova')
+    const chiamata = pushSubscription.upsert.mock.calls[0][0]
+    expect(chiamata.where).toEqual({ endpoint: DATI.endpoint })
+    expect(chiamata.create).toMatchObject({
+      endpoint: DATI.endpoint,
+      p256dh: DATI.keys.p256dh,
+      auth: DATI.keys.auth,
+      userId: 'u1',
+      isActive: true,
+    })
   })
 
-  it('scarta anche le righe a cui mancano le chiavi', async () => {
-    pushSubscription.findMany.mockResolvedValue([
-      { id: 'monca', userId: 'u1', fcmToken: JSON.stringify({ endpoint: DATI.endpoint }) },
-    ])
+  it('riattiva una sottoscrizione che era stata spenta', async () => {
+    await salvaSottoscrizione({ userId: 'u1', dati: DATI })
 
-    expect(await sottoscrizioniAttive('u1')).toEqual([])
+    expect(pushSubscription.upsert.mock.calls[0][0].update).toMatchObject({ isActive: true })
+  })
+
+  it('converte in data la scadenza dichiarata dal browser', async () => {
+    const scadenza = Date.UTC(2026, 7, 20, 12, 0, 0)
+
+    await salvaSottoscrizione({ userId: 'u1', dati: { ...DATI, expirationTime: scadenza } })
+
+    expect(pushSubscription.upsert.mock.calls[0][0].create.expiresAt).toEqual(new Date(scadenza))
+  })
+
+  it('lascia vuota la scadenza quando il browser non la dichiara', async () => {
+    await salvaSottoscrizione({ userId: 'u1', dati: DATI })
+
+    expect(pushSubscription.upsert.mock.calls[0][0].create.expiresAt).toBeNull()
+  })
+
+  it('chiede al database i soli campi che servono a inviare', async () => {
+    pushSubscription.findMany.mockResolvedValue([])
+
+    await sottoscrizioniAttive('u1')
+
+    expect(pushSubscription.findMany).toHaveBeenCalledWith({
+      where: { userId: 'u1', isActive: true },
+      select: { id: true, userId: true, endpoint: true, p256dh: true, auth: true },
+    })
   })
 
   it('non interroga il database per un elenco di utenti vuoto', async () => {
     expect(await sottoscrizioniAttiveDi([])).toEqual([])
     expect(pushSubscription.findMany).not.toHaveBeenCalled()
+  })
+
+  it('cerca per endpoint sull\'indice unique', async () => {
+    pushSubscription.findUnique.mockResolvedValue({ id: 's1', userId: 'u1' })
+
+    expect(await trovaPerEndpoint(DATI.endpoint)).toEqual({ id: 's1', userId: 'u1' })
+    expect(pushSubscription.findUnique).toHaveBeenCalledWith({
+      where: { endpoint: DATI.endpoint },
+      select: { id: true, userId: true },
+    })
   })
 
   it('disattiva la sottoscrizione senza cancellarla', async () => {
