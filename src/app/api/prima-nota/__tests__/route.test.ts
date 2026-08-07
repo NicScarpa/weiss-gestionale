@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 import { Session } from 'next-auth'
-import { POST } from '../route'
+import { GET, POST } from '../route'
 
 vi.mock('@/lib/auth', () => ({ auth: vi.fn() }))
 
@@ -11,7 +11,7 @@ vi.mock('@/lib/venue', () => ({
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    journalEntry: { create: vi.fn() },
+    journalEntry: { create: vi.fn(), findMany: vi.fn(), count: vi.fn() },
     account: { findMany: vi.fn() },
     costCenter: { findUnique: vi.fn(), findFirst: vi.fn() },
   },
@@ -113,5 +113,60 @@ describe('POST /api/prima-nota - centro di costo del movimento', () => {
     const body = await response.json()
     expect(body.code).toBe('CENTRO_DI_COSTO_NON_VALIDO')
     expect(prisma.journalEntry.create).not.toHaveBeenCalled()
+  })
+})
+
+// Regressione (Task 13, fix round 1): il payload di GET aveva smesso di
+// restituire costCenterId (il campo scalare arrivava da Prisma ma la riga
+// in formattedEntries mancava). Se questa riga sparisse di nuovo, riaprire
+// un movimento in modifica sovrascriverebbe in silenzio un centro già
+// salvato con il default — il comportamento che la spec vieta.
+describe('GET /api/prima-nota - costCenterId nel payload (regressione)', () => {
+  function entryConCentro(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'entry-1',
+      venueId: 'venue-test-123',
+      date: new Date('2026-08-01'),
+      registerType: 'BANK',
+      description: 'Fattura fornitore',
+      debitAmount: null,
+      creditAmount: 100,
+      vatAmount: null,
+      accountId: 'conto-1',
+      costCenterId: 'cc-vv',
+      closureId: null,
+      runningBalance: null,
+      createdAt: new Date('2026-08-01'),
+      updatedAt: new Date('2026-08-01'),
+      verified: false,
+      hiddenAt: null,
+      categorizationSource: 'manual',
+      counterpartName: null,
+      notes: null,
+      budgetCategoryId: null,
+      appliedRuleId: null,
+      venue: null,
+      account: null,
+      budgetCategory: null,
+      appliedRule: null,
+      closure: null,
+      createdBy: null,
+      allocations: [],
+      ...overrides,
+    }
+  }
+
+  it('ogni voce della lista include costCenterId', async () => {
+    vi.mocked(prisma.journalEntry.findMany)
+      .mockResolvedValueOnce([entryConCentro()]) // entries (con include)
+      .mockResolvedValueOnce([]) // allEntries (solo per i totali)
+    vi.mocked(prisma.journalEntry.count).mockResolvedValue(1)
+
+    const response = await GET(new NextRequest('http://localhost:3000/api/prima-nota'))
+    const json = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(json.data).toHaveLength(1)
+    expect(json.data[0].costCenterId).toBe('cc-vv')
   })
 })

@@ -203,6 +203,18 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [costCenterFieldState.value])
 
+  // Il componente oggi viene sempre rimontato quando cambia invoiceId (unico
+  // punto d'ingresso: /fatture/[id]), quindi questo reset non è ancora
+  // osservabile. Lo aggiungiamo comunque perché la garanzia "non sovrascrivere
+  // mai una scelta manuale" deve valere per il campo, non dipendere dalla
+  // navigazione attuale: se in futuro comparisse un link "fattura successiva"
+  // tra due pagine /fatture/[id], senza questo reset il centro scelto per una
+  // fattura resterebbe preselezionato/bloccato su quella successiva.
+  useEffect(() => {
+    setCostCenterId(undefined)
+    setCostCenterTouched(false)
+  }, [invoiceId])
+
   // Set initial account when invoice loads
   useEffect(() => {
     if (invoice?.account) {
