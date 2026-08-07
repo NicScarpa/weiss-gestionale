@@ -179,23 +179,27 @@ beforeEach(() => {
 })
 
 describe('POST /api/invoices — idempotenza', () => {
-  it('due import concorrenti dello stesso XML lasciano una sola fattura', async () => {
-    await loginAs('admin')
-    const xml = xmlFattura()
+  it(
+    'due import concorrenti dello stesso XML lasciano una sola fattura',
+    { repeats: 5 },
+    async () => {
+      await loginAs('admin')
+      const xml = xmlFattura()
 
-    const [primo, secondo] = await Promise.all([importa(xml), importa(xml)])
+      const [primo, secondo] = await Promise.all([importa(xml), importa(xml)])
 
-    const fatture = await prisma.electronicInvoice.findMany({
-      where: { invoiceNumber: NUMERO },
-    })
-    expect(fatture).toHaveLength(1)
+      const fatture = await prisma.electronicInvoice.findMany({
+        where: { invoiceNumber: NUMERO },
+      })
+      expect(fatture).toHaveLength(1)
 
-    // Una delle due chiamate ha importato, l'altra deve dire che c'era già:
-    // un 500 significherebbe che il duplicato è stato fermato dal database
-    // senza che la route sapesse spiegarlo a chi ha premuto due volte.
-    const stati = [primo.status, secondo.status].sort()
-    expect(stati).toEqual([201, 409])
-  })
+      // Una delle due chiamate ha importato, l'altra deve dire che c'era già:
+      // un 500 significherebbe che il duplicato è stato fermato dal database
+      // senza che la route sapesse spiegarlo a chi ha premuto due volte.
+      const stati = [primo.status, secondo.status].sort()
+      expect(stati).toEqual([201, 409])
+    }
+  )
 
   it('il secondo import risponde 409 indicando la fattura già presente', async () => {
     await loginAs('admin')
@@ -209,20 +213,24 @@ describe('POST /api/invoices — idempotenza', () => {
     expect(secondo.body.existingId).toBe(primo.body.id)
   })
 
-  it('non duplica le scadenze dello scadenzario sul secondo import', async () => {
-    await loginAs('admin')
-    const xml = xmlFattura({ rate: [
-      { scadenza: '2026-07-01', importo: '61.00' },
-      { scadenza: '2026-08-01', importo: '61.00' },
-    ] })
+  it(
+    'non duplica le scadenze dello scadenzario sul secondo import',
+    { repeats: 5 },
+    async () => {
+      await loginAs('admin')
+      const xml = xmlFattura({ rate: [
+        { scadenza: '2026-07-01', importo: '61.00' },
+        { scadenza: '2026-08-01', importo: '61.00' },
+      ] })
 
-    await Promise.all([importa(xml), importa(xml)])
+      await Promise.all([importa(xml), importa(xml)])
 
-    const scadenzeCreate = await prisma.schedule.findMany({
-      where: { numeroDocumento: NUMERO },
-    })
-    expect(scadenzeCreate).toHaveLength(2)
-  })
+      const scadenzeCreate = await prisma.schedule.findMany({
+        where: { numeroDocumento: NUMERO },
+      })
+      expect(scadenzeCreate).toHaveLength(2)
+    }
+  )
 })
 
 describe('POST /api/invoices — atomicità', () => {
