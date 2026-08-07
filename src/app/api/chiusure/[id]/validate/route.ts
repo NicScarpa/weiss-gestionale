@@ -51,6 +51,15 @@ export async function POST(
           { status: 400 }
         )
 
+      case 'missing_cost_center':
+        return NextResponse.json(
+          {
+            error:
+              'Impossibile validare: la chiusura non ha un centro di costo in testata. Apri la chiusura e selezionalo prima di procedere.',
+          },
+          { status: 400 }
+        )
+
       case 'rejected':
         return NextResponse.json({
           ...result.closure,

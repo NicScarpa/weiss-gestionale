@@ -52,6 +52,7 @@ export function calculateBankDeposit(
 export type ValidateClosureResult =
   | { outcome: 'not_found' }
   | { outcome: 'invalid_status'; currentStatus: string }
+  | { outcome: 'missing_cost_center' }
   | {
       outcome: 'approved'
       closure: { id: string; status: string; validatedAt: Date | null }
@@ -128,6 +129,18 @@ export async function validateClosure({
     })
 
     return { outcome: 'rejected', closure: updated, deletedJournalEntries: deletedEntries }
+  }
+
+  // Il centro di costo resta opzionale nello zod di creazione/modifica (bozze
+  // storiche, salvataggi incrementali della PWA): il vincolo si applica solo
+  // qui, all'ultimo punto prima che i movimenti nascano. Senza questo
+  // controllo, approvare una chiusura con testata vuota farebbe ricadere in
+  // silenzio tutti i movimenti generati sul centro di default del server
+  // (STR) invece che su quello scelto dal compilatore. Non blocca il
+  // rifiuto: una chiusura senza centro deve poter tornare in bozza per
+  // essere corretta.
+  if (!closure.costCenterId) {
+    return { outcome: 'missing_cost_center' }
   }
 
   const bankDeposit = calculateBankDeposit(closure.stations, closure.expenses)

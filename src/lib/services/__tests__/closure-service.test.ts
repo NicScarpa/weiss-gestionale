@@ -1,5 +1,37 @@
-import { describe, it, expect } from 'vitest'
-import { calculateBankDeposit } from '../closure-service'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { calculateBankDeposit, validateClosure } from '../closure-service'
+
+// Mock delle dipendenze di validateClosure: prisma (findUnique + $transaction),
+// la generazione dei movimenti e gli effetti collaterali informativi (audit,
+// alert budget). Stesso stile di mock di src/app/api/chiusure/__tests__/route.test.ts.
+vi.mock('@/lib/prisma', () => ({
+  prisma: {
+    dailyClosure: {
+      findUnique: vi.fn(),
+      update: vi.fn(),
+    },
+    $transaction: vi.fn(),
+  },
+}))
+
+vi.mock('@/lib/closure-journal-entries', () => ({
+  generateJournalEntriesFromClosure: vi.fn(),
+  deleteJournalEntriesForClosure: vi.fn(),
+}))
+
+vi.mock('@/lib/budget/alert-generator', () => ({
+  generateAlertsForVenue: vi.fn().mockResolvedValue([]),
+}))
+
+vi.mock('@/lib/audit', () => ({
+  createAuditLog: vi.fn().mockResolvedValue(undefined),
+}))
+
+import { prisma } from '@/lib/prisma'
+import {
+  generateJournalEntriesFromClosure,
+  deleteJournalEntriesForClosure,
+} from '@/lib/closure-journal-entries'
 
 /**
  * Il versamento in banca è il numero che chiude la giornata: sbagliarlo
@@ -73,5 +105,103 @@ describe('calculateBankDeposit', () => {
     )
 
     expect(deposit).toBeCloseTo(836.25, 2)
+  })
+})
+
+/**
+ * Senza questo controllo, approvare una chiusura con testata vuota fa
+ * ricadere in silenzio tutti i movimenti generati sul centro di default del
+ * server (STR) invece che su quello scelto dal compilatore — un bug scoperto
+ * in review perché né lo zod di creazione (volutamente opzionale, per le
+ * bozze storiche) né il `required` di Radix (solo `aria-required`, non
+ * bloccante) impediscono di arrivare qui senza un centro.
+ */
+describe('validateClosure — centro di costo obbligatorio in approvazione', () => {
+  const baseClosure = {
+    id: 'closure-1',
+    status: 'SUBMITTED',
+    venueId: 'venue-1',
+    date: new Date('2026-08-07'),
+    stations: [],
+    expenses: [],
+    venue: { id: 'venue-1', name: 'Weiss', vatRate: 10 },
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('rifiuta l\'approvazione se la testata non ha un centro di costo, senza toccare la transazione', async () => {
+    vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue({
+      ...baseClosure,
+      costCenterId: null,
+    } as unknown as Awaited<ReturnType<typeof prisma.dailyClosure.findUnique>>)
+
+    const result = await validateClosure({
+      closureId: 'closure-1',
+      userId: 'user-1',
+      action: 'approve',
+    })
+
+    expect(result.outcome).toBe('missing_cost_center')
+    expect(prisma.$transaction).not.toHaveBeenCalled()
+    expect(generateJournalEntriesFromClosure).not.toHaveBeenCalled()
+  })
+
+  it('approva normalmente quando la testata ha un centro di costo', async () => {
+    vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue({
+      ...baseClosure,
+      costCenterId: 'weiss-id',
+    } as unknown as Awaited<ReturnType<typeof prisma.dailyClosure.findUnique>>)
+
+    const txUpdate = vi
+      .fn()
+      .mockResolvedValue({ id: 'closure-1', status: 'VALIDATED', validatedAt: new Date() })
+    vi.mocked(prisma.$transaction).mockImplementation((async (
+      fn: (tx: unknown) => Promise<unknown>
+    ) => fn({ dailyClosure: { update: txUpdate } })) as typeof prisma.$transaction)
+    vi.mocked(generateJournalEntriesFromClosure).mockResolvedValue({
+      entriesCreated: 5,
+      totalDebits: 100,
+      totalCredits: 100,
+    })
+
+    const result = await validateClosure({
+      closureId: 'closure-1',
+      userId: 'user-1',
+      action: 'approve',
+    })
+
+    expect(result.outcome).toBe('approved')
+    expect(generateJournalEntriesFromClosure).toHaveBeenCalledWith(
+      expect.objectContaining({ costCenterId: 'weiss-id' }),
+      'user-1',
+      expect.anything()
+    )
+  })
+
+  it('non blocca il rifiuto (reject) anche se la testata non ha un centro di costo', async () => {
+    vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue({
+      ...baseClosure,
+      costCenterId: null,
+    } as unknown as Awaited<ReturnType<typeof prisma.dailyClosure.findUnique>>)
+
+    const txUpdate = vi.fn().mockResolvedValue({
+      id: 'closure-1',
+      status: 'DRAFT',
+      rejectionNotes: 'Chiusura rifiutata',
+    })
+    vi.mocked(prisma.$transaction).mockImplementation((async (
+      fn: (tx: unknown) => Promise<unknown>
+    ) => fn({ dailyClosure: { update: txUpdate } })) as typeof prisma.$transaction)
+    vi.mocked(deleteJournalEntriesForClosure).mockResolvedValue(0)
+
+    const result = await validateClosure({
+      closureId: 'closure-1',
+      userId: 'user-1',
+      action: 'reject',
+    })
+
+    expect(result.outcome).toBe('rejected')
   })
 })

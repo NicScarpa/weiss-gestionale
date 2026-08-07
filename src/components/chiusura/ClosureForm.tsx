@@ -24,8 +24,12 @@ function shiftLabel(shift: 'MORNING' | 'EVENING') {
   return shift === 'MORNING' ? 'Mattina' : 'Sera'
 }
 
-function getDraftBlockingIssues(data: ClosureFormData): string[] {
+export function getDraftBlockingIssues(data: ClosureFormData): string[] {
   const issues: string[] = []
+
+  if (!data.costCenterId?.trim()) {
+    issues.push('Seleziona il centro di costo della chiusura')
+  }
 
   const fixedRows = data.attendance.filter((a) => !a.isExtra)
   const extraRows = data.attendance.filter((a) => a.isExtra)
