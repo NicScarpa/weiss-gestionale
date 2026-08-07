@@ -1513,10 +1513,18 @@ model NotificationLog {
   @@map("notification_logs")
 }
 
+/// Iscrizione di un browser alle notifiche push (Web Push standard, VAPID).
+///
+/// `endpoint` è l'indirizzo che il browser assegna a quel dispositivo — è
+/// l'identità dell'iscrizione — mentre `p256dh` e `auth` sono le chiavi con
+/// cui si cifra il contenuto: senza, il servizio di push trasporterebbe il
+/// testo in chiaro. Nessun campo qui è un segreto del server.
 model PushSubscription {
   id          String    @id @default(cuid())
   userId      String    @map("user_id")
-  fcmToken    String    @unique @map("fcm_token")
+  endpoint    String    @unique
+  p256dh      String
+  auth        String
   deviceName  String?   @map("device_name")
   deviceType  String?   @map("device_type")
   browserName String?   @map("browser_name")

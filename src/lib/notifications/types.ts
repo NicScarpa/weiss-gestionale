@@ -24,24 +24,6 @@ export interface SendBulkNotificationOptions {
   channels?: NotificationChannel[]
 }
 
-export interface FCMMessage {
-  token: string
-  notification: {
-    title: string
-    body: string
-  }
-  data?: Record<string, string>
-  webpush?: {
-    fcmOptions?: {
-      link?: string
-    }
-    notification?: {
-      icon?: string
-      badge?: string
-    }
-  }
-}
-
 export interface NotificationResult {
   success: boolean
   messageId?: string
