@@ -297,8 +297,42 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/**
+ * Cerca una fattura già importata con la stessa terna (numero, data, P.IVA).
+ *
+ * La P.IVA viene confrontata anche senza zeri iniziali: le fatture importate
+ * prima della normalizzazione le hanno perse, e senza questa variante lo stesso
+ * documento risulterebbe nuovo. L'indice unico del database
+ * (`ux_electronic_invoices_numero_data_piva`) non può fare altrettanto, per
+ * questo il controllo applicativo resta anche ora che c'è il vincolo: sono due
+ * reti a maglie diverse, non una ridondanza.
+ */
+async function trovaFatturaEsistente(
+  invoiceNumber: string,
+  invoiceDate: Date,
+  supplierVat: string
+) {
+  return prisma.electronicInvoice.findFirst({
+    where: {
+      invoiceNumber,
+      invoiceDate,
+      OR: [
+        { supplierVat },
+        { supplierVat: supplierVat.replace(/^0+/, '') },
+      ],
+    },
+  })
+}
+
 // POST /api/invoices - Import fattura XML
 export async function POST(request: NextRequest) {
+  /**
+   * Identità del documento in lavorazione, leggibile anche dal `catch`: serve a
+   * ritrovare la fattura quando il duplicato concorrente viene fermato dal
+   * database, senza riparsare l'XML.
+   */
+  let fatturaInCorso: { numero: string; data: Date; partitaIva: string } | null = null
+
   try {
     const session = await auth()
 
@@ -338,22 +372,17 @@ export async function POST(request: NextRequest) {
     const parseWarnings: ParseWarning[] = parseResult.warnings
 
     // Verifica se la fattura esiste già
-    // Usa varianti P.IVA per retrocompatibilità con dati esistenti non normalizzati
-    const normalizedSupplierVat = fattura.cedentePrestatore.partitaIva
-    const vatWithoutLeadingZeros = normalizedSupplierVat.replace(/^0+/, '')
+    fatturaInCorso = {
+      numero: fattura.numero,
+      data: new Date(fattura.data),
+      partitaIva: fattura.cedentePrestatore.partitaIva,
+    }
 
-    const existingInvoice = await prisma.electronicInvoice.findFirst({
-      where: {
-        invoiceNumber: fattura.numero,
-        invoiceDate: new Date(fattura.data),
-        OR: [
-          // Match esatto con P.IVA normalizzata (nuove fatture)
-          { supplierVat: normalizedSupplierVat },
-          // Match senza zeri iniziali (fatture pre-fix)
-          { supplierVat: vatWithoutLeadingZeros },
-        ],
-      },
-    })
+    const existingInvoice = await trovaFatturaEsistente(
+      fatturaInCorso.numero,
+      fatturaInCorso.data,
+      fatturaInCorso.partitaIva
+    )
 
     if (existingInvoice) {
       return NextResponse.json(
@@ -474,86 +503,93 @@ export async function POST(request: NextRequest) {
       datiEstesi = null
     }
 
-    // Crea la fattura con le scadenze
-    const invoice = await prisma.electronicInvoice.create({
-      data: {
-        invoiceNumber: fattura.numero,
-        invoiceDate: new Date(fattura.data),
-        supplierVat: fattura.cedentePrestatore.partitaIva,
-        supplierName: supplierNameForInvoice, // Use normalized name
-        totalAmount: new Prisma.Decimal(importi.totalAmount.toFixed(2)),
-        vatAmount: new Prisma.Decimal(importi.vatAmount.toFixed(2)),
-        netAmount: new Prisma.Decimal(importi.netAmount.toFixed(2)),
-        status,
-        supplierId,
-        accountId,
-        xmlContent: validatedData.xmlContent,
-        fileName: validatedData.fileName || null,
-        venueId: validatedData.venueId,
-        createdBy: session.user.id,
-        // Nuovi campi estesi (Phase 1 PRD)
-        documentType: datiEstesi?.documentType || fattura.tipoDocumento || 'TD01',
-        lineItems: (datiEstesi?.lineItems ?? Prisma.DbNull) as unknown as Prisma.InputJsonValue,
-        references: (datiEstesi?.references ?? Prisma.DbNull) as unknown as Prisma.InputJsonValue,
-        vatSummary: (datiEstesi?.vatSummary ?? Prisma.DbNull) as unknown as Prisma.InputJsonValue,
-        causale: datiEstesi?.causale || null,
-        deadlines: {
-          create: scadenze.map((s, index) => ({
-            dueDate: s.dueDate,
-            amount: new Prisma.Decimal(s.amount.toFixed(2)),
-            paymentMethod: s.paymentMethod,
-            iban: extractIban(index),
-          })),
-        },
-      },
-      include: {
-        supplier: true,
-        account: true,
-        venue: true,
-        deadlines: true,
-      },
-    })
+    // Documento, rate e scadenze nascono insieme o non nascono affatto.
+    //
+    // Prima le scadenze si generavano dopo, fuori transazione, e il loro errore
+    // veniva solo scritto a log: la fattura restava a database senza scadenze,
+    // invisibile nel calendario e nel saldo scalare, e il re-import rispondeva
+    // "già importata" — nessun modo di rimediare se non a mano sul database.
+    const { invoice, schedulesResult } = await prisma.$transaction(
+      async (tx) => {
+        const invoice = await tx.electronicInvoice.create({
+          data: {
+            invoiceNumber: fattura.numero,
+            invoiceDate: new Date(fattura.data),
+            supplierVat: fattura.cedentePrestatore.partitaIva,
+            supplierName: supplierNameForInvoice, // Use normalized name
+            totalAmount: new Prisma.Decimal(importi.totalAmount.toFixed(2)),
+            vatAmount: new Prisma.Decimal(importi.vatAmount.toFixed(2)),
+            netAmount: new Prisma.Decimal(importi.netAmount.toFixed(2)),
+            status,
+            supplierId,
+            accountId,
+            xmlContent: validatedData.xmlContent,
+            fileName: validatedData.fileName || null,
+            venueId: validatedData.venueId,
+            createdBy: session.user.id,
+            // Nuovi campi estesi (Phase 1 PRD)
+            documentType: datiEstesi?.documentType || fattura.tipoDocumento || 'TD01',
+            lineItems: (datiEstesi?.lineItems ?? Prisma.DbNull) as unknown as Prisma.InputJsonValue,
+            references: (datiEstesi?.references ?? Prisma.DbNull) as unknown as Prisma.InputJsonValue,
+            vatSummary: (datiEstesi?.vatSummary ?? Prisma.DbNull) as unknown as Prisma.InputJsonValue,
+            causale: datiEstesi?.causale || null,
+            deadlines: {
+              create: scadenze.map((s, index) => ({
+                dueDate: s.dueDate,
+                amount: new Prisma.Decimal(s.amount.toFixed(2)),
+                paymentMethod: s.paymentMethod,
+                iban: extractIban(index),
+              })),
+            },
+          },
+          include: {
+            supplier: true,
+            account: true,
+            venue: true,
+            deadlines: true,
+          },
+        })
 
-    // Porta le rate della fattura nello scadenzario: senza questo passaggio
-    // resterebbero dentro il documento e non comparirebbero nel calendario,
-    // nel saldo scalare o nell'aging.
-    let schedulesResult: { created: number; skipped: number } | null = null
-    try {
-      schedulesResult = await generateSchedulesFromInvoice(
-        {
-          id: invoice.id,
-          venueId: invoice.venueId,
-          invoiceNumber: invoice.invoiceNumber,
-          invoiceDate: invoice.invoiceDate,
-          documentType: invoice.documentType,
-          supplierId: invoice.supplierId,
-          supplierName: invoice.supplierName,
-          deadlines: invoice.deadlines.map((d) => ({
-            id: d.id,
-            dueDate: d.dueDate,
-            amount: d.amount,
-            paymentMethod: d.paymentMethod,
-            // InvoiceDeadline non ha una colonna per la stima: la nota si
-            // recupera dalle rate appena estratte, correlate per data e importo
-            notaStima: scadenze.find(
-              (s) =>
-                s.dueDate.getTime() === d.dueDate.getTime() &&
-                Math.abs(s.amount - Number(d.amount)) < 0.01
-            )?.notaStima,
-          })),
-        },
-        session.user.id
-      )
-    } catch (scheduleError) {
-      // La fattura è già stata importata: un errore qui non deve annullarla,
-      // ma va segnalato perché lo scadenzario resta incompleto.
-      logger.error('Errore generazione scadenze da fattura', scheduleError, {
-        invoiceId: invoice.id,
-      })
-    }
+        // Porta le rate della fattura nello scadenzario: senza questo passaggio
+        // resterebbero dentro il documento e non comparirebbero nel calendario,
+        // nel saldo scalare o nell'aging.
+        const schedulesResult = await generateSchedulesFromInvoice(
+          {
+            id: invoice.id,
+            venueId: invoice.venueId,
+            invoiceNumber: invoice.invoiceNumber,
+            invoiceDate: invoice.invoiceDate,
+            documentType: invoice.documentType,
+            supplierId: invoice.supplierId,
+            supplierName: invoice.supplierName,
+            deadlines: invoice.deadlines.map((d) => ({
+              id: d.id,
+              dueDate: d.dueDate,
+              amount: d.amount,
+              paymentMethod: d.paymentMethod,
+              // InvoiceDeadline non ha una colonna per la stima: la nota si
+              // recupera dalle rate appena estratte, correlate per data e importo
+              notaStima: scadenze.find(
+                (s) =>
+                  s.dueDate.getTime() === d.dueDate.getTime() &&
+                  Math.abs(s.amount - Number(d.amount)) < 0.01
+              )?.notaStima,
+            })),
+          },
+          session.user.id,
+          tx
+        )
+
+        return { invoice, schedulesResult }
+      },
+      // Parsing e scritture accessorie stanno fuori: qui restano una create con
+      // le rate annidate e una scadenza per rata. Il tetto è largo per i
+      // documenti con molte rate, non per coprire lavoro lento.
+      { timeout: 15_000 }
+    )
 
     // Le nuove rate del fornitore ereditano la stima del suo ritardo storico
-    if (schedulesResult?.created && invoice.supplierId) {
+    if (schedulesResult.created > 0 && invoice.supplierId) {
       await ricalcolaStimeFornitore(invoice.supplierId, invoice.venueId)
     }
 
@@ -607,7 +643,7 @@ export async function POST(request: NextRequest) {
       {
         ...invoice,
         priceTracking: priceTrackingResult,
-        scadenzeGenerate: schedulesResult?.created ?? 0,
+        scadenzeGenerate: schedulesResult.created,
         // Warning dal parsing (tipo documento non riconosciuto, P.IVA non standard, etc.)
         parseWarnings: parseWarnings.length > 0 ? parseWarnings : undefined,
       },
@@ -618,6 +654,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Dati non validi', details: error.issues },
         { status: 400 }
+      )
+    }
+
+    // Doppio invio arrivato in contemporanea: il controllo iniziale l'ha visto
+    // nuovo in entrambe le richieste, ed è stato l'indice unico del database a
+    // fermare la seconda. È lo stesso esito del controllo applicativo — la
+    // fattura c'è già — e va detto allo stesso modo, non come guasto del
+    // server: chi ha premuto due volte deve ritrovarsi la fattura, non un 500.
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002' &&
+      fatturaInCorso
+    ) {
+      const gia = await trovaFatturaEsistente(
+        fatturaInCorso.numero,
+        fatturaInCorso.data,
+        fatturaInCorso.partitaIva
+      )
+
+      logger.info('Import concorrente della stessa fattura fermato dal vincolo unico', {
+        invoiceNumber: fatturaInCorso.numero,
+        existingId: gia?.id,
+      })
+
+      return NextResponse.json(
+        { error: 'Fattura già importata', existingId: gia?.id ?? null },
+        { status: 409 }
       )
     }
 
