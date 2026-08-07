@@ -184,6 +184,11 @@ con titolo, corpo e url corretti — più la prova per decifratura del payload (
   finte** `expect(true).toBe(true)` più un login che cerca un'etichetta "Email" inesistente da
   gennaio. Installarla senza riscriverle darebbe fiducia falsa.
 - **Verificare l'offline** ora che il service worker esiste (§5 n.22).
+- **Promuovere `entraCome()` in `src/test/integration/auth-mock.ts`**: da quando `withAuth` fa valere
+  anche `mustChangePassword`, il `loginAs` dell'harness **non basta più** per le route protette —
+  tutti gli utenti del seed nascono con quel flag a `true` e ricevono 403 (correttamente). C4 ha
+  scritto un helper locale che azzera il flag nella sessione: va reso condiviso, altrimenti ogni
+  agente futuro ci sbatterà contro e penserà a un difetto del guard.
 - `next build --webpack` fallisce per simboli non consentiti esportati da
   `api/luoghi-lavoro` e `api/promemoria-timbratura` (segnalato da C3).
 - `src/lib/prisma.ts:49` esige TLS quando `NODE_ENV=production`: chi vuole provare una build reale in
@@ -252,6 +257,19 @@ sessione parallela su `presenze/regole-orario`.
    girano in realtà sul codice corrente, sembrando una verifica riuscita. Percorsi sempre espliciti.
 9. **`@testing-library/react` senza `@testing-library/dom`** falliva all'import (ora la peer è
    installata, da B3): era il motivo per cui il repo non aveva test di componente.
+10bis. **Uno script con un worktree predefinito lavora nella cartella sbagliata.** `scripts/gate.sh`
+    aveva `WT=${1:-.../integrazione}`: un agente l'ha lanciato senza argomenti dal proprio worktree e
+    il gate è andato a fare `npm ci` **in quello di integrazione**, fallendo a metà con `ENOTEMPTY` e
+    lasciando lì le dipendenze incoerenti. Il guasto si manifesta come "pacchetto non trovato" su
+    librerie regolarmente dichiarate, in una cartella che non stavi guardando. Il percorso è ora
+    **obbligatorio** e lo script rifiuta di partire senza. Regola generale: **niente valori
+    predefiniti per i percorsi che indicano dove scrivere.**
+
+10ter. **Non fare `git checkout -- <file>` su un fix non ancora committato.** Successo a me il 7 ago
+    durante una verifica per inversione: ripristinando il file ho cancellato il fix che stavo
+    verificando, senza alcun errore. **Committare prima, invertire dopo**: l'inversione su codice
+    committato è reversibile, quella su codice nel solo albero di lavoro no.
+
 10. **`npm install --no-package-lock` distrugge l'ambiente del worktree.** Il flag non aggiunge solo
     il pacchetto richiesto: **ignora il lockfile e ri-risolve l'intero albero** dalle forcelle di
     `package.json`. Caso reale del 7 ago (un `npm install --no-save --no-package-lock knip@5`):

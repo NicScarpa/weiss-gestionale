@@ -7,10 +7,25 @@
 # fine si stampa un verdetto unico. Senza questo, un passo rosso seguito da un
 # "build: OK" si legge come un gate verde.
 
-WT=${1:-$HOME/Desktop/accounting-wt/integrazione}
+# Il worktree è OBBLIGATORIO e non ha un valore predefinito. Averlo avuto è
+# costato un incidente reale il 7 ago 2026: un agente ha lanciato lo script
+# senza argomenti dal proprio worktree, e il gate è andato a fare `npm ci` nel
+# worktree di integrazione, dove è fallito a metà lasciando le dipendenze
+# incoerenti. Il guasto sembra un difetto del codice e sta invece in una
+# cartella che non stavi guardando.
+if [ -z "$1" ]; then
+  print -u2 "uso: gate.sh <percorso-del-worktree> [suffisso-db]"
+  print -u2 "esempio: ./scripts/gate.sh . int"
+  print -u2 "Il percorso è obbligatorio di proposito: vedi il commento qui sopra."
+  exit 2
+fi
+
+WT=$1
 SUFFISSO=${2:-int}
+DA=$PWD
 
 cd "$WT" || exit 2
+[ "$PWD" != "$DA" ] && print "nota: il gate gira su $PWD, non su $DA"
 source ~/.nvm/nvm.sh >/dev/null 2>&1
 nvm use 22 >/dev/null 2>&1
 
