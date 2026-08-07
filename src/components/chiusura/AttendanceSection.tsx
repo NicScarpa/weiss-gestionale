@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -11,7 +12,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Users, UserPlus, Plus, Trash2, Calendar, RefreshCw, Banknote } from 'lucide-react'
+import {
+  Users,
+  UserPlus,
+  Plus,
+  Trash2,
+  Calendar,
+  RefreshCw,
+  Banknote,
+  AlertTriangle,
+  LogOut,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { formatCurrency } from '@/lib/constants'
@@ -107,6 +118,25 @@ interface AttendanceSectionProps {
   className?: string
   closureDate?: string // Data della chiusura per caricare turni schedulati
   venueId?: string
+  /** Avvisa il form di quante timbrature risultano ancora aperte. */
+  onSessioniAperteChange?: (count: number) => void
+}
+
+// Timbratura ancora aperta: la chiusura termina il servizio, quindi prima
+// dell'invio l'operatore conferma l'orario di uscita di chi risulta dentro.
+interface TimbraturaAperta {
+  userId: string
+  firstName: string
+  lastName: string
+  dentroDalle: string
+  finePrevista: string | null
+}
+
+async function fetchTimbratureAperte(date: string): Promise<TimbraturaAperta[]> {
+  const res = await fetch(`/api/attendance/timbrature-aperte?date=${date}`)
+  if (!res.ok) return []
+  const data = await res.json()
+  return data.data || []
 }
 
 // Fetch turni schedulati per data
@@ -152,8 +182,75 @@ export function AttendanceSection({
   className,
   closureDate,
   venueId,
+  onSessioniAperteChange,
 }: AttendanceSectionProps) {
   const [hasLoadedFromSchedule, setHasLoadedFromSchedule] = useState(false)
+  const queryClient = useQueryClient()
+
+  // Timbrature ancora aperte: la chiusura non si invia finché ci sono.
+  const { data: timbratureAperte } = useQuery({
+    queryKey: ['timbrature-aperte', closureDate],
+    queryFn: () => fetchTimbratureAperte(closureDate!),
+    enabled: !!closureDate && !disabled,
+    refetchInterval: 60_000,
+  })
+  const aperte = timbratureAperte ?? []
+
+  const [orariUscita, setOrariUscita] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    onSessioniAperteChange?.(aperte.length)
+  }, [aperte.length, onSessioniAperteChange])
+
+  // L'orario proposto è "adesso": inviare la chiusura è la fine del servizio.
+  // Per chi è andato via prima senza timbrare, l'operatore lo corregge.
+  useEffect(() => {
+    if (aperte.length === 0) return
+    setOrariUscita((prev) => {
+      const adesso = new Date().toTimeString().slice(0, 5)
+      let cambiato = false
+      const next = { ...prev }
+      for (const sessione of aperte) {
+        if (!next[sessione.userId]) {
+          next[sessione.userId] = adesso
+          cambiato = true
+        }
+      }
+      return cambiato ? next : prev
+    })
+  }, [aperte])
+
+  const confermaUscite = useMutation({
+    mutationFn: async () => {
+      const fallback = new Date().toTimeString().slice(0, 5)
+      const res = await fetch('/api/attendance/timbrature-aperte', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: closureDate,
+          uscite: aperte.map((sessione) => ({
+            userId: sessione.userId,
+            orario: orariUscita[sessione.userId] || fallback,
+          })),
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || 'Errore nella registrazione delle uscite')
+      }
+      return data
+    },
+    onSuccess: (data) => {
+      toast.success(data.message || 'Uscite registrate')
+      queryClient.invalidateQueries({ queryKey: ['timbrature-aperte', closureDate] })
+      queryClient.invalidateQueries({
+        queryKey: ['actual-attendance', closureDate, venueId],
+      })
+    },
+    onError: (err: Error) => {
+      toast.error('Uscite non registrate', { description: err.message })
+    },
+  })
 
   // Query per turni schedulati
   const { data: scheduledShifts } = useQuery({
@@ -386,6 +483,63 @@ export function AttendanceSection({
   return (
     <TooltipProvider>
     <div className={`space-y-4 ${className || ''}`}>
+      {/* Timbrature ancora aperte: la chiusura termina il servizio */}
+      {closureDate && !disabled && aperte.length > 0 && (
+        <div className="space-y-3 p-3 bg-amber-50 border border-amber-300 rounded-lg">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="text-sm text-amber-800">
+              <p className="font-medium">
+                {aperte.length === 1
+                  ? 'Una persona risulta ancora dentro'
+                  : `${aperte.length} persone risultano ancora dentro`}
+              </p>
+              <p>
+                Inviare la chiusura termina il servizio: conferma l&apos;orario di
+                uscita di ciascuno. Se qualcuno è andato via prima senza timbrare,
+                correggi l&apos;orario proposto.
+              </p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {aperte.map((sessione) => (
+              <div key={sessione.userId} className="flex items-center gap-3">
+                <span className="flex-1 text-sm">
+                  {sessione.firstName} {sessione.lastName}
+                  <span className="text-muted-foreground">
+                    {' '}— dentro dalle {sessione.dentroDalle}
+                    {sessione.finePrevista
+                      ? `, fine turno ${sessione.finePrevista}`
+                      : ''}
+                  </span>
+                </span>
+                <Input
+                  type="time"
+                  className="w-28"
+                  value={orariUscita[sessione.userId] ?? ''}
+                  onChange={(e) =>
+                    setOrariUscita((prev) => ({
+                      ...prev,
+                      [sessione.userId]: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+            ))}
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => confermaUscite.mutate()}
+            disabled={confermaUscite.isPending}
+            className="gap-1 bg-amber-600 text-white hover:bg-amber-700"
+          >
+            <LogOut className="h-4 w-4" />
+            {confermaUscite.isPending ? 'Registrazione…' : 'Conferma le uscite'}
+          </Button>
+        </div>
+      )}
+
       {/* Banner turni schedulati */}
       {closureDate && scheduledShifts && scheduledShifts.length > 0 && !hasLoadedFromSchedule && (
         <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
