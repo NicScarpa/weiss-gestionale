@@ -1,26 +1,27 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { withAuth } from '@/lib/api-utils'
 import ExcelJS from 'exceljs'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 
 import { logger } from '@/lib/logger'
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const session = await auth()
-    const { id } = await params
 
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
+/**
+ * GET /api/chiusure/[id]/excel - Export completo della chiusura
+ *
+ * A differenza del PDF, che il flusso di fine turno apre allo staff, questo
+ * export non è collegato ad alcuna schermata e riversa l'intero dettaglio di
+ * cassa in un foglio: resta ad admin e manager.
+ */
+export const GET = withAuth<{ id: string }>(
+  async (request, { params, venueId }) => {
+  try {
+    const { id } = params
 
     // Recupera la chiusura con tutti i dati necessari
-    const closure = await prisma.dailyClosure.findUnique({
-      where: { id },
+    const closure = await prisma.dailyClosure.findFirst({
+      where: { id, venueId },
       include: {
         venue: {
           select: {
@@ -305,4 +306,6 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+  },
+  { roles: ['admin', 'manager'], venueScoped: true }
+)

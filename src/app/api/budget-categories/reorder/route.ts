@@ -1,12 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { withAuth } from '@/lib/api-utils'
 import { z } from 'zod'
 
 import { logger } from '@/lib/logger'
 // Schema per riordinamento
 const reorderSchema = z.object({
-  venueId: z.string(),
   items: z.array(z.object({
     id: z.string(),
     displayOrder: z.number().int().min(0),
@@ -15,13 +14,8 @@ const reorderSchema = z.object({
 })
 
 // PUT /api/budget-categories/reorder - Riordina categorie (drag & drop)
-export async function PUT(request: NextRequest) {
+export const PUT = withAuth(async (request, { venueId }) => {
   try {
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
     const body = await request.json()
 
     const validationResult = reorderSchema.safeParse(body)
@@ -32,7 +26,7 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    const { venueId, items } = validationResult.data
+    const { items } = validationResult.data
 
     // Verifica che tutte le categorie appartengano alla venue
     const categoryIds = items.map(i => i.id)
@@ -109,7 +103,7 @@ export async function PUT(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+}, { roles: ['admin', 'manager'], venueScoped: true })
 
 // Helper per ottenere tutti i discendenti di una categoria
 async function getDescendants(categoryId: string): Promise<string[]> {

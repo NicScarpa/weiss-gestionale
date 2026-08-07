@@ -1,9 +1,13 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { withAuth } from '@/lib/api-utils'
 import { z } from 'zod'
 
 import { logger } from '@/lib/logger'
+
+/** Il piano delle categorie di budget si legge e si modifica solo da gestori. */
+const soloGestori = { roles: ['admin', 'manager'], venueScoped: true } as const
+
 // Schema per singolo mapping
 const mappingSchema = z.object({
   accountId: z.string(),
@@ -13,26 +17,15 @@ const mappingSchema = z.object({
 
 // Schema per mappings multipli (batch)
 const batchMappingsSchema = z.object({
-  venueId: z.string(),
   mappings: z.array(mappingSchema),
 })
 
-// GET /api/budget-categories/mappings - Lista tutti i mapping per venue
-export async function GET(request: NextRequest) {
+// GET /api/budget-categories/mappings - Lista tutti i mapping della sede
+export const GET = withAuth(async (request, { venueId }) => {
   try {
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
     const { searchParams } = new URL(request.url)
-    const venueId = searchParams.get('venueId')
     const categoryId = searchParams.get('categoryId')
     const unmappedOnly = searchParams.get('unmappedOnly') === 'true'
-
-    if (!venueId) {
-      return NextResponse.json({ error: 'venueId richiesto' }, { status: 400 })
-    }
 
     if (unmappedOnly) {
       // Restituisci i conti NON ancora mappati
@@ -107,16 +100,11 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+}, soloGestori)
 
 // POST /api/budget-categories/mappings - Crea/aggiorna mapping (singolo o batch)
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async (request, { user, venueId }) => {
   try {
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
     const body = await request.json()
 
     // Supporta sia singolo mapping che batch
@@ -130,7 +118,7 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      const { venueId, mappings } = validationResult.data
+      const { mappings } = validationResult.data
 
       // Verifica che tutte le categorie appartengano alla venue
       const categoryIds = [...new Set(mappings.map(m => m.budgetCategoryId))]
@@ -159,7 +147,7 @@ export async function POST(request: NextRequest) {
               accountId: mapping.accountId,
               budgetCategoryId: mapping.budgetCategoryId,
               includeInBudget: mapping.includeInBudget ?? true,
-              createdBy: session.user!.id,
+              createdBy: user.id,
             },
             update: {
               budgetCategoryId: mapping.budgetCategoryId,
@@ -193,9 +181,9 @@ export async function POST(request: NextRequest) {
 
       const { accountId, budgetCategoryId, includeInBudget } = validationResult.data
 
-      // Verifica che la categoria esista
-      const category = await prisma.budgetCategory.findUnique({
-        where: { id: budgetCategoryId },
+      // Verifica che la categoria esista nella sede della sessione
+      const category = await prisma.budgetCategory.findFirst({
+        where: { id: budgetCategoryId, venueId },
       })
 
       if (!category) {
@@ -224,7 +212,7 @@ export async function POST(request: NextRequest) {
           accountId,
           budgetCategoryId,
           includeInBudget: includeInBudget ?? true,
-          createdBy: session.user.id,
+          createdBy: user.id,
         },
         update: {
           budgetCategoryId,
@@ -245,16 +233,11 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+}, soloGestori)
 
 // DELETE /api/budget-categories/mappings - Rimuovi mapping (singolo o batch)
-export async function DELETE(request: NextRequest) {
+export const DELETE = withAuth(async (request) => {
   try {
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
     const { searchParams } = new URL(request.url)
     const accountId = searchParams.get('accountId')
     const categoryId = searchParams.get('categoryId')
@@ -298,4 +281,4 @@ export async function DELETE(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+}, { roles: ['admin', 'manager'] })

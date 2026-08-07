@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { Session } from 'next-auth'
+import { auth } from './auth'
+import { getVenueId } from './venue'
 import {
   checkRateLimit,
   getClientIp,
@@ -136,9 +138,10 @@ export function requireAuth(session: Session | null, allowMustChangePassword = f
 
 export function requireRole(
   session: Session | null,
-  allowedRoles: string[]
+  allowedRoles: string[],
+  allowMustChangePassword = false
 ): AuthCheckResult {
-  const authCheck = requireAuth(session)
+  const authCheck = requireAuth(session, allowMustChangePassword)
   if (!authCheck.authorized) return authCheck
 
   if (!allowedRoles.includes(session!.user.role)) {
@@ -161,6 +164,125 @@ export function requireVenueAccess(
     return { authorized: false, response: forbidden('Non hai accesso a questa sede') }
   }
   return { authorized: true, session: session! }
+}
+
+/**
+ * Guard di autenticazione e autorizzazione per le route dell'App Router.
+ *
+ * Sostituisce il `const session = await auth()` ripetuto a mano in ogni route:
+ * quella ripetizione è la causa dei buchi trovati dall'audit di agosto 2026,
+ * perché il controllo di ruolo veniva dimenticato o scritto in forme diverse.
+ * Qui la sessione si risolve una volta sola e i tre controlli passano dagli
+ * helper già testati sopra (`requireAuth`, `requireRole`, `requireVenueAccess`).
+ *
+ * Uso:
+ *   export const GET = withAuth(
+ *     async (request, { venueId }) => ok(await leggi(venueId)),
+ *     { roles: ['admin', 'manager'], venueScoped: true }
+ *   )
+ *
+ * `venueId` arriva SEMPRE dalla sessione (o, per chi non ne dichiara una, dalla
+ * sede attiva): mai dalla query string o dal body, che sono sotto il controllo
+ * del client.
+ */
+export interface WithAuthOptions {
+  /** Ruoli ammessi. Omesso: è sufficiente essere autenticati. */
+  roles?: readonly string[]
+  /** Risolve la sede e la passa allo handler in `venueId`. */
+  venueScoped?: boolean
+  /**
+   * Consente l'accesso anche a chi deve ancora cambiare la password. Serve solo
+   * alle route del cambio password stesso: ovunque altro lasciarlo a `false`.
+   */
+  allowMustChangePassword?: boolean
+}
+
+/** Parametri di rotta risolti: `{}` sulle route statiche. */
+type EmptyParams = Record<string, never>
+
+export interface AuthContext<TParams = EmptyParams> {
+  session: Session
+  user: Session['user']
+  /** Segmenti dinamici della rotta, già attesi. */
+  params: TParams
+}
+
+export interface VenueScopedContext<TParams = EmptyParams> extends AuthContext<TParams> {
+  venueId: string
+}
+
+/** Secondo argomento che l'App Router passa alle route dinamiche. */
+interface RouteContext<TParams> {
+  params: Promise<TParams>
+}
+
+type AuthedRoute<TParams> = (
+  request: NextRequest,
+  routeContext?: RouteContext<TParams>
+) => Promise<Response>
+
+type AuthHandler<TParams> = (
+  request: NextRequest,
+  context: AuthContext<TParams>
+) => Promise<Response> | Response
+
+type VenueScopedHandler<TParams> = (
+  request: NextRequest,
+  context: VenueScopedContext<TParams>
+) => Promise<Response> | Response
+
+export function withAuth<TParams = EmptyParams>(
+  handler: VenueScopedHandler<TParams>,
+  options: WithAuthOptions & { venueScoped: true }
+): AuthedRoute<TParams>
+
+export function withAuth<TParams = EmptyParams>(
+  handler: AuthHandler<TParams>,
+  options?: WithAuthOptions & { venueScoped?: false }
+): AuthedRoute<TParams>
+
+export function withAuth<TParams = EmptyParams>(
+  handler: AuthHandler<TParams> | VenueScopedHandler<TParams>,
+  options: WithAuthOptions = {}
+): AuthedRoute<TParams> {
+  const { roles, venueScoped = false, allowMustChangePassword = false } = options
+
+  return async function authenticatedRoute(request, routeContext) {
+    const session = await auth()
+
+    const check = roles?.length
+      ? requireRole(session, [...roles], allowMustChangePassword)
+      : requireAuth(session, allowMustChangePassword)
+    if (!check.authorized) return check.response!
+
+    const authorizedSession = check.session!
+    const params = ((await routeContext?.params) ?? {}) as TParams
+    const base: AuthContext<TParams> = {
+      session: authorizedSession,
+      user: authorizedSession.user,
+      params,
+    }
+
+    if (!venueScoped) {
+      return (handler as AuthHandler<TParams>)(request, base)
+    }
+
+    let venueId: string
+    try {
+      // Chi ha una sede in sessione usa quella; gli admin, che possono non
+      // averla, ricadono sull'unica sede attiva (l'app è single-venue: vedi
+      // il commento in cima a src/lib/venue.ts).
+      venueId = authorizedSession.user.venueId ?? (await getVenueId())
+    } catch (error) {
+      logger.error('Sede non risolvibile in withAuth', error)
+      return internalError()
+    }
+
+    const venueCheck = requireVenueAccess(authorizedSession, venueId)
+    if (!venueCheck.authorized) return venueCheck.response!
+
+    return (handler as VenueScopedHandler<TParams>)(request, { ...base, venueId })
+  }
 }
 
 // Pagination helpers

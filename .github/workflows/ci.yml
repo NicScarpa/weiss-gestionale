@@ -30,6 +30,14 @@ jobs:
       - name: Run ESLint
         run: npm run lint
 
+      # Censimento dell'autorizzazione sulle route API. Oggi è solo un rapporto
+      # (lo script esce sempre 0): la conversione a withAuth è appena
+      # cominciata e bloccare qui fermerebbe ogni commit. Quando sarà completa
+      # diventa `node scripts/check-route-auth.mjs --strict`, che fallisce se
+      # ricompaiono guard scritti a mano.
+      - name: Autorizzazione delle route API (rapporto)
+        run: node scripts/check-route-auth.mjs
+
   typecheck:
     name: Type Check
     runs-on: ubuntu-latest
