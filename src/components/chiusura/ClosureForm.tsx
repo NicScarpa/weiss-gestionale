@@ -15,6 +15,8 @@ import { ClosureSummaryCard } from './ClosureSummaryCard'
 import { ClosureActions } from './ClosureActions'
 import { useClosureCalculations } from './hooks/useClosureCalculations'
 import { toast } from 'sonner'
+import type { CostCenterOption } from '@/components/prima-nota/shared/CostCenterSelect'
+import { resolveDefaultClosureCostCenterId } from '@/lib/closure-cost-center'
 
 import { logger } from '@/lib/logger'
 
@@ -79,6 +81,8 @@ export interface ClosureFormData {
   weatherAfternoon?: string
   weatherEvening?: string
   notes?: string
+  /** Centro di costo di testata: eredita a tutti i movimenti generati, salvo override di riga. */
+  costCenterId?: string
   stations: (CashStationData & { isEventOnly?: boolean })[]
   partials: HourlyPartialData[]
   expenses: ExpenseData[]
@@ -94,6 +98,7 @@ interface ClosureFormProps {
   cashStationTemplates: { id: string; name: string; position: number; isEventOnly?: boolean }[]
   staffMembers: { id: string; firstName: string; lastName: string; isFixedStaff?: boolean; hourlyRate?: number | null; defaultShift?: 'MORNING' | 'EVENING' | null }[]
   accounts: { id: string; code: string; name: string }[]
+  costCenters: CostCenterOption[]
   closureId?: string
   status?: 'DRAFT' | 'SUBMITTED' | 'VALIDATED'
   onSave?: (data: ClosureFormData) => Promise<void>
@@ -108,6 +113,7 @@ export function ClosureForm({
   cashStationTemplates,
   staffMembers,
   accounts,
+  costCenters,
   closureId,
   status = 'DRAFT',
   onSave,
@@ -149,6 +155,7 @@ export function ClosureForm({
     weatherAfternoon: initialData?.weatherAfternoon || '',
     weatherEvening: initialData?.weatherEvening || '',
     notes: initialData?.notes || '',
+    costCenterId: initialData?.costCenterId ?? resolveDefaultClosureCostCenterId(costCenters),
     stations: initializeStations(),
     partials: initialData?.partials ?? DEFAULT_PARTIAL_HOURS.map((timeSlot) => ({
       timeSlot,
@@ -485,6 +492,9 @@ export function ClosureForm({
         onWeatherEveningChange={(w) => handleFieldChange('weatherEvening', w)}
         notes={formData.notes}
         onNotesChange={(notes) => handleFieldChange('notes', notes)}
+        costCenterId={formData.costCenterId}
+        onCostCenterIdChange={(id) => handleFieldChange('costCenterId', id)}
+        costCenters={costCenters}
         disabled={isReadOnly}
       />
 
@@ -531,6 +541,8 @@ export function ClosureForm({
         disabled={isReadOnly}
         venueId={venueId}
         activeStationKeys={activeStationKeys}
+        costCenters={costCenters}
+        costCenterTestataId={formData.costCenterId}
       />
 
       {/* Presenze */}

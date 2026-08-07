@@ -14,6 +14,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  CostCenterSelectList,
+  type CostCenterOption,
+} from '@/components/prima-nota/shared/CostCenterSelect'
 
 // Opzioni meteo
 const WEATHER_OPTIONS = [
@@ -40,6 +44,9 @@ interface ClosureMetadataSectionProps {
   onWeatherEveningChange: (weather: string) => void
   notes?: string
   onNotesChange: (notes: string) => void
+  costCenterId?: string
+  onCostCenterIdChange: (costCenterId: string | undefined) => void
+  costCenters: CostCenterOption[]
   disabled?: boolean
 }
 
@@ -58,6 +65,9 @@ export function ClosureMetadataSection({
   onWeatherEveningChange,
   notes,
   onNotesChange,
+  costCenterId,
+  onCostCenterIdChange,
+  costCenters,
   disabled = false,
 }: ClosureMetadataSectionProps) {
   const NOTES_PHRASES = [
@@ -115,6 +125,17 @@ export function ClosureMetadataSection({
                 placeholder="Nome evento..."
               />
             )}
+          </div>
+
+          <div className="space-y-2">
+            <Label>Centro di costo *</Label>
+            <CostCenterSelectList
+              costCenters={costCenters}
+              value={costCenterId}
+              onChange={onCostCenterIdChange}
+              required
+              disabled={disabled}
+            />
           </div>
         </div>
 

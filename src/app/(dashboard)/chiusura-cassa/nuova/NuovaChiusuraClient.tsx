@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { ClosureForm, ClosureFormData } from '@/components/chiusura'
 import { useClosureMutation } from '@/hooks/useClosureMutation'
+import type { CostCenterOption } from '@/components/prima-nota/shared/CostCenterSelect'
 
 interface NuovaChiusuraClientProps {
   venue: {
@@ -13,6 +14,7 @@ interface NuovaChiusuraClientProps {
   cashStationTemplates: { id: string; name: string; position: number; isEventOnly: boolean }[]
   staffMembers: { id: string; firstName: string; lastName: string; isFixedStaff: boolean; hourlyRate: number | null }[]
   accounts: { id: string; code: string; name: string }[]
+  costCenters: CostCenterOption[]
 }
 
 export function NuovaChiusuraClient({
@@ -20,6 +22,7 @@ export function NuovaChiusuraClient({
   cashStationTemplates,
   staffMembers,
   accounts,
+  costCenters,
 }: NuovaChiusuraClientProps) {
   const router = useRouter()
 
@@ -46,6 +49,7 @@ export function NuovaChiusuraClient({
       cashStationTemplates={cashStationTemplates}
       staffMembers={staffMembers}
       accounts={accounts}
+      costCenters={costCenters}
       onSave={handleSave}
       onSubmit={submitForValidation}
     />

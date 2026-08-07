@@ -84,6 +84,24 @@ describe('buildClosurePayload', () => {
 
       expect(result.notes).toBe('Giornata tranquilla')
     })
+
+    it('should preserve the header cost center (costCenterId)', () => {
+      const data = createFormData({
+        costCenterId: 'weiss-id',
+      })
+
+      const result = buildClosurePayload(data, 'venue-123')
+
+      expect(result.costCenterId).toBe('weiss-id')
+    })
+
+    it('should leave costCenterId undefined when not set', () => {
+      const data = createFormData()
+
+      const result = buildClosurePayload(data, 'venue-123')
+
+      expect(result.costCenterId).toBeUndefined()
+    })
   })
 
   describe('Stations Mapping', () => {
@@ -234,6 +252,42 @@ describe('buildClosurePayload', () => {
       const result = buildClosurePayload(data, 'venue-123')
 
       expect(result.expenses).toHaveLength(2)
+    })
+
+    it('should preserve an explicit per-row cost center override', () => {
+      const data = createFormData({
+        expenses: [
+          { payee: 'Fornitore Casetta', amount: 40, costCenterId: 'cas-id' } as unknown as ExpenseData,
+        ],
+      })
+
+      const result = buildClosurePayload(data, 'venue-123')
+
+      expect(result.expenses[0].costCenterId).toBe('cas-id')
+    })
+
+    it('should send null for a row that explicitly inherits from the header ("Come chiusura")', () => {
+      const data = createFormData({
+        expenses: [
+          { payee: 'Fornitore Weiss', amount: 40, costCenterId: null } as unknown as ExpenseData,
+        ],
+      })
+
+      const result = buildClosurePayload(data, 'venue-123')
+
+      expect(result.expenses[0].costCenterId).toBeNull()
+    })
+
+    it('should leave costCenterId undefined for a row that never touched the override', () => {
+      const data = createFormData({
+        expenses: [
+          { payee: 'Fornitore Weiss', amount: 40 } as unknown as ExpenseData,
+        ],
+      })
+
+      const result = buildClosurePayload(data, 'venue-123')
+
+      expect(result.expenses[0].costCenterId).toBeUndefined()
     })
   })
 

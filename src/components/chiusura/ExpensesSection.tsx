@@ -16,6 +16,8 @@ import { formatCurrency } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 import { PayeeAutocomplete } from '@/components/ui/payee-autocomplete'
 import { AccountComboboxList } from '@/components/prima-nota/shared/AccountCombobox'
+import type { CostCenterOption } from '@/components/prima-nota/shared/CostCenterSelect'
+import { getCostCenterCode } from '@/lib/closure-cost-center'
 
 // Tipo per uscita
 export interface ExpenseData {
@@ -29,6 +31,8 @@ export interface ExpenseData {
   accountId?: string
   isPaid?: boolean
   paidBy?: string
+  /** Override del centro di testata per questa sola riga: null/undefined = eredita dalla testata. */
+  costCenterId?: string | null
 }
 
 // Valore iniziale
@@ -61,6 +65,9 @@ const DOCUMENT_TYPE_OPTIONS = [
   { value: 'PERSONALE', label: 'Personale' },
 ]
 
+/** Sentinella per "eredita dalla testata": invia costCenterId = null sulla riga. */
+const EREDITA_TESTATA = '__eredita_testata__'
+
 interface Account {
   id: string
   code: string
@@ -75,6 +82,10 @@ interface ExpensesSectionProps {
   className?: string
   venueId?: string
   activeStationKeys?: string[]
+  /** Centri di costo attivi, per l'override per riga (Task 14). */
+  costCenters?: CostCenterOption[]
+  /** Id del centro di testata: determina cosa eredita "Come chiusura". */
+  costCenterTestataId?: string
 }
 
 export function ExpensesSection({
@@ -85,7 +96,10 @@ export function ExpensesSection({
   className,
   venueId,
   activeStationKeys,
+  costCenters = [],
+  costCenterTestataId,
 }: ExpensesSectionProps) {
+  const testataCode = getCostCenterCode(costCenters, costCenterTestataId)
   // Filtra opzioni stazione in base alle stazioni movimentate
   const getFilteredStationOptions = (currentPaidBy?: string) => {
     if (!activeStationKeys) return STATION_OPTIONS
@@ -113,7 +127,7 @@ export function ExpensesSection({
   const handleFieldChange = (
     index: number,
     field: keyof ExpenseData,
-    value: string | number | boolean
+    value: string | number | boolean | null
   ) => {
     const updated = [...expenses]
     if (field === 'amount' || field === 'vatAmount') {
@@ -292,6 +306,37 @@ export function ExpensesSection({
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+
+              {/* Quarta riga: Centro di costo (override della testata) */}
+              <div className="space-y-1">
+                <Label className="text-xs">Centro di costo</Label>
+                <Select
+                  value={expense.costCenterId ?? EREDITA_TESTATA}
+                  onValueChange={(value) =>
+                    handleFieldChange(
+                      index,
+                      'costCenterId',
+                      value === EREDITA_TESTATA ? null : value
+                    )
+                  }
+                  disabled={disabled}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={EREDITA_TESTATA}>
+                      {testataCode ? `Come chiusura (${testataCode})` : 'Come chiusura'}
+                    </SelectItem>
+                    {costCenters.map((cc) => (
+                      <SelectItem key={cc.id} value={cc.id}>
+                        <span className="font-medium">{cc.code}</span>
+                        <span className="ml-2 text-muted-foreground">{cc.name}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           ))

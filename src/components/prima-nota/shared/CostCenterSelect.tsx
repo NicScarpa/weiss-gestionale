@@ -80,6 +80,64 @@ export function resolveCostCenterField(params: {
   }
 }
 
+interface CostCenterSelectListProps {
+  costCenters: CostCenterOption[]
+  isLoading?: boolean
+  value?: string
+  onChange: (costCenterId: string | undefined) => void
+  required?: boolean
+  disabled?: boolean
+  hint?: string
+  placeholder?: string
+}
+
+/**
+ * Corpo del select (stesse opzioni/sentinella "Nessuno"), a prescindere da
+ * come è stato ottenuto l'elenco dei centri. Usato sia da `CostCenterSelect`
+ * (fetch interno via react-query) sia direttamente da chi possiede già i
+ * centri come prop — es. la chiusura di cassa (Task 14), che li riceve via
+ * SSR insieme a conti e personale: quel form non deve introdurre una fetch
+ * di rete nel percorso del centro di costo, perché è un campo obbligatorio e
+ * la PWA deve restare compilabile offline (le route `/api/*` sono
+ * NetworkOnly nel service worker, vedi `src/app/sw.ts`).
+ */
+export function CostCenterSelectList({
+  costCenters,
+  isLoading = false,
+  value,
+  onChange,
+  required = false,
+  disabled = false,
+  hint,
+  placeholder,
+}: CostCenterSelectListProps) {
+  const handleValueChange = (v: string) => {
+    onChange(v === NESSUN_CENTRO ? undefined : v)
+  }
+
+  return (
+    <div className="space-y-1">
+      <Select value={value ?? ''} onValueChange={handleValueChange} disabled={disabled || isLoading}>
+        <SelectTrigger aria-required={required}>
+          <SelectValue
+            placeholder={isLoading ? 'Caricamento centri...' : placeholder ?? 'Seleziona centro di costo'}
+          />
+        </SelectTrigger>
+        <SelectContent>
+          {!required && <SelectItem value={NESSUN_CENTRO}>Nessuno</SelectItem>}
+          {costCenters.map((cc) => (
+            <SelectItem key={cc.id} value={cc.id}>
+              <span className="font-medium">{cc.code}</span>
+              <span className="ml-2 text-muted-foreground">{cc.name}</span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </div>
+  )
+}
+
 interface CostCenterSelectProps {
   value?: string
   onChange: (costCenterId: string | undefined) => void
@@ -109,29 +167,15 @@ export function CostCenterSelect({
 }: CostCenterSelectProps) {
   const { data: costCenters = [], isLoading } = useCostCenters()
 
-  const handleValueChange = (v: string) => {
-    onChange(v === NESSUN_CENTRO ? undefined : v)
-  }
-
   return (
-    <div className="space-y-1">
-      <Select value={value ?? ''} onValueChange={handleValueChange} disabled={disabled || isLoading}>
-        <SelectTrigger aria-required={required}>
-          <SelectValue
-            placeholder={isLoading ? 'Caricamento centri...' : 'Seleziona centro di costo'}
-          />
-        </SelectTrigger>
-        <SelectContent>
-          {!required && <SelectItem value={NESSUN_CENTRO}>Nessuno</SelectItem>}
-          {costCenters.map((cc) => (
-            <SelectItem key={cc.id} value={cc.id}>
-              <span className="font-medium">{cc.code}</span>
-              <span className="ml-2 text-muted-foreground">{cc.name}</span>
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-    </div>
+    <CostCenterSelectList
+      costCenters={costCenters}
+      isLoading={isLoading}
+      value={value}
+      onChange={onChange}
+      required={required}
+      disabled={disabled}
+      hint={hint}
+    />
   )
 }

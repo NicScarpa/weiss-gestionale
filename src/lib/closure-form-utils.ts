@@ -55,6 +55,8 @@ export interface ClosureExpensePayload {
   accountId?: string
   isPaid?: boolean
   paidBy?: string
+  /** Override del centro di testata per questa sola riga: assente/null = eredita dalla testata. */
+  costCenterId?: string | null
 }
 
 export interface ClosureAttendancePayload {
@@ -77,6 +79,8 @@ export interface ClosureApiPayload {
   weatherAfternoon?: string
   weatherEvening?: string
   notes?: string
+  /** Centro di costo di testata: eredita a tutti i movimenti generati, salvo override di riga. */
+  costCenterId?: string
   stations: ClosureStationPayload[]
   partials: ClosurePartialPayload[]
   expenses: ClosureExpensePayload[]
@@ -129,6 +133,7 @@ function mapExpenseToPayload(expense: ClosureFormData['expenses'][0]): ClosureEx
     accountId: expense.accountId,
     isPaid: expense.isPaid,
     paidBy: expense.paidBy,
+    costCenterId: expense.costCenterId,
   }
 }
 
@@ -167,6 +172,7 @@ export function buildClosurePayload(
     weatherAfternoon: data.weatherAfternoon,
     weatherEvening: data.weatherEvening,
     notes: data.notes,
+    costCenterId: data.costCenterId,
     stations: data.stations.map(mapStationToPayload),
     partials: data.partials.map(mapPartialToPayload),
     expenses: data.expenses.map(mapExpenseToPayload),

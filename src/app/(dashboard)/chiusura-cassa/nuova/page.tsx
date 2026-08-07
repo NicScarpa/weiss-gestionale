@@ -18,7 +18,7 @@ export default async function NuovaChiusuraPage() {
   const venueId = await getVenueId()
 
   // Recupera dati necessari per il form
-  const [venue, cashStationTemplates, staffMembers, accounts] = await Promise.all([
+  const [venue, cashStationTemplates, staffMembers, accounts, costCenters] = await Promise.all([
     // Venue con dettagli
     prisma.venue.findUnique({
       where: { id: venueId },
@@ -74,6 +74,19 @@ export default async function NuovaChiusuraPage() {
       },
       orderBy: { code: 'asc' },
     }),
+    // Centri di costo attivi: passati come prop (niente fetch client) perché
+    // il form deve restare compilabile offline (le route /api/* sono
+    // NetworkOnly nel service worker).
+    prisma.costCenter.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        isDefault: true,
+      },
+      orderBy: { code: 'asc' },
+    }),
   ])
 
   if (!venue) {
@@ -106,6 +119,7 @@ export default async function NuovaChiusuraPage() {
       cashStationTemplates={stations}
       staffMembers={formattedStaff}
       accounts={accounts}
+      costCenters={costCenters}
     />
   )
 }

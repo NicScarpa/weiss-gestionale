@@ -80,7 +80,7 @@ export default async function ModificaChiusuraPage({ params }: Props) {
   const isEditingValidated = closure.status === 'VALIDATED'
 
   // Recupera dati aggiuntivi
-  const [staffMembers, accounts] = await Promise.all([
+  const [staffMembers, accounts, costCenters] = await Promise.all([
     prisma.user.findMany({
       where: {
         venueId: closure.venueId,
@@ -109,6 +109,18 @@ export default async function ModificaChiusuraPage({ params }: Props) {
       },
       orderBy: { code: 'asc' },
     }),
+    // Centri di costo attivi: passati come prop, stessa strategia di conti e
+    // personale, perché il form deve restare compilabile offline.
+    prisma.costCenter.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        isDefault: true,
+      },
+      orderBy: { code: 'asc' },
+    }),
   ])
 
   // Trasforma i dati per il form
@@ -121,6 +133,7 @@ export default async function ModificaChiusuraPage({ params }: Props) {
     weatherAfternoon: closure.weatherAfternoon || undefined,
     weatherEvening: closure.weatherEvening || undefined,
     notes: closure.notes || undefined,
+    costCenterId: closure.costCenterId || undefined,
     stations: closure.stations.map((s) => ({
       id: s.id,
       name: s.name,
@@ -186,6 +199,7 @@ export default async function ModificaChiusuraPage({ params }: Props) {
       vatAmount: Number(e.vatAmount) || undefined,
       accountId: e.accountId || undefined,
       paidBy: e.paidBy || undefined,
+      costCenterId: e.costCenterId || undefined,
     })),
     attendance: closure.attendance.map((a) => {
       const staffMember = staffMembers.find((s) => s.id === a.userId)
@@ -224,6 +238,7 @@ export default async function ModificaChiusuraPage({ params }: Props) {
         hourlyRate: s.hourlyRate ? Number(s.hourlyRate) : null,
       }))}
       accounts={accounts}
+      costCenters={costCenters}
       isEditingValidated={isEditingValidated}
     />
   )

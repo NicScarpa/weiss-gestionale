@@ -5,6 +5,7 @@ import { ClosureForm, ClosureFormData } from '@/components/chiusura'
 import { useClosureMutation } from '@/hooks/useClosureMutation'
 import { AlertTriangle } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
+import type { CostCenterOption } from '@/components/prima-nota/shared/CostCenterSelect'
 
 interface ModificaChiusuraClientProps {
   closureId: string
@@ -17,6 +18,7 @@ interface ModificaChiusuraClientProps {
   cashStationTemplates: { id: string; name: string; position: number }[]
   staffMembers: { id: string; firstName: string; lastName: string }[]
   accounts: { id: string; code: string; name: string }[]
+  costCenters: CostCenterOption[]
   isEditingValidated?: boolean
 }
 
@@ -27,6 +29,7 @@ export function ModificaChiusuraClient({
   cashStationTemplates,
   staffMembers,
   accounts,
+  costCenters,
   isEditingValidated = false,
 }: ModificaChiusuraClientProps) {
   const router = useRouter()
@@ -86,6 +89,7 @@ export function ModificaChiusuraClient({
         cashStationTemplates={cashStationTemplates}
         staffMembers={staffMembers}
         accounts={accounts}
+        costCenters={costCenters}
         status={isEditingValidated ? 'VALIDATED' : 'DRAFT'}
         onSave={handleSave}
         onSubmit={handleSubmit}
