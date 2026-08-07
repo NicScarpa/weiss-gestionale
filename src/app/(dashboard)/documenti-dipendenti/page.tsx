@@ -113,7 +113,7 @@ export default function DocumentiDipendentiPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Documenti Dipendenti</h1>
+        <h1 className="text-2xl font-bold text-foreground">Documenti Dipendenti</h1>
         <p className="text-sm text-slate-500 mt-1">
           Gestisci cedolini, attestati e altri documenti per i dipendenti
         </p>
@@ -293,7 +293,7 @@ function BulkUploadTab({ onGoToPending }: { onGoToPending: () => void }) {
                 <h4 className="font-medium text-sm mb-2">Cedolini salvati:</h4>
                 <div className="space-y-1">
                   {result.matched.map((m) => (
-                    <div key={m.documentId} className="flex items-center gap-2 text-sm text-slate-600">
+                    <div key={m.documentId} className="flex items-center gap-2 text-sm text-muted-foreground">
                       <CheckCircle className="h-3 w-3 text-green-500" />
                       <span>{m.name}</span>
                       <span className="text-slate-400">
@@ -310,7 +310,7 @@ function BulkUploadTab({ onGoToPending }: { onGoToPending: () => void }) {
                 <h4 className="font-medium text-sm mb-2">
                   In attesa di assegnazione:
                 </h4>
-                <p className="text-sm text-slate-600 mb-2">
+                <p className="text-sm text-muted-foreground mb-2">
                   Il PDF di queste pagine è stato salvato ma nessun dipendente vi
                   è stato riconosciuto. Nessuno le vede nel portale finché non le
                   assegni dal tab <strong>Da Assegnare</strong>.
@@ -403,7 +403,7 @@ function PendingAssignmentTab() {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-slate-600">
+      <p className="text-sm text-muted-foreground">
         Queste pagine sono state estratte da un PDF bulk ma il nome del
         dipendente non è stato riconosciuto. Sono salvate e scaricabili, ma
         nessun dipendente le vede finché non le assegni.
@@ -437,7 +437,7 @@ function PendingAssignmentTab() {
                   <Label className="text-xs text-slate-500">
                     Testo estratto dalla pagina
                   </Label>
-                  <pre className="mt-1 p-3 bg-slate-50 rounded-lg text-xs text-slate-700 whitespace-pre-wrap max-h-40 overflow-y-auto">
+                  <pre className="mt-1 p-3 bg-slate-50 rounded-lg text-xs text-foreground whitespace-pre-wrap max-h-40 overflow-y-auto">
                     {doc.unmatchedText}
                   </pre>
                 </div>

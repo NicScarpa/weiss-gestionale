@@ -27,7 +27,7 @@ import {
  */
 
 const STILE_PRIORITA: Record<PrioritaComunicazione, string> = {
-  NORMAL: 'bg-gray-100 text-gray-600',
+  NORMAL: 'bg-muted text-muted-foreground',
   IMPORTANT: 'bg-amber-100 text-amber-800',
   URGENT: 'bg-red-100 text-red-700',
 }
@@ -73,14 +73,14 @@ export default function PortaleComunicazioniPage() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold text-gray-900">Comunicazioni</h2>
+      <h2 className="text-xl font-bold text-foreground">Comunicazioni</h2>
 
       {isLoading ? (
         <div className="flex justify-center py-12">
-          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
       ) : comunicazioni.length === 0 ? (
-        <div className="py-12 text-center text-gray-500">
+        <div className="py-12 text-center text-muted-foreground">
           <Megaphone className="mx-auto mb-3 h-10 w-10 text-gray-300" />
           <p className="text-sm">Nessuna comunicazione al momento</p>
         </div>
@@ -94,8 +94,8 @@ export default function PortaleComunicazioniPage() {
               <Card
                 key={comunicazione.id}
                 className={cn(
-                  'rounded-2xl border-gray-100',
-                  daLeggere && 'border-gray-900/10 bg-white shadow-sm ring-1 ring-gray-900/5'
+                  'rounded-2xl border-border',
+                  daLeggere && 'border-border/10 bg-card shadow-sm ring-1 ring-gray-900/5'
                 )}
               >
                 <CardContent className="space-y-2 py-4">
@@ -109,7 +109,7 @@ export default function PortaleComunicazioniPage() {
                       )}
                       <span
                         className={cn(
-                          'text-sm text-gray-900',
+                          'text-sm text-foreground',
                           daLeggere ? 'font-semibold' : 'font-medium'
                         )}
                       >
@@ -128,11 +128,11 @@ export default function PortaleComunicazioniPage() {
                     )}
                   </div>
 
-                  <p className="whitespace-pre-wrap text-sm text-gray-600">
+                  <p className="whitespace-pre-wrap text-sm text-muted-foreground">
                     {comunicazione.message}
                   </p>
 
-                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-400">
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     <span>{formattaIstante(comunicazione.createdAt)}</span>
                     {comunicazione.eventDate && (
                       <span>

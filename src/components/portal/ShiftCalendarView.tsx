@@ -110,10 +110,10 @@ export function ShiftCalendarView() {
         </Button>
 
         <div className="flex items-center gap-2">
-          <h2 className="text-lg font-bold text-gray-900 capitalize">
+          <h2 className="text-lg font-bold text-foreground capitalize">
             {format(currentMonth, 'MMMM yyyy', { locale: it })}
           </h2>
-          <Button variant="outline" size="sm" onClick={goToToday} className="border-gray-300 text-gray-900 hover:bg-gray-100">
+          <Button variant="outline" size="sm" onClick={goToToday} className="border-border text-foreground hover:bg-muted">
             Oggi
           </Button>
         </div>
@@ -127,11 +127,11 @@ export function ShiftCalendarView() {
       <Card>
         <CardContent className="p-0">
           {/* Header giorni settimana */}
-          <div className="grid grid-cols-7 border-b border-gray-100">
+          <div className="grid grid-cols-7 border-b border-border">
             {['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'].map((d) => (
               <div
                 key={d}
-                className="py-2 text-center text-xs font-medium text-gray-400 uppercase"
+                className="py-2 text-center text-xs font-medium text-muted-foreground uppercase"
               >
                 {d}
               </div>
@@ -142,7 +142,7 @@ export function ShiftCalendarView() {
           {isLoading ? (
             <div className="grid grid-cols-7">
               {Array.from({ length: 35 }).map((_, i) => (
-                <div key={i} className="min-h-[80px] border-b border-r border-gray-100 p-1">
+                <div key={i} className="min-h-[80px] border-b border-r border-border p-1">
                   <Skeleton className="h-4 w-4 mb-2" />
                   <Skeleton className="h-8 w-full" />
                 </div>
@@ -160,8 +160,8 @@ export function ShiftCalendarView() {
                   <div
                     key={dateKey}
                     className={cn(
-                      'min-h-[80px] border-b border-r border-gray-100 p-1',
-                      !isCurrentMonth && 'bg-gray-50/50'
+                      'min-h-[80px] border-b border-r border-border p-1',
+                      !isCurrentMonth && 'bg-muted/50'
                     )}
                   >
                     <div
@@ -207,11 +207,11 @@ export function ShiftCalendarView() {
                           <span className="font-medium">
                             {shift.shiftDefinition?.code || 'T'}
                           </span>{' '}
-                          <span className="text-gray-600">
+                          <span className="text-muted-foreground">
                             {formatTime(shift.startTime)}
                           </span>
                           {shift.swapStatus === 'PENDING' && (
-                            <ArrowLeftRight className="inline-block w-3 h-3 ml-1 text-gray-700" />
+                            <ArrowLeftRight className="inline-block w-3 h-3 ml-1 text-foreground" />
                           )}
                         </button>
                       )
@@ -252,7 +252,7 @@ export function ShiftCalendarView() {
       )}
 
       {/* Hint per lo scambio */}
-      <p className="text-xs text-gray-400 text-center">
+      <p className="text-xs text-muted-foreground text-center">
         Clicca su un turno futuro per richiedere uno scambio
       </p>
 

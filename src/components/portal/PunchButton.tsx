@@ -514,7 +514,7 @@ export function PunchButton({
           {blocco.conLinkCorrezioni && (
             <Link
               href="/portale/correzioni"
-              className="text-sm font-medium text-gray-900 underline underline-offset-2"
+              className="text-sm font-medium text-foreground underline underline-offset-2"
             >
               Dichiara le ore da qui
             </Link>

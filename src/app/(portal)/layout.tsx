@@ -2,6 +2,7 @@ import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import { PortalNavigation } from '@/components/portal/PortalNavigation'
 import { NotificationBell } from '@/components/notifications/NotificationBell'
+import { ThemeToggle } from '@/components/theme/theme-toggle'
 
 export default async function PortalLayout({
   children,
@@ -18,22 +19,25 @@ export default async function PortalLayout({
   const initials = `${session.user.firstName?.[0] ?? ''}${session.user.lastName?.[0] ?? ''}`
 
   return (
-    <div className="flex min-h-screen flex-col bg-gray-50">
-      {/* Header bianco minimale */}
-      <header className="bg-white border-b border-gray-200">
+    <div className="flex min-h-screen flex-col bg-background">
+      {/* Header minimale */}
+      <header className="bg-card border-b">
         <div className="flex items-center justify-between px-5 pt-12 pb-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-900">
-              <span className="text-base font-bold text-white">{initials}</span>
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-foreground">
+              <span className="text-base font-bold text-background">{initials}</span>
             </div>
             <div>
-              <h1 className="text-base font-bold text-gray-900">
+              <h1 className="text-base font-bold text-foreground">
                 {session.user.firstName} {session.user.lastName}
               </h1>
-              <p className="text-sm text-gray-500">Weiss Srl</p>
+              <p className="text-sm text-muted-foreground">Weiss Srl</p>
             </div>
           </div>
-          <NotificationBell />
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
+            <NotificationBell />
+          </div>
         </div>
       </header>
 

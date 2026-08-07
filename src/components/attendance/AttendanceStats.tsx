@@ -52,7 +52,7 @@ export function AttendanceStats({ stats }: AttendanceStatsProps) {
       label: 'Usciti',
       value: stats.clockedOut,
       icon: Home,
-      color: 'text-gray-600',
+      color: 'text-muted-foreground',
       bgColor: 'bg-gray-50',
     },
     {

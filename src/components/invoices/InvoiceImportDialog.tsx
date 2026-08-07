@@ -767,7 +767,7 @@ export function InvoiceImportDialog({
              
              <div className="grid grid-cols-3 gap-4 text-center">
                 <div className="p-3 bg-slate-50 rounded-lg">
-                   <p className="text-2xl font-bold text-slate-700">{stats.total}</p>
+                   <p className="text-2xl font-bold text-foreground">{stats.total}</p>
                    <p className="text-xs text-slate-500 uppercase">Totali</p>
                 </div>
                 <div className="p-3 bg-green-50 rounded-lg">

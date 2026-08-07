@@ -27,6 +27,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     ".venv/**",
     "scripts/**",
+    // Service worker compilato da `npm run build:sw`: codice generato.
+    "public/sw.js",
   ]),
 ]);
 

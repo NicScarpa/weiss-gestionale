@@ -43,20 +43,20 @@ export function MonthHoursCard() {
 
   return (
     <Link href="/portale/cartellino">
-      <Card className="rounded-2xl border-gray-100 transition-colors hover:bg-gray-50">
+      <Card className="rounded-2xl border-border transition-colors hover:bg-muted">
         <CardContent className="flex items-center gap-3 py-4">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gray-100">
-            <CalendarCheck className="h-5 w-5 text-gray-700" />
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-muted">
+            <CalendarCheck className="h-5 w-5 text-foreground" />
           </div>
           <div className="flex-1">
-            <div className="text-sm font-medium text-gray-900">Ore del mese</div>
-            <div className="text-xs text-gray-500">
+            <div className="text-sm font-medium text-foreground">Ore del mese</div>
+            <div className="text-xs text-muted-foreground">
               {formatHoursMinutes(data.totals.total)} lavorate
               {data.totals.overtime > 0 &&
                 ` · ${formatHoursMinutes(data.totals.overtime)} di straordinario`}
             </div>
           </div>
-          <ChevronRight className="h-4 w-4 text-gray-400" />
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
         </CardContent>
       </Card>
     </Link>
