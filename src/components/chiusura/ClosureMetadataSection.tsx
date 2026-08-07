@@ -66,6 +66,12 @@ export function ClosureMetadataSection({
     "Abbiamo avuto un compleanno nella sala?",
   ]
 
+  const weatherSlots = [
+    { id: 'mattina', label: 'Mattina', value: weatherMorning, onChange: onWeatherMorningChange },
+    { id: 'pomeriggio', label: 'Pomeriggio', value: weatherAfternoon, onChange: onWeatherAfternoonChange },
+    { id: 'sera', label: 'Sera', value: weatherEvening, onChange: onWeatherEveningChange },
+  ]
+
   const typingPlaceholder = useTypingPlaceholder({
     phrases: NOTES_PHRASES,
     typingSpeed: 50,
@@ -124,57 +130,37 @@ export function ClosureMetadataSection({
             <CloudSun className="h-4 w-4" />
             Condizioni Meteo
           </Label>
-          <div className="grid grid-cols-3 gap-4">
-            <Select
-              value={weatherMorning || ''}
-              onValueChange={onWeatherMorningChange}
-              disabled={disabled}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Mattina" />
-              </SelectTrigger>
-              <SelectContent>
-                {WEATHER_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select
-              value={weatherAfternoon || ''}
-              onValueChange={onWeatherAfternoonChange}
-              disabled={disabled}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Pomeriggio" />
-              </SelectTrigger>
-              <SelectContent>
-                {WEATHER_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select
-              value={weatherEvening || ''}
-              onValueChange={onWeatherEveningChange}
-              disabled={disabled}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Sera" />
-              </SelectTrigger>
-              <SelectContent>
-                {WEATHER_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          {/* Su telefono tre select affiancati si sovrappongono: sotto sm
+              vanno incolonnati, come già fa il blocco Data/Evento qui sopra.
+              La fascia oraria sta nell'etichetta e non solo nel placeholder,
+              così resta leggibile anche dopo la scelta del meteo. */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {weatherSlots.map((slot) => (
+              <div key={slot.id} className="space-y-1">
+                <Label
+                  htmlFor={`weather-${slot.id}`}
+                  className="text-xs font-normal text-muted-foreground"
+                >
+                  {slot.label}
+                </Label>
+                <Select
+                  value={slot.value || ''}
+                  onValueChange={slot.onChange}
+                  disabled={disabled}
+                >
+                  <SelectTrigger id={`weather-${slot.id}`} className="w-full">
+                    <SelectValue placeholder="Seleziona" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {WEATHER_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ))}
           </div>
         </div>
 

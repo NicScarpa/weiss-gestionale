@@ -109,8 +109,10 @@ export function PagamentiTable({
         </div>
       )}
 
-      {/* Tabella */}
-      <div className="rounded-lg border bg-background">
+      {/* Tabella: lo scroll orizzontale resta dentro la card, altrimenti su
+          telefono le 7 colonne trascinano lateralmente l'intera pagina
+          (stesso wrapper usato in budget e anagrafiche/personale) */}
+      <div className="relative w-full overflow-x-auto rounded-lg border bg-background">
         <table className="w-full">
           <thead className="border-b bg-muted/50">
             <tr className="border-b">
