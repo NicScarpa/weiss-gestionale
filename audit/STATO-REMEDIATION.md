@@ -151,6 +151,7 @@ sessione parallela su `presenze/regole-orario`.
 | 15 | Date estratto conto parse-ate nel fuso del server (`new Date(a,m,g)` → `@db.Date`) | Nuova (W2): ok finché Railway resta UTC, fragile; legata alle impronte di deduplica |
 | 16 | `BankTransaction` senza legame a `BankAccount` (A3-DATA-018) | Con più conti bancari gli estratti si mescolano per sede; richiede schema |
 | 17 | Fix di `PrimaNotaContext` provato dal diff, non da un test | Debito di copertura dichiarato da B2 |
+| 18 | **40 violazioni `react-hooks/set-state-in-effect`** (setState dentro effetti → render a cascata) in ~30 file: pagine di autenticazione, anagrafiche, budget, hook `useOffline` | Nuova (7 ago): oggi sono **avvisi** solo perché `eslint-plugin-react-hooks` è alla 7.0.1; nella **7.1.1 sono errori bloccanti**. Debito con data di scadenza: al primo aggiornamento legittimo del plugin la CI si ferma. Da pianificare come lotto a sé (candidato W4) |
 
 ---
 
@@ -172,6 +173,14 @@ sessione parallela su `presenze/regole-orario`.
    girano in realtà sul codice corrente, sembrando una verifica riuscita. Percorsi sempre espliciti.
 9. **`@testing-library/react` senza `@testing-library/dom`** falliva all'import (ora la peer è
    installata, da B3): era il motivo per cui il repo non aveva test di componente.
+10. **`node_modules` che diverge dal lockfile**: un `npm install` di un singolo pacchetto dentro un
+    worktree può tirarsi dietro versioni più nuove di dipendenze indirette **senza toccare il
+    lockfile**, e il sintomo è un gate che fallisce solo lì. Caso reale del 7 ago: un agente ha
+    misurato 40 errori di lint "preesistenti" che sul ramo base non esistevano — aveva
+    `eslint-plugin-react-hooks` 7.1.1 invece della 7.0.1 bloccata. **Regola: prima di credere a un
+    gate rosso, confronta la versione installata con quella del lockfile e rifai `npm ci`.**
+    Corollario: non aggirare mai il pre-commit con `--no-verify` per far passare un gate rosso —
+    l'hook non era rotto, segnalava un ambiente rotto.
 
 ---
 
