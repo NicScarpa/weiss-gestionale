@@ -21,8 +21,11 @@ export async function GET(
 
     const { id } = await params
 
-    const forecast = await prisma.cashFlowForecast.findUnique({
-      where: { id },
+    // `findUnique` non passa dall'estensione che filtra i cancellati: la
+    // condizione va scritta a mano, o una previsione eliminata resterebbe
+    // raggiungibile da chi ne conosce l'identificativo.
+    const forecast = await prisma.cashFlowForecast.findFirst({
+      where: { id, deletedAt: null },
       include: {
         venue: { select: { id: true, name: true, code: true } },
         createdBy: { select: { id: true, firstName: true, lastName: true } },
@@ -112,8 +115,8 @@ export async function PATCH(
     const body = await request.json()
 
     // Verifica esistenza e permessi
-    const existing = await prisma.cashFlowForecast.findUnique({
-      where: { id },
+    const existing = await prisma.cashFlowForecast.findFirst({
+      where: { id, deletedAt: null },
       select: { venueId: true, stato: true },
     })
 
@@ -175,8 +178,8 @@ export async function DELETE(
     const { id } = await params
 
     // Verifica esistenza e permessi
-    const existing = await prisma.cashFlowForecast.findUnique({
-      where: { id },
+    const existing = await prisma.cashFlowForecast.findFirst({
+      where: { id, deletedAt: null },
       select: { venueId: true, stato: true },
     })
 
@@ -192,12 +195,20 @@ export async function DELETE(
     // Non permettere eliminazione se attivo
     if (existing.stato === ForecastStatus.ATTIVA) {
       return NextResponse.json(
-        { error: 'Archiviare il forecast prima di eliminarlo' },
+        { error: 'Archiviare la previsione prima di eliminarla' },
         { status: 400 }
       )
     }
 
-    await prisma.cashFlowForecast.delete({ where: { id } })
+    // Cancellazione logica: `CashFlowForecast` è fra i `SOFT_DELETE_MODELS` di
+    // `@/lib/prisma`, e le letture filtrano `deletedAt` da sole. La `delete()`
+    // fisica di prima, oltre a contraddire quella politica, non riusciva
+    // proprio: le righe della previsione hanno `onDelete: Restrict` e la
+    // foreign key rifiutava la cancellazione con un errore 500 opaco.
+    await prisma.cashFlowForecast.update({
+      where: { id },
+      data: { deletedAt: new Date(), deletedById: session.user.id },
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {
