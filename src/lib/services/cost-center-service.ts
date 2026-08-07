@@ -11,7 +11,20 @@ import { CENTRO_OPERATIVO_DEFAULT_CODE } from '@/lib/cost-centers'
 export type DbCentriDiCosto = Pick<typeof prisma, 'costCenter' | 'account'>
 
 export type RisoluzioneCentro =
-  | { outcome: 'ok'; costCenterId: string }
+  | {
+      outcome: 'ok'
+      costCenterId: string
+      /**
+       * `true` quando il centro non è stato né scelto da un umano né dettato
+       * da una regola del piano dei conti: il sistema l'ha **supposto**,
+       * perché non c'era nient'altro da cui dedurlo. Chi scrive il movimento
+       * deve allora lasciarlo `verified: false`, anche se altrove avrebbe
+       * titolo per verificarlo da sé (è il caso delle regole di
+       * categorizzazione con `autoVerify`: quella spunta vale per il conto
+       * che l'utente ha configurato, non per un centro indovinato dopo).
+       */
+      supposto: boolean
+    }
   | {
       outcome: 'invalid'
       motivo: string
@@ -19,18 +32,21 @@ export type RisoluzioneCentro =
     }
 
 /**
- * Chi sta registrando il movimento. Non è una preferenza del chiamante: è il
- * fatto che decide cosa succede quando un conto OBBLIGATORIO si presenta
- * senza centro.
+ * Se il centro manca, si può ancora chiederlo a qualcuno? Non è una
+ * preferenza del chiamante: è il fatto che decide cosa succede quando un
+ * conto OBBLIGATORIO si presenta senza centro.
  *
- * - `interattivo`: c'è un umano davanti al form. Il centro glielo si chiede
- *   (esito `invalid`, che le route traducono in 400): chi registra a mano
- *   deve decidere, non gli si assegna un centro di nascosto.
- * - `automatico`: non c'è nessuno a cui chiedere — import dell'estratto
- *   conto, motore delle regole dello scadenzario, ereditarietà delle fette
- *   dalla fattura alla riconciliazione. Il sistema indovina, e indovina il
- *   centro operativo predefinito (WEISS); il movimento va poi marcato
- *   `verified: false` dal chiamante, perché la supposizione richiede
+ * - `interattivo`: c'è un umano davanti a un form che quel campo ce l'ha. Il
+ *   centro glielo si chiede (esito `invalid`, che le route traducono in 400):
+ *   chi registra a mano deve decidere, non gli si assegna un centro di
+ *   nascosto.
+ * - `automatico`: nessuno può scegliere adesso — import dell'estratto conto,
+ *   motore delle regole dello scadenzario, batch di ricategorizzazione,
+ *   ereditarietà delle fette dalla fattura, o form che il campo non ce
+ *   l'ha nemmeno (il versamento cassa→banca). O indovina il sistema, o il
+ *   movimento non nasce: quindi indovina, e indovina il centro operativo
+ *   predefinito (WEISS). L'esito porta `supposto: true` e il movimento va
+ *   lasciato `verified: false`, perché una supposizione richiede
  *   un'approvazione manuale.
  */
 export type ContestoRisoluzione = 'interattivo' | 'automatico'
@@ -102,7 +118,7 @@ export async function risolviCentroDiCosto(
   if (input.costCenterId) {
     const centro = await db.costCenter.findUnique({ where: { id: input.costCenterId } })
     if (centro && centro.isActive) {
-      return { outcome: 'ok', costCenterId: centro.id }
+      return { outcome: 'ok', costCenterId: centro.id, supposto: false }
     }
     return {
       outcome: 'invalid',
@@ -129,7 +145,11 @@ export async function risolviCentroDiCosto(
       const conto = contiPerId.get(id)
       if (conto?.costCenterRule === 'OBBLIGATORIO') {
         if (contesto === 'automatico') {
-          return { outcome: 'ok', costCenterId: await risolviCentroOperativo(db) }
+          return {
+            outcome: 'ok',
+            costCenterId: await risolviCentroOperativo(db),
+            supposto: true,
+          }
         }
         return {
           outcome: 'invalid',
@@ -140,11 +160,12 @@ export async function risolviCentroDiCosto(
     }
     // Nessun conto OBBLIGATORIO fra quelli ispezionati: la regola del piano è
     // DEFAULT_STR (o il conto non ha regola) e vale in entrambi i contesti.
-    return { outcome: 'ok', costCenterId: await esigiCentroStrutturale(db) }
+    // Non è una supposizione: è l'Excel aziendale che ha già risposto.
+    return { outcome: 'ok', costCenterId: await esigiCentroStrutturale(db), supposto: false }
   }
 
   if (contesto === 'automatico') {
-    return { outcome: 'ok', costCenterId: await risolviCentroOperativo(db) }
+    return { outcome: 'ok', costCenterId: await risolviCentroOperativo(db), supposto: true }
   }
-  return { outcome: 'ok', costCenterId: await esigiCentroStrutturale(db) }
+  return { outcome: 'ok', costCenterId: await esigiCentroStrutturale(db), supposto: false }
 }

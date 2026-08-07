@@ -102,16 +102,35 @@ describe('POST /api/prima-nota/recategorize - i movimenti da chiusura restano fu
   })
 })
 
-describe('POST /api/prima-nota/recategorize - il centro di costo non fa fallire il batch', () => {
-  it('la riga senza centro viene saltata e contata, le altre passano', async () => {
+/**
+ * Il batch gira senza nessuno davanti: è il sistema che indovina, come il
+ * motore dello scadenzario. Prima le righe il cui conto pretendeva un centro
+ * assente venivano saltate e restavano non categorizzate — cioè invisibili.
+ * Ora vengono categorizzate sul centro operativo e finiscono fra quelle da
+ * approvare, dove almeno si vedono.
+ */
+describe('POST /api/prima-nota/recategorize - il centro mancante non blocca più la riga', () => {
+  beforeEach(() => {
+    vi.mocked(prisma.costCenter.findFirst).mockImplementation(
+      (async ({ where }: { where: { isDefault?: boolean; code?: string } }) =>
+        where.code === 'WEISS'
+          ? { id: 'cc-weiss', code: 'WEISS', isDefault: false, isActive: true }
+          : where.isDefault
+            ? { id: 'cc-str', code: 'STR', isDefault: true, isActive: true }
+            : null) as never
+    )
+    vi.mocked(prisma.journalEntry.update).mockResolvedValue({ id: 'entry-1' } as never)
+  })
+
+  it('la riga senza centro va sul centro operativo e resta da approvare, nonostante autoVerify', async () => {
     vi.mocked(prisma.categorizationRule.findMany).mockResolvedValue([
       regola('rule-obbligatorio', 'conto-obbligatorio'),
     ] as never)
-    // Due movimenti che la stessa regola vorrebbe imputare a un conto
-    // OBBLIGATORIO: il primo non ha un centro di costo, il secondo sì.
+    // Due movimenti che la stessa regola imputa a un conto OBBLIGATORIO: il
+    // primo non ha un centro di costo, il secondo sì.
     vi.mocked(prisma.journalEntry.findMany).mockResolvedValue([
-      movimento('entry-bloccato'),
-      movimento('entry-ok', 'cc-produzione'),
+      movimento('entry-senza-centro'),
+      movimento('entry-con-centro', 'cc-produzione'),
     ] as never)
     vi.mocked(prisma.account.findMany).mockResolvedValue([
       {
@@ -124,21 +143,71 @@ describe('POST /api/prima-nota/recategorize - il centro di costo non fa fallire 
     vi.mocked(prisma.costCenter.findUnique).mockResolvedValue({
       id: 'cc-produzione', isActive: true,
     } as never)
-    vi.mocked(prisma.journalEntry.update).mockResolvedValue({ id: 'entry-ok' } as never)
 
     const response = await POST(richiestaPost())
 
     expect(response.status).toBe(200)
     const body = await response.json()
-    expect(body).toMatchObject({ processed: 2, updated: 1, saltati: 1 })
+    expect(body).toMatchObject({ processed: 2, updated: 2, daApprovare: 1 })
 
-    // Il movimento bloccato non è stato toccato; quello con centro sì
-    expect(prisma.journalEntry.update).toHaveBeenCalledTimes(1)
+    // Il centro supposto batte la spunta autoVerify della regola...
     expect(prisma.journalEntry.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'entry-ok' },
-        data: expect.objectContaining({ costCenterId: 'cc-produzione' }),
+        where: { id: 'entry-senza-centro' },
+        data: expect.objectContaining({ costCenterId: 'cc-weiss', verified: false }),
       })
     )
+    // ...ma dove il centro c'era già, non si è supposto nulla e autoVerify vale.
+    expect(prisma.journalEntry.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'entry-con-centro' },
+        data: expect.objectContaining({ costCenterId: 'cc-produzione', verified: true }),
+      })
+    )
+  })
+
+  it('conto con regola DEFAULT_STR: il centro è dettato dal piano, non supposto, e autoVerify resta sovrano', async () => {
+    vi.mocked(prisma.categorizationRule.findMany).mockResolvedValue([
+      regola('rule-amministrativa', 'conto-consulenze'),
+    ] as never)
+    vi.mocked(prisma.journalEntry.findMany).mockResolvedValue([
+      movimento('entry-senza-centro'),
+    ] as never)
+    vi.mocked(prisma.account.findMany).mockResolvedValue([
+      {
+        id: 'conto-consulenze',
+        code: '240010',
+        name: 'Consulenze fiscali',
+        costCenterRule: 'DEFAULT_STR',
+      },
+    ] as never)
+
+    const response = await POST(richiestaPost())
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({ updated: 1, daApprovare: 0 })
+    expect(prisma.journalEntry.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ costCenterId: 'cc-str', verified: true }),
+      })
+    )
+  })
+
+  it('centro del movimento nel frattempo disattivato: la riga si salta, il batch prosegue', async () => {
+    vi.mocked(prisma.categorizationRule.findMany).mockResolvedValue([
+      regola('rule-obbligatorio', 'conto-obbligatorio'),
+    ] as never)
+    vi.mocked(prisma.journalEntry.findMany).mockResolvedValue([
+      movimento('entry-centro-dismesso', 'cc-dismesso'),
+    ] as never)
+    vi.mocked(prisma.costCenter.findUnique).mockResolvedValue({
+      id: 'cc-dismesso', isActive: false,
+    } as never)
+
+    const response = await POST(richiestaPost())
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({ updated: 0 })
+    expect(prisma.journalEntry.update).not.toHaveBeenCalled()
   })
 })

@@ -40,7 +40,7 @@ describe('risolviCentroDiCosto', () => {
 
     const esito = await risolviCentroDiCosto(db as never, { costCenterId: 'cc-1' })
 
-    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-1' })
+    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-1', supposto: false })
     expect(db.costCenter.findUnique).toHaveBeenCalledWith({ where: { id: 'cc-1' } })
     // Nessuna query aggiuntiva: il centro fornito è già valido.
     expect(db.account.findMany).not.toHaveBeenCalled()
@@ -98,7 +98,7 @@ describe('risolviCentroDiCosto', () => {
 
     const esito = await risolviCentroDiCosto(db as never, { accountId: 'acc-2' })
 
-    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-str' })
+    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-str', supposto: false })
     expect(db.costCenter.findFirst).toHaveBeenCalledWith({
       where: { isDefault: true, isActive: true },
     })
@@ -110,7 +110,7 @@ describe('risolviCentroDiCosto', () => {
 
     const esito = await risolviCentroDiCosto(db as never, {})
 
-    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-str' })
+    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-str', supposto: false })
     expect(db.account.findMany).not.toHaveBeenCalled()
   })
 
@@ -164,7 +164,7 @@ describe('risolviCentroDiCosto', () => {
       accountIdsFette: ['acc-a', 'acc-c'],
     })
 
-    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-str' })
+    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-str', supposto: false })
   })
 
   it('nessun centro di default configurato → throw (errore di configurazione)', async () => {
@@ -194,7 +194,7 @@ describe('risolviCentroDiCosto — contesto automatico', () => {
 
     const esito = await risolviCentroDiCosto(db as never, { accountId: 'acc-1' }, 'automatico')
 
-    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-weiss' })
+    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-weiss', supposto: true })
   })
 
   it('conto con regola DEFAULT_STR → resta STR anche in automatico (è il piano ufficiale, non una supposizione)', async () => {
@@ -206,7 +206,7 @@ describe('risolviCentroDiCosto — contesto automatico', () => {
 
     const esito = await risolviCentroDiCosto(db as never, { accountId: 'acc-2' }, 'automatico')
 
-    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-str' })
+    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-str', supposto: false })
   })
 
   it('nessun conto da interrogare (movimento appena importato) → centro operativo (WEISS)', async () => {
@@ -215,7 +215,7 @@ describe('risolviCentroDiCosto — contesto automatico', () => {
 
     const esito = await risolviCentroDiCosto(db as never, { accountId: null }, 'automatico')
 
-    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-weiss' })
+    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-weiss', supposto: true })
     expect(db.account.findMany).not.toHaveBeenCalled()
   })
 
@@ -230,7 +230,7 @@ describe('risolviCentroDiCosto — contesto automatico', () => {
       'automatico'
     )
 
-    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-cas' })
+    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-cas', supposto: false })
   })
 
   it('centro esplicito disattivato → invalid anche in automatico: il chiamante decide come ripiegare', async () => {
@@ -262,7 +262,7 @@ describe('risolviCentroDiCosto — contesto automatico', () => {
 
     const esito = await risolviCentroDiCosto(db as never, { accountId: 'acc-1' }, 'automatico')
 
-    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-str' })
+    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-str', supposto: true })
     expect(logger.warn).toHaveBeenCalledWith(
       'Centro operativo predefinito non disponibile: si ripiega sul centro di sistema',
       { code: 'WEISS' }

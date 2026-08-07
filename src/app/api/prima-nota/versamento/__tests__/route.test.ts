@@ -39,12 +39,24 @@ beforeEach(() => {
   vi.mocked(prisma.$transaction).mockImplementation(
     (operazioni: unknown) => Promise.all(operazioni as Promise<unknown>[]) as never
   )
-  vi.mocked(prisma.costCenter.findFirst).mockResolvedValue({
-    id: 'cc-str', isDefault: true, isActive: true,
-  } as never)
+  vi.mocked(prisma.costCenter.findFirst).mockImplementation(
+    (async ({ where }: { where: { isDefault?: boolean; code?: string } }) =>
+      where.code === 'WEISS'
+        ? { id: 'cc-weiss', code: 'WEISS', isDefault: false, isActive: true }
+        : where.isDefault
+          ? { id: 'cc-str', code: 'STR', isDefault: true, isActive: true }
+          : null) as never
+  )
 })
 
-describe('POST /api/prima-nota/versamento - il giroconto va sul centro di default', () => {
+/**
+ * Versare l'incasso di serata è un'operazione del locale: il form non ha un
+ * campo centro, quindi lo sceglie il sistema, e sceglie il centro operativo —
+ * chi filtra la prima nota per il proprio centro deve ritrovarci i propri
+ * versamenti. Sul conto economico non incide: i giroconti usano conti
+ * patrimoniali, che il report esclude.
+ */
+describe('POST /api/prima-nota/versamento - il giroconto va sul centro operativo', () => {
   it('entrambe le scritture nascono sullo stesso centro, senza ispezionare conti', async () => {
     const request = new NextRequest('http://localhost:3000/api/prima-nota/versamento', {
       method: 'POST',
@@ -59,6 +71,6 @@ describe('POST /api/prima-nota/versamento - il giroconto va sul centro di defaul
     const centri = vi
       .mocked(prisma.journalEntry.create)
       .mock.calls.map((c) => c[0].data.costCenterId)
-    expect(centri).toEqual(['cc-str', 'cc-str'])
+    expect(centri).toEqual(['cc-weiss', 'cc-weiss'])
   })
 })

@@ -31,9 +31,14 @@ export async function POST(request: NextRequest) {
       `Versamento in banca ${validatedData.date.toLocaleDateString('it-IT')}`
 
     // Il giroconto cassa → banca non tocca conti economici: nessun conto da
-    // ispezionare, il centro è quello di default e vale per entrambe le
-    // scritture, che restano le due facce dello stesso movimento.
-    const centro = await risolviCentroDiCosto(prisma, { accountId: null })
+    // ispezionare, e il form non ha un campo centro da compilare. Nessuno può
+    // sceglierlo, quindi lo sceglie il sistema: versare l'incasso di serata è
+    // un'operazione del locale, non della struttura, e chi filtra la prima
+    // nota per il proprio centro deve ritrovarci i propri versamenti. Il
+    // centro vale per entrambe le scritture, le due facce dello stesso
+    // movimento; sul conto economico non incide, perché i giroconti usano
+    // conti patrimoniali che il report esclude.
+    const centro = await risolviCentroDiCosto(prisma, { accountId: null }, 'automatico')
     if (centro.outcome === 'invalid') {
       return NextResponse.json(
         { error: centro.motivo, code: centro.code },

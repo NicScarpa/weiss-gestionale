@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     })
 
     let updated = 0
-    let saltati = 0
+    let daApprovare = 0
 
     for (const entry of entries) {
       for (const rule of rules) {
@@ -96,23 +96,32 @@ export async function POST(request: NextRequest) {
             ? await derivaBudgetCategoryDaConto(rule.accountId)
             : rule.budgetCategoryId
 
-          // Il conto della regola può richiedere un centro di costo che il
-          // movimento non ha: una riga sola non deve far fallire il batch, si
-          // salta e si conta. Resterà da categorizzare a mano, dove l'utente
-          // può scegliere il centro.
-          const centro = await risolviCentroDiCosto(prisma, {
-            accountId: rule.accountId,
-            costCenterId: entry.costCenterId,
-          })
+          // Il batch gira senza nessuno davanti: se il conto della regola
+          // pretende un centro che il movimento non ha, non c'è a chi
+          // chiederlo, quindi il centro si suppone (operativo) invece di
+          // saltare la riga. Il where del batch tocca solo movimenti non
+          // verificati e senza fette: nulla di ciò che un umano ha approvato.
+          const centro = await risolviCentroDiCosto(
+            prisma,
+            { accountId: rule.accountId, costCenterId: entry.costCenterId },
+            'automatico'
+          )
           if (centro.outcome === 'invalid') {
-            logger.warn('Ricategorizzazione: movimento saltato per il centro di costo', {
+            // Resta possibile solo se il centro già sul movimento è sparito o
+            // è stato disattivato: lì la regola non c'entra, si lascia stare.
+            logger.warn('Ricategorizzazione: movimento saltato, il suo centro non è più valido', {
               journalEntryId: entry.id,
               ruleId: rule.id,
               code: centro.code,
             })
-            saltati++
             break // La regola vincente è questa: nessun'altra viene provata
           }
+
+          // La spunta `autoVerify` della regola vale per il conto che
+          // l'utente ha configurato, non per un centro che il sistema ha
+          // indovinato dopo: se il centro è supposto, il movimento resta da
+          // approvare comunque.
+          if (centro.supposto) daApprovare++
 
           await prisma.journalEntry.update({
             where: { id: entry.id },
@@ -121,7 +130,7 @@ export async function POST(request: NextRequest) {
               accountId: rule.accountId,
               costCenterId: centro.costCenterId,
               appliedRuleId: rule.id,
-              verified: rule.autoVerify,
+              verified: centro.supposto ? false : rule.autoVerify,
               categorizationSource: 'rule',
             },
           })
@@ -137,14 +146,14 @@ export async function POST(request: NextRequest) {
       entityType: 'JournalEntry',
       entityId: 'bulk-recategorize',
       venueId,
-      newValues: { processed: entries.length, updated, saltati, rules: rules.length },
+      newValues: { processed: entries.length, updated, daApprovare, rules: rules.length },
     })
 
     return NextResponse.json({
       processed: entries.length,
       updated,
-      /** Righe che una regola avrebbe categorizzato, se non mancasse il centro di costo */
-      saltati,
+      /** Righe categorizzate su un centro supposto dal sistema: restano da approvare a mano */
+      daApprovare,
       rules: rules.length,
     })
   } catch (error) {
