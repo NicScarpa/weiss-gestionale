@@ -52,9 +52,9 @@ interface ForecastSectionProps {
 }
 
 const COLORE_STATO: Record<ForecastStatus, string> = {
-  [ForecastStatus.BOZZA]: 'bg-slate-100 text-slate-700',
-  [ForecastStatus.ATTIVA]: 'bg-green-100 text-green-700',
-  [ForecastStatus.ARCHIVIATA]: 'bg-amber-100 text-amber-700',
+  [ForecastStatus.BOZZA]: 'bg-muted text-muted-foreground',
+  [ForecastStatus.ATTIVA]: 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300',
+  [ForecastStatus.ARCHIVIATA]: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
 }
 
 async function chiedi(url: string, method: string, body?: unknown) {

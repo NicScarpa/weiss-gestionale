@@ -146,7 +146,7 @@ export function ForecastDetail({ forecastId }: ForecastDetailProps) {
       </div>
 
       {summary.saldoMinimo < 0 && (
-        <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+        <p className="rounded-md bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
           Con queste righe il saldo scende fino a {formatCurrency(summary.saldoMinimo)}: la
           cassa non copre tutte le uscite previste.
         </p>
