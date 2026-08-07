@@ -23,7 +23,14 @@ import 'dotenv/config'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { Pool } from 'pg'
 
-import { descriviDatabase } from './_comune'
+import { descriviDatabase, validaArgomenti } from './_comune'
+
+validaArgomenti(['rigoroso'])
+
+if (!process.env.DATABASE_URL) {
+  console.error('❌ DATABASE_URL non impostata: non so quale database verificare.')
+  process.exit(1)
+}
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL })
 const adapter = new PrismaPg(pool)

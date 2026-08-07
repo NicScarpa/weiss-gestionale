@@ -1,10 +1,10 @@
 # Migrazione al piano dei conti WEISS v4 — tabella di mappatura
 
-Generato da `scripts/piano-v4/02-report-mappatura.ts` il 2026-08-07T19:10:16.018Z.
+Generato da `scripts/piano-v4/02-report-mappatura.ts` il 2026-08-07T19:42:39.677Z.
 
 > ⚠️ **Documento generato su un database LOCALE di prova, non sulla produzione.** Codici, nomi e conteggi dei conti qui sotto sono quelli di quel database: servono a mostrare la forma del report e a provare il ciclo migrazione/rollback, non sono la fotografia della produzione. La tabella definitiva va rigenerata puntando `DATABASE_URL` alla produzione — lo script è di sola lettura — al momento dello STOP che precede l'esecuzione.
 
-- Database letto: `weiss_t19 @ 127.0.0.1:5433`
+- Database letto: `nicolascarpa@weiss_t19 su 127.0.0.1:5433`
 - Conti non-v4 esaminati: **20**
 - Voci del piano v4 già presenti: **0** (attese 155 dopo la migrazione)
 - Da disattivare: **17** · da conservare: **3** · bloccanti: **0**
@@ -70,23 +70,35 @@ Prima di scrivere ricontrolla tutte le premesse: se anche una sola non regge, la
 
 ## I comandi, in ordine
 
+> ⚠️ **`DATABASE_URL` va indicata sempre, esplicitamente, davanti a ogni comando.** Gli script caricano il `.env` del progetto quando la variabile non c'è, e quel `.env` punta alla produzione: lanciare un comando "nudo" dalla radice significa operare sulla produzione senza averlo deciso. Prima di scrivere su un bersaglio non locale lo script chiede di ribattere a mano la sua identità (`utente@nomedb`), ma è una rete di sicurezza, non il modo di lavorare.
+
 ```bash
+# il bersaglio, una volta sola, in una variabile di shell
+export DB_BERSAGLIO="postgresql://UTENTE:PASSWORD@HOST:5432/NOMEDB"
+
 # 1. rigenera questa tabella contro il database che si vuole migrare (sola lettura)
-npx tsx scripts/piano-v4/02-report-mappatura.ts --out docs/migrazione-piano-conti-v4.md
+DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/02-report-mappatura.ts \
+  --out docs/migrazione-piano-conti-v4.md
 
 # 2. STOP: far approvare la tabella. Poi il dry-run, che salva lo snapshot del rollback
-npx tsx scripts/piano-v4/03-migrate.ts
+DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/03-migrate.ts
 
-# 3. esecuzione vera
-npx tsx scripts/piano-v4/03-migrate.ts --execute
+# 3. esecuzione vera (chiede di ribattere utente@nomedb se il bersaglio è remoto)
+DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/03-migrate.ts --execute
 
 # 4. verifica
-npx tsx scripts/piano-v4/verifica.ts
+DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/verifica.ts
 
 # 5. solo se serve tornare indietro (lo snapshot lo stampa lo script 03)
-npx tsx scripts/piano-v4/04-rollback.ts --snapshot scripts/piano-v4/snapshots/<file>.json
-npx tsx scripts/piano-v4/04-rollback.ts --snapshot scripts/piano-v4/snapshots/<file>.json --execute
+DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/04-rollback.ts \
+  --snapshot scripts/piano-v4/snapshots/<file>.json
+DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/04-rollback.ts \
+  --snapshot scripts/piano-v4/snapshots/<file>.json --execute
 ```
 
-Gli snapshot restano fuori dal repository (sono dati veri) ma vanno conservati: senza lo snapshot il rollback non sa a quale stato tornare.
+Gli snapshot restano fuori dal repository (sono dati veri) ma vanno conservati: senza lo snapshot il rollback non sa a quale stato tornare. Il rollback rifiuta uno snapshot preso da un bersaglio diverso da quello corrente.
+
+## Da eseguire a gestionale fermo
+
+La migrazione gira in una transazione `SERIALIZABLE`, quindi una scrittura concorrente non può infilarsi fra il controllo delle premesse e la disattivazione dei conti: al massimo la transazione viene annullata dal database con un errore di serializzazione, e in quel caso si rilancia. Resta comunque preferibile eseguirla con nessuno collegato: se il pooler in uso non accettasse il livello `SERIALIZABLE`, la finestra si riaprirebbe, e a gestionale fermo la questione non si pone.
 

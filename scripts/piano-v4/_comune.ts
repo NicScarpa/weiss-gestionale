@@ -11,6 +11,8 @@
  * grezzi — un movimento cancellato logicamente continua a occupare la sua
  * FK e va contato come riferimento vero.
  */
+import { createInterface } from 'node:readline/promises'
+
 import { PrismaClient, Prisma } from '@prisma/client'
 import 'dotenv/config'
 
@@ -33,6 +35,15 @@ export function comeDb(tx: Prisma.TransactionClient): Db {
 }
 
 export function creaClient(): { prisma: PrismaClient; chiudi: () => Promise<void> } {
+  // Senza DATABASE_URL il driver `pg` ricadrebbe sui default di libpq
+  // (utente di sistema, database omonimo, socket locale) e lo script si
+  // metterebbe a lavorare su un database che nessuno ha scelto.
+  if (!process.env.DATABASE_URL) {
+    console.error('❌ DATABASE_URL non impostata: non so su quale database operare.')
+    console.error('   Esempio:')
+    console.error('     DATABASE_URL="postgresql://utente@host:5432/nomedb" npx tsx <script>')
+    process.exit(1)
+  }
   const pool = new Pool({ connectionString: process.env.DATABASE_URL })
   const adapter = new PrismaPg(pool)
   const prisma = new PrismaClient({ adapter })
@@ -44,20 +55,47 @@ export function creaClient(): { prisma: PrismaClient; chiudi: () => Promise<void
   }
 }
 
-/** Descrizione leggibile del database bersaglio, senza credenziali. */
-export function descriviDatabase(): string {
+/**
+ * Identità sintetica del bersaglio: `utente@nomedb`.
+ *
+ * L'utente c'è di proposito. Su Supabase l'host è lo stesso per tutti i
+ * progetti dello stesso pooler e il database si chiama sempre `postgres`:
+ * a distinguere un progetto dall'altro resta solo lo username. È la stringa
+ * che si deve ribattere a mano per confermare una scrittura su un bersaglio
+ * remoto. La password non compare mai, da nessuna parte.
+ */
+export function bersaglio(): string {
   const raw = process.env.DATABASE_URL
   if (!raw) return '(DATABASE_URL non impostata)'
   try {
     const u = new URL(raw)
-    const nome = u.pathname.replace(/^\//, '') || '(senza nome)'
-    return `${nome} @ ${u.hostname}:${u.port || '5432'}`
+    const utente = decodeURIComponent(u.username) || '(senza utente)'
+    const nome = decodeURIComponent(u.pathname.replace(/^\//, '')) || '(senza nome)'
+    return `${utente}@${nome}`
   } catch {
     return '(DATABASE_URL non interpretabile)'
   }
 }
 
-/** true se DATABASE_URL non punta alla macchina locale (quindi forse alla produzione). */
+/** Descrizione leggibile del database bersaglio, senza password. */
+export function descriviDatabase(): string {
+  const raw = process.env.DATABASE_URL
+  if (!raw) return '(DATABASE_URL non impostata)'
+  try {
+    const u = new URL(raw)
+    return `${bersaglio()} su ${u.hostname}:${u.port || '5432'}`
+  } catch {
+    return '(DATABASE_URL non interpretabile)'
+  }
+}
+
+/**
+ * true se DATABASE_URL non punta alla macchina locale.
+ *
+ * Euristica sull'hostname, quindi imperfetta: un tunnel SSH che espone la
+ * produzione su 127.0.0.1 passerebbe per locale. Serve a decidere quanto
+ * alzare l'asticella della conferma, non a garantire nulla.
+ */
 export function bersaglioRemoto(): boolean {
   const raw = process.env.DATABASE_URL
   if (!raw) return false
@@ -93,6 +131,80 @@ export async function contoAllaRovescia(secondi: number) {
     await new Promise((r) => setTimeout(r, 1000))
   }
   process.stdout.write('\r' + ' '.repeat(50) + '\r')
+}
+
+/**
+ * Ultimo cancello prima di scrivere.
+ *
+ * Su un bersaglio locale bastano cinque secondi di conto alla rovescia. Su un
+ * bersaglio remoto no: un countdown scade da solo se nessuno guarda lo
+ * schermo, e "nessuno guarda lo schermo" è precisamente il caso in cui non si
+ * vuole scrivere in produzione per sbaglio. Lì si deve ribattere a mano
+ * l'identità del bersaglio, che non si può azzeccare per distrazione.
+ */
+export async function confermaScrittura() {
+  if (!bersaglioRemoto()) {
+    await contoAllaRovescia(5)
+    return
+  }
+
+  const atteso = bersaglio()
+  console.log('  ⚠️  Bersaglio NON locale: la conferma automatica non basta.')
+  console.log('')
+
+  if (!process.stdin.isTTY) {
+    console.error('❌ Serve una conferma interattiva ma lo standard input non è un terminale.')
+    console.error(`   Rilanciare da un terminale: va ribattuto "${atteso}".`)
+    process.exit(1)
+  }
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  const risposta = await rl.question(`  Ribatti l'identità del bersaglio per confermare — ${atteso}\n  > `)
+  rl.close()
+
+  if (risposta.trim() !== atteso) {
+    console.error('')
+    console.error(`❌ Il testo non coincide (atteso "${atteso}"). Nessuna scrittura effettuata.`)
+    process.exit(1)
+  }
+  console.log('')
+}
+
+/**
+ * Rifiuta gli argomenti che non conosce.
+ *
+ * Un refuso in `--mantieni-budget` oggi passerebbe in silenzio e le righe di
+ * budget verrebbero cancellate lo stesso: proprio il flag che protegge dei
+ * dati è quello dove un errore di battitura non deve poter passare.
+ */
+export function validaArgomenti(flagNoti: string[], opzioniNote: string[] = []) {
+  const argomenti = process.argv.slice(2)
+  const sconosciuti: string[] = []
+
+  for (let i = 0; i < argomenti.length; i++) {
+    const token = argomenti[i]
+    if (!token.startsWith('--')) {
+      sconosciuti.push(token)
+      continue
+    }
+    const nome = token.slice(2).split('=')[0]
+    if (opzioniNote.includes(nome)) {
+      // Il valore può stare nel token stesso (--nome=valore) o in quello dopo.
+      if (!token.includes('=')) i++
+      continue
+    }
+    if (flagNoti.includes(nome)) continue
+    sconosciuti.push(token)
+  }
+
+  if (sconosciuti.length > 0) {
+    console.error(`❌ Argomenti non riconosciuti: ${sconosciuti.join(' ')}`)
+    console.error(`   Flag ammessi   : ${flagNoti.map((f) => `--${f}`).join(', ') || '(nessuno)'}`)
+    console.error(
+      `   Opzioni ammesse: ${opzioniNote.map((o) => `--${o} <valore>`).join(', ') || '(nessuna)'}`
+    )
+    process.exit(1)
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -357,6 +469,14 @@ export function formattaDettaglio(r: RiepilogoRiferimenti): string {
 export function formattaDettaglioDuri(r: RiepilogoRiferimenti): string {
   const duri = new Set(CHIAVI_DURE)
   const voci = Object.entries(r.dettaglio).filter(([k]) => duri.has(k))
+  if (voci.length === 0) return 'nessuno'
+  return voci.map(([k, v]) => `${k}: ${v}`).join('; ')
+}
+
+/** Come formattaDettaglio ma solo sulle chiavi non bloccanti. */
+export function formattaDettaglioMorbidi(r: RiepilogoRiferimenti): string {
+  const duri = new Set(CHIAVI_DURE)
+  const voci = Object.entries(r.dettaglio).filter(([k]) => !duri.has(k))
   if (voci.length === 0) return 'nessuno'
   return voci.map(([k, v]) => `${k}: ${v}`).join('; ')
 }

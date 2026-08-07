@@ -33,8 +33,11 @@ import {
   formattaDettaglio,
   RIFERIMENTI,
   stampaIntestazione,
+  validaArgomenti,
   type RiepilogoRiferimenti,
 } from './_comune'
+
+validaArgomenti([], ['out'])
 
 /**
  * Corrispondenze decise a mano fra vecchio codice e voce del piano v4.
@@ -275,26 +278,42 @@ async function main() {
     out.push('')
     out.push('## I comandi, in ordine')
     out.push('')
+    out.push(
+      '> ⚠️ **`DATABASE_URL` va indicata sempre, esplicitamente, davanti a ogni comando.** Gli script caricano il `.env` del progetto quando la variabile non c\'è, e quel `.env` punta alla produzione: lanciare un comando "nudo" dalla radice significa operare sulla produzione senza averlo deciso. Prima di scrivere su un bersaglio non locale lo script chiede di ribattere a mano la sua identità (`utente@nomedb`), ma è una rete di sicurezza, non il modo di lavorare.'
+    )
+    out.push('')
     out.push('```bash')
+    out.push('# il bersaglio, una volta sola, in una variabile di shell')
+    out.push('export DB_BERSAGLIO="postgresql://UTENTE:PASSWORD@HOST:5432/NOMEDB"')
+    out.push('')
     out.push('# 1. rigenera questa tabella contro il database che si vuole migrare (sola lettura)')
-    out.push('npx tsx scripts/piano-v4/02-report-mappatura.ts --out docs/migrazione-piano-conti-v4.md')
+    out.push('DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/02-report-mappatura.ts \\')
+    out.push('  --out docs/migrazione-piano-conti-v4.md')
     out.push('')
     out.push('# 2. STOP: far approvare la tabella. Poi il dry-run, che salva lo snapshot del rollback')
-    out.push('npx tsx scripts/piano-v4/03-migrate.ts')
+    out.push('DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/03-migrate.ts')
     out.push('')
-    out.push('# 3. esecuzione vera')
-    out.push('npx tsx scripts/piano-v4/03-migrate.ts --execute')
+    out.push('# 3. esecuzione vera (chiede di ribattere utente@nomedb se il bersaglio è remoto)')
+    out.push('DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/03-migrate.ts --execute')
     out.push('')
     out.push('# 4. verifica')
-    out.push('npx tsx scripts/piano-v4/verifica.ts')
+    out.push('DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/verifica.ts')
     out.push('')
     out.push('# 5. solo se serve tornare indietro (lo snapshot lo stampa lo script 03)')
-    out.push('npx tsx scripts/piano-v4/04-rollback.ts --snapshot scripts/piano-v4/snapshots/<file>.json')
-    out.push('npx tsx scripts/piano-v4/04-rollback.ts --snapshot scripts/piano-v4/snapshots/<file>.json --execute')
+    out.push('DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/04-rollback.ts \\')
+    out.push('  --snapshot scripts/piano-v4/snapshots/<file>.json')
+    out.push('DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/04-rollback.ts \\')
+    out.push('  --snapshot scripts/piano-v4/snapshots/<file>.json --execute')
     out.push('```')
     out.push('')
     out.push(
-      'Gli snapshot restano fuori dal repository (sono dati veri) ma vanno conservati: senza lo snapshot il rollback non sa a quale stato tornare.'
+      'Gli snapshot restano fuori dal repository (sono dati veri) ma vanno conservati: senza lo snapshot il rollback non sa a quale stato tornare. Il rollback rifiuta uno snapshot preso da un bersaglio diverso da quello corrente.'
+    )
+    out.push('')
+    out.push('## Da eseguire a gestionale fermo')
+    out.push('')
+    out.push(
+      'La migrazione gira in una transazione `SERIALIZABLE`, quindi una scrittura concorrente non può infilarsi fra il controllo delle premesse e la disattivazione dei conti: al massimo la transazione viene annullata dal database con un errore di serializzazione, e in quel caso si rilancia. Resta comunque preferibile eseguirla con nessuno collegato: se il pooler in uso non accettasse il livello `SERIALIZABLE`, la finestra si riaprirebbe, e a gestionale fermo la questione non si pone.'
     )
     out.push('')
 

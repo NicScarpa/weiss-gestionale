@@ -2,14 +2,15 @@
  * Script 04 — Rollback della migrazione al piano dei conti v4.
  *
  * Riporta il database allo stato fotografato dallo snapshot che `03-migrate.ts`
- * salva prima di scrivere. In una sola transazione:
+ * salva prima di scrivere. In una sola transazione SERIALIZABLE:
  *   1. riattiva i conti legacy come erano nello snapshot;
  *   2. ripristina righe di budget e mappature budget cancellate;
  *   3. toglie la `system_key = CORRISPETTIVI` dalla voce 10.01 se lo snapshot
  *      dice che prima non c'era;
  *   4. disattiva — non cancella MAI — le 155 voci v4 introdotte dalla
- *      migrazione. Le voci che esistevano già prima tornano allo stato di
- *      partenza registrato nello snapshot.
+ *      migrazione. Le voci che esistevano già prima tornano all'anagrafica
+ *      INTERA registrata nello snapshot (nome, mastro, gruppo, regola centro,
+ *      is_active): l'upsert della migrazione le aveva sovrascritte.
  *
  * Regola non negoziabile: una voce v4 che nel frattempo ha acquisito
  * riferimenti (un movimento, una fetta, una riga fattura, una regola…) NON
@@ -17,11 +18,19 @@
  * disattivarle romperebbe dati nati dopo la migrazione: in quel caso il
  * rollback va deciso a mano, non a colpi di script.
  *
+ * Il bersaglio dello snapshot deve coincidere con quello corrente: gli
+ * snapshot di prova e quelli di produzione finiscono nella stessa cartella e
+ * si distinguono solo dal timestamp. Applicare lo snapshot sbagliato
+ * spegnerebbe le 155 voci del database giusto.
+ *
  * MODALITÀ: dry-run di default, `--execute` per scrivere davvero.
  *
  * Uso:
- *   npx tsx scripts/piano-v4/04-rollback.ts --snapshot scripts/piano-v4/snapshots/<file>.json
- *   npx tsx scripts/piano-v4/04-rollback.ts --snapshot <file>.json --execute
+ *   DATABASE_URL="…" npx tsx scripts/piano-v4/04-rollback.ts --snapshot <file>.json
+ *   DATABASE_URL="…" npx tsx scripts/piano-v4/04-rollback.ts --snapshot <file>.json --execute
+ *
+ * Flag:
+ *   --forza   procede anche se lo snapshot viene da un altro bersaglio
  */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -30,40 +39,86 @@ import { PIANO_CONTI_WEISS_V4 } from '../../src/lib/accounts/piano-conti-weiss-v
 
 import {
   argomento,
+  bersaglio,
   comeDb,
+  confermaScrittura,
   contaRiferimenti,
-  contoAllaRovescia,
   creaClient,
+  descriviDatabase,
   flag,
   formattaDettaglio,
   stampaIntestazione,
+  validaArgomenti,
   type Db,
 } from './_comune'
 
 const VOCE_CORRISPETTIVI = '10.01'
+const CODICI_V4 = [...new Set(PIANO_CONTI_WEISS_V4.map((v) => v.code))]
+
+validaArgomenti(['execute', 'forza'], ['snapshot'])
+
 const esegui = flag('execute')
+const forza = flag('forza')
+
+interface ContoLegacySnapshot {
+  id: string
+  code: string
+  name: string
+  type: string
+  isActive: boolean
+  systemKey: string | null
+}
+
+interface VoceV4Snapshot {
+  id: string
+  code: string
+  name: string
+  type: string
+  isActive: boolean
+  systemKey: string | null
+  mastroCode: string | null
+  mastroNome: string | null
+  gruppoCode: string | null
+  gruppoNome: string | null
+  costCenterRule: string
+}
 
 interface Snapshot {
   versione: number
   generatoIl: string
   database: string
+  bersaglio?: string
   modalita: string
   mantieniBudget?: boolean
-  contiLegacy: { id: string; code: string; name: string; type: string; isActive: boolean; systemKey: string | null }[]
-  vociV4Preesistenti: { id: string; code: string; isActive: boolean; systemKey: string | null }[]
+  contiLegacy: ContoLegacySnapshot[]
+  vociV4Preesistenti: VoceV4Snapshot[]
   budgetLines: Record<string, unknown>[]
   accountBudgetMappings: Record<string, unknown>[]
 }
 
+const VERSIONI_LETTE = [2]
+
 function leggiSnapshot(percorso: string): Snapshot {
   const grezzo = JSON.parse(readFileSync(percorso, 'utf8'))
-  if (grezzo.versione !== 1) {
-    throw new Error(`Snapshot di versione ${grezzo.versione}: questo script legge solo la versione 1`)
+  if (!VERSIONI_LETTE.includes(grezzo.versione)) {
+    throw new Error(
+      `Snapshot di versione ${grezzo.versione}: questo script legge solo la/le versione/i ${VERSIONI_LETTE.join(', ')}`
+    )
   }
   for (const campo of ['contiLegacy', 'vociV4Preesistenti', 'budgetLines', 'accountBudgetMappings']) {
     if (!Array.isArray(grezzo[campo])) {
       throw new Error(`Snapshot malformato: manca l'elenco "${campo}"`)
     }
+    // Ogni riga deve avere un id: senza, il confronto con lo stato attuale
+    // slitterebbe in silenzio e il ripristino sarebbe parziale.
+    const righe = grezzo[campo] as Record<string, unknown>[]
+    const senzaId = righe.findIndex((r) => !r || typeof r.id !== 'string' || r.id.length === 0)
+    if (senzaId >= 0) {
+      throw new Error(`Snapshot malformato: "${campo}" ha una riga senza id (posizione ${senzaId})`)
+    }
+  }
+  if (typeof grezzo.database !== 'string') {
+    throw new Error('Snapshot malformato: manca il campo "database"')
   }
   return grezzo as Snapshot
 }
@@ -82,12 +137,23 @@ function ripristinaTipi(riga: Record<string, unknown>): Record<string, unknown> 
   return fuori
 }
 
+/** Campi dell'anagrafica che l'upsert della migrazione può aver sovrascritto. */
+const CAMPI_ANAGRAFICA = [
+  'name',
+  'isActive',
+  'mastroCode',
+  'mastroNome',
+  'gruppoCode',
+  'gruppoNome',
+  'costCenterRule',
+] as const
+
 interface Piano {
   legacyDaRiattivare: { id: string; code: string; name: string }[]
   budgetLinesDaRipristinare: number
   mappingDaRipristinare: number
   vociDaDisattivare: { code: string; name: string }[]
-  vociDaRiportareAllaStatoPrecedente: { code: string; isActive: boolean }[]
+  vociPreesistentiDaRipristinare: { code: string; campi: string[]; dati: Record<string, unknown> }[]
   corrispettiviDaTogliere: boolean
   vociConRiferimenti: { code: string; name: string; dettaglio: string }[]
 }
@@ -120,10 +186,20 @@ async function calcolaPiano(db: Db, snap: Snapshot): Promise<Piano> {
   )
 
   // Voci v4 oggi nel database.
-  const codiciV4 = PIANO_CONTI_WEISS_V4.map((v) => v.code)
   const vociOra = await db.account.findMany({
-    where: { code: { in: codiciV4 } },
-    select: { id: true, code: true, name: true, isActive: true, systemKey: true },
+    where: { code: { in: CODICI_V4 } },
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      isActive: true,
+      systemKey: true,
+      mastroCode: true,
+      mastroNome: true,
+      gruppoCode: true,
+      gruppoNome: true,
+      costCenterRule: true,
+    },
   })
 
   const riferimenti = await contaRiferimenti(
@@ -133,19 +209,27 @@ async function calcolaPiano(db: Db, snap: Snapshot): Promise<Piano> {
 
   const vociConRiferimenti: Piano['vociConRiferimenti'] = []
   const vociDaDisattivare: Piano['vociDaDisattivare'] = []
-  const vociDaRiportareAllaStatoPrecedente: Piano['vociDaRiportareAllaStatoPrecedente'] = []
+  const vociPreesistentiDaRipristinare: Piano['vociPreesistentiDaRipristinare'] = []
 
   for (const voce of vociOra) {
     const rif = riferimenti.get(voce.id)
     const prima = preesistenti.get(voce.code)
+
     if (prima) {
-      // Esisteva già: torna com'era, senza guardare i riferimenti (non è la
-      // migrazione ad averla introdotta).
-      if (prima.isActive !== voce.isActive) {
-        vociDaRiportareAllaStatoPrecedente.push({ code: voce.code, isActive: prima.isActive })
+      // Esisteva già: torna com'era in TUTTI i campi che l'upsert tocca,
+      // senza guardare i riferimenti (non è la migrazione ad averla
+      // introdotta, quindi non la si sta togliendo di mezzo).
+      const attuale = voce as unknown as Record<string, unknown>
+      const atteso = prima as unknown as Record<string, unknown>
+      const campi = CAMPI_ANAGRAFICA.filter((c) => attuale[c] !== atteso[c])
+      if (campi.length > 0) {
+        const dati: Record<string, unknown> = {}
+        for (const c of campi) dati[c] = atteso[c]
+        vociPreesistentiDaRipristinare.push({ code: voce.code, campi: [...campi], dati })
       }
       continue
     }
+
     if (rif && rif.totale > 0) {
       vociConRiferimenti.push({ code: voce.code, name: voce.name, dettaglio: formattaDettaglio(rif) })
       continue
@@ -168,7 +252,7 @@ async function calcolaPiano(db: Db, snap: Snapshot): Promise<Piano> {
     mappingDaRipristinare: snap.accountBudgetMappings.filter((m) => !mappingEsistenti.has(m.id as string))
       .length,
     vociDaDisattivare,
-    vociDaRiportareAllaStatoPrecedente,
+    vociPreesistentiDaRipristinare,
     corrispettiviDaTogliere,
     vociConRiferimenti,
   }
@@ -244,8 +328,8 @@ async function applica(tx: Db, snap: Snapshot): Promise<Piano> {
     })
   }
 
-  for (const v of piano.vociDaRiportareAllaStatoPrecedente) {
-    await tx.account.update({ where: { code: v.code }, data: { isActive: v.isActive } })
+  for (const v of piano.vociPreesistentiDaRipristinare) {
+    await tx.account.update({ where: { code: v.code }, data: v.dati as never })
   }
 
   const admin = await tx.user.findFirst({
@@ -265,6 +349,7 @@ async function applica(tx: Db, snap: Snapshot): Promise<Piano> {
           snapshot: snap.generatoIl,
           legacyRiattivati: piano.legacyDaRiattivare.map((c) => c.code),
           vociV4Disattivate: piano.vociDaDisattivare.length,
+          vociV4Ripristinate: piano.vociPreesistentiDaRipristinare.length,
           budgetLinesRipristinate: piano.budgetLinesDaRipristinare,
           mappingRipristinate: piano.mappingDaRipristinare,
         })
@@ -297,6 +382,30 @@ async function main() {
   console.log(`  database: ${snap.database}`)
   console.log('')
 
+  // Snapshot di prova e snapshot di produzione stanno nella stessa cartella e
+  // si distinguono solo dal timestamp. Con quello sbagliato `legacyDaRiattivare`
+  // resterebbe vuoto (gli id non esistono qui) ma le voci v4 verrebbero
+  // spente lo stesso, perché quelle si calcolano per CODICE: si spegnerebbe
+  // il piano dei conti del database giusto.
+  const bersaglioSnapshot = snap.bersaglio ?? snap.database
+  const bersaglioAttuale = snap.bersaglio ? bersaglio() : descriviDatabase()
+  if (bersaglioSnapshot !== bersaglioAttuale) {
+    if (!forza) {
+      console.error('❌ ROLLBACK BLOCCATO — lo snapshot viene da un altro bersaglio:')
+      console.error('')
+      console.error(`   snapshot : ${bersaglioSnapshot}`)
+      console.error(`   corrente : ${bersaglioAttuale}`)
+      console.error('')
+      console.error('   Applicarlo qui spegnerebbe le 155 voci di QUESTO database (si calcolano')
+      console.error('   per codice, non per id) e toglierebbe la system_key CORRISPETTIVI.')
+      console.error('   Se è davvero quello che si vuole, rilanciare con --forza.')
+      process.exitCode = 1
+      return
+    }
+    console.log(`⚠️  Bersaglio diverso da quello dello snapshot (${bersaglioSnapshot}): proseguo per --forza.`)
+    console.log('')
+  }
+
   const { prisma, chiudi } = creaClient()
   try {
     const piano = await calcolaPiano(prisma, snap)
@@ -318,23 +427,32 @@ async function main() {
     )
     console.log(`  4. voci v4 da disattivare (mai cancellare): ${piano.vociDaDisattivare.length}`)
     console.log(
-      `  5. voci v4 preesistenti da riportare allo stato di partenza: ${piano.vociDaRiportareAllaStatoPrecedente.length}`
+      `  5. voci v4 preesistenti da riportare all'anagrafica di partenza: ${piano.vociPreesistentiDaRipristinare.length}`
     )
+    for (const v of piano.vociPreesistentiDaRipristinare.slice(0, 10)) {
+      console.log(`       · ${v.code.padEnd(10)} campi: ${v.campi.join(', ')}`)
+    }
+    if (piano.vociPreesistentiDaRipristinare.length > 10) {
+      console.log(`       · … e altre ${piano.vociPreesistentiDaRipristinare.length - 10}`)
+    }
     console.log('')
 
     if (!esegui) {
       console.log('DRY-RUN: nulla è stato scritto.')
       console.log('')
       console.log('Per eseguire davvero:')
-      console.log(`  npx tsx scripts/piano-v4/04-rollback.ts --snapshot ${percorso} --execute`)
+      console.log(
+        `  DATABASE_URL="…" npx tsx scripts/piano-v4/04-rollback.ts --snapshot ${percorso} --execute${forza ? ' --forza' : ''}`
+      )
       return
     }
 
-    await contoAllaRovescia(5)
+    await confermaScrittura()
 
     const fatto = await prisma.$transaction((tx) => applica(comeDb(tx), snap), {
       timeout: 180_000,
       maxWait: 30_000,
+      isolationLevel: 'Serializable',
     })
 
     console.log('✅ ROLLBACK COMPLETATO')
@@ -343,6 +461,7 @@ async function main() {
     console.log(`   righe di budget ripristinate: ${fatto.budgetLinesDaRipristinare}`)
     console.log(`   mappature budget ripristinate: ${fatto.mappingDaRipristinare}`)
     console.log(`   voci v4 disattivate        : ${fatto.vociDaDisattivare.length}`)
+    console.log(`   voci v4 riportate all'anagrafica di partenza: ${fatto.vociPreesistentiDaRipristinare.length}`)
     console.log('')
     console.log('Le voci v4 restano in tabella disattivate: nessun conto è stato cancellato.')
   } catch (e) {
