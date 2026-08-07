@@ -151,7 +151,7 @@ sessione parallela su `presenze/regole-orario`.
 | 15 | Date estratto conto parse-ate nel fuso del server (`new Date(a,m,g)` → `@db.Date`) | Nuova (W2): ok finché Railway resta UTC, fragile; legata alle impronte di deduplica |
 | 16 | `BankTransaction` senza legame a `BankAccount` (A3-DATA-018) | Con più conti bancari gli estratti si mescolano per sede; richiede schema |
 | 17 | Fix di `PrimaNotaContext` provato dal diff, non da un test | Debito di copertura dichiarato da B2 |
-| 18 | **40 violazioni `react-hooks/set-state-in-effect`** (setState dentro effetti → render a cascata) in ~30 file: pagine di autenticazione, anagrafiche, budget, hook `useOffline` | Nuova (7 ago): oggi sono **avvisi** solo perché `eslint-plugin-react-hooks` è alla 7.0.1; nella **7.1.1 sono errori bloccanti**. Debito con data di scadenza: al primo aggiornamento legittimo del plugin la CI si ferma. Da pianificare come lotto a sé (candidato W4) |
+| 18 | **40 violazioni `react-hooks/set-state-in-effect`** (setState dentro effetti → render a cascata) in ~30 file: pagine di autenticazione, anagrafiche, budget, hook `useOffline` | Nuova (7 ago). Emerse per caso da un ambiente andato alla deriva (vedi §6 n.10), ma **sono difetti reali**: oggi passano come avvisi solo perché `eslint-plugin-react-hooks` è alla 7.0.1; nella **7.1.1 sono errori bloccanti**. Debito con data di scadenza: al primo aggiornamento legittimo del plugin la CI si ferma. Da pianificare come lotto a sé (candidato W4) |
 
 ---
 
@@ -173,14 +173,23 @@ sessione parallela su `presenze/regole-orario`.
    girano in realtà sul codice corrente, sembrando una verifica riuscita. Percorsi sempre espliciti.
 9. **`@testing-library/react` senza `@testing-library/dom`** falliva all'import (ora la peer è
    installata, da B3): era il motivo per cui il repo non aveva test di componente.
-10. **`node_modules` che diverge dal lockfile**: un `npm install` di un singolo pacchetto dentro un
-    worktree può tirarsi dietro versioni più nuove di dipendenze indirette **senza toccare il
-    lockfile**, e il sintomo è un gate che fallisce solo lì. Caso reale del 7 ago: un agente ha
-    misurato 40 errori di lint "preesistenti" che sul ramo base non esistevano — aveva
-    `eslint-plugin-react-hooks` 7.1.1 invece della 7.0.1 bloccata. **Regola: prima di credere a un
-    gate rosso, confronta la versione installata con quella del lockfile e rifai `npm ci`.**
-    Corollario: non aggirare mai il pre-commit con `--no-verify` per far passare un gate rosso —
-    l'hook non era rotto, segnalava un ambiente rotto.
+10. **`npm install --no-package-lock` distrugge l'ambiente del worktree.** Il flag non aggiunge solo
+    il pacchetto richiesto: **ignora il lockfile e ri-risolve l'intero albero** dalle forcelle di
+    `package.json`. Caso reale del 7 ago (un `npm install --no-save --no-package-lock knip@5`):
+    `@prisma/client` e `@prisma/adapter-pg` 7.4.1 → 7.9.1, `pg` 8.18.0 → 8.22.0, ESLint e React
+    Compiler più recenti. Due sintomi, entrambi somigliantissimi a difetti gravi del codice:
+    (a) **40 errori di lint `react-hooks/set-state-in-effect`** inesistenti sul ramo base (nella
+    7.1.1 del plugin quell'avviso è errore); (b) **118 test di integrazione su 138 rossi** con
+    `The column undefined$1undefined does not exist in the current database`, che sembra uno schema
+    distrutto ed è solo disallineamento fra client Prisma e adapter.
+    **Regole:** per uno strumento non installato usare `npx <strumento>`, mai installarlo; prima di
+    credere a un gate rosso verificare che l'installato coincida col lockfile
+    (`node -p "require('./node_modules/eslint-plugin-react-hooks/package.json').version"` → 7.0.1) e
+    nel dubbio `npm ci && npx prisma generate`; **non aggirare il pre-commit con `--no-verify`** per
+    far passare un gate rosso — l'hook non è rotto, sta segnalando un ambiente rotto.
+    **Corollario sul metodo:** la verifica per inversione va fatta anche sull'ambiente, non solo sul
+    diff. Mettere da parte le proprie modifiche non prova nulla se entrambe le esecuzioni girano
+    sullo stesso `node_modules` guasto — è esattamente l'errore che ha prodotto il falso allarme.
 
 ---
 
