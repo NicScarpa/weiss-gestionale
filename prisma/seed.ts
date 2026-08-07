@@ -9,6 +9,8 @@ import 'dotenv/config'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { Pool } from 'pg'
 
+import { PIANO_CONTI_WEISS_V4, CENTRI_DI_COSTO } from '../src/lib/accounts/piano-conti-weiss-v4'
+
 const pool = new Pool({ connectionString: process.env.DATABASE_URL })
 const adapter = new PrismaPg(pool)
 const prisma = new PrismaClient({ adapter })
@@ -201,42 +203,65 @@ async function main() {
     })
   }
 
-  // ==================== PIANO DEI CONTI ====================
-  console.log('Creating chart of accounts...')
+  // ==================== PIANO DEI CONTI v4 ====================
+  console.log('Creating chart of accounts (piano v4)...')
 
-  const accounts = [
-    // RICAVI
-    { code: '400', name: 'Ricavi', type: AccountType.RICAVO, category: 'Ricavi' },
-    { code: '400.01', name: 'Ricavi da vendite bar', type: AccountType.RICAVO, category: 'Ricavi' },
-    { code: '400.02', name: 'Ricavi da vendite caffetteria', type: AccountType.RICAVO, category: 'Ricavi' },
-    { code: '400.03', name: 'Ricavi da eventi', type: AccountType.RICAVO, category: 'Ricavi' },
-
-    // COSTI
-    { code: '500', name: 'Costi', type: AccountType.COSTO, category: 'Costi' },
-    { code: '500.01', name: 'Acquisti materie prime', type: AccountType.COSTO, category: 'Costi F&B' },
-    { code: '500.02', name: 'Acquisti bevande', type: AccountType.COSTO, category: 'Costi F&B' },
-    { code: '510', name: 'Costi personale', type: AccountType.COSTO, category: 'Personale' },
-    { code: '510.01', name: 'Stipendi dipendenti', type: AccountType.COSTO, category: 'Personale' },
-    { code: '510.02', name: 'Compensi extra', type: AccountType.COSTO, category: 'Personale' },
-    { code: '520', name: 'Costi per servizi', type: AccountType.COSTO, category: 'Servizi' },
-    { code: '520.01', name: 'Pulizie', type: AccountType.COSTO, category: 'Servizi' },
-    { code: '520.02', name: 'Utenze', type: AccountType.COSTO, category: 'Servizi' },
-    { code: '520.03', name: 'Manutenzioni', type: AccountType.COSTO, category: 'Servizi' },
-    { code: '530', name: 'Costi amministrativi', type: AccountType.COSTO, category: 'Amministrativi' },
-    { code: '530.01', name: 'Commissioni bancarie', type: AccountType.COSTO, category: 'Amministrativi' },
-    { code: '530.02', name: 'Commissioni POS', type: AccountType.COSTO, category: 'Amministrativi' },
-
-    // ATTIVO
-    { code: '100', name: 'Cassa', type: AccountType.ATTIVO, category: 'Liquidità' },
-    { code: '110', name: 'Banca', type: AccountType.ATTIVO, category: 'Liquidità' },
-
-    // PASSIVO
-    { code: '200', name: 'Debiti v/fornitori', type: AccountType.PASSIVO, category: 'Debiti' },
+  // Conti patrimoniali "di sistema": non fanno parte delle 155 voci del
+  // piano v4 (che sono tutte RICAVO/COSTO), ma servono da controparte per i
+  // movimenti di cassa/banca/debiti e sono referenziati via systemKey.
+  const patrimoniali = [
+    { code: '100', name: 'Cassa', type: AccountType.ATTIVO, systemKey: 'CASSA' },
+    { code: '110', name: 'Banca', type: AccountType.ATTIVO, systemKey: 'BANCA' },
+    { code: '200', name: 'Debiti v/fornitori', type: AccountType.PASSIVO, systemKey: 'DEBITI_FORNITORI' },
   ]
 
-  for (const acc of accounts) {
+  for (const acc of patrimoniali) {
     await prisma.account.create({ data: acc })
   }
+
+  for (const voce of PIANO_CONTI_WEISS_V4) {
+    await prisma.account.create({
+      data: {
+        code: voce.code,
+        name: voce.nome,
+        type: voce.tipo,
+        mastroCode: voce.mastroCode,
+        mastroNome: voce.mastroNome,
+        gruppoCode: voce.gruppoCode,
+        gruppoNome: voce.gruppoNome,
+        costCenterRule: voce.regolaCentro,
+        systemKey: voce.code === '10.01' ? 'CORRISPETTIVI' : undefined,
+      },
+    })
+  }
+
+  // ==================== CENTRI DI COSTO ====================
+  console.log('Creating cost centers...')
+
+  for (const centro of CENTRI_DI_COSTO) {
+    await prisma.costCenter.create({
+      data: {
+        code: centro.code,
+        name: centro.name,
+        description: centro.description,
+        isDefault: centro.isDefault,
+      },
+    })
+  }
+
+  // Permesso di riclassifica dei movimenti da chiusura: assegnato solo al
+  // ruolo admin, non tramite il meccanismo generico "tutti i permessi tranne
+  // admin" usato sopra per manager (altrimenti lo erediterebbe anche lui).
+  const editClosurePermission = await prisma.permission.create({
+    data: {
+      code: 'journal.edit-closure',
+      description: 'Riclassificare movimenti da chiusura',
+      module: 'journal',
+    },
+  })
+  await prisma.rolePermission.create({
+    data: { roleId: adminRole.id, permissionId: editClosurePermission.id },
+  })
 
   // ==================== FORNITORI ESEMPIO ====================
   console.log('Creating suppliers...')
