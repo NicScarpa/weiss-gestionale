@@ -35,7 +35,7 @@ import {
   formatDateIT,
 } from '@/lib/invoice-utils'
 import { NATURA_OPERAZIONE } from '@/lib/sdi/types'
-import { AccountGroupedSelect } from '@/components/prima-nota/shared/AccountGroupedSelect'
+import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
 
 // Type definitions for parsed data from API
 interface CedentePrestatore {
@@ -419,13 +419,13 @@ export function LineItemsTable({
                     {showAccountColumn && (
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <AccountGroupedSelect
+                          <AccountCombobox
                             value={imputazione?.accountId}
-                            onChange={(accountId) =>
-                              onAccountChange?.(linea.numeroLinea, accountId)
-                            }
+                            onChange={(accountId) => {
+                              if (accountId) onAccountChange?.(linea.numeroLinea, accountId)
+                            }}
                             disabled={!canEditAccounts}
-                            accountType="COSTO"
+                            types={['COSTO']}
                             placeholder={
                               !imputazione && defaultAccountLabel
                                 ? `Suggerito: ${defaultAccountLabel}`

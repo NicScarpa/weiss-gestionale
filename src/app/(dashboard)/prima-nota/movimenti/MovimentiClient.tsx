@@ -365,7 +365,6 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
       )}
 
       <MovimentoFormDialog
-        accounts={accounts}
         entry={selectedEntry ? {
           date: new Date(selectedEntry.date),
           registerType: selectedEntry.registerType,

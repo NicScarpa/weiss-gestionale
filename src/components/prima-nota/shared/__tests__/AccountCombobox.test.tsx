@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { groupByMastro, buildSearchValue } from '../AccountCombobox'
+import { groupByMastro, buildSearchValue, type AccountComboboxItem } from '../AccountCombobox'
 import type { ComboboxAccount } from '@/hooks/useImputableAccounts'
 
 // NOTA: @testing-library/react è in package.json ma non è mai stato
@@ -94,5 +94,38 @@ describe('buildSearchValue', () => {
     expect(buildSearchValue(CONTO_BIRRA).includes('20.1')).toBe(true)
     expect(buildSearchValue(CONTO_VINO).includes('20.1')).toBe(true)
     expect(buildSearchValue(CONTO_AFFITTO).includes('20.1')).toBe(false)
+  })
+
+  // Smoke richiesto dal brief Task 12: cercare "Birra" nel form movimento
+  // deve poter trovare il conto "Birra fusto" del piano v4 (mastro 20). cmdk
+  // fa match case-insensitive sul valore restituito da buildSearchValue, non
+  // testabile end-to-end senza infrastruttura DOM (vedi nota in testa al
+  // file): qui si verifica che il termine sia effettivamente presente nella
+  // stringa di ricerca, come nel form movimento reale.
+  it('"Birra" (case-insensitive) trova "Birra fusto" nella stringa di ricerca', () => {
+    expect(buildSearchValue(CONTO_BIRRA).toLowerCase()).toContain('birra')
+  })
+})
+
+describe('groupByMastro / buildSearchValue con lista fornita come prop (AccountComboboxItem minimale)', () => {
+  // Forma usata da ExpensesSection (chiusura di cassa, Task 12): i conti
+  // arrivano come prop SSR con solo {id, code, name}, senza gerarchia
+  // mastro/gruppo. AccountComboboxList deve comunque funzionare, mettendo
+  // tutto in un unico gruppo "Altri conti".
+  const CONTO_MINIMALE: AccountComboboxItem = {
+    id: 'conto-pulizie',
+    code: '61.9.01',
+    name: 'Pulizie',
+  }
+
+  it('un conto senza mastroCode/mastroNome/gruppoNome finisce in "Altri conti"', () => {
+    const gruppi = groupByMastro([CONTO_MINIMALE])
+    expect(gruppi).toEqual([
+      { key: '__senza_mastro__', heading: 'Altri conti', accounts: [CONTO_MINIMALE] },
+    ])
+  })
+
+  it('la stringa di ricerca non contiene "undefined" quando gruppoNome è assente', () => {
+    expect(buildSearchValue(CONTO_MINIMALE)).toBe('61.9.01 Pulizie ')
   })
 })

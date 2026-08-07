@@ -13,15 +13,10 @@ import { ArrowLeft, BookOpen, Loader2, AlertCircle } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
+import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
+import { useAccountsForCombobox } from '@/hooks/useImputableAccounts'
 
 import {
   DocumentInfoSection,
@@ -105,13 +100,6 @@ interface Invoice {
   parsedData?: ParsedInvoiceData
 }
 
-interface Account {
-  id: string
-  code: string
-  name: string
-  type: string
-}
-
 async function fetchInvoice(id: string): Promise<Invoice> {
   const res = await fetch(`/api/invoices/${id}`)
   if (!res.ok) {
@@ -119,13 +107,6 @@ async function fetchInvoice(id: string): Promise<Invoice> {
     throw new Error(data.error || 'Errore caricamento')
   }
   return res.json()
-}
-
-async function fetchAccounts(): Promise<Account[]> {
-  const res = await fetch('/api/accounts?type=COSTO')
-  if (!res.ok) throw new Error('Errore caricamento conti')
-  const data = await res.json()
-  return data.accounts || []
 }
 
 async function updateInvoice(id: string, data: Record<string, unknown>): Promise<Invoice> {
@@ -170,24 +151,24 @@ async function updateRigheConti(id: string, data: RigheContiPayload): Promise<un
 
 export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const queryClient = useQueryClient()
-  const [selectedAccountId, setSelectedAccountId] = useState<string>('')
+  const [selectedAccountId, setSelectedAccountId] = useState<string | undefined>(undefined)
 
   const { data: invoice, isLoading, error } = useQuery({
     queryKey: ['invoice', invoiceId],
     queryFn: () => fetchInvoice(invoiceId),
   })
 
-  const { data: accounts } = useQuery({
-    queryKey: ['accounts-cost'],
-    queryFn: fetchAccounts,
-  })
+  // Stessa chiave di query usata internamente da AccountCombobox
+  // (types=['COSTO']): nessuna fetch duplicata, i dati servono qui solo per
+  // calcolare il suggerimento del conto di default del fornitore.
+  const { data: accounts } = useAccountsForCombobox(['COSTO'])
 
   // Set initial account when invoice loads
   useEffect(() => {
     if (invoice?.account) {
       queueMicrotask(() => setSelectedAccountId(invoice.account!.id))
     } else if (invoice) {
-      queueMicrotask(() => setSelectedAccountId('_none'))
+      queueMicrotask(() => setSelectedAccountId(undefined))
     }
   }, [invoice])
 
@@ -223,9 +204,9 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     },
   })
 
-  const handleAccountChange = (accountId: string) => {
+  const handleAccountChange = (accountId: string | undefined) => {
     setSelectedAccountId(accountId)
-    updateMutation.mutate({ accountId: accountId === '_none' ? null : accountId || null })
+    updateMutation.mutate({ accountId: accountId ?? null })
   }
 
   const handleLineAccountChange = (numeroLinea: number, accountId: string) => {
@@ -386,23 +367,15 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         <CardContent className="pt-0 space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">Conto di spesa</label>
-            <Select
-              value={selectedAccountId}
-              onValueChange={handleAccountChange}
-              disabled={!canEdit || updateMutation.isPending}
-            >
-              <SelectTrigger className="max-w-md">
-                <SelectValue placeholder="Seleziona conto" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_none">Nessun conto</SelectItem>
-                {accounts?.map((account) => (
-                  <SelectItem key={account.id} value={account.id}>
-                    {account.code} - {account.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="max-w-md">
+              <AccountCombobox
+                value={selectedAccountId}
+                onChange={handleAccountChange}
+                types={['COSTO']}
+                allowNone
+                disabled={!canEdit || updateMutation.isPending}
+              />
+            </div>
           </div>
 
           {invoice.journalEntry && (

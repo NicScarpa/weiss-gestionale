@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 import { PayeeAutocomplete } from '@/components/ui/payee-autocomplete'
+import { AccountComboboxList } from '@/components/prima-nota/shared/AccountCombobox'
 
 // Tipo per uscita
 export interface ExpenseData {
@@ -261,24 +262,13 @@ export function ExpensesSection({
               <div className="grid grid-cols-2 gap-2 items-end">
                 <div className="space-y-1">
                   <Label className="text-xs">Conto Contabile</Label>
-                  <Select
-                    value={expense.accountId || ''}
-                    onValueChange={(value) =>
-                      handleFieldChange(index, 'accountId', value)
-                    }
+                  <AccountComboboxList
+                    accounts={accounts}
+                    value={expense.accountId}
+                    onChange={(value) => handleFieldChange(index, 'accountId', value ?? '')}
                     disabled={disabled}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleziona..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {accounts.map((acc) => (
-                        <SelectItem key={acc.id} value={acc.id}>
-                          {acc.code} - {acc.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Seleziona..."
+                  />
                 </div>
 
                 <div className="space-y-1">

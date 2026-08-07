@@ -14,11 +14,7 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import {
-  useAccountsForCombobox,
-  type AccountType,
-  type ComboboxAccount,
-} from '@/hooks/useImputableAccounts'
+import { useAccountsForCombobox, type AccountType } from '@/hooks/useImputableAccounts'
 
 const ALTRI_CONTI_LABEL = 'Altri conti'
 const SENZA_MASTRO_KEY = '__senza_mastro__'
@@ -36,10 +32,36 @@ interface AccountComboboxProps {
   allowNone?: boolean
 }
 
+/**
+ * Forma minima richiesta dal corpo del combobox (ricerca + raggruppamento):
+ * un sottoinsieme di ComboboxAccount, con i campi di gerarchia opzionali.
+ * Permette a chi possiede già una lista di conti senza mastro/gruppo (es.
+ * ExpensesSection nella chiusura di cassa, che riceve un elenco {id, code,
+ * name} via prop SSR) di usare la stessa UI di ricerca senza doverli avere.
+ */
+export interface AccountComboboxItem {
+  id: string
+  code: string
+  name: string
+  mastroCode?: string | null
+  mastroNome?: string | null
+  gruppoNome?: string | null
+}
+
+interface AccountComboboxListProps {
+  accounts: AccountComboboxItem[]
+  isLoading?: boolean
+  value?: string
+  onChange: (accountId: string | undefined) => void
+  disabled?: boolean
+  placeholder?: string
+  allowNone?: boolean
+}
+
 interface AccountGroup {
   key: string
   heading: string
-  accounts: ComboboxAccount[]
+  accounts: AccountComboboxItem[]
 }
 
 /**
@@ -52,7 +74,7 @@ interface AccountGroup {
  * il report del Task 11), quindi la logica di raggruppamento — l'unica parte
  * non banale del componente — è verificata qui senza montare il DOM.
  */
-export function groupByMastro(accounts: ComboboxAccount[]): AccountGroup[] {
+export function groupByMastro(accounts: AccountComboboxItem[]): AccountGroup[] {
   const map = new Map<string, AccountGroup>()
   for (const account of accounts) {
     const key = account.mastroCode ?? SENZA_MASTRO_KEY
@@ -78,28 +100,30 @@ export function groupByMastro(accounts: ComboboxAccount[]): AccountGroup[] {
  * di riflesso perché il gruppoCode è già prefisso del code di ogni conto
  * figlio — più il gruppoNome, per trovare un conto anche digitandolo.
  */
-export function buildSearchValue(account: ComboboxAccount): string {
+export function buildSearchValue(account: AccountComboboxItem): string {
   return `${account.code} ${account.name} ${account.gruppoNome ?? ''}`
 }
 
 /**
- * Combobox con ricerca (client-side, su codice e nome) dei conti del piano
- * dei conti, raggruppati per mastro. Sostituisce AccountGroupedSelect nei
- * punti che devono gestire le ~155 voci del piano v4 (Task 12/17): con quel
- * volume una select senza ricerca è inservibile.
+ * Corpo del combobox (ricerca cmdk + raggruppamento per mastro), a
+ * prescindere da come è stata ottenuta la lista dei conti. Usata sia da
+ * `AccountCombobox` (fetch interno via react-query) sia direttamente da chi
+ * riceve già i conti come prop — es. `ExpensesSection` nella chiusura di
+ * cassa (Task 12): quel form non deve introdurre una fetch di rete nel
+ * percorso del conto, per non perdere la resilienza a interruzioni di
+ * connessione a metà compilazione che oggi ha gratis coi dati SSR passati
+ * come prop.
  */
-export function AccountCombobox({
+export function AccountComboboxList({
+  accounts,
+  isLoading = false,
   value,
   onChange,
-  types,
-  imputableOnly = false,
   disabled,
   placeholder = 'Seleziona conto',
   allowNone = false,
-}: AccountComboboxProps) {
+}: AccountComboboxListProps) {
   const [open, setOpen] = React.useState(false)
-  const { data: accounts = [], isLoading } = useAccountsForCombobox(types, imputableOnly)
-
   const groups = React.useMemo(() => groupByMastro(accounts), [accounts])
   const selected = React.useMemo(
     () => accounts.find((a) => a.id === value),
@@ -182,5 +206,39 @@ export function AccountCombobox({
         </Command>
       </PopoverContent>
     </Popover>
+  )
+}
+
+/**
+ * Combobox con ricerca (client-side, su codice e nome) dei conti del piano
+ * dei conti, raggruppati per mastro. Recupera i conti da sé (react-query,
+ * `/api/accounts`). Sostituisce AccountGroupedSelect nei punti che devono
+ * gestire le ~155 voci del piano v4 (Task 12/17): con quel volume una select
+ * senza ricerca è inservibile.
+ *
+ * Chi possiede già i conti come prop (niente fetch propria) usa invece
+ * `AccountComboboxList` direttamente.
+ */
+export function AccountCombobox({
+  value,
+  onChange,
+  types,
+  imputableOnly = false,
+  disabled,
+  placeholder,
+  allowNone = false,
+}: AccountComboboxProps) {
+  const { data: accounts = [], isLoading } = useAccountsForCombobox(types, imputableOnly)
+
+  return (
+    <AccountComboboxList
+      accounts={accounts}
+      isLoading={isLoading}
+      value={value}
+      onChange={onChange}
+      disabled={disabled}
+      placeholder={placeholder}
+      allowNone={allowNone}
+    />
   )
 }

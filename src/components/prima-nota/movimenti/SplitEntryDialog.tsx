@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { AccountGroupedSelect } from '@/components/prima-nota/shared/AccountGroupedSelect'
+import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
 import type { JournalEntry } from '@/types/prima-nota'
 import { cn } from '@/lib/utils'
 
@@ -200,9 +200,9 @@ export function SplitEntryDialog({ entry, open, onOpenChange, onSaved }: SplitEn
             return (
               <div key={row.key} className="flex items-start gap-2">
                 <div className="flex-1">
-                  <AccountGroupedSelect
+                  <AccountCombobox
                     value={row.accountId}
-                    onChange={(accountId) => updateRow(row.key, { accountId })}
+                    onChange={(accountId) => updateRow(row.key, { accountId: accountId ?? '' })}
                     disabled={isBusy}
                   />
                 </div>

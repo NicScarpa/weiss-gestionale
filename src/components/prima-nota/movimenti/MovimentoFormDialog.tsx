@@ -47,6 +47,21 @@ import {
   type JournalEntryFormData,
 } from '@/types/prima-nota'
 import { cn } from '@/lib/utils'
+import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
+import { type AccountType } from '@/hooks/useImputableAccounts'
+
+/**
+ * Tipi di conto imputabili per tipo di movimento: un incasso genera ricavo,
+ * un'uscita genera costo, gli altri (versamento/prelievo tra cassa e banca,
+ * giroconto) possono imputare entrambi. Estratta come funzione pura per
+ * essere testata senza montare il dialog (il progetto non ha infrastruttura
+ * di test per il rendering di componenti React, vedi report Task 11/12).
+ */
+export function accountTypesForEntryType(entryType: EntryType): AccountType[] {
+  if (entryType === 'INCASSO') return ['RICAVO']
+  if (entryType === 'USCITA') return ['COSTO']
+  return ['RICAVO', 'COSTO']
+}
 
 const MOVIMENTO_SCHEMA = z.object({
   date: z.date(),
@@ -65,7 +80,6 @@ type MovimentoFormData = z.infer<typeof MOVIMENTO_SCHEMA>
 
 interface MovimentoFormDialogProps {
   entry?: JournalEntryFormData
-  accounts?: Array<{ id: string; code: string; name: string }>
   onSave: (data: MovimentoFormData) => void | Promise<void>
   open?: boolean
   onOpenChange?: (open: boolean) => void
@@ -74,7 +88,6 @@ interface MovimentoFormDialogProps {
 
 export function MovimentoFormDialog({
   entry,
-  accounts = [],
   onSave,
   open = false,
   onOpenChange,
@@ -104,6 +117,7 @@ export function MovimentoFormDialog({
 
   const entryType = form.watch('entryType')
   const isEntrata = entryType === 'INCASSO' || entryType === 'VERSAMENTO' || entryType === 'PRELIEVO'
+  const accountTypes = accountTypesForEntryType(entryType)
 
   const onSubmit = async (data: MovimentoFormData) => {
     try {
@@ -296,31 +310,21 @@ export function MovimentoFormDialog({
             </div>
 
             {/* Conto */}
-            {accounts.length > 0 && (
-              <FormField
-                control={form.control}
-                name="accountId"
-                render={({ field }) => (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>Conto</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleziona conto" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {accounts.map((account) => (
-                          <SelectItem key={account.id} value={account.id}>
-                            <span className="font-medium">{account.code}</span>
-                            <span className="ml-2 text-muted-foreground">{account.name}</span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
+            <FormField
+              control={form.control}
+              name="accountId"
+              render={({ field }) => (
+                <FormItem className="flex flex-col">
+                  <FormLabel>Conto</FormLabel>
+                  <AccountCombobox
+                    value={field.value}
+                    onChange={field.onChange}
+                    types={accountTypes}
+                  />
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             {/* IVA */}
             <FormField
