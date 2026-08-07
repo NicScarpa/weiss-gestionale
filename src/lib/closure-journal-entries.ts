@@ -107,7 +107,7 @@ async function risolviCentroMovimento(
       motivo: esito.motivo,
     })
   } catch (error) {
-    logger.error('Chiusura: risoluzione del centro di costo fallita', error)
+    logger.error('Chiusura: risoluzione del centro di costo fallita', error, { closureId })
   }
 
   return null
@@ -124,8 +124,14 @@ async function risolviCentroMovimento(
  * | incasso contanti   | CASH     | CORRISPETTIVI | CASSA         |
  * | uscita (per spesa) | CASH     | conto riga    | CASSA         |
  * | incasso POS        | BANK     | CORRISPETTIVI | BANCA         |
- * | versamento (cassa) | CASH     | CASSA         | BANCA         |
- * | versamento (banca) | BANK     | BANCA         | CASSA         |
+ * | versamento (cassa) | CASH     | BANCA         | CASSA         |
+ * | versamento (banca) | BANK     | CASSA         | BANCA         |
+ *
+ * La regola che tiene insieme la colonna: `counterpartId` è sempre il conto
+ * patrimoniale del registro DELLA RIGA STESSA (cassa sulle righe CASH, banca
+ * su quelle BANK), mentre `accountId` racconta l'altra faccia del movimento.
+ * Per questo le due gambe del versamento portano il conto della gamba
+ * opposta: è la destinazione (o l'origine) del giroconto.
  *
  * Il centro è quello della testata; ogni riga spesa può sovrascriverlo.
  * L'imputazione è additiva: numero di movimenti, importi, registri, date e
@@ -142,6 +148,12 @@ export async function generateJournalEntriesFromClosure(
 
   const conti = await leggiContiSistema()
 
+  // `accountId: null` è voluto: i movimenti che useranno questo centro portano
+  // i conti di sistema (corrispettivi e patrimoniali), non conti scelti da
+  // qualcuno. Passarli qui farebbe scattare la loro regola OBBLIGATORIO su una
+  // chiusura senza testata, e il risultato sarebbe un movimento senza centro
+  // invece che sul centro di default: peggio, e per una scelta che non è di
+  // chi compila la chiusura.
   const centroTestata = await risolviCentroMovimento(client, closure.id, {
     accountId: null,
     costCenterId: closure.costCenterId ?? null,
@@ -256,8 +268,8 @@ export async function generateJournalEntriesFromClosure(
       description: generateClosureDescription('deposit', closure.date),
       debitAmount: null,
       creditAmount: bankDeposit,
-      accountId: conti.cassa,
-      counterpartId: conti.banca,
+      accountId: conti.banca,
+      counterpartId: conti.cassa,
       costCenterId: centroTestata,
       closureId: closure.id,
       createdById: userId,
@@ -272,8 +284,8 @@ export async function generateJournalEntriesFromClosure(
       description: generateClosureDescription('deposit', closure.date),
       debitAmount: bankDeposit,
       creditAmount: null,
-      accountId: conti.banca,
-      counterpartId: conti.cassa,
+      accountId: conti.cassa,
+      counterpartId: conti.banca,
       costCenterId: centroTestata,
       closureId: closure.id,
       createdById: userId,

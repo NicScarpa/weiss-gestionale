@@ -508,7 +508,7 @@ describe('generateJournalEntriesFromClosure', () => {
       })
     })
 
-    it('versamento: le due gambe portano i patrimoniali incrociati', async () => {
+    it('versamento: la contropartita è il patrimoniale del proprio registro, il conto è l\'altra gamba', async () => {
       conContiDiSistema()
       conCentriAttivi()
 
@@ -517,17 +517,34 @@ describe('generateJournalEntriesFromClosure', () => {
       const movimenti = movimentiGenerati()
       const uscitaCassa = movimenti.find((m) => m.registerType === 'CASH' && m.creditAmount === 300)
       const entrataBanca = movimenti.find(
-        (m) => m.registerType === 'BANK' && m.debitAmount === 300 && m.accountId === 'conto-banca'
+        (m) => m.registerType === 'BANK' && m.debitAmount === 300 && m.accountId === 'conto-cassa'
       )
 
+      // Uscita dal registro cassa: contropartita CASSA, conto = dove vanno i soldi
       expect(uscitaCassa).toMatchObject({
-        accountId: 'conto-cassa',
-        counterpartId: 'conto-banca',
-      })
-      expect(entrataBanca).toMatchObject({
         accountId: 'conto-banca',
         counterpartId: 'conto-cassa',
       })
+      // Entrata nel registro banca: contropartita BANCA, conto = da dove vengono
+      expect(entrataBanca).toMatchObject({
+        accountId: 'conto-cassa',
+        counterpartId: 'conto-banca',
+      })
+    })
+
+    it('la contropartita è il patrimoniale del proprio registro su ogni movimento generato', async () => {
+      // La regola che tiene insieme la colonna: vale per tutte e cinque le
+      // righe, non solo per quelle degli incassi.
+      conContiDiSistema()
+      conCentriAttivi()
+
+      await generateJournalEntriesFromClosure(chiusuraCompleta, userId)
+
+      for (const movimento of movimentiGenerati()) {
+        expect(movimento.counterpartId).toBe(
+          movimento.registerType === 'CASH' ? 'conto-cassa' : 'conto-banca'
+        )
+      }
     })
 
     it('CORRISPETTIVI assente (produzione pre-FASE 3): nessun conto sugli incassi, come prima', async () => {
@@ -599,6 +616,32 @@ describe('generateJournalEntriesFromClosure', () => {
       expect(movimenti.find((m) => m.creditAmount === 20)?.costCenterId).toBe('cc-weiss')
       expect(movimenti.find((m) => m.registerType === 'BANK' && m.debitAmount === 300)?.costCenterId)
         .toBe('cc-weiss')
+    })
+
+    it('una riga a importo zero non sfasa i centri delle altre spese', async () => {
+      // I centri delle spese sono un array parallelo a closure.expenses: se
+      // qualcuno filtrasse le righe a zero prima del ciclo, i centri
+      // scivolerebbero silenziosamente da una spesa all'altra.
+      conContiDiSistema()
+      conCentriAttivi()
+
+      await generateJournalEntriesFromClosure(
+        {
+          ...chiusuraCompleta,
+          expenses: [
+            { amount: 50, payee: 'Prima', description: null, documentRef: null, accountId: 'conto-merci', costCenterId: 'cc-produzione' },
+            { amount: 0, payee: 'Riga vuota', description: null, documentRef: null, accountId: 'conto-merci', costCenterId: 'cc-scartato' },
+            { amount: 20, payee: 'Terza', description: null, documentRef: null, accountId: 'conto-merci', costCenterId: 'cc-eventi' },
+          ],
+        },
+        userId
+      )
+
+      const movimenti = movimentiGenerati()
+      expect(movimenti.find((m) => m.creditAmount === 50)?.costCenterId).toBe('cc-produzione')
+      expect(movimenti.find((m) => m.creditAmount === 20)?.costCenterId).toBe('cc-eventi')
+      // La riga a zero non genera nulla e il suo centro non finisce da nessuna parte
+      expect(movimenti.some((m) => m.costCenterId === 'cc-scartato')).toBe(false)
     })
 
     it('chiusura storica senza centro in testata: si usa il centro di default, non WEISS', async () => {
