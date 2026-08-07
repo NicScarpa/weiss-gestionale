@@ -1,0 +1,80 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+
+  // Punti d'ingresso che knip non deduce da solo. Senza questo elenco
+  // segnalava come orfani il service worker, l'intera suite e2e e tutti gli
+  // script operativi: falsi positivi che avrebbero reso il controllo inutile.
+  "entry": [
+    "src/app/sw.ts",
+    "playwright.config.ts",
+    "e2e/**/*.spec.ts",
+    "scripts/**/*.{ts,js,mjs,cjs}",
+    "prisma/seed.ts",
+    "prisma/seed-leave-types.ts",
+    "prisma/cleanup-database.ts"
+  ],
+
+  // src/components/ui/**: primitive shadcn/ui generate dal CLI. Si tengono
+  //   intere anche quando una singola variante non è ancora usata, perché il
+  //   prossimo `npx shadcn add` le riscriverebbe comunque.
+  // src/components/attendance/index.ts e src/lib/validations/attendance.ts:
+  //   orfani veri, ma il modulo presenze è fuori dal perimetro di questa
+  //   ondata. Da riprendere quando si tocca quel modulo.
+  // src/components/ErrorBoundary.tsx: orfano perché non è mai stato montato
+  //   (audit A4-INT-007). Qui la scelta non è fra tenerlo e cancellarlo ma fra
+  //   montarlo e cancellarlo, ed è una decisione di prodotto ancora aperta.
+  "ignore": [
+    "src/components/ui/**",
+    "src/components/attendance/index.ts",
+    "src/lib/validations/attendance.ts",
+    "src/components/ErrorBoundary.tsx"
+  ],
+
+  // pino-pretty: caricata a runtime da pino come `transport.target`, cioè da
+  //   una stringa che nessun analizzatore statico può seguire.
+  // @radix-ui/react-accordion: la usa solo components/ui/accordion.tsx, che
+  //   sta nell'ignore qui sopra.
+  // nuqs, @types/bcryptjs, @types/pdf-parse: inutilizzate davvero, ma
+  //   toglierle significa toccare package.json e il lockfile, fuori dal
+  //   perimetro di questa ondata (Needs-Dep).
+  // @playwright/test: NON è installata, eppure la importano tredici file e2e
+  //   e playwright.config.ts. La suite end-to-end oggi non può partire. Va
+  //   aggiunta alle devDependencies e questa riga va tolta (Needs-Dep).
+  // postcss, @prisma/config, glob: arrivano come transitive di
+  //   @tailwindcss/postcss, prisma e degli script; funzionano, ma dichiararle
+  //   esplicitamente sarebbe più solido (Needs-Dep).
+  "ignoreDependencies": [
+    "pino-pretty",
+    "@radix-ui/react-accordion",
+    "nuqs",
+    "@types/bcryptjs",
+    "@types/pdf-parse",
+    "@playwright/test",
+    "postcss",
+    "@prisma/config",
+    "glob"
+  ],
+
+  // La CI blocca sui file interamente orfani e sulle dipendenze inutilizzate:
+  // è la classe di problema che ha prodotto questa ondata — moduli scritti in
+  // una sessione e mai collegati a nulla.
+  // I singoli export inutilizzati restano segnalati ma non bloccanti: sono
+  // ancora qualche centinaio, e ognuno va verificato a mano prima di sparire
+  // (alcuni sono API di dominio deliberate, altri codice morto vero). Farli
+  // bloccare oggi costringerebbe a cancellarli in massa senza verifica o a
+  // riempire questo file di eccezioni. Sono il lavoro di un'ondata dedicata.
+  "rules": {
+    "files": "error",
+    "dependencies": "error",
+    "devDependencies": "error",
+    "unlisted": "error",
+    "exports": "warn",
+    "types": "warn",
+    "nsExports": "warn",
+    "nsTypes": "warn",
+    "enumMembers": "warn",
+    "duplicates": "warn",
+    "classMembers": "warn",
+    "binaries": "warn"
+  }
+}
