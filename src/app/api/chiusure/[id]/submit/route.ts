@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
+import { trovaSessioniAperte } from '@/lib/attendance/sessioni-aperte'
 // POST /api/chiusure/[id]/submit - Invia chiusura per validazione
 export async function POST(
   request: NextRequest,
@@ -77,6 +78,27 @@ export async function POST(
       return NextResponse.json(
         {
           error: `Uscite di cassa: manca "Pagato da" per ${expensesWithoutPaidBy.length} riga/e${exampleLabel}`,
+        },
+        { status: 400 }
+      )
+    }
+
+    // La chiusura termina il servizio: non si invia finché qualcuno risulta
+    // ancora dentro. Le uscite si confermano nella sezione Presenze — anche
+    // per chi è andato via prima senza timbrare.
+    const sessioniAperte = await trovaSessioniAperte(
+      closure.venueId,
+      closure.date.toISOString().slice(0, 10)
+    )
+    if (sessioniAperte.length > 0) {
+      const nomi = sessioniAperte
+        .map((s) => `${s.firstName} ${s.lastName}`)
+        .join(', ')
+      return NextResponse.json(
+        {
+          error:
+            `Timbrature ancora aperte per: ${nomi}. Conferma gli orari di ` +
+            'uscita nella sezione Presenze prima di inviare la chiusura.',
         },
         { status: 400 }
       )

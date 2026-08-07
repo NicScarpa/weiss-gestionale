@@ -115,6 +115,8 @@ export function ClosureForm({
 }: ClosureFormProps) {
   const router = useRouter()
   const [isSaving, setIsSaving] = useState(false)
+  // Timbrature ancora aperte, riferite dalla sezione Presenze: bloccano l'invio.
+  const [sessioniAperte, setSessioniAperte] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [previousCoffeeCount, setPreviousCoffeeCount] = useState<number | null>(null)
 
@@ -317,6 +319,18 @@ export function ClosureForm({
     if (blockingIssues.length > 0) {
       toast.error('Invio non possibile', {
         description: blockingIssues.join('\n'),
+      })
+      return
+    }
+
+    // La chiusura termina il servizio: prima dell'invio vanno confermate le
+    // uscite di chi risulta ancora dentro. Il server rifiuta comunque.
+    if (sessioniAperte > 0) {
+      toast.error('Timbrature ancora aperte', {
+        description:
+          sessioniAperte === 1
+            ? 'Una persona risulta ancora dentro: conferma il suo orario di uscita nella sezione Presenze.'
+            : `${sessioniAperte} persone risultano ancora dentro: conferma i loro orari di uscita nella sezione Presenze.`,
       })
       return
     }
@@ -541,6 +555,7 @@ export function ClosureForm({
         disabled={isReadOnly}
         closureDate={format(formData.date, 'yyyy-MM-dd')}
         venueId={venueId}
+        onSessioniAperteChange={setSessioniAperte}
       />
 
       {/* Riepilogo */}
