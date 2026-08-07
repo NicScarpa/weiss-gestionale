@@ -4,6 +4,7 @@ import { Label } from '@/components/ui/label'
 import { SearchInput } from '../shared/FiltersToolbar'
 import { DateRangePicker } from '../shared/FiltersToolbar'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useCostCenters } from '../shared/CostCenterSelect'
 import { ENTRY_TYPE_LABELS, RegisterType } from '@/types/prima-nota'
 
 interface MovimentiFiltersProps {
@@ -16,6 +17,8 @@ interface MovimentiFiltersProps {
   onEntryTypeChange?: (value: string | undefined) => void
   accountId?: string
   onAccountIdChange?: (value: string | undefined) => void
+  costCenterId?: string
+  onCostCenterIdChange?: (value: string | undefined) => void
   budgetCategoryId?: string
   onBudgetCategoryIdChange?: (value: string | undefined) => void
   verified?: boolean
@@ -38,6 +41,8 @@ export function MovimentiFilters({
   onEntryTypeChange,
   accountId,
   onAccountIdChange,
+  costCenterId,
+  onCostCenterIdChange,
   budgetCategoryId,
   onBudgetCategoryIdChange,
   verified,
@@ -50,6 +55,11 @@ export function MovimentiFilters({
   onClearFilters,
 }: MovimentiFiltersProps) {
   const ALL = '__all__'
+
+  // Stessa chiave di cache (['cost-centers']) usata da CostCenterSelect nei
+  // form della pagina (MovimentoFormDialog, EditContoCentroDialog): qui non
+  // scatta una fetch aggiuntiva, react-query serve il dato già in cache.
+  const { data: costCenters = [] } = useCostCenters()
 
   const entryTypeOptions = [
     { value: ALL, label: 'Tutti i tipi' },
@@ -147,6 +157,30 @@ export function MovimentiFilters({
                 <SelectItem key={account.id} value={account.id}>
                   <span className="font-medium">{account.code}</span>
                   <span className="ml-2 text-muted-foreground">{account.name}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Centro di costo */}
+        <div className="min-w-[180px]">
+          <Label htmlFor="filter-cost-center" className="text-xs text-muted-foreground">
+            Centro
+          </Label>
+          <Select
+            value={costCenterId ?? ALL}
+            onValueChange={(v) => onCostCenterIdChange?.(v === ALL ? undefined : v)}
+          >
+            <SelectTrigger id="filter-cost-center">
+              <SelectValue placeholder="Tutti i centri" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Tutti i centri</SelectItem>
+              {costCenters.map((cc) => (
+                <SelectItem key={cc.id} value={cc.id}>
+                  <span className="font-medium">{cc.code}</span>
+                  <span className="ml-2 text-muted-foreground">{cc.name}</span>
                 </SelectItem>
               ))}
             </SelectContent>

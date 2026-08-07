@@ -169,4 +169,43 @@ describe('GET /api/prima-nota - costCenterId nel payload (regressione)', () => {
     expect(json.data).toHaveLength(1)
     expect(json.data[0].costCenterId).toBe('cc-vv')
   })
+
+  it('include la relazione costCenter (code/name) per la colonna "Centro"', async () => {
+    vi.mocked(prisma.journalEntry.findMany)
+      .mockResolvedValueOnce([
+        entryConCentro({ costCenter: { id: 'cc-vv', code: 'VV', name: 'Villa Varda' } }),
+      ])
+      .mockResolvedValueOnce([])
+    vi.mocked(prisma.journalEntry.count).mockResolvedValue(1)
+
+    const response = await GET(new NextRequest('http://localhost:3000/api/prima-nota'))
+    const json = await response.json()
+
+    expect(json.data[0].costCenter).toEqual({ id: 'cc-vv', code: 'VV', name: 'Villa Varda' })
+  })
+})
+
+// Task 16: filtro per centro di costo nella lista movimenti.
+describe('GET /api/prima-nota - filtro ?costCenterId=', () => {
+  beforeEach(() => {
+    vi.mocked(prisma.journalEntry.findMany).mockResolvedValue([])
+    vi.mocked(prisma.journalEntry.count).mockResolvedValue(0)
+  })
+
+  it('con costCenterId valorizzato, lo passa nel where della query', async () => {
+    await GET(new NextRequest('http://localhost:3000/api/prima-nota?costCenterId=cc-vv'))
+
+    expect(prisma.journalEntry.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ costCenterId: 'cc-vv' }),
+      })
+    )
+  })
+
+  it('senza il parametro, il comportamento è invariato (nessun filtro sul centro)', async () => {
+    await GET(new NextRequest('http://localhost:3000/api/prima-nota'))
+
+    const callArgs = vi.mocked(prisma.journalEntry.findMany).mock.calls[0][0]
+    expect(callArgs.where).not.toHaveProperty('costCenterId')
+  })
 })

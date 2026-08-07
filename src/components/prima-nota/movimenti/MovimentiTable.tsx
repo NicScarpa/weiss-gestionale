@@ -132,6 +132,9 @@ export function MovimentiTable({
                   Conto
                 </th>
                 <th className="h-10 px-4 text-left">
+                  Centro
+                </th>
+                <th className="h-10 px-4 text-left">
                   Categoria
                 </th>
                 <th className="h-10 px-4 text-center">
@@ -219,6 +222,20 @@ export function MovimentiTable({
                             {entry.account?.name}
                           </span>
                         </div>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </td>
+
+                    {/* Centro di costo */}
+                    <td className="px-4 py-3 text-sm">
+                      {entry.costCenter ? (
+                        <span
+                          className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border"
+                          title={entry.costCenter.name}
+                        >
+                          {entry.costCenter.code}
+                        </span>
                       ) : (
                         <span className="text-muted-foreground">-</span>
                       )}

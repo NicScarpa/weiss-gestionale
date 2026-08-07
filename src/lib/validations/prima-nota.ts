@@ -56,6 +56,7 @@ export const journalEntryFiltersSchema = z.object({
   dateTo: z.string().optional(),
   entryType: entryTypeSchema.optional(),
   accountId: z.string().optional(),
+  costCenterId: z.string().optional(),
   search: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),

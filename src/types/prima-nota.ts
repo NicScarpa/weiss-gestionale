@@ -78,6 +78,11 @@ export interface JournalEntry {
     code: string
     name: string
   }
+  costCenter?: {
+    id: string
+    code: string
+    name: string
+  } | null
   counterpart?: {
     id: string
     code: string
@@ -170,6 +175,7 @@ export interface JournalEntryFilters {
   dateTo?: Date
   entryType?: EntryType
   accountId?: string
+  costCenterId?: string
   budgetCategoryId?: string  // Sibill: filtra per categoria budget
   verified?: boolean           // Sibill: filtra per stato verifica
   categorizationSource?: 'manual' | 'automatic' | 'rule' | 'import' | 'split'  // Sibill: origine categorizzazione

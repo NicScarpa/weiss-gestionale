@@ -116,6 +116,7 @@ export async function GET(request: NextRequest) {
       dateTo: searchParams.get('dateTo') || undefined,
       entryType: searchParams.get('entryType') || undefined,
       accountId: searchParams.get('accountId') || undefined,
+      costCenterId: searchParams.get('costCenterId') || undefined,
       search: searchParams.get('search') || undefined,
       page: searchParams.get('page') || '1',
       limit: searchParams.get('limit') || '50',
@@ -151,6 +152,10 @@ export async function GET(request: NextRequest) {
 
     if (filters.accountId) {
       where.accountId = filters.accountId
+    }
+
+    if (filters.costCenterId) {
+      where.costCenterId = filters.costCenterId
     }
 
     // Filtro per tipo movimento (basato su dare/avere)
@@ -219,6 +224,16 @@ export async function GET(request: NextRequest) {
             },
           },
           account: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+            },
+          },
+          // Solo i tre campi che servono alla colonna "Centro" della lista
+          // (Task 16): niente anagrafica completa per riga, il filtro sui
+          // centri attivi resta comunque su /api/cost-centers.
+          costCenter: {
             select: {
               id: true,
               code: true,
@@ -321,6 +336,7 @@ export async function GET(request: NextRequest) {
       // Relazioni
       venue: entry.venue,
       account: entry.account,
+      costCenter: entry.costCenter,
       budgetCategory: entry.budgetCategory,
       appliedRule: entry.appliedRule,
       closure: entry.closure,

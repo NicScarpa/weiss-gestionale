@@ -65,6 +65,7 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
     dateTo: undefined as Date | undefined,
     entryType: undefined as string | undefined,
     accountId: undefined as string | undefined,
+    costCenterId: undefined as string | undefined,
     budgetCategoryId: undefined as string | undefined,
     verified: undefined as boolean | undefined,
     search: '',
@@ -102,6 +103,7 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
       if (filters.dateTo) params.set('dateTo', filters.dateTo.toISOString())
       if (filters.entryType) params.set('movementType', filters.entryType)
       if (filters.accountId) params.set('accountId', filters.accountId)
+      if (filters.costCenterId) params.set('costCenterId', filters.costCenterId)
       if (filters.budgetCategoryId) params.set('budgetCategoryId', filters.budgetCategoryId)
       if (filters.verified !== undefined) params.set('verified', String(filters.verified))
       if (filters.search) params.set('search', filters.search)
@@ -321,6 +323,8 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
         onEntryTypeChange={(v) => setFilters(f => ({ ...f, entryType: v }))}
         accountId={filters.accountId}
         onAccountIdChange={(v) => setFilters(f => ({ ...f, accountId: v }))}
+        costCenterId={filters.costCenterId}
+        onCostCenterIdChange={(v) => setFilters(f => ({ ...f, costCenterId: v }))}
         budgetCategoryId={filters.budgetCategoryId}
         onBudgetCategoryIdChange={(v) => setFilters(f => ({ ...f, budgetCategoryId: v }))}
         verified={filters.verified}
