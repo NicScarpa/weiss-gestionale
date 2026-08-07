@@ -17,6 +17,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import { CostCenterSelect } from '@/components/prima-nota/shared/CostCenterSelect'
 import {
   ScheduleRule,
   ScheduleRuleDirection,
@@ -48,6 +49,9 @@ export function CreateRulePage({ direzione, initialData }: CreateRulePageProps) 
   const [tipoPagamento, setTipoPagamento] = useState<string>(initialData?.tipoPagamento || '')
   // Il conto della regola è quello BANCARIO su cui creare il movimento
   const [contoId, setContoId] = useState<string>(initialData?.bankAccountId || '')
+  const [costCenterId, setCostCenterId] = useState<string | undefined>(
+    initialData?.costCenterId ?? undefined
+  )
   const [accounts, setAccounts] = useState<Account[]>([])
   const [accountSearch, setAccountSearch] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -100,12 +104,15 @@ export function CreateRulePage({ direzione, initialData }: CreateRulePageProps) 
             tipoDocumento: tipoDocumento || null,
             tipoPagamento: tipoPagamento || null,
             bankAccountId: contoId,
+            // null esplicito: in modifica deve poter azzerare una scelta precedente.
+            costCenterId: costCenterId ?? null,
           }
         : {
             direzione,
             tipoDocumento: tipoDocumento || undefined,
             tipoPagamento: tipoPagamento || undefined,
             bankAccountId: contoId,
+            costCenterId: costCenterId ?? undefined,
           }
 
       const resp = await fetch(url, {
@@ -281,6 +288,19 @@ export function CreateRulePage({ direzione, initialData }: CreateRulePageProps) 
                   )
                 })
               )}
+            </div>
+
+            {/* Centro di costo opzionale della regola (Task 13) */}
+            <div className="pt-2">
+              <Label className="text-sm text-muted-foreground">Centro di costo (opzionale)</Label>
+              <div className="mt-1">
+                <CostCenterSelect value={costCenterId} onChange={setCostCenterId} />
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Se impostato, il movimento generato dalla regola viene sempre imputato a questo
+                centro. Se lasciato su &quot;Nessuno&quot;, vale la regola del conto scelto per il
+                movimento.
+              </p>
             </div>
           </CollapsibleContent>
         </Collapsible>

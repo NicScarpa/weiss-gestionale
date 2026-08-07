@@ -48,7 +48,12 @@ import {
 } from '@/types/prima-nota'
 import { cn } from '@/lib/utils'
 import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
-import { type AccountType } from '@/hooks/useImputableAccounts'
+import {
+  CostCenterSelect,
+  resolveCostCenterField,
+  useCostCenters,
+} from '@/components/prima-nota/shared/CostCenterSelect'
+import { useAccountsForCombobox, buildCostCenterRuleMap, type AccountType } from '@/hooks/useImputableAccounts'
 
 /**
  * Tipi di conto imputabili per tipo di movimento: un incasso genera ricavo,
@@ -72,6 +77,7 @@ const MOVIMENTO_SCHEMA = z.object({
   documentRef: z.string().optional(),
   documentType: z.string().optional(),
   accountId: z.string().optional(),
+  costCenterId: z.string().optional(),
   vatAmount: z.number().min(0).optional(),
   notes: z.string().optional(),
 })
@@ -104,6 +110,7 @@ export function MovimentoFormDialog({
       documentRef: entry.documentRef,
       documentType: entry.documentType,
       accountId: entry.accountId,
+      costCenterId: entry.costCenterId,
       vatAmount: entry.vatAmount,
       notes: entry.notes,
     } : {
@@ -118,11 +125,51 @@ export function MovimentoFormDialog({
   const entryType = form.watch('entryType')
   const isEntrata = entryType === 'INCASSO' || entryType === 'VERSAMENTO' || entryType === 'PRELIEVO'
   const accountTypes = accountTypesForEntryType(entryType)
+  const accountId = form.watch('accountId')
+
+  // Stessa chiave di query di AccountCombobox (types, imputableOnly di
+  // default false): nessuna fetch aggiuntiva, la mappa copre esattamente i
+  // conti che l'utente può scegliere qui, inclusi eventuali conti legacy.
+  const { data: accountsForRule = [] } = useAccountsForCombobox(accountTypes)
+  const costCenterRuleByAccountId = React.useMemo(
+    () => buildCostCenterRuleMap(accountsForRule),
+    [accountsForRule]
+  )
+  const costCenterRule = accountId ? costCenterRuleByAccountId.get(accountId) : undefined
+  const isCostCenterRequired = costCenterRule === 'OBBLIGATORIO'
+
+  const { data: costCenters = [] } = useCostCenters()
+  // In modifica il movimento ha già un centro salvato (il server lo assegna
+  // sempre): trattarlo come "già scelto dall'utente" evita che riaprire il
+  // dialog lo sovrascriva silenziosamente con il default.
+  const [costCenterTouched, setCostCenterTouched] = React.useState(!!entry)
+
+  const costCenterFieldState = resolveCostCenterField({
+    rule: costCenterRule,
+    currentValue: form.watch('costCenterId'),
+    hasManualSelection: costCenterTouched,
+    costCenters,
+  })
+
+  React.useEffect(() => {
+    if (costCenterFieldState.value !== form.getValues('costCenterId')) {
+      form.setValue('costCenterId', costCenterFieldState.value)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [costCenterFieldState.value])
 
   const onSubmit = async (data: MovimentoFormData) => {
+    if (isCostCenterRequired && !data.costCenterId) {
+      form.setError('costCenterId', {
+        type: 'manual',
+        message: 'Il centro di costo è obbligatorio per questo conto.',
+      })
+      return
+    }
     try {
       await onSave(data)
       form.reset()
+      setCostCenterTouched(false)
     } catch (error) {
       console.error('Errore salvataggio movimento:', error)
     }
@@ -320,6 +367,27 @@ export function MovimentoFormDialog({
                     value={field.value}
                     onChange={field.onChange}
                     types={accountTypes}
+                  />
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Centro di costo */}
+            <FormField
+              control={form.control}
+              name="costCenterId"
+              render={({ field }) => (
+                <FormItem className="flex flex-col">
+                  <FormLabel>Centro di costo{isCostCenterRequired ? ' *' : ''}</FormLabel>
+                  <CostCenterSelect
+                    value={field.value}
+                    onChange={(value) => {
+                      setCostCenterTouched(true)
+                      field.onChange(value)
+                    }}
+                    required={isCostCenterRequired}
+                    hint={costCenterFieldState.hint}
                   />
                   <FormMessage />
                 </FormItem>

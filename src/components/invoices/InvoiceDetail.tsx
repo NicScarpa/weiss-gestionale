@@ -8,15 +8,21 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { ArrowLeft, BookOpen, Loader2, AlertCircle } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
-import { useAccountsForCombobox } from '@/hooks/useImputableAccounts'
+import {
+  CostCenterSelect,
+  resolveCostCenterField,
+  useCostCenters,
+} from '@/components/prima-nota/shared/CostCenterSelect'
+import { useAccountsForCombobox, buildCostCenterRuleMap } from '@/hooks/useImputableAccounts'
 
 import {
   DocumentInfoSection,
@@ -122,8 +128,14 @@ async function updateInvoice(id: string, data: Record<string, unknown>): Promise
   return res.json()
 }
 
-async function recordInvoice(id: string): Promise<unknown> {
-  const res = await fetch(`/api/invoices/${id}/record`, { method: 'POST' })
+async function recordInvoice(id: string, costCenterId?: string): Promise<unknown> {
+  const res = await fetch(`/api/invoices/${id}/record`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    // costCenterId assente/undefined -> null esplicito: nessun centro
+    // scelto qui, il server decide (default o errore se il conto lo richiede).
+    body: JSON.stringify({ costCenterId: costCenterId ?? null }),
+  })
   if (!res.ok) {
     const data = await res.json()
     throw new Error(data.error || 'Errore registrazione')
@@ -152,6 +164,10 @@ async function updateRigheConti(id: string, data: RigheContiPayload): Promise<un
 export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const queryClient = useQueryClient()
   const [selectedAccountId, setSelectedAccountId] = useState<string | undefined>(undefined)
+  // Nessun costCenterId salvato sulla fattura: la scelta è effimera, fatta
+  // qui subito prima della registrazione (non c'è un PUT che la persiste).
+  const [costCenterId, setCostCenterId] = useState<string | undefined>(undefined)
+  const [costCenterTouched, setCostCenterTouched] = useState(false)
 
   const { data: invoice, isLoading, error } = useQuery({
     queryKey: ['invoice', invoiceId],
@@ -159,9 +175,33 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   })
 
   // Stessa chiave di query usata internamente da AccountCombobox
-  // (types=['COSTO']): nessuna fetch duplicata, i dati servono qui solo per
-  // calcolare il suggerimento del conto di default del fornitore.
+  // (types=['COSTO']): nessuna fetch duplicata, i dati servono qui sia per
+  // calcolare il suggerimento del conto di default del fornitore sia (Task
+  // 13) per sapere se il conto scelto richiede un centro di costo.
   const { data: accounts } = useAccountsForCombobox(['COSTO'])
+  const costCenterRuleByAccountId = useMemo(
+    () => buildCostCenterRuleMap(accounts ?? []),
+    [accounts]
+  )
+  const costCenterRule = selectedAccountId
+    ? costCenterRuleByAccountId.get(selectedAccountId)
+    : undefined
+  const isCostCenterRequired = costCenterRule === 'OBBLIGATORIO'
+
+  const { data: costCenters = [] } = useCostCenters()
+  const costCenterFieldState = resolveCostCenterField({
+    rule: costCenterRule,
+    currentValue: costCenterId,
+    hasManualSelection: costCenterTouched,
+    costCenters,
+  })
+
+  useEffect(() => {
+    if (costCenterFieldState.value !== costCenterId) {
+      setCostCenterId(costCenterFieldState.value)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [costCenterFieldState.value])
 
   // Set initial account when invoice loads
   useEffect(() => {
@@ -184,7 +224,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   })
 
   const recordMutation = useMutation({
-    mutationFn: () => recordInvoice(invoiceId),
+    mutationFn: () => recordInvoice(invoiceId, costCenterId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoice', invoiceId] })
       toast.success('Fattura registrata in prima nota')
@@ -251,7 +291,12 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   }
 
   const canEdit = invoice.status !== 'RECORDED' && invoice.status !== 'PAID'
-  const canRecord = invoice.status === 'CATEGORIZED' && invoice.account
+  const isCategorizedWithAccount = invoice.status === 'CATEGORIZED' && !!invoice.account
+  // Il conto scelto richiede un centro di costo esplicito e non ne è stato
+  // scelto uno: il bottone Registra resta visibile ma disabilitato, con un
+  // tooltip che spiega perché (non lo si nasconde: l'utente deve capire cosa
+  // manca, non chiedersi perché è sparito).
+  const costCenterMissingButRequired = isCostCenterRequired && !costCenterId
   const parsedData = invoice.parsedData
 
   // ElectronicInvoice modella solo fatture ricevute (campi supplierId/
@@ -287,23 +332,39 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           />
         </div>
 
-        {canRecord && (
-          <Button
-            onClick={() => recordMutation.mutate()}
-            disabled={recordMutation.isPending}
-          >
-            {recordMutation.isPending ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Registrazione...
-              </>
-            ) : (
-              <>
-                <BookOpen className="mr-2 h-4 w-4" />
-                Registra in Prima Nota
-              </>
-            )}
-          </Button>
+        {isCategorizedWithAccount && (
+          costCenterMissingButRequired ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-block">
+                  <Button disabled>
+                    <BookOpen className="mr-2 h-4 w-4" />
+                    Registra in Prima Nota
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                Il conto di spesa selezionato richiede un centro di costo: assegnalo prima di registrare.
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <Button
+              onClick={() => recordMutation.mutate()}
+              disabled={recordMutation.isPending}
+            >
+              {recordMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Registrazione...
+                </>
+              ) : (
+                <>
+                  <BookOpen className="mr-2 h-4 w-4" />
+                  Registra in Prima Nota
+                </>
+              )}
+            </Button>
+          )
         )}
       </div>
 
@@ -376,6 +437,29 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                 disabled={!canEdit || updateMutation.isPending}
               />
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">
+              Centro di costo{isCostCenterRequired ? ' *' : ''}
+            </label>
+            <div className="max-w-md">
+              <CostCenterSelect
+                value={costCenterId}
+                onChange={(value) => {
+                  setCostCenterTouched(true)
+                  setCostCenterId(value)
+                }}
+                required={isCostCenterRequired}
+                disabled={!canEdit}
+                hint={costCenterFieldState.hint}
+              />
+            </div>
+            {costCenterMissingButRequired && (
+              <p className="text-xs text-destructive">
+                Il conto selezionato richiede un centro di costo per poter registrare la fattura.
+              </p>
+            )}
           </div>
 
           {invoice.journalEntry && (

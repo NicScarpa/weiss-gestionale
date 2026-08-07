@@ -365,6 +365,11 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
       )}
 
       <MovimentoFormDialog
+        // key forza il remount quando cambia il movimento target (o si passa
+        // a "Nuovo movimento"): senza, lo stato interno del dialog — es. il
+        // flag "centro di costo toccato manualmente" del Task 13 — resterebbe
+        // quello dell'apertura precedente invece di ripartire pulito.
+        key={selectedEntry?.id ?? 'new'}
         entry={selectedEntry ? {
           date: new Date(selectedEntry.date),
           registerType: selectedEntry.registerType,
@@ -374,6 +379,7 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
           documentRef: selectedEntry.documentRef,
           documentType: selectedEntry.documentType,
           accountId: selectedEntry.accountId,
+          costCenterId: selectedEntry.costCenterId,
           vatAmount: selectedEntry.vatAmount ? Number(selectedEntry.vatAmount) : undefined,
           notes: selectedEntry.notes,
         } : undefined}

@@ -56,6 +56,22 @@ export function useAccountsForCombobox(types?: AccountType[], imputableOnly?: bo
 }
 
 /**
+ * Mappa accountId → costCenterRule da una lista di conti già caricata
+ * (Task 13). Estratta come funzione pura così i form che hanno già la
+ * propria query di conti (stessa chiave di `AccountCombobox`, es.
+ * `imputableOnly` false nei percorsi che devono restare retrocompatibili
+ * con conti legacy già selezionati) possono derivare la regola del centro
+ * senza sottoscrivere una query aggiuntiva con `imputableOnly: true`.
+ */
+export function buildCostCenterRuleMap(accounts: ComboboxAccount[]): Map<string, CostCenterRule> {
+  const map = new Map<string, CostCenterRule>()
+  for (const account of accounts) {
+    map.set(account.id, account.costCenterRule)
+  }
+  return map
+}
+
+/**
  * Conti imputabili (piano v4) con la mappa costCenterRule per accountId, per
  * i form che devono sapere se il conto scelto richiede il centro di costo
  * (Task 13) senza dover renderizzare la combobox.
@@ -63,13 +79,10 @@ export function useAccountsForCombobox(types?: AccountType[], imputableOnly?: bo
 export function useImputableAccounts(types?: AccountType[]) {
   const query = useAccountsForCombobox(types, true)
 
-  const costCenterRuleByAccountId = React.useMemo(() => {
-    const map = new Map<string, CostCenterRule>()
-    for (const account of query.data ?? []) {
-      map.set(account.id, account.costCenterRule)
-    }
-    return map
-  }, [query.data])
+  const costCenterRuleByAccountId = React.useMemo(
+    () => buildCostCenterRuleMap(query.data ?? []),
+    [query.data]
+  )
 
   return { ...query, costCenterRuleByAccountId }
 }

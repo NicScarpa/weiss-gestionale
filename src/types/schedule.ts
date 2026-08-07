@@ -487,12 +487,16 @@ export interface ScheduleRule {
   tipoPagamento: SchedulePaymentMethod | null
   azione: ScheduleRuleAction
   contoId: string | null
+  /** Centro di costo esplicito e opzionale: se valorizzato, impone il centro
+   *  sul movimento generato dalla regola (Task 13). */
+  costCenterId?: string | null
   ordine: number
   isActive: boolean
   createdById: string | null
   createdAt: Date
   updatedAt: Date
   conto?: { id: string; code: string; name: string; type: string }
+  costCenter?: { id: string; code: string; name: string } | null
   createdBy?: { id: string; firstName: string | null; lastName: string | null }
 }
 

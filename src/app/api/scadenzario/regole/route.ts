@@ -15,6 +15,9 @@ const createRuleSchema = z.object({
   contoId: z.string().optional(),
   /** Conto bancario su cui creare il movimento quando la regola si applica */
   bankAccountId: z.string().min(1, 'Conto bancario obbligatorio'),
+  /** Centro di costo esplicito e opzionale (Task 13): se assente, decide la
+   *  regola del conto scelto per il movimento generato. */
+  costCenterId: z.string().nullable().optional(),
 }).refine(
   (data) => data.tipoDocumento || data.tipoPagamento,
   { message: 'Almeno un criterio (tipo documento o tipo pagamento) è obbligatorio' }
@@ -97,6 +100,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Conto non trovato' }, { status: 404 })
     }
 
+    if (validated.costCenterId) {
+      const costCenter = await prisma.costCenter.findFirst({
+        where: { id: validated.costCenterId, isActive: true },
+      })
+      if (!costCenter) {
+        return NextResponse.json({ error: 'Centro di costo non trovato' }, { status: 404 })
+      }
+    }
+
     // Auto-assegna ordine = max + 1
     const maxOrdine = await prisma.scheduleRule.aggregate({
       where: { venueId, direzione: validated.direzione },
@@ -113,6 +125,7 @@ export async function POST(request: NextRequest) {
         azione: validated.azione,
         contoId: validated.contoId ?? null,
         bankAccountId: validated.bankAccountId,
+        costCenterId: validated.costCenterId ?? null,
         ordine,
         createdById: session.user.id,
       },
@@ -122,6 +135,9 @@ export async function POST(request: NextRequest) {
         },
         bankAccount: {
           select: { id: true, name: true, bankName: true, accountType: true },
+        },
+        costCenter: {
+          select: { id: true, code: true, name: true },
         },
         createdBy: {
           select: { id: true, firstName: true, lastName: true },
@@ -135,7 +151,11 @@ export async function POST(request: NextRequest) {
       entityType: 'ScheduleRule',
       entityId: rule.id,
       venueId,
-      newValues: { direzione: validated.direzione, bankAccountId: validated.bankAccountId },
+      newValues: {
+        direzione: validated.direzione,
+        bankAccountId: validated.bankAccountId,
+        costCenterId: validated.costCenterId ?? null,
+      },
     })
 
     return NextResponse.json({ rule }, { status: 201 })

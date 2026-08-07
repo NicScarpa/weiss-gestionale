@@ -305,6 +305,7 @@ export async function GET(request: NextRequest) {
       creditAmount: entry.creditAmount ? Number(entry.creditAmount) : null,
       vatAmount: entry.vatAmount ? Number(entry.vatAmount) : null,
       accountId: entry.accountId,
+      costCenterId: entry.costCenterId,
       closureId: entry.closureId,
       runningBalance: entry.runningBalance ? Number(entry.runningBalance) : null,
       createdAt: entry.createdAt,

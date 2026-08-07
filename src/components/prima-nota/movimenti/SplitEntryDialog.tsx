@@ -14,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
+import { useAccountsForCombobox, buildCostCenterRuleMap } from '@/hooks/useImputableAccounts'
 import type { JournalEntry } from '@/types/prima-nota'
 import { cn } from '@/lib/utils'
 
@@ -97,8 +98,23 @@ export function SplitEntryDialog({ entry, open, onOpenChange, onSaved }: SplitEn
   )
   const sommaEreditate = round2(ereditate.reduce((sum, a) => sum + a.importo, 0))
 
+  // Stessa chiave di query usata internamente da AccountCombobox in questo
+  // dialog (nessun filtro types/imputableOnly): nessuna fetch aggiuntiva,
+  // serve solo a capire se una fetta imputa un conto OBBLIGATORIO (Task 13).
+  // Nessun campo centro qui: le fette ereditano quello del movimento.
+  const { data: accountsForRule = [] } = useAccountsForCombobox()
+  const costCenterRuleByAccountId = React.useMemo(
+    () => buildCostCenterRuleMap(accountsForRule),
+    [accountsForRule]
+  )
+
   const importoMovimento = entry ? Math.abs(entry.debitAmount || entry.creditAmount || 0) : 0
   const statuses = rows.map(rowStatus)
+  const hasObbligatorioSenzaCentro =
+    !entry?.costCenterId &&
+    rows.some(
+      (row, i) => statuses[i] === 'valid' && costCenterRuleByAccountId.get(row.accountId) === 'OBBLIGATORIO'
+    )
   const hasInvalidRow = statuses.includes('invalid')
   const sommaFette = rows.reduce(
     (sum, row, i) => (statuses[i] === 'valid' ? sum + parseFloat(row.importo) : sum),
@@ -273,6 +289,14 @@ export function SplitEntryDialog({ entry, open, onOpenChange, onSaved }: SplitEn
           <div className="rounded-lg border border-dashed bg-muted/30 p-3 text-sm text-muted-foreground">
             Fette ereditate dalla riconciliazione: {ereditate.length}, totale{' '}
             {formatCurrency(sommaEreditate)}
+          </div>
+        )}
+
+        {hasObbligatorioSenzaCentro && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+            Una fetta imputa un conto che richiede un centro di costo, ma il movimento non ne ha
+            uno assegnato. Le fette ereditano il centro del movimento: assegnalo prima dal form di
+            modifica, altrimenti il salvataggio verrà rifiutato.
           </div>
         )}
 

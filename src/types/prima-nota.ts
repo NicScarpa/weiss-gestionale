@@ -49,6 +49,7 @@ export interface JournalEntry {
   creditAmount?: number  // Avere
   vatAmount?: number
   accountId?: string
+  costCenterId?: string
   counterpartId?: string
   closureId?: string
   runningBalance?: number
@@ -157,6 +158,7 @@ export interface JournalEntryFormData {
   documentRef?: string
   documentType?: string
   accountId?: string
+  costCenterId?: string
   vatAmount?: number
   notes?: string
 }

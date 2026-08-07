@@ -11,6 +11,8 @@ const updateRuleSchema = z.object({
   tipoPagamento: z.string().nullable().optional(),
   azione: z.string().optional(),
   contoId: z.string().nullable().optional(),
+  /** Centro di costo esplicito e opzionale (Task 13). */
+  costCenterId: z.string().nullable().optional(),
   isActive: z.boolean().optional(),
 })
 
@@ -111,12 +113,25 @@ export async function PATCH(
       }
     }
 
+    // Se costCenterId cambia (e non viene azzerato), verifica esistenza centro
+    if (validated.costCenterId && validated.costCenterId !== existing.costCenterId) {
+      const costCenter = await prisma.costCenter.findFirst({
+        where: { id: validated.costCenterId, isActive: true },
+      })
+      if (!costCenter) {
+        return NextResponse.json({ error: 'Centro di costo non trovato' }, { status: 404 })
+      }
+    }
+
     const rule = await prisma.scheduleRule.update({
       where: { id },
       data: validated,
       include: {
         conto: {
           select: { id: true, code: true, name: true, type: true },
+        },
+        costCenter: {
+          select: { id: true, code: true, name: true },
         },
         createdBy: {
           select: { id: true, firstName: true, lastName: true },
@@ -129,6 +144,7 @@ export async function PATCH(
       action: 'UPDATE',
       entityType: 'ScheduleRule',
       entityId: id,
+      newValues: validated,
     })
 
     return NextResponse.json({ rule })
