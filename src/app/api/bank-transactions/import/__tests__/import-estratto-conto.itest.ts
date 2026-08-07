@@ -112,6 +112,30 @@ describe('POST /api/bank-transactions/import — re-import dello stesso file', (
     expect(await prisma.bankTransaction.count()).toBe(3)
   })
 
+  it('riconosce i movimenti già in archivio col vecchio formato di riferimento', async () => {
+    const sessione = await loginAs('admin')
+
+    // Movimento importato prima del fix: il riferimento ha la forma sintetica
+    // di allora. Reimportare quel file non deve duplicarlo.
+    await prisma.bankTransaction.create({
+      data: {
+        venueId: sessione.user.venueId!,
+        transactionDate: new Date('2026-01-05'),
+        valueDate: new Date('2026-01-05'),
+        description: 'COMMISSIONI SU BONIFICO',
+        amount: -2.5,
+        bankReference: '2026-01-05_-2_5_COMMISSIONI_SU_BONIFICO',
+        importSource: 'CSV',
+      },
+    })
+
+    const risposta = await importa(csv(riga('05/01/26', '-2,50', 'COMMISSIONI SU BONIFICO')))
+
+    expect(risposta.body.recordsImported).toBe(0)
+    expect(risposta.body.duplicatesSkipped).toBe(1)
+    expect(await prisma.bankTransaction.count()).toBe(1)
+  })
+
   it('importa solo le righe nuove di un file che ne aggiunge alcune', async () => {
     await loginAs('admin')
 
