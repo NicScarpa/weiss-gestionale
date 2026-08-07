@@ -284,9 +284,9 @@ export function RegolaFormDialog({
                 allowNone con la semantica di form "Nessun conto" — non è un
                 filtro di lista. types COSTO+RICAVO: sono gli unici tipi che
                 l'accountId di un movimento può avere (vedi
-                accountTypesForEntryType in MovimentoFormDialog).
-                imputableOnly non impostato (default false): una regola già
-                salvata può puntare a un conto legacy. */}
+                accountTypesForEntryType in MovimentoFormDialog). Nessun
+                filtro sui conti legacy: una regola già salvata può
+                puntarne uno. */}
             <FormField
               control={form.control}
               name="accountId"

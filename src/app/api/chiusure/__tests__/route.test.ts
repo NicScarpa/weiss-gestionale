@@ -11,6 +11,7 @@ import {
   createMockSession,
   createInvalidClosure,
   TestClosureData,
+  TestExpenseData,
 } from '@/test/factories/closure.factory'
 
 // Mock auth
@@ -569,6 +570,74 @@ describe('POST /api/chiusure', () => {
       const stationData = createCall.data.stations?.create?.[0]
       expect(stationData?.totalAmount).toBe(500) // 300 + 200
       expect(stationData?.nonReceiptAmount).toBe(50) // 500 - 450
+    })
+
+    it('should accept an expense row that explicitly inherits the header cost center (costCenterId: null)', async () => {
+      // Il form invia costCenterId: null quando l'utente sceglie "Come
+      // chiusura" sulla riga spesa (ExpensesSection.tsx / EREDITA_TESTATA).
+      // Prima del fix lo schema dichiarava il campo solo stringa: zod
+      // rifiutava l'intero payload, bloccando anche il salvataggio in bozza.
+      vi.mocked(auth).mockResolvedValue(createMockSession())
+      vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(null)
+
+      const closureData = createTestClosure({
+        expenses: [
+          { payee: 'Fornitore Weiss', amount: 40, costCenterId: null } as unknown as TestExpenseData,
+        ],
+      })
+      const mockResult = createMockDbClosure(closureData)
+      vi.mocked(prisma.dailyClosure.create).mockResolvedValue(mockResult as unknown as DailyClosure)
+
+      const request = new NextRequest('http://localhost:3000/api/chiusure', {
+        method: 'POST',
+        body: JSON.stringify(closureData),
+      })
+      const response = await POST(request)
+
+      expect(response.status).toBe(201)
+      expect(prisma.dailyClosure.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            expenses: expect.objectContaining({
+              create: expect.arrayContaining([
+                expect.objectContaining({ costCenterId: null }),
+              ]),
+            }),
+          }),
+        })
+      )
+    })
+
+    it('should still accept an explicit per-row cost center override alongside a null one', async () => {
+      vi.mocked(auth).mockResolvedValue(createMockSession())
+      vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue(null)
+
+      const closureData = createTestClosure({
+        expenses: [
+          { payee: 'Fornitore Casetta', amount: 40, costCenterId: 'cas-id' } as unknown as TestExpenseData,
+        ],
+      })
+      const mockResult = createMockDbClosure(closureData)
+      vi.mocked(prisma.dailyClosure.create).mockResolvedValue(mockResult as unknown as DailyClosure)
+
+      const request = new NextRequest('http://localhost:3000/api/chiusure', {
+        method: 'POST',
+        body: JSON.stringify(closureData),
+      })
+      const response = await POST(request)
+
+      expect(response.status).toBe(201)
+      expect(prisma.dailyClosure.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            expenses: expect.objectContaining({
+              create: expect.arrayContaining([
+                expect.objectContaining({ costCenterId: 'cas-id' }),
+              ]),
+            }),
+          }),
+        })
+      )
     })
   })
 

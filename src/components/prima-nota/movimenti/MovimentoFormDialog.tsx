@@ -127,9 +127,9 @@ export function MovimentoFormDialog({
   const accountTypes = accountTypesForEntryType(entryType)
   const accountId = form.watch('accountId')
 
-  // Stessa chiave di query di AccountCombobox (types, imputableOnly di
-  // default false): nessuna fetch aggiuntiva, la mappa copre esattamente i
-  // conti che l'utente può scegliere qui, inclusi eventuali conti legacy.
+  // Stessa chiave di query di AccountCombobox (types): nessuna fetch
+  // aggiuntiva, la mappa copre esattamente i conti che l'utente può
+  // scegliere qui, inclusi eventuali conti legacy.
   const { data: accountsForRule = [] } = useAccountsForCombobox(accountTypes)
   const costCenterRuleByAccountId = React.useMemo(
     () => buildCostCenterRuleMap(accountsForRule),

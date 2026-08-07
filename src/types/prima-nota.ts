@@ -49,7 +49,7 @@ export interface JournalEntry {
   creditAmount?: number  // Avere
   vatAmount?: number
   accountId?: string
-  costCenterId?: string
+  costCenterId?: string | null
   counterpartId?: string
   closureId?: string
   runningBalance?: number

@@ -74,6 +74,8 @@ Prima di scrivere ricontrolla tutte le premesse: se anche una sola non regge, la
 
 > 🔐 **La stringa di connessione non va battuta sulla riga di comando.** Contiene la password di produzione, e tutto ciò che si scrive al prompt finisce in `~/.zsh_history` in chiaro, dove resta. Si legge senza eco, oppure da un file con i permessi stretti.
 
+> ⚠️ **I passi 1 e 2 sono un prerequisito di dati, non solo di schema, e vanno eseguiti nella stessa finestra del deploy del codice nuovo, a gestionale fermo — indipendentemente dall'approvazione della tabella di mappatura (passo 3).** Il codice del piano v4 in produzione chiama `risolviCentroDiCosto` su ogni registrazione di prima nota e su ogni chiusura di cassa. Se la tabella `cost_centers` è ancora vuota — cioè se il DDL è stato applicato ma lo script 01 no — quella funzione **lancia** ("Nessun centro di costo di default configurato") e il gestionale risponde 500 su ogni scrittura, chiusura compresa: non si salva nemmeno una bozza. Lo script 01 non tocca le 155 voci del piano dei conti (quelle arrivano al passo 5, dopo l'approvazione): crea solo i quattro centri di costo, le `system_key` sui conti patrimoniali esistenti e il permesso di riclassifica — per questo può girare subito, prima ancora che la tabella di mappatura sia pronta.
+
 ```bash
 # il bersaglio, una volta sola, senza lasciarne traccia nella history
 read -rs "DB_BERSAGLIO?URL di connessione: " && export DB_BERSAGLIO   # zsh
@@ -83,21 +85,28 @@ read -rs "DB_BERSAGLIO?URL di connessione: " && export DB_BERSAGLIO   # zsh
 #   umask 077 && $EDITOR ~/.weiss-migrazione   (una riga: postgresql://…)
 #   export DB_BERSAGLIO="$(cat ~/.weiss-migrazione)"
 
-# 1. rigenera questa tabella contro il database che si vuole migrare (sola lettura)
+# 1. DDL: tabella cost_centers, colonne di supporto, RLS (idempotente)
+psql "$DB_BERSAGLIO" -f prisma/migrations/2026-08-07_piano_v4_centri_costo.sql
+
+# 2. dati minimi indispensabili: i 4 centri di costo, le system_key sui conti
+#    patrimoniali, il permesso di riclassifica (idempotente, nessun --execute)
+DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/01-centri-e-sistema.ts
+
+# 3. rigenera questa tabella contro il database che si vuole migrare (sola lettura)
 DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/02-report-mappatura.ts \
   --out docs/migrazione-piano-conti-v4.md
 
-# 2. STOP: far approvare la tabella. Poi il dry-run, che salva lo snapshot del rollback
+# 4. STOP: far approvare la tabella. Poi il dry-run, che salva lo snapshot del rollback
 DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/03-migrate.ts
 
-# 3. esecuzione vera: se il bersaglio è remoto chiede di ribattere la sua
+# 5. esecuzione vera: se il bersaglio è remoto chiede di ribattere la sua
 #    identità completa, "utente@nomedb su host:porta", stampata sopra la domanda
 DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/03-migrate.ts --execute
 
-# 4. verifica
+# 6. verifica
 DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/verifica.ts
 
-# 5. solo se serve tornare indietro (lo snapshot lo stampa lo script 03)
+# 7. solo se serve tornare indietro (lo snapshot lo stampa lo script 03)
 DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/04-rollback.ts \
   --snapshot scripts/piano-v4/snapshots/<file>.json
 DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/04-rollback.ts \

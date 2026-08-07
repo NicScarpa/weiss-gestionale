@@ -99,8 +99,8 @@ export function SplitEntryDialog({ entry, open, onOpenChange, onSaved }: SplitEn
   const sommaEreditate = round2(ereditate.reduce((sum, a) => sum + a.importo, 0))
 
   // Stessa chiave di query usata internamente da AccountCombobox in questo
-  // dialog (nessun filtro types/imputableOnly): nessuna fetch aggiuntiva,
-  // serve solo a capire se una fetta imputa un conto OBBLIGATORIO (Task 13).
+  // dialog (nessun filtro types): nessuna fetch aggiuntiva, serve solo a
+  // capire se una fetta imputa un conto OBBLIGATORIO (Task 13).
   // Nessun campo centro qui: le fette ereditano quello del movimento.
   const { data: accountsForRule = [] } = useAccountsForCombobox()
   const costCenterRuleByAccountId = React.useMemo(

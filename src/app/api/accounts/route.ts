@@ -37,7 +37,6 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const type = searchParams.get('type') // retrocompatibile: RICAVO, COSTO, ATTIVO, PASSIVO
     const typesParam = searchParams.get('types') // CSV, es. 'COSTO,RICAVO'
-    const imputable = searchParams.get('imputable') === 'true'
     const includeInactive = searchParams.get('includeInactive') === 'true'
     const full = searchParams.get('full') === 'true'
 
@@ -57,13 +56,6 @@ export async function GET(request: NextRequest) {
       }
     } else if (type) {
       where.type = type as Prisma.EnumAccountTypeFilter
-    }
-
-    // Voci imputabili del piano v4: solo i conti con mastro valorizzato. I
-    // patrimoniali e i legacy (mastroCode null) restano fuori dai form
-    // economici ma continuano a uscire dalla stessa route senza il flag.
-    if (imputable) {
-      where.mastroCode = { not: null }
     }
 
     const accounts = await prisma.account.findMany({

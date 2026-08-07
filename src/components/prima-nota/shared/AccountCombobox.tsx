@@ -24,8 +24,6 @@ interface AccountComboboxProps {
   onChange: (accountId: string | undefined) => void
   /** Filtra per tipo di conto (es. ['COSTO', 'RICAVO']); nessun filtro se omesso. */
   types?: AccountType[]
-  /** Solo voci del piano v4 (mastroCode valorizzato): esclude patrimoniali e legacy. */
-  imputableOnly?: boolean
   /** Include anche i conti disattivati (utile nei filtri di lista, per trovare movimenti storici). */
   includeInactive?: boolean
   disabled?: boolean
@@ -68,8 +66,8 @@ interface AccountGroup {
 
 /**
  * Raggruppa per mastro, preservando l'ordine per codice già applicato
- * dall'API. I conti senza mastro (patrimoniali/legacy, visibili solo quando
- * imputableOnly è false) finiscono sempre in un gruppo a parte in fondo.
+ * dall'API. I conti senza mastro (patrimoniali/legacy) finiscono sempre in
+ * un gruppo a parte in fondo.
  *
  * Esportata per essere testata come funzione pura: il progetto non ha
  * un'infrastruttura funzionante per il rendering dei componenti React (vedi
@@ -225,13 +223,12 @@ export function AccountCombobox({
   value,
   onChange,
   types,
-  imputableOnly = false,
   includeInactive = false,
   disabled,
   placeholder,
   allowNone = false,
 }: AccountComboboxProps) {
-  const { data: accounts = [], isLoading } = useAccountsForCombobox(types, imputableOnly, includeInactive)
+  const { data: accounts = [], isLoading } = useAccountsForCombobox(types, includeInactive)
 
   return (
     <AccountComboboxList

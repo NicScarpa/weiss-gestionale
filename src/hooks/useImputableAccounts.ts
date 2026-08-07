@@ -1,6 +1,5 @@
 'use client'
 
-import * as React from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 export type AccountType = 'RICAVO' | 'COSTO' | 'ATTIVO' | 'PASSIVO'
@@ -21,28 +20,25 @@ export interface ComboboxAccount {
 /**
  * Costruisce la querystring di /api/accounts. Estratta a parte per poterla
  * testare senza montare react-query: l'unica logica non banale qui è
- * l'omissione dei parametri a valore di default (nessun types, imputable
- * false, includeInactive false), condivisa da fetchAccounts e dalla chiave
- * di cache di useAccountsForCombobox.
+ * l'omissione dei parametri a valore di default (nessun types, includeInactive
+ * false), condivisa da fetchAccounts e dalla chiave di cache di
+ * useAccountsForCombobox.
  */
 export function buildAccountsQueryString(
   types?: AccountType[],
-  imputableOnly?: boolean,
   includeInactive?: boolean
 ): string {
   const params = new URLSearchParams()
   if (types && types.length > 0) params.set('types', types.join(','))
-  if (imputableOnly) params.set('imputable', 'true')
   if (includeInactive) params.set('includeInactive', 'true')
   return params.toString()
 }
 
 async function fetchAccounts(
   types?: AccountType[],
-  imputableOnly?: boolean,
   includeInactive?: boolean
 ): Promise<ComboboxAccount[]> {
-  const qs = buildAccountsQueryString(types, imputableOnly, includeInactive)
+  const qs = buildAccountsQueryString(types, includeInactive)
 
   const res = await fetch(`/api/accounts${qs ? `?${qs}` : ''}`)
   if (!res.ok) throw new Error('Errore nel caricamento dei conti')
@@ -52,9 +48,9 @@ async function fetchAccounts(
 
 /**
  * Query dei conti condivisa da AccountCombobox e da chi ha bisogno solo dei
- * dati (es. useImputableAccounts). Stessa chiave per types+imputableOnly+
- * includeInactive equivalenti: niente fetch duplicati quando due punti della
- * stessa vista chiedono lo stesso filtro.
+ * dati (es. buildCostCenterRuleMap sul risultato). Stessa chiave per
+ * types+includeInactive equivalenti: niente fetch duplicati quando due punti
+ * della stessa vista chiedono lo stesso filtro.
  *
  * La chiave usa una stringa normalizzata dei types (ordinati e uniti) invece
  * dell'array ricevuto: un array letterale passato inline dal chiamante ad
@@ -68,15 +64,14 @@ async function fetchAccounts(
  */
 export function useAccountsForCombobox(
   types?: AccountType[],
-  imputableOnly?: boolean,
   includeInactive?: boolean
 ) {
   const normalizedTypes = types && types.length > 0 ? [...types].sort() : undefined
   const typesCacheKey = normalizedTypes?.join(',') ?? null
 
   return useQuery({
-    queryKey: ['accounts', typesCacheKey, imputableOnly ?? false, includeInactive ?? false],
-    queryFn: () => fetchAccounts(normalizedTypes, imputableOnly, includeInactive),
+    queryKey: ['accounts', typesCacheKey, includeInactive ?? false],
+    queryFn: () => fetchAccounts(normalizedTypes, includeInactive),
     staleTime: 60 * 1000,
   })
 }
@@ -84,10 +79,8 @@ export function useAccountsForCombobox(
 /**
  * Mappa accountId → costCenterRule da una lista di conti già caricata
  * (Task 13). Estratta come funzione pura così i form che hanno già la
- * propria query di conti (stessa chiave di `AccountCombobox`, es.
- * `imputableOnly` false nei percorsi che devono restare retrocompatibili
- * con conti legacy già selezionati) possono derivare la regola del centro
- * senza sottoscrivere una query aggiuntiva con `imputableOnly: true`.
+ * propria query di conti (stessa chiave di `AccountCombobox`) possono
+ * derivare la regola del centro senza sottoscrivere una query aggiuntiva.
  */
 export function buildCostCenterRuleMap(accounts: ComboboxAccount[]): Map<string, CostCenterRule> {
   const map = new Map<string, CostCenterRule>()
@@ -97,18 +90,9 @@ export function buildCostCenterRuleMap(accounts: ComboboxAccount[]): Map<string,
   return map
 }
 
-/**
- * Conti imputabili (piano v4) con la mappa costCenterRule per accountId, per
- * i form che devono sapere se il conto scelto richiede il centro di costo
- * (Task 13) senza dover renderizzare la combobox.
- */
-export function useImputableAccounts(types?: AccountType[]) {
-  const query = useAccountsForCombobox(types, true)
-
-  const costCenterRuleByAccountId = React.useMemo(
-    () => buildCostCenterRuleMap(query.data ?? []),
-    [query.data]
-  )
-
-  return { ...query, costCenterRuleByAccountId }
-}
+// Nota: questo modulo esponeva anche un filtro `imputableOnly` (voci del
+// piano v4 con mastroCode valorizzato, via ?imputable=true su /api/accounts)
+// pensato per i form economici. Rimosso nella revisione finale del piano v4
+// perché non aveva mai avuto un consumer reale: nessun form lo passava mai a
+// `true`, in tutti i punti d'uso restava sul default `false`. Vedi il report
+// del fix wave per i dettagli della decisione.

@@ -121,8 +121,8 @@ const createClosureSchema = z.object({
     amount: z.number(),
     vatAmount: z.number().optional(),
     accountId: z.string().optional(),
-    /** Override del centro di testata per questa sola uscita */
-    costCenterId: z.string().optional(),
+    /** Override del centro di testata per questa sola uscita: null = eredita esplicitamente dalla testata ("Come chiusura" nel form). */
+    costCenterId: z.string().optional().nullable(),
     isPaid: z.boolean().default(true),
     paidBy: z.string().optional(),
   })).optional(),

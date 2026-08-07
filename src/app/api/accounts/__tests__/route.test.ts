@@ -93,25 +93,6 @@ describe('GET /api/accounts - nuovi parametri', () => {
     })
   })
 
-  it('?imputable=true filtra solo i conti con mastroCode valorizzato', async () => {
-    const request = new NextRequest('http://localhost:3000/api/accounts?imputable=true')
-    await GET(request)
-
-    const chiamata = vi.mocked(prisma.account.findMany).mock.calls[0][0]
-    expect(chiamata?.where).toEqual({
-      isActive: true,
-      mastroCode: { not: null },
-    })
-  })
-
-  it('senza ?imputable= il filtro su mastroCode non viene applicato', async () => {
-    const request = new NextRequest('http://localhost:3000/api/accounts')
-    await GET(request)
-
-    const chiamata = vi.mocked(prisma.account.findMany).mock.calls[0][0]
-    expect(chiamata?.where).not.toHaveProperty('mastroCode')
-  })
-
   it('il select include sempre i campi di gerarchia e costCenterRule', async () => {
     const request = new NextRequest('http://localhost:3000/api/accounts')
     await GET(request)
@@ -127,7 +108,7 @@ describe('GET /api/accounts - nuovi parametri', () => {
   })
 
   it('il payload espone la gerarchia del piano v4', async () => {
-    const request = new NextRequest('http://localhost:3000/api/accounts?imputable=true')
+    const request = new NextRequest('http://localhost:3000/api/accounts')
     const response = await GET(request)
     const body = await response.json()
 

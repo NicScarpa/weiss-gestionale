@@ -152,9 +152,9 @@ export function MovimentiFilters({
           {/*
             types=[RICAVO, COSTO]: un movimento non può mai avere un accountId
             di altro tipo (vedi accountTypesForEntryType in MovimentoFormDialog).
-            imputableOnly=false e includeInactive=true: il filtro deve poter
-            ancora trovare movimenti storici legati a conti legacy o nel
-            frattempo disattivati, non solo alle ~155 voci v4 attive.
+            includeInactive=true: il filtro deve poter ancora trovare
+            movimenti storici legati a conti legacy o nel frattempo
+            disattivati, non solo alle ~155 voci v4 attive.
           */}
           <AccountCombobox
             types={['RICAVO', 'COSTO']}

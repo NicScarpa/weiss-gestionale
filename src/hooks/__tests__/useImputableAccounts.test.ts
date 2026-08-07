@@ -47,21 +47,13 @@ describe('buildAccountsQueryString', () => {
     expect(buildAccountsQueryString(['COSTO', 'RICAVO'])).toBe('types=COSTO%2CRICAVO')
   })
 
-  it('imputableOnly false non aggiunge il parametro imputable', () => {
-    expect(buildAccountsQueryString(undefined, false)).toBe('')
-  })
-
-  it('imputableOnly true aggiunge imputable=true', () => {
-    expect(buildAccountsQueryString(undefined, true)).toContain('imputable=true')
-  })
-
   it('includeInactive true aggiunge includeInactive=true accanto agli altri filtri', () => {
-    const qs = buildAccountsQueryString(['COSTO'], false, true)
+    const qs = buildAccountsQueryString(['COSTO'], true)
     expect(qs).toContain('types=COSTO')
     expect(qs).toContain('includeInactive=true')
   })
 
   it('includeInactive false (default) non aggiunge il parametro', () => {
-    expect(buildAccountsQueryString(undefined, undefined, false)).toBe('')
+    expect(buildAccountsQueryString(undefined, false)).toBe('')
   })
 })
