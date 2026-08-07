@@ -8,13 +8,17 @@ il contesto. Se stai leggendo questo file in una sessione nuova, **leggilo tutto
 ## 1. In una pagina
 
 Un audit completo (8 agenti, report in `audit/A1..A8-*.md`) ha diagnosticato ~112 problemi nel
-gestionale contabile di Weiss Cafè. Da lì è nato un piano di remediation in 6 ondate, di cui **tre
-sono complete e verificate** (W0 fondazioni, W1 fix contabili critici, W2 numeri/import/qualità/UI)
-e **tre restano da fare** (W3, W4, W5).
+gestionale contabile di Weiss Cafè. Da lì è nato un piano di remediation, di cui **quattro ondate
+sono complete e verificate** (W0 fondazioni, W1 fix contabili critici, W2 numeri/import/qualità/UI,
+W3 accessi/orfani/moduli) e **due restano da fare** (W4 e W5).
 
 **I tre problemi critici sono risolti (W1). Con la W2:** saldi, budget e cash-flow rispondono la
 stessa cifra (con un test permanente che lo pretende), gli import sono atomici e idempotenti, Sentry
 è attivo, la CI è bloccante, e chiusura/portale/tabelle funzionano da telefono a 390px.
+**Con la W3:** zero vulnerabilità critical e high, le route finanziarie hanno un guardiano unico,
+4.259 righe di codice morto in meno, le notifiche push funzionano davvero (e il service worker
+**esiste**, prima non veniva generato affatto), previsioni e spese ricorrenti hanno un'interfaccia,
+il tema scuro si accende.
 
 Tutto il lavoro vive sul branch `remediation/integrazione`, **non è ancora su `main`** per scelta
 del committente: si porta su main solo a revisione completata.
@@ -27,14 +31,14 @@ del committente: si porta su main solo a revisione completata.
 |---|---|
 | **Ramo con tutto il lavoro** | `remediation/integrazione` (worktree `~/Desktop/accounting-wt/integrazione`) |
 | Base di partenza | `main` = `fb99dce` |
-| Punti di rollback | tag `remediation/pre-W0`, `remediation/pre-W2` |
-| Fine ondate | tag `remediation/W0-completa`, `remediation/W1-completa`, `remediation/W2-completa` |
+| Punti di rollback | tag `remediation/pre-W0`, `remediation/pre-W2`, `remediation/pre-W3` |
+| Fine ondate | tag `remediation/W0-completa`, `W1-completa`, `W2-completa`, `W3-completa` |
 | Report dell'audit | `audit/*.md` + `audit/screenshots/` (committati sul ramo) |
 | Piano approvato | `~/.claude/plans/cryptic-wandering-flute.md` |
 | Screenshot verifica mobile W2 | `~/Desktop/accounting/.playwright-mcp/b5/` (gitignored, prima/dopo a 390px) |
 
-**Worktree attivi**: `integrazione` più i quattro della W3 (`c1-auth`, `c2-orfani`, `c3-moduli-a`,
-`c4-moduli-b`). Quelli di W0/W1/W2 e `c0-vulnerabilita` sono stati rimossi dopo l'integrazione.
+**Worktree attivi**: solo `integrazione`. Quelli di W0/W1/W2/W3 e `c0-vulnerabilita` sono stati
+rimossi dopo l'integrazione.
 
 **ATTENZIONE — tre sessioni parallele lavorano sullo stesso repository** (stato al 7 ago, ore 18):
 - `~/Desktop/accounting-presenze` su `presenze/chiusura-ore-timbrate` — **non toccarlo**;
