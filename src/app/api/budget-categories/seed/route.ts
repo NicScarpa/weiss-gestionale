@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { withAuth } from '@/lib/api-utils'
 
 import { logger } from '@/lib/logger'
 // Categorie di sistema predefinite
@@ -145,29 +145,11 @@ const SYSTEM_CATEGORIES = [
   },
 ]
 
-// POST /api/budget-categories/seed - Crea categorie di sistema per una venue
-export async function POST(request: NextRequest) {
+// POST /api/budget-categories/seed - Crea le categorie di sistema della sede
+export const POST = withAuth(async (request, { user, venueId }) => {
   try {
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
     const body = await request.json()
-    const { venueId, skipExisting = true } = body
-
-    if (!venueId) {
-      return NextResponse.json({ error: 'venueId richiesto' }, { status: 400 })
-    }
-
-    // Verifica che la venue esista
-    const venue = await prisma.venue.findUnique({
-      where: { id: venueId },
-    })
-
-    if (!venue) {
-      return NextResponse.json({ error: 'Sede non trovata' }, { status: 404 })
-    }
+    const { skipExisting = true } = body
 
     // Controlla se esistono già categorie per questa venue
     const existingCount = await prisma.budgetCategory.count({
@@ -206,7 +188,7 @@ export async function POST(request: NextRequest) {
             alertThresholdPercent: cat.alertThresholdPercent ?? 10,
             isSystem: cat.isSystem || false,
             displayOrder: cat.displayOrder,
-            createdBy: session.user.id,
+            createdBy: user.id,
           },
         })
         parentIdMap[cat.code] = newCat.id
@@ -243,7 +225,7 @@ export async function POST(request: NextRequest) {
             alertThresholdPercent: cat.alertThresholdPercent ?? 10,
             isSystem: false,
             displayOrder: cat.displayOrder,
-            createdBy: session.user.id,
+            createdBy: user.id,
           },
         })
         created.push({ id: newCat.id, code: newCat.code, name: newCat.name })
@@ -269,12 +251,14 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+}, { roles: ['admin', 'manager'], venueScoped: true })
 
 // GET /api/budget-categories/seed - Restituisce le categorie predefinite
-export async function GET() {
-  return NextResponse.json({
-    categories: SYSTEM_CATEGORIES,
-    description: 'Categorie budget predefinite per il wizard di configurazione',
-  })
-}
+export const GET = withAuth(
+  async () =>
+    NextResponse.json({
+      categories: SYSTEM_CATEGORIES,
+      description: 'Categorie budget predefinite per il wizard di configurazione',
+    }),
+  { roles: ['admin', 'manager'] }
+)

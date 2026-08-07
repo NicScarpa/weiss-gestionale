@@ -1,10 +1,13 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { withAuth } from '@/lib/api-utils'
 import { z } from 'zod'
 import { type BudgetCategoryType } from '@prisma/client'
 
 import { logger } from '@/lib/logger'
+
+/** Il piano delle categorie di budget si legge e si modifica solo da gestori. */
+const soloGestori = { roles: ['admin', 'manager'], venueScoped: true } as const
 // Schema di validazione per nuova categoria
 const createCategorySchema = z.object({
   code: z.string().min(1).max(50),
@@ -20,25 +23,12 @@ const createCategorySchema = z.object({
   description: z.string().optional().nullable(),
 })
 
-// GET /api/budget-categories - Lista categorie per venue
-export async function GET(request: NextRequest) {
+// GET /api/budget-categories - Lista categorie della sede
+export const GET = withAuth(async (request, { venueId }) => {
   try {
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
     const { searchParams } = new URL(request.url)
-    const venueId = searchParams.get('venueId')
     const includeInactive = searchParams.get('includeInactive') === 'true'
     const categoryType = searchParams.get('categoryType')
-
-    if (!venueId) {
-      return NextResponse.json(
-        { error: 'venueId richiesto' },
-        { status: 400 }
-      )
-    }
 
     const categories = await prisma.budgetCategory.findMany({
       where: {
@@ -92,25 +82,13 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+}, soloGestori)
 
 // POST /api/budget-categories - Crea nuova categoria
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async (request, { user, venueId }) => {
   try {
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
     const body = await request.json()
-    const { venueId, ...data } = body
-
-    if (!venueId) {
-      return NextResponse.json(
-        { error: 'venueId richiesto' },
-        { status: 400 }
-      )
-    }
+    const { venueId: _venueIdDalClient, ...data } = body
 
     // Valida i dati
     const validationResult = createCategorySchema.safeParse(data)
@@ -174,7 +152,7 @@ export async function POST(request: NextRequest) {
         description: validData.description,
         isSystem: false,
         isActive: true,
-        createdBy: session.user.id,
+        createdBy: user.id,
       },
       include: {
         parent: { select: { id: true, code: true, name: true } },
@@ -189,4 +167,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+}, soloGestori)

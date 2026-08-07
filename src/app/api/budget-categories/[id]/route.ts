@@ -1,9 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { withAuth } from '@/lib/api-utils'
 import { z } from 'zod'
 
 import { logger } from '@/lib/logger'
+
+/** Il piano delle categorie di budget si legge e si modifica solo da gestori. */
+const soloGestori = { roles: ['admin', 'manager'], venueScoped: true } as const
 // Schema di validazione per aggiornamento categoria
 const updateCategorySchema = z.object({
   code: z.string().min(1).max(50).optional(),
@@ -20,22 +23,15 @@ const updateCategorySchema = z.object({
   isActive: z.boolean().optional(),
 })
 
-interface RouteParams {
-  params: Promise<{ id: string }>
-}
-
 // GET /api/budget-categories/[id] - Ottieni singola categoria
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export const GET = withAuth<{ id: string }>(async (request, { params, venueId }) => {
   try {
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
+    const { id } = params
 
-    const { id } = await params
-
-    const category = await prisma.budgetCategory.findUnique({
-      where: { id },
+    // La sede vincola la ricerca: un id di un'altra sede è "non trovato",
+    // non "vietato" — non si conferma l'esistenza di ciò che non si può vedere.
+    const category = await prisma.budgetCategory.findFirst({
+      where: { id, venueId },
       include: {
         parent: { select: { id: true, code: true, name: true } },
         children: {
@@ -71,22 +67,17 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       { status: 500 }
     )
   }
-}
+}, soloGestori)
 
 // PUT /api/budget-categories/[id] - Aggiorna categoria
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export const PUT = withAuth<{ id: string }>(async (request, { params, venueId }) => {
   try {
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
-    const { id } = await params
+    const { id } = params
     const body = await request.json()
 
-    // Verifica esistenza
-    const existing = await prisma.budgetCategory.findUnique({
-      where: { id },
+    // Verifica esistenza dentro la sede della sessione
+    const existing = await prisma.budgetCategory.findFirst({
+      where: { id, venueId },
     })
 
     if (!existing) {
@@ -186,20 +177,15 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       { status: 500 }
     )
   }
-}
+}, soloGestori)
 
 // DELETE /api/budget-categories/[id] - Elimina categoria
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+export const DELETE = withAuth<{ id: string }>(async (request, { params, venueId }) => {
   try {
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
+    const { id } = params
 
-    const { id } = await params
-
-    const existing = await prisma.budgetCategory.findUnique({
-      where: { id },
+    const existing = await prisma.budgetCategory.findFirst({
+      where: { id, venueId },
       include: {
         _count: {
           select: { accountMappings: true, budgetLines: true, children: true },
@@ -252,4 +238,4 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       { status: 500 }
     )
   }
-}
+}, soloGestori)

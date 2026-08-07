@@ -1,69 +1,67 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from '@/lib/auth'
+import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { withAuth } from '@/lib/api-utils'
 import { CategorizationRule } from '@prisma/client'
 
 // POST /api/categorization-rules/test - Test regola su descrizione
-export async function POST(request: NextRequest) {
-  try {
-    const session = await getServerSession()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+export const POST = withAuth(
+  async (request, { venueId }) => {
+    try {
+      const body = await request.json()
+      const { description, amount } = body
 
-    const body = await request.json()
-    const { venueId, description, amount } = body
-
-    if (!venueId || !description) {
-      return NextResponse.json(
-        { error: 'Venue ID e descrizione sono richiesti' },
-        { status: 400 }
-      )
-    }
-
-    // Recupera regole attive per la venue
-    const rules = await prisma.categorizationRule.findMany({
-      where: {
-        venueId,
-        isActive: true,
-      },
-      include: {
-        budgetCategory: { select: { id: true, code: true, name: true, color: true } },
-        account: { select: { id: true, code: true, name: true } },
-      },
-      orderBy: { priority: 'desc' },
-    })
-
-    // Determina direzione in base all'importo
-    const direction = amount && amount < 0 ? 'OUTFLOW' : 'INFLOW'
-
-    // Trova matching rules
-    const matchedRules = rules
-      .filter(rule => {
-        if (rule.direction !== direction) return false
-        // Controlla se almeno una keyword è presente nella descrizione
-        return rule.keywords.some((keyword: string) =>
-          description.toLowerCase().includes(keyword.toLowerCase())
+      if (!description) {
+        return NextResponse.json(
+          { error: 'La descrizione è richiesta' },
+          { status: 400 }
         )
-      })
-      .map(rule => ({
-        rule,
-        confidence: calculateConfidence(rule, description),
-      }))
-      .sort((a, b) => b.confidence - a.confidence)
+      }
 
-    return NextResponse.json({
-      matched: matchedRules.length > 0,
-      matches: matchedRules.slice(0, 5), // Top 5 matches
-      suggestedCategory: matchedRules[0]?.rule.budgetCategoryId,
-      suggestedAccount: matchedRules[0]?.rule.accountId,
-      bestMatch: matchedRules[0]?.rule,
-    })
-  } catch (error) {
-    console.error('Error testing categorization rule:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
-  }
-}
+      // Recupera regole attive per la venue
+      const rules = await prisma.categorizationRule.findMany({
+        where: {
+          venueId,
+          isActive: true,
+        },
+        include: {
+          budgetCategory: { select: { id: true, code: true, name: true, color: true } },
+          account: { select: { id: true, code: true, name: true } },
+        },
+        orderBy: { priority: 'desc' },
+      })
+
+      // Determina direzione in base all'importo
+      const direction = amount && amount < 0 ? 'OUTFLOW' : 'INFLOW'
+
+      // Trova matching rules
+      const matchedRules = rules
+        .filter(rule => {
+          if (rule.direction !== direction) return false
+          // Controlla se almeno una keyword è presente nella descrizione
+          return rule.keywords.some((keyword: string) =>
+            description.toLowerCase().includes(keyword.toLowerCase())
+          )
+        })
+        .map(rule => ({
+          rule,
+          confidence: calculateConfidence(rule, description),
+        }))
+        .sort((a, b) => b.confidence - a.confidence)
+
+      return NextResponse.json({
+        matched: matchedRules.length > 0,
+        matches: matchedRules.slice(0, 5), // Top 5 matches
+        suggestedCategory: matchedRules[0]?.rule.budgetCategoryId,
+        suggestedAccount: matchedRules[0]?.rule.accountId,
+        bestMatch: matchedRules[0]?.rule,
+      })
+    } catch (error) {
+      console.error('Error testing categorization rule:', error)
+      return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    }
+  },
+  { roles: ['admin', 'manager'], venueScoped: true }
+)
 
 function calculateConfidence(rule: Pick<CategorizationRule, 'keywords' | 'priority'>, description: string): number {
   // Calcola confidence in base a:
