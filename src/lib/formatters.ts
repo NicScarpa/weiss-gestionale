@@ -10,14 +10,21 @@
  * componente, dove chi le trovava le riscriveva da capo.
  */
 
+// `useGrouping: true` non è ridondante: il valore predefinito per l'italiano è
+// `'auto'`, che NON raggruppa i numeri di quattro cifre. Senza, «1.234,56 €»
+// diventa «1234,56 €» mentre da 10.000 in su il punto ricompare — e in un
+// gestionale da bar la maggior parte degli importi (fatture, pagamenti, incassi
+// di giornata) sta proprio fra mille e diecimila euro.
 const EURO = new Intl.NumberFormat('it-IT', {
   style: 'currency',
   currency: 'EUR',
+  useGrouping: true,
 })
 
 const DECIMALE = new Intl.NumberFormat('it-IT', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
+  useGrouping: true,
 })
 
 /** Importo in euro all'italiana: `1.234,56 €`. */

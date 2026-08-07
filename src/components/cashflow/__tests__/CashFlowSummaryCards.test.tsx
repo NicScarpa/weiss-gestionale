@@ -30,11 +30,11 @@ describe('CashFlowSummaryCards', () => {
     // puntuali: sono euro. Stamparlo con un `%` accanto significava dire
     // "+1234,6%" a chi in tasca ha 1.234,56 € in più.
     //
-    // Il separatore delle migliaia è opzionale nella regex perché per l'italiano
-    // il CLDR non raggruppa i numeri di quattro cifre: `formatCurrency` rende
-    // «1234,56 €» e «12.000,00 €». Quello che questo test presidia è l'unità di
-    // misura, non la scelta di formattazione, che vive in `@/lib/formatters`.
-    expect(testo).toMatch(/\+1\.?234,56/)
+    // Il separatore delle migliaia è atteso: `formatCurrency` impone
+    // `useGrouping: true` proprio perché il predefinito italiano non raggruppa
+    // i numeri di quattro cifre, cioè quasi tutti gli importi di questo
+    // gestionale. Il test presidia l'unità di misura E il raggruppamento.
+    expect(testo).toMatch(/\+1\.234,56/)
     expect(testo).not.toMatch(/1234,6\s*%/)
     expect(testo).not.toMatch(/%/)
   })
