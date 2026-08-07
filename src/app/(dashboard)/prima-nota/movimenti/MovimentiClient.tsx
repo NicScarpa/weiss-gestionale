@@ -331,7 +331,6 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
         onVerifiedChange={(v) => setFilters(f => ({ ...f, verified: v }))}
         search={filters.search}
         onSearchChange={(v) => setFilters(f => ({ ...f, search: v }))}
-        accountOptions={accounts}
         budgetCategoryOptions={budgetCategories}
       />
 

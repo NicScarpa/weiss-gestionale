@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildCostCenterRuleMap } from '../useImputableAccounts'
+import { buildCostCenterRuleMap, buildAccountsQueryString } from '../useImputableAccounts'
 import type { ComboboxAccount } from '../useImputableAccounts'
 
 function account(overrides: Partial<ComboboxAccount>): ComboboxAccount {
@@ -35,5 +35,33 @@ describe('buildCostCenterRuleMap', () => {
   it('un accountId assente dalla lista non è nella mappa', () => {
     const map = buildCostCenterRuleMap([account({ id: 'a1' })])
     expect(map.has('conto-non-caricato')).toBe(false)
+  })
+})
+
+describe('buildAccountsQueryString', () => {
+  it('senza argomenti non produce alcun parametro', () => {
+    expect(buildAccountsQueryString()).toBe('')
+  })
+
+  it('unisce più types in un CSV ordinato dal chiamante', () => {
+    expect(buildAccountsQueryString(['COSTO', 'RICAVO'])).toBe('types=COSTO%2CRICAVO')
+  })
+
+  it('imputableOnly false non aggiunge il parametro imputable', () => {
+    expect(buildAccountsQueryString(undefined, false)).toBe('')
+  })
+
+  it('imputableOnly true aggiunge imputable=true', () => {
+    expect(buildAccountsQueryString(undefined, true)).toContain('imputable=true')
+  })
+
+  it('includeInactive true aggiunge includeInactive=true accanto agli altri filtri', () => {
+    const qs = buildAccountsQueryString(['COSTO'], false, true)
+    expect(qs).toContain('types=COSTO')
+    expect(qs).toContain('includeInactive=true')
+  })
+
+  it('includeInactive false (default) non aggiunge il parametro', () => {
+    expect(buildAccountsQueryString(undefined, undefined, false)).toBe('')
   })
 })

@@ -15,6 +15,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { DangerousDeleteDialog } from '@/components/ui/dangerous-delete-dialog'
+import { AccountComboboxList } from '@/components/prima-nota/shared/AccountCombobox'
+import { useAccountsForCombobox } from '@/hooks/useImputableAccounts'
 import {
   Card,
   CardContent,
@@ -30,13 +32,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -61,20 +56,12 @@ import { calculateAnnualTotal, emptyMonthlyValues } from '@/lib/budget-utils'
 import { BudgetDashboard } from '@/components/budget'
 
 import { logger } from '@/lib/logger'
-interface Account {
-  id: string
-  code: string
-  name: string
-  type: string
-}
-
 interface BudgetDetailClientProps {
   budgetId: string
   venue: { id: string; name: string; code: string }
   year: number
   budgetName: string
   budgetStatus: BudgetStatus
-  accounts: Account[]
   isEditing: boolean
   canEdit: boolean
 }
@@ -85,7 +72,6 @@ export function BudgetDetailClient({
   year,
   budgetName,
   budgetStatus,
-  accounts,
   isEditing: initialEditing,
   canEdit,
 }: BudgetDetailClientProps) {
@@ -120,8 +106,13 @@ export function BudgetDetailClient({
     fetchLines()
   }, [fetchLines])
 
-  // Conti disponibili (non ancora usati)
-  const availableAccounts = accounts.filter(
+  // Conti attivi di tipo RICAVO/COSTO (v4 e legacy, come la fetch server-side
+  // che sostituisce), con la stessa fetch/chiave di cache di AccountCombobox
+  // altrove nell'app.
+  const { data: allAccounts = [] } = useAccountsForCombobox(['RICAVO', 'COSTO'])
+
+  // Conti disponibili (non ancora usati nel budget)
+  const availableAccounts = allAccounts.filter(
     (acc) => !lines.some((l) => l.accountId === acc.id)
   )
 
@@ -515,23 +506,15 @@ export function BudgetDetailClient({
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
                   <Label>Conto</Label>
-                  <Select value={newLineAccountId} onValueChange={setNewLineAccountId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleziona conto" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableAccounts.map((acc) => (
-                        <SelectItem key={acc.id} value={acc.id}>
-                          <span className="flex items-center gap-2">
-                            <Badge variant={acc.type === 'RICAVO' ? 'default' : 'secondary'} className="text-xs">
-                              {acc.type === 'RICAVO' ? 'R' : 'C'}
-                            </Badge>
-                            {acc.code} - {acc.name}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  {/* Raggruppato per mastro (es. "40 — Ricavi..." vs "60 —
+                      Costi..."): la distinzione RICAVO/COSTO resta leggibile
+                      dall'intestazione di gruppo, non serve più il badge R/C. */}
+                  <AccountComboboxList
+                    accounts={availableAccounts}
+                    value={newLineAccountId || undefined}
+                    onChange={(accountId) => setNewLineAccountId(accountId ?? '')}
+                    placeholder="Seleziona conto"
+                  />
                 </div>
               </div>
               <DialogFooter>

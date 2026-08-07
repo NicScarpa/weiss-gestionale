@@ -5,21 +5,16 @@ import { CategorizationRulesManager } from '@/components/prima-nota/regole/Categ
 export default async function RegolePage() {
   const session = await auth()
 
-  const [accounts, budgetCategories] = await Promise.all([
-    prisma.account.findMany({
-      select: { id: true, name: true, code: true },
-      orderBy: { code: 'asc' },
-    }),
-    prisma.budgetCategory.findMany({
-      select: { id: true, name: true, code: true, color: true },
-      orderBy: { code: 'asc' },
-    }),
-  ])
+  // Il conto della regola (RegolaFormDialog) ha ora una fetch propria via
+  // AccountCombobox: qui serve solo più budgetCategories.
+  const budgetCategories = await prisma.budgetCategory.findMany({
+    select: { id: true, name: true, code: true, color: true },
+    orderBy: { code: 'asc' },
+  })
 
   return (
     <CategorizationRulesManager
       venueId={session?.user?.venueId || ''}
-      accounts={accounts}
       budgetCategories={budgetCategories}
     />
   )

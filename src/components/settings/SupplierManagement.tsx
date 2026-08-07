@@ -6,13 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -22,6 +15,7 @@ import {
 } from '@/components/ui/dialog'
 import { DeleteSupplierDialog } from './DeleteSupplierDialog'
 import { BulkDeleteSuppliersDialog } from './BulkDeleteSuppliersDialog'
+import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -67,7 +61,6 @@ const initialFormData = {
 
 export function SupplierManagement() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
-  const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -96,21 +89,8 @@ export function SupplierManagement() {
     }
   }
 
-  // Carica conti per select
-  const fetchAccounts = async () => {
-    try {
-      const res = await fetch('/api/accounts?type=COSTO')
-      if (!res.ok) throw new Error('Errore nel caricamento conti')
-      const data = await res.json()
-      setAccounts(data.accounts || [])
-    } catch (error) {
-      logger.error('Errore', error)
-    }
-  }
-
   useEffect(() => {
     fetchSuppliers()
-    fetchAccounts()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showInactive])
 
@@ -551,25 +531,20 @@ export function SupplierManagement() {
 
             {/* Conto Default */}
             <div className="col-span-2 space-y-2">
-              <Label htmlFor="defaultAccount">Conto di Costo Default</Label>
-              <Select
-                value={formData.defaultAccountId}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, defaultAccountId: value })
+              <Label>Conto di Costo Default</Label>
+              {/* formData.defaultAccountId resta 'none' come sentinella
+                  interna (usata anche nel submit e nel caricamento del
+                  fornitore in modifica): qui si traduce solo al bordo con
+                  AccountCombobox, che lavora con undefined. */}
+              <AccountCombobox
+                types={['COSTO']}
+                allowNone
+                value={formData.defaultAccountId === 'none' ? undefined : formData.defaultAccountId}
+                onChange={(value) =>
+                  setFormData({ ...formData, defaultAccountId: value ?? 'none' })
                 }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleziona conto..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Nessuno</SelectItem>
-                  {accounts.map((account) => (
-                    <SelectItem key={account.id} value={account.id}>
-                      {account.code} - {account.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder="Seleziona conto..."
+              />
               <p className="text-xs text-muted-foreground">
                 Conto utilizzato automaticamente nelle uscite
               </p>

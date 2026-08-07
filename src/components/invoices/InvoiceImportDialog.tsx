@@ -38,6 +38,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
 import { Badge } from '@/components/ui/badge'
 import {
   Select,
@@ -115,13 +116,6 @@ interface Venue {
   id: string
   name: string
   code: string
-}
-
-interface Account {
-  id: string
-  code: string
-  name: string
-  type: string
 }
 
 // Editable supplier data structure
@@ -202,13 +196,6 @@ async function fetchVenues(): Promise<Venue[]> {
   return data.venues || []
 }
 
-async function fetchAccounts(): Promise<Account[]> {
-  const res = await fetch('/api/accounts?type=COSTO')
-  if (!res.ok) throw new Error('Errore caricamento conti')
-  const data = await res.json()
-  return data.accounts || []
-}
-
 // Helper outside component
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('it-IT', {
@@ -234,7 +221,7 @@ export function InvoiceImportDialog({
   
   // Review Item State
   const [selectedVenueId, setSelectedVenueId] = useState<string>('')
-  const [selectedAccountId, setSelectedAccountId] = useState<string>('_none')
+  const [selectedAccountId, setSelectedAccountId] = useState<string | undefined>(undefined)
   const [createNewSupplier, setCreateNewSupplier] = useState(false)
   const [, setSupplierFormOpen] = useState(true)
   const [editableSupplier, setEditableSupplier] = useState<EditableSupplierData>({
@@ -244,16 +231,10 @@ export function InvoiceImportDialog({
   // Processing ref to avoid double execution
   const isProcessing = useRef(false)
 
-  // Query per sedi e conti
+  // Query per sedi (i conti li recupera AccountCombobox)
   const { data: venues } = useQuery({
     queryKey: ['venues'],
     queryFn: fetchVenues,
-    enabled: open,
-  })
-
-  const { data: accounts } = useQuery({
-    queryKey: ['accounts-cost'],
-    queryFn: fetchAccounts,
     enabled: open,
   })
 
@@ -381,11 +362,7 @@ export function InvoiceImportDialog({
     setCreateNewSupplier(!item.parsedData.supplierMatch.found)
     setSupplierFormOpen(!item.parsedData.supplierMatch.found)
 
-    if (item.parsedData.suggestedAccount) {
-      setSelectedAccountId(item.parsedData.suggestedAccount.id)
-    } else {
-      setSelectedAccountId('_none')
-    }
+    setSelectedAccountId(item.parsedData.suggestedAccount?.id)
   }
 
   // 2. Process Queue
@@ -492,7 +469,7 @@ export function InvoiceImportDialog({
         supplierId: currentFile.parsedData.supplierMatch.supplier?.id,
         createSupplier: createNewSupplier,
         supplierData: createNewSupplier ? (editableSupplier as unknown as Record<string, unknown>) : undefined,
-        accountId: selectedAccountId !== '_none' ? selectedAccountId : undefined
+        accountId: selectedAccountId
       })
 
       updatedFiles[currentReviewIndex].status = 'completed'
@@ -745,17 +722,15 @@ export function InvoiceImportDialog({
               </div>
               <div className="space-y-2">
                 <Label>Conto Spesa</Label>
-                <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleziona conto" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_none">Nessuno</SelectItem>
-                    {accounts?.map((acc) => (
-                      <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {/* type COSTO: le fatture importate qui sono fatture fornitore
+                    (spese), mai di ricavo. */}
+                <AccountCombobox
+                  types={['COSTO']}
+                  allowNone
+                  value={selectedAccountId}
+                  onChange={setSelectedAccountId}
+                  placeholder="Seleziona conto"
+                />
               </div>
             </div>
 

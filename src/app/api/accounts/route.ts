@@ -70,8 +70,8 @@ export async function GET(request: NextRequest) {
         gruppoCode: true,
         gruppoNome: true,
         costCenterRule: true,
-        // Categoria derivata dalla mappatura budget (Fase 0), per raggruppare
-        // il conto nella select condivisa (AccountGroupedSelect, Fase 1).
+        // Categoria derivata dalla mappatura budget (Fase 0), usata dal
+        // budget e da altri punti che raggruppano i conti per categoria.
         budgetMapping: {
           select: {
             includeInBudget: true,

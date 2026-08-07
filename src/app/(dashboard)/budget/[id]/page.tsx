@@ -39,21 +39,6 @@ export default async function BudgetDetailPage({ params, searchParams }: PagePro
     notFound()
   }
 
-  // Recupera i conti per il form
-  const accounts = await prisma.account.findMany({
-    where: {
-      isActive: true,
-      type: { in: ['RICAVO', 'COSTO'] },
-    },
-    select: {
-      id: true,
-      code: true,
-      name: true,
-      type: true,
-    },
-    orderBy: { code: 'asc' },
-  })
-
   const isEditing = edit === 'true'
   const canEdit = ['admin', 'manager'].includes(session.user.role || '') && budget.status !== 'ARCHIVED'
 
@@ -64,7 +49,6 @@ export default async function BudgetDetailPage({ params, searchParams }: PagePro
       year={budget.year}
       budgetName={budget.name || `Budget ${budget.year}`}
       budgetStatus={budget.status as 'DRAFT' | 'ACTIVE' | 'ARCHIVED'}
-      accounts={accounts}
       isEditing={isEditing && canEdit}
       canEdit={canEdit}
     />

@@ -36,13 +36,11 @@ import type { CategorizationRule, RuleDirection } from '@/types/prima-nota'
 
 interface CategorizationRulesManagerProps {
   venueId: string
-  accounts: Array<{ id: string; name: string; code: string }>
   budgetCategories: Array<{ id: string; name: string; code: string; color?: string }>
 }
 
 export function CategorizationRulesManager({
   venueId: venueIdProp,
-  accounts,
   budgetCategories,
 }: CategorizationRulesManagerProps) {
   const { venueId: contextVenueId } = usePrimaNota()
@@ -351,7 +349,6 @@ export function CategorizationRulesManager({
             autoVerify: selectedRule.autoVerify,
             autoHide: selectedRule.autoHide,
           } : undefined}
-          accounts={accounts}
           budgetCategories={budgetCategories}
           onSave={selectedRule ? handleUpdate : handleCreate}
           open={dialogOpen}

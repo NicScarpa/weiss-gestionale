@@ -5,6 +5,7 @@ import { SearchInput } from '../shared/FiltersToolbar'
 import { DateRangePicker } from '../shared/FiltersToolbar'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useCostCenters } from '../shared/CostCenterSelect'
+import { AccountCombobox } from '../shared/AccountCombobox'
 import { ENTRY_TYPE_LABELS, RegisterType } from '@/types/prima-nota'
 
 interface MovimentiFiltersProps {
@@ -25,7 +26,6 @@ interface MovimentiFiltersProps {
   onVerifiedChange?: (value: boolean | undefined) => void
   search?: string
   onSearchChange?: (value: string) => void
-  accountOptions?: Array<{ id: string; name: string; code: string }>
   budgetCategoryOptions?: Array<{ id: string; name: string; code: string; color?: string }>
   filterCount?: number
   onClearFilters?: () => void
@@ -49,7 +49,6 @@ export function MovimentiFilters({
   onVerifiedChange,
   search,
   onSearchChange,
-  accountOptions = [],
   budgetCategoryOptions = [],
   filterCount = 0,
   onClearFilters,
@@ -145,22 +144,25 @@ export function MovimentiFilters({
 
         {/* Conto */}
         <div className="min-w-[200px]">
-          <Label htmlFor="filter-account" className="text-xs text-muted-foreground">
+          {/* Nessun htmlFor: AccountCombobox non espone un id sul trigger,
+              come già negli altri punti d'uso (MovimentoFormDialog e simili). */}
+          <Label className="text-xs text-muted-foreground">
             Conto
           </Label>
-          <Select value={accountId} onValueChange={onAccountIdChange}>
-            <SelectTrigger id="filter-account">
-              <SelectValue placeholder="Tutti i conti" />
-            </SelectTrigger>
-            <SelectContent>
-              {accountOptions.map((account) => (
-                <SelectItem key={account.id} value={account.id}>
-                  <span className="font-medium">{account.code}</span>
-                  <span className="ml-2 text-muted-foreground">{account.name}</span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/*
+            types=[RICAVO, COSTO]: un movimento non può mai avere un accountId
+            di altro tipo (vedi accountTypesForEntryType in MovimentoFormDialog).
+            imputableOnly=false e includeInactive=true: il filtro deve poter
+            ancora trovare movimenti storici legati a conti legacy o nel
+            frattempo disattivati, non solo alle ~155 voci v4 attive.
+          */}
+          <AccountCombobox
+            types={['RICAVO', 'COSTO']}
+            includeInactive
+            value={accountId}
+            onChange={(v) => onAccountIdChange?.(v)}
+            placeholder="Tutti i conti"
+          />
         </div>
 
         {/* Centro di costo */}

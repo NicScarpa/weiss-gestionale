@@ -32,6 +32,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
+import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
 import {
   type RuleDirection,
   type CategorizationRuleFormData,
@@ -53,7 +54,6 @@ type RegolaFormData = z.infer<typeof REGOLA_SCHEMA>
 
 interface RegolaFormDialogProps {
   rule?: CategorizationRuleFormData
-  accounts?: Array<{ id: string; code: string; name: string }>
   budgetCategories?: Array<{ id: string; code: string; name: string; color?: string }>
   onSave: (data: RegolaFormData) => void | Promise<void>
   open?: boolean
@@ -64,7 +64,6 @@ interface RegolaFormDialogProps {
 
 export function RegolaFormDialog({
   rule,
-  accounts = [],
   budgetCategories = [],
   onSave,
   open = true,
@@ -279,32 +278,31 @@ export function RegolaFormDialog({
               )}
             />
 
-            {/* Conto */}
-            {accounts.length > 0 && (
-              <FormField
-                control={form.control}
-                name="accountId"
-                render={({ field }) => (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>Conto</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Tutti i conti" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {accounts.map((account) => (
-                          <SelectItem key={account.id} value={account.id}>
-                            <span className="font-medium">{account.code}</span>
-                            <span className="ml-2 text-muted-foreground">{account.name}</span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
+            {/* Conto: assegnato automaticamente ai movimenti che matchano la
+                regola. Campo opzionale (una regola può limitarsi a
+                categorizzare/nascondere senza assegnare un conto), quindi
+                allowNone con la semantica di form "Nessun conto" — non è un
+                filtro di lista. types COSTO+RICAVO: sono gli unici tipi che
+                l'accountId di un movimento può avere (vedi
+                accountTypesForEntryType in MovimentoFormDialog).
+                imputableOnly non impostato (default false): una regola già
+                salvata può puntare a un conto legacy. */}
+            <FormField
+              control={form.control}
+              name="accountId"
+              render={({ field }) => (
+                <FormItem className="flex flex-col">
+                  <FormLabel>Conto</FormLabel>
+                  <AccountCombobox
+                    types={['COSTO', 'RICAVO']}
+                    allowNone
+                    value={field.value}
+                    onChange={field.onChange}
+                  />
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             {/* Categoria Budget */}
             {budgetCategories.length > 0 && (

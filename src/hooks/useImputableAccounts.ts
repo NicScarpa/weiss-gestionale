@@ -18,14 +18,31 @@ export interface ComboboxAccount {
   costCenterRule: CostCenterRule
 }
 
-async function fetchAccounts(
+/**
+ * Costruisce la querystring di /api/accounts. Estratta a parte per poterla
+ * testare senza montare react-query: l'unica logica non banale qui è
+ * l'omissione dei parametri a valore di default (nessun types, imputable
+ * false, includeInactive false), condivisa da fetchAccounts e dalla chiave
+ * di cache di useAccountsForCombobox.
+ */
+export function buildAccountsQueryString(
   types?: AccountType[],
-  imputableOnly?: boolean
-): Promise<ComboboxAccount[]> {
+  imputableOnly?: boolean,
+  includeInactive?: boolean
+): string {
   const params = new URLSearchParams()
   if (types && types.length > 0) params.set('types', types.join(','))
   if (imputableOnly) params.set('imputable', 'true')
-  const qs = params.toString()
+  if (includeInactive) params.set('includeInactive', 'true')
+  return params.toString()
+}
+
+async function fetchAccounts(
+  types?: AccountType[],
+  imputableOnly?: boolean,
+  includeInactive?: boolean
+): Promise<ComboboxAccount[]> {
+  const qs = buildAccountsQueryString(types, imputableOnly, includeInactive)
 
   const res = await fetch(`/api/accounts${qs ? `?${qs}` : ''}`)
   if (!res.ok) throw new Error('Errore nel caricamento dei conti')
@@ -35,22 +52,31 @@ async function fetchAccounts(
 
 /**
  * Query dei conti condivisa da AccountCombobox e da chi ha bisogno solo dei
- * dati (es. useImputableAccounts). Stessa chiave per types+imputableOnly
- * equivalenti: niente fetch duplicati quando due punti della stessa vista
- * chiedono lo stesso filtro.
+ * dati (es. useImputableAccounts). Stessa chiave per types+imputableOnly+
+ * includeInactive equivalenti: niente fetch duplicati quando due punti della
+ * stessa vista chiedono lo stesso filtro.
  *
  * La chiave usa una stringa normalizzata dei types (ordinati e uniti) invece
  * dell'array ricevuto: un array letterale passato inline dal chiamante ad
  * ogni render avrebbe reference diversa ma stesso contenuto, e react-query
  * rifarebbe la fetch inutilmente.
+ *
+ * includeInactive di default è false (i form di registrazione non devono
+ * proporre conti disattivati); i filtri di lista lo passano true per poter
+ * ancora trovare movimenti storici legati a un conto nel frattempo
+ * disattivato (Task 17).
  */
-export function useAccountsForCombobox(types?: AccountType[], imputableOnly?: boolean) {
+export function useAccountsForCombobox(
+  types?: AccountType[],
+  imputableOnly?: boolean,
+  includeInactive?: boolean
+) {
   const normalizedTypes = types && types.length > 0 ? [...types].sort() : undefined
   const typesCacheKey = normalizedTypes?.join(',') ?? null
 
   return useQuery({
-    queryKey: ['accounts', typesCacheKey, imputableOnly ?? false],
-    queryFn: () => fetchAccounts(normalizedTypes, imputableOnly),
+    queryKey: ['accounts', typesCacheKey, imputableOnly ?? false, includeInactive ?? false],
+    queryFn: () => fetchAccounts(normalizedTypes, imputableOnly, includeInactive),
     staleTime: 60 * 1000,
   })
 }

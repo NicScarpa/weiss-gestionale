@@ -26,6 +26,8 @@ interface AccountComboboxProps {
   types?: AccountType[]
   /** Solo voci del piano v4 (mastroCode valorizzato): esclude patrimoniali e legacy. */
   imputableOnly?: boolean
+  /** Include anche i conti disattivati (utile nei filtri di lista, per trovare movimenti storici). */
+  includeInactive?: boolean
   disabled?: boolean
   placeholder?: string
   /** Mostra in cima una voce per azzerare la selezione. */
@@ -224,11 +226,12 @@ export function AccountCombobox({
   onChange,
   types,
   imputableOnly = false,
+  includeInactive = false,
   disabled,
   placeholder,
   allowNone = false,
 }: AccountComboboxProps) {
-  const { data: accounts = [], isLoading } = useAccountsForCombobox(types, imputableOnly)
+  const { data: accounts = [], isLoading } = useAccountsForCombobox(types, imputableOnly, includeInactive)
 
   return (
     <AccountComboboxList

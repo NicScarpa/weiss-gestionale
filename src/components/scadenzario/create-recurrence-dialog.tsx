@@ -90,9 +90,12 @@ export function CreateRecurrenceDialog({
 
     const fetchOptions = async () => {
       try {
+        // Il conto di pagamento è patrimoniale (cassa/banca), non una voce
+        // economica: senza il filtro qui comparirebbero le ~155 voci di
+        // costo/ricavo del piano v4.
         const [catRes, accRes] = await Promise.all([
           fetch('/api/budget-categories'),
-          fetch('/api/accounts'),
+          fetch('/api/accounts?types=ATTIVO,PASSIVO'),
         ])
         if (catRes.ok) {
           const catData = await catRes.json()
