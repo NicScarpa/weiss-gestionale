@@ -252,14 +252,17 @@ model DailyClosure {
   attendance       DailyAttendance[]
   deletedAt        DateTime?         @map("deleted_at")
   deletedById      String?           @map("deleted_by_id")
+  costCenterId     String?           @map("cost_center_id")
   submittedBy      User?             @relation("SubmittedBy", fields: [submittedById], references: [id])
   validatedBy      User?             @relation("ValidatedBy", fields: [validatedById], references: [id])
   venue            Venue             @relation(fields: [venueId], references: [id])
+  costCenter       CostCenter?       @relation(fields: [costCenterId], references: [id], onDelete: Restrict)
   expenses         DailyExpense[]
   partials         HourlyPartial[]
   journalEntries   JournalEntry[]
 
   @@unique([venueId, date])
+  @@index([costCenterId])
   @@map("daily_closures")
 }
 
@@ -343,11 +346,14 @@ model DailyExpense {
   paidBy       String?      @map("paid_by")
   position     Int          @default(0)
   createdAt    DateTime     @default(now()) @map("created_at")
+  costCenterId String?      @map("cost_center_id")
   account      Account?     @relation(fields: [accountId], references: [id])
   closure      DailyClosure @relation(fields: [closureId], references: [id], onDelete: Restrict)
+  costCenter   CostCenter?  @relation(fields: [costCenterId], references: [id], onDelete: Restrict)
 
   @@index([closureId])
   @@index([accountId])
+  @@index([costCenterId])
   @@map("daily_expenses")
 }
 
@@ -379,6 +385,17 @@ model Account {
   parentId            String?               @map("parent_id")
   isActive            Boolean               @default(true) @map("is_active")
   createdAt           DateTime              @default(now()) @map("created_at")
+  /// Mastro/gruppo del piano dei conti v4, denormalizzati sul conto
+  /// imputabile: accounts contiene solo voci imputabili, non righe per
+  /// mastri/gruppi. Null sui conti patrimoniali e sui conti legacy.
+  mastroCode          String?               @map("mastro_code")
+  mastroNome          String?               @map("mastro_nome")
+  gruppoCode          String?               @map("gruppo_code")
+  gruppoNome          String?               @map("gruppo_nome")
+  /// Regola di applicazione del centro di costo quando si registra su questo conto.
+  costCenterRule      CostCenterRule        @default(DEFAULT_STR) @map("cost_center_rule")
+  /// Chiave stabile dei conti "di sistema" (es. banca), indipendente dal code.
+  systemKey           String?               @unique @map("system_key")
   budgetMapping       AccountBudgetMapping?
   parent              Account?              @relation("AccountHierarchy", fields: [parentId], references: [id])
   children            Account[]             @relation("AccountHierarchy")
@@ -397,6 +414,7 @@ model Account {
   supplierProductAccounts SupplierProductAccount[]
 
   @@index([parentId])
+  @@index([mastroCode])
   @@map("accounts")
 }
 
@@ -429,6 +447,11 @@ model JournalEntry {
   notes                String?
   verified             Boolean             @default(false)
   paymentId            String?             @unique @map("payment_id")
+  /// Centro di costo del movimento. Nullable di proposito: il DDL va in
+  /// produzione prima del deploy del codice che lo valorizza; il NOT NULL è
+  /// un follow-up successivo.
+  costCenterId         String?             @map("cost_center_id")
+  azienda              String              @default("WEISS S.r.l.")
   bankTransaction      BankTransaction?
   electronicInvoice    ElectronicInvoice?
   account              Account?            @relation(fields: [accountId], references: [id])
@@ -437,6 +460,7 @@ model JournalEntry {
   appliedRule          CategorizationRule? @relation(fields: [appliedRuleId], references: [id])
   budgetCategory       BudgetCategory?     @relation(fields: [budgetCategoryId], references: [id])
   closure              DailyClosure?       @relation(fields: [closureId], references: [id], onDelete: SetNull)
+  costCenter           CostCenter?         @relation(fields: [costCenterId], references: [id], onDelete: Restrict)
   counterpart          Account?            @relation("Counterpart", fields: [counterpartId], references: [id])
   createdBy            User?               @relation(fields: [createdById], references: [id])
   venue                Venue               @relation(fields: [venueId], references: [id])
@@ -449,6 +473,7 @@ model JournalEntry {
   @@index([accountId])
   @@index([budgetCategoryId])
   @@index([closureId])
+  @@index([costCenterId])
   @@map("journal_entries")
 }
 
@@ -1935,14 +1960,19 @@ model ScheduleRule {
   createdById   String?  @map("created_by")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
+  /// Centro di costo esplicito e opzionale della regola: se valorizzato,
+  /// impone il centro sul movimento generato dalla regola (logica nel Task 6).
+  costCenterId  String?  @map("cost_center_id")
 
   venue       Venue        @relation(fields: [venueId], references: [id])
   conto       Account?     @relation(fields: [contoId], references: [id])
   bankAccount BankAccount? @relation("ScheduleRuleBankAccount", fields: [bankAccountId], references: [id])
   createdBy User?    @relation("ScheduleRuleCreatedBy", fields: [createdById], references: [id])
+  costCenter  CostCenter?  @relation(fields: [costCenterId], references: [id], onDelete: Restrict)
 
   @@index([venueId, direzione, ordine])
   @@index([isActive])
+  @@index([costCenterId])
   @@map("schedule_rules")
 }
 
@@ -2020,6 +2050,25 @@ model AuditLog {
   @@index([venueId])
   @@index([timestamp])
   @@map("audit_logs")
+}
+
+/// Centro di costo del piano dei conti v4. Al più uno può avere isDefault
+/// true (indice unico parziale in DDL, non esprimibile qui).
+model CostCenter {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+  isDefault   Boolean  @default(false) @map("is_default")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  journalEntries JournalEntry[]
+  dailyClosures  DailyClosure[]
+  dailyExpenses  DailyExpense[]
+  scheduleRules  ScheduleRule[]
+
+  @@map("cost_centers")
 }
 
 enum ContractType {
@@ -2448,4 +2497,11 @@ enum SchedulePaymentMethod {
   CREDITO_FISCALE
   SENZA_INCASSO
   ALTRO
+}
+
+/// Regola di applicazione del centro di costo su un conto: OBBLIGATORIO
+/// impone la scelta a chi registra, DEFAULT_STR applica il centro di default.
+enum CostCenterRule {
+  OBBLIGATORIO
+  DEFAULT_STR
 }

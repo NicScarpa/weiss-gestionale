@@ -68,7 +68,30 @@ DECLARE
         'clock_reminder_recipients',
         'communications',
         'communication_reads',
-        'users'
+        'users',
+        'audit_logs',
+        'bank_accounts',
+        'cash_flow_alerts',
+        'cash_flow_forecast_lines',
+        'cash_flow_forecasts',
+        'cash_flow_scenarios',
+        'categorization_rules',
+        'certifications',
+        'customers',
+        'employee_documents',
+        'invitation_tokens',
+        'invoice_line_accounts',
+        'journal_entry_allocations',
+        'payments',
+        'recurrences',
+        'schedule_attachments',
+        'schedule_payments',
+        'schedule_reconciliations',
+        'schedule_reminders',
+        'schedule_rules',
+        'schedules',
+        'supplier_product_accounts',
+        'cost_centers'
     ];
 BEGIN
     FOREACH table_name IN ARRAY tables
