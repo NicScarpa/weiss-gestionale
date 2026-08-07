@@ -351,6 +351,10 @@ export function Sidebar() {
                           <Link
                             key={subItem.name}
                             href={subItem.href}
+                            // Come per la rail: la voce attiva del sottomenu si
+                            // distingueva solo dal colore di sfondo, che per uno
+                            // screen reader non esiste.
+                            aria-current={isSubActive ? 'page' : undefined}
                             className={cn(
                               "flex items-center gap-3 px-3 py-2 rounded-md font-medium transition-colors",
                               isSubActive

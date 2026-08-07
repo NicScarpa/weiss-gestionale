@@ -1,48 +1,58 @@
+import {
+  ConfidenceLevel,
+  FlowType,
+  ForecastStatus,
+  ForecastType,
+  CONFIDENCE_LABELS,
+  FORECAST_STATUS_LABELS,
+  FORECAST_TYPE_LABELS,
+} from '@/types/cash-flow'
+
 /**
- * Il vocabolario delle previsioni di cassa: i tipi che il database conosce e i
- * nomi con cui si mostrano.
+ * Quel poco che serve alle schermate delle previsioni oltre a `@/types/cash-flow`.
  *
- * Gli enum di Prisma arrivano al client come stringhe maiuscole («PESSIMISTICO»,
- * «ARCHIVIATA»): le tabelle qui sotto sono l'unico punto in cui diventano
- * parole da leggere.
+ * Gli enum e le loro etichette stanno lì e da lì si prendono: riscriverli qui
+ * significherebbe tenere allineati a mano due elenchi di stati, che è il modo in
+ * cui `formatCurrency` è finita definita quindici volte in questo progetto.
+ * Restano di competenza di questo file solo gli ordini in cui le voci compaiono
+ * nei menu — una scelta di interfaccia, non un dato del dominio — e la forma dei
+ * dati che le route restituiscono.
  */
 
-export const STATI_PREVISIONE = ['BOZZA', 'ATTIVA', 'ARCHIVIATA'] as const
-export type StatoPrevisione = (typeof STATI_PREVISIONE)[number]
+export {
+  ConfidenceLevel,
+  FlowType,
+  ForecastStatus,
+  ForecastType,
+  CONFIDENCE_LABELS,
+  FORECAST_STATUS_LABELS,
+  FORECAST_TYPE_LABELS,
+}
 
-export const TIPI_PREVISIONE = [
-  'BASE',
-  'OTTIMISTICO',
-  'PESSIMISTICO',
-  'PERSONALIZZATO',
+/** Gli stati nell'ordine in cui una previsione li attraversa. */
+export const STATI_PREVISIONE = [
+  ForecastStatus.BOZZA,
+  ForecastStatus.ATTIVA,
+  ForecastStatus.ARCHIVIATA,
 ] as const
-export type TipoPrevisione = (typeof TIPI_PREVISIONE)[number]
 
-export const NOME_STATO_PREVISIONE: Record<StatoPrevisione, string> = {
-  BOZZA: 'Bozza',
-  ATTIVA: 'Attiva',
-  ARCHIVIATA: 'Archiviata',
-}
+/** Gli scenari, dal più neutro ai più connotati. */
+export const TIPI_PREVISIONE = [
+  ForecastType.BASE,
+  ForecastType.OTTIMISTICO,
+  ForecastType.PESSIMISTICO,
+  ForecastType.PERSONALIZZATO,
+] as const
 
-export const NOME_TIPO_PREVISIONE: Record<TipoPrevisione, string> = {
-  BASE: 'Base',
-  OTTIMISTICO: 'Ottimistico',
-  PESSIMISTICO: 'Pessimistico',
-  PERSONALIZZATO: 'Personalizzato',
-}
+export const TIPI_RIGA = [FlowType.ENTRATA, FlowType.USCITA] as const
 
-export const TIPI_RIGA = ['ENTRATA', 'USCITA'] as const
-export type TipoRiga = (typeof TIPI_RIGA)[number]
-
-export const CONFIDENZE = ['CERTA', 'ALTA', 'MEDIA', 'BASSA'] as const
-export type Confidenza = (typeof CONFIDENZE)[number]
-
-export const NOME_CONFIDENZA: Record<Confidenza, string> = {
-  CERTA: 'Certa',
-  ALTA: 'Alta',
-  MEDIA: 'Media',
-  BASSA: 'Bassa',
-}
+/** Dalla più sicura alla più incerta. */
+export const CONFIDENZE = [
+  ConfidenceLevel.CERTA,
+  ConfidenceLevel.ALTA,
+  ConfidenceLevel.MEDIA,
+  ConfidenceLevel.BASSA,
+] as const
 
 export interface Previsione {
   id: string
@@ -51,19 +61,19 @@ export interface Previsione {
   dataInizio: string
   dataFine: string
   saldoIniziale: string | number
-  stato: StatoPrevisione
-  tipo: TipoPrevisione
+  stato: ForecastStatus
+  tipo: ForecastType
   _count?: { lines: number; alerts: number }
 }
 
 export interface RigaPrevisione {
   id: string
   data: string
-  tipo: TipoRiga
+  tipo: FlowType
   importo: string | number
   categoria?: string | null
   descrizione?: string | null
-  confidenza: Confidenza
+  confidenza: ConfidenceLevel
   saldoProgressivo: number
 }
 

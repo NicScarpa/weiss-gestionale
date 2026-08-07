@@ -22,10 +22,10 @@ import {
 } from '@/components/ui/select'
 import { formatCurrency } from '@/lib/constants'
 import {
-  NOME_TIPO_PREVISIONE,
+  FORECAST_TYPE_LABELS,
+  ForecastType,
   TIPI_PREVISIONE,
   type Previsione,
-  type TipoPrevisione,
 } from './previsioni'
 
 export interface DatiPrevisione {
@@ -34,7 +34,7 @@ export interface DatiPrevisione {
   dataInizio: string
   dataFine: string
   saldoIniziale?: number
-  tipo: TipoPrevisione
+  tipo: ForecastType
 }
 
 interface ForecastDialogProps {
@@ -73,7 +73,7 @@ export function ForecastDialog({
   const [dataInizio, setDataInizio] = useState('')
   const [dataFine, setDataFine] = useState('')
   const [saldoIniziale, setSaldoIniziale] = useState('')
-  const [tipo, setTipo] = useState<TipoPrevisione>('BASE')
+  const [tipo, setTipo] = useState<ForecastType>(ForecastType.BASE)
   const [errore, setErrore] = useState<string | null>(null)
   const [inCorso, setInCorso] = useState(false)
 
@@ -85,7 +85,7 @@ export function ForecastDialog({
     setDataInizio(giornoCivile(previsione?.dataInizio) || predefinito.inizio)
     setDataFine(giornoCivile(previsione?.dataFine) || predefinito.fine)
     setSaldoIniziale(previsione ? String(Number(previsione.saldoIniziale)) : '')
-    setTipo(previsione?.tipo ?? 'BASE')
+    setTipo(previsione?.tipo ?? ForecastType.BASE)
     setErrore(null)
   }, [open, previsione])
 
@@ -177,14 +177,14 @@ export function ForecastDialog({
 
           <div className="space-y-2">
             <Label htmlFor="tipo">Scenario</Label>
-            <Select value={tipo} onValueChange={(v) => setTipo(v as TipoPrevisione)}>
+            <Select value={tipo} onValueChange={(v) => setTipo(v as ForecastType)}>
               <SelectTrigger id="tipo">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {TIPI_PREVISIONE.map((t) => (
                   <SelectItem key={t} value={t}>
-                    {NOME_TIPO_PREVISIONE[t]}
+                    {FORECAST_TYPE_LABELS[t]}
                   </SelectItem>
                 ))}
               </SelectContent>

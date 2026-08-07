@@ -29,12 +29,12 @@ import { ChevronDown, ChevronRight, LineChart, Pencil, Plus, Trash2 } from 'luci
 import { ForecastDialog, type DatiPrevisione } from './ForecastDialog'
 import { ForecastDetail } from './ForecastDetail'
 import {
-  NOME_STATO_PREVISIONE,
-  NOME_TIPO_PREVISIONE,
+  FORECAST_STATUS_LABELS,
+  FORECAST_TYPE_LABELS,
+  ForecastStatus,
   STATI_PREVISIONE,
   giornoItaliano,
   type Previsione,
-  type StatoPrevisione,
 } from './previsioni'
 
 /**
@@ -51,10 +51,10 @@ interface ForecastSectionProps {
   saldoAttuale?: number
 }
 
-const COLORE_STATO: Record<StatoPrevisione, string> = {
-  BOZZA: 'bg-slate-100 text-slate-700',
-  ATTIVA: 'bg-green-100 text-green-700',
-  ARCHIVIATA: 'bg-amber-100 text-amber-700',
+const COLORE_STATO: Record<ForecastStatus, string> = {
+  [ForecastStatus.BOZZA]: 'bg-slate-100 text-slate-700',
+  [ForecastStatus.ATTIVA]: 'bg-green-100 text-green-700',
+  [ForecastStatus.ARCHIVIATA]: 'bg-amber-100 text-amber-700',
 }
 
 async function chiedi(url: string, method: string, body?: unknown) {
@@ -104,7 +104,7 @@ export function ForecastSection({ saldoAttuale }: ForecastSectionProps) {
   })
 
   const cambiaStato = useMutation({
-    mutationFn: ({ id, stato }: { id: string; stato: StatoPrevisione }) =>
+    mutationFn: ({ id, stato }: { id: string; stato: ForecastStatus }) =>
       chiedi(`/api/cashflow/forecasts/${id}`, 'PATCH', { stato }),
     onSuccess: () => {
       toast.success('Stato aggiornato')
@@ -182,9 +182,9 @@ export function ForecastSection({ saldoAttuale }: ForecastSectionProps) {
                       <span className="flex flex-wrap items-center gap-2">
                         <span className="font-medium break-words">{previsione.nome}</span>
                         <Badge className={COLORE_STATO[previsione.stato]} variant="secondary">
-                          {NOME_STATO_PREVISIONE[previsione.stato]}
+                          {FORECAST_STATUS_LABELS[previsione.stato]}
                         </Badge>
-                        <Badge variant="outline">{NOME_TIPO_PREVISIONE[previsione.tipo]}</Badge>
+                        <Badge variant="outline">{FORECAST_TYPE_LABELS[previsione.tipo]}</Badge>
                       </span>
                       <span className="mt-1 block text-sm text-muted-foreground">
                         {giornoItaliano(previsione.dataInizio)} –{' '}
@@ -199,7 +199,7 @@ export function ForecastSection({ saldoAttuale }: ForecastSectionProps) {
                     <Select
                       value={previsione.stato}
                       onValueChange={(stato) =>
-                        cambiaStato.mutate({ id: previsione.id, stato: stato as StatoPrevisione })
+                        cambiaStato.mutate({ id: previsione.id, stato: stato as ForecastStatus })
                       }
                     >
                       <SelectTrigger
@@ -211,7 +211,7 @@ export function ForecastSection({ saldoAttuale }: ForecastSectionProps) {
                       <SelectContent>
                         {STATI_PREVISIONE.map((stato) => (
                           <SelectItem key={stato} value={stato}>
-                            {NOME_STATO_PREVISIONE[stato]}
+                            {FORECAST_STATUS_LABELS[stato]}
                           </SelectItem>
                         ))}
                       </SelectContent>

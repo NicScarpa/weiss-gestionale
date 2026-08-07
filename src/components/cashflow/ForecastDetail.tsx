@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Select,
@@ -18,14 +17,15 @@ import {
 } from '@/components/ui/select'
 import { formatCurrency } from '@/lib/constants'
 import { Plus, Trash2 } from 'lucide-react'
+import { ConfidenceBadge } from './ConfidenceBadge'
 import {
   CONFIDENZE,
-  NOME_CONFIDENZA,
+  CONFIDENCE_LABELS,
+  ConfidenceLevel,
+  FlowType,
   TIPI_RIGA,
   giornoItaliano,
-  type Confidenza,
   type DettaglioPrevisione,
-  type TipoRiga,
 } from './previsioni'
 
 /**
@@ -49,10 +49,10 @@ async function leggiDettaglio(id: string): Promise<DettaglioPrevisione> {
 export function ForecastDetail({ forecastId }: ForecastDetailProps) {
   const queryClient = useQueryClient()
   const [data, setData] = useState('')
-  const [tipo, setTipo] = useState<TipoRiga>('USCITA')
+  const [tipo, setTipo] = useState<FlowType>(FlowType.USCITA)
   const [importo, setImporto] = useState('')
   const [descrizione, setDescrizione] = useState('')
-  const [confidenza, setConfidenza] = useState<Confidenza>('MEDIA')
+  const [confidenza, setConfidenza] = useState<ConfidenceLevel>(ConfidenceLevel.MEDIA)
 
   const { data: dettaglio, isLoading } = useQuery({
     queryKey: ['cashflow', 'forecast', forecastId],
@@ -174,14 +174,14 @@ export function ForecastDetail({ forecastId }: ForecastDetailProps) {
                 <Label htmlFor={`tipo-${forecastId}`} className="text-xs">
                   Tipo
                 </Label>
-                <Select value={tipo} onValueChange={(v) => setTipo(v as TipoRiga)}>
+                <Select value={tipo} onValueChange={(v) => setTipo(v as FlowType)}>
                   <SelectTrigger id={`tipo-${forecastId}`}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {TIPI_RIGA.map((t) => (
                       <SelectItem key={t} value={t}>
-                        {t === 'ENTRATA' ? 'Entrata' : 'Uscita'}
+                        {t === FlowType.ENTRATA ? 'Entrata' : 'Uscita'}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -215,14 +215,14 @@ export function ForecastDetail({ forecastId }: ForecastDetailProps) {
                 <Label htmlFor={`confidenza-${forecastId}`} className="text-xs">
                   Confidenza
                 </Label>
-                <Select value={confidenza} onValueChange={(v) => setConfidenza(v as Confidenza)}>
+                <Select value={confidenza} onValueChange={(v) => setConfidenza(v as ConfidenceLevel)}>
                   <SelectTrigger id={`confidenza-${forecastId}`}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {CONFIDENZE.map((c) => (
                       <SelectItem key={c} value={c}>
-                        {NOME_CONFIDENZA[c]}
+                        {CONFIDENCE_LABELS[c]}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -251,10 +251,8 @@ export function ForecastDetail({ forecastId }: ForecastDetailProps) {
                     {giornoItaliano(riga.data)}
                   </span>
                   <span className="break-words">{riga.descrizione || '—'}</span>
-                  {riga.confidenza !== 'CERTA' && (
-                    <Badge variant="outline" className="text-xs">
-                      {NOME_CONFIDENZA[riga.confidenza].toLowerCase()}
-                    </Badge>
+                  {riga.confidenza !== ConfidenceLevel.CERTA && (
+                    <ConfidenceBadge level={riga.confidenza} />
                   )}
                 </div>
                 <p className="mt-0.5 text-xs text-muted-foreground">
@@ -264,10 +262,10 @@ export function ForecastDetail({ forecastId }: ForecastDetailProps) {
               <div className="flex items-center gap-2">
                 <span
                   className={`font-mono text-sm font-semibold ${
-                    riga.tipo === 'ENTRATA' ? 'text-green-600' : 'text-red-600'
+                    riga.tipo === FlowType.ENTRATA ? 'text-green-600' : 'text-red-600'
                   }`}
                 >
-                  {riga.tipo === 'ENTRATA' ? '+' : '-'}
+                  {riga.tipo === FlowType.ENTRATA ? '+' : '-'}
                   {formatCurrency(Number(riga.importo))}
                 </span>
                 <Button

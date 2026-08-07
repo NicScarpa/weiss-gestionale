@@ -269,6 +269,47 @@ describe('CRUD previsioni di cassa', () => {
     expect(await prisma.cashFlowForecastLine.count()).toBe(0)
   })
 
+  // Le route delle righe lavoravano sul solo `lineId`: bastava conoscerlo per
+  // agire su una riga appartenente a un'altra previsione.
+  it("non elimina una riga passando l'identificativo di un'altra previsione", async () => {
+    await loginAs('admin')
+    const mia = await creaPrevisione({ nome: 'Mia' })
+    const altrui = await creaPrevisione({ nome: 'Altrui' })
+
+    const riga = await callRoute<{ id: string }>(
+      createLine,
+      jsonRequest(`/api/cashflow/forecasts/${altrui.id}/lines`, {
+        method: 'POST',
+        body: { data: '2026-09-10', tipo: 'USCITA', importo: 500 },
+      }),
+      { id: altrui.id }
+    )
+
+    const risposta = await callRoute(
+      deleteLine,
+      jsonRequest(`/api/cashflow/forecasts/${mia.id}/lines/${riga.body.id}`, { method: 'DELETE' }),
+      { id: mia.id, lineId: riga.body.id }
+    )
+
+    expect(risposta.status).toBe(404)
+    expect(await prisma.cashFlowForecastLine.count()).toBe(1)
+  })
+
+  it('eliminare una riga inesistente risponde 404, non 500', async () => {
+    await loginAs('admin')
+    const previsione = await creaPrevisione()
+
+    const risposta = await callRoute(
+      deleteLine,
+      jsonRequest(`/api/cashflow/forecasts/${previsione.id}/lines/inesistente`, {
+        method: 'DELETE',
+      }),
+      { id: previsione.id, lineId: 'inesistente' }
+    )
+
+    expect(risposta.status).toBe(404)
+  })
+
   it('senza sessione risponde 401', async () => {
     const risposta = await callRoute(listForecasts, jsonRequest('/api/cashflow/forecasts'))
 

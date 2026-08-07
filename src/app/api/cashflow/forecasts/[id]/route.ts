@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { getVenueId } from '@/lib/venue'
-import { ForecastStatus, Prisma } from '@prisma/client'
+import { ForecastStatus, ForecastType, Prisma } from '@prisma/client'
 
 // GET /api/cashflow/forecasts/[id] - Dettaglio forecast
 export async function GET(
@@ -129,20 +129,20 @@ export async function PATCH(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    // Campi aggiornabili
-    const updatable = [
-      'nome', 'descrizione', 'dataInizio', 'dataFine', 'saldoIniziale', 'stato', 'tipo',
-    ]
+    // Campi aggiornabili, uno per uno. La versione precedente ciclava su un
+    // elenco di nomi e assegnava `data[field] = body[field]`: comoda da
+    // scrivere, ma il tipo di ogni campo si perdeva per strada (`any`), e con
+    // esso il controllo su cosa arriva davvero dal client.
     const data: Prisma.CashFlowForecastUpdateInput = {}
-    for (const field of updatable) {
-      if (body[field] !== undefined) {
-        if (field === 'dataInizio' || field === 'dataFine') {
-          data[field] = new Date(body[field])
-        } else {
-          data[field] = body[field]
-        }
-      }
+    if (body.nome !== undefined) data.nome = String(body.nome)
+    if (body.descrizione !== undefined) {
+      data.descrizione = body.descrizione === null ? null : String(body.descrizione)
     }
+    if (body.dataInizio !== undefined) data.dataInizio = new Date(body.dataInizio)
+    if (body.dataFine !== undefined) data.dataFine = new Date(body.dataFine)
+    if (body.saldoIniziale !== undefined) data.saldoIniziale = Number(body.saldoIniziale)
+    if (body.stato !== undefined) data.stato = body.stato as ForecastStatus
+    if (body.tipo !== undefined) data.tipo = body.tipo as ForecastType
 
     const forecast = await prisma.cashFlowForecast.update({
       where: { id },

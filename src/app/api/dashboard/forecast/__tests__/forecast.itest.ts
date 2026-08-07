@@ -8,6 +8,7 @@ import { jsonRequest, callRoute } from '@/test/integration/api'
 import { venueDiTest } from '@/test/integration/fixtures/closures'
 import { GET as getForecast } from '../route'
 import { GET as getSummary } from '@/app/api/cashflow/summary/route'
+import { GET as getSaldiPrimaNota } from '@/app/api/prima-nota/saldi/route'
 
 /**
  * La previsione di cassa a trenta giorni, quella che alimenta il pannello
@@ -68,7 +69,82 @@ async function saldoDelleCard(): Promise<number> {
   return risposta.body.saldoAttuale
 }
 
+/** Il saldo della prima nota: la risposta di riferimento a «quanti soldi abbiamo». */
+async function saldoDellaPrimaNota(): Promise<{ cash: number; bank: number; total: number }> {
+  const risposta = await callRoute<{
+    data: Array<{ cashBalance: number; bankBalance: number; totalAvailable: number }>
+  }>(getSaldiPrimaNota, jsonRequest('/api/prima-nota/saldi'))
+  expect(risposta.status).toBe(200)
+  const saldi = risposta.body.data[0]
+  return { cash: saldi.cashBalance, bank: saldi.bankBalance, total: saldi.totalAvailable }
+}
+
+/**
+ * Il dataset di una prima nota vera: un anno già chiuso alle spalle, il saldo
+ * iniziale dell'anno in corso che lo riassume, un movimento nascosto e una
+ * scadenza registrata al giorno futuro in cui il denaro uscirà.
+ *
+ * È su questa forma che il vecchio conteggio divergeva, e di parecchio: al
+ * saldo iniziale del 2026 sommava anche i movimenti del 2025 — già compresi in
+ * quel saldo, quindi contati due volte — più i nascosti, e sottraeva già oggi
+ * le uscite datate domani.
+ */
+async function primaNotaRealistica(venueId: string) {
+  const anno = Number(OGGI.slice(0, 4))
+
+  await prisma.initialBalance.create({
+    data: { venueId, year: anno, cashBalance: 2000, bankBalance: 18000 },
+  })
+
+  for (const importo of [12000, 9500, 7300]) {
+    await prisma.journalEntry.create({
+      data: {
+        venueId,
+        date: toDateOnlyUtc(`${anno - 1}-06-15`),
+        registerType: 'BANK',
+        description: 'Incasso anno precedente',
+        debitAmount: importo,
+      },
+    })
+  }
+
+  await movimento(venueId, { giorniFa: 20, entrata: 4200 })
+  await movimento(venueId, { giorniFa: 12, uscita: 1600 })
+  await movimento(venueId, { giorniFa: 6, entrata: 3100, nascosto: true })
+  await movimento(venueId, { giorniFa: -15, uscita: 5400 })
+}
+
 describe('GET /api/dashboard/forecast', () => {
+  // Tre route, una sola risposta alla domanda «quanti soldi abbiamo». Prima del
+  // fix questa era l'unica a dare un numero diverso dalle altre due: 49.100 €
+  // contro i 22.600 € reali, cioè 26.500 € di troppo.
+  it('parte dallo stesso saldo di /api/prima-nota/saldi su una prima nota realistica', async () => {
+    await loginAs('admin')
+    const venue = await venueDiTest()
+    await primaNotaRealistica(venue.id)
+
+    const dati = await previsione()
+    const primaNota = await saldoDellaPrimaNota()
+
+    // 20.000 di apertura + 4.200 − 1.600: né il 2025, né il nascosto, né la
+    // scadenza del mese prossimo.
+    expect(dati.currentBalance.total).toBe(22600)
+    expect(dati.currentBalance.total).toBe(primaNota.total)
+    expect(dati.currentBalance.total).toBe(await saldoDelleCard())
+  })
+
+  it('cassa e banca coincidono voce per voce, non solo nel totale', async () => {
+    await loginAs('admin')
+    const venue = await venueDiTest()
+    await primaNotaRealistica(venue.id)
+
+    const dati = await previsione()
+    const primaNota = await saldoDellaPrimaNota()
+
+    expect(dati.currentBalance.cash).toBe(primaNota.cash)
+    expect(dati.currentBalance.bank).toBe(primaNota.bank)
+  })
+
   it('parte dallo stesso saldo che mostrano le card del cash flow', async () => {
     await loginAs('admin')
     const venue = await venueDiTest()
