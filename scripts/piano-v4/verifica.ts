@@ -3,17 +3,27 @@
  *
  * Script di sola lettura, pensato per essere rieseguito in più momenti:
  * dopo il seed di sviluppo (che replica lo stato finale con le 155 voci) e
- * dopo i rollout in produzione dello script 01 e della futura migrazione di
- * FASE 3. Esce con codice diverso da zero se una delle attese non è
- * soddisfatta, per poter essere usato in pipeline/CI.
+ * dopo i rollout in produzione dello script 01 e della migrazione di FASE 3.
+ * Esce con codice diverso da zero se una delle attese non è soddisfatta, per
+ * poter essere usato in pipeline/CI.
  *
- * Uso: npx tsx scripts/piano-v4/verifica.ts
+ * Alcune attese valgono solo DOPO la migrazione (script 03) e vengono
+ * segnalate come avvisi finché il passo successivo non è stato fatto: il
+ * `cost_center_id` NOT NULL sui movimenti, per esempio, è un follow-up del
+ * DDL. Con `--rigoroso` anche gli avvisi diventano errori: è la forma da
+ * usare per dire "la migrazione è finita davvero".
+ *
+ * Uso:
+ *   npx tsx scripts/piano-v4/verifica.ts
+ *   npx tsx scripts/piano-v4/verifica.ts --rigoroso
  */
 import { PrismaClient } from '@prisma/client'
 import 'dotenv/config'
 
 import { PrismaPg } from '@prisma/adapter-pg'
 import { Pool } from 'pg'
+
+import { descriviDatabase } from './_comune'
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL })
 const adapter = new PrismaPg(pool)
@@ -23,10 +33,15 @@ const VOCI_ATTESE = 155
 const CENTRI_ATTESI = 4
 const SYSTEM_KEYS_ATTESE = ['CASSA', 'BANCA', 'DEBITI_FORNITORI']
 const PERMESSO_ATTESO = 'journal.edit-closure'
+const VOCE_CORRISPETTIVI = '10.01'
+
+const rigoroso = process.argv.includes('--rigoroso')
 
 async function main() {
   console.log('🔎 Verifica piano dei conti v4 + centri di costo')
+  console.log(`   database: ${descriviDatabase()}${rigoroso ? ' — modalità rigorosa' : ''}`)
   let ok = true
+  let avvisi = 0
 
   // ==================== VOCI PIANO V4 ====================
   // Solo le voci del piano v4 hanno mastroCode valorizzato: i conti
@@ -95,8 +110,68 @@ async function main() {
     }
   }
 
-  if (ok) {
+  // ==================== CONTO DI SISTEMA CORRISPETTIVI ====================
+  // Assegnata dalla migrazione di FASE 3 alla voce 10.01: da lì le chiusure
+  // di cassa nascono imputate ai ricavi.
+  const corrispettivi = await prisma.account.findUnique({
+    where: { systemKey: 'CORRISPETTIVI' },
+    select: { code: true, isActive: true },
+  })
+  if (!corrispettivi) {
+    console.error(`  ❌ systemKey CORRISPETTIVI non trovata (attesa sulla voce ${VOCE_CORRISPETTIVI})`)
+    ok = false
+  } else if (corrispettivi.code !== VOCE_CORRISPETTIVI) {
+    console.error(
+      `  ❌ systemKey CORRISPETTIVI sul conto ${corrispettivi.code}, attesa su ${VOCE_CORRISPETTIVI}`
+    )
+    ok = false
+  } else if (!corrispettivi.isActive) {
+    console.error(`  ❌ la voce ${VOCE_CORRISPETTIVI} (CORRISPETTIVI) è disattivata`)
+    ok = false
+  } else {
+    console.log(`  ✓ systemKey CORRISPETTIVI → conto ${corrispettivi.code}`)
+  }
+
+  // ==================== CONTI LEGACY ====================
+  // Il piano vecchio non si cancella, si spegne: dopo la migrazione nessun
+  // conto economico fuori dal piano v4 deve restare selezionabile. Su un
+  // database appena seminato di conti legacy non ce ne sono affatto, e va
+  // bene lo stesso.
+  const legacy = await prisma.account.findMany({
+    where: { mastroCode: null, type: { in: ['RICAVO', 'COSTO'] } },
+    select: { code: true, isActive: true },
+    orderBy: { code: 'asc' },
+  })
+  const legacyAttivi = legacy.filter((l) => l.isActive)
+  if (legacyAttivi.length === 0) {
+    console.log(`  ✓ conti legacy RICAVO/COSTO attivi: 0 (${legacy.length} disattivati in archivio)`)
+  } else {
+    console.error(
+      `  ❌ conti legacy RICAVO/COSTO ancora attivi: ${legacyAttivi.length} (${legacyAttivi.map((l) => l.code).join(', ')})`
+    )
+    ok = false
+  }
+
+  // ==================== CENTRO SUI MOVIMENTI ====================
+  // Atteso zero solo dopo il follow-up che porta cost_center_id a NOT NULL:
+  // finché quello non c'è, è un avviso.
+  const senzaCentro = await prisma.journalEntry.count({ where: { costCenterId: null } })
+  if (senzaCentro === 0) {
+    console.log('  ✓ movimenti senza centro di costo: 0')
+  } else if (rigoroso) {
+    console.error(`  ❌ movimenti senza centro di costo: ${senzaCentro}`)
+    ok = false
+  } else {
+    console.warn(
+      `  ⚠️  movimenti senza centro di costo: ${senzaCentro} (atteso 0 dopo il follow-up NOT NULL su journal_entries.cost_center_id)`
+    )
+    avvisi++
+  }
+
+  if (ok && avvisi === 0) {
     console.log('✅ Tutte le verifiche superate')
+  } else if (ok) {
+    console.log(`✅ Verifiche superate con ${avvisi} avviso/i (usare --rigoroso per trattarli come errori)`)
   } else {
     console.error('❌ Una o più verifiche fallite')
     process.exitCode = 1
