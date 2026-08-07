@@ -211,32 +211,66 @@ export function Sidebar() {
               const isHovered = hoveredItem === item.name
               const showBadge = item.name === 'Scadenzario' && scaduteCount > 0
 
+              // Il tooltip Radix descrive il controllo ma non lo nomina: senza
+              // aria-label la rail è una fila di link vuoti per screen reader
+              const label = showBadge
+                ? `${item.name}, ${scaduteCount} scadute`
+                : item.name
+
+              const railClass = cn(
+                "w-full aspect-square flex items-center justify-center rounded-lg transition-all relative group",
+                isActive || isHovered
+                  ? "bg-slate-800 text-white"
+                  : "text-slate-400 hover:bg-slate-800 hover:text-white"
+              )
+
+              const railContent = (
+                <>
+                  <item.icon aria-hidden="true" className="h-5 w-5" />
+                  {showBadge && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white"
+                    >
+                      {scaduteCount > 99 ? '99+' : scaduteCount}
+                    </span>
+                  )}
+                  {(isActive || isHovered) && (
+                    <motion.div
+                      layoutId="activeIndicator"
+                      className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-white rounded-r-full"
+                    />
+                  )}
+                </>
+              )
+
               return (
                 <Tooltip key={item.name}>
                   <TooltipTrigger asChild>
-                    <Link
-                      href={item.href || '#'}
-                      onMouseEnter={() => setHoveredItem(item.name)}
-                      className={cn(
-                        "w-full aspect-square flex items-center justify-center rounded-lg transition-all relative group",
-                        isActive || isHovered
-                          ? "bg-slate-800 text-white"
-                          : "text-slate-400 hover:bg-slate-800 hover:text-white"
-                      )}
-                    >
-                      <item.icon className="h-5 w-5" />
-                      {showBadge && (
-                        <span className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
-                          {scaduteCount > 99 ? '99+' : scaduteCount}
-                        </span>
-                      )}
-                      {(isActive || isHovered) && (
-                        <motion.div
-                          layoutId="activeIndicator"
-                          className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-white rounded-r-full"
-                        />
-                      )}
-                    </Link>
+                    {item.href ? (
+                      <Link
+                        href={item.href}
+                        aria-label={label}
+                        aria-current={isActive ? 'page' : undefined}
+                        onMouseEnter={() => setHoveredItem(item.name)}
+                        className={railClass}
+                      >
+                        {railContent}
+                      </Link>
+                    ) : (
+                      // Voci senza pagina propria (Personale): un link a "#" non
+                      // porta da nessuna parte, servono ad aprire il sottomenu
+                      <button
+                        type="button"
+                        aria-label={label}
+                        aria-expanded={isHovered}
+                        onMouseEnter={() => setHoveredItem(item.name)}
+                        onClick={() => setHoveredItem(item.name)}
+                        className={railClass}
+                      >
+                        {railContent}
+                      </button>
+                    )}
                   </TooltipTrigger>
                   <TooltipContent side="right" sideOffset={10} className="bg-slate-900 border-slate-800 text-white">
                     {item.name}
@@ -257,6 +291,8 @@ export function Sidebar() {
                   <TooltipTrigger asChild>
                     <Link
                       href={item.href || '#'}
+                      aria-label={item.name}
+                      aria-current={isActive ? 'page' : undefined}
                       onMouseEnter={() => setHoveredItem(item.name)}
                       className={cn(
                         "w-full aspect-square flex items-center justify-center rounded-lg transition-all relative group",
@@ -265,7 +301,7 @@ export function Sidebar() {
                           : "text-slate-400 hover:bg-slate-800 hover:text-white"
                       )}
                     >
-                      <item.icon className="h-5 w-5" />
+                      <item.icon aria-hidden="true" className="h-5 w-5" />
                       {(isActive || isHovered) && (
                         <motion.div
                           layoutId="activeIndicator"
