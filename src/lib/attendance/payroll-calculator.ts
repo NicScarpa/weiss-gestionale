@@ -8,7 +8,7 @@
 import { prisma } from '@/lib/prisma'
 import { Prisma, PunchType, LeaveStatus } from '@prisma/client'
 import { computeRecognizedDay } from './timekeeping-engine'
-import type { DayPunch, PolicyRules } from './timekeeping-types'
+import type { DayPunch, PolicyRules, ShiftReview } from './timekeeping-types'
 import {
   loadPolicyResolutionContext,
   neutralPolicy,
@@ -108,6 +108,8 @@ export interface PayrollRecord {
   workLocationName: string | null
   /** Regola oraria applicata: senza questo nome i numeri sono inspiegabili. */
   policyName: string | null
+  /** Minuti oltre il turno sospesi in attesa di revisione: né pagati né persi. */
+  pendingReviewMinutes: number
 }
 
 export interface PayrollSummary {
@@ -123,6 +125,8 @@ export interface PayrollSummary {
   totalLeaveDays: number
   leaveSummary: Record<string, number> // FE: 2, MA: 1, etc.
   estimatedCost: number
+  /** Minuti del mese in attesa di revisione: finché non sono zero, niente export. */
+  totalPendingReviewMinutes: number
 }
 
 interface AttendanceRecordData {
@@ -142,11 +146,13 @@ function calculateHoursFromPunches(
   records: AttendanceRecordData[],
   workdayKey: string,
   rules: PolicyRules,
-  shiftWindows?: { startMinutes: number; endMinutes: number }[]
+  shiftWindows?: { startMinutes: number; endMinutes: number }[],
+  shiftReview?: ShiftReview
 ): {
   hours: DailyHours
   clockInMinutes: number | null
   clockOutMinutes: number | null
+  pendingReviewMinutes: number
 } {
   const punches: DayPunch[] = records.map((record) => ({
     type: record.punchType as DayPunch['type'],
@@ -166,6 +172,7 @@ function calculateHoursFromPunches(
     isHoliday: isItalianHoliday(workdayKey),
     dstShiftMinutes,
     shiftWindows,
+    shiftReview,
   })
 
   return {
@@ -179,7 +186,40 @@ function calculateHoursFromPunches(
     },
     clockInMinutes: day.clockIn,
     clockOutMinutes: day.clockOut,
+    pendingReviewMinutes: day.pendingReviewMinutes,
   }
+}
+
+/** Tipi di anomalia la cui decisione entra nel calcolo delle ore. */
+const REVIEW_ANOMALY_TYPES = ['EARLY_CLOCK_IN', 'OVERTIME'] as const
+
+/**
+ * Le decisioni del revisore per un giorno, dalle anomalie di quel giorno.
+ * Finché una è PENDING la decisione non c'è: il motore tiene le ore sospese.
+ * Fra più anomalie decise dello stesso tipo prevale il rifiuto: meglio non
+ * pagare ore da confermare che pagare ore rifiutate.
+ */
+function reviewFromAnomalies(
+  anomalies: { anomalyType: string; status: string }[]
+): ShiftReview {
+  const review: ShiftReview = {}
+
+  for (const [tipo, campo] of [
+    ['EARLY_CLOCK_IN', 'earlyIn'],
+    ['OVERTIME', 'overtime'],
+  ] as const) {
+    const delTipo = anomalies.filter((a) => a.anomalyType === tipo)
+    if (delTipo.length === 0 || delTipo.some((a) => a.status === 'PENDING')) {
+      continue
+    }
+    if (delTipo.some((a) => a.status === 'REJECTED')) {
+      review[campo] = 'REJECTED'
+    } else if (delTipo.some((a) => a.status === 'APPROVED')) {
+      review[campo] = 'APPROVED'
+    }
+  }
+
+  return review
 }
 
 /**
@@ -340,22 +380,33 @@ export async function generatePayrollData(
     },
   })
 
-  // Carica anomalie non risolte
-  const unresolvedAnomalies = await prisma.attendanceAnomaly.findMany({
+  // Anomalie del mese: le PENDING finiscono nelle note e negli avvisi; per
+  // anticipo e straordinario contano anche quelle decise, perché la decisione
+  // del revisore entra nel calcolo delle ore (le sospese si pagano solo se
+  // approvate, il rifiuto taglia la giornata al turno).
+  const monthAnomalies = await prisma.attendanceAnomaly.findMany({
     where: {
       date: {
         gte: firstDay,
         lte: lastDay,
       },
-      status: 'PENDING',
+      OR: [
+        { status: 'PENDING' },
+        {
+          anomalyType: { in: [...REVIEW_ANOMALY_TYPES] },
+          status: { in: ['APPROVED', 'REJECTED'] },
+        },
+      ],
       ...(venueId && { venueId }),
     },
     select: {
       userId: true,
       date: true,
       anomalyType: true,
+      status: true,
     },
   })
+  const unresolvedAnomalies = monthAnomalies.filter((a) => a.status === 'PENDING')
 
   // Organizza le timbrature per utente e giornata lavorativa. Non per giorno
   // civile: un turno che finisce dopo la mezzanotte appartiene per intero al
@@ -406,6 +457,24 @@ export async function generatePayrollData(
     anomaliesByUserDay.get(key)!.push(anomaly.anomalyType)
   })
 
+  // Decisioni del revisore per utente e giorno, da passare al motore.
+  const reviewAnomaliesByUserDay = new Map<
+    string,
+    { anomalyType: string; status: string }[]
+  >()
+  monthAnomalies.forEach((anomaly) => {
+    if (!(REVIEW_ANOMALY_TYPES as readonly string[]).includes(anomaly.anomalyType)) {
+      return
+    }
+    const key = `${anomaly.userId}_${anomaly.date.toISOString().slice(0, 10)}`
+    const lista = reviewAnomaliesByUserDay.get(key)
+    if (lista) {
+      lista.push(anomaly)
+    } else {
+      reviewAnomaliesByUserDay.set(key, [anomaly])
+    }
+  })
+
   // Genera record giornalieri
   const records: PayrollRecord[] = []
   const summariesMap = new Map<string, PayrollSummary>()
@@ -428,6 +497,7 @@ export async function generatePayrollData(
       totalLeaveDays: 0,
       leaveSummary: {},
       estimatedCost: 0,
+      totalPendingReviewMinutes: 0,
     })
 
     // Regole in vigore per questa persona: quelle del locale se ne impone una,
@@ -468,6 +538,7 @@ export async function generatePayrollData(
       } | null = null
       let workLocationName: string | null = null
       let policyName: string | null = null
+      let pendingReviewMinutes = 0
       if (leaveCode) {
         // Giorno di assenza
         hours = {
@@ -501,10 +572,21 @@ export async function generatePayrollData(
           punches,
           dateKey,
           regole.rules,
-          turniPerUtenteGiorno.get(key)
+          turniPerUtenteGiorno.get(key),
+          reviewFromAnomalies(reviewAnomaliesByUserDay.get(key) ?? [])
         )
         hours = risultato.hours
         riconosciuto = risultato
+        pendingReviewMinutes = risultato.pendingReviewMinutes
+
+        if (pendingReviewMinutes > 0) {
+          notes.push(`${pendingReviewMinutes} min oltre il turno in attesa di approvazione`)
+          warnings.push(
+            `${user.lastName} ${user.firstName}: ${pendingReviewMinutes} min oltre il ` +
+              `turno in attesa di approvazione il ` +
+              dateKey.split('-').reverse().join('/')
+          )
+        }
 
         // Aggiorna summary
         const summary = summariesMap.get(user.id)!
@@ -513,6 +595,7 @@ export async function generatePayrollData(
         summary.totalNight += hours.night
         summary.totalHoliday += hours.holiday
         summary.totalHours += hours.total
+        summary.totalPendingReviewMinutes += pendingReviewMinutes
       } else {
         // Nessuna timbratura e nessuna assenza
         hours = {
@@ -589,6 +672,7 @@ export async function generatePayrollData(
           : null,
         workLocationName,
         policyName,
+        pendingReviewMinutes,
       })
     })
 

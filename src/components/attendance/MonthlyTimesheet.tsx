@@ -60,6 +60,7 @@ interface MonthlyTimesheetData {
     total: number
     leaveDays: number
     leaveSummary: Record<string, number>
+    pendingReviewMinutes: number
   }
   contractHoursWeek: number | null
   policyNames: string[]
@@ -312,6 +313,20 @@ export function MonthlyTimesheet({ userId, showName = true }: MonthlyTimesheetPr
               </div>
             )}
           </div>
+
+          {data.totals.pendingReviewMinutes > 0 && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>
+                <span className="font-semibold">
+                  {formatHoursMinutes(data.totals.pendingReviewMinutes / 60)} oltre il
+                  turno in attesa di approvazione.
+                </span>{' '}
+                Non sono contate nei totali: finché le segnalazioni non vengono
+                approvate o rifiutate, il mese non si può esportare per le paghe.
+              </p>
+            </div>
+          )}
         </>
       )}
     </div>

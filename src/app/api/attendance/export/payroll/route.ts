@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
 import { getVenueId } from '@/lib/venue'
 import { z } from 'zod'
 import { format } from 'date-fns'
@@ -49,6 +50,44 @@ export async function GET(request: NextRequest) {
 
     // Filtra per sede
     const venueId = filters.venueId || await getVenueId()
+
+    // Le ore di anticipo e straordinario in attesa di revisione bloccano
+    // l'export: il mese non si consegna al consulente finché un revisore non
+    // ha deciso, altrimenti si pagherebbero (o perderebbero) ore mai confermate.
+    const firstDay = new Date(Date.UTC(filters.year, filters.month - 1, 1))
+    const lastDay = new Date(Date.UTC(filters.year, filters.month, 0))
+    const anomalieInAttesa = await prisma.attendanceAnomaly.findMany({
+      where: {
+        date: { gte: firstDay, lte: lastDay },
+        status: 'PENDING',
+        anomalyType: { in: ['EARLY_CLOCK_IN', 'OVERTIME'] },
+        ...(venueId && { venueId }),
+      },
+      select: {
+        date: true,
+        anomalyType: true,
+        user: { select: { firstName: true, lastName: true } },
+      },
+      orderBy: { date: 'asc' },
+    })
+
+    if (anomalieInAttesa.length > 0) {
+      const dettagli = anomalieInAttesa.map(
+        (a) =>
+          `${a.user.lastName} ${a.user.firstName} — ` +
+          `${a.date.toISOString().slice(0, 10).split('-').reverse().join('/')} ` +
+          `(${a.anomalyType === 'OVERTIME' ? 'ore oltre il turno' : 'anticipo sul turno'})`
+      )
+      return NextResponse.json(
+        {
+          error:
+            `Export bloccato: ${anomalieInAttesa.length} segnalazioni di ore in ` +
+            `attesa di revisione. Approvale o rifiutale dalle anomalie, poi riprova.`,
+          details: dettagli,
+        },
+        { status: 409 }
+      )
+    }
 
     // Genera dati payroll
     const { records, summaries, warnings } = await generatePayrollData(

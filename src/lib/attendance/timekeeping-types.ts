@@ -44,12 +44,28 @@ export interface PolicyRules {
   singlePunchMode: boolean
   /**
    * La giornata segue il turno pianificato (context.shiftWindows) invece
-   * della finestra fissa: l'anticipo non conta, il ritardo si arrotonda a
-   * blocchi dall'inizio del turno, le ore oltre la fine si contano ma vanno
-   * in revisione. Senza turno pianificato quel giorno, le ore sono quelle
-   * timbrate.
+   * della finestra fissa: l'anticipo entro la tolleranza non conta e oltre
+   * conta ma va in revisione, il ritardo si arrotonda a blocchi dall'inizio
+   * del turno, le ore oltre la fine restano sospese finché un revisore non
+   * decide (context.shiftReview), il buco del turno spezzato non si conta.
+   * Senza turno pianificato quel giorno, le ore sono quelle timbrate.
    */
   useShiftAsWindow: boolean
+}
+
+/** Esito della revisione umana su un'anomalia della giornata. */
+export type ReviewDecision = 'APPROVED' | 'REJECTED'
+
+/**
+ * Decisioni del revisore sulle anomalie del giorno, per le regole che
+ * seguono il turno. Assente = in attesa: l'anticipo conta comunque (l'ha
+ * chiesto il datore), le ore oltre la fine restano sospese.
+ */
+export interface ShiftReview {
+  /** Anomalia EARLY_CLOCK_IN: anticipo sull'inizio del turno. */
+  earlyIn?: ReviewDecision
+  /** Anomalia OVERTIME: ore oltre la fine del turno o fuori dal pianificato. */
+  overtime?: ReviewDecision
 }
 
 export interface DayPunch {
@@ -67,6 +83,8 @@ export interface DayContext {
    * Usati solo dalle regole con `useShiftAsWindow`.
    */
   shiftWindows?: { startMinutes: number; endMinutes: number }[]
+  /** Decisioni del revisore sulle anomalie del giorno (regole a turno). */
+  shiftReview?: ShiftReview
   /**
    * Scarto di fuso fra inizio e fine della giornata, in minuti: +60 nella notte
    * di fine marzo in cui l'orologio va avanti, -60 in quella di fine ottobre.
@@ -84,8 +102,14 @@ export type DayWarning =
   | 'PAUSA_PRANZO_NON_TIMBRATA'
   | 'FUORI_FINESTRA'
   | 'OLTRE_TETTO_GIORNALIERO'
-  /** Ore oltre la fine del turno pianificato: contate, ma da rivedere. */
+  /** Ore oltre la fine del turno pianificato: sospese in attesa di revisione. */
   | 'OLTRE_TURNO'
+  /** Anticipo sul turno oltre la tolleranza: contato, in attesa di revisione. */
+  | 'ANTICIPO_TURNO'
+  /** Buco del turno spezzato coperto dalle timbrature: non contato. */
+  | 'BUCO_TURNO'
+  /** Uscita ben prima della fine del turno: ore reali, ma da far vedere. */
+  | 'USCITA_ANTICIPATA'
 
 export interface RecognizedDay {
   /** Entrata riconosciuta, dopo flessibilità e arrotondamento. */
@@ -99,6 +123,12 @@ export interface RecognizedDay {
   breakMinutes: number
   /** Minuti tagliati dal tetto giornaliero. */
   cappedMinutes: number
+  /**
+   * Minuti oltre il turno pianificato sospesi in attesa di revisione: non
+   * contati né buttati. Finché non tornano a zero, il mese del dipendente
+   * non si può esportare per le paghe.
+   */
+  pendingReviewMinutes: number
   /** Passaggi del calcolo in italiano, per il calcolatore di prova. */
   steps: string[]
   warnings: DayWarning[]
