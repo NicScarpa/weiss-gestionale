@@ -33,6 +33,9 @@
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
+  "overrides": {
+    "js-yaml": "4.3.1"
+  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
     "@date-fns/tz": "^1.5.0",
