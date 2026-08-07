@@ -8,7 +8,8 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "prisma generate && next build && npm run build:sw",
+    "build:sw": "serwist build serwist.config.mjs",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest",
@@ -79,7 +80,6 @@
     "dotenv": "^17.2.3",
     "exceljs": "^4.4.0",
     "fast-xml-parser": "^5.3.3",
-    "firebase-admin": "^13.6.0",
     "framer-motion": "^12.34.0",
     "idb": "^8.0.3",
     "jspdf": "^4.2.1",
@@ -107,9 +107,11 @@
     "swagger-ui-react": "^5.31.0",
     "tailwind-merge": "^3.4.0",
     "use-places-autocomplete": "^4.0.1",
+    "web-push": "^3.6.7",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@serwist/cli": "^9.5.12",
     "@tailwindcss/postcss": "^4",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
@@ -121,6 +123,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/swagger-ui-react": "^5.18.0",
+    "@types/web-push": "^3.6.4",
     "@vitejs/plugin-react": "^5.1.2",
     "@vitest/coverage-v8": "^4.0.16",
     "eslint": "^9",
