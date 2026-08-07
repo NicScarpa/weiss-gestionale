@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { ChevronRight, BarChart3, TrendingUp, Calendar, PieChart } from 'lucide-react'
+import { ChevronRight, BarChart3, TrendingUp, Calendar, PieChart, Building2 } from 'lucide-react'
 
 export const metadata = {
   title: 'Report'
@@ -37,6 +37,14 @@ const reports = [
     details: 'Monitora le spese per categoria e fornitore',
     href: '/report/analisi-costi',
     icon: PieChart,
+    available: true,
+  },
+  {
+    title: 'Conto Economico per Centro',
+    description: 'Ricavi, costi e margine per attività',
+    details: 'Confronta Weiss, Villa Varda, stand stagionali e struttura, con drill-down per voce di conto',
+    href: '/report/conto-economico',
+    icon: Building2,
     available: true,
   },
 ]
