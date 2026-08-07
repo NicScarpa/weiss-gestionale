@@ -5,35 +5,8 @@ import { Input } from '@/components/ui/input'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
-import { CalendarIcon, FilterIcon, X } from 'lucide-react'
+import { CalendarIcon, FilterIcon } from 'lucide-react'
 import { useState } from 'react'
-
-interface FiltersToolbarProps {
-  children?: React.ReactNode
-  onClearFilters?: () => void
-  filterCount?: number
-}
-
-export function FiltersToolbar({ children, onClearFilters, filterCount = 0 }: FiltersToolbarProps) {
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <div className="flex flex-wrap items-center gap-2">
-        {children}
-      </div>
-      {filterCount > 0 && onClearFilters && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onClearFilters}
-          className="h-8 px-2 text-muted-foreground hover:text-foreground"
-        >
-          <X className="h-4 w-4 mr-1" />
-          Cancella filtri ({filterCount})
-        </Button>
-      )}
-    </div>
-  )
-}
 
 interface DateRangePickerProps {
   value?: { from?: Date; to?: Date }
