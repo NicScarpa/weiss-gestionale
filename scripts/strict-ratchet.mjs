@@ -18,7 +18,7 @@
 
 import { spawnSync } from 'node:child_process'
 
-const BASELINE = 29
+const BASELINE = 27
 
 const esito = spawnSync(
   'npx',
