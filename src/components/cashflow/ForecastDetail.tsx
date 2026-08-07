@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { formatCurrency } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 import { Plus, Trash2 } from 'lucide-react'
 import { ConfidenceBadge } from './ConfidenceBadge'
 import {

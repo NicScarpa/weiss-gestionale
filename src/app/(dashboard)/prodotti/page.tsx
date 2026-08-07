@@ -37,6 +37,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
+import { formatPercentage } from '@/lib/formatters'
 
 interface Product {
   id: string
@@ -122,11 +123,8 @@ export default function ProdottiPage() {
     }).format(numPrice)
   }
 
-  const formatPercent = (pct: string | null) => {
-    if (!pct) return null
-    const num = parseFloat(pct)
-    return `${num > 0 ? '+' : ''}${num.toFixed(1)}%`
-  }
+  const formatPercent = (pct: string | null) =>
+    pct ? formatPercentage(parseFloat(pct), { segno: true }) : null
 
   return (
     <div className="space-y-6">

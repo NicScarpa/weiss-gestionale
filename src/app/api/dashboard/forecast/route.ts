@@ -1,8 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { getVenueId } from '@/lib/venue'
 import { saldiAlGiorno } from '@/lib/saldi'
+import { withAuth } from '@/lib/api-utils'
 import {
   addDays,
   subDays,
@@ -61,16 +60,9 @@ interface ForecastResult {
 }
 
 // GET /api/dashboard/forecast - Previsione cash flow
-export async function GET(request: NextRequest) {
+export const GET = withAuth(async (request, { venueId }) => {
   try {
-    const session = await auth()
-
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
     const { searchParams } = new URL(request.url)
-    const venueId = await getVenueId()
     const days = parseInt(searchParams.get('days') || '30')
 
     const forecastDays = Math.min(Math.max(days, 7), 90)
@@ -248,7 +240,7 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+}, { roles: ['admin', 'manager'], venueScoped: true })
 
 /**
  * Il saldo da cui la previsione parte: la liquidità di oggi, letta da

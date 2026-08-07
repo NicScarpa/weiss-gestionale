@@ -4,7 +4,8 @@ import { useCallback, useMemo, memo } from 'react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
-import { BILL_DENOMINATIONS, COIN_DENOMINATIONS, formatCurrency } from '@/lib/constants'
+import { BILL_DENOMINATIONS, COIN_DENOMINATIONS } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 
 // Tipo per il conteggio
 export interface CashCountValues {

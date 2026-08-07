@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Recurrence, RECURRENCE_TYPE_LABELS, SCHEDULE_PAYMENT_METHOD_LABELS, RecurrenceType, SchedulePaymentMethod } from '@/types/schedule'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency } from '@/lib/formatters'
 import { RecurrenceActions } from './recurrence-actions'
 import { Repeat } from 'lucide-react'
 

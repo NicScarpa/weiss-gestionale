@@ -29,7 +29,12 @@ describe('CashFlowSummaryCards', () => {
     // `/api/cashflow/summary` calcola trend7gg come differenza fra due saldi
     // puntuali: sono euro. Stamparlo con un `%` accanto significava dire
     // "+1234,6%" a chi in tasca ha 1.234,56 € in più.
-    expect(testo).toMatch(/\+1\.234,56/)
+    //
+    // Il separatore delle migliaia è opzionale nella regex perché per l'italiano
+    // il CLDR non raggruppa i numeri di quattro cifre: `formatCurrency` rende
+    // «1234,56 €» e «12.000,00 €». Quello che questo test presidia è l'unità di
+    // misura, non la scelta di formattazione, che vive in `@/lib/formatters`.
+    expect(testo).toMatch(/\+1\.?234,56/)
     expect(testo).not.toMatch(/1234,6\s*%/)
     expect(testo).not.toMatch(/%/)
   })
@@ -72,6 +77,6 @@ describe('CashFlowSummaryCards', () => {
     const testo = testoDellaPagina()
 
     expect(testo).toMatch(/4,2 mesi|4\.2 mesi/)
-    expect(testo).toMatch(/2\.500,00/)
+    expect(testo).toMatch(/2\.?500,00/)
   })
 })

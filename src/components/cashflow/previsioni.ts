@@ -66,7 +66,7 @@ export interface Previsione {
   _count?: { lines: number; alerts: number }
 }
 
-export interface RigaPrevisione {
+interface RigaPrevisione {
   id: string
   data: string
   tipo: FlowType

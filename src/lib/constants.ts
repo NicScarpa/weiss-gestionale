@@ -54,15 +54,6 @@ export function getWeatherEmoji(value?: string | null): string {
   return WEATHER_EMOJI[value] ?? value
 }
 
-// Formattazione importi in italiano
-export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('it-IT', {
-    style: 'currency',
-    currency: 'EUR',
-    useGrouping: true,
-  }).format(amount)
-}
-
 // Formattazione data in italiano
 export function formatDate(date: Date | string): string {
   const d = typeof date === 'string' ? new Date(date) : date

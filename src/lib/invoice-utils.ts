@@ -110,17 +110,6 @@ export function generateYearOptions(yearsBack: number = 5): { value: string; lab
   }))
 }
 
-// Formatta valuta in italiano
-export function formatCurrency(value: string | number | null | undefined): string {
-  if (value === null || value === undefined) return '€ 0,00'
-  const num = typeof value === 'string' ? parseFloat(value) : value
-  if (isNaN(num)) return '€ 0,00'
-  return new Intl.NumberFormat('it-IT', {
-    style: 'currency',
-    currency: 'EUR',
-  }).format(num)
-}
-
 // Formatta data in italiano
 export function formatDateIT(date: string | Date | null | undefined): string {
   if (!date) return '-'

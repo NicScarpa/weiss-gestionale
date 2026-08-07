@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
+import { formatCurrency } from '@/lib/formatters'
 
 const CashFlowForecast = dynamic(
   () => import('@/components/dashboard/CashFlowForecast').then(mod => ({ default: mod.CashFlowForecast })),
@@ -82,12 +83,6 @@ interface DashboardData {
   }
 }
 
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('it-IT', {
-    style: 'currency',
-    currency: 'EUR',
-  }).format(value)
-}
 
 function StatCard({
   title,

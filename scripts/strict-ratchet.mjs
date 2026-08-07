@@ -18,7 +18,7 @@
 
 import { spawnSync } from 'node:child_process'
 
-const BASELINE = 29
+const BASELINE = 27
 
 const esito = spawnSync(
   'npx',
@@ -32,7 +32,18 @@ if (esito.error) {
 }
 
 const output = `${esito.stdout ?? ''}${esito.stderr ?? ''}`
-const errori = output.split('\n').filter((riga) => /: error TS\d+:/.test(riga))
+
+// `.next/types/**` è rigenerato da `next build` e resta indietro: dopo aver
+// cancellato una route continua a importarla, e tsc riporta un TS2307 per
+// ciascuna finché non si ricompila. Sono errori di un artefatto, non del
+// sorgente, e conteggiarli produce un falso allarme proprio quando si fa
+// pulizia — successo davvero il 7 ago 2026, con tre route rimosse.
+const GENERATI = /^\.next[/\\]/
+
+const errori = output
+  .split('\n')
+  .filter((riga) => /: error TS\d+:/.test(riga))
+  .filter((riga) => !GENERATI.test(riga.trim()))
 const conteggio = errori.length
 
 // tsc esce con codice != 0 anche per problemi suoi (config illeggibile, tsc

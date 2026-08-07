@@ -12,7 +12,7 @@ import {
 } from 'recharts'
 import { format, parseISO } from 'date-fns'
 import { Card, CardContent } from '@/components/ui/card'
-import { formatCurrency } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 
 interface ChartDataPoint {
   date: string

@@ -17,6 +17,7 @@ import {
   type PaymentType,
 } from '@/types/prima-nota'
 import { cn } from '@/lib/utils'
+import { formatCurrencyOrDash } from '@/lib/formatters'
 
 interface PagamentiTableProps {
   data: Array<{
@@ -63,15 +64,6 @@ export function PagamentiTable({
   onPageChange,
   isLoading = false,
 }: PagamentiTableProps) {
-  // Format data italiana
-  const formatCurrency = (amount?: number) => {
-    if (amount === undefined || amount === null) return '-'
-    return new Intl.NumberFormat('it-IT', {
-      style: 'currency',
-      currency: 'EUR',
-    }).format(amount)
-  }
-
   // Format data italiana
   const formatDate = (date: Date | string) => {
     return format(new Date(date), 'dd/MM/yyyy', { locale: it })
@@ -205,7 +197,7 @@ export function PagamentiTable({
 
                   {/* Importo */}
                   <td className="px-4 py-3 text-sm text-right font-medium">
-                    €{formatCurrency(payment.importo)}
+                    €{formatCurrencyOrDash(payment.importo)}
                   </td>
 
                   {/* Causale */}

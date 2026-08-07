@@ -19,7 +19,7 @@ interface AlertGeneratorResult {
 /**
  * Genera alert per un budget basandosi sui benchmark delle categorie
  */
-export async function generateBudgetAlerts(
+async function generateBudgetAlerts(
   budgetId: string
 ): Promise<AlertGeneratorResult> {
   // 1. Recupera budget info
@@ -155,40 +155,6 @@ export async function generateAlertsForVenue(venueId: string): Promise<{
     const result = await generateBudgetAlerts(budget.id)
     totalCreated += result.alertsCreated
     totalResolved += result.alertsResolved
-  }
-
-  return {
-    budgetsProcessed: budgets.length,
-    totalAlertsCreated: totalCreated,
-    totalAlertsResolved: totalResolved,
-  }
-}
-
-/**
- * Genera alert per tutti i budget attivi (per cron job)
- */
-export async function generateAlertsForAllActiveBudgets(): Promise<{
-  budgetsProcessed: number
-  totalAlertsCreated: number
-  totalAlertsResolved: number
-}> {
-  // Trova tutti i budget attivi
-  const budgets = await prisma.budget.findMany({
-    where: { status: 'ACTIVE' },
-    select: { id: true },
-  })
-
-  let totalCreated = 0
-  let totalResolved = 0
-
-  for (const budget of budgets) {
-    try {
-      const result = await generateBudgetAlerts(budget.id)
-      totalCreated += result.alertsCreated
-      totalResolved += result.alertsResolved
-    } catch (error) {
-      logger.error(`Errore generazione alert per budget ${budget.id}:`, error)
-    }
   }
 
   return {

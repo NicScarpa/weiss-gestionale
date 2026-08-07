@@ -33,11 +33,18 @@ del committente: si porta su main solo a revisione completata.
 | Piano approvato | `~/.claude/plans/cryptic-wandering-flute.md` |
 | Screenshot verifica mobile W2 | `~/Desktop/accounting/.playwright-mcp/b5/` (gitignored, prima/dopo a 390px) |
 
-**Worktree attivi**: `integrazione` più i cinque della W2 (`b1-import`, `b2-numeri`, `b3-qualita`,
-`b4-ui-scadenzario`, `b5-ui-mobile`), tutti già integrati: si possono rimuovere con
-`git worktree remove`. Esiste anche `~/Desktop/accounting-presenze` su `presenze/regole-orario`:
-**è di un'altra sessione, non toccarlo**. Il worktree principale `~/Desktop/accounting` è fermo sul
-branch obsoleto `scadenzario/stima-data-attesa`.
+**Worktree attivi**: `integrazione` più i quattro della W3 (`c1-auth`, `c2-orfani`, `c3-moduli-a`,
+`c4-moduli-b`). Quelli di W0/W1/W2 e `c0-vulnerabilita` sono stati rimossi dopo l'integrazione.
+
+**ATTENZIONE — tre sessioni parallele lavorano sullo stesso repository** (stato al 7 ago, ore 18):
+- `~/Desktop/accounting-presenze` su `presenze/chiusura-ore-timbrate` — **non toccarlo**;
+- `~/Desktop/accounting` (worktree principale) su **`conti/piano-v4`**, che ha
+  `prisma/schema.prisma` **modificato e non committato**: aggiunge `CostCenter`, l'enum
+  `CostCenterRule` e campi su DailyClosure, DailyExpense, Account, JournalEntry, ScheduleRule,
+  AuditLog (56 righe, tutte additive). **Non tocca `PushSubscription`**, quindi non collide con il
+  micro-slot concesso a C3 in W3; ma quando questi rami convergeranno lo schema andrà riconciliato
+  con attenzione. È anche il motivo per cui la baseline delle migrazioni (§5 n.1) diventa ogni
+  giorno più urgente.
 
 ---
 
@@ -135,7 +142,7 @@ sessione parallela su `presenze/regole-orario`.
 | 6 | `Payment` di tipo `ALTRO` in entrata? | Aperta, emergerà dal censimento |
 | 7 | Cron `auto-clockout` solo su `vercel.json`, produzione su Railway | **CHIUSA — IL FINDING ERA SBAGLIATO** (verificato 7 ago sui log Railway): esiste un servizio dedicato **`cron-presenze`** che gira ogni ~15 minuti e chiama *entrambi* gli endpoint (`/api/promemoria-timbratura/cron` e `/api/attendance/auto-clockout`); ultima esecuzione riscontrata `2026-08-07T15:45Z`, risposte `success:true`. `vercel.json` è un residuo inerte che ha ingannato l'audit: **va cancellato** (assegnare a C2-ORFANI in W3) |
 | 8 | **`SENTRY_DSN` da configurare su Railway** e forzare un errore di prova | **IN CORSO** (7 ago): verificato che sul servizio `weiss-gestionale` la variabile **non esiste** (le variabili presenti sono DATABASE_URL, AUTH_SECRET, NEXTAUTH_*, ENCRYPTION_KEY, ANTHROPIC_API_KEY, CRON_SECRET, UPLOAD_ROOT, NEXT_PUBLIC_*). Non esiste alcun account Sentry: nessun DSN in codice, storia git o `.env`. Serve che il committente crei il progetto su sentry.io e fornisca il DSN; poi `railway variables --service weiss-gestionale --set 'SENTRY_DSN=...' --set 'NEXT_PUBLIC_SENTRY_DSN=...'` |
-| 9 | **5 vulnerabilità critical + 16 high nelle dipendenze di produzione** (`@auth/core`, `next-auth`, `jspdf`, `protobufjs`, `websocket-driver`) | **IN LAVORAZIONE** (7 ago, decisione del committente: risolverle) — agente C0 su `remediation/c0-vulnerabilita` |
+| 9 | **5 vulnerabilità critical + 16 high nelle dipendenze di produzione** | **CHIUSA** (7 ago, merge `a0cd25f`): ora **0 critical / 0 high**, cricchetto CI a barriera. `jspdf` 4.2.1, `next-auth` beta.32, `firebase-admin` 13.10.0 (dentro il range, trascina `websocket-driver` 0.7.5 e `protobufjs` 7.6.5), `next` 16.3.0, `axios` 1.19.0; unico `overrides`: `js-yaml` 4.3.1 perché `swagger-ui-react` la pinna esatta. **Login verificato a mano dal lead** (dev server locale, sessione JWE valida su pagina protetta) più verifica indipendente dell'agente. Restano 9 moderate non risolvibili senza downgrade major: documentate nello script. Da tenere d'occhio: `next` 16.1.6→16.3.0 è il candidato per un giro in staging; l'override su `js-yaml` va tolto quando swagger allenterà il pin |
 | 10 | **Ricavi per categoria/conto a zero** finché le scritture di chiusura non portano un conto di ricavo | **RATIFICATA** (7 ago): per ora va bene l'approccio col KPI `unassignedRevenue`; l'imputazione a conto resta per dopo |
 | 11 | **Il margine del budget cambierà** (ora include i costi bancari che prima mancavano) | **RATIFICATA** (7 ago): il committente è avvisato e d'accordo |
 | 12 | Movimenti nascosti fuori dai saldi in modo uniforme | Nuova (W2): decisione presa da B2, da ratificare |
@@ -144,6 +151,8 @@ sessione parallela su `presenze/regole-orario`.
 | 15 | Date estratto conto parse-ate nel fuso del server (`new Date(a,m,g)` → `@db.Date`) | Nuova (W2): ok finché Railway resta UTC, fragile; legata alle impronte di deduplica |
 | 16 | `BankTransaction` senza legame a `BankAccount` (A3-DATA-018) | Con più conti bancari gli estratti si mescolano per sede; richiede schema |
 | 17 | Fix di `PrimaNotaContext` provato dal diff, non da un test | Debito di copertura dichiarato da B2 |
+| 19 | **Il versamento manuale cassa→banca scrive una sola riga invece di due** | **NUOVO P1, verificato dal lead il 7 ago.** La route orfana `/api/prima-nota/versamento` (cancellata in W3 perché senza chiamanti) creava **due** scritture in `$transaction`: `CASH` in avere + `BANK` in dare. Il percorso **vivo** — `MovimentoFormDialog` con `entryType: 'VERSAMENTO'` → `POST /api/prima-nota` — fa un solo `journalEntry.create`. Un versamento è un trasferimento a saldo netto zero: registrandone un lato solo, **il saldo totale si muove dell'intero importo**. Stessa famiglia del P0 sul segno dei pagamenti. **Attenuante importante:** la chiusura di cassa giornaliera — il percorso normale — genera correttamente le due righe (`closure-journal-entries.ts:181-211`), quindi il difetto colpisce solo i versamenti registrati a mano fuori dalla chiusura. Scoperto da C2 mentre censiva il codice orfano |
+| 18 | **40 violazioni `react-hooks/set-state-in-effect`** (setState dentro effetti → render a cascata) in ~30 file: pagine di autenticazione, anagrafiche, budget, hook `useOffline` | Nuova (7 ago). Emerse per caso da un ambiente andato alla deriva (vedi §6 n.10), ma **sono difetti reali**: oggi passano come avvisi solo perché `eslint-plugin-react-hooks` è alla 7.0.1; nella **7.1.1 sono errori bloccanti**. Debito con data di scadenza: al primo aggiornamento legittimo del plugin la CI si ferma. Da pianificare come lotto a sé (candidato W4) |
 
 ---
 
@@ -165,6 +174,23 @@ sessione parallela su `presenze/regole-orario`.
    girano in realtà sul codice corrente, sembrando una verifica riuscita. Percorsi sempre espliciti.
 9. **`@testing-library/react` senza `@testing-library/dom`** falliva all'import (ora la peer è
    installata, da B3): era il motivo per cui il repo non aveva test di componente.
+10. **`npm install --no-package-lock` distrugge l'ambiente del worktree.** Il flag non aggiunge solo
+    il pacchetto richiesto: **ignora il lockfile e ri-risolve l'intero albero** dalle forcelle di
+    `package.json`. Caso reale del 7 ago (un `npm install --no-save --no-package-lock knip@5`):
+    `@prisma/client` e `@prisma/adapter-pg` 7.4.1 → 7.9.1, `pg` 8.18.0 → 8.22.0, ESLint e React
+    Compiler più recenti. Due sintomi, entrambi somigliantissimi a difetti gravi del codice:
+    (a) **40 errori di lint `react-hooks/set-state-in-effect`** inesistenti sul ramo base (nella
+    7.1.1 del plugin quell'avviso è errore); (b) **118 test di integrazione su 138 rossi** con
+    `The column undefined$1undefined does not exist in the current database`, che sembra uno schema
+    distrutto ed è solo disallineamento fra client Prisma e adapter.
+    **Regole:** per uno strumento non installato usare `npx <strumento>`, mai installarlo; prima di
+    credere a un gate rosso verificare che l'installato coincida col lockfile
+    (`node -p "require('./node_modules/eslint-plugin-react-hooks/package.json').version"` → 7.0.1) e
+    nel dubbio `npm ci && npx prisma generate`; **non aggirare il pre-commit con `--no-verify`** per
+    far passare un gate rosso — l'hook non è rotto, sta segnalando un ambiente rotto.
+    **Corollario sul metodo:** la verifica per inversione va fatta anche sull'ambiente, non solo sul
+    diff. Mettere da parte le proprie modifiche non prova nulla se entrambe le esecuzioni girano
+    sullo stesso `node_modules` guasto — è esattamente l'errore che ha prodotto il falso allarme.
 
 ---
 

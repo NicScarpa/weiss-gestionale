@@ -742,6 +742,3 @@ export function CreateScheduleDialog({
     </Dialog>
   )
 }
-
-// Backward-compatible alias
-export const CreateScheduleSheet = CreateScheduleDialog

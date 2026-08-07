@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { auth } from '@/lib/auth'
+import { withAuth } from '@/lib/api-utils'
 import { z } from 'zod'
 import { logger } from '@/lib/logger'
 import { sendStaffInvitationEmail } from '@/lib/email-invitation'
@@ -16,71 +16,50 @@ function buildInviteUrl(token: string) {
 /**
  * GET /api/staff/invite
  *
- * Recupera o genera un link di invito generico (senza email/nome).
- * Solo admin.
+ * Legge il link di invito generico attivo, se c'è. Non ne crea: un invito è una
+ * credenziale valida sette giorni, e prima questa GET la emetteva ogni volta che
+ * non ne trovava una — cioè un prefetch, una pagina ricaricata o un link aperto
+ * per sbaglio bastavano a generarla. L'emissione vive solo nella POST.
  */
-export async function GET() {
-  try {
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Non autenticato' }, { status: 401 })
-    }
+export const GET = withAuth(
+  async () => {
+    try {
+      // Cerca token generico attivo (email=null, non usato, non scaduto, attivo)
+      const existing = await prisma.invitationToken.findFirst({
+        where: {
+          email: null,
+          usedAt: null,
+          isActive: true,
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: { createdAt: 'desc' },
+      })
 
-    if (session.user.role !== 'admin') {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 })
-    }
+      if (!existing) {
+        return NextResponse.json({
+          token: null,
+          url: null,
+          expiresAt: null,
+          emailSent: false,
+        })
+      }
 
-    // Cerca token generico attivo (email=null, non usato, non scaduto, attivo)
-    const existing = await prisma.invitationToken.findFirst({
-      where: {
-        email: null,
-        usedAt: null,
-        isActive: true,
-        expiresAt: { gt: new Date() },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
-
-    if (existing) {
       return NextResponse.json({
         token: existing.token,
         url: buildInviteUrl(existing.token),
         expiresAt: existing.expiresAt,
         emailSent: false,
       })
+    } catch (error) {
+      logger.error('Errore GET /api/staff/invite', error)
+      return NextResponse.json(
+        { error: 'Si e verificato un errore. Riprova piu tardi.' },
+        { status: 500 }
+      )
     }
-
-    // Crea nuovo token generico
-    const token = globalThis.crypto.randomUUID()
-    const expiresAt = new Date(Date.now() + TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000)
-
-    const invitation = await prisma.invitationToken.create({
-      data: {
-        token,
-        invitedById: session.user.id,
-        expiresAt,
-      },
-    })
-
-    logger.info('[StaffInvite] Link generico creato', {
-      token,
-      invitedBy: session.user.id,
-    })
-
-    return NextResponse.json({
-      token: invitation.token,
-      url: buildInviteUrl(invitation.token),
-      expiresAt: invitation.expiresAt,
-      emailSent: false,
-    })
-  } catch (error) {
-    logger.error('Errore GET /api/staff/invite', error)
-    return NextResponse.json(
-      { error: 'Si e verificato un errore. Riprova piu tardi.' },
-      { status: 500 }
-    )
-  }
-}
+  },
+  { roles: ['admin'] }
+)
 
 const regenerateSchema = z.object({
   action: z.literal('regenerate'),
@@ -95,17 +74,9 @@ const regenerateSchema = z.object({
  * Rigenera il link di invito generico. Invalida tutti i token generici attivi
  * e ne crea uno nuovo. Solo admin.
  */
-export async function POST(request: NextRequest) {
+export const POST = withAuth(
+  async (request, { user }) => {
   try {
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Non autenticato' }, { status: 401 })
-    }
-
-    if (session.user.role !== 'admin') {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 })
-    }
-
     const body = await request.json()
     const { email, firstName, lastName } = regenerateSchema.parse(body)
 
@@ -131,7 +102,7 @@ export async function POST(request: NextRequest) {
         email: email?.toLowerCase() || null,
         firstName: firstName || null,
         lastName: lastName || null,
-        invitedById: session.user.id,
+        invitedById: user.id,
         expiresAt,
       },
     })
@@ -139,14 +110,14 @@ export async function POST(request: NextRequest) {
     logger.info('[StaffInvite] Link invito rigenerato', {
       token,
       email: email || null,
-      invitedBy: session.user.id,
+      invitedBy: user.id,
     })
 
     // Se l'invito è vincolato a un'email, spediscilo al dipendente.
     // Un fallimento non blocca il flusso: la UI mostra comunque il link da copiare.
     let emailSent = false
     if (invitation.email) {
-      const invitedByName = [session.user.firstName, session.user.lastName]
+      const invitedByName = [user.firstName, user.lastName]
         .filter(Boolean)
         .join(' ')
         .trim()
@@ -161,7 +132,7 @@ export async function POST(request: NextRequest) {
       if (!emailSent) {
         logger.error('[StaffInvite] Invito creato ma invio email fallito', {
           email: invitation.email,
-          invitedBy: session.user.id,
+          invitedBy: user.id,
         })
       }
     }
@@ -187,4 +158,6 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+  },
+  { roles: ['admin'] }
+)

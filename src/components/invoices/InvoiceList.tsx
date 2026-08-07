@@ -66,10 +66,10 @@ import {
   getDocumentTypeAbbrev,
   getDocumentTypeColor,
   getSimpleStatus,
-  formatCurrency,
   generateYearOptions,
   ITALIAN_MONTHS,
 } from '@/lib/invoice-utils'
+import { formatCurrencyOrZero as formatCurrency } from '@/lib/formatters'
 
 
 interface Invoice {

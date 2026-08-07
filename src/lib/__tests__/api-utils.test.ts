@@ -1,7 +1,16 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { z } from 'zod'
+import { NextRequest } from 'next/server'
 import type { Session } from 'next-auth'
 import { logger } from '../logger'
+
+// `withAuth` risolve da sé sessione e sede: qui entrambe sono finte, così le
+// asserzioni riguardano il guard e non NextAuth o il database.
+vi.mock('../auth', () => ({ auth: vi.fn() }))
+vi.mock('../venue', () => ({ getVenueId: vi.fn() }))
+
+import { auth } from '../auth'
+import { getVenueId } from '../venue'
 import {
   errorResponse,
   badRequest,
@@ -17,6 +26,7 @@ import {
   requireAuth,
   requireRole,
   requireVenueAccess,
+  withAuth,
   parsePagination,
   paginatedResponse,
   HttpStatus,
@@ -330,6 +340,185 @@ describe('api-utils', () => {
         const result = paginatedResponse([], 0, { page: 1, limit: 10, skip: 0 })
         expect(result.pagination.totalPages).toBe(0)
       })
+    })
+  })
+})
+
+describe('withAuth', () => {
+  const authMock = vi.mocked(auth as unknown as () => Promise<Session | null>)
+  const getVenueIdMock = vi.mocked(getVenueId as unknown as () => Promise<string>)
+
+  const VENUE = 'venue-attiva'
+
+  function sessionOf(role: string, overrides: Record<string, unknown> = {}): Session {
+    return {
+      user: {
+        id: `${role}-1`,
+        email: `${role}@weisscafe.it`,
+        role,
+        venueId: VENUE,
+        mustChangePassword: false,
+        ...overrides,
+      },
+      expires: '2099-01-01',
+    } as unknown as Session
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    getVenueIdMock.mockResolvedValue(VENUE)
+  })
+
+  const request = (url = 'http://localhost:3000/api/test') => new NextRequest(url)
+
+  describe('autenticazione', () => {
+    it('risponde 401 senza sessione e non esegue lo handler', async () => {
+      authMock.mockResolvedValue(null)
+      const handler = vi.fn()
+
+      const response = await withAuth(handler)(request())
+
+      expect(response.status).toBe(401)
+      expect(handler).not.toHaveBeenCalled()
+    })
+
+    it('risponde 403 MUST_CHANGE_PASSWORD a chi deve cambiare la password', async () => {
+      authMock.mockResolvedValue(sessionOf('admin', { mustChangePassword: true }))
+      const handler = vi.fn()
+
+      const response = await withAuth(handler)(request())
+      const body = await response.json()
+
+      expect(response.status).toBe(403)
+      expect(body.code).toBe('MUST_CHANGE_PASSWORD')
+      expect(handler).not.toHaveBeenCalled()
+    })
+
+    it('lascia passare chi deve cambiare la password se la route lo consente', async () => {
+      authMock.mockResolvedValue(sessionOf('staff', { mustChangePassword: true }))
+      const handler = vi.fn().mockResolvedValue(ok({ fatto: true }))
+
+      const response = await withAuth(handler, { allowMustChangePassword: true })(request())
+
+      expect(response.status).toBe(200)
+      expect(handler).toHaveBeenCalledOnce()
+    })
+
+    it('risolve la sessione una sola volta per richiesta', async () => {
+      authMock.mockResolvedValue(sessionOf('manager'))
+      const handler = vi.fn().mockResolvedValue(ok({}))
+
+      await withAuth(handler, { roles: ['admin', 'manager'], venueScoped: true })(request())
+
+      expect(authMock).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe('autorizzazione per ruolo', () => {
+    it('risponde 403 a uno staff su una route riservata ad admin e manager', async () => {
+      authMock.mockResolvedValue(sessionOf('staff'))
+      const handler = vi.fn()
+
+      const response = await withAuth(handler, { roles: ['admin', 'manager'] })(request())
+
+      expect(response.status).toBe(403)
+      expect(handler).not.toHaveBeenCalled()
+    })
+
+    it('esegue lo handler per un ruolo ammesso e gli passa utente e sessione', async () => {
+      const session = sessionOf('manager')
+      authMock.mockResolvedValue(session)
+      const handler = vi.fn().mockResolvedValue(ok({}))
+
+      await withAuth(handler, { roles: ['admin', 'manager'] })(request())
+
+      const context = handler.mock.calls[0][1]
+      expect(context.session).toBe(session)
+      expect(context.user.id).toBe('manager-1')
+      expect(context.user.role).toBe('manager')
+    })
+
+    it('senza elenco di ruoli basta essere autenticati', async () => {
+      authMock.mockResolvedValue(sessionOf('staff'))
+      const handler = vi.fn().mockResolvedValue(ok({}))
+
+      const response = await withAuth(handler)(request())
+
+      expect(response.status).toBe(200)
+    })
+  })
+
+  describe('sede', () => {
+    it('ricava venueId dalla sessione ignorando la query string', async () => {
+      authMock.mockResolvedValue(sessionOf('manager'))
+      const handler = vi.fn().mockResolvedValue(ok({}))
+
+      await withAuth(handler, { roles: ['manager'], venueScoped: true })(
+        request('http://localhost:3000/api/test?venueId=sede-di-un-altro')
+      )
+
+      expect(handler.mock.calls[0][1].venueId).toBe(VENUE)
+    })
+
+    it("usa la sede attiva quando la sessione non ne dichiara una (admin)", async () => {
+      authMock.mockResolvedValue(sessionOf('admin', { venueId: null }))
+      const handler = vi.fn().mockResolvedValue(ok({}))
+
+      await withAuth(handler, { roles: ['admin'], venueScoped: true })(request())
+
+      expect(handler.mock.calls[0][1].venueId).toBe(VENUE)
+    })
+
+    it('nega la sede a un non-admin che non ne ha alcuna in sessione', async () => {
+      authMock.mockResolvedValue(sessionOf('manager', { venueId: null }))
+      const handler = vi.fn()
+
+      const response = await withAuth(handler, { roles: ['manager'], venueScoped: true })(request())
+
+      expect(response.status).toBe(403)
+      expect(handler).not.toHaveBeenCalled()
+    })
+
+    it('non risolve la sede se la route non è venueScoped', async () => {
+      authMock.mockResolvedValue(sessionOf('admin'))
+      const handler = vi.fn().mockResolvedValue(ok({}))
+
+      await withAuth(handler)(request())
+
+      expect(getVenueIdMock).not.toHaveBeenCalled()
+    })
+
+    it('risponde 500 se non esiste una sede attiva', async () => {
+      authMock.mockResolvedValue(sessionOf('admin', { venueId: null }))
+      getVenueIdMock.mockRejectedValue(new Error('Nessuna sede attiva configurata'))
+      const handler = vi.fn()
+
+      const response = await withAuth(handler, { venueScoped: true })(request())
+
+      expect(response.status).toBe(500)
+      expect(handler).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('parametri di rotta', () => {
+    it('passa allo handler i params già risolti', async () => {
+      authMock.mockResolvedValue(sessionOf('admin'))
+      const handler = vi.fn().mockResolvedValue(ok({}))
+
+      await withAuth<{ id: string }>(handler)(request(), {
+        params: Promise.resolve({ id: 'chiusura-42' }),
+      })
+
+      expect(handler.mock.calls[0][1].params).toEqual({ id: 'chiusura-42' })
+    })
+
+    it('su una route statica i params sono un oggetto vuoto', async () => {
+      authMock.mockResolvedValue(sessionOf('admin'))
+      const handler = vi.fn().mockResolvedValue(ok({}))
+
+      await withAuth(handler)(request())
+
+      expect(handler.mock.calls[0][1].params).toEqual({})
     })
   })
 })

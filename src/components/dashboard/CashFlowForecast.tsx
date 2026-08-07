@@ -29,6 +29,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import Link from 'next/link'
+import { formatCurrency } from '@/lib/formatters'
 
 interface ForecastDay {
   date: string
@@ -73,12 +74,6 @@ interface ForecastData {
   }
 }
 
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('it-IT', {
-    style: 'currency',
-    currency: 'EUR',
-  }).format(value)
-}
 
 function formatCompactCurrency(value: number): string {
   if (Math.abs(value) >= 1000) {

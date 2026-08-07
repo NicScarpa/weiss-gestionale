@@ -22,7 +22,8 @@ import { CalendarClock, CalendarDays, Plus, ArrowUpDown, ArrowUp, ArrowDown } fr
 import { format, isAfter, startOfDay } from 'date-fns'
 import { it } from 'date-fns/locale'
 import { toast } from 'sonner'
-import { formatCurrency, cn } from '@/lib/utils'
+import { cn } from '@/lib/utils'
+import { formatCurrency } from '@/lib/formatters'
 
 /**
  * Il messaggio che il server ha dato, o un ripiego leggibile. Serve a farlo

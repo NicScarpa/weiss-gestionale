@@ -24,7 +24,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { formatCurrency } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 import { ChevronDown, ChevronRight, LineChart, Pencil, Plus, Trash2 } from 'lucide-react'
 import { ForecastDialog, type DatiPrevisione } from './ForecastDialog'
 import { ForecastDetail } from './ForecastDetail'

@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { toDateOnlyUtc } from '@/lib/timezone'
 import { giornoCorrente, giornoIndietro } from '@/lib/saldi'
 import { setupIntegrationDb } from '@/test/integration/db'
-import { loginAs } from '@/test/integration/auth-mock'
+import { loginAs, setSession, type SeedRole } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
 import { venueDiTest } from '@/test/integration/fixtures/closures'
 import { GET as getForecast } from '../route'
@@ -23,6 +23,21 @@ import { GET as getSaldiPrimaNota } from '@/app/api/prima-nota/saldi/route'
 setupIntegrationDb()
 
 const OGGI = giornoCorrente()
+
+/**
+ * Entra come utente che ha già cambiato la password iniziale.
+ *
+ * Tutti gli utenti del seed hanno `mustChangePassword: true`, e da quando
+ * questa route è protetta da `withAuth` il guard risponde 403 a chi non l'ha
+ * cambiata — giustamente: in produzione nessuno usa l'applicazione in quello
+ * stato. `loginAs` da solo produce quindi una sessione che non passa i guard,
+ * e ogni test su una route protetta ha bisogno di questo passaggio in più.
+ */
+async function entraCome(ruolo: SeedRole) {
+  const sessione = await loginAs(ruolo)
+  setSession({ ...sessione, user: { ...sessione.user, mustChangePassword: false } })
+  return sessione
+}
 
 interface RispostaForecast {
   currentBalance: { cash: number; bank: number; total: number }
@@ -119,7 +134,7 @@ describe('GET /api/dashboard/forecast', () => {
   // fix questa era l'unica a dare un numero diverso dalle altre due: 49.100 €
   // contro i 22.600 € reali, cioè 26.500 € di troppo.
   it('parte dallo stesso saldo di /api/prima-nota/saldi su una prima nota realistica', async () => {
-    await loginAs('admin')
+    await entraCome('admin')
     const venue = await venueDiTest()
     await primaNotaRealistica(venue.id)
 
@@ -134,7 +149,7 @@ describe('GET /api/dashboard/forecast', () => {
   })
 
   it('cassa e banca coincidono voce per voce, non solo nel totale', async () => {
-    await loginAs('admin')
+    await entraCome('admin')
     const venue = await venueDiTest()
     await primaNotaRealistica(venue.id)
 
@@ -146,7 +161,7 @@ describe('GET /api/dashboard/forecast', () => {
   })
 
   it('parte dallo stesso saldo che mostrano le card del cash flow', async () => {
-    await loginAs('admin')
+    await entraCome('admin')
     const venue = await venueDiTest()
     await prisma.initialBalance.create({
       data: {
@@ -168,7 +183,7 @@ describe('GET /api/dashboard/forecast', () => {
   // Nascondere un movimento serve a toglierlo dai conti: se pesa ancora sulla
   // previsione, le due schermate raccontano due storie diverse.
   it('un movimento nascosto non entra nel saldo di partenza', async () => {
-    await loginAs('admin')
+    await entraCome('admin')
     const venue = await venueDiTest()
     await movimento(venue.id, { giorniFa: 5, entrata: 1000 })
     await movimento(venue.id, { giorniFa: 4, entrata: 700, nascosto: true })
@@ -182,7 +197,7 @@ describe('GET /api/dashboard/forecast', () => {
   // Una scadenza registrata dalle regole porta la data del giorno in cui il
   // denaro uscirà: oggi quel denaro non è ancora uscito.
   it('un movimento datato nel futuro non entra nel saldo di partenza', async () => {
-    await loginAs('admin')
+    await entraCome('admin')
     const venue = await venueDiTest()
     await movimento(venue.id, { giorniFa: 5, entrata: 900 })
     await movimento(venue.id, { giorniFa: -10, uscita: 400 })
@@ -191,7 +206,7 @@ describe('GET /api/dashboard/forecast', () => {
   })
 
   it('le spese ricorrenti attive compaiono fra le uscite previste', async () => {
-    await loginAs('admin')
+    await entraCome('admin')
     const venue = await venueDiTest()
     const sessione = await prisma.user.findFirstOrThrow({ where: { role: { name: 'admin' } } })
     await prisma.recurringExpense.create({
@@ -214,7 +229,7 @@ describe('GET /api/dashboard/forecast', () => {
   // gennaio, scritto a mano nel codice: un'assicurazione che si paga a
   // settembre spariva dalla previsione di settembre e ricompariva a gennaio.
   it('una spesa annuale cade nel mese da cui è attiva', async () => {
-    await loginAs('admin')
+    await entraCome('admin')
     const venue = await venueDiTest()
     const autore = await prisma.user.findFirstOrThrow({ where: { role: { name: 'admin' } } })
     const fraUnMese = new Date(Date.UTC(2026, 8, 10)) // 10 settembre 2026
@@ -239,7 +254,7 @@ describe('GET /api/dashboard/forecast', () => {
   })
 
   it('una spesa trimestrale cade ogni tre mesi a partire dal mese di attivazione', async () => {
-    await loginAs('admin')
+    await entraCome('admin')
     const venue = await venueDiTest()
     const autore = await prisma.user.findFirstOrThrow({ where: { role: { name: 'admin' } } })
     await prisma.recurringExpense.create({
@@ -266,7 +281,7 @@ describe('GET /api/dashboard/forecast', () => {
   })
 
   it('una spesa sospesa non pesa sulla previsione', async () => {
-    await loginAs('admin')
+    await entraCome('admin')
     const venue = await venueDiTest()
     const sessione = await prisma.user.findFirstOrThrow({ where: { role: { name: 'admin' } } })
     await prisma.recurringExpense.create({

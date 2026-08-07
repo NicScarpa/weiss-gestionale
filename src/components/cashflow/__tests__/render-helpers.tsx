@@ -60,48 +60,14 @@ export async function smontare() {
   document.body.innerHTML = ''
 }
 
-/** Lascia risolvere le promise in sospeso e ri-renderizzare React. */
-export async function attendere() {
-  await act(async () => {
-    await Promise.resolve()
-    await Promise.resolve()
-  })
-}
-
-export async function cliccare(el: Element | null | undefined) {
-  if (!el) throw new Error('Elemento da cliccare non trovato')
-  await act(async () => {
-    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-  })
-}
-
-/** Scrive in un input controllato da React passando dal setter nativo. */
-export async function scrivere(el: Element | null | undefined, valore: string) {
-  if (!el) throw new Error('Campo non trovato')
-  const input = el as HTMLInputElement | HTMLTextAreaElement
-  const prototipo =
-    input instanceof HTMLTextAreaElement
-      ? window.HTMLTextAreaElement.prototype
-      : window.HTMLInputElement.prototype
-  const setter = Object.getOwnPropertyDescriptor(prototipo, 'value')!.set!
-  await act(async () => {
-    setter.call(input, valore)
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-  })
-}
-
-/** Il primo elemento il cui testo visibile corrisponde. */
-export function perTesto(testo: string | RegExp, selettore = 'button'): HTMLElement | undefined {
-  const elementi = Array.from(document.body.querySelectorAll<HTMLElement>(selettore))
-  return elementi.find((el) => {
-    const contenuto = (el.textContent || '').trim()
-    return typeof testo === 'string' ? contenuto.includes(testo) : testo.test(contenuto)
-  })
-}
-
-export function perId<T extends HTMLElement = HTMLInputElement>(id: string): T | null {
-  return document.body.querySelector<T>(`#${id}`)
-}
+/*
+ * Per interagire con un componente (click, digitazione, ricerca per testo)
+ * esistono già gli helper dello scadenzario in
+ * `src/components/scadenzario/__tests__/render-helpers.tsx`. Quando serviranno
+ * anche qui, la cosa giusta è promuoverli a modulo condiviso invece di
+ * ricopiarli: la prima stesura di questo file li aveva duplicati tutti, e
+ * cinque su nove non li usava nessuno.
+ */
 
 /** Il testo dell'intera pagina montata, con gli spazi normalizzati. */
 export function testoDellaPagina(): string {
