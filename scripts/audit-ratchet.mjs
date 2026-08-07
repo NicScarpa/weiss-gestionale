@@ -24,8 +24,8 @@
 import { spawnSync } from 'node:child_process'
 
 const BASELINE = {
-  critical: 5,
-  high: 16,
+  critical: 0,
+  high: 0,
 }
 
 const esito = spawnSync('npm', ['audit', '--json', '--omit=dev'], {
