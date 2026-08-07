@@ -96,16 +96,26 @@ const DenominationRow = memo(function DenominationRow({
   const total = denomination * count
 
   return (
-    <div className="grid grid-cols-[80px_1fr_100px] items-center gap-2 py-1">
+    // Sotto sm il taglio non ci sta su una riga sola (stepper ~160px + etichetta
+    // + totale in ~215px di card): prima riga etichetta e totale, sotto lo
+    // stepper a tutta larghezza. Da sm in poi torna la riga unica, con
+    // sm:order-* a rimettere il totale in fondo.
+    <div className="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1 py-1 sm:grid-cols-[80px_1fr_100px]">
       {/* Etichetta denominazione */}
       <Label className="font-bold text-sm text-foreground">
         {formatDenomination(denomination)}
       </Label>
 
+      {/* Totale riga */}
+      <span className="text-right font-mono text-sm text-muted-foreground sm:order-3">
+        {formatCurrency(total)}
+      </span>
+
       {/* Input con bottoni +/- */}
-      <div className="flex items-center gap-1">
+      <div className="col-span-2 flex items-center gap-1 sm:col-span-1 sm:order-2">
         <button
           type="button"
+          aria-label={`Togli un pezzo da ${formatDenomination(denomination)}`}
           onClick={() => onIncrement(denomination, -1)}
           disabled={disabled || count === 0}
           className={cn(
@@ -120,6 +130,7 @@ const DenominationRow = memo(function DenominationRow({
         <Input
           type="number"
           min="0"
+          aria-label={`Pezzi da ${formatDenomination(denomination)}`}
           value={count || ''}
           onChange={(e) => onChange(denomination, e.target.value)}
           disabled={disabled}
@@ -128,6 +139,7 @@ const DenominationRow = memo(function DenominationRow({
         />
         <button
           type="button"
+          aria-label={`Aggiungi un pezzo da ${formatDenomination(denomination)}`}
           onClick={() => onIncrement(denomination, 1)}
           disabled={disabled}
           className={cn(
@@ -140,11 +152,6 @@ const DenominationRow = memo(function DenominationRow({
           +
         </button>
       </div>
-
-      {/* Totale riga */}
-      <span className="text-right font-mono text-sm text-muted-foreground">
-        {formatCurrency(total)}
-      </span>
     </div>
   )
 })
