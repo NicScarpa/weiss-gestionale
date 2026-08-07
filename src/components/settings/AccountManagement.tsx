@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -37,13 +37,20 @@ import { Plus, Pencil, Trash2, Loader2, Search, TrendingUp, TrendingDown, Wallet
 import { toast } from 'sonner'
 
 import { logger } from '@/lib/logger'
+import { AccountTree } from './AccountTree'
+
 type AccountType = 'RICAVO' | 'COSTO' | 'ATTIVO' | 'PASSIVO'
+type CostCenterRule = 'OBBLIGATORIO' | 'DEFAULT_STR'
+
+/** Sentinel per il gruppo "Nessuno": Radix Select non ammette value="". */
+const NESSUN_GRUPPO = '__nessun_gruppo__'
 
 interface Account {
   id: string
   code: string
   name: string
   type: AccountType
+  /** Campo libero ereditato dal vecchio impianto, senza uso in logica (vedi report Task 18). Sparito dal form, mostrato se già valorizzato. */
   category: string | null
   parentId: string | null
   parent: {
@@ -51,6 +58,12 @@ interface Account {
     code: string
     name: string
   } | null
+  // Gerarchia del piano v4 (mastro/gruppo), null sui conti patrimoniali e legacy.
+  mastroCode: string | null
+  mastroNome: string | null
+  gruppoCode: string | null
+  gruppoNome: string | null
+  costCenterRule: CostCenterRule
   isActive: boolean
   _count: {
     expenses: number
@@ -65,13 +78,60 @@ const ACCOUNT_TYPES: { value: AccountType; label: string; icon: React.ComponentT
   { value: 'PASSIVO', label: 'Passivita', icon: CreditCard },
 ]
 
+/** Tab con l'albero mastro → gruppo → voce: solo i tipi coperti dal piano v4. Attivo/Passivo restano liste piatte. */
+const TIPI_AD_ALBERO = new Set<AccountType>(['RICAVO', 'COSTO'])
+
 const initialFormData = {
   code: '',
   name: '',
   type: 'COSTO' as AccountType,
-  category: '',
-  parentId: '',
+  mastroCode: '',
+  gruppoCode: '',
+  costCenterRule: 'DEFAULT_STR' as CostCenterRule,
   isActive: true,
+}
+
+interface OpzioneGerarchia {
+  code: string
+  nome: string
+}
+
+/** Confronto codici numeric-aware: "9" prima di "10", a differenza di localeCompare puro su stringhe di lunghezza diversa. */
+function confrontaCodici(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true })
+}
+
+/**
+ * Mastri distinti (code+nome) tra i conti già caricati, per il tipo dato —
+ * il "SELECT DISTINCT dei dati" richiesto dal brief del Task 18: la select
+ * del form propone solo mastri già usati da almeno un conto, mai testo
+ * libero, per non introdurre varianti del nome che spaccherebbero il
+ * raggruppamento dell'albero e dei report (mastroNome è denormalizzato per
+ * conto, non una tabella a parte).
+ *
+ * Esportata per essere testata come funzione pura (il progetto non ha
+ * un'infrastruttura funzionante per il rendering dei componenti React, vedi
+ * il report del Task 11).
+ */
+export function getMastroOptions(accounts: Account[], type: AccountType): OpzioneGerarchia[] {
+  const map = new Map<string, string>()
+  for (const account of accounts) {
+    if (account.type === type && account.mastroCode) {
+      map.set(account.mastroCode, account.mastroNome ?? account.mastroCode)
+    }
+  }
+  return Array.from(map, ([code, nome]) => ({ code, nome })).sort((a, b) => confrontaCodici(a.code, b.code))
+}
+
+/** Come getMastroOptions, ma per i gruppi di un singolo mastro (select dipendente, si svuota se il mastro cambia). */
+export function getGruppoOptions(accounts: Account[], mastroCode: string): OpzioneGerarchia[] {
+  const map = new Map<string, string>()
+  for (const account of accounts) {
+    if (account.mastroCode === mastroCode && account.gruppoCode) {
+      map.set(account.gruppoCode, account.gruppoNome ?? account.gruppoCode)
+    }
+  }
+  return Array.from(map, ([code, nome]) => ({ code, nome })).sort((a, b) => confrontaCodici(a.code, b.code))
 }
 
 export function AccountManagement() {
@@ -108,6 +168,13 @@ export function AccountManagement() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showInactive])
 
+  const isTipoEconomico = formData.type === 'RICAVO' || formData.type === 'COSTO'
+  const mastroOptions = useMemo(() => getMastroOptions(accounts, formData.type), [accounts, formData.type])
+  const gruppoOptions = useMemo(
+    () => (formData.mastroCode ? getGruppoOptions(accounts, formData.mastroCode) : []),
+    [accounts, formData.mastroCode]
+  )
+
   // Filtra conti per tipo e ricerca
   const filteredAccounts = accounts.filter(
     (a) =>
@@ -115,11 +182,7 @@ export function AccountManagement() {
       (a.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
         a.name.toLowerCase().includes(searchQuery.toLowerCase()))
   )
-
-  // Conti per select parent (solo stesso tipo)
-  const parentAccounts = accounts.filter(
-    (a) => a.type === formData.type && a.isActive && a.id !== editingAccount?.id
-  )
+  const searchActive = searchQuery.trim().length > 0
 
   // Conta per tipo
   const countByType = (type: AccountType) =>
@@ -139,8 +202,9 @@ export function AccountManagement() {
       code: account.code,
       name: account.name,
       type: account.type,
-      category: account.category || '',
-      parentId: account.parentId || '',
+      mastroCode: account.mastroCode || '',
+      gruppoCode: account.gruppoCode || '',
+      costCenterRule: account.costCenterRule,
       isActive: account.isActive,
     })
     setIsDialogOpen(true)
@@ -159,17 +223,31 @@ export function AccountManagement() {
       return
     }
 
+    if (isTipoEconomico && !formData.mastroCode) {
+      toast.error('Il mastro è obbligatorio per i conti di ricavo e di costo')
+      return
+    }
+
     try {
       setSaving(true)
+
+      const mastro = mastroOptions.find((m) => m.code === formData.mastroCode)
+      const gruppo = gruppoOptions.find((g) => g.code === formData.gruppoCode)
 
       const payload = {
         ...(editingAccount && { id: editingAccount.id }),
         code: formData.code.trim(),
         name: formData.name.trim(),
         type: formData.type,
-        category: formData.category.trim() || null,
-        parentId: formData.parentId || null,
         isActive: formData.isActive,
+        // Solo i conti economici (RICAVO/COSTO) appartengono al piano v4: un
+        // conto patrimoniale ha sempre mastro/gruppo nulli, anche se erano
+        // valorizzati prima che il tipo venisse cambiato nel form.
+        mastroCode: isTipoEconomico ? formData.mastroCode : null,
+        mastroNome: isTipoEconomico ? mastro?.nome ?? null : null,
+        gruppoCode: isTipoEconomico ? formData.gruppoCode || null : null,
+        gruppoNome: isTipoEconomico ? gruppo?.nome ?? null : null,
+        costCenterRule: formData.costCenterRule,
       }
 
       const res = await fetch('/api/accounts', {
@@ -292,7 +370,19 @@ export function AccountManagement() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {filteredAccounts.length === 0 ? (
+                {TIPI_AD_ALBERO.has(type.value) ? (
+                  <AccountTree
+                    accounts={filteredAccounts}
+                    searchActive={searchActive}
+                    onEdit={handleEdit}
+                    onDelete={handleDeleteConfirm}
+                    emptyMessage={
+                      searchQuery
+                        ? 'Nessun conto trovato'
+                        : `Nessun conto di tipo ${type.label.toLowerCase()} configurato`
+                    }
+                  />
+                ) : filteredAccounts.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-4">
                     {searchQuery
                       ? 'Nessun conto trovato'
@@ -385,7 +475,7 @@ export function AccountManagement() {
                   onChange={(e) =>
                     setFormData({ ...formData, code: e.target.value })
                   }
-                  placeholder="es. 601"
+                  placeholder="es. 20.1.06"
                   className="font-mono"
                   maxLength={20}
                 />
@@ -409,7 +499,7 @@ export function AccountManagement() {
               <Select
                 value={formData.type}
                 onValueChange={(value: AccountType) =>
-                  setFormData({ ...formData, type: value, parentId: '' })
+                  setFormData({ ...formData, type: value, mastroCode: '', gruppoCode: '' })
                 }
               >
                 <SelectTrigger>
@@ -425,43 +515,81 @@ export function AccountManagement() {
               </Select>
             </div>
 
-            {/* Categoria */}
-            <div className="space-y-2">
-              <Label htmlFor="account-category">Categoria</Label>
-              <Input
-                id="account-category"
-                value={formData.category}
-                onChange={(e) =>
-                  setFormData({ ...formData, category: e.target.value })
-                }
-                placeholder="es. Materie Prime"
-              />
-              <p className="text-xs text-muted-foreground">
-                Raggruppamento per report
-              </p>
-            </div>
+            {/* Mastro e Gruppo: solo per i conti del piano v4 (RICAVO/COSTO) */}
+            {isTipoEconomico && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="account-mastro">Mastro *</Label>
+                  <Select
+                    value={formData.mastroCode}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, mastroCode: value, gruppoCode: '' })
+                    }
+                  >
+                    <SelectTrigger id="account-mastro">
+                      <SelectValue placeholder="Seleziona mastro" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {mastroOptions.map((m) => (
+                        <SelectItem key={m.code} value={m.code}>
+                          {m.code} - {m.nome}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            {/* Conto Padre */}
+                <div className="space-y-2">
+                  <Label htmlFor="account-gruppo">Gruppo</Label>
+                  <Select
+                    value={formData.gruppoCode || NESSUN_GRUPPO}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, gruppoCode: value === NESSUN_GRUPPO ? '' : value })
+                    }
+                    disabled={!formData.mastroCode || gruppoOptions.length === 0}
+                  >
+                    <SelectTrigger id="account-gruppo">
+                      <SelectValue placeholder="Nessuno" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NESSUN_GRUPPO}>Nessuno</SelectItem>
+                      {gruppoOptions.map((g) => (
+                        <SelectItem key={g.code} value={g.code}>
+                          {g.code} - {g.nome}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {formData.mastroCode && gruppoOptions.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Questo mastro non è articolato in gruppi
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* Regola centro di costo */}
             <div className="space-y-2">
-              <Label htmlFor="account-parent">Conto Padre</Label>
+              <Label htmlFor="account-cost-center-rule">Regola centro di costo</Label>
               <Select
-                value={formData.parentId || '__none__'}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, parentId: value === '__none__' ? '' : value })
+                value={formData.costCenterRule}
+                onValueChange={(value: CostCenterRule) =>
+                  setFormData({ ...formData, costCenterRule: value })
                 }
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Nessuno (conto principale)" />
+                <SelectTrigger id="account-cost-center-rule">
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">Nessuno</SelectItem>
-                  {parentAccounts.map((account) => (
-                    <SelectItem key={account.id} value={account.id}>
-                      {account.code} - {account.name}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="OBBLIGATORIO">CdC obbligatorio</SelectItem>
+                  <SelectItem value="DEFAULT_STR">Default STR</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                &quot;CdC obbligatorio&quot; blocca la registrazione senza centro di costo; &quot;Default STR&quot;
+                lo assegna automaticamente a Struttura/Amministrazione se non indicato
+              </p>
             </div>
 
             {/* Stato Attivo */}

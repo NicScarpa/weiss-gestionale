@@ -13,6 +13,15 @@ const accountSchema = z.object({
   category: z.string().optional().nullable(),
   parentId: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
+  // Gerarchia del piano v4 (Task 18: form voce con mastro/gruppo). mastroCode
+  // e mastroNome viaggiano sempre in coppia dal client (l'ammnistrazione li
+  // deriva da un menu a discesa sui dati esistenti, mai testo libero), stessa
+  // cosa per gruppoCode/gruppoNome quando il mastro è articolato in gruppi.
+  mastroCode: z.string().optional().nullable(),
+  mastroNome: z.string().optional().nullable(),
+  gruppoCode: z.string().optional().nullable(),
+  gruppoNome: z.string().optional().nullable(),
+  costCenterRule: z.enum(['OBBLIGATORIO', 'DEFAULT_STR']).optional(),
 })
 
 // GET /api/accounts - Lista conti (per uscite)
@@ -138,6 +147,13 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const validatedData = accountSchema.parse(body)
 
+    if (validatedData.gruppoCode && !validatedData.mastroCode) {
+      return NextResponse.json(
+        { error: 'Il gruppo richiede un mastro' },
+        { status: 400 }
+      )
+    }
+
     // Verifica codice unico
     const existingCode = await prisma.account.findUnique({
       where: { code: validatedData.code },
@@ -158,6 +174,11 @@ export async function POST(request: NextRequest) {
         category: validatedData.category,
         parentId: validatedData.parentId,
         isActive: validatedData.isActive,
+        mastroCode: validatedData.mastroCode,
+        mastroNome: validatedData.mastroNome,
+        gruppoCode: validatedData.gruppoCode,
+        gruppoNome: validatedData.gruppoNome,
+        ...(validatedData.costCenterRule && { costCenterRule: validatedData.costCenterRule }),
       },
       include: {
         parent: {
@@ -216,6 +237,20 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Conto non trovato' }, { status: 404 })
     }
 
+    // Coerenza mastro/gruppo sullo stato risultante (esistente + patch), non
+    // solo sul payload: un PUT che tocca solo il gruppo deve comunque vedere
+    // il mastro già presente sul conto.
+    const mastroCodeRisultante =
+      validatedData.mastroCode !== undefined ? validatedData.mastroCode : existing.mastroCode
+    const gruppoCodeRisultante =
+      validatedData.gruppoCode !== undefined ? validatedData.gruppoCode : existing.gruppoCode
+    if (gruppoCodeRisultante && !mastroCodeRisultante) {
+      return NextResponse.json(
+        { error: 'Il gruppo richiede un mastro' },
+        { status: 400 }
+      )
+    }
+
     // Verifica codice unico se modificato
     if (validatedData.code && validatedData.code !== existing.code) {
       const existingCode = await prisma.account.findUnique({
@@ -238,6 +273,11 @@ export async function PUT(request: NextRequest) {
         ...(validatedData.category !== undefined && { category: validatedData.category }),
         ...(validatedData.parentId !== undefined && { parentId: validatedData.parentId }),
         ...(validatedData.isActive !== undefined && { isActive: validatedData.isActive }),
+        ...(validatedData.mastroCode !== undefined && { mastroCode: validatedData.mastroCode }),
+        ...(validatedData.mastroNome !== undefined && { mastroNome: validatedData.mastroNome }),
+        ...(validatedData.gruppoCode !== undefined && { gruppoCode: validatedData.gruppoCode }),
+        ...(validatedData.gruppoNome !== undefined && { gruppoNome: validatedData.gruppoNome }),
+        ...(validatedData.costCenterRule !== undefined && { costCenterRule: validatedData.costCenterRule }),
       },
       include: {
         parent: {
