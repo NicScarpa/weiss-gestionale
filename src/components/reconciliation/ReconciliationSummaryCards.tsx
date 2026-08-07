@@ -60,7 +60,7 @@ export function ReconciliationSummaryCards({
       title: 'Ignorati',
       value: summary?.ignored ?? 0,
       icon: Ban,
-      color: 'text-gray-600',
+      color: 'text-muted-foreground',
       bgColor: 'bg-gray-100',
     },
     {

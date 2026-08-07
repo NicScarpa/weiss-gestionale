@@ -357,7 +357,7 @@ export default function ScadenzarioDetailPage() {
                 {schedule.verificata ? '✓ Verificata' : '○ Da verificare'}
               </Badge>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">
               {schedule.descrizione}
             </h1>
           </div>

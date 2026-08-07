@@ -234,7 +234,7 @@ export default function ScadenzarioPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">
             Scadenzario
           </h1>
           <p className="text-muted-foreground">
@@ -252,7 +252,7 @@ export default function ScadenzarioPage() {
               onCheckedChange={setShowSaldoScalare}
               className="h-[22px] w-[42px] border border-neutral-300 data-[state=checked]:border-neutral-900 shadow-none data-[state=unchecked]:bg-neutral-300 data-[state=checked]:bg-neutral-900 [&>span]:size-[18px]"
             />
-            <span className="text-sm font-medium select-none text-slate-600">
+            <span className="text-sm font-medium select-none text-muted-foreground">
               Mostra saldo scalare
             </span>
           </label>

@@ -490,8 +490,8 @@ export default function FeriePermessiPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Ferie e Permessi</h1>
-          <p className="text-sm text-slate-600 mt-1">
+          <h1 className="text-2xl font-bold text-foreground">Ferie e Permessi</h1>
+          <p className="text-sm text-muted-foreground mt-1">
             Gestisci le richieste di ferie e permessi del personale
           </p>
         </div>
@@ -592,7 +592,7 @@ export default function FeriePermessiPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <User className="h-4 w-4 text-slate-400" />
-                      <span className="font-medium text-slate-900">
+                      <span className="font-medium text-foreground">
                         {req.user.firstName} {req.user.lastName}
                       </span>
                       {req.user.venue && (
@@ -613,7 +613,7 @@ export default function FeriePermessiPage() {
                       >
                         {req.leaveType.name}
                       </Badge>
-                      <span className="text-sm text-slate-600">
+                      <span className="text-sm text-muted-foreground">
                         {formatDateRange(req.startDate, req.endDate)}
                       </span>
                       {req.daysRequested && (
@@ -664,7 +664,7 @@ export default function FeriePermessiPage() {
                         className={cn(
                           req.status === 'APPROVED' && 'bg-emerald-100 text-emerald-700',
                           req.status === 'REJECTED' && 'bg-red-100 text-red-700',
-                          req.status === 'CANCELLED' && 'bg-slate-100 text-slate-600'
+                          req.status === 'CANCELLED' && 'bg-slate-100 text-muted-foreground'
                         )}
                       >
                         {req.status === 'APPROVED' && 'Approvata'}

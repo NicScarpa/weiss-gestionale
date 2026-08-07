@@ -146,7 +146,7 @@ export function SaldoScalarePanel({ visible }: SaldoScalarePanelProps) {
                 </div>
                 <p className={cn(
                   "text-xl font-bold",
-                  data.saldoOggi >= 0 ? 'text-slate-900' : 'text-rose-600'
+                  data.saldoOggi >= 0 ? 'text-foreground' : 'text-rose-600'
                 )}>
                   {formatCurrency(data.saldoOggi)}
                 </p>
@@ -199,7 +199,7 @@ export function SaldoScalarePanel({ visible }: SaldoScalarePanelProps) {
                 </div>
                 <p className={cn(
                   "text-xl font-bold",
-                  data.saldoFinale >= 0 ? 'text-slate-900' : 'text-rose-600'
+                  data.saldoFinale >= 0 ? 'text-foreground' : 'text-rose-600'
                 )}>
                   {formatCurrency(data.saldoFinale)}
                 </p>

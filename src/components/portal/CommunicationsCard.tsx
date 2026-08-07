@@ -32,18 +32,18 @@ export function CommunicationsCard() {
 
   return (
     <Link href="/portale/comunicazioni">
-      <Card className="rounded-2xl border-gray-100 transition-colors hover:bg-gray-50">
+      <Card className="rounded-2xl border-border transition-colors hover:bg-muted">
         <CardContent className="flex items-center gap-3 py-4">
           <div
             className={cn(
               'relative flex h-11 w-11 items-center justify-center rounded-xl',
-              nonLette > 0 ? 'bg-gray-900' : 'bg-gray-100'
+              nonLette > 0 ? 'bg-gray-900' : 'bg-muted'
             )}
           >
             <Megaphone
               className={cn(
                 'h-5 w-5',
-                nonLette > 0 ? 'text-white' : 'text-gray-700'
+                nonLette > 0 ? 'text-white' : 'text-foreground'
               )}
             />
             {nonLette > 0 && (
@@ -53,10 +53,10 @@ export function CommunicationsCard() {
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium text-gray-900">Comunicazioni</div>
-            <div className="truncate text-xs text-gray-500">{sottotitolo}</div>
+            <div className="text-sm font-medium text-foreground">Comunicazioni</div>
+            <div className="truncate text-xs text-muted-foreground">{sottotitolo}</div>
           </div>
-          <ChevronRight className="h-4 w-4 flex-shrink-0 text-gray-400" />
+          <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
         </CardContent>
       </Card>
     </Link>

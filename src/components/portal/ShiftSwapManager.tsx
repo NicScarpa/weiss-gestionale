@@ -152,14 +152,14 @@ function SwapCard({ swap, isSent, currentUserId, onAccept, onReject, onCancel, i
   return (
     <Card className={cn(
       "transition-colors",
-      isPending && "border-gray-300 bg-gray-50"
+      isPending && "border-border bg-muted"
     )}>
       <CardContent className="p-4">
         <div className="flex flex-col gap-3">
           {/* Header con data e stato */}
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-gray-500" />
+              <Calendar className="w-4 h-4 text-muted-foreground" />
               <span className="font-medium">
                 {format(parseISO(swap.date), 'EEEE d MMMM yyyy', { locale: it })}
               </span>
@@ -170,7 +170,7 @@ function SwapCard({ swap, isSent, currentUserId, onAccept, onReject, onCancel, i
           {/* Dettagli turno */}
           <div className="flex items-center gap-4 text-sm">
             <div className="flex items-center gap-1.5">
-              <Clock className="w-4 h-4 text-gray-400" />
+              <Clock className="w-4 h-4 text-muted-foreground" />
               <span>
                 {formatTime(swap.startTime)} - {formatTime(swap.endTime)}
               </span>
@@ -179,30 +179,30 @@ function SwapCard({ swap, isSent, currentUserId, onAccept, onReject, onCancel, i
               <Badge variant="secondary">{swap.shiftDefinition.name}</Badge>
             )}
             {swap.venue && (
-              <span className="text-gray-500">{swap.venue.name}</span>
+              <span className="text-muted-foreground">{swap.venue.name}</span>
             )}
           </div>
 
           {/* Scambio visualizzato */}
-          <div className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg">
+          <div className="flex items-center gap-3 p-2 bg-muted rounded-lg">
             <div className="flex items-center gap-2 flex-1">
-              <User className="w-4 h-4 text-gray-400" />
+              <User className="w-4 h-4 text-muted-foreground" />
               <span className="text-sm">
                 {swap.user?.firstName} {swap.user?.lastName}
               </span>
             </div>
-            <ArrowLeftRight className="w-5 h-5 text-gray-700" />
+            <ArrowLeftRight className="w-5 h-5 text-foreground" />
             <div className="flex items-center gap-2 flex-1 justify-end">
               <span className="text-sm">
                 {swap.targetUser?.firstName} {swap.targetUser?.lastName}
               </span>
-              <User className="w-4 h-4 text-gray-400" />
+              <User className="w-4 h-4 text-muted-foreground" />
             </div>
           </div>
 
           {/* Turno target (se esiste) */}
           {swap.targetAssignment?.shiftDefinition && (
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-muted-foreground">
               Il collega ha: {swap.targetAssignment.shiftDefinition.name} ({formatTime(swap.targetAssignment.shiftDefinition.startTime)} - {formatTime(swap.targetAssignment.shiftDefinition.endTime)})
             </div>
           )}
@@ -362,7 +362,7 @@ export function ShiftSwapManager({ currentUserId }: ShiftSwapManagerProps) {
         <TabsContent value={activeTab} className="mt-4 space-y-3">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
             </div>
           ) : swaps && swaps.length > 0 ? (
             swaps.map((swap) => (
@@ -382,7 +382,7 @@ export function ShiftSwapManager({ currentUserId }: ShiftSwapManagerProps) {
             ))
           ) : (
             <Card>
-              <CardContent className="p-6 text-center text-gray-500">
+              <CardContent className="p-6 text-center text-muted-foreground">
                 <ArrowLeftRight className="w-12 h-12 mx-auto mb-3 text-gray-300" />
                 <p>Nessuna richiesta di scambio</p>
               </CardContent>

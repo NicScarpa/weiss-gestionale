@@ -132,7 +132,7 @@ export function NotificationBell({ className }: NotificationBellProps) {
             className
           )}
         >
-          <Bell className="h-5 w-5 text-gray-600" />
+          <Bell className="h-5 w-5 text-muted-foreground" />
           {unreadCount > 0 && (
             <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold leading-none text-white">
               {unreadCount > 99 ? '99+' : unreadCount}
@@ -146,7 +146,7 @@ export function NotificationBell({ className }: NotificationBellProps) {
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold">Notifiche</span>
             {unreadCount > 0 && (
-              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-muted-foreground">
                 {unreadCount} non lette
               </span>
             )}
@@ -155,7 +155,7 @@ export function NotificationBell({ className }: NotificationBellProps) {
             type="button"
             onClick={handleMarkAllAsRead}
             disabled={unreadCount === 0 || markReadMutation.isPending}
-            className="flex items-center gap-1 text-xs font-medium text-gray-600 transition-colors hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
           >
             <CheckCheck className="h-3.5 w-3.5" />
             Segna tutte come lette
@@ -209,12 +209,12 @@ export function NotificationBell({ className }: NotificationBellProps) {
                         <span
                           className={cn(
                             'block truncate text-sm',
-                            isUnread ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'
+                            isUnread ? 'font-semibold text-foreground' : 'font-medium text-foreground'
                           )}
                         >
                           {notification.title}
                         </span>
-                        <span className="mt-0.5 line-clamp-2 text-xs text-gray-600">
+                        <span className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
                           {notification.body}
                         </span>
                         <span className="mt-1 block text-[11px] text-gray-400">

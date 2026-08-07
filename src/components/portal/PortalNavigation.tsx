@@ -54,7 +54,7 @@ export function PortalNavigation() {
   const pathname = usePathname()
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-100">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t">
       <div className="flex items-center justify-around h-16">
         {navItems.map((item) => {
           const isActive = pathname === item.href ||
@@ -70,14 +70,14 @@ export function PortalNavigation() {
                 // larghezza fissa traboccherebbe sugli schermi stretti
                 'flex flex-col items-center justify-center flex-1 min-w-0 h-full px-0.5 transition-colors duration-200 sm:px-1',
                 isActive
-                  ? 'text-gray-900'
-                  : 'text-gray-400 hover:text-gray-600'
+                  ? 'text-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
               )}
             >
               <div className={cn(
                 'flex items-center justify-center mb-1 transition-all duration-200',
                 isActive
-                  ? 'bg-gray-100 rounded-full h-10 w-10'
+                  ? 'bg-accent rounded-full h-10 w-10'
                   : 'h-5 w-5'
               )}>
                 <item.icon className={cn(

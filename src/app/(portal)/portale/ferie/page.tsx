@@ -87,13 +87,13 @@ function getStatusConfig(status: string) {
       return {
         label: 'Annullata',
         icon: AlertCircle,
-        className: 'bg-gray-50 text-gray-500 border border-gray-200',
+        className: 'bg-muted text-muted-foreground border border-border',
       }
     default:
       return {
         label: status,
         icon: AlertCircle,
-        className: 'bg-gray-50 text-gray-500 border border-gray-200',
+        className: 'bg-muted text-muted-foreground border border-border',
       }
   }
 }
@@ -144,8 +144,8 @@ export default function PortalFeriePage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Ferie e Permessi</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <h1 className="text-2xl font-bold text-foreground">Ferie e Permessi</h1>
+          <p className="text-sm text-muted-foreground mt-1">
             Gestisci le tue richieste di ferie e permessi
           </p>
         </div>
@@ -175,7 +175,7 @@ export default function PortalFeriePage() {
               return (
                 <div
                   key={req.id}
-                  className="flex items-start gap-4 p-4 rounded-2xl border-l-4 border-l-amber-400 border border-gray-100 bg-white"
+                  className="flex items-start gap-4 p-4 rounded-2xl border-l-4 border-l-amber-400 border border-border bg-card"
                 >
                   <div
                     className="w-1 h-12 rounded-full mt-1"
@@ -183,7 +183,7 @@ export default function PortalFeriePage() {
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="font-medium text-gray-900">
+                      <span className="font-medium text-foreground">
                         {req.leaveType.name}
                       </span>
                       <Badge className={status.className}>
@@ -191,16 +191,16 @@ export default function PortalFeriePage() {
                         {status.label}
                       </Badge>
                     </div>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-muted-foreground">
                       {formatDateRange(req.startDate, req.endDate)}
                       {req.daysRequested && (
-                        <span className="ml-2 text-gray-500">
+                        <span className="ml-2 text-muted-foreground">
                           ({Number(req.daysRequested).toFixed(1)} giorni)
                         </span>
                       )}
                     </p>
                     {req.notes && (
-                      <p className="text-sm text-gray-500 mt-1 italic">
+                      <p className="text-sm text-muted-foreground mt-1 italic">
                         &quot;{req.notes}&quot;
                       </p>
                     )}
@@ -273,7 +273,7 @@ export default function PortalFeriePage() {
                     />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="font-medium text-gray-900">
+                        <span className="font-medium text-foreground">
                           {req.leaveType.name}
                         </span>
                         <Badge className={status.className}>
@@ -281,10 +281,10 @@ export default function PortalFeriePage() {
                           {status.label}
                         </Badge>
                       </div>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm text-muted-foreground">
                         {formatDateRange(req.startDate, req.endDate)}
                         {req.daysRequested && (
-                          <span className="ml-2 text-gray-500">
+                          <span className="ml-2 text-muted-foreground">
                             ({Number(req.daysRequested).toFixed(1)} giorni)
                           </span>
                         )}
@@ -300,7 +300,7 @@ export default function PortalFeriePage() {
               })}
             </div>
           ) : (
-            <p className="text-sm text-gray-400 text-center py-8">
+            <p className="text-sm text-muted-foreground text-center py-8">
               Nessuna richiesta precedente
             </p>
           )}
