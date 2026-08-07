@@ -43,14 +43,23 @@ const nextConfig: NextConfig = {
   },
 };
 
+// L'upload dei source map a Sentry richiede un token: senza, il build deve
+// procedere in silenzio invece di riempire i log di avvisi. Nessuno deve avere
+// bisogno di un account Sentry per compilare il progetto.
+const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN;
+
 // Configurazione Sentry
 const sentryConfig = {
   // Organizzazione e progetto Sentry (configurare in .env)
   org: process.env.SENTRY_ORG,
   project: process.env.SENTRY_PROJECT,
+  authToken: sentryAuthToken,
 
-  // Carica source maps solo in produzione
-  silent: process.env.NODE_ENV !== "production",
+  silent: !sentryAuthToken,
+
+  sourcemaps: {
+    disable: !sentryAuthToken,
+  },
 
   // Upload source maps per debugging migliore
   widenClientFileUpload: true,
@@ -66,7 +75,8 @@ const sentryConfig = {
     treeshake: {
       removeDebugLogging: true,
     },
-    automaticVercelMonitors: true,
+    // La produzione gira su Railway: i cron monitor di Vercel non esistono.
+    automaticVercelMonitors: false,
   },
 };
 
