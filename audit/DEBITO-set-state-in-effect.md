@@ -14,9 +14,19 @@ componente si disegna, l'effetto parte, lo stato cambia, il componente si ridise
 o una pagina con più effetti concatenati diventa una cascata di render che l'utente percepisce come
 lentezza o sfarfallio.
 
-Oggi il progetto non se ne accorge perché `eslint-plugin-react-hooks` è alla **7.0.1**, dove la
-regola è un semplice avviso. Nella **7.1.1 la stessa regola è un errore**: al primo aggiornamento
-legittimo del plugin — che arriverà con un `npm update` o con Next — **la CI si ferma su 40 errori**.
+Oggi il progetto non se ne accorge perché con `eslint-plugin-react-hooks` **7.0.1 la regola non si
+attiva affatto**: `npx eslint src` sul ramo di integrazione riporta **zero** occorrenze di
+`set-state-in-effect` e di `exhaustive-deps` — solo 67 `no-unused-vars` e 4 `incompatible-library`.
+Nella **7.1.1 le stesse righe diventano errori bloccanti**: al primo aggiornamento legittimo del
+plugin — che arriverà con un `npm update` o dietro Next — **la CI si ferma su 40 errori**.
+
+> **Attenzione a non concludere che il problema non esista.** Cercandole oggi non si trova nulla, ed
+> è precisamente ciò che rende questo debito insidioso. Che le righe siano reali lo dimostra un
+> dettaglio indipendente: nel codice **esistono già deroghe scritte a mano** per quella regola —
+> `scadenzario/regole/page.tsx:55`, `scadenzario/ricorrenze/page.tsx:45`,
+> `create-schedule-sheet.tsx:170`, `saldo-scalare-panel.tsx:70`, `create-recurrence-dialog.tsx:129` —
+> e con la 7.0.1 il linter le segnala come *inutili* ("no problems were reported"). Qualcuno le ha
+> messe perché la regola scattava; oggi non scatta più; domani riscatterà.
 
 Sono emerse per caso, da un worktree con l'ambiente andato alla deriva (vedi `STATO-REMEDIATION.md`
 §6 n.10), ma **non sono un artefatto**: il codice è quello, e il difetto è reale a prescindere dalla
