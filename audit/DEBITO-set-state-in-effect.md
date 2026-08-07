@@ -45,7 +45,12 @@ appartengono ad altri lotti. Va fatto come lotto a sé, con un agente dedicato, 
 3. Alla fine, **alzare `eslint-plugin-react-hooks` alla 7.1.x nello stesso lotto**: è la prova che
    il debito è estinto, e impedisce che rientri.
 
-## Gruppo 1 — `set-state-in-effect`: 30 occorrenze (il grosso del lavoro)
+## Gruppo 1 — `set-state-in-effect`: 29 occorrenze (il grosso del lavoro)
+
+> Erano 30. **`src/app/(dashboard)/cash-flow/page.tsx:78` è già stata estinta** in W3 da C4, che ha
+> riscritto la pagina con TanStack Query: nessun `useEffect`, i `useState` rimasti tengono solo i
+> filtri di data. È esattamente il rimedio proposto qui sotto al punto 1, e vale come prova che
+> funziona.
 
 ```
 src/app/(auth)/invito/page.tsx:45
@@ -56,7 +61,6 @@ src/app/(dashboard)/anagrafiche/utenti/page.tsx:55,86
 src/app/(dashboard)/budget/BudgetList.tsx:123
 src/app/(dashboard)/budget/[id]/BudgetDetailClient.tsx:120
 src/app/(dashboard)/budget/confronto/BudgetConfrontoClient.tsx:192
-src/app/(dashboard)/cash-flow/page.tsx:78
 src/app/(dashboard)/chiusura-cassa/ClosureList.tsx:155
 src/app/(dashboard)/fatture/page.tsx:69
 src/app/(dashboard)/prima-nota/movimenti/MovimentiClient.tsx:137

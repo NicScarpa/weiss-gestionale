@@ -200,6 +200,15 @@ sessione parallela su `presenze/regole-orario`.
   dipendenze nuove solo via `Needs-Dep:` al proprietario di `package.json` dell'ondata.
 - **Merge sequenziale con gate completo dopo ognuno**; se il gate cade → `git revert -m 1`.
 - **Test-first** e **verifica per inversione fatta dal lead** (non fidarsi del report: rifare).
+- **Il "verde" non basta: controllare che il CONTEGGIO dei test sia quello atteso.** Un test che
+  sparisce non fa fallire niente — fa solo scendere un numero che nessuno guarda. Caso reale del
+  7 ago: un agente ha perso due test appena scritti facendo `stash`/`checkout` in detached HEAD, e
+  se n'è accorto solo perché i test di integrazione erano 167 invece di 169. Corollario: `git status`
+  pulito non va controllato solo prima di consegnare, ma **subito dopo ogni stash o checkout**.
+- **`set -e` NON funziona in questo ambiente**: dopo un comando fallito la catena prosegue. Un gate
+  scritto come sequenza con `set -e` può stampare "build: OK" in fondo pur avendo un passo rosso in
+  mezzo. Controllare il codice di uscita di **ogni** passo e stampare un verdetto unico
+  (script pronto: vedi §7 "Gate di verifica").
 - **Report standard richiesto a ogni agente** (gli agenti si fermano senza inviarlo: richiederlo
   esplicitamente): esito gate coi numeri, evidenza test-first, file toccati, dubbi aperti.
 - **Estensione di proprietà mid-ondata**: lecita se decisa dal lead dopo verifica che nessun altro
