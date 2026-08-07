@@ -1,15 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// La pipeline è best-effort assoluto: si mocka prisma, il parser, il mapping
-// budget e l'SDK Anthropic per osservare esattamente cosa viene scritto senza
-// mai colpire una vera API o un vero database.
+// La pipeline è best-effort assoluto: si mocca prisma, il parser e l'SDK
+// Anthropic per osservare esattamente cosa viene scritto senza mai colpire
+// una vera API o un vero database.
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     electronicInvoice: { findUnique: vi.fn() },
     invoiceLineAccount: { findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
     supplierProductAccount: { findMany: vi.fn() },
     account: { findMany: vi.fn() },
-    budgetCategory: { findMany: vi.fn() },
   },
 }))
 
@@ -21,10 +20,6 @@ vi.mock('@/lib/sdi/parser', () => ({
   parseFatturaPA: vi.fn(),
 }))
 
-vi.mock('@/lib/accounts/mapping', () => ({
-  derivaBudgetCategoryDaConto: vi.fn(),
-}))
-
 vi.mock('@anthropic-ai/sdk', () => ({
   default: vi.fn(),
 }))
@@ -33,7 +28,6 @@ import Anthropic from '@anthropic-ai/sdk'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { parseFatturaPA } from '@/lib/sdi/parser'
-import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
 import { categorizzaRigheFattura } from '../index'
 
 const INVOICE_ID = 'fatt-1'
@@ -64,8 +58,20 @@ const rigaAcqua = {
 }
 
 const contiCosto = [
-  { id: 'acc-pane', name: 'Materie prime - pane' },
-  { id: 'acc-acqua', name: 'Materie prime - bevande' },
+  {
+    id: 'acc-pane',
+    name: 'Materie prime - pane',
+    code: '20.01',
+    mastroNome: 'Materie prime, sussidiarie e merci',
+    gruppoNome: null,
+  },
+  {
+    id: 'acc-acqua',
+    name: 'Materie prime - bevande',
+    code: '20.02',
+    mastroNome: 'Materie prime, sussidiarie e merci',
+    gruppoNome: null,
+  },
 ]
 
 const mockAnthropicParse = vi.fn()
@@ -80,8 +86,6 @@ beforeEach(() => {
   vi.mocked(prisma.invoiceLineAccount.update).mockResolvedValue({} as never)
   vi.mocked(prisma.supplierProductAccount.findMany).mockResolvedValue([])
   vi.mocked(prisma.account.findMany).mockResolvedValue(contiCosto as never)
-  vi.mocked(prisma.budgetCategory.findMany).mockResolvedValue([])
-  vi.mocked(derivaBudgetCategoryDaConto).mockResolvedValue(null)
   vi.mocked(parseFatturaPA).mockReturnValue({
     dettaglioLinee: [rigaPane, rigaAcqua],
   } as never)
@@ -382,5 +386,50 @@ describe('categorizzaRigheFattura', () => {
 
     expect(parseFatturaPA).not.toHaveBeenCalled()
     expect(prisma.invoiceLineAccount.create).not.toHaveBeenCalled()
+  })
+
+  it('prompt: raggruppa i conti per gruppo (mastro in fallback) e ordina i gruppi per primo codice contenuto, con "Non categorizzato" sempre in fondo', async () => {
+    vi.mocked(prisma.account.findMany).mockResolvedValue([
+      // Mastro senza gruppo: raggruppa per mastroNome.
+      { id: 'acc-servizi', name: 'Utenze', code: '30.02', mastroNome: 'Servizi', gruppoNome: null },
+      // Due gruppi diversi sotto lo stesso mastro, codici che ne impongono l'ordine.
+      {
+        id: 'acc-bev-alcolico',
+        name: 'Vino',
+        code: '20.1.01',
+        mastroNome: 'Materie prime, sussidiarie e merci',
+        gruppoNome: 'Beverage alcolico',
+      },
+      {
+        id: 'acc-bev-analcolico',
+        name: 'Succhi',
+        code: '20.2.01',
+        mastroNome: 'Materie prime, sussidiarie e merci',
+        gruppoNome: 'Beverage analcolico',
+      },
+      // Conto legacy senza mastro né gruppo: cade nel fallback, che va in
+      // fondo nonostante il suo codice (01.01) sia il più basso di tutti.
+      { id: 'acc-legacy', name: 'Conto legacy', code: '01.01', mastroNome: null, gruppoNome: null },
+    ] as never)
+
+    await categorizzaRigheFattura({ invoiceId: INVOICE_ID })
+
+    const promptInviato = mockAnthropicParse.mock.calls[0][0].messages[0].content as string
+
+    expect(promptInviato).toContain('Beverage alcolico:\n- acc-bev-alcolico: Vino')
+    expect(promptInviato).toContain('Beverage analcolico:\n- acc-bev-analcolico: Succhi')
+    expect(promptInviato).toContain('Servizi:\n- acc-servizi: Utenze')
+    expect(promptInviato).toContain('Non categorizzato:\n- acc-legacy: Conto legacy')
+    // Il raggruppamento non dipende più dalla categoria di budget.
+    expect(promptInviato).not.toContain('categoria di budget')
+
+    const posAlcolico = promptInviato.indexOf('Beverage alcolico:')
+    const posAnalcolico = promptInviato.indexOf('Beverage analcolico:')
+    const posServizi = promptInviato.indexOf('Servizi:')
+    const posNonCategorizzato = promptInviato.indexOf('Non categorizzato:')
+
+    expect(posAlcolico).toBeLessThan(posAnalcolico)
+    expect(posAnalcolico).toBeLessThan(posServizi)
+    expect(posServizi).toBeLessThan(posNonCategorizzato)
   })
 })

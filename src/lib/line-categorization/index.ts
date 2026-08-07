@@ -5,7 +5,6 @@ import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { parseFatturaPA } from '@/lib/sdi/parser'
 import { normalizeProductName } from '@/lib/price-tracking'
-import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
 import type { DettaglioLinea } from '@/lib/sdi/types'
 
 const MODELLO_AI = 'claude-haiku-4-5'
@@ -113,10 +112,10 @@ export async function categorizzaRigheFattura({
 
     const conti = await prisma.account.findMany({
       where: { type: 'COSTO', isActive: true },
-      select: { id: true, name: true },
+      select: { id: true, name: true, code: true, mastroNome: true, gruppoNome: true },
     })
 
-    const prompt = await costruisciPrompt({ conti, memorie, righeDaProcessare, righeMatchate })
+    const prompt = costruisciPrompt({ conti, memorie, righeDaProcessare, righeMatchate })
 
     let response
     try {
@@ -189,6 +188,9 @@ export async function categorizzaRigheFattura({
 interface ContoCosto {
   id: string
   name: string
+  code: string
+  mastroNome: string | null
+  gruppoNome: string | null
 }
 
 interface MemoriaFornitore {
@@ -199,10 +201,11 @@ interface MemoriaFornitore {
 
 /**
  * Costruisce il prompt (user message unico): piano dei conti COSTO
- * raggruppato per categoria derivata, memorie del fornitore come few-shot, e
- * le righe fattura — marcando quelle già risolte dalla memoria.
+ * raggruppato per gruppo del piano dei conti v4 (o mastro, se il conto non
+ * appartiene a un gruppo), memorie del fornitore come few-shot, e le righe
+ * fattura — marcando quelle già risolte dalla memoria.
  */
-async function costruisciPrompt({
+function costruisciPrompt({
   conti,
   memorie,
   righeDaProcessare,
@@ -212,32 +215,33 @@ async function costruisciPrompt({
   memorie: MemoriaFornitore[]
   righeDaProcessare: DettaglioLinea[]
   righeMatchate: Map<number, { accountId: string }>
-}): Promise<string> {
+}): string {
   const nomeConto = new Map(conti.map((c) => [c.id, c.name]))
-
-  // Nessuna dipendenza d'ordine fra i conti: le query si eseguono in parallelo.
-  const categorieDerivate = await Promise.all(
-    conti.map((conto) => derivaBudgetCategoryDaConto(conto.id))
-  )
-  const categoriaPerConto = new Map(conti.map((conto, i) => [conto.id, categorieDerivate[i]]))
-  const idCategorie = [...new Set([...categoriaPerConto.values()].filter((id): id is string => !!id))]
-  const categorie = idCategorie.length > 0
-    ? await prisma.budgetCategory.findMany({ where: { id: { in: idCategorie } }, select: { id: true, name: true } })
-    : []
-  const nomeCategoria = new Map(categorie.map((c) => [c.id, c.name]))
 
   const gruppi = new Map<string, ContoCosto[]>()
   for (const conto of conti) {
-    const categoriaId = categoriaPerConto.get(conto.id)
-    const nome = categoriaId ? nomeCategoria.get(categoriaId) ?? 'Non categorizzato' : 'Non categorizzato'
+    const nome = conto.gruppoNome ?? conto.mastroNome ?? 'Non categorizzato'
     const lista = gruppi.get(nome) ?? []
     lista.push(conto)
     gruppi.set(nome, lista)
   }
+
+  // Ordine naturale per primo codice contenuto: i codici del piano v4 sono
+  // segmenti zero-padded, quindi il confronto lessicografico coincide con
+  // quello numerico. 'Non categorizzato' (conti legacy senza mastro/gruppo)
+  // va sempre in fondo, indipendentemente dai codici che contiene.
+  const primoCodice = (elenco: ContoCosto[]) =>
+    elenco.reduce((min, c) => (c.code.localeCompare(min) < 0 ? c.code : min), elenco[0].code)
+
   const pianoDeiConti = [...gruppi.entries()]
+    .sort(([nomeA, elencoA], [nomeB, elencoB]) => {
+      if (nomeA === 'Non categorizzato') return 1
+      if (nomeB === 'Non categorizzato') return -1
+      return primoCodice(elencoA).localeCompare(primoCodice(elencoB))
+    })
     .map(
-      ([categoria, elenco]) =>
-        `${categoria}:\n${elenco.map((c) => `- ${c.id}: ${c.name}`).join('\n')}`
+      ([gruppo, elenco]) =>
+        `${gruppo}:\n${elenco.map((c) => `- ${c.id}: ${c.name}`).join('\n')}`
     )
     .join('\n\n')
 
@@ -258,7 +262,7 @@ async function costruisciPrompt({
   return [
     'Sei un assistente di contabilità per un locale di ristorazione. Devi imputare le righe di una fattura fornitore ai conti del piano dei conti.',
     '',
-    'Piano dei conti attivi di tipo COSTO, raggruppato per categoria di budget:',
+    'Piano dei conti attivi di tipo COSTO, raggruppato per mastro/gruppo:',
     pianoDeiConti,
     '',
     fewShot
