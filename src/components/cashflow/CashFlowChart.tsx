@@ -26,6 +26,22 @@ interface CashFlowChartProps {
   sogliaMinima?: number
 }
 
+/**
+ * L'importo abbreviato per l'asse verticale: «23,9 mila €».
+ *
+ * Per esteso non ci sta: recharts riserva ai tick una banda fissa, e
+ * «23.900,00 €» veniva tagliato a sinistra lasciando in colonna una fila di
+ * «00,00 €» tutti uguali, cioè nessuna informazione su quanto valga la curva.
+ */
+function importoBreve(valore: number): string {
+  return new Intl.NumberFormat('it-IT', {
+    style: 'currency',
+    currency: 'EUR',
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(valore)
+}
+
 export function CashFlowChart({ data, sogliaMinima }: CashFlowChartProps) {
   const today = new Date().toISOString().split('T')[0]
 
@@ -39,7 +55,7 @@ export function CashFlowChart({ data, sogliaMinima }: CashFlowChartProps) {
               dataKey="date"
               tickFormatter={(value) => format(parseISO(value), 'dd/MMM')}
             />
-            <YAxis tickFormatter={(value) => formatCurrency(value)} />
+            <YAxis width={72} tickFormatter={importoBreve} />
             <Tooltip
               contentStyle={{ backgroundColor: 'rgba(0,0,0,0.8)' }}
               itemStyle={{ color: '#fff' }}
