@@ -19,20 +19,21 @@
  *    quello del movimento: le fette non ne hanno uno proprio.
  *
  * 2. Niente sparisce. Un movimento senza centro finisce nella colonna
- *    `UNASSIGNED`, uno senza conto nella riga `senzaConto`. Sono le chiusure
- *    di cassa storiche, e nasconderle vorrebbe dire un report che non quadra
- *    con la prima nota.
+ *    `UNASSIGNED`, uno senza conto in `senzaContoNetto` (che non è una riga
+ *    come le altre: ha la convenzione di segno opposta, vedi il suo commento).
+ *    Sono le chiusure di cassa storiche, e nasconderle vorrebbe dire un report
+ *    che non quadra con la prima nota.
  *
  * 3. I segni non si correggono. Ricavi e costi hanno formule opposte
  *    (avere − dare / dare − avere), così le voci di rettifica del piano —
  *    resi e sconti su vendite (10.09), resi su acquisti (20.6.01), rimanenze
  *    finali (20.6.03) — vengono fuori negative da sole, senza casi speciali.
  *
- * L'invariante che dà valore a tutto il resto: `margine` più la riga
- * `senzaConto` è uguale al netto avere − dare dei movimenti economici in
- * ingresso. Vale perché ricavi (avere − dare) meno costi (dare − avere) è
- * proprio quella somma: se una fetta si perde per strada, o viene contata due
- * volte, o finisce col segno sbagliato, i due lati non tornano più. I test la
+ * L'invariante che dà valore a tutto il resto: `margine` più `senzaContoNetto`
+ * è uguale al netto avere − dare dei movimenti economici in ingresso. Vale
+ * perché ricavi (avere − dare) meno costi (dare − avere) è proprio quella
+ * somma: se una fetta si perde per strada, o viene contata due volte, o
+ * finisce col segno sbagliato, i due lati non tornano più. I test la
  * verificano sia sul totale sia colonna per colonna, in centesimi interi.
  */
 
@@ -56,6 +57,8 @@ export type ImportoDecimale = number | string | { toNumber(): number }
 
 /** La voce del piano dei conti, con mastro e gruppo denormalizzati. */
 export interface VoceConto {
+  /** L'id del conto: finisce sulla riga, per il drill-down verso la prima nota. */
+  id: string
   code: string
   name: string
   type: TipoConto
@@ -85,6 +88,8 @@ export interface MovimentoContoEconomico {
 
 /** Riga del report: una voce del piano, con una cella per centro. */
 export interface RigaContoEconomico {
+  /** Id del conto aggregato: serve a filtrare la prima nota dal drill-down. */
+  accountId: string
   code: string
   name: string
   /** Solo RICAVO o COSTO: i patrimoniali non arrivano fin qui. */
@@ -99,24 +104,44 @@ export interface RigaContoEconomico {
   total: number
 }
 
+/** Il terzetto in fondo a una colonna del report, in euro. */
+export interface TotaliContoEconomico {
+  /** Somma delle righe RICAVO. */
+  ricavi: number
+  /** Somma delle righe COSTO (positivo = costo sostenuto). */
+  costi: number
+  /**
+   * `ricavi − costi`, sui soli movimenti **classificati**: `senzaContoNetto`
+   * non ci entra, perché senza il tipo di conto non si può dire se quegli
+   * importi siano ricavi o costi. È il numero che l'utente legge come
+   * "risultato del periodo", ed è anche il motivo per cui può non quadrare
+   * con la banca: se `senzaContoNetto` non è a zero, la differenza è lì.
+   */
+  margine: number
+}
+
 export interface ContoEconomico {
   /** Righe ordinate per codice voce. Include le voci che nettano a zero. */
   rows: RigaContoEconomico[]
   /**
-   * Movimenti con importi ma senza conto: netto avere − dare per centro.
-   * Senza un tipo di conto non si può dire se siano ricavo o costo, quindi
-   * si usa la stessa convenzione netta del margine (positivo = incasso).
-   * Fuori dai totali: sono importi da classificare, non da sommare a occhio.
+   * Movimenti con importi ma senza conto, per centro. Ha le stesse chiavi di
+   * `riga.amounts` ma **la convenzione di segno opposta**: qui è un netto
+   * avere − dare (positivo = incasso, negativo = uscita), mentre nelle righe
+   * un costo è positivo. Non è una riga della tabella e non va incolonnata
+   * sotto le altre senza cambiarle segno: senza un tipo di conto non si può
+   * dire se quegli importi siano ricavi o costi, e il netto è l'unica formula
+   * applicabile — nonché l'unica che fa quadrare `margine + senzaContoNetto`
+   * col netto della prima nota. Da qui il nome.
    */
-  senzaConto: Record<string, number>
-  totals: {
-    /** Somma delle righe RICAVO, in euro. */
-    ricavi: number
-    /** Somma delle righe COSTO, in euro (positivo = costo sostenuto). */
-    costi: number
-    /** `ricavi − costi`. */
-    margine: number
-  }
+  senzaContoNetto: Record<string, number>
+  /** Totali di tutto il periodo, tutti i centri insieme. */
+  totals: TotaliContoEconomico
+  /**
+   * Gli stessi totali per singola colonna (codice centro o `UNASSIGNED`),
+   * già sommati in centesimi: il report li mostra in fondo a ogni colonna e
+   * non deve risommare le celle in virgola mobile per ottenerli.
+   */
+  totalsPerColonna: Record<string, TotaliContoEconomico>
 }
 
 /**
@@ -165,6 +190,37 @@ function isEconomica(voce: VoceConto): voce is VoceEconomica {
   return voce.type === 'RICAVO' || voce.type === 'COSTO'
 }
 
+/**
+ * Ordina i codici del piano segmento per segmento, confrontando come numeri i
+ * segmenti che lo sono. L'ordine alfabetico oggi darebbe lo stesso risultato,
+ * ma solo finché i segmenti restano di lunghezza fissa: il primo mastro che
+ * arriva a dieci gruppi metterebbe '20.10.01' prima di '20.2.01'. Segmenti non
+ * numerici (i codici legacy) ricadono sul confronto alfabetico, e il codice
+ * più corto viene prima di uno che lo estende. Deterministico ovunque, a
+ * differenza di `localeCompare`.
+ */
+function confrontaCodici(a: string, b: string): number {
+  const segmentiA = a.split('.')
+  const segmentiB = b.split('.')
+
+  for (let i = 0; i < Math.max(segmentiA.length, segmentiB.length); i++) {
+    const segA = segmentiA[i]
+    const segB = segmentiB[i]
+    if (segA === undefined) return -1
+    if (segB === undefined) return 1
+    if (segA === segB) continue
+
+    const numA = Number(segA)
+    const numB = Number(segB)
+    if (Number.isFinite(numA) && Number.isFinite(numB) && numA !== numB) {
+      return numA - numB
+    }
+    return segA < segB ? -1 : 1
+  }
+
+  return 0
+}
+
 interface Accumulatore {
   voce: VoceEconomica
   perColonna: Map<string, number>
@@ -197,7 +253,7 @@ export function aggregaContoEconomico(
 
   // Chiave: il codice della voce, che è unico nel piano.
   const perVoce = new Map<string, Accumulatore>()
-  const senzaConto = new Map<string, number>()
+  const senzaContoNetto = new Map<string, number>()
 
   const accumula = (voce: VoceEconomica, colonna: string, centesimi: number) => {
     let riga = perVoce.get(voce.code)
@@ -215,8 +271,12 @@ export function aggregaContoEconomico(
 
     if (movimento.allocations.length > 0) {
       // Il verso del movimento: l'importo utile sta tutto su un lato solo e le
-      // fette ne sono quote positive. Se per qualche ragione fossero valorizzati
-      // entrambi i lati vince dare, come nel calcolo lato scrittura.
+      // fette ne sono quote positive, quindi il segno glielo dà il movimento.
+      // Si guarda al lato VALORIZZATO, non a quale campo è non-null: un dare a
+      // zero con l'avere pieno è un movimento in avere. Con entrambi i lati a
+      // zero il verso è convenzionalmente dare — ma lì nessuna fetta dovrebbe
+      // esistere (la somma delle fette non può superare l'importo utile), e se
+      // ce ne fosse una sarebbe dato corrotto, non un flusso reale.
       const versoDare = dare !== 0 || avere === 0
 
       for (const fetta of movimento.allocations) {
@@ -236,9 +296,10 @@ export function aggregaContoEconomico(
     }
 
     if (movimento.account === null) {
-      if (dare !== 0 || avere !== 0) {
-        senzaConto.set(colonna, (senzaConto.get(colonna) ?? 0) + (avere - dare))
-      }
+      // Netto avere − dare: senza un tipo di conto le due formule economiche
+      // non si possono applicare. Un movimento a zero contribuisce zero, e la
+      // colonna è già stata registrata: nessuna guardia da aggiungere.
+      senzaContoNetto.set(colonna, (senzaContoNetto.get(colonna) ?? 0) + (avere - dare))
       continue
     }
 
@@ -269,6 +330,7 @@ export function aggregaContoEconomico(
 
   const rows: RigaContoEconomico[] = righe
     .map(({ voce, perColonna }) => ({
+      accountId: voce.id,
       code: voce.code,
       name: voce.name,
       type: voce.type,
@@ -279,27 +341,44 @@ export function aggregaContoEconomico(
       amounts: celleInEuro(perColonna),
       total: inEuro(totaleCent(perColonna)),
     }))
-    // I codici del piano hanno segmenti di lunghezza fissa ("10.01",
-    // "20.6.01"): l'ordine alfabetico è già quello giusto, ed è deterministico
-    // ovunque, a differenza di `localeCompare`.
-    .sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0))
+    .sort((a, b) => confrontaCodici(a.code, b.code))
 
-  const totalePerTipo = (tipo: TipoEconomico): number =>
-    righe.reduce(
-      (somma, riga) => (riga.voce.type === tipo ? somma + totaleCent(riga.perColonna) : somma),
-      0
-    )
+  // Ricavi e costi per colonna, sempre in centesimi: il report li mostra in
+  // fondo a ogni centro, e il totale generale è la somma delle colonne — mai
+  // una risomma delle celle in euro.
+  const ricaviCentPerColonna = new Map<string, number>()
+  const costiCentPerColonna = new Map<string, number>()
+  for (const { voce, perColonna } of righe) {
+    const destinazione =
+      voce.type === 'RICAVO' ? ricaviCentPerColonna : costiCentPerColonna
+    for (const [colonna, centesimi] of perColonna) {
+      destinazione.set(colonna, (destinazione.get(colonna) ?? 0) + centesimi)
+    }
+  }
 
-  const ricaviCent = totalePerTipo('RICAVO')
-  const costiCent = totalePerTipo('COSTO')
+  const totalsPerColonna: Record<string, TotaliContoEconomico> = {}
+  let ricaviCent = 0
+  let costiCent = 0
+  for (const colonna of colonne) {
+    const ricavi = ricaviCentPerColonna.get(colonna) ?? 0
+    const costi = costiCentPerColonna.get(colonna) ?? 0
+    ricaviCent += ricavi
+    costiCent += costi
+    totalsPerColonna[colonna] = {
+      ricavi: inEuro(ricavi),
+      costi: inEuro(costi),
+      margine: inEuro(ricavi - costi),
+    }
+  }
 
   return {
     rows,
-    senzaConto: celleInEuro(senzaConto),
+    senzaContoNetto: celleInEuro(senzaContoNetto),
     totals: {
       ricavi: inEuro(ricaviCent),
       costi: inEuro(costiCent),
       margine: inEuro(ricaviCent - costiCent),
     },
+    totalsPerColonna,
   }
 }

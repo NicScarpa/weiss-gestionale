@@ -13,6 +13,7 @@ const CENTRI = [{ code: 'STR' }, { code: 'WEISS' }, { code: 'VV' }, { code: 'CAS
 /** Voce del piano v4: i campi che il report legge, con i default più comuni. */
 function voce(partial: Partial<VoceConto> & Pick<VoceConto, 'code' | 'type'>): VoceConto {
   return {
+    id: `acc-${partial.code}`,
     name: `Voce ${partial.code}`,
     mastroCode: partial.code.split('.')[0],
     mastroNome: `Mastro ${partial.code.split('.')[0]}`,
@@ -69,7 +70,7 @@ function movimento(
   const { centro, ...resto } = partial
   return {
     id: `mov-${++contatore}`,
-    accountId: resto.account ? resto.account.code : null,
+    accountId: resto.account ? resto.account.id : null,
     account: resto.account ?? null,
     costCenter: centro ? { code: centro } : null,
     debitAmount: null,
@@ -81,7 +82,7 @@ function movimento(
 
 /** Fetta di ripartizione: importo sempre positivo, verso quello del movimento. */
 function fetta(account: VoceConto, importo: number) {
-  return { accountId: account.code, account, importo }
+  return { accountId: account.id, account, importo }
 }
 
 describe('inCentesimi', () => {
@@ -164,6 +165,66 @@ describe('aggregaContoEconomico — movimento semplice', () => {
       '20.1.01',
       '20.2.01',
       '20.6.03',
+    ])
+  })
+
+  it('ordina i segmenti come numeri, non alfabeticamente', () => {
+    // Il giorno in cui un mastro arriverà a dieci gruppi, l'ordine alfabetico
+    // metterebbe '20.10.01' prima di '20.2.01'.
+    const decimoGruppo = voce({ code: '20.10.01', type: 'COSTO' })
+    const centesimaVoce = voce({ code: '20.1.100', type: 'COSTO' })
+
+    const risultato = aggregaContoEconomico(
+      [
+        movimento({ account: decimoGruppo, centro: 'STR', debitAmount: 1 }),
+        movimento({ account: FOOD, centro: 'STR', debitAmount: 1 }),
+        movimento({ account: centesimaVoce, centro: 'STR', debitAmount: 1 }),
+        movimento({ account: BEVERAGE, centro: 'STR', debitAmount: 1 }),
+      ],
+      CENTRI
+    )
+
+    expect(risultato.rows.map((r) => r.code)).toEqual([
+      '20.1.01',
+      '20.1.100',
+      '20.2.01',
+      '20.10.01',
+    ])
+  })
+
+  it('regge i codici legacy non numerici senza perdere il determinismo', () => {
+    const risultato = aggregaContoEconomico(
+      [
+        movimento({ account: voce({ code: 'CASSA', type: 'COSTO' }), centro: 'STR', debitAmount: 1 }),
+        movimento({ account: BEVERAGE, centro: 'STR', debitAmount: 1 }),
+        movimento({ account: voce({ code: '20.1', type: 'COSTO' }), centro: 'STR', debitAmount: 1 }),
+      ],
+      CENTRI
+    )
+
+    // Numerici prima (Number('CASSA') è NaN → confronto alfabetico), e il
+    // codice più corto prima di quello che lo estende.
+    expect(risultato.rows.map((r) => r.code)).toEqual(['20.1', '20.1.01', 'CASSA'])
+  })
+
+  it('porta l’accountId sulla riga, per il drill-down verso la prima nota', () => {
+    const risultato = aggregaContoEconomico(
+      [
+        movimento({ account: CORRISPETTIVI, centro: 'STR', creditAmount: 10 }),
+        movimento({
+          account: BEVERAGE,
+          centro: 'STR',
+          debitAmount: 10,
+          allocations: [fetta(FOOD, 10)],
+        }),
+      ],
+      CENTRI
+    )
+
+    expect(risultato.rows.map((r) => [r.code, r.accountId])).toEqual([
+      ['10.01', 'acc-10.01'],
+      // Anche la riga nata da una fetta porta l'id del conto della fetta
+      ['20.2.01', 'acc-20.2.01'],
     ])
   })
 })
@@ -312,7 +373,7 @@ describe('aggregaContoEconomico — quello che non va perso', () => {
     expect(risultato.totals.ricavi).toBe(90.45)
   })
 
-  it('un movimento senza conto finisce nella riga senzaConto, per centro', () => {
+  it('un movimento senza conto finisce in senzaContoNetto, per centro', () => {
     const risultato = aggregaContoEconomico(
       [
         movimento({ account: null, centro: 'CAS', debitAmount: 42.3 }),
@@ -323,7 +384,7 @@ describe('aggregaContoEconomico — quello che non va perso', () => {
 
     expect(risultato.rows).toHaveLength(0)
     // Senza tipo di conto vale il netto avere − dare: positivo = incasso
-    expect(risultato.senzaConto).toEqual({
+    expect(risultato.senzaContoNetto).toEqual({
       STR: 0,
       WEISS: 0,
       VV: 0,
@@ -339,7 +400,7 @@ describe('aggregaContoEconomico — quello che non va perso', () => {
       CENTRI
     )
 
-    expect(risultato.senzaConto).toEqual({
+    expect(risultato.senzaContoNetto).toEqual({
       STR: 0,
       WEISS: 0,
       VV: 0,
@@ -369,7 +430,7 @@ describe('aggregaContoEconomico — quello che non va perso', () => {
 
     expect(risultato.rows[0].amounts.DISMESSO).toBe(33)
     expect(risultato.rows[0].total).toBe(33)
-    expect(Object.keys(risultato.senzaConto)).toContain('DISMESSO')
+    expect(Object.keys(risultato.senzaContoNetto)).toContain('DISMESSO')
   })
 
   it('tiene la riga di una voce che netta a zero: è stata usata', () => {
@@ -389,7 +450,7 @@ describe('aggregaContoEconomico — quello che non va perso', () => {
     const risultato = aggregaContoEconomico([], CENTRI)
 
     expect(risultato.rows).toEqual([])
-    expect(Object.keys(risultato.senzaConto)).toEqual([
+    expect(Object.keys(risultato.senzaContoNetto)).toEqual([
       'STR',
       'WEISS',
       'VV',
@@ -439,7 +500,7 @@ describe('aggregaContoEconomico — quadratura', () => {
    * L'oracolo: il netto avere − dare della prima nota, sui soli contributi che
    * il conto economico misura. Non sa nulla di ricavi e costi né di colonne —
    * sa solo quali importi esistono e su quale centro stanno. Deve coincidere
-   * con `margine + senzaConto`, perché ricavi (avere − dare) meno costi
+   * con `margine + senzaContoNetto`, perché ricavi (avere − dare) meno costi
    * (dare − avere) è proprio quella somma.
    */
   function nettoPrimaNota(
@@ -479,7 +540,7 @@ describe('aggregaContoEconomico — quadratura', () => {
     const risultato = aggregaContoEconomico(MOVIMENTI, CENTRI)
 
     const margineCent = inCentesimi(risultato.totals.margine)
-    const senzaContoCent = sommaCentesimi(Object.values(risultato.senzaConto))
+    const senzaContoCent = sommaCentesimi(Object.values(risultato.senzaContoNetto))
 
     expect(margineCent + senzaContoCent).toBe(nettoPrimaNota(MOVIMENTI))
     // Valore atteso del fixture, calcolato a mano
@@ -488,7 +549,7 @@ describe('aggregaContoEconomico — quadratura', () => {
 
   it('quadra colonna per colonna: nessuna fetta finisce sul centro sbagliato', () => {
     const risultato = aggregaContoEconomico(MOVIMENTI, CENTRI)
-    const colonne = Object.keys(risultato.senzaConto)
+    const colonne = Object.keys(risultato.senzaContoNetto)
 
     expect(colonne).toEqual(['STR', 'WEISS', 'VV', 'CAS', UNASSIGNED])
 
@@ -499,7 +560,64 @@ describe('aggregaContoEconomico — quadratura', () => {
       const costi = sommaCentesimi(
         risultato.rows.filter((r) => r.type === 'COSTO').map((r) => r.amounts[colonna])
       )
-      const netto = ricavi - costi + inCentesimi(risultato.senzaConto[colonna])
+      const netto = ricavi - costi + inCentesimi(risultato.senzaContoNetto[colonna])
+
+      expect({ colonna, netto }).toEqual({
+        colonna,
+        netto: nettoPrimaNota(MOVIMENTI, colonna),
+      })
+    }
+  })
+
+  it('totalsPerColonna è la somma delle celle di quella colonna', () => {
+    const risultato = aggregaContoEconomico(MOVIMENTI, CENTRI)
+
+    expect(Object.keys(risultato.totalsPerColonna)).toEqual([
+      'STR',
+      'WEISS',
+      'VV',
+      'CAS',
+      UNASSIGNED,
+    ])
+
+    for (const [colonna, totali] of Object.entries(risultato.totalsPerColonna)) {
+      const ricavi = sommaCentesimi(
+        risultato.rows.filter((r) => r.type === 'RICAVO').map((r) => r.amounts[colonna])
+      )
+      const costi = sommaCentesimi(
+        risultato.rows.filter((r) => r.type === 'COSTO').map((r) => r.amounts[colonna])
+      )
+
+      expect({
+        colonna,
+        ricavi: inCentesimi(totali.ricavi),
+        costi: inCentesimi(totali.costi),
+        margine: inCentesimi(totali.margine),
+      }).toEqual({ colonna, ricavi, costi, margine: ricavi - costi })
+    }
+  })
+
+  it('la somma di totalsPerColonna è totals', () => {
+    const risultato = aggregaContoEconomico(MOVIMENTI, CENTRI)
+    const colonne = Object.values(risultato.totalsPerColonna)
+
+    expect(sommaCentesimi(colonne.map((t) => t.ricavi))).toBe(
+      inCentesimi(risultato.totals.ricavi)
+    )
+    expect(sommaCentesimi(colonne.map((t) => t.costi))).toBe(
+      inCentesimi(risultato.totals.costi)
+    )
+    expect(sommaCentesimi(colonne.map((t) => t.margine))).toBe(
+      inCentesimi(risultato.totals.margine)
+    )
+  })
+
+  it('il margine di ogni colonna più il suo senzaContoNetto quadra col netto', () => {
+    const risultato = aggregaContoEconomico(MOVIMENTI, CENTRI)
+
+    for (const [colonna, totali] of Object.entries(risultato.totalsPerColonna)) {
+      const netto =
+        inCentesimi(totali.margine) + inCentesimi(risultato.senzaContoNetto[colonna])
 
       expect({ colonna, netto }).toEqual({
         colonna,
@@ -540,8 +658,8 @@ describe('aggregaContoEconomico — quadratura', () => {
       ['20.6.03', -800],
     ])
     expect(risultato.totals).toEqual({ ricavi: 939.9, costi: 50.1, margine: 889.8 })
-    expect(risultato.senzaConto.CAS).toBe(-42.3)
-    expect(risultato.senzaConto[UNASSIGNED]).toBe(12.1)
+    expect(risultato.senzaContoNetto.CAS).toBe(-42.3)
+    expect(risultato.senzaContoNetto[UNASSIGNED]).toBe(12.1)
   })
 
   it('quadra anche con gli importi come Decimal di Prisma', () => {
@@ -562,7 +680,7 @@ describe('aggregaContoEconomico — quadratura', () => {
     expect(risultato.totals).toEqual({ ricavi: 939.9, costi: 50.1, margine: 889.8 })
     expect(
       inCentesimi(risultato.totals.margine) +
-        sommaCentesimi(Object.values(risultato.senzaConto))
+        sommaCentesimi(Object.values(risultato.senzaContoNetto))
     ).toBe(85960)
   })
 
