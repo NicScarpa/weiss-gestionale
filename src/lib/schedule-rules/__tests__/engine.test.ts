@@ -423,14 +423,21 @@ describe('applicaRegolaCreaMovimento', () => {
 
     journalEntryCreateMock.mockResolvedValue({ id: 'entry-1' } as never)
 
-    // Centro di costo: il conto del fornitore non lo pretende, quindi la
-    // risoluzione cade sul default (STR).
+    // Centro di costo: il conto del fornitore porta la regola DEFAULT_STR,
+    // quindi la risoluzione resta sul centro di sistema (STR). L'anagrafica
+    // risponde in base a cosa le si chiede: il centro di sistema o quello
+    // operativo (WEISS), usato quando il sistema deve indovinare.
     vi.mocked(prisma.account.findMany).mockResolvedValue([
       { id: 'conto-forn', code: '600010', name: 'Acquisti', costCenterRule: 'DEFAULT_STR' },
     ] as never)
-    vi.mocked(prisma.costCenter.findFirst).mockResolvedValue({
-      id: 'cc-str', isDefault: true, isActive: true,
-    } as never)
+    vi.mocked(prisma.costCenter.findFirst).mockImplementation(
+      (async ({ where }: { where: { isDefault?: boolean; code?: string } }) =>
+        where.code === 'WEISS'
+          ? { id: 'cc-weiss', code: 'WEISS', isDefault: false, isActive: true }
+          : where.isDefault
+            ? { id: 'cc-str', code: 'STR', isDefault: true, isActive: true }
+            : null) as never
+    )
 
     reconcileMock.mockResolvedValue({
       outcome: 'ok',
@@ -506,9 +513,10 @@ describe('applicaRegolaCreaMovimento', () => {
     )
   })
 
-  it('conto OBBLIGATORIO e regola senza centro: il movimento nasce lo stesso, su STR e da verificare', async () => {
-    // Il percorso è automatico: non c'è nessuno a cui chiedere il centro, e
-    // perdere il movimento sarebbe peggio che imputarlo al default.
+  it('conto OBBLIGATORIO e regola senza centro: il movimento nasce sul centro operativo (WEISS) e da verificare', async () => {
+    // Il percorso è automatico: non c'è nessuno a cui chiedere il centro. Il
+    // sistema indovina, e per un conto operativo indovina il locale, non la
+    // struttura; il movimento resta da approvare a mano.
     vi.mocked(prisma.account.findMany).mockResolvedValue([
       { id: 'conto-forn', code: '620010', name: 'Manutenzioni', costCenterRule: 'OBBLIGATORIO' },
     ] as never)
@@ -524,14 +532,45 @@ describe('applicaRegolaCreaMovimento', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           accountId: 'conto-forn',
-          costCenterId: 'cc-str',
+          costCenterId: 'cc-weiss',
           verified: false,
         }),
       })
     )
+    // Non è più un ripiego da segnalare: è la regola.
+    expect(logger.warn).not.toHaveBeenCalled()
+  })
+
+  it('centro indicato dalla regola ma nel frattempo disattivato: si ripiega sul centro operativo, con un warning', async () => {
+    scheduleRuleFindManyMock.mockResolvedValue([
+      regola({
+        id: 'r1',
+        direzione: ScheduleRuleDirection.RICEVUTI,
+        azione: 'crea_riconcilia_movimento',
+        contoId: null,
+        bankAccountId: 'banca-1',
+        costCenterId: 'cc-dismesso',
+      }),
+    ] as never)
+    vi.mocked(prisma.costCenter.findUnique).mockResolvedValue({
+      id: 'cc-dismesso', isActive: false,
+    } as never)
+
+    const esito = await applicaRegolaCreaMovimento({
+      scheduleId: 'sched-1',
+      venueId: 'venue-1',
+      userId: 'user-1',
+    })
+
+    expect(esito.applicata).toBe(true)
+    expect(prisma.journalEntry.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ costCenterId: 'cc-weiss', verified: false }),
+      })
+    )
     expect(logger.warn).toHaveBeenCalledWith(
-      'Regola scadenzario: centro di costo non risolvibile, si usa il default',
-      expect.objectContaining({ code: 'CENTRO_DI_COSTO_OBBLIGATORIO' })
+      'Regola scadenzario: centro di costo non risolvibile, si usa il predefinito',
+      expect.objectContaining({ code: 'CENTRO_DI_COSTO_NON_VALIDO' })
     )
   })
 })

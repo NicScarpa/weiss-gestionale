@@ -5,7 +5,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     schedule: { findFirst: vi.fn(), update: vi.fn(), count: vi.fn() },
-    journalEntry: { findFirst: vi.fn(), update: vi.fn() },
+    journalEntry: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+    costCenter: { findUnique: vi.fn(), findFirst: vi.fn() },
+    account: { findMany: vi.fn() },
     scheduleReconciliation: { findFirst: vi.fn(), create: vi.fn(), delete: vi.fn() },
     schedulePayment: { create: vi.fn(), delete: vi.fn() },
     electronicInvoice: { update: vi.fn(), findUnique: vi.fn() },
@@ -44,6 +46,8 @@ import {
 } from '../schedule-reconciliation-service'
 
 const VENUE = 'venue-1'
+const CENTRO_STR = { id: 'cc-str', code: 'STR', isDefault: true, isActive: true }
+const CENTRO_WEISS = { id: 'cc-weiss', code: 'WEISS', isDefault: false, isActive: true }
 
 function scadenza(overrides: Record<string, unknown> = {}) {
   return {
@@ -91,6 +95,15 @@ beforeEach(() => {
   vi.mocked(prisma.journalEntryAllocation.aggregate).mockResolvedValue({
     _sum: { importo: null },
   } as never)
+  // L'anagrafica dei centri, che l'ereditarietà interroga per rivalutare il
+  // centro contro il conto arrivato dalle fette (percorso automatico).
+  vi.mocked(prisma.costCenter.findFirst).mockImplementation(
+    (async ({ where }: { where: { isDefault?: boolean; code?: string } }) =>
+      where.code === 'WEISS' ? CENTRO_WEISS : where.isDefault ? CENTRO_STR : null) as never
+  )
+  // Default: il conto dominante non pretende un centro.
+  vi.mocked(prisma.account.findMany).mockResolvedValue([] as never)
+  vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({ costCenterId: null } as never)
 })
 
 describe('reconcileScheduleWithEntry - dataAttesa', () => {
@@ -369,6 +382,101 @@ describe('reconcileScheduleWithEntry - ereditarietà pro-quota dalla fattura (Fa
       { accountId: 'conto-a', importo: 350 },
       { accountId: 'conto-b', importo: 150 },
     ])
+  })
+
+  it('il bonifico importato che eredita un conto OBBLIGATORIO finisce sul locale, non sulla struttura, e resta da approvare', async () => {
+    // Il caso da cui nasce la regola: il movimento è nato dall'import senza
+    // conto, quindi con il centro che si dà a chi non ne ha uno; la fattura
+    // di birra arriva solo ora, con un conto che un centro lo pretende. Prima
+    // il costo restava su Struttura, e non comparendo fra i "non attribuiti"
+    // non se ne accorgeva nessuno.
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      scadenza({ invoiceId: 'inv-1', importoTotale: new Prisma.Decimal(1000) }) as never
+    )
+    vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue(
+      movimento({ creditAmount: new Prisma.Decimal(1000) }) as never
+    )
+    vi.mocked(prisma.electronicInvoice.findUnique).mockResolvedValue({
+      lineItems: [{ numeroLinea: 1 }],
+    } as never)
+    vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([
+      { accountId: 'conto-birra', importo: new Prisma.Decimal(1000) },
+    ] as never)
+    vi.mocked(prisma.journalEntryAllocation.findMany)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { accountId: 'conto-birra', importo: new Prisma.Decimal(1000) },
+      ] as never)
+    // Il movimento importato porta il centro di sistema: non è una scelta,
+    // è il ripiego di quando il conto ancora non c'era.
+    vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
+      costCenterId: 'cc-str',
+    } as never)
+    vi.mocked(prisma.account.findMany).mockResolvedValue([
+      { id: 'conto-birra', code: '600020', name: 'Acquisti bevande', costCenterRule: 'OBBLIGATORIO' },
+    ] as never)
+    vi.mocked(derivaBudgetCategoryDaConto).mockResolvedValue('cat-bevande')
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: 'sched-1',
+      journalEntryId: 'entry-1',
+      venueId: VENUE,
+      userId: 'user-1',
+    })
+
+    expect(esito.outcome).toBe('ok')
+    expect(prisma.journalEntry.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'entry-1' },
+        data: expect.objectContaining({
+          accountId: 'conto-birra',
+          costCenterId: 'cc-weiss',
+          verified: false,
+        }),
+      })
+    )
+  })
+
+  it('un centro scelto da un umano (CAS) non viene sovrascritto dall\'ereditarietà', async () => {
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      scadenza({ invoiceId: 'inv-1', importoTotale: new Prisma.Decimal(1000) }) as never
+    )
+    vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue(
+      movimento({ creditAmount: new Prisma.Decimal(1000) }) as never
+    )
+    vi.mocked(prisma.electronicInvoice.findUnique).mockResolvedValue({
+      lineItems: [{ numeroLinea: 1 }],
+    } as never)
+    vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([
+      { accountId: 'conto-birra', importo: new Prisma.Decimal(1000) },
+    ] as never)
+    vi.mocked(prisma.journalEntryAllocation.findMany)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { accountId: 'conto-birra', importo: new Prisma.Decimal(1000) },
+      ] as never)
+    vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
+      costCenterId: 'cc-cas',
+    } as never)
+    vi.mocked(prisma.costCenter.findUnique).mockResolvedValue({
+      id: 'cc-cas', isActive: true,
+    } as never)
+    vi.mocked(prisma.account.findMany).mockResolvedValue([
+      { id: 'conto-birra', code: '600020', name: 'Acquisti bevande', costCenterRule: 'OBBLIGATORIO' },
+    ] as never)
+
+    await reconcileScheduleWithEntry({
+      scheduleId: 'sched-1',
+      journalEntryId: 'entry-1',
+      venueId: VENUE,
+      userId: 'user-1',
+    })
+
+    expect(prisma.journalEntry.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ costCenterId: 'cc-cas', verified: false }),
+      })
+    )
   })
 
   it('copertura incompleta (righe non tutte categorizzate): nessuna fetta ereditata', async () => {

@@ -59,11 +59,15 @@ export async function POST(request: NextRequest) {
 
             // Un movimento importato non porta ancora un conto (BankTransaction
             // non ne ha uno): l'input della risoluzione è identico per tutte le
-            // righe, quindi il centro — il default, STR — si risolve una volta
-            // sola invece che a ogni riga. Quando le righe importate porteranno
-            // un conto, la chiamata va spostata dentro il ciclo e la riga che
-            // non risolve va scartata con il motivo, senza fermare le altre.
-            const centro = await risolviCentroDiCosto(tx, { accountId: null })
+            // righe, quindi il centro si risolve una volta sola invece che a
+            // ogni riga. Nessun conto significa nessuna regola da rispettare:
+            // il sistema sta indovinando, e su un percorso automatico indovina
+            // il centro operativo predefinito (WEISS), non la struttura — la
+            // stragrande maggioranza dei bonifici è gestione ordinaria del
+            // locale. Quando le righe importate porteranno un conto, la
+            // chiamata va spostata dentro il ciclo e la riga che non risolve va
+            // scartata con il motivo, senza fermare le altre.
+            const centro = await risolviCentroDiCosto(tx, { accountId: null }, 'automatico')
             if (centro.outcome === 'invalid') {
                 // Irraggiungibile senza conto: il tipo lo prevede, i dati no.
                 throw new Error(centro.motivo)
@@ -85,6 +89,10 @@ export async function POST(request: NextRequest) {
                             creditAmount: !isInflow ? Math.abs(amount) : null,
                             costCenterId: centro.costCenterId,
                             categorizationSource: 'import',
+                            // Il centro è una supposizione del sistema e il
+                            // conto non c'è ancora: l'imputazione va approvata
+                            // a mano prima di valere come verificata.
+                            verified: false,
                             notes: bankTx.bankReference ? `Rif. banca: ${bankTx.bankReference}` : undefined,
                             createdById: session.user.id,
                         },

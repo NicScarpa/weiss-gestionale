@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // stesso come tx (pattern di schedule-reconciliation-service.test.ts).
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    journalEntry: { findFirst: vi.fn(), update: vi.fn() },
+    journalEntry: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     journalEntryAllocation: {
       findMany: vi.fn(),
       deleteMany: vi.fn(),
@@ -28,8 +28,14 @@ vi.mock('@/lib/accounts/mapping', () => ({
 
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
+import { logger } from '@/lib/logger'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
-import { calcolaPesiDaRighe, ripartisciProQuota, setEntryAllocations } from '../allocation-service'
+import {
+  aggiornaContoDominante,
+  calcolaPesiDaRighe,
+  ripartisciProQuota,
+  setEntryAllocations,
+} from '../allocation-service'
 
 describe('ripartisciProQuota', () => {
   it('quota piena: le fette restano identiche', () => {
@@ -377,5 +383,132 @@ describe('setEntryAllocations', () => {
         }),
       })
     )
+  })
+})
+
+/**
+ * Il conto può arrivare DOPO il centro: il movimento nasce dall'import senza
+ * conto, prende il centro che si dà a chi non ne ha uno, e solo alla
+ * riconciliazione eredita dalla fattura un conto che un centro lo pretendeva.
+ * In quel momento il centro va rivalutato — senza però sovrascrivere una
+ * scelta umana.
+ */
+describe('aggiornaContoDominante — percorso automatico', () => {
+  const STR = { id: 'cc-str', code: 'STR', isDefault: true, isActive: true }
+  const WEISS = { id: 'cc-weiss', code: 'WEISS', isDefault: false, isActive: true }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(prisma.journalEntryAllocation.findMany).mockResolvedValue([
+      { accountId: 'conto-birra', importo: new Prisma.Decimal(700) },
+      { accountId: 'conto-vino', importo: new Prisma.Decimal(300) },
+    ] as never)
+    vi.mocked(derivaBudgetCategoryDaConto).mockResolvedValue('cat-birra')
+    vi.mocked(prisma.costCenter.findFirst).mockImplementation(
+      (async ({ where }: { where: { isDefault?: boolean; code?: string } }) =>
+        where.code === 'WEISS' ? WEISS : where.isDefault ? STR : null) as never
+    )
+    vi.mocked(prisma.account.findMany).mockResolvedValue([
+      { id: 'conto-birra', code: '600020', name: 'Acquisti bevande', costCenterRule: 'OBBLIGATORIO' },
+    ] as never)
+  })
+
+  it('conto dominante OBBLIGATORIO su un movimento fermo al centro di sistema: passa al centro operativo e resta da verificare', async () => {
+    vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
+      costCenterId: 'cc-str',
+    } as never)
+
+    const fette = await aggiornaContoDominante(prisma as never, 'entry-1', 'automatico')
+
+    expect(fette).toBe(2)
+    expect(prisma.journalEntry.update).toHaveBeenCalledWith({
+      where: { id: 'entry-1' },
+      data: {
+        accountId: 'conto-birra',
+        budgetCategoryId: 'cat-birra',
+        categorizationSource: 'split',
+        costCenterId: 'cc-weiss',
+        verified: false,
+      },
+    })
+  })
+
+  it('movimento senza centro: il centro operativo lo riempie', async () => {
+    vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({ costCenterId: null } as never)
+
+    await aggiornaContoDominante(prisma as never, 'entry-1', 'automatico')
+
+    expect(prisma.journalEntry.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ costCenterId: 'cc-weiss', verified: false }),
+      })
+    )
+  })
+
+  it('centro scelto da un umano (CAS): non viene toccato, ma il movimento torna da verificare', async () => {
+    vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
+      costCenterId: 'cc-cas',
+    } as never)
+    vi.mocked(prisma.costCenter.findUnique).mockResolvedValue({
+      id: 'cc-cas', isActive: true,
+    } as never)
+
+    await aggiornaContoDominante(prisma as never, 'entry-1', 'automatico')
+
+    expect(prisma.journalEntry.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ costCenterId: 'cc-cas', verified: false }),
+      })
+    )
+  })
+
+  it('conto dominante con regola DEFAULT_STR: il centro di sistema resta quello giusto', async () => {
+    vi.mocked(prisma.account.findMany).mockResolvedValue([
+      { id: 'conto-birra', code: '240010', name: 'Consulenze', costCenterRule: 'DEFAULT_STR' },
+    ] as never)
+    vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
+      costCenterId: 'cc-str',
+    } as never)
+
+    await aggiornaContoDominante(prisma as never, 'entry-1', 'automatico')
+
+    expect(prisma.journalEntry.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ costCenterId: 'cc-str', verified: false }),
+      })
+    )
+  })
+
+  it('centro del movimento nel frattempo disattivato: il conto si aggiorna, il centro resta com\'è e si logga', async () => {
+    vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
+      costCenterId: 'cc-dismesso',
+    } as never)
+    vi.mocked(prisma.costCenter.findUnique).mockResolvedValue({
+      id: 'cc-dismesso', isActive: false,
+    } as never)
+
+    await aggiornaContoDominante(prisma as never, 'entry-1', 'automatico')
+
+    const dati = vi.mocked(prisma.journalEntry.update).mock.calls[0][0].data as Record<string, unknown>
+    expect(dati).not.toHaveProperty('costCenterId')
+    expect(dati.verified).toBe(false)
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Centro non rivalutabile dopo il conto dominante: si lascia quello del movimento',
+      expect.objectContaining({ journalEntryId: 'entry-1' })
+    )
+  })
+
+  it('percorso interattivo (default): centro e stato di verifica non si toccano', async () => {
+    await aggiornaContoDominante(prisma as never, 'entry-1')
+
+    expect(prisma.journalEntry.findUnique).not.toHaveBeenCalled()
+    expect(prisma.journalEntry.update).toHaveBeenCalledWith({
+      where: { id: 'entry-1' },
+      data: {
+        accountId: 'conto-birra',
+        budgetCategoryId: 'cat-birra',
+        categorizationSource: 'split',
+      },
+    })
   })
 })

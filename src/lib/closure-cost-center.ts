@@ -1,13 +1,15 @@
 import type { CostCenterOption } from '@/components/prima-nota/shared/CostCenterSelect'
+import { CENTRO_OPERATIVO_DEFAULT_CODE } from '@/lib/cost-centers'
 
 /**
  * Centro di costo preselezionato in testata per una nuova chiusura: il
- * locale principale (Weiss Cafè), non il centro di default del server
- * (STR — struttura/amministrazione, usato altrove per i conti con regola
- * DEFAULT_STR). Se il form lasciasse il campo vuoto, il server ricadrebbe
- * su STR: un risultato diverso da quello atteso da chi compila la chiusura.
+ * locale principale (Weiss Cafè), non il centro di default di sistema
+ * (STR — struttura/amministrazione, usato per i conti con regola
+ * DEFAULT_STR). È lo stesso centro operativo predefinito che il server usa
+ * ovunque debba indovinare un'imputazione: vedi `@/lib/cost-centers` per la
+ * distinzione fra i due "predefiniti".
  */
-export const CLOSURE_DEFAULT_COST_CENTER_CODE = 'WEISS'
+export const CLOSURE_DEFAULT_COST_CENTER_CODE = CENTRO_OPERATIVO_DEFAULT_CODE
 
 /**
  * Id del centro da preselezionare in testata su una nuova chiusura, o

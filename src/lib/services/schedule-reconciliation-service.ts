@@ -72,11 +72,15 @@ function importoUtile(
  * Le fette 'manuale' già presenti sul movimento vincono sempre: se ce ne
  * sono, questa funzione è un no-op.
  *
- * Non valida il centro di costo, di proposito: il centro appartiene al
- * movimento, che è già stato validato quando è nato (import, regola, o
- * registrazione manuale), e le fette ereditate ricalcano conti che la fattura
- * porta già con sé. Rifiutarle qui bloccherebbe una riconciliazione corretta
- * per un dato che l'utente non sta nemmeno toccando.
+ * L'ereditarietà non rifiuta mai una riconciliazione per il centro di costo —
+ * bloccarla per un dato che l'utente non sta toccando sarebbe peggio — ma il
+ * centro va comunque rivalutato, e questo è un percorso automatico. Il
+ * movimento importato dall'estratto conto nasce senza conto, quindi con il
+ * centro che si dà a chi non ne ha uno; il conto arriva solo ora, con le
+ * fette della fattura, e può essere di quelli che un centro lo pretendono.
+ * Se ne occupa `aggiornaContoDominante` in contesto automatico, che imputa al
+ * centro operativo predefinito quanto non è stato scelto da nessuno e lascia
+ * il movimento da verificare.
  */
 async function ereditaFetteDaFattura(
   tx: TransactionClient,
@@ -165,7 +169,7 @@ async function ereditaFetteDaFattura(
     })),
   })
 
-  await aggiornaContoDominante(tx, journalEntryId)
+  await aggiornaContoDominante(tx, journalEntryId, 'automatico')
 }
 
 /**

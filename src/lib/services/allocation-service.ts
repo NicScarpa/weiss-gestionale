@@ -2,7 +2,11 @@ import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
-import { risolviCentroDiCosto } from '@/lib/services/cost-center-service'
+import {
+  risolviCentroDiCosto,
+  trovaCentroStrutturale,
+  type ContestoRisoluzione,
+} from '@/lib/services/cost-center-service'
 
 export interface FettaInput {
   accountId: string
@@ -61,6 +65,54 @@ export type TransactionClient = Omit<
 >
 
 /**
+ * Rivaluta il centro del movimento dopo che le fette gli hanno riscritto il
+ * conto, sui soli percorsi automatici. Serve perché il conto può arrivare
+ * DOPO il centro: il movimento nasce dall'import senza conto, prende il
+ * centro che si dà a chi non ne ha uno, e solo alla riconciliazione eredita
+ * dalla fattura un conto che invece un centro lo pretendeva.
+ *
+ * Una scelta umana non si tocca mai: se il movimento porta un centro diverso
+ * da quello di sistema, quello è. Il centro di sistema (STR) su un conto
+ * operativo, invece, non è una scelta: è il ripiego di quando il conto ancora
+ * non c'era, e va trattato come assente perché la regola del conto possa
+ * rivalutarlo (→ WEISS, il centro operativo predefinito).
+ */
+async function rivalutaCentroSuPercorsoAutomatico(
+  tx: TransactionClient,
+  journalEntryId: string,
+  accountIdDominante: string
+): Promise<{ costCenterId?: string }> {
+  const movimento = await tx.journalEntry.findUnique({
+    where: { id: journalEntryId },
+    select: { costCenterId: true },
+  })
+  const strutturale = await trovaCentroStrutturale(tx)
+  const centroScelto =
+    movimento?.costCenterId && movimento.costCenterId !== strutturale?.id
+      ? movimento.costCenterId
+      : null
+
+  const esito = await risolviCentroDiCosto(
+    tx,
+    { accountId: accountIdDominante, costCenterId: centroScelto },
+    'automatico'
+  )
+  if (esito.outcome !== 'ok') {
+    // Su un percorso automatico la risoluzione non chiede più nulla: resta
+    // 'invalid' solo se il centro già sul movimento è sparito o è stato
+    // disattivato. Il conto si aggiorna comunque, il centro resta com'è e il
+    // movimento è da verificare: sarà chi approva a sistemarlo.
+    logger.warn('Centro non rivalutabile dopo il conto dominante: si lascia quello del movimento', {
+      journalEntryId,
+      accountId: accountIdDominante,
+      code: esito.code,
+    })
+    return {}
+  }
+  return { costCenterId: esito.costCenterId }
+}
+
+/**
  * Rilegge TUTTE le fette del movimento (manuali + ereditate) e allinea conto
  * dominante, categoria derivata e `categorizationSource: 'split'`. Condiviso
  * fra lo split manuale (setEntryAllocations) e l'ereditarietà pro-quota dalla
@@ -68,14 +120,17 @@ export type TransactionClient = Omit<
  * dominante, un'unica verità. Ritorna il numero di fette rilette (0 se non
  * ce n'è più nessuna, e in tal caso non scrive nulla).
  *
- * Non valida il centro di costo e non lo tocca: il dominante cambia il conto,
- * non l'imputazione al centro, e chi la chiama ha già validato le fette
- * (setEntryAllocations) o lavora su un movimento validato a monte
- * (ereditaFetteDaFattura).
+ * Sul percorso `interattivo` il centro non si tocca: chi chiama ha già
+ * validato le fette contro il centro del movimento (setEntryAllocations, che
+ * risponde 400 se non tornano). Sul percorso `automatico` — l'ereditarietà
+ * dalla fattura alla riconciliazione — il centro va invece rivalutato contro
+ * il nuovo conto, e il movimento resta `verified: false`: un bonifico
+ * importato e riconciliato dal sistema passa da un'approvazione manuale.
  */
 export async function aggiornaContoDominante(
   tx: TransactionClient,
-  journalEntryId: string
+  journalEntryId: string,
+  contesto: ContestoRisoluzione = 'interattivo'
 ): Promise<number> {
   const tutte = await tx.journalEntryAllocation.findMany({
     where: { journalEntryId },
@@ -86,12 +141,21 @@ export async function aggiornaContoDominante(
   const dominante = tutte.reduce((max, f) =>
     Number(f.importo) > Number(max.importo) ? f : max
   )
+  const imputazioneAutomatica =
+    contesto === 'automatico'
+      ? {
+          ...(await rivalutaCentroSuPercorsoAutomatico(tx, journalEntryId, dominante.accountId)),
+          verified: false,
+        }
+      : {}
+
   await tx.journalEntry.update({
     where: { id: journalEntryId },
     data: {
       accountId: dominante.accountId,
       budgetCategoryId: await derivaBudgetCategoryDaConto(dominante.accountId),
       categorizationSource: 'split',
+      ...imputazioneAutomatica,
     },
   })
   return tutte.length

@@ -319,25 +319,30 @@ export async function applicaRegolaCreaMovimento(params: {
 
     // Questo è un percorso automatico: non c'è nessuno a cui chiedere il
     // centro di costo. Se il conto ereditato dal fornitore ne pretende uno e
-    // la regola non lo indica, il movimento nasce comunque, sul centro di
-    // default e da verificare: perderlo sarebbe peggio che imputarlo male.
-    const risoluzione = await risolviCentroDiCosto(prisma, {
-      accountId: contoMovimento,
-      costCenterId: match.costCenterId,
-    })
+    // la regola non lo indica, il movimento nasce comunque, sul centro
+    // operativo predefinito e da verificare: perderlo sarebbe peggio che
+    // imputarlo per supposizione.
+    const risoluzione = await risolviCentroDiCosto(
+      prisma,
+      { accountId: contoMovimento, costCenterId: match.costCenterId },
+      'automatico'
+    )
 
     let costCenterId: string
     if (risoluzione.outcome === 'ok') {
       costCenterId = risoluzione.costCenterId
     } else {
-      logger.warn('Regola scadenzario: centro di costo non risolvibile, si usa il default', {
+      // In contesto automatico resta 'invalid' solo il centro indicato dalla
+      // regola ma nel frattempo cancellato o disattivato: si indovina come se
+      // la regola non ne indicasse nessuno.
+      logger.warn('Regola scadenzario: centro di costo non risolvibile, si usa il predefinito', {
         scheduleId: schedule.id,
         ruleId: match.rule.id,
         contoId: contoMovimento,
         code: risoluzione.code,
         motivo: risoluzione.motivo,
       })
-      const centroDefault = await risolviCentroDiCosto(prisma, {})
+      const centroDefault = await risolviCentroDiCosto(prisma, {}, 'automatico')
       if (centroDefault.outcome !== 'ok') {
         return { applicata: false, motivo: 'centro di costo di default non disponibile' }
       }
@@ -359,7 +364,7 @@ export async function applicaRegolaCreaMovimento(params: {
         counterpartName: schedule.controparteNome,
         categorizationSource: 'rule',
         // Nessuno ha confermato l'imputazione di un movimento nato da una
-        // regola, tanto meno quando il centro è caduto sul default.
+        // regola, tanto meno quando il centro è stato indovinato.
         verified: false,
         createdById: params.userId,
       },
