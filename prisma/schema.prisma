@@ -1485,10 +1485,21 @@ model NotificationLog {
   @@map("notification_logs")
 }
 
+/// Sottoscrizione di un dispositivo alle notifiche push (Web Push, RFC 8030).
+/// La tripletta endpoint + p256dh + auth è indivisibile: l'endpoint dice a
+/// quale push service consegnare il messaggio, le due chiavi servono a
+/// cifrarne il contenuto. Senza le chiavi non si può inviare nulla.
 model PushSubscription {
   id          String    @id @default(cuid())
   userId      String    @map("user_id")
-  fcmToken    String    @unique @map("fcm_token")
+  /// URL del push service del browser: identifica il dispositivo, ed è unico.
+  endpoint    String    @unique @map("endpoint")
+  /// Chiave pubblica del dispositivo, usata per cifrare il payload.
+  p256dh      String
+  /// Segreto di autenticazione del dispositivo.
+  auth        String
+  /// Scadenza dichiarata dal browser: nella pratica quasi sempre assente.
+  expiresAt   DateTime? @map("expires_at")
   deviceName  String?   @map("device_name")
   deviceType  String?   @map("device_type")
   browserName String?   @map("browser_name")
