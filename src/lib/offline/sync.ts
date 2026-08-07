@@ -145,11 +145,23 @@ export async function prefetchDataForOffline() {
       await cacheData('cachedSuppliers', suppliers)
     }
 
-    // Fetch and cache accounts
+    // Fetch and cache accounts (include mastro/gruppo/costCenterRule del piano dei conti v4)
     const accountsRes = await fetch('/api/accounts?full=true')
     if (accountsRes.ok) {
       const { accounts } = await accountsRes.json()
       await cacheData('cachedAccounts', accounts)
+    }
+
+    // Fetch and cache cost centers. La route arriva con il Task 11: finché
+    // non esiste, la sincronizzazione prosegue senza interrompersi.
+    const costCentersRes = await fetch('/api/cost-centers')
+    if (costCentersRes.ok) {
+      const { costCenters } = await costCentersRes.json()
+      await cacheData('costCenters', costCenters)
+    } else {
+      logger.warn('[Offline] /api/cost-centers non disponibile, sincronizzazione centri di costo saltata', {
+        status: costCentersRes.status,
+      })
     }
 
     // Fetch and cache recent closures

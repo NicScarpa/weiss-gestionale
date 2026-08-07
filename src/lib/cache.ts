@@ -28,6 +28,11 @@ interface AccountCache {
   type: string
   category: string | null
   isActive: boolean
+  mastroCode: string | null
+  mastroNome: string | null
+  gruppoCode: string | null
+  gruppoNome: string | null
+  costCenterRule: string
 }
 
 interface ShiftDefinitionCache {
@@ -171,6 +176,11 @@ export async function getCachedAccounts(type?: 'RICAVO' | 'COSTO' | 'ATTIVO' | '
         type: true,
         category: true,
         isActive: true,
+        mastroCode: true,
+        mastroNome: true,
+        gruppoCode: true,
+        gruppoNome: true,
+        costCenterRule: true,
       },
       orderBy: { code: 'asc' },
     })

@@ -61,6 +61,15 @@ interface WeissDB extends DBSchema {
       cachedAt: Date
     }
   }
+  // Cached cost centers (piano dei conti v4)
+  costCenters: {
+    key: string
+    value: {
+      id: string
+      data: unknown
+      cachedAt: Date
+    }
+  }
   // Sync metadata
   syncMeta: {
     key: string
@@ -73,7 +82,9 @@ interface WeissDB extends DBSchema {
 }
 
 const DB_NAME = 'weiss-gestionale'
-const DB_VERSION = 1
+// v2: nuovo store costCenters e conti arricchiti di mastro/gruppo/costCenterRule
+// (piano dei conti v4). Il bump forza la risincronizzazione su ogni dispositivo.
+const DB_VERSION = 2
 
 let dbInstance: IDBPDatabase<WeissDB> | null = null
 
@@ -103,6 +114,9 @@ export async function getDB(): Promise<IDBPDatabase<WeissDB>> {
       }
       if (!db.objectStoreNames.contains('cachedSuppliers')) {
         db.createObjectStore('cachedSuppliers', { keyPath: 'id' })
+      }
+      if (!db.objectStoreNames.contains('costCenters')) {
+        db.createObjectStore('costCenters', { keyPath: 'id' })
       }
 
       // Sync metadata
@@ -160,7 +174,7 @@ export async function deletePendingClosure(id: string) {
 }
 
 // Cache operations
-export async function cacheData<T extends 'cachedClosures' | 'cachedVenues' | 'cachedStaff' | 'cachedAccounts' | 'cachedSuppliers'>(
+export async function cacheData<T extends 'cachedClosures' | 'cachedVenues' | 'cachedStaff' | 'cachedAccounts' | 'cachedSuppliers' | 'costCenters'>(
   store: T,
   items: Array<{ id: string; [key: string]: unknown }> | undefined | null
 ) {
@@ -193,7 +207,7 @@ export async function cacheData<T extends 'cachedClosures' | 'cachedVenues' | 'c
 }
 
 export async function getCachedData<T>(
-  store: 'cachedClosures' | 'cachedVenues' | 'cachedStaff' | 'cachedAccounts' | 'cachedSuppliers'
+  store: 'cachedClosures' | 'cachedVenues' | 'cachedStaff' | 'cachedAccounts' | 'cachedSuppliers' | 'costCenters'
 ): Promise<T[]> {
   const db = await getDB()
   const items = await db.getAll(store)
@@ -201,7 +215,7 @@ export async function getCachedData<T>(
 }
 
 export async function getCachedItem<T>(
-  store: 'cachedClosures' | 'cachedVenues' | 'cachedStaff' | 'cachedAccounts' | 'cachedSuppliers',
+  store: 'cachedClosures' | 'cachedVenues' | 'cachedStaff' | 'cachedAccounts' | 'cachedSuppliers' | 'costCenters',
   id: string
 ): Promise<T | undefined> {
   const db = await getDB()
@@ -209,7 +223,7 @@ export async function getCachedItem<T>(
   return item?.data as T | undefined
 }
 
-export async function clearCache(store?: 'cachedClosures' | 'cachedVenues' | 'cachedStaff' | 'cachedAccounts' | 'cachedSuppliers') {
+export async function clearCache(store?: 'cachedClosures' | 'cachedVenues' | 'cachedStaff' | 'cachedAccounts' | 'cachedSuppliers' | 'costCenters') {
   const db = await getDB()
 
   if (store) {
@@ -221,6 +235,7 @@ export async function clearCache(store?: 'cachedClosures' | 'cachedVenues' | 'ca
       db.clear('cachedStaff'),
       db.clear('cachedAccounts'),
       db.clear('cachedSuppliers'),
+      db.clear('costCenters'),
     ])
   }
 }
