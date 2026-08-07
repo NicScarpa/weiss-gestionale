@@ -1,21 +1,19 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { withAuth, forbidden } from '@/lib/api-utils'
 
 import { logger } from '@/lib/logger'
 // GET /api/venues/[id]/cash-stations - Template postazioni cassa per sede
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const GET = withAuth<{ id: string }>(
+  async (request, { params, venueId }) => {
   try {
-    const session = await auth()
+    const { id } = params
 
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
+    // La sede della sessione è l'unica interrogabile: l'id nell'URL può solo
+    // confermarla, non sceglierne un'altra.
+    if (id !== venueId) {
+      return forbidden('Non hai accesso a questa sede')
     }
-
-    const { id } = await params
 
     // Verifica che la sede esista
     const venue = await prisma.venue.findUnique({
@@ -60,4 +58,6 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+  },
+  { roles: ['admin', 'manager'], venueScoped: true }
+)
