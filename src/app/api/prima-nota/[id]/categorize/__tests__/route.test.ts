@@ -27,6 +27,7 @@ import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
 import { createAuditLog } from '@/lib/audit'
 
 const sessione = { user: { id: 'user-1', role: 'admin' } } as unknown as Session
+const sessioneManager = { user: { id: 'user-2', role: 'manager' } } as unknown as Session
 
 function patchCon(body: Record<string, unknown>) {
   const request = new NextRequest('http://localhost:3000/api/prima-nota/entry-1/categorize', {
@@ -42,6 +43,7 @@ beforeEach(() => {
   vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
     id: 'entry-1',
     costCenterId: null,
+    closureId: null,
     _count: { allocations: 0 },
   } as never)
   // Conto che non pretende un centro: la risoluzione cade sul default (STR).
@@ -168,6 +170,43 @@ describe('PATCH /api/prima-nota/[id]/categorize - il centro di costo del nuovo c
 
     expect(vi.mocked(prisma.journalEntry.update).mock.calls[0][0].data.costCenterId).toBeUndefined()
     expect(prisma.costCenter.findFirst).not.toHaveBeenCalled()
+  })
+})
+
+describe('PATCH /api/prima-nota/[id]/categorize - un movimento da chiusura segue il gate admin', () => {
+  it('manager su movimento da chiusura: 403 e update mai chiamato', async () => {
+    vi.mocked(auth).mockResolvedValue(sessioneManager as never)
+    vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
+      id: 'entry-1',
+      costCenterId: null,
+      closureId: 'chiusura-1',
+      _count: { allocations: 0 },
+    } as never)
+
+    const { request, context } = patchCon({ accountId: 'conto-1' })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(403)
+    const body = await response.json()
+    expect(body.error).toBe('Solo un amministratore può riclassificare i movimenti generati da chiusura')
+    expect(prisma.journalEntry.update).not.toHaveBeenCalled()
+  })
+
+  it('admin su movimento da chiusura: procede normalmente', async () => {
+    vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
+      id: 'entry-1',
+      costCenterId: null,
+      closureId: 'chiusura-1',
+      _count: { allocations: 0 },
+    } as never)
+    vi.mocked(derivaBudgetCategoryDaConto).mockResolvedValue('cat-derivata')
+    vi.mocked(prisma.journalEntry.update).mockResolvedValue({ id: 'entry-1' } as never)
+
+    const { request, context } = patchCon({ accountId: 'conto-1' })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(200)
+    expect(prisma.journalEntry.update).toHaveBeenCalled()
   })
 })
 

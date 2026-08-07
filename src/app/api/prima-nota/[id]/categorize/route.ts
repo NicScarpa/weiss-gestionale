@@ -38,11 +38,20 @@ export async function PATCH(
     // Recupera la entry corrente
     const current = await prisma.journalEntry.findUnique({
       where: { id: id },
-      select: { id: true, costCenterId: true, _count: { select: { allocations: true } } },
+      select: { id: true, costCenterId: true, closureId: true, _count: { select: { allocations: true } } },
     })
 
     if (!current) {
       return NextResponse.json({ error: 'Movimento non trovato' }, { status: 404 })
+    }
+
+    // Un movimento generato da chiusura segue lo stesso gate del PUT: solo
+    // l'admin può riclassificarlo (vedi CAMPI_RICLASSIFICABILI in [id]/route.ts).
+    if (current.closureId && session.user.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Solo un amministratore può riclassificare i movimenti generati da chiusura' },
+        { status: 403 }
+      )
     }
 
     // Un movimento suddiviso in fette (Allocation) è governato dalla

@@ -45,12 +45,17 @@ export async function POST(request: NextRequest) {
     // Recupera entry da ricategorizzare. I movimenti suddivisi in fette
     // (allocations) sono esclusi: la loro categoria/conto è governata dalla
     // suddivisione, non dal batch di regole (vedi finding review allocation).
+    // I movimenti generati da una chiusura (closureId valorizzato) sono
+    // esclusi allo stesso modo: la loro riclassifica resta un gesto
+    // deliberato dell'admin (vedi [id]/route.ts), non un effetto collaterale
+    // di un batch automatico che gira senza scelta puntuale dell'utente.
     const entries = await prisma.journalEntry.findMany({
       where: {
         venueId,
         verified: false,
         hiddenAt: null,
         allocations: { none: {} },
+        closureId: null,
       },
       take: 100, // Batch processing
     })

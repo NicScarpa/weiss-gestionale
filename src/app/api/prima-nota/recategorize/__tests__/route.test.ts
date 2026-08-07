@@ -87,6 +87,21 @@ describe('POST /api/prima-nota/recategorize - i movimenti suddivisi restano fuor
   })
 })
 
+describe('POST /api/prima-nota/recategorize - i movimenti da chiusura restano fuori dal batch', () => {
+  it('il where esclude i movimenti con closureId valorizzato', async () => {
+    const response = await POST(richiestaPost())
+
+    expect(response.status).toBe(200)
+    expect(prisma.journalEntry.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          closureId: null,
+        }),
+      })
+    )
+  })
+})
+
 describe('POST /api/prima-nota/recategorize - il centro di costo non fa fallire il batch', () => {
   it('la riga senza centro viene saltata e contata, le altre passano', async () => {
     vi.mocked(prisma.categorizationRule.findMany).mockResolvedValue([
