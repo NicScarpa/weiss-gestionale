@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
-import { Prisma } from '@prisma/client'
+import { Prisma, type AccountType } from '@prisma/client'
 
 import { logger } from '@/lib/logger'
 // Schema validazione
@@ -25,7 +25,9 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const type = searchParams.get('type') // RICAVO, COSTO, ATTIVO, PASSIVO
+    const type = searchParams.get('type') // retrocompatibile: RICAVO, COSTO, ATTIVO, PASSIVO
+    const typesParam = searchParams.get('types') // CSV, es. 'COSTO,RICAVO'
+    const imputable = searchParams.get('imputable') === 'true'
     const includeInactive = searchParams.get('includeInactive') === 'true'
     const full = searchParams.get('full') === 'true'
 
@@ -35,8 +37,23 @@ export async function GET(request: NextRequest) {
       where.isActive = true
     }
 
-    if (type) {
+    if (typesParam) {
+      const types = typesParam
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean) as AccountType[]
+      if (types.length > 0) {
+        where.type = { in: types }
+      }
+    } else if (type) {
       where.type = type as Prisma.EnumAccountTypeFilter
+    }
+
+    // Voci imputabili del piano v4: solo i conti con mastro valorizzato. I
+    // patrimoniali e i legacy (mastroCode null) restano fuori dai form
+    // economici ma continuano a uscire dalla stessa route senza il flag.
+    if (imputable) {
+      where.mastroCode = { not: null }
     }
 
     const accounts = await prisma.account.findMany({
@@ -46,6 +63,13 @@ export async function GET(request: NextRequest) {
         code: true,
         name: true,
         type: true,
+        // Gerarchia del piano v4 (mastro/gruppo), null sui conti patrimoniali
+        // e legacy: alimenta il raggruppamento di AccountCombobox.
+        mastroCode: true,
+        mastroNome: true,
+        gruppoCode: true,
+        gruppoNome: true,
+        costCenterRule: true,
         // Categoria derivata dalla mappatura budget (Fase 0), per raggruppare
         // il conto nella select condivisa (AccountGroupedSelect, Fase 1).
         budgetMapping: {
