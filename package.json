@@ -19,6 +19,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:integration:watch": "vitest --config vitest.integration.config.ts",
     "postinstall": "prisma generate",
+    "strict:ratchet": "node scripts/strict-ratchet.mjs",
     "guard:not-prod": "tsx scripts/guards/assert-not-prod.ts",
     "db:push": "npm run guard:not-prod && prisma db push",
     "db:seed": "npm run guard:not-prod && tsx prisma/seed.ts",

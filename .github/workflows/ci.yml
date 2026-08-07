@@ -51,6 +51,11 @@ jobs:
       - name: Run TypeScript Check
         run: npx tsc --noEmit
 
+      # tsconfig.strict.json non passa ancora: il cricchetto impedisce che il
+      # numero di errori salga. La baseline vive in scripts/strict-ratchet.mjs.
+      - name: Strict mode ratchet
+        run: npm run strict:ratchet
+
   test:
     name: Test
     runs-on: ubuntu-latest
