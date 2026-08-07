@@ -33,6 +33,11 @@ passo() {
 }
 
 print "=== gate su $WT ==="
+# Sempre per primo: un merge che tocca package.json lascia node_modules indietro
+# rispetto al lockfile, e tutto ciò che viene dopo misura un ambiente sbagliato.
+# Sintomo tipico: "Cannot find module '<pacchetto appena aggiunto>'".
+passo 'npm ci'        npm ci
+passo 'prisma generate' npx prisma generate
 passo 'tsc'           npx tsc --noEmit
 passo 'lint'          npm run lint
 passo 'test unit'     npm run test:run
@@ -43,7 +48,7 @@ passo 'build'          npm run build
 
 print ""
 if [ ${#FALLITI[@]} -eq 0 ]; then
-  print "=== GATE VERDE: tutti e 7 i passi superati ==="
+  print "=== GATE VERDE: tutti i passi superati ==="
   exit 0
 else
   print "=== GATE ROSSO: falliti ${#FALLITI[@]} passi → ${FALLITI[*]} ==="
