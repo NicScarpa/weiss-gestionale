@@ -2,20 +2,35 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import {
+  salvaSottoscrizione,
+  trovaPerEndpoint,
+  rimuoviSottoscrizione,
+} from '@/lib/notifications/subscriptions'
 
 import { logger } from '@/lib/logger'
+
+/**
+ * Una sottoscrizione Web Push è la tripletta (endpoint, p256dh, auth) prodotta
+ * dal browser con `pushManager.subscribe()`. Le due chiavi servono a cifrare il
+ * payload: senza, non si può inviare nulla.
+ */
 const subscribeSchema = z.object({
-  fcmToken: z.string().min(1),
+  endpoint: z.string().url(),
+  keys: z.object({
+    p256dh: z.string().min(1),
+    auth: z.string().min(1),
+  }),
   deviceName: z.string().optional(),
   deviceType: z.enum(['ios', 'android', 'web']).optional(),
   browserName: z.string().optional(),
 })
 
 const unsubscribeSchema = z.object({
-  fcmToken: z.string().min(1),
+  endpoint: z.string().url(),
 })
 
-// POST /api/notifications/subscribe - Registra token FCM
+// POST /api/notifications/subscribe - Registra la sottoscrizione di un dispositivo
 export async function POST(request: NextRequest) {
   try {
     const session = await auth()
@@ -27,46 +42,12 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = subscribeSchema.parse(body)
 
-    // Verifica se il token esiste già
-    const existing = await prisma.pushSubscription.findUnique({
-      where: { fcmToken: data.fcmToken },
-    })
-
-    if (existing) {
-      // Aggiorna la subscription esistente
-      const updated = await prisma.pushSubscription.update({
-        where: { id: existing.id },
-        data: {
-          userId: session.user.id,
-          deviceName: data.deviceName,
-          deviceType: data.deviceType,
-          browserName: data.browserName,
-          isActive: true,
-          lastUsedAt: new Date(),
-        },
-      })
-
-      return NextResponse.json({
-        success: true,
-        subscription: {
-          id: updated.id,
-          deviceName: updated.deviceName,
-          deviceType: updated.deviceType,
-        },
-      })
-    }
-
-    // Crea nuova subscription
-    const subscription = await prisma.pushSubscription.create({
-      data: {
-        userId: session.user.id,
-        fcmToken: data.fcmToken,
-        deviceName: data.deviceName,
-        deviceType: data.deviceType,
-        browserName: data.browserName,
-        isActive: true,
-        lastUsedAt: new Date(),
-      },
+    const subscription = await salvaSottoscrizione({
+      userId: session.user.id,
+      dati: { endpoint: data.endpoint, keys: data.keys },
+      deviceName: data.deviceName,
+      deviceType: data.deviceType,
+      browserName: data.browserName,
     })
 
     // Crea preferenze di default se non esistono
@@ -76,14 +57,7 @@ export async function POST(request: NextRequest) {
       update: {},
     })
 
-    return NextResponse.json({
-      success: true,
-      subscription: {
-        id: subscription.id,
-        deviceName: subscription.deviceName,
-        deviceType: subscription.deviceType,
-      },
-    })
+    return NextResponse.json({ success: true, subscription })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
@@ -100,7 +74,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// DELETE /api/notifications/subscribe - Rimuovi token FCM
+// DELETE /api/notifications/subscribe - Rimuovi la sottoscrizione di un dispositivo
 export async function DELETE(request: NextRequest) {
   try {
     const session = await auth()
@@ -112,13 +86,10 @@ export async function DELETE(request: NextRequest) {
     const body = await request.json()
     const data = unsubscribeSchema.parse(body)
 
-    // Trova e disattiva la subscription
-    const subscription = await prisma.pushSubscription.findUnique({
-      where: { fcmToken: data.fcmToken },
-    })
+    const subscription = await trovaPerEndpoint(data.endpoint)
 
     if (!subscription) {
-      return NextResponse.json({ success: true, message: 'Token non trovato' })
+      return NextResponse.json({ success: true, message: 'Sottoscrizione non trovata' })
     }
 
     // Verifica che appartenga all'utente corrente
@@ -126,9 +97,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 })
     }
 
-    await prisma.pushSubscription.delete({
-      where: { id: subscription.id },
-    })
+    await rimuoviSottoscrizione(subscription.id)
 
     return NextResponse.json({ success: true })
   } catch (error) {
@@ -147,7 +116,7 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
-// GET /api/notifications/subscribe - Lista subscriptions dell'utente
+// GET /api/notifications/subscribe - Lista dispositivi sottoscritti dell'utente
 export async function GET(_request: NextRequest) {
   try {
     const session = await auth()
