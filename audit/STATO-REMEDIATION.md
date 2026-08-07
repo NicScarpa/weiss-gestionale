@@ -139,9 +139,19 @@ Riepilogo di ciò che è entrato; il dettaglio dei mandati originali resta sotto
 **Verifica per inversione fatta dal lead su ogni lotto**: C1 24 rossi · C2 verificato sui tre canali
 + conteggio test (809−67 esatti) · C4 13 rossi · C3 prova di consegna push decifrata.
 
-**Gate finale W3**: tsc 0 · lint 0 errori (70 warning, da 81) · **798 test unit** (57 file) ·
+**Gate finale W3**: tsc 0 · lint 0 errori (70 warning, da 81) · **800 test unit** (57 file) ·
 **215 test di integrazione** (31 file, erano 68 a inizio remediation) · strict **24** (da 35) ·
-audit **0 critical / 0 high** · build OK. **106 commit sopra `main`.**
+audit **0 critical / 0 high** · build OK. **117 commit sopra `main`.**
+
+**Le notifiche push funzionano davvero, con la catena completa dimostrata**: sottoscrizione reale
+presso il push service di Google, invio dal server, consegna al service worker che mostra la notifica
+con titolo, corpo e url corretti — più la prova per decifratura del payload (aes128gcm, firma VAPID).
+`PushSubscription` conserva ora la tripletta Web Push in **tre colonne vere** (`endpoint` unico,
+`p256dh`, `auth`) più la scadenza dichiarata dal browser.
+
+> **ORDINE DI RILASCIO OBBLIGATORIO.** Lo schema nuovo va applicato **prima** che il codice nuovo
+> giri, altrimenti il codice cerca colonne che non esistono. Con `db push` è un drop-and-create di
+> `fcm_token`, indolore perché la tabella è vuota per costruzione — ma l'ordine conta.
 
 ---
 
