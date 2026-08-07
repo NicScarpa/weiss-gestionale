@@ -199,6 +199,8 @@ export function Sidebar() {
       {/* Rail Sidebar (Livello 1 - Icone) */}
       <aside className="w-16 h-full bg-slate-900 flex flex-col items-center py-4 z-50 border-r border-slate-800">
         <div className="mb-8 px-2 overflow-hidden text-center">
+          {/* Il quadrato del logo resta bianco in entrambi i temi: la sigla
+              sopra dev'essere scura sempre, non seguire il tema. */}
           <div className="w-8 h-8 mx-auto bg-white rounded flex items-center justify-center text-slate-900 font-bold text-sm">
             WS
           </div>
@@ -328,17 +330,17 @@ export function Sidebar() {
             animate={{ width: 256, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ type: "spring", bounce: 0, duration: 0.3 }}
-            className="h-full bg-white border-r border-slate-200 z-40 overflow-hidden shadow-xl"
+            className="h-full bg-card border-r z-40 overflow-hidden shadow-xl"
           >
             <div className="w-64 py-6 px-4 whitespace-nowrap">
-              <h2 className="text-xl font-bold text-slate-900 mb-8 px-2">
+              <h2 className="text-xl font-bold text-foreground mb-8 px-2">
                 {activeNavigation.name}
               </h2>
 
               <div className="space-y-8">
                 {activeNavigation.sections?.map((section) => (
                   <div key={section.title}>
-                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-2">
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-2">
                       {section.title}
                     </h3>
                     <div className="space-y-1 text-sm">
@@ -351,8 +353,8 @@ export function Sidebar() {
                             className={cn(
                               "flex items-center gap-3 px-3 py-2 rounded-md font-medium transition-colors",
                               isSubActive
-                                ? "bg-slate-100 text-slate-900"
-                                : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                                ? "bg-accent text-accent-foreground"
+                                : "text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground"
                             )}
                           >
                             <span>{subItem.name}</span>
