@@ -27,6 +27,12 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     ".venv/**",
     "scripts/**",
+    // Worktree di agenti Claude Code annidate dentro il repo (isolamento per
+    // sessioni parallele): senza questo ignore, "npm run lint" dalla root
+    // scansiona anche i loro file (inclusi script CommonJS con require(),
+    // vietati qui) e blocca il pre-commit hook di chiunque stia lavorando
+    // nella working directory principale per una violazione che non è sua.
+    ".claude/worktrees/**",
   ]),
 ]);
 
