@@ -5,11 +5,17 @@ import { format } from 'date-fns'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
 import { getSystemAccount } from '@/lib/accounts/system'
 import { getVenueId } from '@/lib/venue'
+import { risolviCentroDiCosto } from '@/lib/services/cost-center-service'
+import { z } from 'zod'
 
 import { logger } from '@/lib/logger'
 interface RouteContext {
   params: Promise<{ id: string }>
 }
+
+const recordSchema = z.object({
+  costCenterId: z.string().optional().nullable(),
+})
 
 // POST /api/invoices/[id]/record - Registra fattura in prima nota
 export async function POST(request: NextRequest, context: RouteContext) {
@@ -26,6 +32,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const { id } = await context.params
+
+    // La registrazione parte anche da un bottone senza corpo: JSON assente
+    // significa nessun centro esplicito.
+    const body = await request.json().catch(() => ({}))
+    const { costCenterId } = recordSchema.parse(body)
 
     // Trova fattura con tutte le relazioni
     const invoice = await prisma.electronicInvoice.findFirst({
@@ -91,6 +102,20 @@ export async function POST(request: NextRequest, context: RouteContext) {
       )
     }
 
+    // La regola del centro si valuta sul conto ECONOMICO della fattura, non
+    // sulla contropartita banca: è il costo a dover essere imputato a un
+    // centro, non il conto corrente da cui esce il denaro.
+    const centro = await risolviCentroDiCosto(prisma, {
+      accountId: invoice.accountId,
+      costCenterId,
+    })
+    if (centro.outcome === 'invalid') {
+      return NextResponse.json(
+        { error: centro.motivo, code: centro.code },
+        { status: 400 }
+      )
+    }
+
     // Descrizione movimento
     const invoiceDateStr = format(invoice.invoiceDate, 'dd/MM/yyyy')
     const description = `Fattura ${invoice.invoiceNumber} del ${invoiceDateStr} - ${invoice.supplierName}`
@@ -110,6 +135,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         creditAmount: invoice.totalAmount,
         vatAmount: invoice.vatAmount,
         accountId: invoice.accountId,
+        costCenterId: centro.costCenterId,
         budgetCategoryId: invoice.accountId
           ? await derivaBudgetCategoryDaConto(invoice.accountId)
           : null,
@@ -142,6 +168,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
       message: 'Fattura registrata in prima nota con successo',
     })
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Dati non validi', details: error.issues },
+        { status: 400 }
+      )
+    }
+
     logger.error('Errore POST /api/invoices/[id]/record', error)
     return NextResponse.json(
       { error: 'Errore nella registrazione della fattura' },

@@ -71,6 +71,12 @@ function importoUtile(
  *
  * Le fette 'manuale' già presenti sul movimento vincono sempre: se ce ne
  * sono, questa funzione è un no-op.
+ *
+ * Non valida il centro di costo, di proposito: il centro appartiene al
+ * movimento, che è già stato validato quando è nato (import, regola, o
+ * registrazione manuale), e le fette ereditate ricalcano conti che la fattura
+ * porta già con sé. Rifiutarle qui bloccherebbe una riconciliazione corretta
+ * per un dato che l'utente non sta nemmeno toccando.
  */
 async function ereditaFetteDaFattura(
   tx: TransactionClient,

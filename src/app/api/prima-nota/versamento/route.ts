@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { bankDepositSchema } from '@/lib/validations/prima-nota'
 import { getVenueId } from '@/lib/venue'
+import { risolviCentroDiCosto } from '@/lib/services/cost-center-service'
 
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
@@ -29,6 +30,17 @@ export async function POST(request: NextRequest) {
       validatedData.description ||
       `Versamento in banca ${validatedData.date.toLocaleDateString('it-IT')}`
 
+    // Il giroconto cassa → banca non tocca conti economici: nessun conto da
+    // ispezionare, il centro è quello di default e vale per entrambe le
+    // scritture, che restano le due facce dello stesso movimento.
+    const centro = await risolviCentroDiCosto(prisma, { accountId: null })
+    if (centro.outcome === 'invalid') {
+      return NextResponse.json(
+        { error: centro.motivo, code: centro.code },
+        { status: 400 }
+      )
+    }
+
     // Crea entrambi i movimenti in una transazione
     const [cashEntry, bankEntry] = await prisma.$transaction([
       // Movimento CASSA: Avere (uscita verso banca)
@@ -40,6 +52,7 @@ export async function POST(request: NextRequest) {
           description: description,
           documentRef: validatedData.documentRef,
           creditAmount: validatedData.amount,
+          costCenterId: centro.costCenterId,
           createdById: session.user.id,
         },
         include: {
@@ -57,6 +70,7 @@ export async function POST(request: NextRequest) {
           description: description,
           documentRef: validatedData.documentRef,
           debitAmount: validatedData.amount,
+          costCenterId: centro.costCenterId,
           createdById: session.user.id,
         },
         include: {

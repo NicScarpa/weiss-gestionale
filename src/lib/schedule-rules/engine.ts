@@ -30,6 +30,7 @@
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
+import { risolviCentroDiCosto } from '@/lib/services/cost-center-service'
 import {
   ScheduleDocumentType,
   SchedulePaymentMethod,
@@ -49,6 +50,7 @@ export interface MatchableScheduleRule {
   azione: string
   contoId: string | null
   bankAccountId?: string | null
+  costCenterId?: string | null
   ordine: number
   isActive?: boolean
 }
@@ -67,6 +69,8 @@ export interface ScheduleRuleMatch<T extends MatchableScheduleRule = MatchableSc
   contoId: string | null
   /** Conto bancario su cui creare il movimento quando la regola si applica */
   bankAccountId: string | null
+  /** Centro di costo imposto dalla regola, se ne indica uno */
+  costCenterId: string | null
 }
 
 /** Un criterio nullo sulla regola è un jolly; altrimenti serve uguaglianza esatta. */
@@ -103,6 +107,7 @@ export function trovaRegolaApplicabile<T extends MatchableScheduleRule>(
     azione: rule.azione,
     contoId: rule.contoId,
     bankAccountId: 'bankAccountId' in rule ? (rule.bankAccountId as string | null) : null,
+    costCenterId: 'costCenterId' in rule ? (rule.costCenterId as string | null) : null,
   }
 }
 
@@ -177,6 +182,7 @@ export async function risolviRegolaScadenza(
       azione: true,
       contoId: true,
       bankAccountId: true,
+      costCenterId: true,
       ordine: true,
       isActive: true,
     },
@@ -311,6 +317,33 @@ export async function applicaRegolaCreaMovimento(params: {
       ? await derivaBudgetCategoryDaConto(contoMovimento)
       : null
 
+    // Questo è un percorso automatico: non c'è nessuno a cui chiedere il
+    // centro di costo. Se il conto ereditato dal fornitore ne pretende uno e
+    // la regola non lo indica, il movimento nasce comunque, sul centro di
+    // default e da verificare: perderlo sarebbe peggio che imputarlo male.
+    const risoluzione = await risolviCentroDiCosto(prisma, {
+      accountId: contoMovimento,
+      costCenterId: match.costCenterId,
+    })
+
+    let costCenterId: string
+    if (risoluzione.outcome === 'ok') {
+      costCenterId = risoluzione.costCenterId
+    } else {
+      logger.warn('Regola scadenzario: centro di costo non risolvibile, si usa il default', {
+        scheduleId: schedule.id,
+        ruleId: match.rule.id,
+        contoId: contoMovimento,
+        code: risoluzione.code,
+        motivo: risoluzione.motivo,
+      })
+      const centroDefault = await risolviCentroDiCosto(prisma, {})
+      if (centroDefault.outcome !== 'ok') {
+        return { applicata: false, motivo: 'centro di costo di default non disponibile' }
+      }
+      costCenterId = centroDefault.costCenterId
+    }
+
     const entry = await prisma.journalEntry.create({
       data: {
         venueId: params.venueId,
@@ -321,9 +354,13 @@ export async function applicaRegolaCreaMovimento(params: {
         debitAmount: isIncasso ? residuo : null,
         creditAmount: isIncasso ? null : residuo,
         accountId: contoMovimento,
+        costCenterId,
         budgetCategoryId: categoriaDerivata,
         counterpartName: schedule.controparteNome,
         categorizationSource: 'rule',
+        // Nessuno ha confermato l'imputazione di un movimento nato da una
+        // regola, tanto meno quando il centro è caduto sul default.
+        verified: false,
         createdById: params.userId,
       },
     })

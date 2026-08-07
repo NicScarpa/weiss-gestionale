@@ -6,6 +6,7 @@ import { updateJournalEntrySchema } from '@/lib/validations/prima-nota'
 import { getVenueId } from '@/lib/venue'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
+import { risolviCentroDiCosto } from '@/lib/services/cost-center-service'
 // GET /api/prima-nota/[id] - Dettaglio singolo movimento
 export async function GET(
   request: NextRequest,
@@ -113,7 +114,7 @@ export async function PUT(
     // Verifica che il movimento esista e appartenga al venue
     const existingEntry = await prisma.journalEntry.findFirst({
       where: { id, venueId },
-      select: { id: true, closureId: true },
+      select: { id: true, closureId: true, accountId: true, costCenterId: true },
     })
 
     if (!existingEntry) {
@@ -131,6 +132,27 @@ export async function PUT(
       )
     }
 
+    // Cambiare conto o centro rimette in discussione la regola del centro di
+    // costo: si rivaluta sullo stato risultante dall'aggiornamento, non su
+    // quello attuale. Se nessuno dei due cambia, il movimento resta com'è.
+    const cambiaConto = validatedData.accountId !== undefined
+    const cambiaCentro = validatedData.costCenterId !== undefined
+    let costCenterId: string | undefined
+
+    if (cambiaConto || cambiaCentro) {
+      const centro = await risolviCentroDiCosto(prisma, {
+        accountId: cambiaConto ? validatedData.accountId : existingEntry.accountId,
+        costCenterId: cambiaCentro ? validatedData.costCenterId : existingEntry.costCenterId,
+      })
+      if (centro.outcome === 'invalid') {
+        return NextResponse.json(
+          { error: centro.motivo, code: centro.code },
+          { status: 400 }
+        )
+      }
+      costCenterId = centro.costCenterId
+    }
+
     // Aggiorna
     const updated = await prisma.journalEntry.update({
       where: { id },
@@ -140,6 +162,7 @@ export async function PUT(
         documentRef: validatedData.documentRef,
         documentType: validatedData.documentType,
         accountId: validatedData.accountId,
+        costCenterId,
         vatAmount: validatedData.vatAmount,
       },
       select: { id: true, updatedAt: true },

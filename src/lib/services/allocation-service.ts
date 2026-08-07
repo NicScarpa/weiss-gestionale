@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
+import { risolviCentroDiCosto } from '@/lib/services/cost-center-service'
 
 export interface FettaInput {
   accountId: string
@@ -66,6 +67,11 @@ export type TransactionClient = Omit<
  * fattura alla riconciliazione (Fase 3): stesso identico calcolo del
  * dominante, un'unica verità. Ritorna il numero di fette rilette (0 se non
  * ce n'è più nessuna, e in tal caso non scrive nulla).
+ *
+ * Non valida il centro di costo e non lo tocca: il dominante cambia il conto,
+ * non l'imputazione al centro, e chi la chiama ha già validato le fette
+ * (setEntryAllocations) o lavora su un movimento validato a monte
+ * (ereditaFetteDaFattura).
  */
 export async function aggiornaContoDominante(
   tx: TransactionClient,
@@ -114,7 +120,13 @@ export async function setEntryAllocations({
 }): Promise<SetAllocationsOutcome> {
   const entry = await prisma.journalEntry.findFirst({
     where: { id: journalEntryId, venueId, deletedAt: null },
-    select: { id: true, debitAmount: true, creditAmount: true, accountId: true },
+    select: {
+      id: true,
+      debitAmount: true,
+      creditAmount: true,
+      accountId: true,
+      costCenterId: true,
+    },
   })
   if (!entry) return { outcome: 'entry_not_found' }
 
@@ -146,6 +158,28 @@ export async function setEntryAllocations({
     })
     if (conti.length !== new Set(fette.map((f) => f.accountId)).size) {
       return { outcome: 'invalid', motivo: 'Uno o più conti non esistono o non sono attivi' }
+    }
+
+    // Le fette possono portare conti che pretendono un centro di costo: se il
+    // movimento non ne ha uno, la suddivisione creerebbe righe non
+    // imputabili. Qui si valida soltanto — il centro resta quello del
+    // movimento, che è l'unico titolare dell'imputazione (le fette scelgono
+    // il conto, non il centro). Come le altre guardie sta fuori dalla
+    // transazione: se non passa, non si scrive nulla. Rimuovere lo split
+    // (fette vuote) non ha nulla da imputare e non passa di qui.
+    const centro = await risolviCentroDiCosto(prisma, {
+      accountId: null,
+      costCenterId: entry.costCenterId,
+      accountIdsFette: fette.map((f) => f.accountId),
+    })
+    if (centro.outcome === 'invalid') {
+      return {
+        outcome: 'invalid',
+        motivo:
+          centro.code === 'CENTRO_DI_COSTO_OBBLIGATORIO'
+            ? 'Scegli il centro di costo del movimento prima di suddividerlo.'
+            : centro.motivo,
+      }
     }
   }
 

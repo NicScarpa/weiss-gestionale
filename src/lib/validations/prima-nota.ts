@@ -22,6 +22,10 @@ export const createJournalEntrySchema = z.object({
   documentRef: z.string().optional(),
   documentType: z.string().optional(),
   accountId: z.string().optional(),
+  // Centro di costo esplicito: se assente, lo risolve la route dalla regola
+  // del conto (cost-center-service). Mai obbligatorio nello schema: il centro
+  // di default copre i conti che non lo richiedono.
+  costCenterId: z.string().optional().nullable(),
   vatAmount: z.number().min(0).optional(),
   notes: z.string().optional(),
 })
@@ -33,6 +37,7 @@ export const updateJournalEntrySchema = z.object({
   documentRef: z.string().optional(),
   documentType: z.string().optional(),
   accountId: z.string().optional(),
+  costCenterId: z.string().optional().nullable(),
   vatAmount: z.number().min(0).optional(),
 })
 

@@ -1,4 +1,12 @@
-import type { PrismaClient } from '@prisma/client'
+import type { prisma } from '@/lib/prisma'
+
+/**
+ * I soli modelli che la risoluzione interroga. Il tipo si ricava dal client
+ * reale (esteso dall'adapter) e non da `PrismaClient` di libreria: solo così
+ * combacia sia con il client globale sia con quello di transazione, che ne è
+ * un `Omit` (stesso pattern di allocation-service).
+ */
+export type DbCentriDiCosto = Pick<typeof prisma, 'costCenter' | 'account'>
 
 export type RisoluzioneCentro =
   | { outcome: 'ok'; costCenterId: string }
@@ -16,7 +24,7 @@ export type RisoluzioneCentro =
  * accetta anche il client di transazione oltre al client globale.
  */
 export async function risolviCentroDiCosto(
-  db: Pick<PrismaClient, 'costCenter' | 'account'>,
+  db: DbCentriDiCosto,
   input: { accountId?: string | null; costCenterId?: string | null; accountIdsFette?: string[] }
 ): Promise<RisoluzioneCentro> {
   if (input.costCenterId) {

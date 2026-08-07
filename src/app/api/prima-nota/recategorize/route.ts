@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma'
 import { getVenueId } from '@/lib/venue'
 import { createAuditLog } from '@/lib/audit'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
+import { risolviCentroDiCosto } from '@/lib/services/cost-center-service'
+import { logger } from '@/lib/logger'
 
 /**
  * POST /api/prima-nota/recategorize
@@ -54,6 +56,7 @@ export async function POST(request: NextRequest) {
     })
 
     let updated = 0
+    let saltati = 0
 
     for (const entry of entries) {
       for (const rule of rules) {
@@ -88,11 +91,30 @@ export async function POST(request: NextRequest) {
             ? await derivaBudgetCategoryDaConto(rule.accountId)
             : rule.budgetCategoryId
 
+          // Il conto della regola può richiedere un centro di costo che il
+          // movimento non ha: una riga sola non deve far fallire il batch, si
+          // salta e si conta. Resterà da categorizzare a mano, dove l'utente
+          // può scegliere il centro.
+          const centro = await risolviCentroDiCosto(prisma, {
+            accountId: rule.accountId,
+            costCenterId: entry.costCenterId,
+          })
+          if (centro.outcome === 'invalid') {
+            logger.warn('Ricategorizzazione: movimento saltato per il centro di costo', {
+              journalEntryId: entry.id,
+              ruleId: rule.id,
+              code: centro.code,
+            })
+            saltati++
+            break // La regola vincente è questa: nessun'altra viene provata
+          }
+
           await prisma.journalEntry.update({
             where: { id: entry.id },
             data: {
               budgetCategoryId,
               accountId: rule.accountId,
+              costCenterId: centro.costCenterId,
               appliedRuleId: rule.id,
               verified: rule.autoVerify,
               categorizationSource: 'rule',
@@ -110,12 +132,14 @@ export async function POST(request: NextRequest) {
       entityType: 'JournalEntry',
       entityId: 'bulk-recategorize',
       venueId,
-      newValues: { processed: entries.length, updated, rules: rules.length },
+      newValues: { processed: entries.length, updated, saltati, rules: rules.length },
     })
 
     return NextResponse.json({
       processed: entries.length,
       updated,
+      /** Righe che una regola avrebbe categorizzato, se non mancasse il centro di costo */
+      saltati,
       rules: rules.length,
     })
   } catch (error) {

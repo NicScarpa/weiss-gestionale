@@ -4,7 +4,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     scheduleRule: { findMany: vi.fn() },
-    account: { findUnique: vi.fn() },
+    account: { findUnique: vi.fn(), findMany: vi.fn() },
+    costCenter: { findUnique: vi.fn(), findFirst: vi.fn() },
     schedule: { findFirst: vi.fn() },
     bankAccount: { findFirst: vi.fn() },
     journalEntry: { create: vi.fn() },
@@ -24,6 +25,7 @@ vi.mock('@/lib/services/schedule-reconciliation-service', () => ({
 }))
 
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
 import { reconcileScheduleWithEntry } from '@/lib/services/schedule-reconciliation-service'
 import {
@@ -224,7 +226,15 @@ describe('trovaRegolaApplicabile - esito', () => {
       azione: 'crea_riconcilia_movimento',
       contoId: 'conto-1',
       bankAccountId: null,
+      costCenterId: null,
     })
+  })
+
+  it('riporta il centro di costo imposto dalla regola', () => {
+    const rules = [regola({ id: 'a', ordine: 0, costCenterId: 'cc-produzione' })]
+
+    const match = trovaRegolaApplicabile({ direzione: ScheduleRuleDirection.RICEVUTI }, rules)
+    expect(match?.costCenterId).toBe('cc-produzione')
   })
 
   it('riporta il conto bancario su cui creare il movimento', () => {
@@ -413,6 +423,15 @@ describe('applicaRegolaCreaMovimento', () => {
 
     journalEntryCreateMock.mockResolvedValue({ id: 'entry-1' } as never)
 
+    // Centro di costo: il conto del fornitore non lo pretende, quindi la
+    // risoluzione cade sul default (STR).
+    vi.mocked(prisma.account.findMany).mockResolvedValue([
+      { id: 'conto-forn', code: '600010', name: 'Acquisti', costCenterRule: 'DEFAULT_STR' },
+    ] as never)
+    vi.mocked(prisma.costCenter.findFirst).mockResolvedValue({
+      id: 'cc-str', isDefault: true, isActive: true,
+    } as never)
+
     reconcileMock.mockResolvedValue({
       outcome: 'ok',
       reconciliationId: 'rec-1',
@@ -439,6 +458,80 @@ describe('applicaRegolaCreaMovimento', () => {
           budgetCategoryId: 'cat-forn',
         }),
       })
+    )
+  })
+
+  it('il conto non pretende un centro: il movimento nasce sul centro di default', async () => {
+    const esito = await applicaRegolaCreaMovimento({
+      scheduleId: 'sched-1',
+      venueId: 'venue-1',
+      userId: 'user-1',
+    })
+
+    expect(esito.applicata).toBe(true)
+    expect(prisma.journalEntry.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ costCenterId: 'cc-str' }),
+      })
+    )
+    expect(logger.warn).not.toHaveBeenCalled()
+  })
+
+  it('la regola impone un centro: il movimento nasce su quel centro', async () => {
+    scheduleRuleFindManyMock.mockResolvedValue([
+      regola({
+        id: 'r1',
+        direzione: ScheduleRuleDirection.RICEVUTI,
+        azione: 'crea_riconcilia_movimento',
+        contoId: null,
+        bankAccountId: 'banca-1',
+        costCenterId: 'cc-produzione',
+      }),
+    ] as never)
+    vi.mocked(prisma.costCenter.findUnique).mockResolvedValue({
+      id: 'cc-produzione', isActive: true,
+    } as never)
+
+    const esito = await applicaRegolaCreaMovimento({
+      scheduleId: 'sched-1',
+      venueId: 'venue-1',
+      userId: 'user-1',
+    })
+
+    expect(esito.applicata).toBe(true)
+    expect(prisma.journalEntry.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ costCenterId: 'cc-produzione' }),
+      })
+    )
+  })
+
+  it('conto OBBLIGATORIO e regola senza centro: il movimento nasce lo stesso, su STR e da verificare', async () => {
+    // Il percorso è automatico: non c'è nessuno a cui chiedere il centro, e
+    // perdere il movimento sarebbe peggio che imputarlo al default.
+    vi.mocked(prisma.account.findMany).mockResolvedValue([
+      { id: 'conto-forn', code: '620010', name: 'Manutenzioni', costCenterRule: 'OBBLIGATORIO' },
+    ] as never)
+
+    const esito = await applicaRegolaCreaMovimento({
+      scheduleId: 'sched-1',
+      venueId: 'venue-1',
+      userId: 'user-1',
+    })
+
+    expect(esito.applicata).toBe(true)
+    expect(prisma.journalEntry.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          accountId: 'conto-forn',
+          costCenterId: 'cc-str',
+          verified: false,
+        }),
+      })
+    )
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Regola scadenzario: centro di costo non risolvibile, si usa il default',
+      expect.objectContaining({ code: 'CENTRO_DI_COSTO_OBBLIGATORIO' })
     )
   })
 })

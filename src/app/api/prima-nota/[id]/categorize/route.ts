@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { createAuditLog } from '@/lib/audit'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
+import { risolviCentroDiCosto } from '@/lib/services/cost-center-service'
 
 const categorizeSchema = z.object({
   budgetCategoryId: z.string().optional(),
@@ -37,7 +38,7 @@ export async function PATCH(
     // Recupera la entry corrente
     const current = await prisma.journalEntry.findUnique({
       where: { id: id },
-      select: { id: true, _count: { select: { allocations: true } } },
+      select: { id: true, costCenterId: true, _count: { select: { allocations: true } } },
     })
 
     if (!current) {
@@ -60,11 +61,30 @@ export async function PATCH(
       ? await derivaBudgetCategoryDaConto(validated.accountId)
       : validated.budgetCategoryId || null
 
+    // Il nuovo conto può richiedere un centro di costo che il movimento non
+    // ha: in quel caso la categorizzazione si ferma qui, il centro va scelto
+    // prima (dal dettaglio del movimento).
+    let costCenterId: string | undefined
+    if (validated.accountId) {
+      const centro = await risolviCentroDiCosto(prisma, {
+        accountId: validated.accountId,
+        costCenterId: current.costCenterId,
+      })
+      if (centro.outcome === 'invalid') {
+        return NextResponse.json(
+          { error: centro.motivo, code: centro.code },
+          { status: 400 }
+        )
+      }
+      costCenterId = centro.costCenterId
+    }
+
     const updated = await prisma.journalEntry.update({
       where: { id: id },
       data: {
         budgetCategoryId,
         accountId: validated.accountId || undefined,
+        costCenterId,
         notes: validated.notes || undefined,
         categorizationSource: 'manual',
         verified: true, // Auto-verify su categorizzazione manuale

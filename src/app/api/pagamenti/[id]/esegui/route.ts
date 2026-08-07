@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
+import { z } from 'zod'
+import { risolviCentroDiCosto } from '@/lib/services/cost-center-service'
+
+const eseguiSchema = z.object({
+  costCenterId: z.string().optional().nullable(),
+})
 
 /**
  * POST /api/pagamenti/[id]/esegui
@@ -23,6 +29,11 @@ export async function POST(
       return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
+    // La disposizione arriva anche senza corpo (è un bottone): un JSON assente
+    // vale come nessun centro esplicito.
+    const body = await request.json().catch(() => ({}))
+    const { costCenterId } = eseguiSchema.parse(body)
+
     const payment = await prisma.payment.findUnique({
       where: { id: id },
       include: {
@@ -42,6 +53,16 @@ export async function POST(
       )
     }
 
+    // Il movimento del pagamento non porta conto economico: il centro è
+    // quello esplicito, se indicato, altrimenti il default.
+    const centro = await risolviCentroDiCosto(prisma, { accountId: null, costCenterId })
+    if (centro.outcome === 'invalid') {
+      return NextResponse.json(
+        { error: centro.motivo, code: centro.code },
+        { status: 400 }
+      )
+    }
+
     // Crea journal entry per il pagamento
     const journalEntry = await prisma.journalEntry.create({
       data: {
@@ -52,6 +73,7 @@ export async function POST(
         documentRef: payment.riferimentoInterno || undefined,
         debitAmount: Number(payment.importo),
         creditAmount: undefined,
+        costCenterId: centro.costCenterId,
         createdById: session.user.id,
         paymentId: payment.id,
         verified: true,
@@ -73,6 +95,13 @@ export async function POST(
       journalEntry,
     })
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Dati non validi', details: error.issues },
+        { status: 400 }
+      )
+    }
+
     console.error('Errore POST /api/pagamenti/[id]/esegui', error)
     return NextResponse.json(
       { error: 'Errore nell\'esecuzione del pagamento' },

@@ -8,6 +8,7 @@ import {
   journalEntryFiltersSchema,
 } from '@/lib/validations/prima-nota'
 import { toDebitCredit, calculateTotals } from '@/lib/prima-nota-utils'
+import { risolviCentroDiCosto } from '@/lib/services/cost-center-service'
 import type { JournalEntry } from '@/types/prima-nota'
 import { getVenueId } from '@/lib/venue'
 
@@ -410,6 +411,19 @@ export async function POST(request: NextRequest) {
       validatedData.amount
     )
 
+    // Il centro di costo si risolve prima di scrivere: un conto OBBLIGATORIO
+    // senza centro esplicito non produce un movimento a metà.
+    const centro = await risolviCentroDiCosto(prisma, {
+      accountId: validatedData.accountId,
+      costCenterId: validatedData.costCenterId,
+    })
+    if (centro.outcome === 'invalid') {
+      return NextResponse.json(
+        { error: centro.motivo, code: centro.code },
+        { status: 400 }
+      )
+    }
+
     // Crea il movimento
     const entry = await prisma.journalEntry.create({
       data: {
@@ -423,6 +437,7 @@ export async function POST(request: NextRequest) {
         creditAmount,
         vatAmount: validatedData.vatAmount,
         accountId: validatedData.accountId,
+        costCenterId: centro.costCenterId,
         createdById: session.user.id,
       },
       include: {

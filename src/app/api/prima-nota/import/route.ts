@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { getVenueId } from '@/lib/venue'
 
 import { checkRequestRateLimit, RATE_LIMIT_CONFIGS } from '@/lib/api-utils'
+import { risolviCentroDiCosto } from '@/lib/services/cost-center-service'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
 
@@ -56,6 +57,18 @@ export async function POST(request: NextRequest) {
             let created = 0
             const errors: Array<{ transactionId: string; error: string }> = []
 
+            // Un movimento importato non porta ancora un conto (BankTransaction
+            // non ne ha uno): l'input della risoluzione è identico per tutte le
+            // righe, quindi il centro — il default, STR — si risolve una volta
+            // sola invece che a ogni riga. Quando le righe importate porteranno
+            // un conto, la chiamata va spostata dentro il ciclo e la riga che
+            // non risolve va scartata con il motivo, senza fermare le altre.
+            const centro = await risolviCentroDiCosto(tx, { accountId: null })
+            if (centro.outcome === 'invalid') {
+                // Irraggiungibile senza conto: il tipo lo prevede, i dati no.
+                throw new Error(centro.motivo)
+            }
+
             for (const bankTx of transactions) {
                 try {
                     const amount = Number(bankTx.amount)
@@ -70,6 +83,7 @@ export async function POST(request: NextRequest) {
                             description: bankTx.description,
                             debitAmount: isInflow ? Math.abs(amount) : null,
                             creditAmount: !isInflow ? Math.abs(amount) : null,
+                            costCenterId: centro.costCenterId,
                             categorizationSource: 'import',
                             notes: bankTx.bankReference ? `Rif. banca: ${bankTx.bankReference}` : undefined,
                             createdById: session.user.id,

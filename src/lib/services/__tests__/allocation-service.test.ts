@@ -13,6 +13,7 @@ vi.mock('@/lib/prisma', () => ({
       aggregate: vi.fn(),
     },
     account: { findMany: vi.fn() },
+    costCenter: { findUnique: vi.fn(), findFirst: vi.fn() },
     $transaction: vi.fn(),
   },
 }))
@@ -90,6 +91,11 @@ describe('setEntryAllocations', () => {
     // quadratura (manuali + ereditate ≤ importo utile) è un no-op silenzioso.
     vi.mocked(prisma.journalEntryAllocation.aggregate).mockResolvedValue({
       _sum: { importo: null },
+    } as never)
+    // Il centro del movimento: di default nessuna fetta lo pretende, quindi
+    // la risoluzione cade sul centro di default e la suddivisione passa.
+    vi.mocked(prisma.costCenter.findFirst).mockResolvedValue({
+      id: 'cc-str', isDefault: true, isActive: true,
     } as never)
   })
 
@@ -266,6 +272,74 @@ describe('setEntryAllocations', () => {
         data: { categorizationSource: 'manual' },
       })
     )
+  })
+
+  it('fetta su un conto OBBLIGATORIO e movimento senza centro: invalid, non si scrive nulla', async () => {
+    vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue({
+      id: 'entry-1', creditAmount: new Prisma.Decimal(1000), debitAmount: null, costCenterId: null,
+    } as never)
+    vi.mocked(prisma.account.findMany).mockResolvedValue([
+      { id: 'conto-a', isActive: true, code: '620010', name: 'Manutenzioni', costCenterRule: 'OBBLIGATORIO' },
+    ] as never)
+
+    const esito = await setEntryAllocations({
+      journalEntryId: 'entry-1', venueId: 'venue-1', userId: 'user-1',
+      fette: [{ accountId: 'conto-a', importo: 500 }],
+    })
+
+    expect(esito).toEqual({
+      outcome: 'invalid',
+      motivo: 'Scegli il centro di costo del movimento prima di suddividerlo.',
+    })
+    expect(prisma.journalEntryAllocation.deleteMany).not.toHaveBeenCalled()
+    expect(prisma.journalEntryAllocation.createMany).not.toHaveBeenCalled()
+    expect(prisma.journalEntry.update).not.toHaveBeenCalled()
+  })
+
+  it('stessa fetta OBBLIGATORIO ma movimento con centro: la suddivisione passa', async () => {
+    vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue({
+      id: 'entry-1', creditAmount: new Prisma.Decimal(1000), debitAmount: null,
+      costCenterId: 'cc-produzione',
+    } as never)
+    vi.mocked(prisma.account.findMany).mockResolvedValue([
+      { id: 'conto-a', isActive: true, code: '620010', name: 'Manutenzioni', costCenterRule: 'OBBLIGATORIO' },
+    ] as never)
+    vi.mocked(prisma.costCenter.findUnique).mockResolvedValue({
+      id: 'cc-produzione', isActive: true,
+    } as never)
+    vi.mocked(prisma.journalEntryAllocation.deleteMany).mockResolvedValue({ count: 0 } as never)
+    vi.mocked(prisma.journalEntryAllocation.findMany).mockResolvedValue([
+      { accountId: 'conto-a', importo: new Prisma.Decimal(500) },
+    ] as never)
+
+    const esito = await setEntryAllocations({
+      journalEntryId: 'entry-1', venueId: 'venue-1', userId: 'user-1',
+      fette: [{ accountId: 'conto-a', importo: 500 }],
+    })
+
+    expect(esito).toEqual({ outcome: 'ok', allocazioni: 1 })
+    expect(prisma.journalEntryAllocation.createMany).toHaveBeenCalled()
+    // Il centro resta quello del movimento: la suddivisione non lo tocca.
+    expect(vi.mocked(prisma.journalEntry.update).mock.calls[0][0].data).not.toHaveProperty(
+      'costCenterId'
+    )
+  })
+
+  it('rimuovere la suddivisione non passa dalla validazione del centro', async () => {
+    vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue({
+      id: 'entry-1', creditAmount: new Prisma.Decimal(1000), debitAmount: null, costCenterId: null,
+    } as never)
+    vi.mocked(prisma.journalEntryAllocation.deleteMany).mockResolvedValue({ count: 1 } as never)
+    vi.mocked(prisma.journalEntryAllocation.findMany).mockResolvedValue([] as never)
+
+    const esito = await setEntryAllocations({
+      journalEntryId: 'entry-1', venueId: 'venue-1', userId: 'user-1',
+      fette: [],
+    })
+
+    expect(esito).toEqual({ outcome: 'ok', allocazioni: 0 })
+    expect(prisma.costCenter.findFirst).not.toHaveBeenCalled()
+    expect(prisma.costCenter.findUnique).not.toHaveBeenCalled()
   })
 
   it('le fette ereditate non si toccano: il dominante si calcola su tutte', async () => {
