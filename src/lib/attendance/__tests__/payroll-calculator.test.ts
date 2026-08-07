@@ -203,6 +203,98 @@ describe('generatePayrollData', () => {
     expect(giorno?.clockIn?.toISOString()).toBe('2026-08-20T07:00:00.000Z')
   })
 
+  // Il turno che segue la pianificazione: le ore oltre la fine restano
+  // sospese finché l'anomalia OVERTIME non viene decisa, e la decisione
+  // cambia il calcolo da sola, senza correzioni manuali delle timbrature.
+  function preparaRegolaTurno() {
+    vi.mocked(prisma.timekeepingPolicy.findFirst).mockResolvedValue({
+      id: 'pol-turno',
+      name: 'Segue il turno',
+      dayStartMinutes: 0,
+      dayEndMinutes: 0,
+      lunchStartMinutes: null,
+      lunchEndMinutes: null,
+      flexMinutes: 0,
+      roundingMinutes: 30,
+      roundingToleranceMinutes: 10,
+      roundingOutMinutes: null,
+      roundingOutToleranceMinutes: null,
+      maxDailyMinutes: null,
+      contractWeeklyHours: null,
+      saturdayAsOvertime: false,
+      blockSunday: false,
+      singlePunchMode: false,
+      useShiftAsWindow: true,
+      extraBreaks: [],
+    } as never)
+    vi.mocked(prisma.workLocation.findMany).mockResolvedValue([] as never)
+    vi.mocked(prisma.user.findMany).mockReset()
+    vi.mocked(prisma.user.findMany)
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce([dipendente] as never)
+    vi.mocked(prisma.shiftAssignment.findMany).mockResolvedValue([
+      {
+        userId: 'user-1',
+        date: new Date('2026-08-20T00:00:00Z'),
+        startTime: new Date('1970-01-01T09:00:00Z'),
+        endTime: new Date('1970-01-01T17:00:00Z'),
+      },
+    ] as never)
+    // Turno 9:00-17:00; timbra 9:00-18:30 italiane (estate: 7:00Z-16:30Z).
+    vi.mocked(prisma.attendanceRecord.findMany).mockResolvedValue([
+      punch('IN', '2026-08-20T07:00:00Z'),
+      punch('OUT', '2026-08-20T16:30:00Z'),
+    ] as never)
+  }
+
+  it('le ore oltre il turno senza decisione restano sospese nel record', async () => {
+    preparaRegolaTurno()
+
+    const { records } = await generatePayrollData(8, 2026, 'venue-1')
+    const giorno = giornoDi(records, '2026-08-20')
+
+    expect(giorno?.hours.total).toBe(8)
+    expect(giorno?.pendingReviewMinutes).toBe(90)
+  })
+
+  it("l'anomalia di straordinario approvata fa contare le ore oltre il turno", async () => {
+    preparaRegolaTurno()
+    vi.mocked(prisma.attendanceAnomaly.findMany).mockResolvedValue([
+      {
+        userId: 'user-1',
+        date: new Date('2026-08-20T00:00:00Z'),
+        anomalyType: 'OVERTIME',
+        status: 'APPROVED',
+      },
+    ] as never)
+
+    const { records } = await generatePayrollData(8, 2026, 'venue-1')
+    const giorno = giornoDi(records, '2026-08-20')
+
+    expect(giorno?.hours.total).toBe(9.5)
+    // 40 ore su 6 giorni lavorativi = 400 minuti: i 170 oltre sono straordinario.
+    expect(giorno?.hours.overtime).toBeCloseTo(170 / 60, 5)
+    expect(giorno?.pendingReviewMinutes).toBe(0)
+  })
+
+  it("l'anomalia di straordinario rifiutata taglia la giornata alla fine del turno", async () => {
+    preparaRegolaTurno()
+    vi.mocked(prisma.attendanceAnomaly.findMany).mockResolvedValue([
+      {
+        userId: 'user-1',
+        date: new Date('2026-08-20T00:00:00Z'),
+        anomalyType: 'OVERTIME',
+        status: 'REJECTED',
+      },
+    ] as never)
+
+    const { records } = await generatePayrollData(8, 2026, 'venue-1')
+    const giorno = giornoDi(records, '2026-08-20')
+
+    expect(giorno?.hours.total).toBe(8)
+    expect(giorno?.pendingReviewMinutes).toBe(0)
+  })
+
   it('con userIds calcola solo le persone richieste', async () => {
     vi.mocked(prisma.attendanceRecord.findMany).mockResolvedValue([] as never)
 

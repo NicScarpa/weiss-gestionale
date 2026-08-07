@@ -8,7 +8,7 @@ import {
   pickWorkLocation,
   type AssignedLocation,
 } from '@/lib/attendance/work-location'
-import { notifyAnomalyCreated } from '@/lib/notifications'
+import { notifyAnomalyCreated, notifyUscitaAnticipata } from '@/lib/notifications'
 import { format, isValid, parseISO } from 'date-fns'
 import {
   romeDateKey,
@@ -498,14 +498,12 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Uscita ben oltre la fine del turno pianificato: le ore si contano, ma
-    // la giornata va rivista da un umano. Il guardrail push del cron ha già
-    // avvisato di timbrare; qui resta la traccia per chi approva.
-    if (
-      validatedData.punchType === 'OUT' &&
-      todayAssignment?.startTime &&
-      todayAssignment.endTime
-    ) {
+    // Regole che seguono il turno pianificato: all'entrata l'anticipo oltre
+    // la tolleranza conta ma va confermato da un umano (anomalia + notifica);
+    // all'uscita, oltre la fine le ore restano sospese finché l'anomalia di
+    // straordinario non viene decisa, e ben prima della fine parte una
+    // notifica al responsabile, senza nessuna approvazione.
+    if (todayAssignment?.startTime && todayAssignment.endTime) {
       const { rules } = await getEffectiveTimekeepingPolicy(
         session.user.id,
         validatedData.venueId,
@@ -513,41 +511,114 @@ export async function POST(request: NextRequest) {
       )
 
       if (rules.useShiftAsWindow) {
-        const inizioTurno = timeColumnToMinutes(todayAssignment.startTime)
-        let fineTurno = timeColumnToMinutes(todayAssignment.endTime)
-        if (fineTurno <= inizioTurno) {
-          fineTurno += 24 * 60
-        }
+        // Tutte le finestre della giornata: col turno spezzato l'entrata e
+        // l'uscita vanno confrontate con la finestra giusta, non con la prima
+        // assegnazione trovata.
+        const turniDelGiorno = await prisma.shiftAssignment.findMany({
+          where: {
+            userId: session.user.id,
+            venueId: validatedData.venueId,
+            date: toDateOnlyUtc(workdayKey),
+            schedule: { status: 'PUBLISHED' },
+          },
+          select: { id: true, startTime: true, endTime: true },
+        })
 
-        const minutiUscita = toWorkdayMinutes(punchedAt, workdayKey)
-        const oltre = minutiUscita - fineTurno
-
-        if (oltre > rules.exitRounding.toleranceMinutes) {
-          const fineTurnoOrario =
-            `${String(Math.floor((fineTurno % 1440) / 60)).padStart(2, '0')}:` +
-            String(fineTurno % 60).padStart(2, '0')
-
-          const anomaly = await prisma.attendanceAnomaly.create({
-            data: {
-              userId: session.user.id,
-              venueId: validatedData.venueId,
-              recordId: record.id,
-              assignmentId: todayAssignment.id,
-              anomalyType: 'OVERTIME',
-              status: 'PENDING',
-              date: toDateOnlyUtc(workdayKey),
-              description:
-                `Uscita ${oltre} minuti oltre la fine del turno pianificato: ` +
-                'ore contate, da rivedere come straordinario',
-              actualValue: romeTimeString(punchedAt),
-              expectedValue: fineTurnoOrario,
-              differenceMinutes: oltre,
-            },
+        const finestre = turniDelGiorno
+          .filter((t) => t.startTime && t.endTime)
+          .map((t) => {
+            const inizio = timeColumnToMinutes(t.startTime!)
+            let fine = timeColumnToMinutes(t.endTime!)
+            if (fine <= inizio) {
+              fine += 24 * 60
+            }
+            return { id: t.id, inizio, fine }
           })
 
-          notifyAnomalyCreated(anomaly.id).catch((err) =>
-            logger.error('Errore invio notifica anomalia oltre turno', err)
-          )
+        const formatta = (minuti: number) =>
+          `${String(Math.floor((minuti % 1440) / 60)).padStart(2, '0')}:` +
+          String(minuti % 60).padStart(2, '0')
+
+        const minutiTimbratura = toWorkdayMinutes(punchedAt, workdayKey)
+
+        if (validatedData.punchType === 'IN') {
+          // La finestra di riferimento è la prossima a iniziare.
+          const prossima = finestre
+            .filter((f) => f.inizio > minutiTimbratura)
+            .sort((a, b) => a.inizio - b.inizio)[0]
+          const anticipo = prossima ? prossima.inizio - minutiTimbratura : 0
+
+          if (prossima && anticipo > rules.entryRounding.toleranceMinutes) {
+            const anomaly = await prisma.attendanceAnomaly.create({
+              data: {
+                userId: session.user.id,
+                venueId: validatedData.venueId,
+                recordId: record.id,
+                assignmentId: prossima.id,
+                anomalyType: 'EARLY_CLOCK_IN',
+                status: 'PENDING',
+                date: toDateOnlyUtc(workdayKey),
+                description:
+                  `Entrata ${anticipo} minuti prima dell'inizio del turno ` +
+                  'pianificato: ore contate, in attesa di conferma',
+                actualValue: romeTimeString(punchedAt),
+                expectedValue: formatta(prossima.inizio),
+                differenceMinutes: anticipo,
+              },
+            })
+
+            notifyAnomalyCreated(anomaly.id).catch((err) =>
+              logger.error('Errore invio notifica anomalia anticipo turno', err)
+            )
+          }
+        }
+
+        if (validatedData.punchType === 'OUT' && finestre.length > 0) {
+          // La finestra di riferimento è quella con la fine più vicina: così
+          // l'uscita delle 13:00 del turno spezzato non risulta "9 ore prima"
+          // della fine serale.
+          const riferimento = [...finestre].sort(
+            (a, b) =>
+              Math.abs(a.fine - minutiTimbratura) - Math.abs(b.fine - minutiTimbratura)
+          )[0]
+          const oltre = minutiTimbratura - riferimento.fine
+
+          if (oltre > rules.exitRounding.toleranceMinutes) {
+            const anomaly = await prisma.attendanceAnomaly.create({
+              data: {
+                userId: session.user.id,
+                venueId: validatedData.venueId,
+                recordId: record.id,
+                assignmentId: riferimento.id,
+                anomalyType: 'OVERTIME',
+                status: 'PENDING',
+                date: toDateOnlyUtc(workdayKey),
+                description:
+                  `Uscita ${oltre} minuti oltre la fine del turno pianificato: ` +
+                  'ore sospese finché la revisione non decide',
+                actualValue: romeTimeString(punchedAt),
+                expectedValue: formatta(riferimento.fine),
+                differenceMinutes: oltre,
+              },
+            })
+
+            notifyAnomalyCreated(anomaly.id).catch((err) =>
+              logger.error('Errore invio notifica anomalia oltre turno', err)
+            )
+          } else if (
+            riferimento.fine - minutiTimbratura >
+            rules.exitRounding.toleranceMinutes
+          ) {
+            notifyUscitaAnticipata({
+              userId: session.user.id,
+              venueId: validatedData.venueId,
+              minutiAnticipo: riferimento.fine - minutiTimbratura,
+              orarioUscita: romeTimeString(punchedAt),
+              fineTurno: formatta(riferimento.fine),
+            }).catch((err) =>
+              logger.error('Errore invio notifica uscita anticipata', err)
+            )
+          }
         }
       }
     }

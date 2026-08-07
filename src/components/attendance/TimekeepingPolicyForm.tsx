@@ -65,6 +65,7 @@ interface RisultatoProva {
   holidayMinutes: number
   breakMinutes: number
   cappedMinutes: number
+  pendingReviewMinutes: number
   clockIn: number | null
   clockOut: number | null
   steps: string[]
@@ -140,7 +141,10 @@ const ETICHETTE_AVVISI: Record<string, string> = {
   PAUSA_PRANZO_NON_TIMBRATA: 'Pausa pranzo dedotta dalla regola',
   FUORI_FINESTRA: 'Orario fuori dalla finestra della giornata',
   OLTRE_TETTO_GIORNALIERO: 'Ore oltre il tetto giornaliero',
-  OLTRE_TURNO: 'Ore oltre il turno pianificato, da rivedere',
+  OLTRE_TURNO: 'Ore oltre il turno, sospese in attesa di revisione',
+  ANTICIPO_TURNO: 'Anticipo sul turno contato, in attesa di conferma',
+  BUCO_TURNO: 'Buco del turno spezzato non contato',
+  USCITA_ANTICIPATA: 'Uscita prima della fine del turno',
 }
 
 interface Props {
@@ -768,6 +772,12 @@ export function TimekeepingPolicyForm({
                     <span className="text-muted-foreground">Pause</span>
                     <span>{formatDurata(risultato.breakMinutes)}</span>
                   </div>
+                  {risultato.pendingReviewMinutes > 0 && (
+                    <div className="flex justify-between text-amber-600">
+                      <span>In attesa di revisione</span>
+                      <span>{formatDurata(risultato.pendingReviewMinutes)}</span>
+                    </div>
+                  )}
                 </div>
 
                 {risultato.warnings.length > 0 && (

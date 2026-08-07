@@ -602,18 +602,53 @@ describe('computeRecognizedDay — la giornata segue il turno pianificato', () =
     expect(giorno.warnings).not.toContain('OLTRE_TURNO')
   })
 
-  it('ben oltre la fine del turno: le ore si contano ma vanno in revisione', () => {
-    // Turno fino alle 17:00, esce alle 18:30: 90 minuti oltre. Si contano
-    // (straordinario) e la giornata viene segnalata per la revisione umana.
+  it('ben oltre la fine del turno: le ore restano sospese finché nessuno decide', () => {
+    // Turno fino alle 17:00, esce alle 18:30: 90 minuti oltre. Non si
+    // pagano e non si buttano: restano in attesa che un umano capisca se
+    // era lavoro o un'uscita timbrata tardi. Il mese non si chiude finché
+    // l'anomalia non è decisa.
     const giorno = computeRecognizedDay(
       [inAt(at(9)), outAt(at(18, 30))],
       regolaTurno,
       makeContext({ shiftWindows: [{ startMinutes: at(9), endMinutes: at(17) }] })
     )
 
+    expect(giorno.workedMinutes).toBe(at(8))
+    expect(giorno.overtimeMinutes).toBe(0)
+    expect(giorno.pendingReviewMinutes).toBe(90)
+    expect(giorno.warnings).toContain('OLTRE_TURNO')
+  })
+
+  it('le ore oltre il turno approvate contano come straordinario, senza più segnali', () => {
+    const giorno = computeRecognizedDay(
+      [inAt(at(9)), outAt(at(18, 30))],
+      regolaTurno,
+      makeContext({
+        shiftWindows: [{ startMinutes: at(9), endMinutes: at(17) }],
+        shiftReview: { overtime: 'APPROVED' },
+      })
+    )
+
     expect(giorno.workedMinutes).toBe(at(9, 30))
     expect(giorno.overtimeMinutes).toBe(90)
-    expect(giorno.warnings).toContain('OLTRE_TURNO')
+    expect(giorno.pendingReviewMinutes).toBe(0)
+    expect(giorno.warnings).not.toContain('OLTRE_TURNO')
+  })
+
+  it('le ore oltre il turno rifiutate si tagliano da sole alla fine del turno', () => {
+    // Il rifiuto È il taglio: nessuna correzione manuale della timbratura.
+    const giorno = computeRecognizedDay(
+      [inAt(at(9)), outAt(at(18, 30))],
+      regolaTurno,
+      makeContext({
+        shiftWindows: [{ startMinutes: at(9), endMinutes: at(17) }],
+        shiftReview: { overtime: 'REJECTED' },
+      })
+    )
+
+    expect(giorno.workedMinutes).toBe(at(8))
+    expect(giorno.pendingReviewMinutes).toBe(0)
+    expect(giorno.warnings).not.toContain('OLTRE_TURNO')
   })
 
   it('senza turno pianificato le ore sono quelle timbrate, senza arrotondamenti', () => {
@@ -647,16 +682,107 @@ describe('computeRecognizedDay — la giornata segue il turno pianificato', () =
     expect(giorno.workedMinutes).toBe(at(6) + (at(22) - at(17, 6)))
   })
 
-  it('lavoro del tutto fuori dal turno pianificato: contato, ma in revisione', () => {
-    // Pianificato 7:00-13:00, timbra 15:00-18:00: le tre ore si contano ma
-    // la giornata va rivista da un umano
+  it('lavoro del tutto fuori dal turno pianificato resta sospeso finché nessuno decide', () => {
+    // Pianificato 7:00-13:00, timbra 15:00-18:00: nessuno sa se era lavoro
+    // richiesto. Le tre ore aspettano la revisione, come quelle oltre la fine.
     const giorno = computeRecognizedDay(
       [inAt(at(15)), outAt(at(18))],
       regolaTurno,
       makeContext({ shiftWindows: [{ startMinutes: at(7), endMinutes: at(13) }] })
     )
 
-    expect(giorno.workedMinutes).toBe(at(3))
+    expect(giorno.workedMinutes).toBe(0)
+    expect(giorno.pendingReviewMinutes).toBe(at(3))
     expect(giorno.warnings).toContain('OLTRE_TURNO')
+  })
+
+  it('lavoro fuori dal turno approvato: le ore contano', () => {
+    const giorno = computeRecognizedDay(
+      [inAt(at(15)), outAt(at(18))],
+      regolaTurno,
+      makeContext({
+        shiftWindows: [{ startMinutes: at(7), endMinutes: at(13) }],
+        shiftReview: { overtime: 'APPROVED' },
+      })
+    )
+
+    expect(giorno.workedMinutes).toBe(at(3))
+    expect(giorno.pendingReviewMinutes).toBe(0)
+  })
+
+  it("l'anticipo oltre la tolleranza si conta subito, ma in attesa di revisione", () => {
+    // "Vieni alle 6:30 che arriva il fornitore", turno 7:00-13:00: la
+    // mezz'ora conta da subito — l'ha chiesta il datore — ma un umano deve
+    // confermarla, così nessuno si allunga il turno da solo.
+    const giorno = computeRecognizedDay(
+      [inAt(at(6, 30)), outAt(at(13))],
+      regolaTurno,
+      makeContext({ shiftWindows: [{ startMinutes: at(7), endMinutes: at(13) }] })
+    )
+
+    expect(giorno.clockIn).toBe(at(6, 30))
+    expect(giorno.workedMinutes).toBe(at(6, 30))
+    expect(giorno.warnings).toContain('ANTICIPO_TURNO')
+  })
+
+  it("l'anticipo rifiutato riparte dall'inizio del turno", () => {
+    const giorno = computeRecognizedDay(
+      [inAt(at(6, 30)), outAt(at(13))],
+      regolaTurno,
+      makeContext({
+        shiftWindows: [{ startMinutes: at(7), endMinutes: at(13) }],
+        shiftReview: { earlyIn: 'REJECTED' },
+      })
+    )
+
+    expect(giorno.clockIn).toBe(at(7))
+    expect(giorno.workedMinutes).toBe(at(6))
+    expect(giorno.warnings).not.toContain('ANTICIPO_TURNO')
+  })
+
+  it("l'anticipo approvato conta senza più segnalazioni", () => {
+    const giorno = computeRecognizedDay(
+      [inAt(at(6, 30)), outAt(at(13))],
+      regolaTurno,
+      makeContext({
+        shiftWindows: [{ startMinutes: at(7), endMinutes: at(13) }],
+        shiftReview: { earlyIn: 'APPROVED' },
+      })
+    )
+
+    expect(giorno.workedMinutes).toBe(at(6, 30))
+    expect(giorno.warnings).not.toContain('ANTICIPO_TURNO')
+  })
+
+  it('il buco del turno spezzato non è lavoro, anche se nessuno ha timbrato l\'uscita', () => {
+    // Pianificato 7:00-13:00 e 17:00-22:00, timbra 7:00 e 22:00 senza mai
+    // uscire: contano le 11 ore dentro le finestre, non le 4 del buco.
+    const giorno = computeRecognizedDay(
+      [inAt(at(7)), outAt(at(22))],
+      regolaTurno,
+      makeContext({
+        shiftWindows: [
+          { startMinutes: at(7), endMinutes: at(13) },
+          { startMinutes: at(17), endMinutes: at(22) },
+        ],
+      })
+    )
+
+    expect(giorno.workedMinutes).toBe(at(11))
+    expect(giorno.pendingReviewMinutes).toBe(0)
+    expect(giorno.warnings).toContain('BUCO_TURNO')
+  })
+
+  it("l'uscita molto prima della fine del turno viene segnalata", () => {
+    // Turno fino alle 17:00, esce alle 15:00: ore reali, nessuna
+    // approvazione richiesta, ma il responsabile deve poterlo vedere.
+    const giorno = computeRecognizedDay(
+      [inAt(at(9)), outAt(at(15))],
+      regolaTurno,
+      makeContext({ shiftWindows: [{ startMinutes: at(9), endMinutes: at(17) }] })
+    )
+
+    expect(giorno.workedMinutes).toBe(at(6))
+    expect(giorno.warnings).toContain('USCITA_ANTICIPATA')
   })
 })

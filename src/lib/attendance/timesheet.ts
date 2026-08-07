@@ -29,6 +29,8 @@ export interface TimesheetDay {
   policyName: string | null
   /** Note del giorno, incluse le anomalie non risolte. */
   notes: string[]
+  /** Minuti oltre il turno sospesi in attesa di revisione. */
+  pendingReviewMinutes: number
 }
 
 export interface MonthlyTimesheet {
@@ -46,6 +48,8 @@ export interface MonthlyTimesheet {
     total: number
     leaveDays: number
     leaveSummary: Record<string, number>
+    /** Minuti del mese in attesa di revisione: il triangolo giallo del mese. */
+    pendingReviewMinutes: number
   }
   contractHoursWeek: number | null
   /** Regole orario applicate nel mese, senza ripetizioni. */
@@ -81,6 +85,7 @@ export function buildMonthlyTimesheet(
     workLocationName: r.workLocationName,
     policyName: r.policyName,
     notes: r.notes,
+    pendingReviewMinutes: r.pendingReviewMinutes,
   }))
 
   const policyNames = [
@@ -108,6 +113,7 @@ export function buildMonthlyTimesheet(
       total: summary?.totalHours ?? 0,
       leaveDays: summary?.totalLeaveDays ?? 0,
       leaveSummary: summary?.leaveSummary ?? {},
+      pendingReviewMinutes: summary?.totalPendingReviewMinutes ?? 0,
     },
     contractHoursWeek: records[0]?.contractHoursWeek ?? null,
     policyNames,

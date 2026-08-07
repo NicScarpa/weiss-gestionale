@@ -184,6 +184,89 @@ export async function notifyAnomalyCreated(
 }
 
 /**
+ * Uscita ben prima della fine del turno pianificato: niente approvazione —
+ * le ore restano quelle reali e gli errori li corregge l'admin a mano — ma
+ * il responsabile deve saperlo subito, non scoprirlo a fine mese.
+ */
+export async function notifyUscitaAnticipata(input: {
+  userId: string
+  venueId: string
+  minutiAnticipo: number
+  orarioUscita: string
+  fineTurno: string
+}): Promise<void> {
+  const [dipendente, responsabili] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: input.userId },
+      select: { firstName: true, lastName: true },
+    }),
+    prisma.user.findMany({
+      where: {
+        venueId: input.venueId,
+        isActive: true,
+        role: { name: { in: ['admin', 'manager'] } },
+      },
+      select: { id: true },
+    }),
+  ])
+
+  if (!dipendente || responsabili.length === 0) return
+
+  await sendBulkNotification({
+    userIds: responsabili.map((r) => r.id),
+    payload: {
+      type: 'STAFF_ANOMALY',
+      title: 'Uscita anticipata',
+      body:
+        `${dipendente.firstName} ${dipendente.lastName} ha timbrato l'uscita ` +
+        `alle ${input.orarioUscita}, ${input.minutiAnticipo} min prima della ` +
+        `fine del turno (${input.fineTurno})`,
+      url: '/presenze',
+    },
+  })
+}
+
+/**
+ * Mancata uscita a metà del turno spezzato: il buco non verrà contato, ma
+ * dipendente e responsabile devono saperlo subito per correggere in giornata.
+ */
+export async function notifyMancataUscitaSpezzato(input: {
+  userId: string
+  venueId: string
+  fineFinestra: string
+}): Promise<void> {
+  const [dipendente, responsabili] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: input.userId },
+      select: { firstName: true, lastName: true },
+    }),
+    prisma.user.findMany({
+      where: {
+        venueId: input.venueId,
+        isActive: true,
+        role: { name: { in: ['admin', 'manager'] } },
+      },
+      select: { id: true },
+    }),
+  ])
+
+  if (!dipendente || responsabili.length === 0) return
+
+  await sendBulkNotification({
+    userIds: responsabili.map((r) => r.id),
+    payload: {
+      type: 'STAFF_ANOMALY',
+      title: 'Uscita non timbrata (turno spezzato)',
+      body:
+        `${dipendente.firstName} ${dipendente.lastName} non ha timbrato ` +
+        `l'uscita della prima parte del turno spezzato (fine ${input.fineFinestra}): ` +
+        'il buco fra le due parti non verrà contato',
+      url: '/presenze',
+    },
+  })
+}
+
+/**
  * Invia notifica anomalia risolta
  */
 export async function notifyAnomalyResolved(
