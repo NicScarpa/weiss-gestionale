@@ -10,6 +10,58 @@ import { createAuditLog } from '@/lib/audit'
 import { ScheduleStatus, ScheduleType, SchedulePriority, ScheduleDocumentType, ScheduleSource } from '@/types/schedule'
 import { getVenueId } from '@/lib/venue'
 
+/**
+ * Colonne su cui la lista si lascia ordinare.
+ *
+ * L'elenco è chiuso e non coincide con le colonne del modello: `orderBy` prende
+ * il nome della colonna dalla query string, e senza un elenco un valore
+ * inventato fa sollevare Prisma (500 riproducibile a comando da chiunque sia
+ * autenticato) mentre un valore indovinato ordina su colonne che il contratto
+ * non ha mai promesso — e la differenza fra 500 e 200 dice al chiamante quali
+ * colonne esistono davvero.
+ */
+const CAMPI_ORDINABILI = [
+  'dataScadenza',
+  'dataAttesa',
+  'dataEmissione',
+  'dataPagamento',
+  'importoTotale',
+  'importoPagato',
+  'descrizione',
+  'controparteNome',
+  'numeroDocumento',
+  'stato',
+  'priorita',
+  'tipo',
+  'createdAt',
+  'updatedAt',
+] as const
+
+type CampoOrdinabile = (typeof CAMPI_ORDINABILI)[number]
+
+const VERSI_ORDINAMENTO = ['asc', 'desc'] as const
+
+type VersoOrdinamento = (typeof VERSI_ORDINAMENTO)[number]
+
+function isCampoOrdinabile(valore: string): valore is CampoOrdinabile {
+  return (CAMPI_ORDINABILI as readonly string[]).includes(valore)
+}
+
+function isVersoOrdinamento(valore: string): valore is VersoOrdinamento {
+  return (VERSI_ORDINAMENTO as readonly string[]).includes(valore)
+}
+
+/**
+ * Interi positivi della paginazione. `parseInt` su testo restituisce NaN, e un
+ * NaN in `skip`/`take` fa fallire la query come un campo di ordinamento
+ * sbagliato: stessa famiglia di guasto, stessa cura.
+ */
+function interoPositivo(valore: string | null, predefinito: number): number {
+  const numero = Number(valore)
+  if (!Number.isInteger(numero) || numero < 1) return predefinito
+  return numero
+}
+
 // Schema validazione per creazione
 const createScheduleSchema = z.object({
   tipo: z.nativeEnum(ScheduleType),
@@ -63,10 +115,31 @@ export async function GET(request: NextRequest) {
     const dataFine = searchParams.get('dataFine')
     const isRicorrente = searchParams.get('isRicorrente')
     const verificata = searchParams.get('verificata')
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '50')
+    const page = interoPositivo(searchParams.get('page'), 1)
+    const limit = interoPositivo(searchParams.get('limit'), 50)
+
     const sortBy = searchParams.get('sortBy') || 'dataScadenza'
     const sortOrder = searchParams.get('sortOrder') || 'asc'
+
+    if (!isCampoOrdinabile(sortBy)) {
+      return NextResponse.json(
+        {
+          error: `Ordinamento non valido: "${sortBy}" non è una colonna ordinabile`,
+          campiAmmessi: CAMPI_ORDINABILI,
+        },
+        { status: 400 }
+      )
+    }
+
+    if (!isVersoOrdinamento(sortOrder)) {
+      return NextResponse.json(
+        {
+          error: `Verso di ordinamento non valido: "${sortOrder}"`,
+          versiAmmessi: VERSI_ORDINAMENTO,
+        },
+        { status: 400 }
+      )
+    }
 
     // Venue isolation
     const venueId = await getVenueId()
@@ -128,6 +201,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const orderBy: Prisma.ScheduleOrderByWithRelationInput = { [sortBy]: sortOrder }
+
     // Count totale
     const total = await prisma.schedule.count({ where })
 
@@ -136,7 +211,7 @@ export async function GET(request: NextRequest) {
       where,
       skip: (page - 1) * limit,
       take: limit,
-      orderBy: { [sortBy]: sortOrder },
+      orderBy,
       include: {
         supplier: {
           select: {
