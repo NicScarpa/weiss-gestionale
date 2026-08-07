@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
-import { prisma } from '@/lib/prisma'
 import { getVenueId } from '@/lib/venue'
+import { saldiAlGiorno } from '@/lib/saldi'
 import { RegisterBalanceCards } from '@/components/prima-nota/RegisterBalanceCards'
 import { PrimaNotaTabNav } from '@/components/prima-nota/PrimaNotaTabNav'
 import { AccountSelectorToggle } from '@/components/prima-nota/AccountSelectorToggle'
@@ -24,44 +24,24 @@ export default async function PrimaNotaLayout({
   const venueId = await getVenueId()
   const isAdmin = session.user.role === 'admin'
 
-  // Fetch balances per RegisterBalanceCards
-  const today = new Date() // Passiamo direttamente l'oggetto Date per il campo @db.Date
-  const [cashBalance, bankBalance] = await Promise.all([
-    prisma.registerBalance.findUnique({
-      where: { venueId_registerType_date: { venueId, registerType: 'CASH', date: today } },
-    }),
-    prisma.registerBalance.findUnique({
-      where: { venueId_registerType_date: { venueId, registerType: 'BANK', date: today } },
-    }),
-  ])
-
-  // Converti Decimal in number
-  const convertBalance = (balance: typeof cashBalance) => {
-    if (!balance) return null
-    return {
-      ...balance,
-      openingBalance: balance.openingBalance.toNumber(),
-      totalDebits: balance.totalDebits.toNumber(),
-      totalCredits: balance.totalCredits.toNumber(),
-      closingBalance: balance.closingBalance.toNumber(),
-    }
-  }
-
-  const convertedCashBalance = convertBalance(cashBalance)
-  const convertedBankBalance = convertBalance(bankBalance)
+  // I saldi del primo render vengono dalla stessa funzione che risponde a
+  // `/api/prima-nota/saldi`, così le card nascono già col numero giusto. Prima
+  // si leggeva `register_balances`, tabella che nessun codice popola: le card
+  // partivano vuote a ogni caricamento.
+  const saldi = await saldiAlGiorno(venueId)
 
   return (
     <PrimaNotaProvider
       venueId={venueId}
       isAdmin={isAdmin}
-      cashBalance={convertedCashBalance}
-      bankBalance={convertedBankBalance}
+      cashBalance={saldi.registers.CASH}
+      bankBalance={saldi.registers.BANK}
     >
       <div className="space-y-6">
         {/* 3 box compatti */}
         <RegisterBalanceCards
-          cashRegister={convertedCashBalance}
-          bankRegister={convertedBankBalance}
+          cashRegister={saldi.registers.CASH}
+          bankRegister={saldi.registers.BANK}
           className="mb-6"
         />
 
