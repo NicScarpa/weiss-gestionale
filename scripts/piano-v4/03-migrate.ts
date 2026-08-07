@@ -52,7 +52,6 @@ import { CENTRI_DI_COSTO, PIANO_CONTI_WEISS_V4 } from '../../src/lib/accounts/pi
 
 import {
   argomento,
-  bersaglio,
   CHIAVI_DURE,
   comeDb,
   confermaScrittura,
@@ -280,7 +279,7 @@ function valutaGuardie(stato: Stato): string[] {
 interface Snapshot {
   versione: number
   generatoIl: string
-  database: string
+  /** Identità completa del bersaglio: utente@nomedb su host:porta. */
   bersaglio: string
   modalita: string
   mantieniBudget: boolean
@@ -297,10 +296,14 @@ async function costruisciSnapshot(db: Db, stato: Stato): Promise<Snapshot> {
   const mappings = await db.accountBudgetMapping.findMany({ where: { accountId: { in: legacyIds } } })
 
   return {
-    versione: 2,
+    // v3: `bersaglio` porta l'identità completa (utente, database, host e
+    // porta). Nella v2 era il solo `utente@nomedb`, che su Supabase in
+    // connessione diretta vale `postgres@postgres` per qualunque progetto:
+    // il rollback avrebbe confrontato due stringhe uguali e lasciato passare
+    // lo snapshot di un altro database.
+    versione: 3,
     generatoIl: new Date().toISOString(),
-    database: descriviDatabase(),
-    bersaglio: bersaglio(),
+    bersaglio: descriviDatabase(),
     modalita: esegui ? 'execute' : 'dry-run',
     mantieniBudget,
     // Stato dei conti legacy PRIMA della migrazione: il rollback ci
@@ -398,9 +401,34 @@ async function applica(tx: Db, snapshot: Snapshot): Promise<Riepilogo> {
   const statoTx = await rilevaStato(tx)
   const problemi = valutaGuardie(statoTx)
 
-  // Lo snapshot è stato letto fuori dalla transazione. Se nel frattempo
-  // l'insieme delle righe di budget da cancellare è cambiato, cancellarle
-  // significherebbe distruggere righe che il rollback non sa ripristinare.
+  // ── La finestra fra la fotografia (fuori transazione) e le scritture ──
+  // Tutto ciò su cui la migrazione agisce dev'essere ciò che lo snapshot ha
+  // fotografato, altrimenti il rollback non saprebbe rimetterlo a posto.
+
+  // Un conto legacy nato nella finestra verrebbe spento senza comparire
+  // nello snapshot, e il rollback non lo riaccenderebbe più.
+  if (!stessoInsieme(statoTx.legacy.map((l) => l.id), snapshot.contiLegacy.map((c) => c.id))) {
+    problemi.push(
+      `i conti legacy non coincidono con lo snapshot (snapshot ${snapshot.contiLegacy.length}, ora ${statoTx.legacy.length}): il piano dei conti è cambiato nel frattempo. Rifare il dry-run.`
+    )
+  }
+
+  // Una voce v4 nata nella finestra si vedrebbe sovrascrivere l'anagrafica
+  // e poi verrebbe DISATTIVATA dal rollback, che la scambierebbe per una
+  // voce introdotta dalla migrazione.
+  if (
+    !stessoInsieme(
+      statoTx.v4Presenti.map((v) => v.code),
+      snapshot.vociV4Preesistenti.map((v) => v.code)
+    )
+  ) {
+    problemi.push(
+      `le voci v4 già presenti non coincidono con lo snapshot (snapshot ${snapshot.vociV4Preesistenti.length}, ora ${statoTx.v4Presenti.length}): qualcuno ha toccato il piano dei conti nel frattempo. Rifare il dry-run.`
+    )
+  }
+
+  // Le righe di budget sono l'unico caso in cui si cancella: qui uno
+  // scostamento non è recuperabile, non solo scomodo.
   if (!mantieniBudget) {
     const snapBudget = snapshot.budgetLines.map((b) => b.id as string)
     const snapMapping = snapshot.accountBudgetMappings.map((m) => m.id as string)

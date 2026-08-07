@@ -39,7 +39,6 @@ import { PIANO_CONTI_WEISS_V4 } from '../../src/lib/accounts/piano-conti-weiss-v
 
 import {
   argomento,
-  bersaglio,
   comeDb,
   confermaScrittura,
   contaRiferimenti,
@@ -86,8 +85,8 @@ interface VoceV4Snapshot {
 interface Snapshot {
   versione: number
   generatoIl: string
-  database: string
-  bersaglio?: string
+  /** Identità completa del bersaglio: utente@nomedb su host:porta. */
+  bersaglio: string
   modalita: string
   mantieniBudget?: boolean
   contiLegacy: ContoLegacySnapshot[]
@@ -96,13 +95,13 @@ interface Snapshot {
   accountBudgetMappings: Record<string, unknown>[]
 }
 
-const VERSIONI_LETTE = [2]
+const VERSIONI_LETTE = [3]
 
 function leggiSnapshot(percorso: string): Snapshot {
   const grezzo = JSON.parse(readFileSync(percorso, 'utf8'))
   if (!VERSIONI_LETTE.includes(grezzo.versione)) {
     throw new Error(
-      `Snapshot di versione ${grezzo.versione}: questo script legge solo la/le versione/i ${VERSIONI_LETTE.join(', ')}`
+      `Snapshot di versione ${grezzo.versione}: questo script legge solo la/le versione/i ${VERSIONI_LETTE.join(', ')}. Rifare il dry-run con lo script 03 aggiornato.`
     )
   }
   for (const campo of ['contiLegacy', 'vociV4Preesistenti', 'budgetLines', 'accountBudgetMappings']) {
@@ -117,10 +116,24 @@ function leggiSnapshot(percorso: string): Snapshot {
       throw new Error(`Snapshot malformato: "${campo}" ha una riga senza id (posizione ${senzaId})`)
     }
   }
-  if (typeof grezzo.database !== 'string') {
-    throw new Error('Snapshot malformato: manca il campo "database"')
+  if (typeof grezzo.bersaglio !== 'string' || grezzo.bersaglio.length === 0) {
+    throw new Error('Snapshot malformato: manca il campo "bersaglio"')
   }
   return grezzo as Snapshot
+}
+
+/**
+ * Prova diretta della provenienza dello snapshot: quanti dei conti legacy
+ * fotografati esistono davvero in questo database.
+ *
+ * Il confronto sulle stringhe di connessione è una premessa, non una prova:
+ * due ambienti possono presentarsi allo stesso modo, e chiunque può
+ * modificare un JSON. Gli id sono cuid generati alla creazione del conto:
+ * se non ne esiste nemmeno uno, lo snapshot viene da un altro database.
+ */
+async function contiLegacyRiconosciuti(db: Db, snap: Snapshot): Promise<number> {
+  if (snap.contiLegacy.length === 0) return 0
+  return db.account.count({ where: { id: { in: snap.contiLegacy.map((c) => c.id) } } })
 }
 
 /**
@@ -378,8 +391,8 @@ async function main() {
   )
 
   console.log(`Snapshot  : ${assoluto}`)
-  console.log(`  generato: ${snap.generatoIl} (modalità ${snap.modalita})`)
-  console.log(`  database: ${snap.database}`)
+  console.log(`  generato : ${snap.generatoIl} (modalità ${snap.modalita})`)
+  console.log(`  bersaglio: ${snap.bersaglio}`)
   console.log('')
 
   // Snapshot di prova e snapshot di produzione stanno nella stessa cartella e
@@ -387,13 +400,12 @@ async function main() {
   // resterebbe vuoto (gli id non esistono qui) ma le voci v4 verrebbero
   // spente lo stesso, perché quelle si calcolano per CODICE: si spegnerebbe
   // il piano dei conti del database giusto.
-  const bersaglioSnapshot = snap.bersaglio ?? snap.database
-  const bersaglioAttuale = snap.bersaglio ? bersaglio() : descriviDatabase()
-  if (bersaglioSnapshot !== bersaglioAttuale) {
+  const bersaglioAttuale = descriviDatabase()
+  if (snap.bersaglio !== bersaglioAttuale) {
     if (!forza) {
       console.error('❌ ROLLBACK BLOCCATO — lo snapshot viene da un altro bersaglio:')
       console.error('')
-      console.error(`   snapshot : ${bersaglioSnapshot}`)
+      console.error(`   snapshot : ${snap.bersaglio}`)
       console.error(`   corrente : ${bersaglioAttuale}`)
       console.error('')
       console.error('   Applicarlo qui spegnerebbe le 155 voci di QUESTO database (si calcolano')
@@ -402,12 +414,35 @@ async function main() {
       process.exitCode = 1
       return
     }
-    console.log(`⚠️  Bersaglio diverso da quello dello snapshot (${bersaglioSnapshot}): proseguo per --forza.`)
+    console.log(`⚠️  Bersaglio diverso da quello dello snapshot (${snap.bersaglio}): proseguo per --forza.`)
     console.log('')
   }
 
   const { prisma, chiudi } = creaClient()
   try {
+    // Seconda prova, questa volta sui dati e non sulle stringhe: due ambienti
+    // possono presentarsi con la stessa identità, e un JSON si modifica.
+    // `--forza` non la salta: serve a dire "so che l'identità è diversa", non
+    // "applica uno snapshot che non c'entra niente con questo database".
+    const riconosciuti = await contiLegacyRiconosciuti(prisma, snap)
+    if (snap.contiLegacy.length > 0 && riconosciuti === 0) {
+      console.error('❌ ROLLBACK BLOCCATO — lo snapshot non appartiene a questo database:')
+      console.error('')
+      console.error(
+        `   nessuno dei ${snap.contiLegacy.length} conti legacy dello snapshot esiste qui (0 su ${snap.contiLegacy.length}).`
+      )
+      console.error('   Gli id sono generati alla creazione del conto: se non ne torna nemmeno')
+      console.error('   uno, la fotografia è di un altro database. Non proseguo nemmeno con --forza.')
+      process.exitCode = 1
+      return
+    }
+    if (snap.contiLegacy.length > 0) {
+      console.log(
+        `✅ Provenienza confermata: ${riconosciuti} conti legacy dello snapshot su ${snap.contiLegacy.length} esistono in questo database`
+      )
+      console.log('')
+    }
+
     const piano = await calcolaPiano(prisma, snap)
 
     if (piano.vociConRiferimenti.length > 0) {

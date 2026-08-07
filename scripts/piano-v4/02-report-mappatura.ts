@@ -29,7 +29,7 @@ import {
   bersaglioRemoto,
   contaRiferimenti,
   creaClient,
-  descriviDatabase,
+  descriviDatabasePerDocumento,
   formattaDettaglio,
   RIFERIMENTI,
   stampaIntestazione,
@@ -229,7 +229,8 @@ async function main() {
       )
     }
     out.push('')
-    out.push(`- Database letto: \`${descriviDatabase()}\``)
+    // Mai le coordinate reali di un bersaglio remoto: questo file è tracciato.
+    out.push(`- Database letto: \`${descriviDatabasePerDocumento()}\``)
     out.push(`- Conti non-v4 esaminati: **${righe.length}**`)
     out.push(`- Voci del piano v4 già presenti: **${vociV4}** (attese 155 dopo la migrazione)`)
     out.push(`- Da disattivare: **${daDisattivare.length}** · da conservare: **${conservati.length}** · bloccanti: **${bloccanti.length}**`)
@@ -282,9 +283,18 @@ async function main() {
       '> ⚠️ **`DATABASE_URL` va indicata sempre, esplicitamente, davanti a ogni comando.** Gli script caricano il `.env` del progetto quando la variabile non c\'è, e quel `.env` punta alla produzione: lanciare un comando "nudo" dalla radice significa operare sulla produzione senza averlo deciso. Prima di scrivere su un bersaglio non locale lo script chiede di ribattere a mano la sua identità (`utente@nomedb`), ma è una rete di sicurezza, non il modo di lavorare.'
     )
     out.push('')
+    out.push(
+      '> 🔐 **La stringa di connessione non va battuta sulla riga di comando.** Contiene la password di produzione, e tutto ciò che si scrive al prompt finisce in `~/.zsh_history` in chiaro, dove resta. Si legge senza eco, oppure da un file con i permessi stretti.'
+    )
+    out.push('')
     out.push('```bash')
-    out.push('# il bersaglio, una volta sola, in una variabile di shell')
-    out.push('export DB_BERSAGLIO="postgresql://UTENTE:PASSWORD@HOST:5432/NOMEDB"')
+    out.push('# il bersaglio, una volta sola, senza lasciarne traccia nella history')
+    out.push('read -rs "DB_BERSAGLIO?URL di connessione: " && export DB_BERSAGLIO   # zsh')
+    out.push('# read -rsp "URL di connessione: " DB_BERSAGLIO && export DB_BERSAGLIO  # bash')
+    out.push('')
+    out.push('# in alternativa, da un file leggibile solo dal proprietario:')
+    out.push('#   umask 077 && $EDITOR ~/.weiss-migrazione   (una riga: postgresql://…)')
+    out.push('#   export DB_BERSAGLIO="$(cat ~/.weiss-migrazione)"')
     out.push('')
     out.push('# 1. rigenera questa tabella contro il database che si vuole migrare (sola lettura)')
     out.push('DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/02-report-mappatura.ts \\')

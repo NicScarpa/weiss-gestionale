@@ -1,6 +1,6 @@
 # Migrazione al piano dei conti WEISS v4 — tabella di mappatura
 
-Generato da `scripts/piano-v4/02-report-mappatura.ts` il 2026-08-07T19:42:39.677Z.
+Generato da `scripts/piano-v4/02-report-mappatura.ts` il 2026-08-07T20:12:12.889Z.
 
 > ⚠️ **Documento generato su un database LOCALE di prova, non sulla produzione.** Codici, nomi e conteggi dei conti qui sotto sono quelli di quel database: servono a mostrare la forma del report e a provare il ciclo migrazione/rollback, non sono la fotografia della produzione. La tabella definitiva va rigenerata puntando `DATABASE_URL` alla produzione — lo script è di sola lettura — al momento dello STOP che precede l'esecuzione.
 
@@ -72,9 +72,16 @@ Prima di scrivere ricontrolla tutte le premesse: se anche una sola non regge, la
 
 > ⚠️ **`DATABASE_URL` va indicata sempre, esplicitamente, davanti a ogni comando.** Gli script caricano il `.env` del progetto quando la variabile non c'è, e quel `.env` punta alla produzione: lanciare un comando "nudo" dalla radice significa operare sulla produzione senza averlo deciso. Prima di scrivere su un bersaglio non locale lo script chiede di ribattere a mano la sua identità (`utente@nomedb`), ma è una rete di sicurezza, non il modo di lavorare.
 
+> 🔐 **La stringa di connessione non va battuta sulla riga di comando.** Contiene la password di produzione, e tutto ciò che si scrive al prompt finisce in `~/.zsh_history` in chiaro, dove resta. Si legge senza eco, oppure da un file con i permessi stretti.
+
 ```bash
-# il bersaglio, una volta sola, in una variabile di shell
-export DB_BERSAGLIO="postgresql://UTENTE:PASSWORD@HOST:5432/NOMEDB"
+# il bersaglio, una volta sola, senza lasciarne traccia nella history
+read -rs "DB_BERSAGLIO?URL di connessione: " && export DB_BERSAGLIO   # zsh
+# read -rsp "URL di connessione: " DB_BERSAGLIO && export DB_BERSAGLIO  # bash
+
+# in alternativa, da un file leggibile solo dal proprietario:
+#   umask 077 && $EDITOR ~/.weiss-migrazione   (una riga: postgresql://…)
+#   export DB_BERSAGLIO="$(cat ~/.weiss-migrazione)"
 
 # 1. rigenera questa tabella contro il database che si vuole migrare (sola lettura)
 DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/02-report-mappatura.ts \

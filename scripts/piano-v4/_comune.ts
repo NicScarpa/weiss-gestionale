@@ -56,37 +56,47 @@ export function creaClient(): { prisma: PrismaClient; chiudi: () => Promise<void
 }
 
 /**
- * Identità sintetica del bersaglio: `utente@nomedb`.
+ * Identità del database bersaglio: `utente@nomedb su host:porta`. Senza
+ * password, mai, da nessuna parte.
  *
- * L'utente c'è di proposito. Su Supabase l'host è lo stesso per tutti i
- * progetti dello stesso pooler e il database si chiama sempre `postgres`:
- * a distinguere un progetto dall'altro resta solo lo username. È la stringa
- * che si deve ribattere a mano per confermare una scrittura su un bersaglio
- * remoto. La password non compare mai, da nessuna parte.
+ * Servono tutti e quattro i pezzi, perché quale sia quello discriminante
+ * dipende da come ci si collega:
+ *  - Supabase, *pooler*: host uguale per tutti i progetti, database sempre
+ *    `postgres`, a distinguere è lo username (`postgres.<ref>`);
+ *  - Supabase, *connessione diretta* (quella consigliata per la migrazione):
+ *    utente `postgres` e database `postgres` per ogni progetto, a
+ *    distinguere è l'host (`db.<ref>.supabase.co`);
+ *  - Railway: più database sono `postgres@railway`, distingue l'host.
+ * Un'identità che ne omettesse uno collasserebbe su bersagli diversi, e
+ * confrontare due stringhe identiche non è un controllo.
+ *
+ * Questa è la stringa che si ribatte a mano per confermare una scrittura su
+ * un bersaglio remoto, ed è quella che il rollback confronta con lo snapshot.
  */
-export function bersaglio(): string {
+export function descriviDatabase(): string {
   const raw = process.env.DATABASE_URL
   if (!raw) return '(DATABASE_URL non impostata)'
   try {
     const u = new URL(raw)
     const utente = decodeURIComponent(u.username) || '(senza utente)'
     const nome = decodeURIComponent(u.pathname.replace(/^\//, '')) || '(senza nome)'
-    return `${utente}@${nome}`
+    return `${utente}@${nome} su ${u.hostname}:${u.port || '5432'}`
   } catch {
     return '(DATABASE_URL non interpretabile)'
   }
 }
 
-/** Descrizione leggibile del database bersaglio, senza password. */
-export function descriviDatabase(): string {
-  const raw = process.env.DATABASE_URL
-  if (!raw) return '(DATABASE_URL non impostata)'
-  try {
-    const u = new URL(raw)
-    return `${bersaglio()} su ${u.hostname}:${u.port || '5432'}`
-  } catch {
-    return '(DATABASE_URL non interpretabile)'
-  }
+/**
+ * Identità adatta a finire in un file che il repository traccia.
+ *
+ * `docs/migrazione-piano-conti-v4.md` è versionato: rigenerarlo contro la
+ * produzione e committarlo depositerebbe utente e host di produzione nella
+ * storia del repository. Su bersaglio remoto si scrive un segnaposto.
+ */
+export function descriviDatabasePerDocumento(): string {
+  return bersaglioRemoto()
+    ? '(bersaglio remoto — coordinate omesse: questo documento è tracciato dal repository)'
+    : descriviDatabase()
 }
 
 /**
@@ -148,7 +158,7 @@ export async function confermaScrittura() {
     return
   }
 
-  const atteso = bersaglio()
+  const atteso = descriviDatabase()
   console.log('  ⚠️  Bersaglio NON locale: la conferma automatica non basta.')
   console.log('')
 
@@ -159,7 +169,17 @@ export async function confermaScrittura() {
   }
 
   const rl = createInterface({ input: process.stdin, output: process.stdout })
-  const risposta = await rl.question(`  Ribatti l'identità del bersaglio per confermare — ${atteso}\n  > `)
+  let risposta: string
+  try {
+    risposta = await rl.question(`  Ribatti l'identità del bersaglio per confermare — ${atteso}\n  > `)
+  } catch {
+    // Ctrl-D, Ctrl-C o stdin che si chiude: è un rifiuto, non un incidente.
+    // Senza questo l'uscita sarebbe uno stack trace, che spaventa e non spiega.
+    rl.close()
+    console.error('')
+    console.error('❌ Conferma interrotta. Nessuna scrittura effettuata.')
+    process.exit(1)
+  }
   rl.close()
 
   if (risposta.trim() !== atteso) {
