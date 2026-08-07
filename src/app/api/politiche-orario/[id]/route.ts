@@ -6,7 +6,22 @@ import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
 import { getVenueId } from '@/lib/venue'
 import { politicaOrarioSchema } from '@/lib/validations/politiche-orario'
+import { toDateOnlyUtc } from '@/lib/timezone'
 import { politicaSelect } from '../route'
+
+/**
+ * La decorrenza di una modifica: i giorni precedenti restano calcolati con
+ * la regola com'era (i valori si congelano in una versione), così i mesi già
+ * consegnati al consulente non cambiano. Senza decorrenza la modifica vale
+ * anche per il passato — utile per correggere un errore di battitura.
+ */
+const decorrenzaSchema = z.object({
+  decorrenza: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Decorrenza non valida (attesa yyyy-MM-dd)')
+    .nullable()
+    .optional(),
+})
 
 async function guard() {
   const session = await auth()
@@ -49,13 +64,67 @@ export async function PUT(
 
     const body = await request.json()
     const dati = politicaOrarioSchema.parse(body)
+    const { decorrenza } = decorrenzaSchema.parse(body)
     const { extraBreaks, ...campi } = dati
+
+    if (decorrenza) {
+      // Le versioni devono restare in ordine: una decorrenza precedente a
+      // una già registrata renderebbe ambiguo quale valga per quei giorni.
+      const ultimaVersione = await prisma.timekeepingPolicyVersion.findFirst({
+        where: { policyId: id },
+        orderBy: { effectiveUntil: 'desc' },
+        select: { effectiveUntil: true },
+      })
+      const ultimaKey = ultimaVersione?.effectiveUntil.toISOString().slice(0, 10)
+      if (ultimaKey && decorrenza <= ultimaKey) {
+        return NextResponse.json(
+          {
+            error:
+              'La decorrenza deve essere successiva all\'ultima modifica già ' +
+              `registrata (${ultimaKey.split('-').reverse().join('/')})`,
+          },
+          { status: 422 }
+        )
+      }
+    }
 
     const politica = await prisma.$transaction(async (tx) => {
       if (campi.isDefault) {
         await tx.timekeepingPolicy.updateMany({
           where: { venueId, isDefault: true, id: { not: id } },
           data: { isDefault: false },
+        })
+      }
+
+      // Con la decorrenza, i valori correnti si congelano in una versione
+      // valida per i giorni precedenti, prima di essere sovrascritti.
+      if (decorrenza) {
+        await tx.timekeepingPolicyVersion.create({
+          data: {
+            policyId: id,
+            effectiveUntil: toDateOnlyUtc(decorrenza),
+            name: esistente.name,
+            dayStartMinutes: esistente.dayStartMinutes,
+            dayEndMinutes: esistente.dayEndMinutes,
+            lunchStartMinutes: esistente.lunchStartMinutes,
+            lunchEndMinutes: esistente.lunchEndMinutes,
+            useShiftAsWindow: esistente.useShiftAsWindow,
+            flexMinutes: esistente.flexMinutes,
+            roundingMinutes: esistente.roundingMinutes,
+            roundingToleranceMinutes: esistente.roundingToleranceMinutes,
+            roundingOutMinutes: esistente.roundingOutMinutes,
+            roundingOutToleranceMinutes: esistente.roundingOutToleranceMinutes,
+            maxDailyMinutes: esistente.maxDailyMinutes,
+            contractWeeklyHours: esistente.contractWeeklyHours,
+            saturdayAsOvertime: esistente.saturdayAsOvertime,
+            blockSunday: esistente.blockSunday,
+            singlePunchMode: esistente.singlePunchMode,
+            extraBreaks: esistente.extraBreaks.map((pausa) => ({
+              name: pausa.name,
+              startMinutes: pausa.startMinutes,
+              endMinutes: pausa.endMinutes,
+            })),
+          },
         })
       }
 
@@ -80,7 +149,7 @@ export async function PUT(
       entityId: id,
       venueId,
       oldValues: esistente,
-      newValues: politica,
+      newValues: { ...politica, decorrenza: decorrenza ?? null },
     })
 
     return NextResponse.json({ data: politica })

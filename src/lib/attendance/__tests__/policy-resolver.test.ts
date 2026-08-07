@@ -196,3 +196,90 @@ describe('resolvePolicyRules', () => {
     expect(rules.contractDailyMinutes).toBe(400)
   })
 })
+
+describe('resolvePolicyRules con la decorrenza (versioni congelate)', () => {
+  // La regola oggi ha tolleranza 15, ma prima del 15 agosto valeva 5:
+  // la modifica è stata salvata con decorrenza 2026-08-15, congelando i
+  // vecchi valori in una versione valida per i giorni precedenti.
+  function versione(overrides: Record<string, unknown> = {}) {
+    const { id: _id, ...senzaId } = policyRow()
+    return {
+      ...senzaId,
+      effectiveUntil: new Date('2026-08-15T00:00:00Z'),
+      roundingToleranceMinutes: 5,
+      ...overrides,
+    }
+  }
+
+  function contestoCon(row: ReturnType<typeof policyRow>) {
+    return {
+      defaultPolicy: row,
+      userPolicyByUserId: new Map(),
+      locationPolicyByLocationId: new Map(),
+    }
+  }
+
+  it('un giorno prima della decorrenza usa i valori congelati', () => {
+    const contesto = contestoCon(
+      policyRow({ roundingToleranceMinutes: 15, versions: [versione()] })
+    )
+
+    const { rules } = resolvePolicyRules(contesto, 'user-1', null, null, '2026-08-10')
+
+    expect(rules.entryRounding.toleranceMinutes).toBe(5)
+  })
+
+  it('dal giorno di decorrenza in poi valgono i valori attuali', () => {
+    const contesto = contestoCon(
+      policyRow({ roundingToleranceMinutes: 15, versions: [versione()] })
+    )
+
+    const { rules } = resolvePolicyRules(contesto, 'user-1', null, null, '2026-08-15')
+
+    expect(rules.entryRounding.toleranceMinutes).toBe(15)
+  })
+
+  it('con più modifiche vince la versione in vigore quel giorno', () => {
+    const contesto = contestoCon(
+      policyRow({
+        roundingToleranceMinutes: 15,
+        versions: [
+          versione({
+            effectiveUntil: new Date('2026-08-10T00:00:00Z'),
+            roundingToleranceMinutes: 0,
+          }),
+          versione({
+            effectiveUntil: new Date('2026-08-20T00:00:00Z'),
+            roundingToleranceMinutes: 5,
+          }),
+        ],
+      })
+    )
+
+    const il = (giorno: string) =>
+      resolvePolicyRules(contesto, 'user-1', null, null, giorno).rules
+        .entryRounding.toleranceMinutes
+
+    expect(il('2026-08-05')).toBe(0)
+    expect(il('2026-08-12')).toBe(5)
+    expect(il('2026-08-25')).toBe(15)
+  })
+
+  it('senza versioni la data non cambia nulla', () => {
+    const contesto = contestoCon(policyRow({ roundingToleranceMinutes: 15 }))
+
+    const { rules } = resolvePolicyRules(contesto, 'user-1', null, null, '2026-08-10')
+
+    expect(rules.entryRounding.toleranceMinutes).toBe(15)
+  })
+
+  it('senza data vale la riga attuale, come sempre', () => {
+    const contesto = contestoCon(
+      policyRow({ roundingToleranceMinutes: 15, versions: [versione()] })
+    )
+
+    const { rules } = resolvePolicyRules(contesto, 'user-1', null, null)
+
+    expect(rules.entryRounding.toleranceMinutes).toBe(15)
+  })
+})

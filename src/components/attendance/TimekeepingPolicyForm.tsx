@@ -55,6 +55,12 @@ export interface PoliticaOrario {
   singlePunchMode: boolean
   useShiftAsWindow: boolean
   extraBreaks: PausaAggiuntiva[]
+  /**
+   * Solo in modifica: la data da cui valgono i nuovi valori. I giorni
+   * precedenti restano calcolati con la regola com'era. Vuota = la
+   * modifica vale anche per il passato.
+   */
+  decorrenza?: string | null
 }
 
 interface RisultatoProva {
@@ -254,6 +260,23 @@ export function TimekeepingPolicyForm({
                 onCheckedChange={(v) => aggiorna('isActive', v)}
               />
             </div>
+
+            {valore.id && (
+              <div className="space-y-2">
+                <Label htmlFor="decorrenza">Decorrenza della modifica</Label>
+                <Input
+                  id="decorrenza"
+                  type="date"
+                  value={valore.decorrenza ?? ''}
+                  onChange={(e) => aggiorna('decorrenza', e.target.value || null)}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Con una data, i giorni precedenti restano calcolati con la
+                  regola com&apos;era: i mesi già consegnati al consulente non
+                  cambiano. Senza data, la modifica vale anche per il passato.
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 

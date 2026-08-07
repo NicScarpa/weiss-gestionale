@@ -1207,9 +1207,46 @@ model TimekeepingPolicy {
   extraBreaks                 TimekeepingPolicyBreak[]
   users                       User[]
   workLocations               WorkLocation[]
+  versions                    TimekeepingPolicyVersion[]
 
   @@index([venueId, isActive])
   @@map("timekeeping_policies")
+}
+
+/// Fotografia dei parametri di calcolo di una regola prima di una modifica
+/// con decorrenza: i giorni precedenti alla decorrenza continuano a essere
+/// calcolati con questi valori, così una modifica di ottobre non riscrive il
+/// cartellino di agosto già consegnato al consulente. Solo storia: si crea
+/// al salvataggio della modifica e non si tocca mai più.
+model TimekeepingPolicyVersion {
+  id                          String            @id @default(cuid())
+  policyId                    String            @map("policy_id")
+  /// Primo giorno in cui questi valori NON valgono più: la decorrenza della
+  /// modifica che li ha sostituiti. I giorni precedenti usano questa versione.
+  effectiveUntil              DateTime          @map("effective_until") @db.Date
+  name                        String
+  dayStartMinutes             Int               @map("day_start_minutes")
+  dayEndMinutes               Int               @map("day_end_minutes")
+  lunchStartMinutes           Int?              @map("lunch_start_minutes")
+  lunchEndMinutes             Int?              @map("lunch_end_minutes")
+  useShiftAsWindow            Boolean           @map("use_shift_as_window")
+  flexMinutes                 Int               @map("flex_minutes")
+  roundingMinutes             Int               @map("rounding_minutes")
+  roundingToleranceMinutes    Int               @map("rounding_tolerance_minutes")
+  roundingOutMinutes          Int?              @map("rounding_out_minutes")
+  roundingOutToleranceMinutes Int?              @map("rounding_out_tolerance_minutes")
+  maxDailyMinutes             Int?              @map("max_daily_minutes")
+  contractWeeklyHours         Decimal?          @map("contract_weekly_hours") @db.Decimal(4, 1)
+  saturdayAsOvertime          Boolean           @map("saturday_as_overtime")
+  blockSunday                 Boolean           @map("block_sunday")
+  singlePunchMode             Boolean           @map("single_punch_mode")
+  /// Le pause aggiuntive congelate: [{name, startMinutes, endMinutes}].
+  extraBreaks                 Json              @map("extra_breaks")
+  createdAt                   DateTime          @default(now()) @map("created_at")
+  policy                      TimekeepingPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([policyId, effectiveUntil])
+  @@map("timekeeping_policy_versions")
 }
 
 /// Luogo fisico in cui si timbra: Weiss Cafè, Villa Varda, le Casette.

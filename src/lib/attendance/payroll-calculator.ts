@@ -506,9 +506,17 @@ export async function generatePayrollData(
     const contractWeeklyHours = user.contractHoursWeek
       ? Number(user.contractHoursWeek)
       : null
-    const regolePerGiornata = (workLocationId: string | null) =>
+    // La risoluzione dipende anche dal giorno: una modifica con decorrenza
+    // congela i valori precedenti, e i giorni passati usano quelli.
+    const regolePerGiornata = (workLocationId: string | null, dateKey: string) =>
       policyContext
-        ? resolvePolicyRules(policyContext, user.id, workLocationId, contractWeeklyHours)
+        ? resolvePolicyRules(
+            policyContext,
+            user.id,
+            workLocationId,
+            contractWeeklyHours,
+            dateKey
+          )
         : { rules: neutralPolicy(contractWeeklyHours), policyName: null }
 
     // Processa ogni giorno
@@ -565,7 +573,7 @@ export async function generatePayrollData(
           ? (workLocationNames.get(workLocationId) ?? null)
           : null
 
-        const regole = regolePerGiornata(workLocationId)
+        const regole = regolePerGiornata(workLocationId, dateKey)
         policyName = regole.policyName
 
         const risultato = calculateHoursFromPunches(

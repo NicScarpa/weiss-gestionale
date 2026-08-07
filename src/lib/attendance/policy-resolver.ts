@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { romeDateKey } from '@/lib/timezone'
 import type { PolicyRules } from './timekeeping-types'
 
 /**
@@ -37,6 +38,39 @@ export interface TimekeepingPolicyRow {
   blockSunday: boolean
   singlePunchMode: boolean
   extraBreaks: { name: string; startMinutes: number; endMinutes: number }[]
+  /** Valori congelati dalle modifiche con decorrenza, per i giorni passati. */
+  versions?: TimekeepingPolicyVersionRow[]
+}
+
+/**
+ * Fotografia dei parametri prima di una modifica con decorrenza: vale per i
+ * giorni precedenti a `effectiveUntil` (esclusa), che è la decorrenza della
+ * modifica che l'ha sostituita.
+ */
+export interface TimekeepingPolicyVersionRow
+  extends Omit<TimekeepingPolicyRow, 'id' | 'versions'> {
+  effectiveUntil: Date
+}
+
+/**
+ * I parametri della regola in vigore in un dato giorno: la versione col più
+ * piccolo `effectiveUntil` successivo al giorno, o la riga attuale se nessuna
+ * versione copre quel giorno. Così una modifica di ottobre non riscrive il
+ * cartellino di agosto già consegnato al consulente.
+ */
+export function policyParamsForDay(
+  row: TimekeepingPolicyRow,
+  dateKey: string
+): TimekeepingPolicyRow {
+  const candidate = (row.versions ?? [])
+    .filter((v) => v.effectiveUntil.toISOString().slice(0, 10) > dateKey)
+    .sort((a, b) => a.effectiveUntil.getTime() - b.effectiveUntil.getTime())[0]
+
+  if (!candidate) {
+    return row
+  }
+
+  return { ...candidate, id: row.id, versions: row.versions }
 }
 
 export interface PolicyResolutionInput {
@@ -161,7 +195,55 @@ const policySelect = {
   extraBreaks: {
     select: { name: true, startMinutes: true, endMinutes: true },
   },
+  versions: {
+    select: {
+      effectiveUntil: true,
+      name: true,
+      dayStartMinutes: true,
+      dayEndMinutes: true,
+      lunchStartMinutes: true,
+      lunchEndMinutes: true,
+      flexMinutes: true,
+      roundingMinutes: true,
+      roundingToleranceMinutes: true,
+      roundingOutMinutes: true,
+      roundingOutToleranceMinutes: true,
+      maxDailyMinutes: true,
+      contractWeeklyHours: true,
+      saturdayAsOvertime: true,
+      blockSunday: true,
+      singlePunchMode: true,
+      useShiftAsWindow: true,
+      extraBreaks: true,
+    },
+  },
 } as const
+
+/**
+ * Nelle versioni le pause congelate viaggiano in una colonna Json: qui
+ * tornano l'array tipizzato che il resto del resolver si aspetta.
+ */
+function normalizePolicyRow<
+  T extends Omit<TimekeepingPolicyRow, 'versions'> & {
+    versions?: (Omit<TimekeepingPolicyVersionRow, 'extraBreaks'> & {
+      extraBreaks: unknown
+    })[]
+  },
+>(raw: T): TimekeepingPolicyRow {
+  return {
+    ...raw,
+    versions: (raw.versions ?? []).map((v) => ({
+      ...v,
+      extraBreaks: Array.isArray(v.extraBreaks)
+        ? (v.extraBreaks as {
+            name: string
+            startMinutes: number
+            endMinutes: number
+          }[])
+        : [],
+    })),
+  }
+}
 
 export interface PolicyResolutionContext {
   defaultPolicy: TimekeepingPolicyRow | null
@@ -205,30 +287,38 @@ export async function loadPolicyResolutionContext(
   const userPolicyByUserId = new Map<string, TimekeepingPolicyRow>()
   for (const user of usersWithPolicy) {
     if (user.timekeepingPolicy) {
-      userPolicyByUserId.set(user.id, user.timekeepingPolicy)
+      userPolicyByUserId.set(user.id, normalizePolicyRow(user.timekeepingPolicy))
     }
   }
 
   const locationPolicyByLocationId = new Map<string, TimekeepingPolicyRow>()
   for (const location of locationsWithPolicy) {
     if (location.timekeepingPolicy) {
-      locationPolicyByLocationId.set(location.id, location.timekeepingPolicy)
+      locationPolicyByLocationId.set(
+        location.id,
+        normalizePolicyRow(location.timekeepingPolicy)
+      )
     }
   }
 
   return {
-    defaultPolicy: defaultPolicy ?? null,
+    defaultPolicy: defaultPolicy ? normalizePolicyRow(defaultPolicy) : null,
     userPolicyByUserId,
     locationPolicyByLocationId,
   }
 }
 
-/** Le regole in vigore per una persona, pronte per il motore. */
+/**
+ * Le regole in vigore per una persona, pronte per il motore. Con `dateKey`
+ * la risoluzione tiene conto della decorrenza: il giorno usa la versione
+ * della regola in vigore quel giorno, non l'ultima salvata.
+ */
 export function resolvePolicyRules(
   context: PolicyResolutionContext,
   userId: string,
   workLocationId: string | null,
-  contractWeeklyHours: number | null
+  contractWeeklyHours: number | null,
+  dateKey?: string
 ): { rules: PolicyRules; policyName: string | null } {
   const row = pickEffectivePolicy({
     locationPolicy: workLocationId
@@ -242,7 +332,12 @@ export function resolvePolicyRules(
     return { rules: neutralPolicy(contractWeeklyHours), policyName: null }
   }
 
-  return { rules: toPolicyRules(row, contractWeeklyHours), policyName: row.name }
+  const effettiva = dateKey ? policyParamsForDay(row, dateKey) : row
+
+  return {
+    rules: toPolicyRules(effettiva, contractWeeklyHours),
+    policyName: effettiva.name,
+  }
 }
 
 /** Le regole in vigore per una singola persona, quando serve fuori dal calcolo mensile. */
@@ -279,9 +374,13 @@ export async function getEffectiveTimekeepingPolicy(
     }
   }
 
+  // Anche "adesso" ha la sua versione: una modifica salvata oggi con
+  // decorrenza futura non deve valere prima del suo giorno.
+  const effettiva = policyParamsForDay(row, romeDateKey(new Date()))
+
   return {
-    rules: toPolicyRules(row, contractWeeklyHours),
-    policyName: row.name,
-    blockSunday: row.blockSunday,
+    rules: toPolicyRules(effettiva, contractWeeklyHours),
+    policyName: effettiva.name,
+    blockSunday: effettiva.blockSunday,
   }
 }
