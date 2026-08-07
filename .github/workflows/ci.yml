@@ -115,6 +115,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run npm audit
-        run: npm audit --audit-level=high
+      # Blocca davvero: una vulnerabilità critica in ciò che gira in
+      # produzione non deve poter essere mergiata. Oggi ne abbiamo zero,
+      # quindi il gate è sostenibile. Le dipendenze di sviluppo sono escluse:
+      # non girano sul server, e le loro falle non sono lo stesso rischio.
+      - name: Vulnerabilità critiche in produzione (blocca)
+        run: npm audit --omit=dev --audit-level=critical
+
+      # Informativo: resta visibile nel log senza fermare la pipeline. Oggi
+      # segnala minimatch (plugin di build Sentry) ed exceljs/uuid, il cui
+      # unico rimedio offerto sarebbe un downgrade peggiore del problema.
+      - name: Vulnerabilità alte e moderate (solo segnalazione)
+        run: npm audit --omit=dev --audit-level=moderate
         continue-on-error: true
