@@ -80,6 +80,9 @@ const navigationItems = [
       {
         title: 'Configurazione',
         items: [
+          // Le spese ricorrenti alimentano la previsione di cassa: senza una
+          // voce di menu il loro CRUD è rimasto per mesi irraggiungibile.
+          { name: 'Spese Ricorrenti', href: '/spese-ricorrenti' },
           { name: 'Settings Budget', href: '/impostazioni/budget' },
         ]
       }

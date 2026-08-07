@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getVenueId } from '@/lib/venue'
 import { z } from 'zod'
 
 import { logger } from '@/lib/logger'
@@ -85,6 +86,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         { error: 'Spesa non trovata' },
         { status: 404 }
       )
+    }
+
+    // La spesa deve appartenere alla sede della sessione: senza questo
+    // controllo bastava conoscere un id per modificare le spese altrui.
+    if (expense.venueId !== (await getVenueId())) {
+      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
     const body = await request.json()
@@ -173,6 +180,12 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         { error: 'Spesa non trovata' },
         { status: 404 }
       )
+    }
+
+    // La spesa deve appartenere alla sede della sessione: senza questo
+    // controllo bastava conoscere un id per modificare le spese altrui.
+    if (expense.venueId !== (await getVenueId())) {
+      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
     await prisma.recurringExpense.delete({
