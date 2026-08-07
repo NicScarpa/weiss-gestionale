@@ -1,6 +1,11 @@
-# Debito: `react-hooks/set-state-in-effect` — 40 occorrenze in 34 file
+# Debito: regole React Compiler — 40 errori in 34 file
 
 **Rilevato:** 7 agosto 2026, durante la W3. **Stato:** non corretto, pianificato.
+
+> **Rettifica del 7 ago (fonte: C2-ORFANI).** La prima stesura di questo documento attribuiva tutte
+> e 40 le occorrenze a `set-state-in-effect`. È sbagliato: quella regola ne fa **30**. Le altre 10
+> sono difetti diversi, con rimedi diversi, ed è per questo che l'elenco qui sotto è ora diviso per
+> regola. Chi pianifica il lotto tratti i quattro gruppi separatamente.
 
 ## Perché è debito con una data di scadenza
 
@@ -30,7 +35,7 @@ appartengono ad altri lotti. Va fatto come lotto a sé, con un agente dedicato, 
 3. Alla fine, **alzare `eslint-plugin-react-hooks` alla 7.1.x nello stesso lotto**: è la prova che
    il debito è estinto, e impedisce che rientri.
 
-## Elenco completo (`file:righe`)
+## Gruppo 1 — `set-state-in-effect`: 30 occorrenze (il grosso del lavoro)
 
 ```
 src/app/(auth)/invito/page.tsx:45
@@ -49,33 +54,41 @@ src/app/(dashboard)/prima-nota/pagamenti/PagamentiClient.tsx:63
 src/app/(dashboard)/report/incassi-giornalieri/DailyRevenueClient.tsx:229
 src/app/(dashboard)/riconciliazione/RiconciliazioneClient.tsx:84
 src/app/(dashboard)/turni/[id]/page.tsx:117
-src/components/chiusura/ClosureForm.tsx:122
-src/components/portal/NotificationSettings.tsx:52
 src/components/portal/PunchButton.tsx:291
 src/components/prima-nota/movimenti/SplitEntryDialog.tsx:80
 src/components/prima-nota/regole/CategorizationProposalsDialog.tsx:76
 src/components/prima-nota/regole/CategorizationRulesManager.tsx:85
 src/components/reconciliation/MatchDialog.tsx:72
 src/components/reconciliation/TransactionDetailsDialog.tsx:103
-src/components/scadenzario/create-schedule-sheet.tsx:231
 src/components/scadenzario/payment-dialog.tsx:70
-src/components/settings/AccountMappingManager.tsx:186,192
-src/components/settings/BancheEContiClient.tsx:104
-src/components/settings/BudgetCategoryManagement.tsx:115,121,122
-src/components/settings/SupplierManagement.tsx:112
 src/components/settings/VenueManagement.tsx:69
 src/components/ui/address-autocomplete.tsx:60
 src/components/ui/payee-autocomplete.tsx:58,64
 src/hooks/useOffline.ts:49
 ```
 
-## Nello stesso passaggio alla 7.1.1 comparivano anche
+## Gruppo 2 — `exhaustive-deps`: 8 occorrenze (errori)
 
-- 8 `exhaustive-deps` (dipendenze di effetti dichiarate male)
-- 6 `immutability`
-- 5 `incompatible-library`, tutti sul `watch()` di react-hook-form: probabilmente **inevitabili**,
-  perché quell'API restituisce funzioni che il React Compiler non può memoizzare. Vanno esclusi con
-  una deroga motivata, non "corretti".
+Dipendenze di effetti dichiarate male: rimedio diverso, spesso la dipendenza va aggiunta o l'effetto
+va eliminato del tutto.
 
-L'elenco dettagliato di questi tre gruppi è recuperabile ripetendo la misura con il plugin 7.1.1 in
-un ambiente usa-e-getta (**mai** con `npm install --no-package-lock`: vedi la trappola §6 n.10).
+```
+src/components/scadenzario/create-schedule-sheet.tsx:231
+src/components/settings/AccountMappingManager.tsx:186,192
+src/components/settings/BancheEContiClient.tsx:104
+src/components/settings/BudgetCategoryManagement.tsx:115,121,122
+src/components/settings/SupplierManagement.tsx:112
+```
+
+## Gruppo 3 — un caso ciascuno
+
+- `preserve-manual-memoization`: `src/components/chiusura/ClosureForm.tsx:122`
+- `immutability`: `src/components/portal/NotificationSettings.tsx:52`
+
+## Gruppo 4 — restano avvisi anche nella 7.1.1 (non bloccano)
+
+- `incompatible-library`, 5: `LeaveRequestForm.tsx:235`, `MovimentoFormDialog.tsx:105`,
+  `PagamentoFormDialog.tsx:279`, `RegolaFormDialog.tsx:98`, `UserForm.tsx:115`. Tutti sul `watch()`
+  di react-hook-form, che restituisce funzioni non memoizzabili dal React Compiler: **verosimilmente
+  non risolvibili**. Vanno esclusi con una deroga motivata, non "corretti".
+- `exhaustive-deps`, 1: `create-recurrence-dialog.tsx:147`.
