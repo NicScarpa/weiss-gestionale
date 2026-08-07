@@ -179,7 +179,7 @@ export function LocationStatus({
         variant="ghost"
         size="sm"
         onClick={refresh}
-        className="h-6 w-6 p-0 hover:bg-white/50"
+        className="h-6 w-6 p-0 hover:bg-card/50"
       >
         <RefreshCw className="h-3 w-3" />
       </Button>

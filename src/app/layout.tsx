@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from 'next'
 import { Public_Sans } from 'next/font/google'
 import './globals.css'
 import { Providers } from '@/components/providers'
+import { ThemeProvider } from '@/components/theme/theme-provider'
+import { ServiceWorkerRegistration } from '@/components/pwa/ServiceWorkerRegistration'
 
 const publicSans = Public_Sans({
   variable: '--font-public-sans',
@@ -30,7 +32,10 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: '#0f172a',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#0f172a' },
+    { media: '(prefers-color-scheme: dark)', color: '#171717' },
+  ],
 }
 
 export default function RootLayout({
@@ -41,9 +46,12 @@ export default function RootLayout({
   return (
     <html lang="it" suppressHydrationWarning>
       <body className={`${publicSans.variable} font-sans antialiased`} suppressHydrationWarning>
-        <Providers>
-          {children}
-        </Providers>
+        <ThemeProvider>
+          <Providers>
+            {children}
+          </Providers>
+          <ServiceWorkerRegistration />
+        </ThemeProvider>
       </body>
     </html>
   )

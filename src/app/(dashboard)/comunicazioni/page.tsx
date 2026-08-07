@@ -88,7 +88,7 @@ const FORM_VUOTO: DatiForm = {
 }
 
 const COLORE_PRIORITA: Record<PrioritaComunicazione, string> = {
-  NORMAL: 'bg-slate-100 text-slate-700',
+  NORMAL: 'bg-slate-100 text-foreground',
   IMPORTANT: 'bg-amber-100 text-amber-800',
   URGENT: 'bg-red-100 text-red-700',
 }
@@ -218,7 +218,7 @@ export default function ComunicazioniPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Comunicazioni</h1>
+          <h1 className="text-2xl font-bold text-foreground">Comunicazioni</h1>
           <p className="mt-1 text-sm text-slate-500">
             La bacheca del portale: quello che pubblichi qui arriva a chi lavora
             con una notifica sul telefono
@@ -255,7 +255,7 @@ export default function ComunicazioniPage() {
                 <CardContent className="flex items-start justify-between gap-4 py-4">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold text-slate-900">
+                      <span className="font-semibold text-foreground">
                         {comunicazione.title}
                       </span>
                       <Badge
@@ -271,7 +271,7 @@ export default function ComunicazioniPage() {
                       )}
                     </div>
 
-                    <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">
+                    <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
                       {comunicazione.message}
                     </p>
 
@@ -295,7 +295,7 @@ export default function ComunicazioniPage() {
                           )}
                         </span>
                       )}
-                      <span className="font-medium text-slate-600">
+                      <span className="font-medium text-muted-foreground">
                         {comunicazione.letture} su {comunicazione.destinatari}{' '}
                         {comunicazione.letture === 1 ? "l'ha letta" : "l'hanno letta"}
                       </span>
@@ -421,7 +421,7 @@ export default function ComunicazioniPage() {
                 {(ruoli ?? RUOLI_NOTI).map((ruolo) => (
                   <label
                     key={ruolo}
-                    className="flex cursor-pointer items-center gap-2 text-sm text-slate-700"
+                    className="flex cursor-pointer items-center gap-2 text-sm text-foreground"
                   >
                     <Checkbox
                       checked={form.targetRoles.includes(ruolo)}

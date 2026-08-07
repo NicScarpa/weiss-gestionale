@@ -153,7 +153,7 @@ export default function RicorrenzePage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">
             Ricorrenze
           </h1>
           <p className="text-muted-foreground">

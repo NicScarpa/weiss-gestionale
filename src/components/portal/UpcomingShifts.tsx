@@ -60,7 +60,7 @@ export function UpcomingShifts() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Calendar className="h-5 w-5 text-gray-700" />
+            <Calendar className="h-5 w-5 text-foreground" />
             Prossimi Turni
           </CardTitle>
         </CardHeader>
@@ -78,7 +78,7 @@ export function UpcomingShifts() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Calendar className="h-5 w-5 text-gray-700" />
+            <Calendar className="h-5 w-5 text-foreground" />
             Prossimi Turni
           </CardTitle>
         </CardHeader>
@@ -95,7 +95,7 @@ export function UpcomingShifts() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
-          <Calendar className="h-5 w-5 text-gray-700" />
+          <Calendar className="h-5 w-5 text-foreground" />
           Prossimi Turni
         </CardTitle>
       </CardHeader>
@@ -105,7 +105,7 @@ export function UpcomingShifts() {
             {shifts.map((shift) => (
               <div
                 key={shift.id}
-                className="flex items-center gap-4 p-4 rounded-2xl border border-gray-100 bg-white"
+                className="flex items-center gap-4 p-4 rounded-2xl border border-border bg-card"
               >
                 {/* Indicatore colore turno */}
                 <div
@@ -117,7 +117,7 @@ export function UpcomingShifts() {
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium text-gray-900">
+                    <span className="font-medium text-foreground">
                       {formatShiftDate(shift.date)}
                     </span>
                     {shift.shiftDefinition && (
@@ -127,7 +127,7 @@ export function UpcomingShifts() {
                     )}
                   </div>
 
-                  <div className="flex items-center gap-4 text-sm text-gray-600">
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <Clock className="h-4 w-4" />
                       {formatTime(shift.startTime)} - {formatTime(shift.endTime)}
@@ -144,7 +144,7 @@ export function UpcomingShifts() {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-gray-400 text-center py-4">
+          <p className="text-sm text-muted-foreground text-center py-4">
             Nessun turno programmato
           </p>
         )}

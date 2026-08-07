@@ -1,13 +1,10 @@
 import type { NextConfig } from "next";
-import withSerwistInit from "@serwist/next";
 import { withSentryConfig } from "@sentry/nextjs";
 
-const withSerwist = withSerwistInit({
-  swSrc: "src/app/sw.ts",
-  swDest: "public/sw.js",
-  disable: process.env.NODE_ENV === "development",
-});
-
+// Il service worker non si costruisce più qui: `withSerwist` è un plugin
+// webpack e da Next 16 la build passa da Turbopack, che lo ignorava in
+// silenzio lasciando la PWA senza service worker. Ora lo compila la CLI di
+// Serwist, configurata in serwist.config.mjs ed eseguita da `npm run build`.
 const nextConfig: NextConfig = {
   // pdf-parse trascina pdfjs-dist, che al bundling tocca API di browser
   // (DOMMatrix) assenti in Node: va lasciato esterno e caricato a runtime.
@@ -80,8 +77,8 @@ const sentryConfig = {
   },
 };
 
-// Esporta la configurazione con Serwist e Sentry
+// Esporta la configurazione con Sentry
 export default withSentryConfig(
-  withSerwist(nextConfig),
+  nextConfig,
   sentryConfig
 );

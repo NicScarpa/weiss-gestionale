@@ -265,7 +265,7 @@ export function CreateRulePage({ direzione, initialData }: CreateRulePageProps) 
                         "h-8 w-8 rounded-full flex items-center justify-center text-xs font-medium shrink-0",
                         isSelected
                           ? "bg-white/20 text-white"
-                          : "bg-slate-100 text-slate-600"
+                          : "bg-slate-100 text-muted-foreground"
                       )}>
                         {initials}
                       </div>

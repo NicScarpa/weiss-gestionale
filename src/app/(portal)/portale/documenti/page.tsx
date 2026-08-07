@@ -37,7 +37,7 @@ export default function PortaleDocumentiPage() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold text-gray-900">I miei Documenti</h2>
+      <h2 className="text-xl font-bold text-foreground">I miei Documenti</h2>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="w-full">
@@ -49,17 +49,17 @@ export default function PortaleDocumentiPage() {
         <TabsContent value={activeTab} className="mt-4">
           {isLoading ? (
             <div className="flex justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : data?.documents?.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
+            <div className="text-center py-12 text-muted-foreground">
               <FileText className="h-10 w-10 mx-auto mb-3 text-gray-300" />
               <p className="text-sm">Nessun documento disponibile</p>
             </div>
           ) : (
             <div className="space-y-2">
               {data?.documents?.map((doc) => (
-                <Card key={doc.id} className="hover:bg-gray-50 transition-colors">
+                <Card key={doc.id} className="hover:bg-muted transition-colors">
                   <CardContent className="p-4">
                     <a
                       href={`/api/portal/documents/${doc.id}`}
@@ -68,20 +68,20 @@ export default function PortaleDocumentiPage() {
                       className="flex items-center justify-between"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="flex-shrink-0 h-10 w-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                          <FileText className="h-5 w-5 text-gray-500" />
+                        <div className="flex-shrink-0 h-10 w-10 bg-muted rounded-lg flex items-center justify-center">
+                          <FileText className="h-5 w-5 text-muted-foreground" />
                         </div>
                         <div className="min-w-0">
-                          <p className="font-medium text-gray-900 text-sm truncate">
+                          <p className="font-medium text-foreground text-sm truncate">
                             {doc.periodLabel || doc.description || doc.originalFilename}
                           </p>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs text-muted-foreground">
                             {formatFileSize(doc.fileSize)} &middot;{' '}
                             {new Date(doc.createdAt).toLocaleDateString('it-IT')}
                           </p>
                         </div>
                       </div>
-                      <Download className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                      <Download className="h-5 w-5 text-muted-foreground flex-shrink-0" />
                     </a>
                   </CardContent>
                 </Card>

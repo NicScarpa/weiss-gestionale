@@ -138,7 +138,7 @@ export function AnomalyCard({ anomaly }: AnomalyCardProps) {
   const typeConfig = anomalyTypeConfig[anomaly.anomalyType] || {
     label: anomaly.anomalyType,
     icon: AlertTriangle,
-    color: 'text-gray-600',
+    color: 'text-muted-foreground',
   }
   const TypeIcon = typeConfig.icon
   const status = statusConfig[anomaly.status]

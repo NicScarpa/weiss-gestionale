@@ -93,3 +93,7 @@ Piano dei conti/
 
 # artefatti browser automation
 .playwright-mcp/
+
+# Service worker: artefatto di build, prodotto da `npm run build:sw`
+/public/sw.js
+/public/sw.js.map
