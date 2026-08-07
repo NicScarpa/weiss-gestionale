@@ -1,6 +1,10 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* Lega le utility `dark:` alla classe .dark sull'elemento radice invece che a
+   prefers-color-scheme, altrimenti il tema non sarebbe comandabile dall'utente. */
+@custom-variant dark (&:is(.dark *));
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -139,6 +143,108 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+
+  /* La palette del portale è nera su fondo chiaro: va invertita, o in scuro
+     sparirebbe sullo sfondo. */
+  --portal-primary: #FAFAFA;
+  --portal-primary-light: #C9C9C9;
+  --portal-primary-dark: #FFFFFF;
+  --portal-primary-bg: oklch(0.205 0 0);
+  --portal-gradient-start: #2A2A2A;
+  --portal-gradient-end: #1A1A1A;
+
+  /* Le tinte di stato (esiti, avvisi, saldi) sono usate in tutta l'applicazione
+     come fondo chiarissimo con sopra un testo dello stesso colore ma scuro:
+     `bg-red-50` più `text-red-700`. In tema scuro quella coppia si annulla —
+     testo chiaro su fondo chiaro — e i riquadri di riepilogo diventano
+     illeggibili.
+     Invece di aggiungere `dark:` a centinaia di occorrenze sparse, qui si
+     ribalta la scala alla radice: i gradini chiari diventano fondi scuri e
+     saturi il giusto, quelli scuri diventano testo chiaro. Ogni `bg-X-50` con
+     `text-X-700` continua così a funzionare in entrambi i temi senza che il
+     componente sappia quale è attivo. */
+  --color-red-50: oklch(0.26 0.055 25);
+  --color-red-100: oklch(0.31 0.07 25);
+  --color-red-600: oklch(0.72 0.16 25);
+  --color-red-700: oklch(0.78 0.14 25);
+  --color-red-800: oklch(0.84 0.11 25);
+  --color-red-900: oklch(0.89 0.08 25);
+
+  --color-rose-50: oklch(0.26 0.055 15);
+  --color-rose-100: oklch(0.31 0.07 15);
+  --color-rose-600: oklch(0.72 0.16 15);
+  --color-rose-700: oklch(0.78 0.14 15);
+  --color-rose-800: oklch(0.84 0.11 15);
+  --color-rose-900: oklch(0.89 0.08 15);
+
+  --color-green-50: oklch(0.26 0.05 150);
+  --color-green-100: oklch(0.31 0.065 150);
+  --color-green-600: oklch(0.74 0.15 150);
+  --color-green-700: oklch(0.80 0.13 150);
+  --color-green-800: oklch(0.86 0.10 150);
+  --color-green-900: oklch(0.90 0.07 150);
+
+  --color-emerald-50: oklch(0.26 0.05 160);
+  --color-emerald-100: oklch(0.31 0.065 160);
+  --color-emerald-600: oklch(0.74 0.15 160);
+  --color-emerald-700: oklch(0.80 0.13 160);
+  --color-emerald-800: oklch(0.86 0.10 160);
+  --color-emerald-900: oklch(0.90 0.07 160);
+
+  --color-blue-50: oklch(0.26 0.05 255);
+  --color-blue-100: oklch(0.31 0.07 255);
+  --color-blue-600: oklch(0.74 0.14 255);
+  --color-blue-700: oklch(0.80 0.12 255);
+  --color-blue-800: oklch(0.86 0.09 255);
+  --color-blue-900: oklch(0.90 0.06 255);
+
+  --color-sky-50: oklch(0.26 0.05 235);
+  --color-sky-100: oklch(0.31 0.07 235);
+  --color-sky-700: oklch(0.80 0.12 235);
+  --color-sky-800: oklch(0.86 0.09 235);
+  --color-sky-900: oklch(0.90 0.06 235);
+
+  --color-amber-50: oklch(0.27 0.05 80);
+  --color-amber-100: oklch(0.32 0.065 80);
+  --color-amber-600: oklch(0.80 0.14 80);
+  --color-amber-700: oklch(0.85 0.12 80);
+  --color-amber-800: oklch(0.89 0.09 80);
+  --color-amber-900: oklch(0.92 0.06 80);
+
+  --color-yellow-50: oklch(0.27 0.05 95);
+  --color-yellow-100: oklch(0.32 0.065 95);
+  --color-yellow-700: oklch(0.85 0.12 95);
+  --color-yellow-800: oklch(0.89 0.09 95);
+  --color-yellow-900: oklch(0.92 0.06 95);
+
+  --color-orange-50: oklch(0.27 0.05 55);
+  --color-orange-100: oklch(0.32 0.065 55);
+  --color-orange-700: oklch(0.82 0.13 55);
+  --color-orange-800: oklch(0.87 0.10 55);
+  --color-orange-900: oklch(0.91 0.07 55);
+
+  --color-purple-50: oklch(0.26 0.05 300);
+  --color-purple-100: oklch(0.31 0.07 300);
+  --color-purple-700: oklch(0.80 0.13 300);
+  --color-purple-800: oklch(0.86 0.10 300);
+  --color-purple-900: oklch(0.90 0.07 300);
+
+  --color-pink-50: oklch(0.26 0.055 350);
+  --color-pink-100: oklch(0.31 0.07 350);
+  --color-pink-700: oklch(0.79 0.13 350);
+  --color-pink-800: oklch(0.85 0.10 350);
+  --color-pink-900: oklch(0.90 0.07 350);
+
+  /* I grigi NON si ribaltano: `bg-slate-900` e `bg-gray-900` sono usati anche
+     come fondi scuri voluti (la barra laterale, i bottoni pieni con testo
+     bianco). Invertirli li renderebbe quasi bianchi e cancellerebbe il testo
+     che ci sta sopra. I pochi punti in cui un grigio scuro è usato come colore
+     di testo vanno corretti nel componente, non qui. Si schiariscono soltanto i
+     due gradini più chiari, che servono solo da fondo. */
+  --color-slate-50: oklch(0.22 0.004 260);
+  --color-slate-100: oklch(0.27 0.005 260);
+  --color-gray-50: oklch(0.22 0 0);
+  --color-gray-100: oklch(0.27 0 0);
 }
 
 @layer base {
