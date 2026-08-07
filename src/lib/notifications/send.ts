@@ -6,7 +6,7 @@
  */
 
 import { prisma } from '@/lib/prisma'
-import { sendPushNotificationBatch } from './fcm'
+import { sendWebPush } from './webpush'
 import type { NotificationLog, NotificationType } from '@prisma/client'
 import {
   NotificationPayload,
@@ -14,7 +14,6 @@ import {
   SendBulkNotificationOptions,
   NotificationResult,
   BulkNotificationResult,
-  FCMMessage,
   NotificationChannel,
 } from './types'
 
@@ -93,7 +92,7 @@ export async function sendBulkNotification(
   })
 
   if (channels.includes('PUSH')) {
-    // Ottieni token FCM per tutti gli utenti
+    // Iscrizioni push di tutti i destinatari
     const subscriptions = await prisma.pushSubscription.findMany({
       where: {
         userId: { in: eligibleUserIds },
@@ -101,58 +100,77 @@ export async function sendBulkNotification(
       },
     })
 
-    if (subscriptions.length > 0) {
-      const messages: FCMMessage[] = subscriptions.map((sub) => ({
-        token: sub.fcmToken,
-        notification: {
-          title: payload.title,
-          body: payload.body,
-        },
-        data: {
-          type: payload.type,
-          referenceId: payload.referenceId || '',
-          referenceType: payload.referenceType || '',
-          url: payload.url || '',
-          ...payload.data,
-        },
-        webpush: {
-          fcmOptions: {
-            link: payload.url,
-          },
-        },
-      }))
+    const iscrizioniPerUtente = new Map<string, typeof subscriptions>()
+    for (const sub of subscriptions) {
+      const lista = iscrizioniPerUtente.get(sub.userId)
+      if (lista) {
+        lista.push(sub)
+      } else {
+        iscrizioniPerUtente.set(sub.userId, [sub])
+      }
+    }
 
-      const pushResults = await sendPushNotificationBatch(messages)
+    // Si itera sui destinatari, non sulle iscrizioni: chi non ha un
+    // dispositivo registrato deve comunque trovare l'avviso nella campanella
+    // dell'app. Prima il ciclo partiva dalle iscrizioni, e senza dispositivi
+    // la notifica spariva senza lasciare traccia da nessuna parte.
+    for (const userId of eligibleUserIds) {
+      const iscrizioni = iscrizioniPerUtente.get(userId) ?? []
 
-      // Processa risultati e logga
-      for (let i = 0; i < subscriptions.length; i++) {
-        const sub = subscriptions[i]
-        const result = pushResults[i]
-
-        if (result.success) {
-          successCount++
-          results.push({ userId: sub.userId, success: true })
-        } else {
-          failureCount++
-          results.push({ userId: sub.userId, success: false, error: result.error })
-
-          // Disattiva token non valido
-          if (result.error === 'invalid_token') {
-            await prisma.pushSubscription.update({
-              where: { id: sub.id },
-              data: { isActive: false },
-            })
-          }
-        }
-
-        // Log notifica
+      if (iscrizioni.length === 0) {
+        failureCount++
+        results.push({
+          userId,
+          success: false,
+          error: 'Nessun dispositivo registrato',
+        })
         await logNotification({
-          userId: sub.userId,
+          userId,
           payload,
           channel: 'PUSH',
-          result,
+          result: { success: false, error: 'Nessun dispositivo registrato' },
+        })
+        continue
+      }
+
+      const esiti = await Promise.all(
+        iscrizioni.map((sub) =>
+          sendWebPush(
+            { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
+            payload
+          ).then((result) => ({ sub, result }))
+        )
+      )
+
+      for (const { sub, result } of esiti) {
+        if (!result.success && result.error === 'invalid_token') {
+          await prisma.pushSubscription.update({
+            where: { id: sub.id },
+            data: { isActive: false },
+          })
+        }
+      }
+
+      // Basta un dispositivo raggiunto perché la persona sia stata avvisata.
+      const riuscito = esiti.find((e) => e.result.success)
+      if (riuscito) {
+        successCount++
+        results.push({ userId, success: true })
+      } else {
+        failureCount++
+        results.push({
+          userId,
+          success: false,
+          error: esiti.map((e) => e.result.error).join(', '),
         })
       }
+
+      await logNotification({
+        userId,
+        payload,
+        channel: 'PUSH',
+        result: riuscito?.result ?? esiti[0].result,
+      })
     }
   }
 
@@ -164,13 +182,14 @@ export async function sendBulkNotification(
 }
 
 /**
- * Invia push notification a un utente
+ * Invia la notifica push a tutti i dispositivi di una persona.
+ * Chi non ne ha registrato nessuno riceve comunque la traccia in-app: il
+ * `logNotification` di chi chiama avviene sempre, anche in caso di errore.
  */
 async function sendPushToUser(
   userId: string,
   payload: NotificationPayload
 ): Promise<NotificationResult> {
-  // Ottieni token FCM attivi dell'utente
   const subscriptions = await prisma.pushSubscription.findMany({
     where: {
       userId,
@@ -179,33 +198,17 @@ async function sendPushToUser(
   })
 
   if (subscriptions.length === 0) {
-    return { success: false, error: 'No active push subscriptions' }
+    return { success: false, error: 'Nessun dispositivo registrato' }
   }
 
-  // Invia a tutti i dispositivi dell'utente
-  const messages: FCMMessage[] = subscriptions.map((sub) => ({
-    token: sub.fcmToken,
-    notification: {
-      title: payload.title,
-      body: payload.body,
-    },
-    data: {
-      type: payload.type,
-      referenceId: payload.referenceId || '',
-      referenceType: payload.referenceType || '',
-      url: payload.url || '',
-      ...payload.data,
-    },
-    webpush: {
-      fcmOptions: {
-        link: payload.url,
-      },
-    },
-  }))
+  const results = await Promise.all(
+    subscriptions.map((sub) =>
+      sendWebPush({ endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth }, payload)
+    )
+  )
 
-  const results = await sendPushNotificationBatch(messages)
-
-  // Disattiva token non validi
+  // Un'iscrizione revocata o scaduta si spegne: continuare a scriverle
+  // significherebbe un errore a ogni notifica, per sempre.
   for (let i = 0; i < results.length; i++) {
     if (results[i].error === 'invalid_token') {
       await prisma.pushSubscription.update({

@@ -4,18 +4,27 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
 import { logger } from '@/lib/logger'
+/**
+ * Iscrizione del browser alle notifiche push (Web Push, VAPID).
+ *
+ * `endpoint` è l'indirizzo che il servizio di push del browser assegna al
+ * dispositivo, `p256dh` e `auth` le chiavi con cui si cifra il contenuto.
+ * Li produce `pushManager.subscribe()` sul client: qui si conservano e basta.
+ */
 const subscribeSchema = z.object({
-  fcmToken: z.string().min(1),
-  deviceName: z.string().optional(),
+  endpoint: z.string().url().max(1000),
+  p256dh: z.string().min(1).max(500),
+  auth: z.string().min(1).max(500),
+  deviceName: z.string().max(120).optional(),
   deviceType: z.enum(['ios', 'android', 'web']).optional(),
-  browserName: z.string().optional(),
+  browserName: z.string().max(80).optional(),
 })
 
 const unsubscribeSchema = z.object({
-  fcmToken: z.string().min(1),
+  endpoint: z.string().url().max(1000),
 })
 
-// POST /api/notifications/subscribe - Registra token FCM
+// POST /api/notifications/subscribe - Registra l'iscrizione push del browser
 export async function POST(request: NextRequest) {
   try {
     const session = await auth()
@@ -27,9 +36,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = subscribeSchema.parse(body)
 
-    // Verifica se il token esiste già
+    // Lo stesso browser che si re-iscrive presenta lo stesso endpoint: si
+    // aggiorna, non si duplica.
     const existing = await prisma.pushSubscription.findUnique({
-      where: { fcmToken: data.fcmToken },
+      where: { endpoint: data.endpoint },
     })
 
     if (existing) {
@@ -38,6 +48,8 @@ export async function POST(request: NextRequest) {
         where: { id: existing.id },
         data: {
           userId: session.user.id,
+          p256dh: data.p256dh,
+          auth: data.auth,
           deviceName: data.deviceName,
           deviceType: data.deviceType,
           browserName: data.browserName,
@@ -60,7 +72,9 @@ export async function POST(request: NextRequest) {
     const subscription = await prisma.pushSubscription.create({
       data: {
         userId: session.user.id,
-        fcmToken: data.fcmToken,
+        endpoint: data.endpoint,
+        p256dh: data.p256dh,
+        auth: data.auth,
         deviceName: data.deviceName,
         deviceType: data.deviceType,
         browserName: data.browserName,
@@ -100,7 +114,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// DELETE /api/notifications/subscribe - Rimuovi token FCM
+// DELETE /api/notifications/subscribe - Rimuovi l'iscrizione push
 export async function DELETE(request: NextRequest) {
   try {
     const session = await auth()
@@ -114,11 +128,11 @@ export async function DELETE(request: NextRequest) {
 
     // Trova e disattiva la subscription
     const subscription = await prisma.pushSubscription.findUnique({
-      where: { fcmToken: data.fcmToken },
+      where: { endpoint: data.endpoint },
     })
 
     if (!subscription) {
-      return NextResponse.json({ success: true, message: 'Token non trovato' })
+      return NextResponse.json({ success: true, message: 'Iscrizione non trovata' })
     }
 
     // Verifica che appartenga all'utente corrente

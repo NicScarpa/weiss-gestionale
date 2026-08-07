@@ -10,6 +10,8 @@ import { toast } from 'sonner'
 import { Separator } from '@/components/ui/separator'
 
 import { logger } from '@/lib/logger'
+import { iscriviAllePush, disiscriviDallePush } from '@/lib/notifications/client'
+
 interface NotificationPreferences {
   pushEnabled: boolean
   newShiftPublished: boolean
@@ -105,31 +107,41 @@ export function NotificationSettings() {
     }
     setPreferences(newPreferences)
     savePreferences(newPreferences)
+
+    // Spegnere le push non è solo una preferenza: il dispositivo va tolto
+    // dai destinatari, altrimenti il server continuerebbe a scrivergli.
+    if (key === 'pushEnabled' && !newPreferences.pushEnabled) {
+      disiscriviDallePush().catch((error) =>
+        logger.error('Errore disiscrizione push', error)
+      )
+    }
   }
 
   const requestPushPermission = async () => {
     if (!pushSupported) return
 
+    setSaving(true)
     try {
-      const permission = await Notification.requestPermission()
-      setPushPermission(permission)
+      // L'iscrizione registra il dispositivo sul server: senza, il permesso
+      // del browser da solo non fa arrivare nulla.
+      const esito = await iscriviAllePush()
+      setPushPermission(Notification.permission)
 
-      if (permission === 'granted') {
-        // Register service worker and get push subscription
-        await navigator.serviceWorker.ready
-
-        // For now, just enable push in preferences
-        const newPreferences = { ...preferences, pushEnabled: true }
-        setPreferences(newPreferences)
-        await savePreferences(newPreferences)
-
-        toast.success('Notifiche attivate')
-      } else if (permission === 'denied') {
-        toast.error('Permesso negato - Abilita le notifiche dalle impostazioni del browser')
+      if (!esito.ok) {
+        toast.error('Notifiche non attivate', { description: esito.motivo })
+        return
       }
+
+      const newPreferences = { ...preferences, pushEnabled: true }
+      setPreferences(newPreferences)
+      await savePreferences(newPreferences)
+
+      toast.success('Notifiche attivate su questo dispositivo')
     } catch (error) {
       logger.error('Error requesting push permission', error)
       toast.error('Impossibile attivare le notifiche')
+    } finally {
+      setSaving(false)
     }
   }
 
