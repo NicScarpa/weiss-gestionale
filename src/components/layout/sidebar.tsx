@@ -80,6 +80,9 @@ const navigationItems = [
       {
         title: 'Configurazione',
         items: [
+          // Le spese ricorrenti alimentano la previsione di cassa: senza una
+          // voce di menu il loro CRUD è rimasto per mesi irraggiungibile.
+          { name: 'Spese Ricorrenti', href: '/spese-ricorrenti' },
           { name: 'Settings Budget', href: '/impostazioni/budget' },
         ]
       }
@@ -350,6 +353,10 @@ export function Sidebar() {
                           <Link
                             key={subItem.name}
                             href={subItem.href}
+                            // Come per la rail: la voce attiva del sottomenu si
+                            // distingueva solo dal colore di sfondo, che per uno
+                            // screen reader non esiste.
+                            aria-current={isSubActive ? 'page' : undefined}
                             className={cn(
                               "flex items-center gap-3 px-3 py-2 rounded-md font-medium transition-colors",
                               isSubActive

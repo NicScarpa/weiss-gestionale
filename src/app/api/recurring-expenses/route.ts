@@ -28,15 +28,11 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const venueId = searchParams.get('venueId') || await getVenueId()
     const includeInactive = searchParams.get('includeInactive') === 'true'
 
-    if (!venueId) {
-      return NextResponse.json(
-        { error: 'Sede non specificata' },
-        { status: 400 }
-      )
-    }
+    // La sede viene dalla sessione, non dalla query: leggerla dai parametri
+    // significa lasciar scegliere al chiamante di quale sede vedere le spese.
+    const venueId = await getVenueId()
 
     const expenses = await prisma.recurringExpense.findMany({
       where: {
@@ -123,14 +119,10 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const venueId = body.venueId || await getVenueId()
 
-    if (!venueId) {
-      return NextResponse.json(
-        { error: 'Sede non specificata' },
-        { status: 400 }
-      )
-    }
+    // Come per la lettura: la sede la decide la sessione. Accettarla dal corpo
+    // della richiesta lasciava creare spese su una sede qualsiasi.
+    const venueId = await getVenueId()
 
     const validatedData = createExpenseSchema.parse(body)
 

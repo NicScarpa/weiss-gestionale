@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { cn } from '@/lib/utils'
 
 interface CashFlowControlsProps {
   dateFrom: Date
@@ -32,30 +31,32 @@ export function CashFlowControls({
 
   return (
     <div className="flex flex-wrap items-center gap-4">
-      {/* Selettore date */}
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1 border rounded-md px-3 py-2">
-          <Calendar className="h-4 w-4 text-muted-foreground" />
+      {/* Selettore date. I due campi si restringono insieme (`min-w-0` sui
+          contenitori flex, che altrimenti non scendono sotto la larghezza del
+          contenuto): a 390px la riga sfondava il bordo destro della pagina. */}
+      <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
+        <div className="flex min-w-0 flex-1 items-center gap-1 rounded-md border px-3 py-2 sm:flex-none">
+          <Calendar className="h-4 w-4 shrink-0 text-muted-foreground" />
           <input
             type="date"
             value={dateFrom.toISOString().split('T')[0]}
             onChange={(e) => onDateFromChange(new Date(e.target.value))}
-            className="border-0 bg-transparent text-sm"
+            className="w-full min-w-0 border-0 bg-transparent text-sm"
           />
         </div>
-        <span className="text-muted-foreground">→</span>
-        <div className="flex items-center gap-1 border rounded-md px-3 py-2">
+        <span className="shrink-0 text-muted-foreground">→</span>
+        <div className="flex min-w-0 flex-1 items-center gap-1 rounded-md border px-3 py-2 sm:flex-none">
           <input
             type="date"
             value={dateTo.toISOString().split('T')[0]}
             onChange={(e) => onDateToChange(new Date(e.target.value))}
-            className="border-0 bg-transparent text-sm"
+            className="w-full min-w-0 border-0 bg-transparent text-sm"
           />
         </div>
       </div>
 
       {/* Preset */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button variant="outline" size="sm" onClick={() => onPreset(30)}>
           30gg
         </Button>

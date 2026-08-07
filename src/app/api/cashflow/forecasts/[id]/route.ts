@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { getVenueId } from '@/lib/venue'
-import { ForecastStatus, Prisma } from '@prisma/client'
+import { ForecastStatus, ForecastType, Prisma } from '@prisma/client'
 
 // GET /api/cashflow/forecasts/[id] - Dettaglio forecast
 export async function GET(
@@ -21,8 +21,11 @@ export async function GET(
 
     const { id } = await params
 
-    const forecast = await prisma.cashFlowForecast.findUnique({
-      where: { id },
+    // `findUnique` non passa dall'estensione che filtra i cancellati: la
+    // condizione va scritta a mano, o una previsione eliminata resterebbe
+    // raggiungibile da chi ne conosce l'identificativo.
+    const forecast = await prisma.cashFlowForecast.findFirst({
+      where: { id, deletedAt: null },
       include: {
         venue: { select: { id: true, name: true, code: true } },
         createdBy: { select: { id: true, firstName: true, lastName: true } },
@@ -112,8 +115,8 @@ export async function PATCH(
     const body = await request.json()
 
     // Verifica esistenza e permessi
-    const existing = await prisma.cashFlowForecast.findUnique({
-      where: { id },
+    const existing = await prisma.cashFlowForecast.findFirst({
+      where: { id, deletedAt: null },
       select: { venueId: true, stato: true },
     })
 
@@ -126,20 +129,20 @@ export async function PATCH(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    // Campi aggiornabili
-    const updatable = [
-      'nome', 'descrizione', 'dataInizio', 'dataFine', 'saldoIniziale', 'stato', 'tipo',
-    ]
+    // Campi aggiornabili, uno per uno. La versione precedente ciclava su un
+    // elenco di nomi e assegnava `data[field] = body[field]`: comoda da
+    // scrivere, ma il tipo di ogni campo si perdeva per strada (`any`), e con
+    // esso il controllo su cosa arriva davvero dal client.
     const data: Prisma.CashFlowForecastUpdateInput = {}
-    for (const field of updatable) {
-      if (body[field] !== undefined) {
-        if (field === 'dataInizio' || field === 'dataFine') {
-          data[field] = new Date(body[field])
-        } else {
-          data[field] = body[field]
-        }
-      }
+    if (body.nome !== undefined) data.nome = String(body.nome)
+    if (body.descrizione !== undefined) {
+      data.descrizione = body.descrizione === null ? null : String(body.descrizione)
     }
+    if (body.dataInizio !== undefined) data.dataInizio = new Date(body.dataInizio)
+    if (body.dataFine !== undefined) data.dataFine = new Date(body.dataFine)
+    if (body.saldoIniziale !== undefined) data.saldoIniziale = Number(body.saldoIniziale)
+    if (body.stato !== undefined) data.stato = body.stato as ForecastStatus
+    if (body.tipo !== undefined) data.tipo = body.tipo as ForecastType
 
     const forecast = await prisma.cashFlowForecast.update({
       where: { id },
@@ -175,8 +178,8 @@ export async function DELETE(
     const { id } = await params
 
     // Verifica esistenza e permessi
-    const existing = await prisma.cashFlowForecast.findUnique({
-      where: { id },
+    const existing = await prisma.cashFlowForecast.findFirst({
+      where: { id, deletedAt: null },
       select: { venueId: true, stato: true },
     })
 
@@ -192,12 +195,20 @@ export async function DELETE(
     // Non permettere eliminazione se attivo
     if (existing.stato === ForecastStatus.ATTIVA) {
       return NextResponse.json(
-        { error: 'Archiviare il forecast prima di eliminarlo' },
+        { error: 'Archiviare la previsione prima di eliminarla' },
         { status: 400 }
       )
     }
 
-    await prisma.cashFlowForecast.delete({ where: { id } })
+    // Cancellazione logica: `CashFlowForecast` è fra i `SOFT_DELETE_MODELS` di
+    // `@/lib/prisma`, e le letture filtrano `deletedAt` da sole. La `delete()`
+    // fisica di prima, oltre a contraddire quella politica, non riusciva
+    // proprio: le righe della previsione hanno `onDelete: Restrict` e la
+    // foreign key rifiutava la cancellazione con un errore 500 opaco.
+    await prisma.cashFlowForecast.update({
+      where: { id },
+      data: { deletedAt: new Date(), deletedById: session.user.id },
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {
