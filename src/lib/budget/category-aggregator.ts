@@ -219,24 +219,88 @@ async function movimentiPerConto(
 }
 
 /**
- * Consuntivo di un conto secondo la natura della categoria che lo ospita: per
- * un ricavo conta quanto è entrato, per tutto il resto quanto è uscito. Il
- * verso opposto viene sottratto, così una nota di credito o uno storno
- * riducono il consuntivo invece di gonfiare l'altra colonna.
+ * Consuntivo di un conto secondo la **natura del conto**: un conto di ricavo è
+ * alimentato da ciò che entra, ogni altro da ciò che esce. Il verso opposto
+ * viene sottratto, così una nota di credito o uno storno riducono il
+ * consuntivo invece di gonfiare l'altra colonna.
+ *
+ * La regola guarda il conto e non la categoria che lo ospita perché è il conto
+ * a sapere cosa rappresenta; ed è la stessa regola che serve a
+ * `/api/budget/confronto`, che ragiona per conto e di categorie non ne ha.
  */
 function consuntivoDelConto(
   movimenti: MovimentiDelConto | undefined,
-  categoryType: CategoryType
+  natura: AccountType | undefined
 ): ValoriMensili {
   if (!movimenti) return mesiVuoti()
 
-  const positivo = categoryType === 'REVENUE' ? movimenti.entrate : movimenti.uscite
-  const negativo = categoryType === 'REVENUE' ? movimenti.uscite : movimenti.entrate
+  const entrante = natura === 'RICAVO'
+  const positivo = entrante ? movimenti.entrate : movimenti.uscite
+  const negativo = entrante ? movimenti.uscite : movimenti.entrate
 
   return MONTH_KEYS.reduce((acc, key) => {
     acc[key] = positivo[key].minus(negativo[key])
     return acc
   }, {} as ValoriMensili)
+}
+
+/**
+ * Consuntivo dell'anno per ogni conto movimentato, già orientato.
+ *
+ * Vive qui perché lo usano entrambe le viste del budget: quella per categoria
+ * (`/api/budget/[id]/categories`) e quella per conto (`/api/budget/confronto`).
+ * Erano due implementazioni separate e mostravano numeri diversi sugli stessi
+ * dati.
+ */
+export async function actualPerConto(
+  venueId: string,
+  year: number
+): Promise<Record<string, MonthlyValues>> {
+  const [movimenti, natura] = await Promise.all([
+    movimentiPerConto(venueId, year),
+    naturaDeiConti(),
+  ])
+
+  return Object.fromEntries(
+    Object.entries(movimenti).map(([accountId, movimentiConto]) => [
+      accountId,
+      versoApi(consuntivoDelConto(movimentiConto, natura[accountId])),
+    ])
+  )
+}
+
+/**
+ * Quanto fatturato non è imputato ad alcun conto di ricavo: la differenza fra
+ * il fatturato delle chiusure validate e i movimenti finiti su conti di ricavo.
+ *
+ * Serve a entrambe le viste del budget, e serve perché oggi vale quasi il
+ * fatturato intero: le scritture generate dalla chiusura non portano un conto
+ * di ricavo, quindi quel denaro non può ancora comparire su nessuna riga.
+ * Dirlo esplicitamente è l'unico modo perché non sparisca in silenzio.
+ */
+export async function ricaviNonAttribuiti(
+  venueId: string,
+  year: number
+): Promise<MonthlyValues & { annual: number }> {
+  const [chiusure, movimenti, natura] = await Promise.all([
+    ricaviDalleChiusure(venueId, year),
+    movimentiPerConto(venueId, year),
+    naturaDeiConti(),
+  ])
+
+  let daConti = mesiVuoti()
+
+  for (const [accountId, movimentiConto] of Object.entries(movimenti)) {
+    if (natura[accountId] !== 'RICAVO') continue
+    daConti = sommaMesi(daConti, consuntivoDelConto(movimentiConto, 'RICAVO'))
+  }
+
+  return versoApi(
+    MONTH_KEYS.reduce((acc, key) => {
+      acc[key] = chiusure[key].minus(daConti[key])
+      return acc
+    }, {} as ValoriMensili)
+  )
 }
 
 /**
@@ -380,13 +444,15 @@ export async function aggregateCategoriesForBudget(
   let totalCostsValues = mesiVuoti()
 
   for (const [accountId, movimentiConto] of Object.entries(movimenti)) {
-    if (tipoDelConto[accountId] === 'RICAVO') {
-      ricaviDaConti = sommaMesi(
-        ricaviDaConti,
-        consuntivoDelConto(movimentiConto, 'REVENUE')
-      )
-    } else if (tipoDelConto[accountId] === 'COSTO') {
-      totalCostsValues = sommaMesi(totalCostsValues, consuntivoDelConto(movimentiConto, 'COST'))
+    const natura = tipoDelConto[accountId]
+    if (natura !== 'RICAVO' && natura !== 'COSTO') continue
+
+    const consuntivo = consuntivoDelConto(movimentiConto, natura)
+
+    if (natura === 'RICAVO') {
+      ricaviDaConti = sommaMesi(ricaviDaConti, consuntivo)
+    } else {
+      totalCostsValues = sommaMesi(totalCostsValues, consuntivo)
     }
   }
 
@@ -423,7 +489,7 @@ export async function aggregateCategoriesForBudget(
 
       actualValues = sommaMesi(
         actualValues,
-        consuntivoDelConto(movimenti[mapping.accountId], categoryType)
+        consuntivoDelConto(movimenti[mapping.accountId], tipoDelConto[mapping.accountId])
       )
     }
 
