@@ -6,7 +6,9 @@
 import * as Sentry from '@sentry/nextjs'
 
 Sentry.init({
-  dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
+  // Il DSN del server non deve per forza essere pubblico: src/instrumentation.ts
+  // carica questo file solo se una delle due variabili è configurata.
+  dsn: process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN,
 
   // Percentuale di transazioni da tracciare
   tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
