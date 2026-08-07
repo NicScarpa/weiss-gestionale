@@ -9,11 +9,61 @@ vi.mock('../prisma', () => ({
       deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
+    // Letti dall'imputazione: conti di sistema (system_key) e centri di costo
+    account: { findUnique: vi.fn(), findMany: vi.fn() },
+    costCenter: { findUnique: vi.fn(), findFirst: vi.fn() },
   },
+}))
+
+vi.mock('../logger', () => ({
+  logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }))
 
 // Import the mocked prisma after mocking
 import { prisma } from '../prisma'
+import { logger } from '../logger'
+
+/** Conti di sistema come li vede il codice dopo la migrazione della FASE 3 */
+const CONTI_SISTEMA: Record<string, { id: string; isActive: boolean }> = {
+  CORRISPETTIVI: { id: 'conto-corrispettivi', isActive: true },
+  CASSA: { id: 'conto-cassa', isActive: true },
+  BANCA: { id: 'conto-banca', isActive: true },
+}
+
+const CENTRO_DEFAULT = { id: 'cc-str', isDefault: true, isActive: true }
+
+/** Piano dei conti v4 già migrato: i conti di sistema esistono e sono attivi */
+function conContiDiSistema() {
+  vi.mocked(prisma.account.findUnique).mockImplementation(
+    ((args: { where: { systemKey: string } }) =>
+      Promise.resolve(CONTI_SISTEMA[args.where.systemKey] ?? null)) as never
+  )
+}
+
+/** Ogni centro richiesto per id esiste ed è attivo */
+function conCentriAttivi() {
+  vi.mocked(prisma.costCenter.findUnique).mockImplementation(
+    ((args: { where: { id: string } }) =>
+      Promise.resolve({ id: args.where.id, isActive: true })) as never
+  )
+}
+
+/** Parte contabile di un movimento generato: quella che non deve mai cambiare */
+interface MovimentoGenerato {
+  registerType: string
+  description: string
+  date: Date
+  debitAmount: number | null
+  creditAmount: number | null
+  accountId: string | null
+  counterpartId: string | null
+  costCenterId: string | null
+}
+
+function movimentiGenerati(): MovimentoGenerato[] {
+  const [primaChiamata] = vi.mocked(prisma.journalEntry.createMany).mock.calls
+  return (primaChiamata?.[0].data ?? []) as unknown as MovimentoGenerato[]
+}
 
 describe('generateJournalEntriesFromClosure', () => {
   const userId = 'user-123'
@@ -21,6 +71,12 @@ describe('generateJournalEntriesFromClosure', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    // Stato di partenza: produzione prima della FASE 3 — nessun conto di
+    // sistema configurato, ma il centro di default esiste.
+    vi.mocked(prisma.account.findUnique).mockResolvedValue(null as never)
+    vi.mocked(prisma.account.findMany).mockResolvedValue([] as never)
+    vi.mocked(prisma.costCenter.findUnique).mockResolvedValue(null as never)
+    vi.mocked(prisma.costCenter.findFirst).mockResolvedValue(CENTRO_DEFAULT as never)
   })
 
   describe('Entry Generation Logic', () => {
@@ -391,6 +447,280 @@ describe('generateJournalEntriesFromClosure', () => {
           }),
         ]),
       })
+    })
+  })
+
+  /**
+   * Imputazione: i movimenti generati da una chiusura devono nascere con
+   * conto, contropartita e centro di costo. È un'aggiunta, non un cambio: la
+   * quadratura della chiusura resta identica (vedi l'invariante in fondo).
+   */
+  describe('Imputazione (conto, contropartita, centro)', () => {
+    const chiusuraCompleta = {
+      id: 'closure-1',
+      date: baseDate,
+      venueId: 'venue-1',
+      bankDeposit: 300,
+      costCenterId: 'cc-weiss',
+      stations: [{ cashAmount: 550, posAmount: 300, floatAmount: 114 }],
+      expenses: [
+        { amount: 50, payee: 'Fornitore', description: 'Merce', documentRef: null, accountId: 'conto-merci' },
+      ],
+    }
+
+    it('incasso contanti: corrispettivi con contropartita cassa', async () => {
+      conContiDiSistema()
+      conCentriAttivi()
+
+      await generateJournalEntriesFromClosure(chiusuraCompleta, userId)
+
+      const incasso = movimentiGenerati().find((m) => m.debitAmount === 600)
+      expect(incasso).toMatchObject({
+        registerType: 'CASH',
+        accountId: 'conto-corrispettivi',
+        counterpartId: 'conto-cassa',
+      })
+    })
+
+    it('incasso POS: corrispettivi con contropartita banca', async () => {
+      conContiDiSistema()
+      conCentriAttivi()
+
+      await generateJournalEntriesFromClosure(chiusuraCompleta, userId)
+
+      const pos = movimentiGenerati().find(
+        (m) => m.registerType === 'BANK' && m.debitAmount === 300 && m.accountId === 'conto-corrispettivi'
+      )
+      expect(pos).toMatchObject({ counterpartId: 'conto-banca' })
+    })
+
+    it('spesa: conto della riga con contropartita cassa', async () => {
+      conContiDiSistema()
+      conCentriAttivi()
+
+      await generateJournalEntriesFromClosure(chiusuraCompleta, userId)
+
+      const spesa = movimentiGenerati().find((m) => m.creditAmount === 50)
+      expect(spesa).toMatchObject({
+        registerType: 'CASH',
+        accountId: 'conto-merci',
+        counterpartId: 'conto-cassa',
+      })
+    })
+
+    it('versamento: le due gambe portano i patrimoniali incrociati', async () => {
+      conContiDiSistema()
+      conCentriAttivi()
+
+      await generateJournalEntriesFromClosure(chiusuraCompleta, userId)
+
+      const movimenti = movimentiGenerati()
+      const uscitaCassa = movimenti.find((m) => m.registerType === 'CASH' && m.creditAmount === 300)
+      const entrataBanca = movimenti.find(
+        (m) => m.registerType === 'BANK' && m.debitAmount === 300 && m.accountId === 'conto-banca'
+      )
+
+      expect(uscitaCassa).toMatchObject({
+        accountId: 'conto-cassa',
+        counterpartId: 'conto-banca',
+      })
+      expect(entrataBanca).toMatchObject({
+        accountId: 'conto-banca',
+        counterpartId: 'conto-cassa',
+      })
+    })
+
+    it('CORRISPETTIVI assente (produzione pre-FASE 3): nessun conto sugli incassi, come prima', async () => {
+      // Solo i patrimoniali configurati: la voce 10.01 arriva con la migrazione
+      vi.mocked(prisma.account.findUnique).mockImplementation(
+        ((args: { where: { systemKey: string } }) =>
+          Promise.resolve(
+            args.where.systemKey === 'CORRISPETTIVI' ? null : CONTI_SISTEMA[args.where.systemKey]
+          )) as never
+      )
+      conCentriAttivi()
+
+      await generateJournalEntriesFromClosure(chiusuraCompleta, userId)
+
+      const movimenti = movimentiGenerati()
+      const incasso = movimenti.find((m) => m.debitAmount === 600)
+      const pos = movimenti.find((m) => m.registerType === 'BANK' && m.debitAmount === 300)
+
+      expect(incasso?.accountId).toBeNull()
+      expect(pos?.accountId).toBeNull()
+      // Il centro c'è comunque: è l'unica parte che non dipende dal piano dei conti
+      expect(incasso?.costCenterId).toBe('cc-weiss')
+      expect(pos?.costCenterId).toBe('cc-weiss')
+    })
+
+    it('nessun conto di sistema configurato: i movimenti nascono senza conto né contropartita', async () => {
+      conCentriAttivi()
+
+      await generateJournalEntriesFromClosure(chiusuraCompleta, userId)
+
+      for (const movimento of movimentiGenerati()) {
+        expect(movimento.counterpartId).toBeNull()
+      }
+      // La spesa conserva il conto della propria riga: non viene dai conti di sistema
+      expect(movimentiGenerati().find((m) => m.creditAmount === 50)?.accountId).toBe('conto-merci')
+    })
+
+    it('il centro di testata è applicato a tutti i movimenti generati', async () => {
+      conContiDiSistema()
+      conCentriAttivi()
+
+      await generateJournalEntriesFromClosure(chiusuraCompleta, userId)
+
+      const movimenti = movimentiGenerati()
+      expect(movimenti).toHaveLength(5)
+      for (const movimento of movimenti) {
+        expect(movimento.costCenterId).toBe('cc-weiss')
+      }
+    })
+
+    it("l'override di riga vale solo per quella spesa", async () => {
+      conContiDiSistema()
+      conCentriAttivi()
+
+      await generateJournalEntriesFromClosure(
+        {
+          ...chiusuraCompleta,
+          expenses: [
+            { amount: 50, payee: 'Fornitore', description: null, documentRef: null, accountId: 'conto-merci', costCenterId: 'cc-produzione' },
+            { amount: 20, payee: 'Altro', description: null, documentRef: null, accountId: 'conto-merci' },
+          ],
+        },
+        userId
+      )
+
+      const movimenti = movimentiGenerati()
+      expect(movimenti.find((m) => m.creditAmount === 50)?.costCenterId).toBe('cc-produzione')
+      // La spesa senza override e tutto il resto restano sulla testata
+      expect(movimenti.find((m) => m.creditAmount === 20)?.costCenterId).toBe('cc-weiss')
+      expect(movimenti.find((m) => m.registerType === 'BANK' && m.debitAmount === 300)?.costCenterId)
+        .toBe('cc-weiss')
+    })
+
+    it('chiusura storica senza centro in testata: si usa il centro di default, non WEISS', async () => {
+      conContiDiSistema()
+      conCentriAttivi()
+
+      const { costCenterId: _testata, ...chiusuraStorica } = chiusuraCompleta
+      await generateJournalEntriesFromClosure(chiusuraStorica, userId)
+
+      for (const movimento of movimentiGenerati()) {
+        expect(movimento.costCenterId).toBe(CENTRO_DEFAULT.id)
+      }
+    })
+
+    it('centro disattivato: il movimento nasce senza centro e la chiusura non si blocca', async () => {
+      conContiDiSistema()
+      vi.mocked(prisma.costCenter.findUnique).mockResolvedValue(
+        { id: 'cc-weiss', isActive: false } as never
+      )
+
+      const risultato = await generateJournalEntriesFromClosure(chiusuraCompleta, userId)
+
+      expect(risultato.entriesCreated).toBe(5)
+      for (const movimento of movimentiGenerati()) {
+        expect(movimento.costCenterId).toBeNull()
+      }
+      expect(logger.warn).toHaveBeenCalled()
+    })
+
+    it('anagrafica centri non ancora popolata: si genera lo stesso, senza centro', async () => {
+      // risolviCentroDiCosto lancia quando manca il centro di default: la
+      // quadratura della chiusura non può dipendere da quell'anagrafica.
+      conContiDiSistema()
+      vi.mocked(prisma.costCenter.findFirst).mockResolvedValue(null as never)
+
+      const { costCenterId: _testata, ...chiusuraStorica } = chiusuraCompleta
+      const risultato = await generateJournalEntriesFromClosure(chiusuraStorica, userId)
+
+      expect(risultato.entriesCreated).toBe(5)
+      for (const movimento of movimentiGenerati()) {
+        expect(movimento.costCenterId).toBeNull()
+      }
+      expect(logger.error).toHaveBeenCalled()
+    })
+  })
+
+  /**
+   * L'invariante che protegge il dato contabile: l'imputazione è additiva.
+   * Numero di movimenti, registri, importi, date e descrizioni sono quelli di
+   * prima del piano dei conti v4, in qualunque stato si trovino conti e centri.
+   */
+  describe('Invariante di quadratura', () => {
+    // Baseline: gli stessi cinque movimenti del caso "complete closure",
+    // con gli importi fissati prima dell'introduzione dell'imputazione.
+    const QUADRATURA_ATTESA = [
+      { registerType: 'CASH', debitAmount: 600, creditAmount: null },
+      { registerType: 'CASH', debitAmount: null, creditAmount: 50 },
+      { registerType: 'BANK', debitAmount: 300, creditAmount: null },
+      { registerType: 'CASH', debitAmount: null, creditAmount: 300 },
+      { registerType: 'BANK', debitAmount: 300, creditAmount: null },
+    ]
+
+    const chiusura = {
+      id: 'closure-1',
+      date: baseDate,
+      venueId: 'venue-1',
+      bankDeposit: 300,
+      stations: [
+        { cashAmount: 400, posAmount: 200, floatAmount: 114 },
+        { cashAmount: 150, posAmount: 100, floatAmount: 114 },
+      ],
+      expenses: [
+        { amount: 50, payee: 'Fornitore', description: 'Merce', documentRef: null, accountId: null },
+      ],
+    }
+
+    const configurazioni: Array<[string, () => void]> = [
+      ['piano dei conti v4 migrato', () => { conContiDiSistema(); conCentriAttivi() }],
+      ['CORRISPETTIVI non ancora creata', () => { conCentriAttivi() }],
+      ['nessun conto e nessun centro configurato', () => {
+        vi.mocked(prisma.costCenter.findFirst).mockResolvedValue(null as never)
+      }],
+    ]
+
+    it.each(configurazioni)(
+      'stessi movimenti e stessi importi con %s',
+      async (_nome, configura) => {
+        configura()
+
+        const risultato = await generateJournalEntriesFromClosure(
+          { ...chiusura, costCenterId: 'cc-weiss' },
+          userId
+        )
+
+        expect(risultato).toEqual({ entriesCreated: 5, totalDebits: 1200, totalCredits: 350 })
+        expect(
+          movimentiGenerati().map(({ registerType, debitAmount, creditAmount }) => ({
+            registerType,
+            debitAmount,
+            creditAmount,
+          }))
+        ).toEqual(QUADRATURA_ATTESA)
+      }
+    )
+
+    it('la data e le descrizioni non cambiano con l\'imputazione', async () => {
+      conContiDiSistema()
+      conCentriAttivi()
+      await generateJournalEntriesFromClosure({ ...chiusura, costCenterId: 'cc-weiss' }, userId)
+      const conImputazione = movimentiGenerati().map((m) => ({ date: m.date, description: m.description }))
+
+      vi.clearAllMocks()
+      vi.mocked(prisma.account.findUnique).mockResolvedValue(null as never)
+      vi.mocked(prisma.costCenter.findUnique).mockResolvedValue(null as never)
+      vi.mocked(prisma.costCenter.findFirst).mockResolvedValue(null as never)
+      await generateJournalEntriesFromClosure(chiusura, userId)
+      const senzaImputazione = movimentiGenerati().map((m) => ({ date: m.date, description: m.description }))
+
+      expect(conImputazione).toEqual(senzaImputazione)
+      for (const movimento of senzaImputazione) {
+        expect(movimento.date).toBe(baseDate)
+      }
     })
   })
 })

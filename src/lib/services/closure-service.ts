@@ -150,6 +150,9 @@ export async function validateClosure({
         date: closure.date,
         venueId: closure.venueId,
         bankDeposit,
+        // Imputazione: il centro della testata vale per tutti i movimenti
+        // generati, salvo la riga spesa che ne indica uno proprio.
+        costCenterId: closure.costCenterId,
         stations: closure.stations.map((s) => ({
           cashAmount: s.cashAmount ? Number(s.cashAmount) : null,
           posAmount: s.posAmount ? Number(s.posAmount) : null,
@@ -161,6 +164,7 @@ export async function validateClosure({
           description: e.description,
           documentRef: e.documentRef,
           accountId: e.accountId,
+          costCenterId: e.costCenterId,
         })),
       },
       userId,

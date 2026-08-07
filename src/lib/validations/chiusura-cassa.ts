@@ -35,6 +35,8 @@ export const dailyExpenseFormSchema = z.object({
   description: z.string().min(1, 'Descrizione richiesta'),
   amount: z.number().positive('Importo deve essere positivo'),
   accountId: z.string().optional(),
+  /** Override del centro di testata per questa sola uscita */
+  costCenterId: z.string().optional(),
   supplierId: z.string().optional(),
   receiptNumber: z.string().optional(),
   notes: z.string().optional(),
@@ -58,6 +60,10 @@ export const dailyAttendanceFormSchema = z.object({
 export const dailyClosureFormSchema = z.object({
   date: z.date({ error: 'Data non valida' }),
   venueId: z.string().min(1, 'Seleziona una sede'),
+  // Centro di costo della testata: vale per tutti i movimenti generati alla
+  // validazione, salvo le righe spesa che ne indicano uno proprio. Opzionale
+  // nello schema perché le chiusure storiche non ne portano.
+  costCenterId: z.string().optional(),
   cashStations: z.array(cashStationFormSchema).min(1, 'Almeno una postazione richiesta'),
   hourlyPartials: z.array(hourlyPartialFormSchema),
   expenses: z.array(dailyExpenseFormSchema),

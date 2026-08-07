@@ -69,6 +69,9 @@ const partialsSchema = z.array(partialItemSchema).superRefine((items, ctx) => {
 // Schema per aggiornamento chiusura (metadati + dati relazionali opzionali)
 const updateClosureSchema = z.object({
   date: dateSchema.optional(),
+  // Centro di costo della testata: vale per tutti i movimenti generati alla
+  // validazione, salvo le righe spesa che ne indicano uno proprio.
+  costCenterId: z.string().optional(),
   isEvent: z.boolean().optional(),
   eventName: z.string().optional(),
   weatherMorning: z.string().optional(),
@@ -113,6 +116,8 @@ const updateClosureSchema = z.object({
     amount: z.number(),
     vatAmount: z.number().optional(),
     accountId: z.string().optional(),
+    /** Override del centro di testata per questa sola uscita */
+    costCenterId: z.string().optional(),
     isPaid: z.boolean().default(true),
     paidBy: z.string().optional(),
   })).optional(),
@@ -224,6 +229,7 @@ export async function GET(
       date: chiusura.date,
       status: chiusura.status,
       venue: chiusura.venue,
+      costCenterId: chiusura.costCenterId,
       isEvent: chiusura.isEvent,
       eventName: chiusura.eventName,
       weather: {
@@ -286,6 +292,7 @@ export async function GET(
         amount: expense.amount,
         vatAmount: expense.vatAmount,
         account: expense.account,
+        costCenterId: expense.costCenterId,
         documentRef: expense.documentRef,
         documentType: expense.documentType,
         isPaid: expense.isPaid,
@@ -447,6 +454,7 @@ export async function PUT(
               amount: expense.amount,
               vatAmount: expense.vatAmount,
               accountId: expense.accountId,
+              costCenterId: expense.costCenterId,
               isPaid: expense.isPaid ?? true,
               paidBy: expense.paidBy,
               position: index,

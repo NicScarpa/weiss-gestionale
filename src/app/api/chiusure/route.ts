@@ -72,6 +72,11 @@ const partialsSchema = z.array(partialItemSchema).superRefine((items, ctx) => {
 const createClosureSchema = z.object({
   date: dateSchema,
   venueId: z.string().min(1, 'Sede richiesta'),
+  // Centro di costo della testata: vale per tutti i movimenti generati alla
+  // validazione, salvo le righe spesa che ne indicano uno proprio. Opzionale
+  // qui perché le chiusure storiche non ne portano: il default lo garantisce
+  // il form, non lo schema.
+  costCenterId: z.string().optional(),
   isEvent: z.boolean().default(false),
   eventName: z.string().optional(),
   weatherMorning: z.string().optional(),
@@ -116,6 +121,8 @@ const createClosureSchema = z.object({
     amount: z.number(),
     vatAmount: z.number().optional(),
     accountId: z.string().optional(),
+    /** Override del centro di testata per questa sola uscita */
+    costCenterId: z.string().optional(),
     isPaid: z.boolean().default(true),
     paidBy: z.string().optional(),
   })).optional(),
@@ -428,6 +435,7 @@ export async function POST(request: NextRequest) {
       data: {
         venueId: validatedData.venueId,
         date: validatedData.date,
+        costCenterId: validatedData.costCenterId,
         isEvent: validatedData.isEvent,
         eventName: validatedData.eventName,
         weatherMorning: validatedData.weatherMorning,
@@ -463,6 +471,7 @@ export async function POST(request: NextRequest) {
             amount: expense.amount,
             vatAmount: expense.vatAmount,
             accountId: expense.accountId,
+            costCenterId: expense.costCenterId,
             isPaid: expense.isPaid ?? true,
             paidBy: expense.paidBy,
             position: index,
