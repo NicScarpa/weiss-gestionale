@@ -4,9 +4,14 @@
  *
  * Il job di sicurezza della CI girava con continue-on-error: falliva da mesi
  * senza che nessuno se ne accorgesse. Renderlo bloccante così com'era avrebbe
- * spento la CI il giorno stesso, perché l'albero ha già vulnerabilità note che
- * non si risolvono con un aggiornamento indolore. Allora misuriamo quante ne
- * abbiamo e impediamo che aumentino.
+ * spento la CI il giorno stesso, perché l'albero aveva 5 critical e 16 high.
+ * Le abbiamo prima congelate con questo cricchetto, poi risolte davvero: la
+ * baseline è scesa a zero, e da qui in avanti è una barriera, non una
+ * fotografia. Qualunque critical o high nuova fa fallire la CI.
+ *
+ * Restano fuori conteggio le moderate (9 al 7 agosto 2026, quasi tutte
+ * nell'albero opzionale di firebase-admin) per le quali npm propone come
+ * "fix" un downgrade major all'indietro, che non è un fix.
  *
  * Contiamo solo le dipendenze di PRODUZIONE (--omit=dev): sono quelle che
  * finiscono sul server. Le vulnerabilità delle dev-dependency (il server web

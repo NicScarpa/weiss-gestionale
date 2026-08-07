@@ -33,11 +33,18 @@ del committente: si porta su main solo a revisione completata.
 | Piano approvato | `~/.claude/plans/cryptic-wandering-flute.md` |
 | Screenshot verifica mobile W2 | `~/Desktop/accounting/.playwright-mcp/b5/` (gitignored, prima/dopo a 390px) |
 
-**Worktree attivi**: `integrazione` più i cinque della W2 (`b1-import`, `b2-numeri`, `b3-qualita`,
-`b4-ui-scadenzario`, `b5-ui-mobile`), tutti già integrati: si possono rimuovere con
-`git worktree remove`. Esiste anche `~/Desktop/accounting-presenze` su `presenze/regole-orario`:
-**è di un'altra sessione, non toccarlo**. Il worktree principale `~/Desktop/accounting` è fermo sul
-branch obsoleto `scadenzario/stima-data-attesa`.
+**Worktree attivi**: `integrazione` più i quattro della W3 (`c1-auth`, `c2-orfani`, `c3-moduli-a`,
+`c4-moduli-b`). Quelli di W0/W1/W2 e `c0-vulnerabilita` sono stati rimossi dopo l'integrazione.
+
+**ATTENZIONE — tre sessioni parallele lavorano sullo stesso repository** (stato al 7 ago, ore 18):
+- `~/Desktop/accounting-presenze` su `presenze/chiusura-ore-timbrate` — **non toccarlo**;
+- `~/Desktop/accounting` (worktree principale) su **`conti/piano-v4`**, che ha
+  `prisma/schema.prisma` **modificato e non committato**: aggiunge `CostCenter`, l'enum
+  `CostCenterRule` e campi su DailyClosure, DailyExpense, Account, JournalEntry, ScheduleRule,
+  AuditLog (56 righe, tutte additive). **Non tocca `PushSubscription`**, quindi non collide con il
+  micro-slot concesso a C3 in W3; ma quando questi rami convergeranno lo schema andrà riconciliato
+  con attenzione. È anche il motivo per cui la baseline delle migrazioni (§5 n.1) diventa ogni
+  giorno più urgente.
 
 ---
 
@@ -135,7 +142,7 @@ sessione parallela su `presenze/regole-orario`.
 | 6 | `Payment` di tipo `ALTRO` in entrata? | Aperta, emergerà dal censimento |
 | 7 | Cron `auto-clockout` solo su `vercel.json`, produzione su Railway | **CHIUSA — IL FINDING ERA SBAGLIATO** (verificato 7 ago sui log Railway): esiste un servizio dedicato **`cron-presenze`** che gira ogni ~15 minuti e chiama *entrambi* gli endpoint (`/api/promemoria-timbratura/cron` e `/api/attendance/auto-clockout`); ultima esecuzione riscontrata `2026-08-07T15:45Z`, risposte `success:true`. `vercel.json` è un residuo inerte che ha ingannato l'audit: **va cancellato** (assegnare a C2-ORFANI in W3) |
 | 8 | **`SENTRY_DSN` da configurare su Railway** e forzare un errore di prova | **IN CORSO** (7 ago): verificato che sul servizio `weiss-gestionale` la variabile **non esiste** (le variabili presenti sono DATABASE_URL, AUTH_SECRET, NEXTAUTH_*, ENCRYPTION_KEY, ANTHROPIC_API_KEY, CRON_SECRET, UPLOAD_ROOT, NEXT_PUBLIC_*). Non esiste alcun account Sentry: nessun DSN in codice, storia git o `.env`. Serve che il committente crei il progetto su sentry.io e fornisca il DSN; poi `railway variables --service weiss-gestionale --set 'SENTRY_DSN=...' --set 'NEXT_PUBLIC_SENTRY_DSN=...'` |
-| 9 | **5 vulnerabilità critical + 16 high nelle dipendenze di produzione** (`@auth/core`, `next-auth`, `jspdf`, `protobufjs`, `websocket-driver`) | **IN LAVORAZIONE** (7 ago, decisione del committente: risolverle) — agente C0 su `remediation/c0-vulnerabilita` |
+| 9 | **5 vulnerabilità critical + 16 high nelle dipendenze di produzione** | **CHIUSA** (7 ago, merge `a0cd25f`): ora **0 critical / 0 high**, cricchetto CI a barriera. `jspdf` 4.2.1, `next-auth` beta.32, `firebase-admin` 13.10.0 (dentro il range, trascina `websocket-driver` 0.7.5 e `protobufjs` 7.6.5), `next` 16.3.0, `axios` 1.19.0; unico `overrides`: `js-yaml` 4.3.1 perché `swagger-ui-react` la pinna esatta. **Login verificato a mano dal lead** (dev server locale, sessione JWE valida su pagina protetta) più verifica indipendente dell'agente. Restano 9 moderate non risolvibili senza downgrade major: documentate nello script. Da tenere d'occhio: `next` 16.1.6→16.3.0 è il candidato per un giro in staging; l'override su `js-yaml` va tolto quando swagger allenterà il pin |
 | 10 | **Ricavi per categoria/conto a zero** finché le scritture di chiusura non portano un conto di ricavo | **RATIFICATA** (7 ago): per ora va bene l'approccio col KPI `unassignedRevenue`; l'imputazione a conto resta per dopo |
 | 11 | **Il margine del budget cambierà** (ora include i costi bancari che prima mancavano) | **RATIFICATA** (7 ago): il committente è avvisato e d'accordo |
 | 12 | Movimenti nascosti fuori dai saldi in modo uniforme | Nuova (W2): decisione presa da B2, da ratificare |
