@@ -18,10 +18,18 @@
  * disattivarle romperebbe dati nati dopo la migrazione: in quel caso il
  * rollback va deciso a mano, non a colpi di script.
  *
- * Il bersaglio dello snapshot deve coincidere con quello corrente: gli
- * snapshot di prova e quelli di produzione finiscono nella stessa cartella e
- * si distinguono solo dal timestamp. Applicare lo snapshot sbagliato
- * spegnerebbe le 155 voci del database giusto.
+ * La provenienza dello snapshot si controlla in due modi, perché gli snapshot
+ * di prova e quelli di produzione finiscono nella stessa cartella e si
+ * distinguono solo dal timestamp — e applicare quello sbagliato spegnerebbe
+ * le 155 voci del database giusto:
+ *   1. l'identità del bersaglio (utente, database, host, porta) dev'essere la
+ *      stessa registrata nello snapshot. Questo controllo è una premessa, non
+ *      una prova, e `--forza` lo scavalca: serve per i casi in cui la stessa
+ *      `DATABASE_URL` è scritta in due modi diversi;
+ *   2. almeno uno degli id di conto fotografati dev'esistere davvero qui.
+ *      Questo controllo è sui dati e **`--forza` NON lo scavalca**: se non
+ *      torna nessun id — o se lo snapshot non contiene id da confrontare — il
+ *      rollback si ferma e basta.
  *
  * MODALITÀ: dry-run di default, `--execute` per scrivere davvero.
  *
@@ -30,7 +38,9 @@
  *   DATABASE_URL="…" npx tsx scripts/piano-v4/04-rollback.ts --snapshot <file>.json --execute
  *
  * Flag:
- *   --forza   procede anche se lo snapshot viene da un altro bersaglio
+ *   --forza   accetta uno snapshot la cui IDENTITÀ del bersaglio non coincide
+ *             (es. stessa URL scritta con `localhost` invece di `127.0.0.1`).
+ *             Non scavalca la prova sugli id: quella non è forzabile.
  */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -122,18 +132,33 @@ function leggiSnapshot(percorso: string): Snapshot {
   return grezzo as Snapshot
 }
 
+interface Provenienza {
+  attesi: number
+  riconosciuti: number
+}
+
 /**
- * Prova diretta della provenienza dello snapshot: quanti dei conti legacy
- * fotografati esistono davvero in questo database.
+ * Prova diretta della provenienza dello snapshot: quanti dei conti che ha
+ * fotografato esistono davvero in questo database.
  *
  * Il confronto sulle stringhe di connessione è una premessa, non una prova:
  * due ambienti possono presentarsi allo stesso modo, e chiunque può
  * modificare un JSON. Gli id sono cuid generati alla creazione del conto:
- * se non ne esiste nemmeno uno, lo snapshot viene da un altro database.
+ * se non ne torna nemmeno uno, lo snapshot viene da un altro database.
+ *
+ * Si guardano sia i conti legacy sia le voci v4 già presenti. Fidarsi dei
+ * soli conti legacy lascerebbe scoperto proprio il caso peggiore: uno
+ * snapshot che non ne contiene (niente da ripristinare) è anche quello il cui
+ * unico effetto è spegnere per codice le 155 voci del database su cui viene
+ * applicato.
  */
-async function contiLegacyRiconosciuti(db: Db, snap: Snapshot): Promise<number> {
-  if (snap.contiLegacy.length === 0) return 0
-  return db.account.count({ where: { id: { in: snap.contiLegacy.map((c) => c.id) } } })
+async function verificaProvenienza(db: Db, snap: Snapshot): Promise<Provenienza> {
+  const ids = [
+    ...new Set([...snap.contiLegacy.map((c) => c.id), ...snap.vociV4Preesistenti.map((v) => v.id)]),
+  ]
+  if (ids.length === 0) return { attesi: 0, riconosciuti: 0 }
+  const riconosciuti = await db.account.count({ where: { id: { in: ids } } })
+  return { attesi: ids.length, riconosciuti }
 }
 
 /**
@@ -422,23 +447,48 @@ async function main() {
   try {
     // Seconda prova, questa volta sui dati e non sulle stringhe: due ambienti
     // possono presentarsi con la stessa identità, e un JSON si modifica.
-    // `--forza` non la salta: serve a dire "so che l'identità è diversa", non
-    // "applica uno snapshot che non c'entra niente con questo database".
-    const riconosciuti = await contiLegacyRiconosciuti(prisma, snap)
-    if (snap.contiLegacy.length > 0 && riconosciuti === 0) {
+    // `--forza` non la salta: serve a dire "so che l'identità è scritta
+    // diversa", non "applica uno snapshot che non c'entra con questo database".
+    const { attesi, riconosciuti } = await verificaProvenienza(prisma, snap)
+
+    if (attesi === 0) {
+      console.error('❌ ROLLBACK BLOCCATO — la provenienza dello snapshot non è dimostrabile:')
+      console.error('')
+      console.error('   non contiene nemmeno un id di conto (né legacy né voci v4 preesistenti),')
+      console.error('   quindi non c\'è niente da confrontare con questo database. Uno snapshot')
+      console.error('   così non ha nulla da ripristinare: il suo unico effetto sarebbe spegnere')
+      console.error('   per codice le voci del piano v4 di QUESTO database.')
+      console.error('   Se la provenienza non si può provare, non si procede.')
+      process.exitCode = 1
+      return
+    }
+
+    if (riconosciuti === 0) {
       console.error('❌ ROLLBACK BLOCCATO — lo snapshot non appartiene a questo database:')
       console.error('')
-      console.error(
-        `   nessuno dei ${snap.contiLegacy.length} conti legacy dello snapshot esiste qui (0 su ${snap.contiLegacy.length}).`
-      )
+      console.error(`   nessuno dei ${attesi} conti dello snapshot esiste qui (0 su ${attesi}).`)
       console.error('   Gli id sono generati alla creazione del conto: se non ne torna nemmeno')
       console.error('   uno, la fotografia è di un altro database. Non proseguo nemmeno con --forza.')
       process.exitCode = 1
       return
     }
-    if (snap.contiLegacy.length > 0) {
+
+    if (riconosciuti < attesi) {
+      // Provenienza giusta ma fotografia vecchia: da allora dei conti sono
+      // stati cancellati. Non è un blocco, ma non merita nemmeno il tono
+      // rassicurante del caso pieno: l'operatore deve vederlo prima di
+      // confermare.
       console.log(
-        `✅ Provenienza confermata: ${riconosciuti} conti legacy dello snapshot su ${snap.contiLegacy.length} esistono in questo database`
+        `⚠️  Provenienza solo PARZIALE: ${riconosciuti} conti dello snapshot su ${attesi} esistono ancora qui.`
+      )
+      console.log(
+        `   Gli altri ${attesi - riconosciuti} sono stati cancellati dopo la fotografia: lo snapshot è`
+      )
+      console.log('   vecchio e il ripristino sarà incompleto. Verificare che sia quello giusto.')
+      console.log('')
+    } else {
+      console.log(
+        `✅ Provenienza confermata: tutti i ${attesi} conti dello snapshot esistono in questo database`
       )
       console.log('')
     }

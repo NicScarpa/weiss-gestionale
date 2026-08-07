@@ -280,7 +280,7 @@ async function main() {
     out.push('## I comandi, in ordine')
     out.push('')
     out.push(
-      '> ⚠️ **`DATABASE_URL` va indicata sempre, esplicitamente, davanti a ogni comando.** Gli script caricano il `.env` del progetto quando la variabile non c\'è, e quel `.env` punta alla produzione: lanciare un comando "nudo" dalla radice significa operare sulla produzione senza averlo deciso. Prima di scrivere su un bersaglio non locale lo script chiede di ribattere a mano la sua identità (`utente@nomedb`), ma è una rete di sicurezza, non il modo di lavorare.'
+      '> ⚠️ **`DATABASE_URL` va indicata sempre, esplicitamente, davanti a ogni comando.** Gli script caricano il `.env` del progetto quando la variabile non c\'è, e quel `.env` punta alla produzione: lanciare un comando "nudo" dalla radice significa operare sulla produzione senza averlo deciso. Prima di scrivere su un bersaglio non locale lo script chiede di ribattere a mano la sua identità completa — nella forma `utente@nomedb su host:porta`, che lo script stampa a schermo subito sopra la domanda — ma è una rete di sicurezza, non il modo di lavorare.'
     )
     out.push('')
     out.push(
@@ -303,7 +303,8 @@ async function main() {
     out.push('# 2. STOP: far approvare la tabella. Poi il dry-run, che salva lo snapshot del rollback')
     out.push('DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/03-migrate.ts')
     out.push('')
-    out.push('# 3. esecuzione vera (chiede di ribattere utente@nomedb se il bersaglio è remoto)')
+    out.push('# 3. esecuzione vera: se il bersaglio è remoto chiede di ribattere la sua')
+    out.push('#    identità completa, "utente@nomedb su host:porta", stampata sopra la domanda')
     out.push('DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/03-migrate.ts --execute')
     out.push('')
     out.push('# 4. verifica')
@@ -317,7 +318,11 @@ async function main() {
     out.push('```')
     out.push('')
     out.push(
-      'Gli snapshot restano fuori dal repository (sono dati veri) ma vanno conservati: senza lo snapshot il rollback non sa a quale stato tornare. Il rollback rifiuta uno snapshot preso da un bersaglio diverso da quello corrente.'
+      'Anche esportata, la URL resta nell\'ambiente del processo e chi ha lo stesso utente può leggerla con `ps eww`. È un passo avanti rispetto alla history, che è permanente, non una segregazione: chiusa la sessione, `unset DB_BERSAGLIO`.'
+    )
+    out.push('')
+    out.push(
+      'Gli snapshot restano fuori dal repository (sono dati veri) ma vanno conservati: senza lo snapshot il rollback non sa a quale stato tornare. Il rollback rifiuta uno snapshot preso da un bersaglio diverso da quello corrente (`--forza` per i casi legittimi, per esempio la stessa URL scritta in due modi) e rifiuta comunque, senza possibilità di forzatura, uno snapshot i cui conti non esistono in questo database.'
     )
     out.push('')
     out.push('## Da eseguire a gestionale fermo')

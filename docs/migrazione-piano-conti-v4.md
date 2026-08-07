@@ -1,6 +1,6 @@
 # Migrazione al piano dei conti WEISS v4 — tabella di mappatura
 
-Generato da `scripts/piano-v4/02-report-mappatura.ts` il 2026-08-07T20:12:12.889Z.
+Generato da `scripts/piano-v4/02-report-mappatura.ts` il 2026-08-07T20:40:32.335Z.
 
 > ⚠️ **Documento generato su un database LOCALE di prova, non sulla produzione.** Codici, nomi e conteggi dei conti qui sotto sono quelli di quel database: servono a mostrare la forma del report e a provare il ciclo migrazione/rollback, non sono la fotografia della produzione. La tabella definitiva va rigenerata puntando `DATABASE_URL` alla produzione — lo script è di sola lettura — al momento dello STOP che precede l'esecuzione.
 
@@ -70,7 +70,7 @@ Prima di scrivere ricontrolla tutte le premesse: se anche una sola non regge, la
 
 ## I comandi, in ordine
 
-> ⚠️ **`DATABASE_URL` va indicata sempre, esplicitamente, davanti a ogni comando.** Gli script caricano il `.env` del progetto quando la variabile non c'è, e quel `.env` punta alla produzione: lanciare un comando "nudo" dalla radice significa operare sulla produzione senza averlo deciso. Prima di scrivere su un bersaglio non locale lo script chiede di ribattere a mano la sua identità (`utente@nomedb`), ma è una rete di sicurezza, non il modo di lavorare.
+> ⚠️ **`DATABASE_URL` va indicata sempre, esplicitamente, davanti a ogni comando.** Gli script caricano il `.env` del progetto quando la variabile non c'è, e quel `.env` punta alla produzione: lanciare un comando "nudo" dalla radice significa operare sulla produzione senza averlo deciso. Prima di scrivere su un bersaglio non locale lo script chiede di ribattere a mano la sua identità completa — nella forma `utente@nomedb su host:porta`, che lo script stampa a schermo subito sopra la domanda — ma è una rete di sicurezza, non il modo di lavorare.
 
 > 🔐 **La stringa di connessione non va battuta sulla riga di comando.** Contiene la password di produzione, e tutto ciò che si scrive al prompt finisce in `~/.zsh_history` in chiaro, dove resta. Si legge senza eco, oppure da un file con i permessi stretti.
 
@@ -90,7 +90,8 @@ DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/02-report-mappatura.ts \
 # 2. STOP: far approvare la tabella. Poi il dry-run, che salva lo snapshot del rollback
 DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/03-migrate.ts
 
-# 3. esecuzione vera (chiede di ribattere utente@nomedb se il bersaglio è remoto)
+# 3. esecuzione vera: se il bersaglio è remoto chiede di ribattere la sua
+#    identità completa, "utente@nomedb su host:porta", stampata sopra la domanda
 DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/03-migrate.ts --execute
 
 # 4. verifica
@@ -103,7 +104,9 @@ DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/04-rollback.ts \
   --snapshot scripts/piano-v4/snapshots/<file>.json --execute
 ```
 
-Gli snapshot restano fuori dal repository (sono dati veri) ma vanno conservati: senza lo snapshot il rollback non sa a quale stato tornare. Il rollback rifiuta uno snapshot preso da un bersaglio diverso da quello corrente.
+Anche esportata, la URL resta nell'ambiente del processo e chi ha lo stesso utente può leggerla con `ps eww`. È un passo avanti rispetto alla history, che è permanente, non una segregazione: chiusa la sessione, `unset DB_BERSAGLIO`.
+
+Gli snapshot restano fuori dal repository (sono dati veri) ma vanno conservati: senza lo snapshot il rollback non sa a quale stato tornare. Il rollback rifiuta uno snapshot preso da un bersaglio diverso da quello corrente (`--forza` per i casi legittimi, per esempio la stessa URL scritta in due modi) e rifiuta comunque, senza possibilità di forzatura, uno snapshot i cui conti non esistono in questo database.
 
 ## Da eseguire a gestionale fermo
 

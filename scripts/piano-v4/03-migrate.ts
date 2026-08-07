@@ -391,8 +391,29 @@ class GuardieFallite extends Error {
   }
 }
 
+/**
+ * Separatore per il confronto degli insiemi: una barra verticale, che non
+ * compare mai in un cuid (alfanumerico) né in un codice di conto (cifre e
+ * punti), quindi il join resta non ambiguo.
+ *
+ * Deve restare un carattere STAMPABILE. Un byte di controllo funzionerebbe
+ * anche meglio come separatore, ma farebbe classificare questo file come
+ * binario: grep e rg lo salterebbero in silenzio, e chi cercasse qui dentro
+ * otterrebbe zero risultati senza che nulla glielo dica.
+ */
+const SEPARATORE = '|'
+
+/**
+ * Due elenchi contengono gli stessi elementi?
+ *
+ * Attenzione alla semantica: questi confronti intercettano AGGIUNTE e
+ * RIMOZIONI nella finestra fra la fotografia e la transazione, non le
+ * MODIFICHE di campo su righe già esistenti. È voluto: ciò che il rollback
+ * non saprebbe rimettere a posto è una riga comparsa o sparita, mentre i
+ * valori dei campi sono già nello snapshot e vengono ripristinati da lì.
+ */
 const stessoInsieme = (a: string[], b: string[]) =>
-  a.length === b.length && [...a].sort().join(' ') === [...b].sort().join(' ')
+  a.length === b.length && [...a].sort().join(SEPARATORE) === [...b].sort().join(SEPARATORE)
 
 async function applica(tx: Db, snapshot: Snapshot): Promise<Riepilogo> {
   // Le guardie si rivalutano QUI dentro, sui dati della transazione: fra il
