@@ -1,7 +1,7 @@
 'use client'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { formatCurrency } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 import {
   Target,
   TrendingUp,

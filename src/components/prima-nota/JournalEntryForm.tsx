@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { formatCurrency } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 import { toast } from 'sonner'
 import type { RegisterType, EntryType } from '@/types/prima-nota'
 

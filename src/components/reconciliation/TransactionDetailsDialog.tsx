@@ -10,7 +10,8 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
-import { formatCurrency, formatDateShort } from '@/lib/constants'
+import { formatDateShort } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 import {
   Calendar,
   CreditCard,

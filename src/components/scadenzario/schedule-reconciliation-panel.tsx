@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { LinkIcon, XIcon, Undo2Icon, CheckCircle2Icon } from 'lucide-react'
+import { formatCurrency } from '@/lib/formatters'
 
 interface Props {
   scheduleId: string
@@ -49,11 +50,6 @@ const SOURCE_LABELS: Record<string, string> = {
   RULE: 'Da regola',
 }
 
-function formatCurrency(value: number | string) {
-  return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(
-    Number(value)
-  )
-}
 
 /**
  * Collega i movimenti di prima nota a una scadenza.
@@ -160,7 +156,7 @@ export function ScheduleReconciliationPanel({ scheduleId, onChange }: Props) {
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
                     {format(new Date(r.journalEntry.date), 'd MMMM yyyy', { locale: it })} ·{' '}
-                    {formatCurrency(r.amount)} · {SOURCE_LABELS[r.source] ?? r.source}
+                    {formatCurrency(Number(r.amount))} · {SOURCE_LABELS[r.source] ?? r.source}
                     {r.confidence && ` · affinità ${Math.round(Number(r.confidence) * 100)}%`}
                   </p>
                 </div>

@@ -38,7 +38,7 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
-import { formatCurrency } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 import { toast } from 'sonner'
 import {
   type MonthKey,

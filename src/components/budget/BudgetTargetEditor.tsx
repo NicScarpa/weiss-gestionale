@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { formatCurrency } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 import { toast } from 'sonner'
 import { MONTH_LABELS_FULL, MONTH_KEYS, type MonthKey } from '@/types/budget'
 

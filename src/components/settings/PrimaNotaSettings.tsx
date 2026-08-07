@@ -35,6 +35,7 @@ import { Wallet, Plus, Pencil, Trash2, Loader2, Building2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { logger } from '@/lib/logger'
+import { formatCurrency } from '@/lib/formatters'
 interface Venue {
   id: string
   name: string
@@ -205,13 +206,6 @@ export function PrimaNotaSettings() {
   }
 
   // Formatta valuta
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('it-IT', {
-      style: 'currency',
-      currency: 'EUR',
-    }).format(value)
-  }
-
   // Genera anni disponibili (5 anni indietro, anno corrente, anno successivo)
   const availableYears = Array.from({ length: 7 }, (_, i) => currentYear - 5 + i)
 

@@ -1,4 +1,4 @@
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency } from '@/lib/formatters'
 
 interface PaymentProgressBarProps {
   importoTotale: number

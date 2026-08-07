@@ -15,6 +15,7 @@ import {
   type JournalEntryFilters,
 } from '@/types/prima-nota'
 import { cn } from '@/lib/utils'
+import { formatCurrencyOrDash } from '@/lib/formatters'
 
 interface MovimentiTableProps {
   data: JournalEntry[]
@@ -43,15 +44,6 @@ export function MovimentiTable({
   onSplit,
   isLoading = false,
 }: MovimentiTableProps) {
-  // Format valuta italiana
-  const formatCurrency = (amount?: number) => {
-    if (amount === undefined || amount === null) return '-'
-    return new Intl.NumberFormat('it-IT', {
-      style: 'currency',
-      currency: 'EUR',
-    }).format(amount)
-  }
-
   // Format data italiana
   const formatDate = (date: Date | string) => {
     return format(new Date(date), 'dd/MM/yyyy', { locale: it })
@@ -199,7 +191,7 @@ export function MovimentiTable({
                         </div>
                       )}
                       <div className="font-semibold">
-                        {formatCurrency(dc?.amount)}
+                        {formatCurrencyOrDash(dc?.amount)}
                       </div>
                     </td>
 

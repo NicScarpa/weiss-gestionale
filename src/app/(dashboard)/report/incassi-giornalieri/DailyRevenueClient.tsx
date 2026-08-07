@@ -30,7 +30,8 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { formatCurrency, getWeatherEmoji } from '@/lib/constants'
+import { getWeatherEmoji } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 import { toast } from 'sonner'
 
 import { logger } from '@/lib/logger'

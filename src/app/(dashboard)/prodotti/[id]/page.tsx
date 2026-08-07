@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { formatPercentage } from '@/lib/formatters'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -142,11 +143,8 @@ export default function ProductDetailPage({ params }: PageProps) {
     }).format(numPrice)
   }
 
-  const formatPercent = (pct: string | null) => {
-    if (!pct) return null
-    const num = parseFloat(pct)
-    return `${num > 0 ? '+' : ''}${num.toFixed(1)}%`
-  }
+  const formatPercent = (pct: string | null) =>
+    pct ? formatPercentage(parseFloat(pct), { segno: true }) : null
 
   const formatDate = (dateStr: string) => {
     return format(new Date(dateStr), 'd MMM yyyy', { locale: it })

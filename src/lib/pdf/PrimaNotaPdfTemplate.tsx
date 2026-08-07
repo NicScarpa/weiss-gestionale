@@ -7,6 +7,7 @@ import {
 } from '@react-pdf/renderer'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
+import { formatCurrencyPdf } from '@/lib/formatters'
 
 // Styles
 const styles = StyleSheet.create({
@@ -167,15 +168,6 @@ const styles = StyleSheet.create({
   },
 })
 
-// Format currency helper
-function formatCurrency(value: number | null | undefined): string {
-  if (value === null || value === undefined || value === 0) return ''
-  return new Intl.NumberFormat('it-IT', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value) + ' €'
-}
-
 // Props interface
 interface JournalEntry {
   id: string
@@ -257,19 +249,19 @@ export function PrimaNotaPdfDocument({
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Totale Dare (Entrate)</Text>
             <Text style={[styles.summaryValue, styles.saldoPositive]}>
-              {formatCurrency(totaleDebiti) || '0,00 €'}
+              {formatCurrencyPdf(totaleDebiti) || '0,00 €'}
             </Text>
           </View>
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Totale Avere (Uscite)</Text>
             <Text style={[styles.summaryValue, styles.saldoNegative]}>
-              {formatCurrency(totaleCrediti) || '0,00 €'}
+              {formatCurrencyPdf(totaleCrediti) || '0,00 €'}
             </Text>
           </View>
           <View style={[styles.summaryRow, { borderTopWidth: 1, borderTopColor: '#cbd5e1', marginTop: 4, paddingTop: 8 }]}>
             <Text style={[styles.summaryLabel, styles.bold]}>Saldo Periodo</Text>
             <Text style={[styles.summaryValue, saldoPeriodo >= 0 ? styles.saldoPositive : styles.saldoNegative]}>
-              {saldoPeriodo >= 0 ? '+' : ''}{formatCurrency(saldoPeriodo) || '0,00 €'}
+              {saldoPeriodo >= 0 ? '+' : ''}{formatCurrencyPdf(saldoPeriodo) || '0,00 €'}
             </Text>
           </View>
         </View>
@@ -302,10 +294,10 @@ export function PrimaNotaPdfDocument({
                 {entry.account?.code || '-'}
               </Text>
               <Text style={entry.debitAmount ? [styles.colDebit, styles.textRight, styles.saldoPositive] : [styles.colDebit, styles.textRight]}>
-                {formatCurrency(entry.debitAmount)}
+                {formatCurrencyPdf(entry.debitAmount)}
               </Text>
               <Text style={entry.creditAmount ? [styles.colCredit, styles.textRight, styles.saldoNegative] : [styles.colCredit, styles.textRight]}>
-                {formatCurrency(entry.creditAmount)}
+                {formatCurrencyPdf(entry.creditAmount)}
               </Text>
             </View>
           ))}
@@ -317,10 +309,10 @@ export function PrimaNotaPdfDocument({
             <Text style={styles.colReg}></Text>
             <Text style={styles.colAccount}></Text>
             <Text style={[styles.colDebit, styles.textRight, styles.saldoPositive]}>
-              {formatCurrency(totaleDebiti)}
+              {formatCurrencyPdf(totaleDebiti)}
             </Text>
             <Text style={[styles.colCredit, styles.textRight, styles.saldoNegative]}>
-              {formatCurrency(totaleCrediti)}
+              {formatCurrencyPdf(totaleCrediti)}
             </Text>
           </View>
         </View>

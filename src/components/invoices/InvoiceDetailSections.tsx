@@ -31,9 +31,9 @@ import {
   getDocumentTypeColor,
   getDocumentTypeLabel,
   getPaymentMethodLabel,
-  formatCurrency,
   formatDateIT,
 } from '@/lib/invoice-utils'
+import { formatCurrencyOrZero as formatCurrency } from '@/lib/formatters'
 import { NATURA_OPERAZIONE } from '@/lib/sdi/types'
 import { AccountGroupedSelect } from '@/components/prima-nota/shared/AccountGroupedSelect'
 

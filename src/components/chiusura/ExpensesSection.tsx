@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/select'
 import { Receipt, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { formatCurrency } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
 import { PayeeAutocomplete } from '@/components/ui/payee-autocomplete'
 

@@ -40,7 +40,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { formatCurrency } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 import { DangerousDeleteDialog } from '@/components/ui/dangerous-delete-dialog'
 import type { JournalEntry } from '@/types/prima-nota'
 
