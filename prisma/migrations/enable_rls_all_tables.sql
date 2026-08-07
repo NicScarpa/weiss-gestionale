@@ -61,6 +61,7 @@ DECLARE
         'price_alerts',
         'timekeeping_policies',
         'timekeeping_policy_breaks',
+        'timekeeping_policy_versions',
         'work_locations',
         'work_location_assignments',
         'attendance_correction_requests',
