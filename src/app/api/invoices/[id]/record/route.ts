@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { format } from 'date-fns'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
+import { getSystemAccount } from '@/lib/accounts/system'
 import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
@@ -78,16 +79,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
       )
     }
 
-    // Trova conto CASSA o BANCA per il credito
+    // Trova il conto di sistema BANCA per il credito
     // Di default usiamo BANCA per i pagamenti a fornitori
-    const bankAccount = await prisma.account.findFirst({
-      where: {
-        OR: [{ code: 'BANCA' }, { code: '1001' }, { name: { contains: 'Banca' } }],
-        isActive: true,
-      },
-    })
-
-    if (!bankAccount) {
+    let bankAccount
+    try {
+      bankAccount = await getSystemAccount('BANCA')
+    } catch {
       return NextResponse.json(
         { error: 'Conto Banca non trovato nel piano dei conti' },
         { status: 400 }
