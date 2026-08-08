@@ -6,6 +6,8 @@ import { logger } from '@/lib/logger'
 import { parseFatturaPA } from '@/lib/sdi/parser'
 import { normalizeProductName } from '@/lib/price-tracking'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
+import { abbinaMemoria, codiciNonIdentificanti } from './memoria-match'
+import type { EsitoAbbinamento } from './memoria-match'
 import type { DettaglioLinea } from '@/lib/sdi/types'
 
 const MODELLO_AI = 'claude-haiku-4-5'
@@ -21,6 +23,42 @@ const MAX_TOKENS_AI = 4096
  * resti fermo a guardare.
  */
 const TIMEOUT_AI_MS = 60_000
+
+/**
+ * Quante memorie del fornitore entrano nel prompt come esempi.
+ *
+ * La memoria vi entrava tutta, senza tetto: più il sistema imparava, più la
+ * richiesta cresceva, e una richiesta che cresce all'infinito prima o poi si
+ * fa troncare qualcosa dalla finestra del modello — le righe della fattura,
+ * che stanno in fondo. Non è una questione di costo (la finestra impone da sé
+ * un tetto di pochi centesimi per chiamata): è che il troncamento arriverebbe
+ * in silenzio.
+ *
+ * Cinquanta è largo per lo scopo. Gli esempi servono a far capire al modello
+ * come questo fornitore nomina le cose, non a elencargli il catalogo: i
+ * prodotti che la memoria conosce davvero sono già stati abbinati prima della
+ * chiamata e non arrivano all'AI come scoperti.
+ */
+export const MAX_MEMORIE_NEL_PROMPT = 50
+
+/**
+ * Sceglie le memorie da mostrare al modello: le più confermate per prime, a
+ * pari conferme le più recenti.
+ *
+ * È il criterio che dà finalmente un lettore al contatore `conferme`, che
+ * finora veniva scritto a ogni conferma e non era letto da nessuno
+ * (F2-ALL-011). Una mappatura confermata trenta volte descrive l'abitudine di
+ * questo fornitore; una confermata una volta sola può essere stata un errore.
+ *
+ * Non ordina in posto: l'elenco che arriva serve intero all'abbinamento.
+ */
+export function memoriePerIlPrompt<T extends { conferme: number; updatedAt: Date }>(
+  memorie: T[]
+): T[] {
+  return [...memorie]
+    .sort((a, b) => b.conferme - a.conferme || b.updatedAt.getTime() - a.updatedAt.getTime())
+    .slice(0, MAX_MEMORIE_NEL_PROMPT)
+}
 
 /**
  * Riconduce entro i limiti la sicurezza dichiarata dal modello, o la dichiara
@@ -124,32 +162,45 @@ export async function categorizzaRigheFattura({
     const righeDaProcessare = righeXml.filter((r) => !numeriEsistenti.has(r.numeroLinea))
     if (righeDaProcessare.length === 0) return
 
-    // Memoria prima: match per codiceArticolo esatto, poi per nomeNormalizzato.
-    // Scoping obbligatorio per venueId (vedi doc del modulo): Supplier è
-    // globale, senza questo filtro la memoria di un altro venue matcherebbe.
+    // La memoria del fornitore, tutta: il tetto di memoriePerIlPrompt vale
+    // solo sugli esempi mostrati al modello, l'abbinamento deve poterle vedere
+    // tutte. Scoping obbligatorio per venueId (vedi doc del modulo): Supplier
+    // è globale, senza questo filtro la memoria di un altro venue matcherebbe.
     const memorie = invoice.supplierId
       ? await prisma.supplierProductAccount.findMany({
           where: { supplierId: invoice.supplierId, venueId: invoice.venueId },
         })
       : []
 
-    const righeMatchate = new Map<number, { accountId: string }>()
+    // Le regole di identità di un prodotto stanno in memoria-match.ts, con il
+    // ragionamento per esteso. Qui basta sapere che il nome è identità e il
+    // codice articolo è solo un indizio.
+    const righeNormalizzate = righeDaProcessare.map((riga) => ({
+      riga,
+      nomeNormalizzato: normalizeProductName(riga.descrizione),
+      codiceArticolo: riga.codiceArticolo ?? null,
+    }))
+    const codiciSospetti = codiciNonIdentificanti(righeNormalizzate)
 
-    for (const riga of righeDaProcessare) {
-      const nomeNormalizzato = normalizeProductName(riga.descrizione)
-      const memoriaPerCodice = riga.codiceArticolo
-        ? memorie.find((m) => m.codiceArticolo && m.codiceArticolo === riga.codiceArticolo)
-        : undefined
-      const memoria = memoriaPerCodice ?? memorie.find((m) => m.nomeNormalizzato === nomeNormalizzato)
+    const righeMatchate = new Map<number, EsitoAbbinamento>()
 
-      if (memoria) {
-        righeMatchate.set(riga.numeroLinea, { accountId: memoria.accountId })
+    for (const { riga, nomeNormalizzato, codiceArticolo } of righeNormalizzate) {
+      const esito = abbinaMemoria({
+        riga: { nomeNormalizzato, codiceArticolo },
+        memorie,
+        codiciNonIdentificanti: codiciSospetti,
+      })
+      if (esito) {
+        righeMatchate.set(riga.numeroLinea, esito)
       }
     }
 
-    // Le righe matchate si scrivono subito: confermate dalla memoria, mai
-    // sovrascritte da qui in avanti (solo l'eventuale dubbio dell'AI le
-    // riporta a 'proposta', più sotto).
+    // Le righe abbinate si scrivono subito, e lo stato segue la forza della
+    // prova: il nome è la chiave con cui la memoria è indicizzata, quindi
+    // 'confermata'; il solo codice articolo è un indizio, quindi 'proposta' —
+    // gialla, in lista di controllo. Da qui in avanti non vengono più
+    // sovrascritte (l'eventuale dubbio dell'AI, più sotto, aggiunge solo il
+    // motivo).
     for (const riga of righeDaProcessare) {
       const match = righeMatchate.get(riga.numeroLinea)
       if (!match) continue
@@ -161,7 +212,7 @@ export async function categorizzaRigheFattura({
           codiceArticolo: riga.codiceArticolo ?? null,
           importo: riga.prezzoTotale,
           accountId: match.accountId,
-          stato: 'confermata',
+          stato: match.certezza === 'nome' ? 'confermata' : 'proposta',
           fonte: 'regola-appresa',
         },
       })
@@ -282,8 +333,9 @@ interface ContoCosto {
 
 interface MemoriaFornitore {
   nomeNormalizzato: string
-  codiceArticolo: string | null
   accountId: string
+  conferme: number
+  updatedAt: Date
 }
 
 /**
@@ -300,7 +352,7 @@ async function costruisciPrompt({
   conti: ContoCosto[]
   memorie: MemoriaFornitore[]
   righeDaProcessare: DettaglioLinea[]
-  righeMatchate: Map<number, { accountId: string }>
+  righeMatchate: Map<number, EsitoAbbinamento>
 }): Promise<string> {
   const nomeConto = new Map(conti.map((c) => [c.id, c.name]))
 
@@ -330,7 +382,10 @@ async function costruisciPrompt({
     )
     .join('\n\n')
 
-  const fewShot = memorie
+  // Il tetto vale solo qui, sul prompt. L'abbinamento più sopra deve vedere
+  // TUTTE le memorie: tagliarle nella query significherebbe non riconoscere
+  // più un prodotto che il sistema conosce, solo perché è confermato di rado.
+  const fewShot = memoriePerIlPrompt(memorie)
     .map((m) => `- "${m.nomeNormalizzato}" → conto ${nomeConto.get(m.accountId) ?? m.accountId} (id: ${m.accountId})`)
     .join('\n')
 
@@ -342,6 +397,12 @@ async function costruisciPrompt({
       const base = `Riga ${r.numeroLinea}: "${descrizione}"${codice ? ` (codice articolo: ${codice})` : ''} — importo ${r.prezzoTotale}`
       if (!match) return base
       const nomeContoAssegnato = nomeConto.get(match.accountId) ?? match.accountId
+      if (match.certezza === 'codice') {
+        // Dedotta dal solo codice articolo: il nome del prodotto non
+        // corrisponde a nessuna memoria. È il caso in cui un parere in più
+        // serve davvero, quindi lo si chiede esplicitamente.
+        return `${base} — imputazione PROVVISORIA dedotta dal solo codice articolo al conto ${nomeContoAssegnato} (id: ${match.accountId}), il nome del prodotto non risulta in memoria: se ti sembra sbagliata restituiscila con dubbioSuMemoria: true e il motivo.`
+      }
       return `${base} — GIÀ IMPUTATA dalla memoria al conto ${nomeContoAssegnato} (id: ${match.accountId}): includila nella risposta SOLO se questa imputazione ti sembra sbagliata (dubbioSuMemoria: true).`
     })
     .join('\n')
