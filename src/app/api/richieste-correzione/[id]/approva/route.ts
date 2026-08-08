@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { withAuth } from '@/lib/api-utils'
 import { z } from 'zod'
-import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
@@ -15,21 +15,10 @@ import { richiestaSelect } from '../../route'
 // L'approvazione GENERA le timbrature: entrata e/o uscita proposte diventano
 // timbrature manuali collegate alla richiesta, in un'unica transazione.
 // Se la richiesta era nata da un'anomalia, l'anomalia si chiude insieme.
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const POST = withAuth<{ id: string }>(
+  async (request: NextRequest, { params, user: revisore }) => {
   try {
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
-    if (!['admin', 'manager'].includes(session.user.role || '')) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
-    const { id } = await params
+    const { id } = params
     const venueId = await getVenueId()
 
     const body = await request.json().catch(() => ({}))
@@ -58,7 +47,7 @@ export async function POST(
           workLocationId: richiesta.workLocationId,
           punchType: 'IN',
           punchedAt: richiesta.requestedClockIn,
-          enteredById: session.user.id,
+          enteredById: revisore.id,
           reason: `Richiesta di correzione approvata: ${richiesta.reason}`,
           correctionRequestId: richiesta.id,
         })
@@ -71,7 +60,7 @@ export async function POST(
           workLocationId: richiesta.workLocationId,
           punchType: 'OUT',
           punchedAt: richiesta.requestedClockOut,
-          enteredById: session.user.id,
+          enteredById: revisore.id,
           reason: `Richiesta di correzione approvata: ${richiesta.reason}`,
           correctionRequestId: richiesta.id,
         })
@@ -84,7 +73,7 @@ export async function POST(
           where: { id: richiesta.anomalyId, status: 'PENDING' },
           data: {
             status: 'APPROVED',
-            resolvedBy: session.user.id,
+            resolvedBy: revisore.id,
             resolvedAt: new Date(),
             resolutionNotes: 'Risolta con una richiesta di correzione approvata',
           },
@@ -95,7 +84,7 @@ export async function POST(
         where: { id },
         data: {
           status: 'APPROVED',
-          reviewedById: session.user.id,
+          reviewedById: revisore.id,
           reviewedAt: new Date(),
           reviewNotes: dati.reviewNotes,
         },
@@ -104,7 +93,7 @@ export async function POST(
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      userId: revisore.id,
       action: 'UPDATE',
       entityType: 'AttendanceCorrectionRequest',
       entityId: id,
@@ -135,4 +124,6 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+},
+  { roles: ['admin', 'manager'] }
+)

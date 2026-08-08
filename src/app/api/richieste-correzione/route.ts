@@ -1,10 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
-import { auth } from '@/lib/auth'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
-import { getVenueId } from '@/lib/venue'
+import {
+  badRequest,
+  conflict,
+  created,
+  forbidden,
+  handleApiError,
+  ok,
+  withAuth,
+} from '@/lib/api-utils'
 import { romeInstant, toDateOnlyUtc } from '@/lib/timezone'
 import { richiestaCorrezioneSchema } from '@/lib/validations/richieste-correzione'
 import { notifyNewCorrectionRequest } from '@/lib/notifications/triggers'
@@ -28,26 +34,18 @@ export const richiestaSelect = {
 
 // GET /api/richieste-correzione?status=&month=&year= - Elenco richieste.
 // Lo staff vede solo le proprie; admin e manager tutte quelle della sede.
-export async function GET(request: NextRequest) {
+export const GET = withAuth(async (request: NextRequest, { user, venueId }) => {
   try {
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
-    const { searchParams } = new URL(request.url)
-    const statusParam = searchParams.get('status')
-    const isGestore = ['admin', 'manager'].includes(session.user.role || '')
+    const statusParam = request.nextUrl.searchParams.get('status')
+    const isGestore = ['admin', 'manager'].includes(user.role)
 
     const stati = ['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED'] as const
     const status = stati.find((s) => s === statusParam)
 
-    const venueId = await getVenueId()
-
     const richieste = await prisma.attendanceCorrectionRequest.findMany({
       where: {
-        ...(venueId && { venueId }),
-        ...(isGestore ? {} : { userId: session.user.id }),
+        venueId,
+        ...(isGestore ? {} : { userId: user.id }),
         ...(status && { status }),
       },
       select: richiestaSelect,
@@ -55,34 +53,26 @@ export async function GET(request: NextRequest) {
       take: 200,
     })
 
-    return NextResponse.json({ data: richieste })
+    return ok({ data: richieste })
   } catch (error) {
-    logger.error('Errore GET /api/richieste-correzione', error)
-    return NextResponse.json(
-      { error: 'Errore nel recupero delle richieste' },
-      { status: 500 }
+    return handleApiError(
+      error,
+      'GET /api/richieste-correzione',
+      'Errore nel recupero delle richieste'
     )
   }
-}
+}, { venueScoped: true })
 
 // POST /api/richieste-correzione - Il dipendente chiede una correzione
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async (request: NextRequest, { user: utenteInSessione }) => {
   try {
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
     const utente = await prisma.user.findUnique({
-      where: { id: session.user.id },
+      where: { id: utenteInSessione.id },
       select: { id: true, portalEnabled: true, venueId: true },
     })
 
     if (!utente?.portalEnabled || !utente.venueId) {
-      return NextResponse.json(
-        { error: 'Accesso al portale non abilitato' },
-        { status: 403 }
-      )
+      return forbidden('Accesso al portale non abilitato')
     }
 
     const body = await request.json()
@@ -97,21 +87,18 @@ export async function POST(request: NextRequest) {
         select: { id: true },
       })
       if (!luogo) {
-        return NextResponse.json({ error: 'Luogo non trovato' }, { status: 400 })
+        return badRequest('Luogo non trovato')
       }
     }
 
     // L'anomalia collegata, se indicata, deve essere del richiedente.
     if (dati.anomalyId) {
       const anomalia = await prisma.attendanceAnomaly.findFirst({
-        where: { id: dati.anomalyId, userId: session.user.id },
+        where: { id: dati.anomalyId, userId: utente.id },
         select: { id: true },
       })
       if (!anomalia) {
-        return NextResponse.json(
-          { error: 'Anomalia non trovata' },
-          { status: 400 }
-        )
+        return badRequest('Anomalia non trovata')
       }
     }
 
@@ -119,7 +106,7 @@ export async function POST(request: NextRequest) {
     // confusione in coda di approvazione.
     const giaAperta = await prisma.attendanceCorrectionRequest.findFirst({
       where: {
-        userId: session.user.id,
+        userId: utente.id,
         date: toDateOnlyUtc(dati.date),
         status: 'PENDING',
       },
@@ -127,19 +114,15 @@ export async function POST(request: NextRequest) {
     })
 
     if (giaAperta) {
-      return NextResponse.json(
-        {
-          error:
-            'Hai già una richiesta in attesa per questa giornata: aspetta la risposta o annullala prima',
-        },
-        { status: 409 }
+      return conflict(
+        'Hai già una richiesta in attesa per questa giornata: aspetta la risposta o annullala prima'
       )
     }
 
     // I minuti diventano istanti qui, nel fuso italiano della giornata chiesta.
     const richiesta = await prisma.attendanceCorrectionRequest.create({
       data: {
-        userId: session.user.id,
+        userId: utente.id,
         venueId,
         workLocationId: dati.workLocationId,
         date: toDateOnlyUtc(dati.date),
@@ -158,7 +141,7 @@ export async function POST(request: NextRequest) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      userId: utente.id,
       action: 'CREATE',
       entityType: 'AttendanceCorrectionRequest',
       entityId: richiesta.id,
@@ -173,19 +156,12 @@ export async function POST(request: NextRequest) {
       logger.error('Errore notifica nuova richiesta di correzione', err)
     )
 
-    return NextResponse.json({ data: richiesta }, { status: 201 })
+    return created({ data: richiesta })
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Dati non validi', details: error.issues },
-        { status: 400 }
-      )
-    }
-
-    logger.error('Errore POST /api/richieste-correzione', error)
-    return NextResponse.json(
-      { error: 'Errore nella creazione della richiesta' },
-      { status: 500 }
+    return handleApiError(
+      error,
+      'POST /api/richieste-correzione',
+      'Errore nella creazione della richiesta'
     )
   }
-}
+})
