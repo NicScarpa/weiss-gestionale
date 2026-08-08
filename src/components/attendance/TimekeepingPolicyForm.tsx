@@ -145,6 +145,7 @@ const ETICHETTE_AVVISI: Record<string, string> = {
   ENTRATA_MANCANTE: 'Entrata mancante',
   USCITA_MANCANTE: 'Uscita mancante',
   PAUSA_PRANZO_NON_TIMBRATA: 'Pausa pranzo dedotta dalla regola',
+  PAUSA_NON_CHIUSA: 'Pausa iniziata e mai chiusa: ore invariate, export bloccato',
   FUORI_FINESTRA: 'Orario fuori dalla finestra della giornata',
   OLTRE_TETTO_GIORNALIERO: 'Ore oltre il tetto giornaliero',
   OLTRE_TURNO: 'Ore oltre il turno, sospese in attesa di revisione',
