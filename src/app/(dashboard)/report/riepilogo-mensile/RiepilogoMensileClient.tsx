@@ -443,12 +443,15 @@ export function RiepilogoMensileClient() {
 
                   return (
                     <div key={month.monthNumber} className="space-y-1">
-                      <div className="flex items-center justify-between text-sm">
+                      {/* Mese e quattro colonne fisse non stanno in un
+                          telefono: sotto sm il mese sta sopra e i valori si
+                          distribuiscono sulla riga che segue */}
+                      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm">
                         <span className="font-medium capitalize w-24">{month.monthShort}</span>
-                        <div className="flex items-center gap-4 text-xs">
-                          <span className="text-green-600 w-20 text-right">+{formatCurrency(month.income.gross)}</span>
-                          <span className="text-red-600 w-20 text-right">-{formatCurrency(month.expenses.total)}</span>
-                          <span className={`w-20 text-right font-medium ${month.net.total >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
+                        <div className="flex w-full items-center justify-between gap-2 text-xs sm:w-auto sm:justify-end sm:gap-4">
+                          <span className="min-w-0 truncate text-right tabular-nums text-green-600 sm:w-20">+{formatCurrency(month.income.gross)}</span>
+                          <span className="min-w-0 truncate text-right tabular-nums text-red-600 sm:w-20">-{formatCurrency(month.expenses.total)}</span>
+                          <span className={`min-w-0 truncate text-right font-medium tabular-nums sm:w-20 ${month.net.total >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
                             ={formatCurrency(month.net.total)}
                           </span>
                           <Badge variant={month.margin >= data.totals.margin ? 'default' : 'secondary'} className="w-16 justify-center">
