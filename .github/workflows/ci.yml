@@ -82,10 +82,11 @@ jobs:
       - name: Generate Prisma Client
         run: npx prisma generate
 
-      # Un'unica esecuzione: test:coverage:ci gira gli stessi test e in più
-      # applica le soglie di copertura, che sono bloccanti.
+      # Un'unica esecuzione: gira i test e insieme misura la copertura, le cui
+      # soglie stanno in vitest.config.ts e sono bloccanti. Non c'è più uno
+      # script separato per la CI: qui e in locale si misura la stessa cosa.
       - name: Run Tests with Coverage
-        run: npm run test:coverage:ci -- --reporter=verbose
+        run: npm run test:coverage -- --reporter=verbose
 
   build:
     name: Build

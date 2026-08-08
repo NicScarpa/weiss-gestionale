@@ -16,7 +16,6 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:coverage:ci": "vitest run --coverage --coverage.thresholds.lines=40 --coverage.thresholds.statements=40 --coverage.thresholds.functions=40 --coverage.thresholds.branches=40",
     "test:watch": "vitest --watch",
     "test:ui": "vitest --ui",
     "test:integration": "vitest run --config vitest.integration.config.ts",
