@@ -31,6 +31,10 @@ import {
   Clock,
   MapPin,
 } from 'lucide-react'
+import {
+  SFUMATURA_SCORRIMENTO,
+  useStrisciaScorrevole,
+} from '@/hooks/useStrisciaScorrevole'
 import { cn } from '@/lib/utils'
 import { AttendanceTable } from '@/components/attendance/AttendanceTable'
 import { AttendanceStats } from '@/components/attendance/AttendanceStats'
@@ -94,6 +98,7 @@ export default function PresenzePage() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
   const [manualEntryOpen, setManualEntryOpen] = useState(false)
   const [selectedUserIdForEntry, setSelectedUserIdForEntry] = useState<string | undefined>()
+  const { rifStriscia, restaDaScorrere } = useStrisciaScorrevole<HTMLDivElement>()
 
   // Fetch daily summary
   const { data: summary, isLoading } = useQuery<DailySummaryResponse>({
@@ -156,11 +161,21 @@ export default function PresenzePage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-1 p-1 bg-muted/50 rounded-lg">
+        {/* Le otto voci occupano 950 px: sotto md non ci stanno, e senza il
+            tetto `max-w-full` la striscia si allarga quanto loro e a scorrere
+            finisce la pagina intera. La sfumatura a destra dice che c'è
+            dell'altro, visto che gli scrollbar dei telefoni non si vedono. */}
+        <div
+          ref={rifStriscia}
+          className={cn(
+            'flex items-center gap-1 p-1 bg-muted/50 rounded-lg max-w-full overflow-x-auto',
+            restaDaScorrere && SFUMATURA_SCORRIMENTO
+          )}
+        >
           {/* Anomalie Button */}
           <Link
             href="/presenze/anomalie"
-            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground relative"
+            className="flex shrink-0 items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground relative"
           >
             <AlertTriangle className="h-4 w-4" />
             Anomalie
@@ -174,7 +189,7 @@ export default function PresenzePage() {
           {/* Richieste di correzione Button */}
           <Link
             href="/presenze/richieste"
-            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground relative"
+            className="flex shrink-0 items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground relative"
           >
             <ClipboardCheck className="h-4 w-4" />
             Richieste
@@ -188,7 +203,7 @@ export default function PresenzePage() {
           {/* Policy Button */}
           <Link
             href="/presenze/policy"
-            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="flex shrink-0 items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <Settings className="h-4 w-4" />
             Policy
@@ -197,7 +212,7 @@ export default function PresenzePage() {
           {/* Luoghi Button */}
           <Link
             href="/presenze/luoghi"
-            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="flex shrink-0 items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <MapPin className="h-4 w-4" />
             Luoghi
@@ -206,7 +221,7 @@ export default function PresenzePage() {
           {/* Regole orario Button */}
           <Link
             href="/presenze/regole-orario"
-            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="flex shrink-0 items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <Clock className="h-4 w-4" />
             Regole orario
@@ -215,7 +230,7 @@ export default function PresenzePage() {
           {/* Cartellino Button */}
           <Link
             href="/presenze/cartellino"
-            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="flex shrink-0 items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <CalendarCheck className="h-4 w-4" />
             Cartellino
@@ -224,18 +239,18 @@ export default function PresenzePage() {
           {/* Export Button */}
           <Link
             href="/presenze/export"
-            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="flex shrink-0 items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <FileText className="h-4 w-4" />
             Export
           </Link>
 
-          <div className="w-px h-4 bg-muted-foreground/20 mx-1" />
+          <div className="w-px h-4 shrink-0 bg-muted-foreground/20 mx-1" />
 
           {/* Manual Entry Button */}
           <button
             onClick={() => handleManualEntry()}
-            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground active:scale-95"
+            className="flex shrink-0 items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground active:scale-95"
           >
             <Plus className="h-4 w-4" />
             Inserimento Manuale
@@ -248,22 +263,31 @@ export default function PresenzePage() {
         <CardContent className="pt-6">
           <div className="flex flex-col md:flex-row items-center gap-4">
             {/* Date Navigation */}
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="icon" onClick={goToPreviousDay}>
+            <div className="flex w-full items-center gap-2 md:w-auto">
+              <Button variant="outline" size="icon" className="shrink-0" onClick={goToPreviousDay}>
                 <ChevronLeft className="h-4 w-4" />
               </Button>
 
               <Popover>
                 <PopoverTrigger asChild>
+                  {/* I 240 px fissi più le due frecce non stanno in un telefono:
+                      sotto md il bottone prende lo spazio che avanza */}
                   <Button
                     variant="outline"
                     className={cn(
-                      'w-[240px] justify-start text-left font-normal',
+                      'min-w-0 flex-1 justify-start text-left font-normal md:w-[240px] md:flex-none',
                       !selectedDate && 'text-muted-foreground'
                     )}
                   >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {format(selectedDate, 'EEEE d MMMM yyyy', { locale: it })}
+                    <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                    {/* Per esteso la data non entra in un telefono e verrebbe
+                        troncata proprio dove serve: sotto sm va in forma breve */}
+                    <span className="truncate sm:hidden">
+                      {format(selectedDate, 'EEE d MMM yyyy', { locale: it })}
+                    </span>
+                    <span className="hidden truncate sm:inline">
+                      {format(selectedDate, 'EEEE d MMMM yyyy', { locale: it })}
+                    </span>
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
@@ -276,12 +300,12 @@ export default function PresenzePage() {
                 </PopoverContent>
               </Popover>
 
-              <Button variant="outline" size="icon" onClick={goToNextDay}>
+              <Button variant="outline" size="icon" className="shrink-0" onClick={goToNextDay}>
                 <ChevronRight className="h-4 w-4" />
               </Button>
 
               {!isToday && (
-                <Button variant="ghost" size="sm" onClick={goToToday}>
+                <Button variant="ghost" size="sm" className="shrink-0" onClick={goToToday}>
                   Oggi
                 </Button>
               )}
