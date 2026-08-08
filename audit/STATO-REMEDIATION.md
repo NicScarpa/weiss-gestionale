@@ -217,10 +217,45 @@ Funziona **a metà**, e la parte mancante è quella che l'interfaccia promette:
   `src/app/offline/page.tsx:32` non è mantenuta. Codice scritto e mai collegato, con l'aggravante
   di una promessa esplicita a chi lavora.
 
-#### Fase 2 — in corso
-- **D2-P0-CHIUSURE**: il P0, l'IVA opzionale, la via d'uscita TLS per host locali.
-- **D3-REACT**: il debito React Compiler (39 violazioni), con l'obbligo di **alzare il plugin alla
-  7.1.x nello stesso lotto** — è la prova che il debito è estinto e impedisce che rientri.
+#### Fase 2 — completa e integrata
+
+- **D2-P0-CHIUSURE — fatto.** Il P0 risolto cancellando esplicitamente i `CashCount` nella stessa
+  transazione, **non** allentando il vincolo: il `Restrict` era deliberato (commit `2a5a297` lo mise
+  su *tutte* le relazioni figlie della contabilità) e cambiarlo qui l'avrebbe indebolito ovunque.
+  **Perché la suite non l'aveva visto**: le fixture creavano postazioni *senza* conteggio — le
+  uniche cancellabili — mentre in produzione l'interfaccia manda sempre la griglia. Il codice di
+  prova costruiva un mondo in cui il difetto non poteva accadere. Fixture estese di conseguenza.
+  Inversione: 3 test su 8 rossi. In più: IVA davvero opzionale, e via d'uscita TLS per soli host
+  locali (verificata: verso Supabase resta impossibile allentarla).
+- **D3-REACT — fatto, e con due correzioni decisive alle mie indicazioni.**
+  **43 violazioni bloccanti, non 39**: la ripartizione di questo documento era sbagliata
+  (`set-state-in-effect` 36 e non 29, `immutability` 6 e non 1, le 8 `exhaustive-deps` erano
+  mal classificate). Aggiornata.
+  1. **Le 5 `incompatible-library` NON erano irrisolvibili**, e metterle a tacere sarebbe stato un
+     errore serio: quel messaggio è *"Compilation Skipped"* — il compiler **non analizzava affatto**
+     quei componenti. Risolte con `useWatch`; appena `UserForm` è tornato analizzabile è emersa una
+     violazione mai vista prima. Una deroga avrebbe istituzionalizzato un punto cieco proprio mentre
+     si accendevano i controlli.
+  2. **⚠️ Le deroghe scritte a mano non erano 5.** Ce n'erano altre **9 mascherate da
+     `queueMicrotask(() => setState(...))`**, che ottengono lo stesso aggiramento **senza lasciare
+     traccia cercabile**: un `grep eslint-disable` non le trova. `src/components/shifts/CLAUDE.md`
+     conserva il verbale di come sono nate: *«Wrapped setState calls in queueMicrotask»* accanto a
+     *«Fixed all 18 remaining ESLint errors»*. Qualcuno ha "risolto" 18 errori nascondendoli.
+     **Ne restano 8**, elencate con file, riga e rimedio in `audit/DEBITO-set-state-in-effect.md`.
+  Dettaglio tecnico prezioso e valido oltre questo lotto: **`refetchOnMount: 'always'` non basta** —
+  al cambio di `queryKey` il refetch passa da `shouldFetchOptionally`, subordinato alla staleness,
+  quindi con lo `staleTime` globale di 60s tornando su un filtro già usato si vedevano **dati
+  vecchi**. Aggiunto `staleTime: 0` a tutte e 22 le query del lotto, e **verificato sul browser**.
+
+**Gate W4 fase 1+2** (tag `remediation/W4-fase1e2`): **854 test unit · 236 di integrazione** ·
+`eslint-plugin-react-hooks` **7.1.1** con **zero deroghe residue** per quella regola in tutto `src/` ·
+strict 24 · audit 0/0 · build OK. **26 commit sopra la produzione attuale.**
+
+> **DA RIMISURARE PRIMA DI RILASCIARE**: 7 test e2e sono dichiarati `test.fail()` perché
+> riproducevano difetti veri (`chiusura-cassa`, `prima-nota`, `mobile`, `offline`). Il P0 e l'IVA ora
+> sono corretti: quei test vanno rieseguiti e i `test.fail()` **rimossi dove il difetto è sparito**.
+> Non toglierli senza rieseguirli: diventerebbero asserzioni finte come quelle che abbiamo appena
+> cancellato.
 
 #### Resta da fare in W4 (non ancora assegnato)
 - **292 handler ancora con auth scritta a mano** (censimento di C1) → `withAuth`, poi
