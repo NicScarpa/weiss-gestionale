@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { prisma } from '@/lib/prisma'
 import { toDateOnlyUtc, romeDateKey } from '@/lib/timezone'
-import { giornoCorrente, giornoIndietro, saldiAlGiorno } from '@/lib/saldi'
+import {
+  giornoCorrente,
+  giornoIndietro,
+  movimentiPerContoEMese,
+  saldiAlGiorno,
+} from '@/lib/saldi'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { venueDiTest } from '@/test/integration/fixtures/closures'
 
@@ -128,5 +133,134 @@ describe('saldi dei registri', () => {
     await movimento(venue.id, { giorno: `${ANNO}-01-01`, entrata: 0.2 })
 
     expect((await saldiAlGiorno(venue.id)).registers.BANK.closingBalance).toBe(0.3)
+  })
+})
+
+/**
+ * La suddivisione di un movimento fra più conti (F2-ALL-002).
+ *
+ * Fino all'8 agosto 2026 le fette non erano lette da nessun report: il badge
+ * «Suddiviso (2)» compariva nell'elenco, ma nel budget l'intero importo restava
+ * sul conto principale. Il titolare divideva 1.000 € in 700 Alimentari e 300
+ * Pulizie e vedeva Alimentari 1.000 e Pulizie 0 — la distanza fra ciò che
+ * credeva di aver fatto e i numeri era l'intero importo del movimento.
+ */
+describe('movimenti per conto: le suddivisioni contano', () => {
+  async function conto(nome: string, tipo: 'COSTO' | 'RICAVO' = 'COSTO') {
+    return prisma.account.create({
+      data: { code: `T${Math.random().toString(36).slice(2, 8)}`, name: nome, type: tipo },
+    })
+  }
+
+  it('senza fette, l importo intero resta sul conto del movimento', async () => {
+    const venue = await venueDiTest()
+    const alimentari = await conto('Alimentari')
+    const entry = await movimento(venue.id, { giorno: `${ANNO}-03-10`, uscita: 1000 })
+    await prisma.journalEntry.update({
+      where: { id: entry.id },
+      data: { accountId: alimentari.id },
+    })
+
+    const righe = await movimentiPerContoEMese(venue.id, ANNO)
+    const riga = righe.find((r) => r.accountId === alimentari.id && r.mese === 3)
+
+    expect(riga?.avere.toNumber()).toBe(1000)
+  })
+
+  it('con le fette, ogni conto prende la sua parte', async () => {
+    const venue = await venueDiTest()
+    const alimentari = await conto('Alimentari')
+    const pulizie = await conto('Pulizie')
+    const entry = await movimento(venue.id, { giorno: `${ANNO}-03-10`, uscita: 1000 })
+    await prisma.journalEntry.update({
+      where: { id: entry.id },
+      data: { accountId: alimentari.id },
+    })
+    await prisma.journalEntryAllocation.createMany({
+      data: [
+        { journalEntryId: entry.id, accountId: alimentari.id, importo: 700, origine: 'manuale' },
+        { journalEntryId: entry.id, accountId: pulizie.id, importo: 300, origine: 'manuale' },
+      ],
+    })
+
+    const righe = await movimentiPerContoEMese(venue.id, ANNO)
+
+    expect(
+      righe.find((r) => r.accountId === alimentari.id && r.mese === 3)?.avere.toNumber()
+    ).toBe(700)
+    expect(
+      righe.find((r) => r.accountId === pulizie.id && r.mese === 3)?.avere.toNumber()
+    ).toBe(300)
+  })
+
+  it('il totale del mese non cambia: si sposta, non si crea né si perde', async () => {
+    // L'invariante che conta davvero. Se questa somma cambiasse, la
+    // suddivisione starebbe inventando o bruciando denaro.
+    const venue = await venueDiTest()
+    const alimentari = await conto('Alimentari')
+    const pulizie = await conto('Pulizie')
+    const entry = await movimento(venue.id, { giorno: `${ANNO}-03-10`, uscita: 1000 })
+    await prisma.journalEntry.update({
+      where: { id: entry.id },
+      data: { accountId: alimentari.id },
+    })
+    await prisma.journalEntryAllocation.createMany({
+      data: [
+        { journalEntryId: entry.id, accountId: alimentari.id, importo: 700, origine: 'manuale' },
+        { journalEntryId: entry.id, accountId: pulizie.id, importo: 300, origine: 'manuale' },
+      ],
+    })
+
+    const righe = await movimentiPerContoEMese(venue.id, ANNO)
+    const totale = righe.reduce((s, r) => s + r.avere.toNumber(), 0)
+
+    expect(totale).toBe(1000)
+  })
+
+  it('una suddivisione parziale lascia il resto sul conto principale', async () => {
+    // 1.000 € con una sola fetta da 300: 700 restano dove sono, non spariscono.
+    const venue = await venueDiTest()
+    const alimentari = await conto('Alimentari')
+    const pulizie = await conto('Pulizie')
+    const entry = await movimento(venue.id, { giorno: `${ANNO}-03-10`, uscita: 1000 })
+    await prisma.journalEntry.update({
+      where: { id: entry.id },
+      data: { accountId: alimentari.id },
+    })
+    await prisma.journalEntryAllocation.create({
+      data: { journalEntryId: entry.id, accountId: pulizie.id, importo: 300, origine: 'manuale' },
+    })
+
+    const righe = await movimentiPerContoEMese(venue.id, ANNO)
+
+    expect(
+      righe.find((r) => r.accountId === alimentari.id && r.mese === 3)?.avere.toNumber()
+    ).toBe(700)
+    expect(
+      righe.find((r) => r.accountId === pulizie.id && r.mese === 3)?.avere.toNumber()
+    ).toBe(300)
+    expect(righe.reduce((s, r) => s + r.avere.toNumber(), 0)).toBe(1000)
+  })
+
+  it('le fette di un movimento nascosto restano fuori, come il movimento', async () => {
+    const venue = await venueDiTest()
+    const alimentari = await conto('Alimentari')
+    const pulizie = await conto('Pulizie')
+    const entry = await movimento(venue.id, {
+      giorno: `${ANNO}-03-10`,
+      uscita: 1000,
+      nascosto: true,
+    })
+    await prisma.journalEntry.update({
+      where: { id: entry.id },
+      data: { accountId: alimentari.id },
+    })
+    await prisma.journalEntryAllocation.create({
+      data: { journalEntryId: entry.id, accountId: pulizie.id, importo: 300, origine: 'manuale' },
+    })
+
+    const righe = await movimentiPerContoEMese(venue.id, ANNO)
+
+    expect(righe.reduce((s, r) => s + r.avere.toNumber(), 0)).toBe(0)
   })
 })

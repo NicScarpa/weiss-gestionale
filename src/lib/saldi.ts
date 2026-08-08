@@ -351,21 +351,97 @@ export async function movimentiPerContoEMese(
 
   const perContoEMese = new Map<string, MovimentiPerConto>()
 
-  for (const riga of righe) {
-    // `date` è `@db.Date`, cioè mezzanotte UTC: il mese si legge in UTC, o le
-    // scritture del primo giorno del mese finirebbero in quello precedente.
-    const mese = riga.date.getUTCMonth() + 1
-    const chiave = `${riga.accountId ?? ''}|${mese}`
-
+  const aggiungi = (
+    accountId: string | null,
+    mese: number,
+    dare: ReturnType<typeof money>,
+    avere: ReturnType<typeof money>
+  ) => {
+    const chiave = `${accountId ?? ''}|${mese}`
     const corrente =
-      perContoEMese.get(chiave) ??
-      { accountId: riga.accountId, mese, dare: money(0), avere: money(0) }
+      perContoEMese.get(chiave) ?? { accountId, mese, dare: money(0), avere: money(0) }
 
     perContoEMese.set(chiave, {
       ...corrente,
-      dare: corrente.dare.plus(money(riga._sum.debitAmount)),
-      avere: corrente.avere.plus(money(riga._sum.creditAmount)),
+      dare: corrente.dare.plus(dare),
+      avere: corrente.avere.plus(avere),
     })
+  }
+
+  for (const riga of righe) {
+    // `date` è `@db.Date`, cioè mezzanotte UTC: il mese si legge in UTC, o le
+    // scritture del primo giorno del mese finirebbero in quello precedente.
+    aggiungi(
+      riga.accountId,
+      riga.date.getUTCMonth() + 1,
+      money(riga._sum.debitAmount),
+      money(riga._sum.creditAmount)
+    )
+  }
+
+  // Le suddivisioni spostano l'importo sui conti delle fette.
+  //
+  // Fino all'8 agosto 2026 le fette non erano lette da nessun report: il
+  // titolare divideva un pagamento da 1.000 € in 700 «Alimentari» e 300
+  // «Pulizie», vedeva il badge «Suddiviso (2)», e nel confronto budget
+  // Alimentari mostrava 1.000 e Pulizie 0. L'unico effetto reale della
+  // suddivisione era di spostare il movimento intero sul conto della fetta più
+  // grossa. La distanza fra ciò che credeva di aver fatto e i numeri era
+  // l'intero importo del movimento.
+  //
+  // Si sottrae dal conto principale solo la SOMMA delle fette, non l'importo
+  // intero: una suddivisione parziale lascia il resto dov'era. E il totale del
+  // mese non cambia mai — l'importo si sposta, non si crea e non si perde.
+  const fette = await prisma.journalEntryAllocation.findMany({
+    where: {
+      journalEntry: {
+        ...movimentiChePesano(venueId),
+        date: {
+          gte: toDateOnlyUtc(`${anno}-01-01`),
+          lte: toDateOnlyUtc(`${anno}-12-31`),
+        },
+      },
+    },
+    select: {
+      accountId: true,
+      importo: true,
+      journalEntry: {
+        select: { id: true, accountId: true, date: true, debitAmount: true, creditAmount: true },
+      },
+    },
+  })
+
+  const fettePerMovimento = new Map<string, typeof fette>()
+  for (const fetta of fette) {
+    const elenco = fettePerMovimento.get(fetta.journalEntry.id) ?? []
+    elenco.push(fetta)
+    fettePerMovimento.set(fetta.journalEntry.id, elenco)
+  }
+
+  for (const elenco of fettePerMovimento.values()) {
+    const movimento = elenco[0].journalEntry
+    const mese = movimento.date.getUTCMonth() + 1
+    // Il verso della fetta è quello del movimento che la contiene: una
+    // suddivisione non cambia il segno di ciò che è stato pagato o incassato.
+    const inDare = money(movimento.debitAmount).greaterThan(0)
+
+    for (const fetta of elenco) {
+      const importo = money(fetta.importo)
+      // Via dal conto principale…
+      aggiungi(
+        movimento.accountId,
+        mese,
+        inDare ? importo.negated() : money(0),
+        inDare ? money(0) : importo.negated()
+      )
+      // …e sul conto della fetta.
+      aggiungi(
+        fetta.accountId,
+        mese,
+        inDare ? importo : money(0),
+        inDare ? money(0) : importo
+      )
+    }
   }
 
   return Array.from(perContoEMese.values())
