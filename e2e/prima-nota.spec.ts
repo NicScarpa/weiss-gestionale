@@ -76,24 +76,25 @@ test.describe('Prima nota', () => {
   })
 
   /**
-   * DIFETTO NOTO — non correggere qui: il file è di un altro proprietario.
+   * GUARDIA DI REGRESSIONE — questo test è nato rosso, apposta.
    *
-   * Il campo «IVA (opzionale)» è registrato con `valueAsNumber: true`
-   * (src/components/prima-nota/movimenti/MovimentoFormDialog.tsx:337): lasciato
-   * vuoto produce `NaN`, e lo schema `z.number().min(0).optional()` lo rifiuta
-   * con «Invalid input: expected number, received NaN». Risultato: un campo
-   * dichiarato opzionale è di fatto obbligatorio e nessun movimento si salva
-   * senza scrivere un'IVA. Vale anche per l'importo, che però l'utente compila
-   * comunque.
+   * Il campo «IVA (opzionale)» era registrato con `valueAsNumber: true`:
+   * lasciato vuoto produceva `NaN`, e lo schema `z.number().min(0).optional()`
+   * lo rifiutava con «Invalid input: expected number, received NaN».
+   * Risultato: un campo dichiarato opzionale era di fatto obbligatorio e
+   * nessun movimento si salvava senza scrivere un'IVA.
    *
-   * `test.fail()`: deve fallire finché il difetto c'è; quando sarà corretto
-   * tornerà rosso e sarà il segnale per togliere l'annotazione.
+   * Corretto in `f5a56e2`: il campo usa `setValueAs: numeroFacoltativo`
+   * (src/components/prima-nota/movimenti/MovimentoFormDialog.tsx:491), che
+   * sulla casella vuota restituisce `undefined` invece di `NaN`.
+   * L'annotazione `test.fail()` è stata tolta l'8 ago 2026 **dopo** aver visto
+   * Playwright dichiarare «Expected to fail, but passed» su una esecuzione
+   * vera, non sulla fiducia.
+   *
+   * Da qui in avanti il test difende la correzione: se il campo tornasse
+   * obbligatorio, questo diventa rosso.
    */
-  test('un movimento senza IVA si salva (difetto noto: il campo opzionale blocca)', async ({
-    page,
-  }) => {
-    test.fail()
-
+  test('un movimento senza IVA si salva', async ({ page }) => {
     await apriConSessioneAdmin(page, '/prima-nota/movimenti')
 
     await page.getByRole('button', { name: 'Nuovo' }).click()
