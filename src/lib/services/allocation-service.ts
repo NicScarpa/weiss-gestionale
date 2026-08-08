@@ -17,21 +17,51 @@ export interface FettaInput {
 
 /**
  * Riparte una quota proporzionalmente alle fette date, al centesimo.
- * La differenza di arrotondamento quadra sull'ultima fetta non nulla, così la
- * somma restituita è SEMPRE esattamente la quota. Pura: nessun accesso al DB.
+ * La somma restituita è SEMPRE esattamente la quota. Pura: nessun accesso al DB.
+ *
+ * **Si arrotonda il cumulato, non la singola fetta.** Ogni fetta vale la
+ * differenza fra due totali progressivi arrotondati, quindi lo scarto non si
+ * accumula: dopo la fetta i-esima risultano assegnati esattamente
+ * `round(quota × pesi_fino_a_i ÷ totale)` centesimi, e all'ultima il cumulato
+ * è la quota per costruzione.
+ *
+ * La versione precedente arrotondava ogni fetta per conto suo e lasciava il
+ * resto all'ultima, che però poteva risultare **negativo** — gli arrotondamenti
+ * precedenti avevano già consumato più della quota, fino a mezzo centesimo per
+ * conto — e un `if (centesimi > 0)` lo scartava invece di sottrarlo. La somma
+ * allora superava la quota: 731,34 € ripartiti su undici conti diventavano
+ * 731,37 €. Cifre irrisorie, ma l'invariante dichiarata qui sopra è quella su
+ * cui si appoggiano i controlli di quadratura degli altri percorsi, che
+ * tollerano ±0,01 € contro i 0,03 € che questa funzione poteva produrre.
+ *
+ * I pesi non positivi si scartano prima di cominciare: con un peso negativo i
+ * cumulati non sarebbero più crescenti e una fetta potrebbe tornare negativa,
+ * cioè proprio il caso che l'invariante non saprebbe reggere.
  */
 export function ripartisciProQuota(fette: FettaInput[], quota: number): FettaInput[] {
-  const totale = fette.reduce((s, f) => s + f.importo, 0)
+  const positive = fette.filter((f) => f.importo > 0)
+  const totale = positive.reduce((s, f) => s + f.importo, 0)
   if (totale <= 0 || quota <= 0) return []
 
+  const quotaCentesimi = Math.round(quota * 100)
   const out: FettaInput[] = []
-  let residuo = Math.round(quota * 100)
-  fette.forEach((f, i) => {
-    const centesimi =
-      i === fette.length - 1 ? residuo : Math.round((quota * f.importo * 100) / totale)
-    residuo -= centesimi
+  let cumulatoPesi = 0
+  let assegnati = 0
+
+  positive.forEach((f, i) => {
+    cumulatoPesi += f.importo
+    // L'ultima fetta chiude sulla quota esatta: `cumulatoPesi` vi arriva per
+    // costruzione, ma dirlo evita di dipendere dall'ultima cifra di una
+    // divisione in virgola mobile.
+    const obiettivo =
+      i === positive.length - 1
+        ? quotaCentesimi
+        : Math.round((quotaCentesimi * cumulatoPesi) / totale)
+    const centesimi = obiettivo - assegnati
+    assegnati = obiettivo
     if (centesimi > 0) out.push({ accountId: f.accountId, importo: centesimi / 100 })
   })
+
   return out
 }
 
