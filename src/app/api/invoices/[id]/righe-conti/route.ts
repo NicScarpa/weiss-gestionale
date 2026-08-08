@@ -6,7 +6,7 @@ import { getVenueId } from '@/lib/venue'
 import { createAuditLog } from '@/lib/audit'
 import { logger } from '@/lib/logger'
 import { parseFatturaPA } from '@/lib/sdi/parser'
-import { normalizeProductName } from '@/lib/price-tracking'
+import { alimentaMemoriaFornitore } from '@/lib/line-categorization/memoria'
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -125,46 +125,30 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         })
         righeConfermate++
 
-        // Best-effort: un'imputazione manuale con fornitore noto alimenta la
-        // memoria fornitore-prodotto, riproposta in futuro per lo stesso articolo.
-        // Un errore qui non deve invalidare la conferma già scritta sopra.
-        // Descrizione vuota/whitespace/solo simboli normalizza a stringa
-        // vuota: senza guardia, prodotti diversi dello stesso fornitore
-        // collasserebbero sulla stessa chiave di memoria (come in
-        // trackPricesFromInvoice, price-tracking/index.ts).
-        const nomeNormalizzato = normalizeProductName(linea.descrizione)
-        if (invoice.supplierId && nomeNormalizzato) {
-          try {
-            await prisma.supplierProductAccount.upsert({
-              where: {
-                venueId_supplierId_nomeNormalizzato: {
-                  venueId,
-                  supplierId: invoice.supplierId,
-                  nomeNormalizzato,
-                },
-              },
-              create: {
-                venueId,
-                supplierId: invoice.supplierId,
-                nomeNormalizzato,
-                codiceArticolo: linea.codiceArticolo ?? null,
-                accountId: riga.accountId,
-                conferme: 1,
-              },
-              update: {
-                accountId: riga.accountId,
-                codiceArticolo: linea.codiceArticolo ?? null,
-                conferme: { increment: 1 },
-              },
-            })
-          } catch (error) {
-            logger.error('Errore aggiornamento memoria fornitore-prodotto', error)
-          }
+        // Un'imputazione manuale con fornitore noto alimenta la memoria
+        // fornitore-prodotto, riproposta in futuro per lo stesso articolo.
+        if (invoice.supplierId) {
+          await alimentaMemoriaFornitore({
+            venueId,
+            supplierId: invoice.supplierId,
+            descrizione: linea.descrizione,
+            codiceArticolo: linea.codiceArticolo ?? null,
+            accountId: riga.accountId,
+          })
         }
       }
     }
 
     if (validated.confermaTutte) {
+      // Le proposte si leggono PRIMA di confermarle: subito dopo non sono più
+      // in stato 'proposta' e non ci sarebbe più modo di sapere quali erano.
+      // Bastano lo snapshot (descrizione, codice) già salvato sulla riga e il
+      // conto: la fattura non va riparsata.
+      const proposte = await prisma.invoiceLineAccount.findMany({
+        where: { invoiceId: id, stato: 'proposta' },
+        select: { descrizione: true, codiceArticolo: true, accountId: true },
+      })
+
       const risultato = await prisma.invoiceLineAccount.updateMany({
         where: { invoiceId: id, stato: 'proposta' },
         data: {
@@ -174,6 +158,22 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         },
       })
       tutteConfermate = risultato.count
+
+      // «Conferma tutte» insegna quanto la conferma riga per riga (F2-ALL-008).
+      // È l'approvazione in blocco di proposte che l'utente ha guardato: il
+      // segnale è lo stesso, e prima andava perduto proprio nel percorso più
+      // usato — l'AI ricominciava da capo a ogni fattura dello stesso fornitore.
+      if (invoice.supplierId) {
+        for (const proposta of proposte) {
+          await alimentaMemoriaFornitore({
+            venueId,
+            supplierId: invoice.supplierId,
+            descrizione: proposta.descrizione,
+            codiceArticolo: proposta.codiceArticolo,
+            accountId: proposta.accountId,
+          })
+        }
+      }
     }
 
     // Audit solo se è stata scritta almeno una riga: niente rumore sui no-op
