@@ -38,6 +38,17 @@ jobs:
       - name: Autorizzazione delle route API (rapporto)
         run: node scripts/check-route-auth.mjs
 
+      # Codice morto. Il pacchetto e lo script c'erano da un pezzo, ma nessuno
+      # eseguiva knip in CI: la classe di problema che ha prodotto questa
+      # ondata — moduli scritti in una sessione e mai collegati a nulla —
+      # continuava a passare inosservata.
+      # Blocca, perché oggi è pulito: le severità sono in knip.json, dove file
+      # orfani e dipendenze inutilizzate sono `error` e i singoli export
+      # inutilizzati restano `warn` (sono ancora qualche centinaio e vanno
+      # verificati uno a uno).
+      - name: Codice morto (knip)
+        run: npm run knip
+
   typecheck:
     name: Type Check
     runs-on: ubuntu-latest
