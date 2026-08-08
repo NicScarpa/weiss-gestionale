@@ -48,12 +48,25 @@ export async function POST(
       }
     }
 
-    // Calcola nuova data scadenza
-    const baseDate = parent.ricorrenzaProssimaGenerazione || parent.dataScadenza
-    const nuovaDataScadenza = calcolaProssimaGenerazione(
-      new Date(baseDate),
-      parent.ricorrenzaTipo || 'mensile'
-    )
+    // `ricorrenzaProssimaGenerazione` è la prossima occorrenza DA generare, e
+    // qui si usa così com'è. Prima veniva letta come se fosse l'ultima
+    // generata — `base = prossimaGenerazione ?? dataScadenza`, poi un periodo
+    // in avanti — mentre più sotto viene scritta come la prossima da generare.
+    // Le due semantiche non combaciavano e ogni generazione ne mangiava una:
+    // un affitto mensile dava settembre, novembre, gennaio, e nel previsionale
+    // di cassa mancava una uscita ricorrente su due. L'errore restava
+    // invisibile alla prima generazione, quando il campo è ancora nullo e si
+    // ripiega sulla data del padre, che è davvero l'ultima occorrenza esistente.
+    //
+    // La route gemella `ricorrenze/[id]/genera` ha sempre avuto la semantica
+    // giusta: usa la base come data dell'occorrenza invece di sommarci un
+    // periodo. Questa ora fa lo stesso.
+    const nuovaDataScadenza = parent.ricorrenzaProssimaGenerazione
+      ? new Date(parent.ricorrenzaProssimaGenerazione)
+      : calcolaProssimaGenerazione(
+          new Date(parent.dataScadenza),
+          parent.ricorrenzaTipo || 'mensile'
+        )
 
     // Verifica che la nuova data non superi la fine ricorrenza
     if (parent.ricorrenzaFine && nuovaDataScadenza > new Date(parent.ricorrenzaFine)) {
