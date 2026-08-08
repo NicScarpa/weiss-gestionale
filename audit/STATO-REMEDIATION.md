@@ -1,7 +1,20 @@
 # Stato della remediation — documento di continuità
 
-**Ultimo aggiornamento:** 7 agosto 2026 · **Scopo:** riprendere il lavoro da zero senza ricostruire
+**Ultimo aggiornamento:** 8 agosto 2026 · **Scopo:** riprendere il lavoro da zero senza ricostruire
 il contesto. Se stai leggendo questo file in una sessione nuova, **leggilo tutto prima di agire**.
+
+> ### ⚠️ I numeri di questo documento sono stati ricontati l'8 agosto 2026
+>
+> Sei affermazioni erano false. Le sezioni «Fatto e verificato» restano **come fotografie del
+> momento in cui furono scritte** — non sono state riscritte, sarebbe falsificare la storia — ma
+> dove un numero è superato c'è ora una nota che rimanda allo stato di oggi.
+>
+> Le due che facevano perdere più tempo: **`next build --webpack` non fallisce più** (esce 0 in
+> 1m36s) e **i `test.fail()` residui erano 2, non 7, e ora sono 0**. Le altre quattro — handler
+> inline, copie di `entraCome()`, handler senza controllo, e la tesi delle «quattro route senza
+> validatore», che è **falsa** — sono spiegate in `PIANO-RESIDUO.md` §3.1, insieme ai tre modi in
+> cui un numero diventa sbagliato. **Prima di riportare una cifra da qui, rieseguire il comando che
+> la produce.**
 
 ---
 
@@ -124,7 +137,10 @@ Riepilogo di ciò che è entrato; il dettaglio dei mandati originali resta sotto
   `venueId` sempre dalla sessione; `mustChangePassword` ora vale anche sulle API, non solo nella
   modale. **Censimento** (`scripts/check-route-auth.mjs`, in CI come rapporto): su 200 route e 334
   handler → 27 `withAuth`, **292 inline**, 11 pubbliche, 2 cron, 2 senza controllo (verificate
-  innocue). **294 handler da convertire in W4.** Decisione motivata e verificata dal lead: chiusure
+  innocue). **294 handler da convertire in W4.** *(Fotografia di allora, lasciata com'era. Lo stato
+  di oggi è più sotto, in «Resta da fare»: 64 `withAuth` / 255 inline dopo AUTH-PRESENZE, e i senza
+  controllo sono **1** — `DELETE /api/venues`, che risponde sempre 403 ed è un tappo deliberato.)*
+  Decisione motivata e verificata dal lead: chiusure
   `submit`/`pdf` e `payee-suggestions` restano allo staff (è lui che compila la chiusura ogni sera),
   ma il PDF solo per le proprie chiusure e sempre dentro la sede; Excel ad admin/manager.
 - **C2-ORFANI**: **4.259 righe rimosse**, 30 file cancellati (4 librerie a zero import, 3 route senza
@@ -194,7 +210,9 @@ con titolo, corpo e url corretti — più la prova per decifratura del payload (
   aggiunto domani non resta scoperto in silenzio.
 - **D4-E2E — fatto.** Cancellate le spec vecchie (34 asserzioni `expect(true).toBe(true)`, login che
   cercava un'etichetta sparita a gennaio) e installata Playwright **nello stesso commit**. 17 test
-  funzionali + 5 sull'offline; 6 sono `test.fail()` dichiarati, che riproducono difetti veri.
+  funzionali + 6 sull'offline; **2** erano `test.fail()` dichiarati, che riproducevano difetti veri
+  — non 6, come diceva questa riga: il conteggio includeva le righe di commento che li citano.
+  Entrambi rimossi l'8 ago 2026 dopo averli eseguiti (vedi più sotto).
   **La e2e non entra nel gate**: vuole dev server e DB seedato (istruzioni in `e2e/README.md`).
 
 #### Difetti di prodotto trovati dalla e2e — NON ancora corretti (in lavorazione, agente D2)
@@ -256,11 +274,14 @@ Funziona **a metà**, e la parte mancante è quella che l'interfaccia promette:
 `eslint-plugin-react-hooks` **7.1.1** con **zero deroghe residue** per quella regola in tutto `src/` ·
 strict 24 · audit 0/0 · build OK. **26 commit sopra la produzione attuale.**
 
-> **DA RIMISURARE PRIMA DI RILASCIARE**: 7 test e2e sono dichiarati `test.fail()` perché
-> riproducevano difetti veri (`chiusura-cassa`, `prima-nota`, `mobile`, `offline`). Il P0 e l'IVA ora
-> sono corretti: quei test vanno rieseguiti e i `test.fail()` **rimossi dove il difetto è sparito**.
-> Non toglierli senza rieseguirli: diventerebbero asserzioni finte come quelle che abbiamo appena
-> cancellato.
+> ~~**DA RIMISURARE PRIMA DI RILASCIARE**: 7 test e2e sono dichiarati `test.fail()`~~ —
+> **RIMISURATO l'8 agosto 2026: fatto, e il numero era sbagliato.** Non erano 7 (né 6, né 4: questo
+> documento dice 6 poco sopra, il piano diceva 4). **Erano 2**, `chiusura-cassa.spec.ts:146` e
+> `prima-nota.spec.ts:95`; i conteggi più alti includevano righe di **commento** che citano
+> `test.fail()` e un ramo in `mobile.spec.ts` che nessuna pagina attiva. Suite eseguita contro
+> Postgres seedato e browser vero: entrambi «Expected to fail, but passed», cioè **stavano già
+> fallendo in silenzio**. Annotazioni tolte dopo l'esecuzione; oggi nella suite non ce n'è nessuna.
+> Dettaglio in `e2e/README.md`.
 
 #### Fase 3 — completa e integrata (tag `remediation/W4-completa`)
 
@@ -303,12 +324,17 @@ strict 24 · audit 0/0 · build OK. **26 commit sopra la produzione attuale.**
 > sono già in produzione dal 7 agosto.
 
 #### Resta da fare (non ancora assegnato)
-- **292 handler ancora con auth scritta a mano** (censimento di C1) → `withAuth`, poi
-  `scripts/check-route-auth.mjs --strict` bloccante in CI.
+- **255 handler ancora con auth scritta a mano** → `withAuth`, poi
+  `scripts/check-route-auth.mjs --strict` bloccante in CI. *(Erano 292 su `main`; AUTH-PRESENZE ne
+  ha convertiti 37, portando i `withAuth` da 27 a 64. Ricontato l'8 ago 2026 su
+  `residuo/auth-presenze` con lo script stesso — il 292 non era sbagliato, era **scaduto**.)*
 - **Il versamento manuale a riga singola** (§5 n.19): difetto contabile, va con test.
 - **Collegare la coda offline** delle chiusure (vedi sopra) e precacheare `/offline`.
 - Gli sfondamenti mobile di prima nota e scadenzario.
-- Promuovere `entraCome()` in `src/test/integration/auth-mock.ts` (5 copie sparse nei test).
+- Promuovere `entraCome()` in `src/test/integration/auth-mock.ts` (**17 copie**, non 5: erano 8 su
+  `main` e sono più che raddoppiate durante l'ondata W5, perché ogni lotto che ha scritto test di
+  autorizzazione se l'è riscritta. Ricontate l'8 ago 2026 con
+  `git grep -lE '(function|const) entraCome' residuo/auth-presenze -- 'src/**'`).
 - `budget.delete` è una **hard delete su un modello con `deletedAt`**: decisione di prodotto, perché
   `BudgetLine` non ha soft delete e le righe resterebbero orfane visibili.
 - Il **404 sulla seconda DELETE** (7 route) ora è corretto lato server: verificare che l'interfaccia
@@ -333,8 +359,10 @@ strict 24 · audit 0/0 · build OK. **26 commit sopra la produzione attuale.**
   tutti gli utenti del seed nascono con quel flag a `true` e ricevono 403 (correttamente). C4 ha
   scritto un helper locale che azzera il flag nella sessione: va reso condiviso, altrimenti ogni
   agente futuro ci sbatterà contro e penserà a un difetto del guard.
-- `next build --webpack` fallisce per simboli non consentiti esportati da
-  `api/luoghi-lavoro` e `api/promemoria-timbratura` (segnalato da C3).
+- ~~`next build --webpack` fallisce per simboli non consentiti esportati da `api/luoghi-lavoro` e
+  `api/promemoria-timbratura` (segnalato da C3)~~ — **NON fallisce più.** Corretto da AUTH-PRESENZE
+  (`d2f13bc`, «i simboli condivisi escono dalle route»). Verificato l'8 ago 2026: `npx next build
+  --webpack` esce con **0** in 1m36s. La riga era rimasta qui a far cercare un guasto inesistente.
 - `src/lib/prisma.ts:49` esige TLS quando `NODE_ENV=production`: chi vuole provare una build reale in
   locale deve mettere un proxy TLS davanti a Postgres. Attrito noto, da valutare.
 - `DailyClosure` non ha un campo "creata da" (`submittedById` è null prima dell'invio): per
