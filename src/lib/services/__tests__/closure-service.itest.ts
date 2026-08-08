@@ -84,6 +84,32 @@ describe('validateClosure sul database reale', () => {
     expect(result).toEqual({ outcome: 'invalid_status', currentStatus: 'VALIDATED' })
   })
 
+  it('non valida una chiusura cancellata', async () => {
+    // Il caso che l'audit chiedeva di blindare: una chiusura eliminata non deve
+    // poter rientrare dalla finestra e generare la prima nota del suo giorno,
+    // che è già stato riaperto ad altri.
+    const admin = await loginAs('admin')
+    const closure = await creaChiusura({
+      status: 'SUBMITTED',
+      postazioni: [{ cashAmount: 500, posAmount: 300 }],
+    })
+    await prisma.dailyClosure.updateMany({
+      where: { id: closure.id },
+      data: { deletedAt: new Date() },
+    })
+
+    const result = await validateClosure({
+      closureId: closure.id,
+      userId: admin.user.id,
+      action: 'approve',
+    })
+
+    expect(result).toEqual({ outcome: 'not_found' })
+    expect(
+      await prisma.journalEntry.count({ where: { closureId: closure.id } })
+    ).toBe(0)
+  })
+
   it('il reset riporta il database allo stato del seed fra un test e l\'altro', async () => {
     // Stessa data del primo test: passerebbe solo se la chiusura precedente è
     // sparita, perché sede+data sono uniche.
@@ -140,6 +166,29 @@ describe('POST /api/chiusure/[id]/validate', () => {
 
     expect(response.status).toBe(400)
     expect(response.body.error).toContain('inviate')
+  })
+
+  it('su una chiusura cancellata risponde 404', async () => {
+    const closure = await creaChiusura({
+      status: 'SUBMITTED',
+      postazioni: [{ cashAmount: 500 }],
+    })
+    await prisma.dailyClosure.updateMany({
+      where: { id: closure.id },
+      data: { deletedAt: new Date() },
+    })
+    await loginAs('admin')
+
+    const response = await callRoute<{ error: string }>(
+      validaChiusura,
+      jsonRequest(`/api/chiusure/${closure.id}/validate`, {
+        method: 'POST',
+        body: { action: 'approve' },
+      }),
+      { id: closure.id }
+    )
+
+    expect(response.status).toBe(404)
   })
 
   it('due click ravvicinati validano una volta sola', async () => {
