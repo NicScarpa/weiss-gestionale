@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
@@ -436,18 +437,32 @@ export async function POST(request: NextRequest) {
       // Le due righe stanno in una transazione perché sono un'operazione sola:
       // se ne sopravvivesse una, il denaro risulterebbe uscito da un registro
       // senza essere entrato nell'altro, e la liquidità totale cambierebbe di
-      // un importo che nessuno ha mai incassato né speso.
+      // un importo che nessuno ha mai incassato né speso. `transferId` porta
+      // quel legame oltre il momento della scrittura: è ciò che permette alla
+      // cancellazione di trattare le due righe come una cosa sola.
       //
       // L'IVA non viene riportata su nessuna delle due: spostare contante da un
       // registro all'altro non è un'operazione imponibile, e ricopiarla su
       // entrambe le righe la conterebbe due volte.
+      const transferId = randomUUID()
+
       const [uscita, entrata] = await prisma.$transaction([
         prisma.journalEntry.create({
-          data: { ...comune, registerType: da, creditAmount: validatedData.amount },
+          data: {
+            ...comune,
+            transferId,
+            registerType: da,
+            creditAmount: validatedData.amount,
+          },
           include: relazioni,
         }),
         prisma.journalEntry.create({
-          data: { ...comune, registerType: a, debitAmount: validatedData.amount },
+          data: {
+            ...comune,
+            transferId,
+            registerType: a,
+            debitAmount: validatedData.amount,
+          },
           include: relazioni,
         }),
       ])

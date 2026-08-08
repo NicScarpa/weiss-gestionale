@@ -6,7 +6,9 @@ import { setupIntegrationDb } from '@/test/integration/db'
 import { loginAs } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
 import { venueDiTest } from '@/test/integration/fixtures/closures'
+import { creaScadenza } from '@/test/integration/fixtures/scadenzario'
 import { POST as creaMovimento } from '../route'
+import { DELETE as cancellaMovimento } from '../[id]/route'
 
 /**
  * Un trasferimento non crea né distrugge denaro.
@@ -211,6 +213,119 @@ describe('POST /api/prima-nota, movimenti che trasferiscono denaro', () => {
     expect(dopo.bankBalance).toBe(BANCA_INIZIALE - IMPORTO)
     expect(dopo.totalAvailable).toBe(LIQUIDITA_INIZIALE)
     expect(await righeScritte(venue.id)).toHaveLength(2)
+  })
+})
+
+/**
+ * Cancellare un trasferimento è cancellare un'operazione sola.
+ *
+ * Le due righe si registrano insieme e vanno via insieme: eliminarne una
+ * lascerebbe il denaro uscito da un registro senza essere entrato nell'altro,
+ * cioè lo stesso sbilanciamento chiuso qui sopra, raggiunto da un'altra porta.
+ */
+describe('DELETE /api/prima-nota/[id], un lato di un trasferimento', () => {
+  async function versamentoRegistrato(venueId: string) {
+    const risposta = await registra({ registerType: 'CASH', entryType: 'VERSAMENTO' })
+    expect(risposta.status).toBe(201)
+
+    const righe = await prisma.journalEntry.findMany({
+      where: { venueId },
+      select: { id: true, registerType: true },
+    })
+    expect(righe).toHaveLength(2)
+
+    return righe
+  }
+
+  async function cancella(id: string) {
+    return callRoute<{ error?: string }>(
+      cancellaMovimento,
+      jsonRequest(`/api/prima-nota/${id}`, { method: 'DELETE' }),
+      { id }
+    )
+  }
+
+  it.each(['CASH', 'BANK'] as const)(
+    'cancellare la riga di %s porta via anche l\'altra e lascia il totale fermo',
+    async (registro) => {
+      await loginAs('admin')
+      const venue = await statoDiPartenza()
+      const righe = await versamentoRegistrato(venue.id)
+      const daCancellare = righe.find((r) => r.registerType === registro)!
+
+      const esito = await cancella(daCancellare.id)
+      expect(esito.status).toBe(200)
+
+      const dopo = await saldiAlGiorno(venue.id, OGGI)
+      expect(dopo.cashBalance).toBe(CASSA_INIZIALE)
+      expect(dopo.bankBalance).toBe(BANCA_INIZIALE)
+      expect(dopo.totalAvailable).toBe(LIQUIDITA_INIZIALE)
+    }
+  )
+
+  // La cancellazione è logica: le scritture contabili restano tracciabili.
+  it('entrambe le righe restano nel database, marcate come cancellate', async () => {
+    await loginAs('admin')
+    const venue = await statoDiPartenza()
+    const righe = await versamentoRegistrato(venue.id)
+
+    await cancella(righe[0].id)
+
+    const cancellate = await prisma.journalEntry.count({
+      where: { venueId: venue.id, deletedAt: { not: null } },
+    })
+    expect(cancellate).toBe(2)
+  })
+
+  // Il blocco vale per l'operazione intera: se è l'altra riga a essere agganciata
+  // a una scadenza, cancellare questa se la porterebbe via lo stesso.
+  it('non si cancella se è l\'altra riga a essere riconciliata con una scadenza', async () => {
+    const sessione = await loginAs('admin')
+    const venue = await statoDiPartenza()
+    const righe = await versamentoRegistrato(venue.id)
+    const banca = righe.find((r) => r.registerType === 'BANK')!
+    const cassa = righe.find((r) => r.registerType === 'CASH')!
+
+    const scadenza = await creaScadenza({
+      venueId: venue.id,
+      importoTotale: IMPORTO,
+      dataScadenza: toDateOnlyUtc(OGGI),
+      descrizione: 'Scadenza abbinata alla riga di banca',
+    })
+
+    await prisma.scheduleReconciliation.create({
+      data: {
+        scheduleId: scadenza.id,
+        journalEntryId: banca.id,
+        amount: IMPORTO,
+        status: 'VERIFIED',
+        createdById: sessione.user.id,
+      },
+    })
+
+    const esito = await cancella(cassa.id)
+    expect(esito.status).toBe(409)
+
+    expect(
+      await prisma.journalEntry.count({ where: { venueId: venue.id, deletedAt: null } })
+    ).toBe(2)
+    expect((await saldiAlGiorno(venue.id, OGGI)).totalAvailable).toBe(LIQUIDITA_INIZIALE)
+  })
+
+  it('un movimento a riga singola si cancella da solo, senza portarsi dietro nulla', async () => {
+    await loginAs('admin')
+    const venue = await statoDiPartenza()
+
+    await registra({ registerType: 'CASH', entryType: 'INCASSO' })
+    const incasso = await prisma.journalEntry.findFirstOrThrow({
+      where: { venueId: venue.id },
+      select: { id: true },
+    })
+
+    const esito = await cancella(incasso.id)
+    expect(esito.status).toBe(200)
+
+    expect((await saldiAlGiorno(venue.id, OGGI)).totalAvailable).toBe(LIQUIDITA_INIZIALE)
   })
 })
 
