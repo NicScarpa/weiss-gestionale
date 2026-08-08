@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
     Dialog,
     DialogContent,
@@ -9,17 +9,9 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select'
 import { toast } from 'sonner'
 import {
     UploadIcon,
-    AlertTriangleIcon,
     CheckCircle2Icon,
     FileSpreadsheetIcon,
     Loader2Icon,
@@ -29,39 +21,20 @@ import {
 import { cn } from '@/lib/utils'
 import type { ImportResult } from '@/types/reconciliation'
 
-interface Account {
-    id: string
-    name: string
-    code: string
-}
-
 interface CaricaMovimentiDialogProps {
     open: boolean
     onOpenChange: (open: boolean) => void
-    accounts: Account[]
-    venueId?: string
     onImportComplete?: () => void
 }
 
-type Step = 'select-account' | 'upload' | 'result'
-
-interface DateRange {
-    from: string | null
-    to: string | null
-    count: number
-}
+type Step = 'upload' | 'result'
 
 export function CaricaMovimentiDialog({
     open,
     onOpenChange,
-    accounts,
-    venueId,
     onImportComplete,
 }: CaricaMovimentiDialogProps) {
-    const [step, setStep] = useState<Step>('select-account')
-    const [selectedAccountId, setSelectedAccountId] = useState<string>('')
-    const [existingRange, setExistingRange] = useState<DateRange | null>(null)
-    const [isLoadingRange, setIsLoadingRange] = useState(false)
+    const [step, setStep] = useState<Step>('upload')
     const [isDragging, setIsDragging] = useState(false)
     const [isUploading, setIsUploading] = useState(false)
     const [uploadResult, setUploadResult] = useState<ImportResult | null>(null)
@@ -72,62 +45,13 @@ export function CaricaMovimentiDialog({
     useEffect(() => {
         if (!open) {
             setTimeout(() => {
-                setStep('select-account')
-                setSelectedAccountId('')
-                setExistingRange(null)
+                setStep('upload')
                 setSelectedFile(null)
                 setUploadResult(null)
                 setIsUploading(false)
             }, 300)
         }
     }, [open])
-
-    // Load existing date range when account is selected
-    const loadExistingRange = useCallback(async (accountId: string) => {
-        setIsLoadingRange(true)
-        try {
-            const params = new URLSearchParams()
-            if (venueId) params.set('venueId', venueId)
-            params.set('accountId', accountId)
-
-            const res = await fetch(`/api/bank-transactions?${params.toString()}&limit=1&sort=asc`)
-            const resLatest = await fetch(`/api/bank-transactions?${params.toString()}&limit=1&sort=desc`)
-            const resCount = await fetch(`/api/bank-transactions?${params.toString()}&countOnly=true`)
-
-            let from: string | null = null
-            let to: string | null = null
-            let count = 0
-
-            if (resCount.ok) {
-                const countData = await resCount.json()
-                count = countData.total || 0
-            }
-
-            if (res.ok && resLatest.ok) {
-                const earliest = await res.json()
-                const latest = await resLatest.json()
-                if (earliest.data?.[0]) {
-                    from = new Date(earliest.data[0].transactionDate).toLocaleDateString('it-IT')
-                }
-                if (latest.data?.[0]) {
-                    to = new Date(latest.data[0].transactionDate).toLocaleDateString('it-IT')
-                }
-            }
-
-            setExistingRange({ from, to, count })
-        } catch {
-            // Silently handle - range info is supplementary
-            setExistingRange({ from: null, to: null, count: 0 })
-        } finally {
-            setIsLoadingRange(false)
-        }
-    }, [venueId])
-
-    // Handle account selection
-    const handleAccountSelect = (accountId: string) => {
-        setSelectedAccountId(accountId)
-        loadExistingRange(accountId)
-    }
 
     // Handle file selection
     const handleFileSelect = (file: File) => {
@@ -206,8 +130,6 @@ export function CaricaMovimentiDialog({
         }
     }
 
-    const selectedAccount = accounts.find(a => a.id === selectedAccountId)
-
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-[520px]">
@@ -218,78 +140,25 @@ export function CaricaMovimentiDialog({
                     </DialogTitle>
                 </DialogHeader>
 
-                {/* Step 1: Account Selection */}
-                {step === 'select-account' && (
-                    <div className="space-y-5">
-                        <p className="text-sm text-muted-foreground">
-                            Seleziona il conto dove caricare i movimenti
-                        </p>
-
-                        <Select value={selectedAccountId} onValueChange={handleAccountSelect}>
-                            <SelectTrigger className="w-full">
-                                <SelectValue placeholder="Scegli un conto" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {accounts.map((account) => (
-                                    <SelectItem key={account.id} value={account.id}>
-                                        <div className="flex items-center gap-2">
-                                            <span className="font-medium">{account.name}</span>
-                                            <span className="text-xs text-muted-foreground">({account.code})</span>
-                                        </div>
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-
-                        {/* Duplicate Warning */}
-                        {selectedAccountId && (
-                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-2">
-                                <div className="flex items-center gap-2">
-                                    <EyeIcon className="h-4 w-4 text-amber-600" />
-                                    <span className="font-semibold text-sm text-amber-800">
-                                        Occhio ai duplicati! 👀
-                                    </span>
-                                </div>
-                                <p className="text-sm text-amber-700">
-                                    L&apos;app non rileva le transazioni duplicate. Verifica con attenzione prima di confermare.
-                                </p>
-                                {isLoadingRange ? (
-                                    <div className="flex items-center gap-2 text-sm text-amber-600">
-                                        <Loader2Icon className="h-3 w-3 animate-spin" />
-                                        Caricamento info...
-                                    </div>
-                                ) : existingRange && existingRange.count > 0 ? (
-                                    <p className="text-sm text-amber-700">
-                                        Al momento hai importato movimenti{' '}
-                                        <strong>dal {existingRange.from}</strong>{' '}
-                                        <strong>al {existingRange.to}</strong>
-                                        {' '}({existingRange.count} movimenti totali).
-                                    </p>
-                                ) : (
-                                    <p className="text-sm text-amber-700">
-                                        Nessun movimento importato finora per questo conto.
-                                    </p>
-                                )}
-                            </div>
-                        )}
-
-                        <div className="flex justify-end">
-                            <Button
-                                onClick={() => setStep('upload')}
-                                disabled={!selectedAccountId}
-                            >
-                                Procedi
-                            </Button>
-                        </div>
-                    </div>
-                )}
-
-                {/* Step 2: File Upload */}
+                {/* Step 1: File Upload */}
                 {step === 'upload' && (
                     <div className="space-y-5">
                         <p className="text-sm text-muted-foreground">
                             Carica un file CSV o Excel per iniziare il processo di importazione
                         </p>
+
+                        {/* Duplicate Warning */}
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-2">
+                            <div className="flex items-center gap-2">
+                                <EyeIcon className="h-4 w-4 text-amber-600" />
+                                <span className="font-semibold text-sm text-amber-800">
+                                    Occhio ai duplicati! 👀
+                                </span>
+                            </div>
+                            <p className="text-sm text-amber-700">
+                                L&apos;app non rileva le transazioni duplicate. Verifica con attenzione prima di confermare.
+                            </p>
+                        </div>
 
                         {/* Drop Zone */}
                         <div
@@ -343,25 +212,7 @@ export function CaricaMovimentiDialog({
                             )}
                         </div>
 
-                        {/* Account badge */}
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <span>Conto selezionato:</span>
-                            <span className="font-medium text-foreground bg-muted px-2 py-0.5 rounded">
-                                {selectedAccount?.name} ({selectedAccount?.code})
-                            </span>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                    setStep('select-account')
-                                    setSelectedFile(null)
-                                }}
-                            >
-                                ← Indietro
-                            </Button>
+                        <div className="flex justify-end">
                             <Button
                                 onClick={handleUpload}
                                 disabled={!selectedFile || isUploading}
@@ -379,7 +230,7 @@ export function CaricaMovimentiDialog({
                     </div>
                 )}
 
-                {/* Step 3: Result */}
+                {/* Step 2: Result */}
                 {step === 'result' && uploadResult && (
                     <div className="space-y-5">
                         <div className="bg-green-50 border border-green-200 rounded-lg p-6 text-center space-y-3">

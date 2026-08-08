@@ -36,7 +36,6 @@ import { resolveMovimentoEditAction } from '@/lib/prima-nota-utils'
 import type { JournalEntry, RegisterType, EntryType } from '@/types/prima-nota'
 
 interface MovimentiClientProps {
-  accounts: Array<{ id: string; name: string; code: string }>
   budgetCategories: Array<{ id: string; name: string; code: string; color?: string }>
 }
 
@@ -51,7 +50,7 @@ function deriveEntryType(entry: { registerType: string; debitAmount?: number | n
   return (entry.debitAmount && entry.debitAmount > 0) ? 'VERSAMENTO' : 'PRELIEVO'
 }
 
-export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientProps) {
+export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
   const searchParams = useSearchParams()
   const { venueId, isAdmin } = usePrimaNota()
 
@@ -424,8 +423,6 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
       <CaricaMovimentiDialog
         open={importDialogOpen}
         onOpenChange={setImportDialogOpen}
-        accounts={accounts}
-        venueId={venueId}
         onImportComplete={loadData}
       />
 
