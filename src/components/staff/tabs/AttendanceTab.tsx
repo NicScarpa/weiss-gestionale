@@ -32,12 +32,15 @@ export function AttendanceTab({ userId }: AttendanceTabProps) {
     queryKey: ['attendance-records', userId, from, to],
     queryFn: async () => {
       const res = await fetch(`/api/attendance/records?userId=${userId}&from=${from}&to=${to}`)
-      if (!res.ok) return { records: [] }
+      if (!res.ok) return { data: [] }
       return res.json()
     },
   })
 
-  const records: AttendanceRecord[] = data?.records || []
+  // La API risponde `{ data, pagination }`. Prima qui si leggeva `records`,
+  // che non esiste: la scheda mostrava "-" su ogni giorno e 0,0 h di totale
+  // qualunque cosa fosse stata timbrata.
+  const records: AttendanceRecord[] = data?.data || []
 
   // Group records by date
   const recordsByDate = records.reduce((acc: Record<string, AttendanceRecord[]>, r) => {
