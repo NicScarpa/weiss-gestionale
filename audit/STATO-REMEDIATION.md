@@ -257,7 +257,47 @@ strict 24 · audit 0/0 · build OK. **26 commit sopra la produzione attuale.**
 > Non toglierli senza rieseguirli: diventerebbero asserzioni finte come quelle che abbiamo appena
 > cancellato.
 
-#### Resta da fare in W4 (non ancora assegnato)
+#### Fase 3 — completa e integrata (tag `remediation/W4-completa`)
+
+- **E1-VERSAMENTO.** **Tre** tipi di movimento erano rotti, non uno. Versamento e prelievo
+  scrivevano una riga sola: registrando 500 € dalla cassa la liquidità **scendeva** di 500 invece di
+  restare ferma. Il **giroconto era peggio**: `getMovementDirection` rispondeva `'DEBIT'` su
+  *entrambi* i registri, col commento «Default, dipende dal contesto» — **ogni giroconto creava
+  denaro dal nulla**. Attenuante confermata: la chiusura di cassa giornaliera scriveva già la coppia
+  correttamente, quindi il difetto colpiva solo le registrazioni manuali.
+  **Micro-slot concesso** per chiudere il buco residuo: le due righe non erano legate, quindi la
+  DELETE ne cancellava una sola e sbilanciava di nuovo. Colonna `transferId` nullable + indice;
+  la DELETE cancella la coppia (non rifiuta: non esiste un percorso «elimina trasferimento», il
+  rifiuto sarebbe stato un vicolo cieco). Nessuna migrazione dei dati esistenti, di proposito:
+  appaiare a posteriori richiederebbe di indovinare per data e importo.
+- **E2-OFFLINE.** La coda **ora esiste davvero**: la bozza salvata senza rete entra in
+  `pendingClosures` **con dentro gli importi contati**, un solo avviso invece dei due che si
+  contraddicevano, sincronizzazione automatica al ritorno della rete, fallimento dichiarato.
+  `/offline` precacheata (una voce, ~17 KB, bundle invariato) e resa pubblica nel middleware —
+  necessario: il service worker si installa al primo caricamento, che per tutti è `/login` senza
+  sessione, e protetta in cache sarebbe finito il form di login sotto l'URL `/offline`.
+  Prima visita risolta senza precacheare il guscio. **Limiti dichiarati, non nascosti**: la
+  *modifica* di una chiusura già sul server non si accoda; gli elenchi offline non sono
+  consultabili (**la promessa è stata tolta dalla pagina invece di finger la funzione**); una
+  chiusura rifiutata resta in coda senza una schermata che la mostri.
+- **E3-MOBILE.** Scadenzario **731→326**, prima nota **358→326** (criterio `main.scrollWidth`).
+  **La diagnosi del lead era sbagliata**: non era la tabella — shadcn la avvolge già in
+  `overflow-x-auto` — ma la riga delle azioni dell'intestazione e la striscia delle tab larga a
+  contenuto. Lezione per le prossime pagine: **misurare il colpevole, non dedurlo**.
+  7 deroghe nascoste su 8 estinte; prima di toccarle ne ha tolta una di prova per accertarsi che la
+  regola vedesse attraverso `useCallback`. **L'ottava resta ma cambia natura**: da `queueMicrotask`
+  invisibile a `eslint-disable` **cercabile con la motivazione accanto**.
+- **Lead**: i due `difettoNoto` di `e2e/mobile.spec.ts` tolti **dopo** aver eseguito la suite
+  (4/4 verdi con database seedato e browser reale), non sulla fiducia.
+
+**Gate finale W4: 885 test unit · 45 commit sopra la produzione ·** strict 24 · audit 0/0 · build OK.
+
+> **⚠️ IL PROSSIMO RILASCIO RICHIEDE UNA MIGRAZIONE.** La colonna `transfer_id` su `journal_entries`
+> (con indice) va applicata **prima** del codice, con la stessa sequenza già collaudata:
+> `I_KNOW_THIS_IS_PROD=1 … npm run db:push`. `constraints.sql` **non** va rieseguito: gli 8 vincoli
+> sono già in produzione dal 7 agosto.
+
+#### Resta da fare (non ancora assegnato)
 - **292 handler ancora con auth scritta a mano** (censimento di C1) → `withAuth`, poi
   `scripts/check-route-auth.mjs --strict` bloccante in CI.
 - **Il versamento manuale a riga singola** (§5 n.19): difetto contabile, va con test.
