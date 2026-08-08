@@ -16,8 +16,8 @@ interface FiltersToolbarProps {
 
 export function FiltersToolbar({ children, onClearFilters, filterCount = 0 }: FiltersToolbarProps) {
   return (
-    <div className="flex items-center justify-between gap-2">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-start justify-between gap-2">
+      <div className="flex flex-wrap items-center gap-2 min-w-0">
         {children}
       </div>
       {filterCount > 0 && onClearFilters && (
@@ -25,7 +25,7 @@ export function FiltersToolbar({ children, onClearFilters, filterCount = 0 }: Fi
           variant="ghost"
           size="sm"
           onClick={onClearFilters}
-          className="h-8 px-2 text-muted-foreground hover:text-foreground"
+          className="h-8 px-2 text-muted-foreground hover:text-foreground shrink-0"
         >
           <X className="h-4 w-4 mr-1" />
           Cancella filtri ({filterCount})

@@ -32,7 +32,11 @@ import {
 } from '@/components/ui/select'
 import { DangerousDeleteDialog } from '@/components/ui/dangerous-delete-dialog'
 import { usePrimaNota } from '@/components/prima-nota/PrimaNotaContext'
-import { resolveMovimentoEditAction } from '@/lib/prima-nota-utils'
+import {
+  resolveMovimentoEditAction,
+  countActiveMovimentiFilters,
+  DEFAULT_MOVIMENTI_FILTERS,
+} from '@/lib/prima-nota-utils'
 import type { JournalEntry, RegisterType, EntryType } from '@/types/prima-nota'
 
 interface MovimentiClientProps {
@@ -58,17 +62,12 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
   const registerFromUrl = searchParams.get('register') as RegisterType | null
 
   // Filters state
-  const [filters, setFilters] = useState({
-    registerType: undefined as RegisterType | undefined,
-    dateFrom: undefined as Date | undefined,
-    dateTo: undefined as Date | undefined,
-    entryType: undefined as string | undefined,
-    accountId: undefined as string | undefined,
-    costCenterId: undefined as string | undefined,
-    budgetCategoryId: undefined as string | undefined,
-    verified: undefined as boolean | undefined,
-    search: '',
-  })
+  const [filters, setFilters] = useState(DEFAULT_MOVIMENTI_FILTERS)
+
+  // Usato dal pulsante "Cancella filtri" di MovimentiFilters e per decidere
+  // quando mostrarlo.
+  const filterCount = countActiveMovimentiFilters(filters)
+  const handleClearFilters = () => setFilters(DEFAULT_MOVIMENTI_FILTERS)
 
   // Data state
   const [data, setData] = useState<JournalEntry[]>([])
@@ -331,6 +330,8 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
         search={filters.search}
         onSearchChange={(v) => setFilters(f => ({ ...f, search: v }))}
         budgetCategoryOptions={budgetCategories}
+        filterCount={filterCount}
+        onClearFilters={handleClearFilters}
       />
 
       <MovimentiTable

@@ -10,6 +10,9 @@ import {
   isEntryEditable,
   groupEntriesByDate,
   resolveMovimentoEditAction,
+  countActiveMovimentiFilters,
+  DEFAULT_MOVIMENTI_FILTERS,
+  type MovimentiFiltersState,
 } from '../prima-nota-utils'
 
 describe('getMovementDirection', () => {
@@ -392,5 +395,58 @@ describe('groupEntriesByDate', () => {
 
     expect(dateEntries[0].id).toBe('1')
     expect(dateEntries[1].id).toBe('2')
+  })
+})
+
+describe('countActiveMovimentiFilters', () => {
+  // Difetto preesistente: MovimentiFilters riceveva filterCount/onClearFilters
+  // ma non li usava mai nel render, e MovimentiClient non li passava — una
+  // volta impostato un filtro non c'era modo di azzerarlo dall'interfaccia.
+  // Questa funzione pura è la logica di conteggio ora effettivamente
+  // collegata al pulsante "Cancella filtri".
+
+  it('con i filtri di default (nessun filtro impostato) conta zero', () => {
+    expect(countActiveMovimentiFilters(DEFAULT_MOVIMENTI_FILTERS)).toBe(0)
+  })
+
+  it('conta un filtro per ciascun campo impostato', () => {
+    const filtri: MovimentiFiltersState = {
+      ...DEFAULT_MOVIMENTI_FILTERS,
+      registerType: 'CASH',
+      entryType: 'INCASSO',
+      accountId: 'conto-1',
+      costCenterId: 'centro-1',
+      budgetCategoryId: 'categoria-1',
+    }
+    expect(countActiveMovimentiFilters(filtri)).toBe(5)
+  })
+
+  it('data da/a vale come un unico filtro "periodo", anche se impostate entrambe', () => {
+    const soloDa: MovimentiFiltersState = { ...DEFAULT_MOVIMENTI_FILTERS, dateFrom: new Date('2026-01-01') }
+    const soloA: MovimentiFiltersState = { ...DEFAULT_MOVIMENTI_FILTERS, dateTo: new Date('2026-01-31') }
+    const entrambe: MovimentiFiltersState = {
+      ...DEFAULT_MOVIMENTI_FILTERS,
+      dateFrom: new Date('2026-01-01'),
+      dateTo: new Date('2026-01-31'),
+    }
+
+    expect(countActiveMovimentiFilters(soloDa)).toBe(1)
+    expect(countActiveMovimentiFilters(soloA)).toBe(1)
+    expect(countActiveMovimentiFilters(entrambe)).toBe(1)
+  })
+
+  it('verified=false conta come filtro attivo (non è lo stesso di "nessun filtro")', () => {
+    const filtri: MovimentiFiltersState = { ...DEFAULT_MOVIMENTI_FILTERS, verified: false }
+    expect(countActiveMovimentiFilters(filtri)).toBe(1)
+  })
+
+  it('una ricerca testuale vuota non conta come filtro attivo', () => {
+    const filtri: MovimentiFiltersState = { ...DEFAULT_MOVIMENTI_FILTERS, search: '' }
+    expect(countActiveMovimentiFilters(filtri)).toBe(0)
+  })
+
+  it('una ricerca testuale non vuota conta come filtro attivo', () => {
+    const filtri: MovimentiFiltersState = { ...DEFAULT_MOVIMENTI_FILTERS, search: 'bonifico' }
+    expect(countActiveMovimentiFilters(filtri)).toBe(1)
   })
 })

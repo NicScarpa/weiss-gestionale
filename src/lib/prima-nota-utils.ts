@@ -219,6 +219,55 @@ export function resolveMovimentoEditAction(
 }
 
 /**
+ * Stato dei filtri della lista movimenti (pagina Prima Nota > Movimenti).
+ */
+export interface MovimentiFiltersState {
+  registerType?: RegisterType
+  dateFrom?: Date
+  dateTo?: Date
+  entryType?: string
+  accountId?: string
+  costCenterId?: string
+  budgetCategoryId?: string
+  verified?: boolean
+  search: string
+}
+
+/**
+ * Filtri "vuoti": stato iniziale e valore a cui torna "Cancella filtri".
+ */
+export const DEFAULT_MOVIMENTI_FILTERS: MovimentiFiltersState = {
+  registerType: undefined,
+  dateFrom: undefined,
+  dateTo: undefined,
+  entryType: undefined,
+  accountId: undefined,
+  costCenterId: undefined,
+  budgetCategoryId: undefined,
+  verified: undefined,
+  search: '',
+}
+
+/**
+ * Conta i filtri attivi nella barra dei movimenti, per il pulsante
+ * "Cancella filtri" di MovimentiFilters (data da/a vale come un unico
+ * filtro "periodo", coerente con l'unico controllo DateRangePicker che lo
+ * imposta).
+ */
+export function countActiveMovimentiFilters(filters: MovimentiFiltersState): number {
+  return [
+    filters.registerType,
+    filters.dateFrom || filters.dateTo,
+    filters.entryType,
+    filters.accountId,
+    filters.costCenterId,
+    filters.budgetCategoryId,
+    filters.verified !== undefined,
+    filters.search,
+  ].filter(Boolean).length
+}
+
+/**
  * Raggruppa movimenti per data
  */
 export function groupEntriesByDate(
