@@ -42,8 +42,20 @@ export function installaStubDom() {
 
 /**
  * Nell'applicazione il QueryClientProvider sta nel layout radice, quindi i
- * componenti lo danno per scontato. Qui si monta un client per ogni test, senza
- * ritentativi: una richiesta fallita non deve tenere occupata la suite.
+ * componenti che usano TanStack Query lo danno per scontato: senza, il test
+ * fallisce con "No QueryClient set" per un difetto del banco di prova, non del
+ * prodotto.
+ *
+ * Due scelte che sembrano superflue e non lo sono, da non smontare:
+ *
+ * - **Il client è creato qui dentro, uno nuovo a ogni montaggio**, non una volta
+ *   sola a livello di modulo. Condividendolo, la cache di un test sopravvive nel
+ *   successivo e si ottengono due guasti che sembrano difetti del prodotto: un
+ *   test che passa solo se eseguito dopo un altro, e un componente che pare non
+ *   ricaricare i dati mentre in realtà li sta leggendo dalla cache del test
+ *   precedente.
+ * - **`retry: false`**: col default, un test che verifica lo stato d'errore
+ *   aspetta i tre tentativi con backoff e diventa lento o intermittente.
  */
 export async function montare(ui: React.ReactElement): Promise<HTMLElement> {
   container = document.createElement('div')
