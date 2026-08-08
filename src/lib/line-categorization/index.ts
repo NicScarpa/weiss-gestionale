@@ -162,9 +162,10 @@ export async function categorizzaRigheFattura({
     const righeDaProcessare = righeXml.filter((r) => !numeriEsistenti.has(r.numeroLinea))
     if (righeDaProcessare.length === 0) return
 
-    // Memoria prima: match per codiceArticolo esatto, poi per nomeNormalizzato.
-    // Scoping obbligatorio per venueId (vedi doc del modulo): Supplier è
-    // globale, senza questo filtro la memoria di un altro venue matcherebbe.
+    // La memoria del fornitore, tutta: il tetto di memoriePerIlPrompt vale
+    // solo sugli esempi mostrati al modello, l'abbinamento deve poterle vedere
+    // tutte. Scoping obbligatorio per venueId (vedi doc del modulo): Supplier
+    // è globale, senza questo filtro la memoria di un altro venue matcherebbe.
     const memorie = invoice.supplierId
       ? await prisma.supplierProductAccount.findMany({
           where: { supplierId: invoice.supplierId, venueId: invoice.venueId },
