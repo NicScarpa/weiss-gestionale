@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -87,15 +88,11 @@ const CATEGORY_TYPE_COLORS: Record<string, string> = {
 }
 
 export function BudgetCategoryManagement() {
-  const [categories, setCategories] = useState<BudgetCategory[]>([])
-  const [hierarchy, setHierarchy] = useState<BudgetCategory[]>([])
-  const [venues, setVenues] = useState<Venue[]>([])
-  const [selectedVenueId, setSelectedVenueId] = useState<string>('')
-  const [loading, setLoading] = useState(true)
+  // Sede scelta esplicitamente dall'utente: se manca si usa la prima disponibile
+  const [sceltaSede, setSceltaSede] = useState<string>('')
   const [seeding, setSeeding] = useState(false)
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [editCategory, setEditCategory] = useState<BudgetCategory | null>(null)
-  const [unmappedAccounts, setUnmappedAccounts] = useState<Account[]>([])
   const [deleteTarget, setDeleteTarget] = useState<BudgetCategory | null>(null)
 
   // Form state
@@ -111,61 +108,76 @@ export function BudgetCategoryManagement() {
     description: '',
   })
 
-  useEffect(() => {
-    fetchVenues()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
-    if (selectedVenueId) {
-      fetchCategories()
-      fetchUnmappedAccounts()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedVenueId])
-
-  const fetchVenues = async () => {
-    try {
+  const {
+    data: rispostaSedi,
+    isError: erroreSedi,
+    error: dettaglioErroreSedi,
+  } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    queryKey: ['venues'],
+    queryFn: async (): Promise<{ venues?: Venue[] } | Venue[]> => {
       const res = await fetch('/api/venues')
-      const data = await res.json()
-      // API returns { venues: [...] } or array directly
-      const venuesList = Array.isArray(data) ? data : (data.venues || [])
-      setVenues(venuesList)
-      if (venuesList.length > 0 && !selectedVenueId) {
-        setSelectedVenueId(venuesList[0].id)
-      }
-    } catch (error) {
-      logger.error('Errore caricamento sedi', error)
-      setVenues([])
-    }
-  }
+      return res.json()
+    },
+  })
 
-  const fetchCategories = async () => {
-    if (!selectedVenueId) return
-    setLoading(true)
-    try {
+  useEffect(() => {
+    if (erroreSedi) {
+      logger.error('Errore caricamento sedi', dettaglioErroreSedi)
+    }
+  }, [erroreSedi, dettaglioErroreSedi])
+
+  // API returns { venues: [...] } or array directly
+  const venues = Array.isArray(rispostaSedi) ? rispostaSedi : rispostaSedi?.venues || []
+  const selectedVenueId = sceltaSede || venues[0]?.id || ''
+
+  const {
+    data: datiCategorie,
+    isPending,
+    isFetching,
+    isError: erroreCategorie,
+    error: dettaglioErroreCategorie,
+    refetch: ricaricaCategorie,
+  } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    queryKey: ['budget-categories', selectedVenueId, 'includeInactive'],
+    enabled: !!selectedVenueId,
+    queryFn: async (): Promise<{ categories?: BudgetCategory[]; hierarchy?: BudgetCategory[] }> => {
       const res = await fetch(`/api/budget-categories?venueId=${selectedVenueId}&includeInactive=true`)
-      const data = await res.json()
-      setCategories(data.categories || [])
-      setHierarchy(data.hierarchy || [])
-    } catch (error) {
-      logger.error('Errore caricamento categorie', error)
-      toast.error('Impossibile caricare le categorie')
-    } finally {
-      setLoading(false)
-    }
-  }
+      return res.json()
+    },
+  })
 
-  const fetchUnmappedAccounts = async () => {
-    if (!selectedVenueId) return
-    try {
-      const res = await fetch(`/api/budget-categories/mappings?venueId=${selectedVenueId}&unmappedOnly=true`)
-      const data = await res.json()
-      setUnmappedAccounts(data.unmappedAccounts || [])
-    } catch (error) {
-      logger.error('Errore caricamento conti', error)
+  useEffect(() => {
+    if (erroreCategorie) {
+      logger.error('Errore caricamento categorie', dettaglioErroreCategorie)
+      toast.error('Impossibile caricare le categorie')
     }
-  }
+  }, [erroreCategorie, dettaglioErroreCategorie])
+
+  const { data: datiConti, isError: erroreConti, error: dettaglioErroreConti } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    queryKey: ['budget-category-mappings', selectedVenueId, 'unmapped'],
+    enabled: !!selectedVenueId,
+    queryFn: async (): Promise<{ unmappedAccounts?: Account[] }> => {
+      const res = await fetch(`/api/budget-categories/mappings?venueId=${selectedVenueId}&unmappedOnly=true`)
+      return res.json()
+    },
+  })
+
+  useEffect(() => {
+    if (erroreConti) {
+      logger.error('Errore caricamento conti', dettaglioErroreConti)
+    }
+  }, [erroreConti, dettaglioErroreConti])
+
+  const loading = isPending || isFetching
+  const categories = datiCategorie?.categories || []
+  const hierarchy = datiCategorie?.hierarchy || []
+  const unmappedAccounts = datiConti?.unmappedAccounts || []
 
   const seedCategories = async () => {
     if (!selectedVenueId) return
@@ -180,7 +192,7 @@ export function BudgetCategoryManagement() {
 
       if (res.ok) {
         toast.success(`${data.created?.length || 0} categorie create con successo`)
-        fetchCategories()
+        ricaricaCategorie()
       } else {
         throw new Error(data.error)
       }
@@ -225,7 +237,7 @@ export function BudgetCategoryManagement() {
         setShowAddDialog(false)
         setEditCategory(null)
         resetForm()
-        fetchCategories()
+        ricaricaCategorie()
       } else {
         throw new Error(data.error)
       }
@@ -253,7 +265,7 @@ export function BudgetCategoryManagement() {
     }
     toast.success(`${deleteTarget.name} eliminata con successo`)
     setDeleteTarget(null)
-    fetchCategories()
+    ricaricaCategorie()
   }
 
   const openEditDialog = (category: BudgetCategory) => {
@@ -375,7 +387,7 @@ export function BudgetCategoryManagement() {
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-4">
-                  <Select value={selectedVenueId} onValueChange={setSelectedVenueId}>
+                  <Select value={selectedVenueId} onValueChange={setSceltaSede}>
                     <SelectTrigger className="w-48">
                       <SelectValue placeholder="Seleziona sede" />
                     </SelectTrigger>
@@ -459,7 +471,7 @@ export function BudgetCategoryManagement() {
 
                 <TabsContent value="list" className="mt-4">
                   <div className="border rounded-lg">
-                    {categories
+                    {[...categories]
                       .sort((a, b) => a.displayOrder - b.displayOrder)
                       .map(cat => (
                         <div key={cat.id} className="flex items-center justify-between p-3 border-b last:border-b-0 hover:bg-muted/50">
