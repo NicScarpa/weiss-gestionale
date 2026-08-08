@@ -325,22 +325,6 @@ export async function generatePayrollData(
     }
   }
 
-  const users = await prisma.user.findMany({
-    where: usersWhere,
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      contractType: true,
-      contractHoursWeek: true,
-      hourlyRateBase: true,
-      hourlyRateExtra: true,
-      hourlyRateHoliday: true,
-      hourlyRateNight: true,
-    },
-    orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
-  })
-
   // Carica le timbrature del periodo, più un margine oltre gli estremi: il
   // turno del 31 sera ha l'uscita nel mese dopo, e quello del mese prima ha
   // l'uscita il giorno 1. È il raggruppamento per giornata lavorativa a
@@ -378,6 +362,58 @@ export async function generatePayrollData(
         },
       },
     },
+  })
+
+  // Gli utenti si caricano DOPO timbrature e assenze, perché chi ha lavorato
+  // nel mese deve entrare nell'export anche se oggi non è più attivo.
+  //
+  // Prima il filtro era `isActive: true, portalEnabled: true` senza nessun
+  // criterio di data: chi veniva disattivato il 15 spariva dall'export di quel
+  // mese insieme alle due settimane che aveva lavorato — circa 80 ore, 960 €
+  // lordi — e non compariva nemmeno con una riga a zero, quindi la sua assenza
+  // dall'elenco non saltava all'occhio. Ed è proprio l'ultimo mese, quello del
+  // conguaglio, in cui un errore diventa una vertenza. Valeva identicamente
+  // per `portalEnabled: false`, la casella che si toglie a chi non deve più
+  // accedere: un gesto che sembra innocuo e cancellava le ore dal mese.
+  const idsConAttivitaNelMese = [
+    ...new Set([
+      ...attendanceRecords.map((r) => r.userId),
+      ...leaveRequests.map((l) => l.userId),
+    ]),
+  ]
+
+  usersWhere.OR = [
+    { isActive: true, portalEnabled: true },
+    ...(idsConAttivitaNelMese.length > 0
+      ? [{ id: { in: idsConAttivitaNelMese } }]
+      : []),
+  ]
+
+  const users = await prisma.user.findMany({
+    where: usersWhere,
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      contractType: true,
+      contractHoursWeek: true,
+      hourlyRateBase: true,
+      hourlyRateExtra: true,
+      hourlyRateHoliday: true,
+      hourlyRateNight: true,
+      isActive: true,
+    },
+    orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+  })
+
+  // Chi rientra solo perché ha lavorato va segnalato: il consulente deve
+  // sapere che quella riga è di una persona che non è più in forza.
+  const cessatiConOre = users.filter((u) => !u.isActive)
+  cessatiConOre.forEach((u) => {
+    warnings.push(
+      `${u.lastName} ${u.firstName}: non più attivo, ma ha attività nel mese. ` +
+        "Incluso nell'export."
+    )
   })
 
   // Anomalie del mese: le PENDING finiscono nelle note e negli avvisi; per
@@ -547,23 +583,17 @@ export async function generatePayrollData(
       let workLocationName: string | null = null
       let policyName: string | null = null
       let pendingReviewMinutes = 0
+      // L'assenza approvata si registra sempre, anche se quel giorno la
+      // persona ha lavorato lo stesso: il permesso è stato concesso, ed è un
+      // fatto. Quello che NON si può fare è dedurne che non abbia lavorato.
       if (leaveCode) {
-        // Giorno di assenza
-        hours = {
-          ordinary: 0,
-          overtime: 0,
-          night: 0,
-          holiday: 0,
-          total: 0,
-          breakMinutes: 0,
-        }
-
-        // Aggiorna summary assenze
         const summary = summariesMap.get(user.id)!
         summary.totalLeaveDays++
         summary.leaveSummary[leaveCode] =
           (summary.leaveSummary[leaveCode] || 0) + 1
-      } else if (punches.length > 0) {
+      }
+
+      if (punches.length > 0) {
         // Il luogo della giornata è quello della prima timbratura: se una
         // persona si sposta fra i locali nella stessa giornata, vale dove ha
         // iniziato.
@@ -596,6 +626,27 @@ export async function generatePayrollData(
           )
         }
 
+        // Permesso approvato e timbrature nello stesso giorno: succede
+        // davvero — il collega dà forfait e chi è in permesso viene chiamato.
+        // Prima il ramo delle ferie veniva per primo e azzerava tutto senza
+        // guardare le timbrature, così il cartellino stampava «entrata 17:00,
+        // uscita 23:00, ore 0»: l'orario giusto accanto al totale sbagliato,
+        // e nessuna nota che segnalasse la contraddizione.
+        //
+        // Le ore ora si contano. Quale dei due prevalga — se il permesso vada
+        // restituito o le ore pagate come straordinario — è una decisione del
+        // titolare e del consulente, non del programma: qui si rende visibile.
+        if (leaveCode) {
+          notes.push(
+            `Permesso ${leaveCode} e timbrature nello stesso giorno: da verificare`
+          )
+          warnings.push(
+            `${user.lastName} ${user.firstName}: giornata con permesso e timbrature ` +
+              `il ${dateKey.split('-').reverse().join('/')} ` +
+              `(${leaveCode}, ${hours.total.toFixed(2)} ore lavorate): da verificare`
+          )
+        }
+
         // Aggiorna summary
         const summary = summariesMap.get(user.id)!
         summary.totalOrdinary += hours.ordinary
@@ -605,7 +656,8 @@ export async function generatePayrollData(
         summary.totalHours += hours.total
         summary.totalPendingReviewMinutes += pendingReviewMinutes
       } else {
-        // Nessuna timbratura e nessuna assenza
+        // Nessuna timbratura: la giornata vale zero ore, che sia un'assenza
+        // approvata o un giorno non lavorato.
         hours = {
           ordinary: 0,
           overtime: 0,
