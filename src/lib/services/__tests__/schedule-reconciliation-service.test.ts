@@ -378,8 +378,11 @@ describe('reconcileScheduleWithEntry - ereditarietà pro-quota dalla fattura (Fa
     })
 
     expect(esito.outcome).toBe('ok')
+    // Il where include ora lo stato: eredita solo ciò che un umano ha
+    // confermato (F2-ALL-001). Questa asserzione documentava il contratto
+    // precedente, in cui una proposta dell'AI pesava quanto una conferma.
     expect(prisma.invoiceLineAccount.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { invoiceId: 'inv-1' } })
+      expect.objectContaining({ where: { invoiceId: 'inv-1', stato: 'confermata' } })
     )
     expect(prisma.journalEntryAllocation.createMany).toHaveBeenCalledWith({
       data: [
@@ -650,5 +653,87 @@ describe('undoScheduleReconciliation - ritiro delle fette ereditate (Fase 3)', (
     expect(esito.outcome).toBe('ok')
     expect(prisma.journalEntryAllocation.findMany).not.toHaveBeenCalled()
     expect(prisma.journalEntry.update).not.toHaveBeenCalled()
+  })
+})
+
+describe("reconcileScheduleWithEntry - solo le imputazioni confermate ereditano", () => {
+  it("un'ipotesi dell'AI mai confermata non riscrive il conto del movimento", async () => {
+    // Difetto F2-ALL-001 dell'audit W5-F2, il più grave dell'area: esisteva un
+    // percorso interamente automatico dall'ipotesi del modello fino al conto su
+    // cui il budget conta i soldi, senza un essere umano in mezzo.
+    //
+    // Fattura mista da 1.200 €, l'AI ipotizza 700 «Pulizie» e 500 «Alimentari»,
+    // nessuno apre la fattura. Due settimane dopo si riconcilia il bonifico: da
+    // quel momento il movimento risulta imputato a Pulizie, e il budget ci
+    // manda sopra TUTTI e 1.200 €. L'audit registrava la riconciliazione ma non
+    // la riscrittura del conto, e il valore precedente non era salvato da
+    // nessuna parte: un difetto che cancellava le proprie tracce.
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      scadenza({ invoiceId: 'inv-1', importoTotale: new Prisma.Decimal(1200) }) as never
+    )
+    vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue(
+      movimento({ creditAmount: new Prisma.Decimal(1200) }) as never
+    )
+    vi.mocked(prisma.electronicInvoice.findUnique).mockResolvedValue({
+      lineItems: [{ numeroLinea: 1 }, { numeroLinea: 2 }],
+    } as never)
+    // Il database restituisce solo le confermate, perché il filtro è nel where:
+    // se il codice sotto test non lo passa, questo mock non se ne accorge — per
+    // questo il where viene verificato esplicitamente più sotto.
+    vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([] as never)
+    vi.mocked(prisma.journalEntryAllocation.findMany).mockResolvedValue([] as never)
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: 'sched-1',
+      journalEntryId: 'entry-1',
+      venueId: VENUE,
+      userId: 'user-1',
+    })
+
+    // La riconciliazione va a buon fine: è l'ereditarietà che si astiene.
+    expect(esito.outcome).toBe('ok')
+
+    // La query deve chiedere SOLO le confermate.
+    expect(prisma.invoiceLineAccount.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ invoiceId: 'inv-1', stato: 'confermata' }),
+      })
+    )
+
+    // E soprattutto: il conto del movimento non è stato riscritto.
+    const riscritture = vi
+      .mocked(prisma.journalEntry.update)
+      .mock.calls.filter((c) => 'accountId' in ((c[0] as { data?: object })?.data ?? {}))
+    expect(riscritture).toHaveLength(0)
+  })
+
+  it('se solo una parte delle righe è confermata, l ereditarietà si astiene', async () => {
+    // La guardia esistente conta le imputazioni contro le righe della fattura.
+    // Contava le righe senza guardarne lo stato, quindi una fattura interamente
+    // «gialla» la superava. Col filtro, una fattura mezza confermata non arriva
+    // al conteggio pieno e l'astensione scatta da sé.
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      scadenza({ invoiceId: 'inv-1', importoTotale: new Prisma.Decimal(1000) }) as never
+    )
+    vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue(
+      movimento({ creditAmount: new Prisma.Decimal(1000) }) as never
+    )
+    vi.mocked(prisma.electronicInvoice.findUnique).mockResolvedValue({
+      lineItems: [{ numeroLinea: 1 }, { numeroLinea: 2 }],
+    } as never)
+    vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([
+      { accountId: 'conto-a', importo: new Prisma.Decimal(700) },
+    ] as never)
+    vi.mocked(prisma.journalEntryAllocation.findMany).mockResolvedValue([] as never)
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: 'sched-1',
+      journalEntryId: 'entry-1',
+      venueId: VENUE,
+      userId: 'user-1',
+    })
+
+    expect(esito.outcome).toBe('ok')
+    expect(prisma.journalEntryAllocation.createMany).not.toHaveBeenCalled()
   })
 })
