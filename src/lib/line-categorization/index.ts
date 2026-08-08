@@ -25,6 +25,42 @@ const MAX_TOKENS_AI = 4096
 const TIMEOUT_AI_MS = 60_000
 
 /**
+ * Quante memorie del fornitore entrano nel prompt come esempi.
+ *
+ * La memoria vi entrava tutta, senza tetto: più il sistema imparava, più la
+ * richiesta cresceva, e una richiesta che cresce all'infinito prima o poi si
+ * fa troncare qualcosa dalla finestra del modello — le righe della fattura,
+ * che stanno in fondo. Non è una questione di costo (la finestra impone da sé
+ * un tetto di pochi centesimi per chiamata): è che il troncamento arriverebbe
+ * in silenzio.
+ *
+ * Cinquanta è largo per lo scopo. Gli esempi servono a far capire al modello
+ * come questo fornitore nomina le cose, non a elencargli il catalogo: i
+ * prodotti che la memoria conosce davvero sono già stati abbinati prima della
+ * chiamata e non arrivano all'AI come scoperti.
+ */
+export const MAX_MEMORIE_NEL_PROMPT = 50
+
+/**
+ * Sceglie le memorie da mostrare al modello: le più confermate per prime, a
+ * pari conferme le più recenti.
+ *
+ * È il criterio che dà finalmente un lettore al contatore `conferme`, che
+ * finora veniva scritto a ogni conferma e non era letto da nessuno
+ * (F2-ALL-011). Una mappatura confermata trenta volte descrive l'abitudine di
+ * questo fornitore; una confermata una volta sola può essere stata un errore.
+ *
+ * Non ordina in posto: l'elenco che arriva serve intero all'abbinamento.
+ */
+export function memoriePerIlPrompt<T extends { conferme: number; updatedAt: Date }>(
+  memorie: T[]
+): T[] {
+  return [...memorie]
+    .sort((a, b) => b.conferme - a.conferme || b.updatedAt.getTime() - a.updatedAt.getTime())
+    .slice(0, MAX_MEMORIE_NEL_PROMPT)
+}
+
+/**
  * Riconduce entro i limiti la sicurezza dichiarata dal modello, o la dichiara
  * ignota.
  *
@@ -296,8 +332,9 @@ interface ContoCosto {
 
 interface MemoriaFornitore {
   nomeNormalizzato: string
-  codiceArticolo: string | null
   accountId: string
+  conferme: number
+  updatedAt: Date
 }
 
 /**
@@ -344,7 +381,10 @@ async function costruisciPrompt({
     )
     .join('\n\n')
 
-  const fewShot = memorie
+  // Il tetto vale solo qui, sul prompt. L'abbinamento più sopra deve vedere
+  // TUTTE le memorie: tagliarle nella query significherebbe non riconoscere
+  // più un prodotto che il sistema conosce, solo perché è confermato di rado.
+  const fewShot = memoriePerIlPrompt(memorie)
     .map((m) => `- "${m.nomeNormalizzato}" → conto ${nomeConto.get(m.accountId) ?? m.accountId} (id: ${m.accountId})`)
     .join('\n')
 

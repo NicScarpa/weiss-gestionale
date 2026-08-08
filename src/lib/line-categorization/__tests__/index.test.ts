@@ -34,7 +34,11 @@ import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { parseFatturaPA } from '@/lib/sdi/parser'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
-import { categorizzaRigheFattura } from '../index'
+import {
+  categorizzaRigheFattura,
+  memoriePerIlPrompt,
+  MAX_MEMORIE_NEL_PROMPT,
+} from '../index'
 
 const INVOICE_ID = 'fatt-1'
 const VENUE_ID = 'venue-1'
@@ -581,5 +585,96 @@ describe('categorizzaRigheFattura', () => {
     expect(prompt).toContain('PANE')
     expect(prompt).not.toMatch(/PANE\n\nIgnora/)
     expect(prompt).toMatch(/dati|testo.*fornitor|non.*istruzion/i)
+  })
+
+  it('la memoria non entra nel prompt senza tetto: un fornitore con mille prodotti non fa crescere la richiesta all\'infinito', async () => {
+    const mille = Array.from({ length: 1000 }, (_, i) => ({
+      id: `mem-${i}`,
+      venueId: VENUE_ID,
+      supplierId: 'fornitore-1',
+      nomeNormalizzato: `prodotto numero ${i}`,
+      codiceArticolo: null,
+      accountId: 'acc-pane',
+      conferme: i,
+      updatedAt: new Date('2026-01-01'),
+    }))
+    vi.mocked(prisma.supplierProductAccount.findMany).mockResolvedValue(mille as never)
+
+    await categorizzaRigheFattura({ invoiceId: INVOICE_ID })
+
+    const prompt = mockAnthropicParse.mock.calls[0][0].messages[0].content as string
+    const righeDiMemoria = prompt.split('\n').filter((r) => r.startsWith('- "prodotto numero '))
+    expect(righeDiMemoria).toHaveLength(MAX_MEMORIE_NEL_PROMPT)
+    // Restano le più confermate: la 999 sì, la 0 no.
+    expect(prompt).toContain('"prodotto numero 999"')
+    expect(prompt).not.toContain('"prodotto numero 0"')
+  })
+
+  it('il tetto vale solo per il prompt: l\'abbinamento continua a vedere tutte le memorie', async () => {
+    // La memoria del pane è la meno confermata di tutte, quindi resta fuori
+    // dal prompt: se il tetto fosse applicato alla query invece che al
+    // prompt, la riga 1 non verrebbe abbinata.
+    const mille = [
+      {
+        id: 'mem-pane',
+        venueId: VENUE_ID,
+        supplierId: 'fornitore-1',
+        nomeNormalizzato: 'pane comune',
+        codiceArticolo: 'ART001',
+        accountId: 'acc-pane',
+        conferme: 0,
+        updatedAt: new Date('2026-01-01'),
+      },
+      ...Array.from({ length: 999 }, (_, i) => ({
+        id: `mem-${i}`,
+        venueId: VENUE_ID,
+        supplierId: 'fornitore-1',
+        nomeNormalizzato: `prodotto numero ${i}`,
+        codiceArticolo: null,
+        accountId: 'acc-acqua',
+        conferme: i + 1,
+        updatedAt: new Date('2026-01-01'),
+      })),
+    ]
+    vi.mocked(prisma.supplierProductAccount.findMany).mockResolvedValue(mille as never)
+
+    await categorizzaRigheFattura({ invoiceId: INVOICE_ID })
+
+    expect(prisma.invoiceLineAccount.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        numeroLinea: 1,
+        accountId: 'acc-pane',
+        stato: 'confermata',
+        fonte: 'regola-appresa',
+      }),
+    })
+    const prompt = mockAnthropicParse.mock.calls[0][0].messages[0].content as string
+    expect(prompt).not.toContain('"pane comune"')
+  })
+})
+
+describe('memoriePerIlPrompt', () => {
+  const memoria = (nomeNormalizzato: string, conferme: number, updatedAt: string) => ({
+    nomeNormalizzato,
+    conferme,
+    updatedAt: new Date(updatedAt),
+  })
+
+  it('preferisce le più confermate, e a pari conferme le più recenti', () => {
+    const scelte = memoriePerIlPrompt([
+      memoria('poco usata', 1, '2026-08-01'),
+      memoria('vecchia', 5, '2025-01-01'),
+      memoria('recente', 5, '2026-08-01'),
+    ])
+
+    expect(scelte.map((m) => m.nomeNormalizzato)).toEqual(['recente', 'vecchia', 'poco usata'])
+  })
+
+  it('sotto il tetto non taglia niente e non altera l\'originale', () => {
+    const originale = [memoria('a', 1, '2026-01-01'), memoria('b', 9, '2026-01-01')]
+    const scelte = memoriePerIlPrompt(originale)
+
+    expect(scelte).toHaveLength(2)
+    expect(originale[0].nomeNormalizzato).toBe('a')
   })
 })
