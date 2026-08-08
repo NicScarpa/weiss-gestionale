@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import ExcelJS from 'exceljs'
-import { auth } from '@/lib/auth'
-import { logger } from '@/lib/logger'
-import { getVenueId } from '@/lib/venue'
+import { handleApiError, notFound, withAuth } from '@/lib/api-utils'
 import {
   getMonthlyTimesheet,
   formatHoursMinutes,
@@ -35,67 +33,55 @@ const MESI_IT = [
 // L'export aggregato per le paghe resta in /api/attendance/export/payroll:
 // questo è il documento di una persona sola, che anche lo staff può scaricare
 // per sé.
-export async function GET(request: NextRequest) {
-  try {
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
+export const GET = withAuth(
+  async (request: NextRequest, { user, venueId }) => {
+    try {
+      const { searchParams } = request.nextUrl
+      const filtri = filtriSchema.parse({
+        month: searchParams.get('month') ?? undefined,
+        year: searchParams.get('year') ?? undefined,
+        userId: searchParams.get('userId') ?? undefined,
+      })
 
-    const { searchParams } = new URL(request.url)
-    const filtri = filtriSchema.parse({
-      month: searchParams.get('month') ?? undefined,
-      year: searchParams.get('year') ?? undefined,
-      userId: searchParams.get('userId') ?? undefined,
-    })
+      // Come nella GET del cartellino: chi non gestisce scarica solo il proprio,
+      // qualunque userId abbia messo nella richiesta.
+      const targetUserId = ['admin', 'manager'].includes(user.role)
+        ? (filtri.userId ?? user.id)
+        : user.id
 
-    const isGestore = ['admin', 'manager'].includes(session.user.role || '')
-    const targetUserId = isGestore
-      ? (filtri.userId ?? session.user.id)
-      : session.user.id
+      const cartellino = await getMonthlyTimesheet(
+        targetUserId,
+        filtri.month,
+        filtri.year,
+        venueId
+      )
 
-    const venueId = await getVenueId()
-    const cartellino = await getMonthlyTimesheet(
-      targetUserId,
-      filtri.month,
-      filtri.year,
-      venueId || undefined
-    )
+      if (!cartellino) {
+        return notFound('Cartellino non disponibile per questa persona')
+      }
 
-    if (!cartellino) {
-      return NextResponse.json(
-        { error: 'Cartellino non disponibile per questa persona' },
-        { status: 404 }
+      const buffer = await generaExcel(cartellino)
+      const nomeFile =
+        `cartellino-${cartellino.lastName.toLowerCase()}-` +
+        `${filtri.year}-${String(filtri.month).padStart(2, '0')}.xlsx`
+
+      return new NextResponse(new Uint8Array(buffer), {
+        headers: {
+          'Content-Type':
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'Content-Disposition': `attachment; filename="${nomeFile}"`,
+        },
+      })
+    } catch (error) {
+      return handleApiError(
+        error,
+        'GET /api/cartellino/export',
+        "Errore nell'esportazione del cartellino"
       )
     }
-
-    const buffer = await generaExcel(cartellino)
-    const nomeFile =
-      `cartellino-${cartellino.lastName.toLowerCase()}-` +
-      `${filtri.year}-${String(filtri.month).padStart(2, '0')}.xlsx`
-
-    return new NextResponse(new Uint8Array(buffer), {
-      headers: {
-        'Content-Type':
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition': `attachment; filename="${nomeFile}"`,
-      },
-    })
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Parametri non validi', details: error.issues },
-        { status: 400 }
-      )
-    }
-
-    logger.error('Errore GET /api/cartellino/export', error)
-    return NextResponse.json(
-      { error: "Errore nell'esportazione del cartellino" },
-      { status: 500 }
-    )
-  }
-}
+  },
+  { venueScoped: true }
+)
 
 async function generaExcel(cartellino: MonthlyTimesheet): Promise<Buffer> {
   const wb = new ExcelJS.Workbook()

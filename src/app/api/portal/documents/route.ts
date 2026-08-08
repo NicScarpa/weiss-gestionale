@@ -1,32 +1,25 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { logger } from '@/lib/logger'
+import { handleApiError, ok, withAuth } from '@/lib/api-utils'
+import type { DocumentCategory } from '@prisma/client'
 
 // GET /api/portal/documents - Lista documenti del dipendente autenticato
-export async function GET(request: NextRequest) {
+export const GET = withAuth(async (request: NextRequest, { user }) => {
   try {
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
-    const { searchParams } = new URL(request.url)
+    const { searchParams } = request.nextUrl
     const category = searchParams.get('category')
     const period = searchParams.get('period')
 
-    const where: Record<string, unknown> = {
-      userId: session.user.id,
-      // I cedolini non abbinati sono intestati provvisoriamente all'admin che ha
-      // caricato il PDF: non devono comparire nel suo portale finché non sono
-      // assegnati al dipendente giusto.
-      needsAssignment: false,
-    }
-    if (category) where.category = category
-    if (period) where.period = period
-
     const documents = await prisma.employeeDocument.findMany({
-      where,
+      where: {
+        userId: user.id,
+        // I cedolini non abbinati sono intestati provvisoriamente all'admin che
+        // ha caricato il PDF: non devono comparire nel suo portale finché non
+        // sono assegnati al dipendente giusto.
+        needsAssignment: false,
+        ...(category ? { category: category as DocumentCategory } : {}),
+        ...(period ? { period } : {}),
+      },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
@@ -40,9 +33,12 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ documents })
+    return ok({ documents })
   } catch (error) {
-    logger.error('Errore GET /api/portal/documents', error)
-    return NextResponse.json({ error: 'Errore nel recupero documenti' }, { status: 500 })
+    return handleApiError(
+      error,
+      'GET /api/portal/documents',
+      'Errore nel recupero documenti'
+    )
   }
-}
+})
