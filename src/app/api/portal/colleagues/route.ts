@@ -1,56 +1,40 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
-import { getVenueId } from '@/lib/venue'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { handleApiError, ok, withAuth } from '@/lib/api-utils'
 
-import { logger } from '@/lib/logger'
 // GET /api/portal/colleagues - Lista colleghi della stessa sede
-export async function GET(request: NextRequest) {
-  try {
-    const session = await auth()
+//
+// La sede arriva dalla sessione, non più dalla query string: prima bastava
+// aggiungere `?venueId=` per spostare la lettura su un'altra sede.
+export const GET = withAuth(
+  async (_request: NextRequest, { user, venueId }) => {
+    try {
+      const colleagues = await prisma.user.findMany({
+        where: {
+          venueId,
+          id: { not: user.id },
+          role: { name: 'staff' }, // Solo staff, non manager o admin
+          isActive: true,
+          portalEnabled: true,
+        },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          role: true,
+        },
+        orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+      })
 
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
+      return ok({ data: colleagues })
+    } catch (error) {
+      return handleApiError(
+        error,
+        'GET /api/portal/colleagues',
+        'Errore nel recupero dei colleghi'
+      )
     }
-
-    const { searchParams } = new URL(request.url)
-    const venueId = searchParams.get('venueId')
-
-    // Usa la sede dell'utente corrente se non specificata
-    const targetVenueId = venueId || await getVenueId()
-
-    if (!targetVenueId) {
-      return NextResponse.json({ error: 'Sede non specificata' }, { status: 400 })
-    }
-
-    // Recupera i colleghi della stessa sede (escluso l'utente corrente)
-    const colleagues = await prisma.user.findMany({
-      where: {
-        venueId: targetVenueId,
-        id: { not: session.user.id },
-        role: { name: 'staff' }, // Solo staff, non manager o admin
-        isActive: true,
-        portalEnabled: true,
-      },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        role: true,
-      },
-      orderBy: [
-        { lastName: 'asc' },
-        { firstName: 'asc' },
-      ],
-    })
-
-    return NextResponse.json({ data: colleagues })
-  } catch (error) {
-    logger.error('Errore GET /api/portal/colleagues', error)
-    return NextResponse.json(
-      { error: 'Errore nel recupero dei colleghi' },
-      { status: 500 }
-    )
-  }
-}
+  },
+  { venueScoped: true }
+)

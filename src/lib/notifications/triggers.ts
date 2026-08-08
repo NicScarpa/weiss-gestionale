@@ -267,6 +267,55 @@ export async function notifyMancataUscitaSpezzato(input: {
 }
 
 /**
+ * Fine servizio registrata da un altro in chiusura di cassa.
+ *
+ * È lo staff a compilare la chiusura la sera, e chiudendola scrive l'orario di
+ * uscita di chi risulta ancora dentro: il permesso serve al lavoro reale e
+ * resta. Ma dentro quel permesso l'orario di una persona lo decide un'altra, e
+ * un'ora tolta per distrazione si scopriva solo in busta paga. L'avviso non
+ * impedisce la modifica: la rende visibile in giornata a chi la subisce, quando
+ * c'è ancora tempo per chiedere una correzione.
+ *
+ * Il tipo è `GENERAL` — sempre abilitato — di proposito: riguarda le ore
+ * retribuite dell'interessato, non è una notifica di servizio da poter spegnere.
+ */
+export async function notifyUsciteRegistrateDaAltri(input: {
+  /** Chi ha compilato la chiusura. Le uscite che lo riguardano sono escluse. */
+  autoreId: string
+  dateKey: string
+  uscite: { userId: string; orarioUscita: string }[]
+}): Promise<void> {
+  const daAvvisare = input.uscite.filter((u) => u.userId !== input.autoreId)
+  if (daAvvisare.length === 0) return
+
+  const autore = await prisma.user.findUnique({
+    where: { id: input.autoreId },
+    select: { firstName: true, lastName: true },
+  })
+
+  const giorno = format(new Date(`${input.dateKey}T00:00:00Z`), 'd MMMM', { locale: it })
+  const nomeAutore = autore ? `${autore.firstName} ${autore.lastName}` : 'Un collega'
+
+  // In parallelo: i destinatari di una serata sono una manciata, e in serie
+  // ogni push lento allungherebbe l'attesa di chi sta chiudendo la cassa.
+  await Promise.all(
+    daAvvisare.map((uscita) =>
+      sendNotification({
+        userId: uscita.userId,
+        payload: {
+          type: 'GENERAL',
+          title: 'Uscita registrata in chiusura',
+          body:
+            `${nomeAutore} ha registrato la tua uscita del ${giorno} alle ` +
+            `${uscita.orarioUscita}. Se non è l'orario giusto chiedi una correzione.`,
+          url: '/portale/cartellino',
+        },
+      })
+    )
+  )
+}
+
+/**
  * Invia notifica anomalia risolta
  */
 export async function notifyAnomalyResolved(

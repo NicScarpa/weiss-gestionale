@@ -1,9 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import {
+  badRequest,
+  forbidden,
+  handleApiError,
+  notFound,
+  ok,
+  withAuth,
+} from '@/lib/api-utils'
 
-import { logger } from '@/lib/logger'
+type Params = { id: string }
 // Schema per modifica richiesta (solo admin)
 const updateLeaveRequestSchema = z.object({
   startDate: z.string().optional(),
@@ -16,18 +23,9 @@ const updateLeaveRequestSchema = z.object({
 })
 
 // GET /api/leave-requests/[id] - Dettaglio richiesta
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const GET = withAuth<Params>(async (_request: NextRequest, { params, user }) => {
   try {
-    const session = await auth()
-
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
-    const { id } = await params
+    const { id } = params
 
     const leaveRequest = await prisma.leaveRequest.findUnique({
       where: { id },
@@ -59,26 +57,23 @@ export async function GET(
     })
 
     if (!leaveRequest) {
-      return NextResponse.json({ error: 'Richiesta non trovata' }, { status: 404 })
+      return notFound('Richiesta non trovata')
     }
 
     // Staff può vedere solo le proprie richieste
-    if (
-      session.user.role === 'staff' &&
-      leaveRequest.userId !== session.user.id
-    ) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
+    if (user.role === 'staff' && leaveRequest.userId !== user.id) {
+      return forbidden()
     }
 
-    return NextResponse.json(leaveRequest)
+    return ok(leaveRequest)
   } catch (error) {
-    logger.error('Errore GET /api/leave-requests/[id]', error)
-    return NextResponse.json(
-      { error: 'Errore nel recupero della richiesta' },
-      { status: 500 }
+    return handleApiError(
+      error,
+      'GET /api/leave-requests/[id]',
+      'Errore nel recupero della richiesta'
     )
   }
-}
+})
 
 // Calcola giorni lavorativi tra due date (esclude weekend)
 function calculateWorkingDays(start: Date, end: Date): number {
@@ -93,23 +88,9 @@ function calculateWorkingDays(start: Date, end: Date): number {
 }
 
 // PUT /api/leave-requests/[id] - Modifica richiesta (solo admin)
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const PUT = withAuth<Params>(async (request: NextRequest, { params }) => {
   try {
-    const session = await auth()
-
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
-    // Solo admin può modificare richieste
-    if (session.user.role !== 'admin') {
-      return NextResponse.json({ error: 'Solo gli admin possono modificare le richieste' }, { status: 403 })
-    }
-
-    const { id } = await params
+    const { id } = params
     const body = await request.json()
     const validatedData = updateLeaveRequestSchema.parse(body)
 
@@ -120,7 +101,7 @@ export async function PUT(
     })
 
     if (!existingRequest) {
-      return NextResponse.json({ error: 'Richiesta non trovata' }, { status: 404 })
+      return notFound('Richiesta non trovata')
     }
 
     // Prepara dati aggiornamento
@@ -228,35 +209,20 @@ export async function PUT(
       },
     })
 
-    return NextResponse.json(updatedRequest)
+    return ok(updatedRequest)
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Dati non validi', details: error.issues },
-        { status: 400 }
-      )
-    }
-    logger.error('Errore PUT /api/leave-requests/[id]', error)
-    return NextResponse.json(
-      { error: 'Errore nella modifica della richiesta' },
-      { status: 500 }
+    return handleApiError(
+      error,
+      'PUT /api/leave-requests/[id]',
+      'Errore nella modifica della richiesta'
     )
   }
-}
+}, { roles: ['admin'] })
 
 // DELETE /api/leave-requests/[id] - Annulla richiesta
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const DELETE = withAuth<Params>(async (_request: NextRequest, { params, user }) => {
   try {
-    const session = await auth()
-
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
-    const { id } = await params
+    const { id } = params
 
     const leaveRequest = await prisma.leaveRequest.findUnique({
       where: { id },
@@ -266,27 +232,21 @@ export async function DELETE(
     })
 
     if (!leaveRequest) {
-      return NextResponse.json({ error: 'Richiesta non trovata' }, { status: 404 })
+      return notFound('Richiesta non trovata')
     }
 
     // Solo il richiedente o admin può annullare
-    if (
-      leaveRequest.userId !== session.user.id &&
-      session.user.role !== 'admin'
-    ) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
+    if (leaveRequest.userId !== user.id && user.role !== 'admin') {
+      return forbidden()
     }
 
     // Non si può annullare se già approvata e passata (tranne admin)
     if (
-      session.user.role !== 'admin' &&
+      user.role !== 'admin' &&
       leaveRequest.status === 'APPROVED' &&
       new Date(leaveRequest.startDate) <= new Date()
     ) {
-      return NextResponse.json(
-        { error: 'Non puoi annullare una richiesta già iniziata o passata' },
-        { status: 400 }
-      )
+      return badRequest('Non puoi annullare una richiesta già iniziata o passata')
     }
 
     // Aggiorna stato a CANCELLED
@@ -325,12 +285,12 @@ export async function DELETE(
       }
     }
 
-    return NextResponse.json({ message: 'Richiesta annullata' })
+    return ok({ message: 'Richiesta annullata' })
   } catch (error) {
-    logger.error('Errore DELETE /api/leave-requests/[id]', error)
-    return NextResponse.json(
-      { error: 'Errore nell\'annullamento della richiesta' },
-      { status: 500 }
+    return handleApiError(
+      error,
+      'DELETE /api/leave-requests/[id]',
+      "Errore nell'annullamento della richiesta"
     )
   }
-}
+})

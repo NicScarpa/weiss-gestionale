@@ -1,90 +1,33 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
-import { auth } from '@/lib/auth'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
-import { getVenueId } from '@/lib/venue'
+import { created, handleApiError, ok, withAuth } from '@/lib/api-utils'
 import { politicaOrarioSchema } from '@/lib/validations/politiche-orario'
-
-/** Campi restituiti al client, uguali in lista e in dettaglio. */
-export const politicaSelect = {
-  id: true,
-  name: true,
-  isDefault: true,
-  isActive: true,
-  dayStartMinutes: true,
-  dayEndMinutes: true,
-  lunchStartMinutes: true,
-  lunchEndMinutes: true,
-  flexMinutes: true,
-  roundingMinutes: true,
-  roundingToleranceMinutes: true,
-  roundingOutMinutes: true,
-  roundingOutToleranceMinutes: true,
-  maxDailyMinutes: true,
-  contractWeeklyHours: true,
-  saturdayAsOvertime: true,
-  blockSunday: true,
-  singlePunchMode: true,
-  useShiftAsWindow: true,
-  createdAt: true,
-  updatedAt: true,
-  extraBreaks: {
-    select: { id: true, name: true, startMinutes: true, endMinutes: true },
-    orderBy: { startMinutes: 'asc' },
-  },
-  // Il conteggio deve combaciare con la guardia dell'eliminazione, che conta
-  // dipendenti E luoghi: mostrare solo i dipendenti fa cercare assegnazioni
-  // che non esistono.
-  _count: { select: { users: true, workLocations: true } },
-} as const
+import { politicaSelect, RUOLI_REGOLE } from './condiviso'
 
 // GET /api/politiche-orario - Elenco delle regole orario
-export async function GET() {
+export const GET = withAuth(async (_request: NextRequest, { venueId }) => {
   try {
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
-    if (!['admin', 'manager'].includes(session.user.role || '')) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
-    const venueId = await getVenueId()
-
     const politiche = await prisma.timekeepingPolicy.findMany({
       where: { venueId },
       select: politicaSelect,
       orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
     })
 
-    return NextResponse.json({ data: politiche })
+    return ok({ data: politiche })
   } catch (error) {
-    logger.error('Errore GET /api/politiche-orario', error)
-    return NextResponse.json(
-      { error: 'Errore nel recupero delle regole orario' },
-      { status: 500 }
+    return handleApiError(
+      error,
+      'GET /api/politiche-orario',
+      'Errore nel recupero delle regole orario'
     )
   }
-}
+}, { roles: RUOLI_REGOLE, venueScoped: true })
 
 // POST /api/politiche-orario - Crea una regola orario
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async (request: NextRequest, { user, venueId }) => {
   try {
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
-    if (!['admin', 'manager'].includes(session.user.role || '')) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
-    const body = await request.json()
-    const dati = politicaOrarioSchema.parse(body)
-    const venueId = await getVenueId()
+    const dati = politicaOrarioSchema.parse(await request.json())
 
     const { extraBreaks, ...campi } = dati
 
@@ -109,7 +52,7 @@ export async function POST(request: NextRequest) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      userId: user.id,
       action: 'CREATE',
       entityType: 'TimekeepingPolicy',
       entityId: politica.id,
@@ -117,19 +60,12 @@ export async function POST(request: NextRequest) {
       newValues: politica,
     })
 
-    return NextResponse.json({ data: politica }, { status: 201 })
+    return created({ data: politica })
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Dati non validi', details: error.issues },
-        { status: 400 }
-      )
-    }
-
-    logger.error('Errore POST /api/politiche-orario', error)
-    return NextResponse.json(
-      { error: 'Errore nella creazione della regola orario' },
-      { status: 500 }
+    return handleApiError(
+      error,
+      'POST /api/politiche-orario',
+      'Errore nella creazione della regola orario'
     )
   }
-}
+}, { roles: RUOLI_REGOLE, venueScoped: true })

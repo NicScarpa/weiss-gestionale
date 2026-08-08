@@ -1,36 +1,17 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
-import { auth } from '@/lib/auth'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
-import { getVenueId } from '@/lib/venue'
+import { badRequest, handleApiError, notFound, ok, withAuth } from '@/lib/api-utils'
 import { luogoLavoroSchema } from '@/lib/validations/luoghi-lavoro'
-import { luogoSelect } from '../route'
+import { luogoSelect, RUOLI_CONFIGURAZIONE } from '../condiviso'
 
-async function guard() {
-  const session = await auth()
-  if (!session?.user) {
-    return { error: NextResponse.json({ error: 'Non autorizzato' }, { status: 401 }) }
-  }
-  if (!['admin', 'manager'].includes(session.user.role || '')) {
-    return { error: NextResponse.json({ error: 'Accesso negato' }, { status: 403 }) }
-  }
-
-  return { session }
-}
+type Params = { id: string }
+const OPZIONI = { roles: RUOLI_CONFIGURAZIONE, venueScoped: true } as const
 
 // PUT /api/luoghi-lavoro/[id]
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const PUT = withAuth<Params>(async (request: NextRequest, { params, user, venueId }) => {
   try {
-    const { session, error } = await guard()
-    if (error) return error
-
-    const { id } = await params
-    const venueId = await getVenueId()
+    const { id } = params
 
     const esistente = await prisma.workLocation.findFirst({
       where: { id, venueId },
@@ -38,7 +19,7 @@ export async function PUT(
     })
 
     if (!esistente) {
-      return NextResponse.json({ error: 'Luogo non trovato' }, { status: 404 })
+      return notFound('Luogo non trovato')
     }
 
     const body = await request.json()
@@ -52,10 +33,7 @@ export async function PUT(
       })
 
       if (!regola) {
-        return NextResponse.json(
-          { error: 'Regola orario non trovata' },
-          { status: 400 }
-        )
+        return badRequest('Regola orario non trovata')
       }
     }
 
@@ -66,7 +44,7 @@ export async function PUT(
     })
 
     await createAuditLog({
-      userId: session!.user.id,
+      userId: user.id,
       action: 'UPDATE',
       entityType: 'WorkLocation',
       entityId: id,
@@ -75,34 +53,20 @@ export async function PUT(
       newValues: { name: luogo.name, geofenceRadiusMeters: luogo.geofenceRadiusMeters },
     })
 
-    return NextResponse.json({ data: luogo })
+    return ok({ data: luogo })
   } catch (err) {
-    if (err instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Dati non validi', details: err.issues },
-        { status: 400 }
-      )
-    }
-
-    logger.error('Errore PUT /api/luoghi-lavoro/[id]', err)
-    return NextResponse.json(
-      { error: "Errore nell'aggiornamento del luogo di lavoro" },
-      { status: 500 }
+    return handleApiError(
+      err,
+      'PUT /api/luoghi-lavoro/[id]',
+      "Errore nell'aggiornamento del luogo di lavoro"
     )
   }
-}
+}, OPZIONI)
 
 // DELETE /api/luoghi-lavoro/[id]
-export async function DELETE(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const DELETE = withAuth<Params>(async (_request: NextRequest, { params, user, venueId }) => {
   try {
-    const { session, error } = await guard()
-    if (error) return error
-
-    const { id } = await params
-    const venueId = await getVenueId()
+    const { id } = params
 
     const luogo = await prisma.workLocation.findFirst({
       where: { id, venueId },
@@ -115,7 +79,7 @@ export async function DELETE(
     })
 
     if (!luogo) {
-      return NextResponse.json({ error: 'Luogo non trovato' }, { status: 404 })
+      return notFound('Luogo non trovato')
     }
 
     // Un luogo su cui si è già timbrato non si cancella: le timbrature
@@ -129,7 +93,7 @@ export async function DELETE(
       })
 
       await createAuditLog({
-        userId: session!.user.id,
+        userId: user.id,
         action: 'UPDATE',
         entityType: 'WorkLocation',
         entityId: id,
@@ -138,7 +102,7 @@ export async function DELETE(
         newValues: { isActive: false, motivo: 'disattivato al posto di eliminare' },
       })
 
-      return NextResponse.json({
+      return ok({
         data: disattivato,
         message: `${luogo.name} ha timbrature registrate: è stato disattivato invece di essere eliminato.`,
       })
@@ -147,7 +111,7 @@ export async function DELETE(
     await prisma.workLocation.delete({ where: { id } })
 
     await createAuditLog({
-      userId: session!.user.id,
+      userId: user.id,
       action: 'DELETE',
       entityType: 'WorkLocation',
       entityId: id,
@@ -155,12 +119,12 @@ export async function DELETE(
       oldValues: { name: luogo.name },
     })
 
-    return NextResponse.json({ success: true })
+    return ok({ success: true })
   } catch (err) {
-    logger.error('Errore DELETE /api/luoghi-lavoro/[id]', err)
-    return NextResponse.json(
-      { error: "Errore nell'eliminazione del luogo di lavoro" },
-      { status: 500 }
+    return handleApiError(
+      err,
+      'DELETE /api/luoghi-lavoro/[id]',
+      "Errore nell'eliminazione del luogo di lavoro"
     )
   }
-}
+}, OPZIONI)
