@@ -133,6 +133,20 @@ interface AttendanceRecordData {
   punchType: PunchType
   punchedAt: Date
   workLocationId?: string | null
+  /** 'SYSTEM' per gli orari scritti dalla chiusura automatica. */
+  manualEntryBy?: string | null
+  /** Valorizzato quando la timbratura nasce da una correzione approvata. */
+  correctionRequestId?: string | null
+}
+
+/**
+ * Da dove viene l'orario, per il motore: una supposizione del sistema cede a
+ * una correzione approvata, una timbratura vera non si tocca.
+ */
+function origineDi(record: AttendanceRecordData): DayPunch['origine'] {
+  if (record.correctionRequestId) return 'correzione'
+  if (record.manualEntryBy === 'SYSTEM') return 'sistema'
+  return undefined
 }
 
 /**
@@ -157,6 +171,7 @@ function calculateHoursFromPunches(
   const punches: DayPunch[] = records.map((record) => ({
     type: record.punchType as DayPunch['type'],
     minutes: toWorkdayMinutes(record.punchedAt, workdayKey),
+    origine: origineDi(record),
   }))
 
   const sorted = [...records].sort(
@@ -343,6 +358,10 @@ export async function generatePayrollData(
       punchType: true,
       punchedAt: true,
       workLocationId: true,
+      // Servono al motore per sapere quale orario è una supposizione del
+      // sistema e quale una correzione approvata da un responsabile.
+      manualEntryBy: true,
+      correctionRequestId: true,
     },
     orderBy: { punchedAt: 'asc' },
   })

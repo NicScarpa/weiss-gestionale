@@ -138,6 +138,44 @@ interface Interval {
 }
 
 /**
+ * Toglie di mezzo gli orari che il sistema aveva supposto e che una correzione
+ * approvata ha nel frattempo sostituito.
+ *
+ * Serve perché lo storico delle timbrature è a sola aggiunta — nessuna route
+ * modifica o cancella una timbratura, ed è giusto così. Il rimedio previsto è
+ * la rettifica: si aggiunge l'orario corretto e la richiesta approvata lo
+ * collega. Ma finché il motore non distingueva le due, teneva comunque la più
+ * tarda, e le ore sbagliate scritte dalla chiusura automatica si potevano
+ * togliere **solo entrando nel database**. Nessuno in azienda poteva
+ * correggerle dall'applicazione.
+ *
+ * La sostituzione vale per tipo di timbratura e solo contro ciò che ha scritto
+ * il **sistema**: una supposizione cede a una decisione umana. Le timbrature
+ * vere del dipendente non si toccano — quelle sono fatti.
+ */
+function scartaSupposizioniCorrette(ordered: DayPunch[]): {
+  effettive: DayPunch[]
+  sostituite: DayPunch[]
+} {
+  const tipiCorretti = new Set(
+    ordered.filter((p) => p.origine === 'correzione').map((p) => p.type)
+  )
+
+  if (tipiCorretti.size === 0) {
+    return { effettive: ordered, sostituite: [] }
+  }
+
+  const sostituite = ordered.filter(
+    (p) => p.origine === 'sistema' && tipiCorretti.has(p.type)
+  )
+
+  return {
+    effettive: ordered.filter((p) => !sostituite.includes(p)),
+    sostituite,
+  }
+}
+
+/**
  * Distanza entro cui una seconda uscita è ancora il doppio tocco sul telefono
  * e non una timbratura nuova.
  *
@@ -429,7 +467,16 @@ export function computeRecognizedDay(
   const warnings: DayWarning[] = []
 
   const ordered = [...punches].sort((a, b) => a.minutes - b.minutes)
-  const paired = pairPunches(ordered)
+  const { effettive, sostituite } = scartaSupposizioniCorrette(ordered)
+
+  if (sostituite.length > 0) {
+    const orari = sostituite.map((p) => formatMinutes(p.minutes)).join(', ')
+    steps.push(
+      `Correzione approvata: l'orario scritto dal sistema (${orari}) è stato sostituito.`
+    )
+  }
+
+  const paired = pairPunches(effettive)
 
   if (!paired.hasIn) {
     warnings.push('ENTRATA_MANCANTE')

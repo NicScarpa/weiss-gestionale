@@ -400,6 +400,30 @@ describe('generatePayrollData', () => {
     expect(giorno?.hours.total).toBe(6)
   })
 
+  it('l export rispetta la correzione approvata invece dell orario di sistema', async () => {
+    // Difetto 6: il cablaggio, non il motore. Il motore sa distinguere una
+    // supposizione del sistema da una correzione approvata solo se qualcuno
+    // gliene passa l'origine — e quei due campi vanno chiesti nella query,
+    // altrimenti il fix resta teorico e il cartellino continua a stampare
+    // l'orario inventato.
+    vi.mocked(prisma.attendanceRecord.findMany).mockResolvedValue([
+      { userId: 'user-1', punchType: 'IN', punchedAt: new Date('2026-08-20T05:00:00Z'), workLocationId: null, manualEntryBy: null, correctionRequestId: null },
+      { userId: 'user-1', punchType: 'OUT', punchedAt: new Date('2026-08-20T11:00:00Z'), workLocationId: null, manualEntryBy: 'admin-1', correctionRequestId: 'corr-1' },
+      { userId: 'user-1', punchType: 'OUT', punchedAt: new Date('2026-08-20T17:00:00Z'), workLocationId: null, manualEntryBy: 'SYSTEM', correctionRequestId: null },
+    ] as never)
+
+    const { records } = await generatePayrollData(8, 2026)
+
+    // 07:00 -> 13:00 italiane: sei ore, non le dodici scritte dal sistema.
+    expect(giornoDi(records, '2026-08-20')?.hours.total).toBe(6)
+
+    const query = vi.mocked(prisma.attendanceRecord.findMany).mock.calls[0][0] as {
+      select: Record<string, boolean>
+    }
+    expect(query.select.manualEntryBy).toBe(true)
+    expect(query.select.correctionRequestId).toBe(true)
+  })
+
   it('chi ha solo un permesso approvato entra comunque nell export', async () => {
     // Stessa famiglia: un cessato che nel mese ha solo assenze, nessuna
     // timbratura. Deve comparire, altrimenti le ferie maturate spariscono.
