@@ -8,7 +8,12 @@
 import { prisma } from '@/lib/prisma'
 import { Prisma, PunchType, LeaveStatus } from '@prisma/client'
 import { computeRecognizedDay } from './timekeeping-engine'
-import type { DayPunch, PolicyRules, ShiftReview } from './timekeeping-types'
+import type {
+  DayPunch,
+  DayWarning,
+  PolicyRules,
+  ShiftReview,
+} from './timekeeping-types'
 import {
   loadPolicyResolutionContext,
   neutralPolicy,
@@ -111,6 +116,14 @@ export interface PayrollRecord {
   policyName: string | null
   /** Minuti oltre il turno sospesi in attesa di revisione: né pagati né persi. */
   pendingReviewMinutes: number
+  /**
+   * Avvisi del motore su questa giornata.
+   *
+   * Non tutti valgono un blocco — la pausa pranzo dedotta dalla regola è la
+   * normalità — ma alcuni dicono che il dato è incompleto, e l'export delle
+   * paghe li guarda prima di consegnare un mese al consulente.
+   */
+  dayWarnings: DayWarning[]
 }
 
 export interface PayrollSummary {
@@ -168,6 +181,7 @@ function calculateHoursFromPunches(
   clockInMinutes: number | null
   clockOutMinutes: number | null
   pendingReviewMinutes: number
+  warnings: DayWarning[]
 } {
   const punches: DayPunch[] = records.map((record) => ({
     type: record.punchType as DayPunch['type'],
@@ -203,6 +217,7 @@ function calculateHoursFromPunches(
     clockInMinutes: day.clockIn,
     clockOutMinutes: day.clockOut,
     pendingReviewMinutes: day.pendingReviewMinutes,
+    warnings: day.warnings,
   }
 }
 
@@ -603,6 +618,7 @@ export async function generatePayrollData(
       let workLocationName: string | null = null
       let policyName: string | null = null
       let pendingReviewMinutes = 0
+      let dayWarnings: DayWarning[] = []
       // L'assenza approvata si registra sempre, anche se quel giorno la
       // persona ha lavorato lo stesso: il permesso è stato concesso, ed è un
       // fatto. Quello che NON si può fare è dedurne che non abbia lavorato.
@@ -636,6 +652,19 @@ export async function generatePayrollData(
         hours = risultato.hours
         riconosciuto = risultato
         pendingReviewMinutes = risultato.pendingReviewMinutes
+        dayWarnings = risultato.warnings
+
+        // La pausa iniziata e mai chiusa: le ore restano quelle timbrate — la
+        // deduzione l'ha esclusa il titolare — ma la giornata non si consegna
+        // al consulente senza che qualcuno l'abbia guardata. Il blocco vero
+        // sta nell'export, qui nasce la riga che dice a chi e quando.
+        if (dayWarnings.includes('PAUSA_NON_CHIUSA')) {
+          notes.push('Pausa iniziata e mai chiusa: da verificare')
+          warnings.push(
+            `${user.lastName} ${user.firstName}: pausa iniziata e mai chiusa il ` +
+              dateKey.split('-').reverse().join('/')
+          )
+        }
 
         if (pendingReviewMinutes > 0) {
           notes.push(`${pendingReviewMinutes} min oltre il turno in attesa di approvazione`)
@@ -753,6 +782,7 @@ export async function generatePayrollData(
         workLocationName,
         policyName,
         pendingReviewMinutes,
+        dayWarnings,
       })
     })
 
