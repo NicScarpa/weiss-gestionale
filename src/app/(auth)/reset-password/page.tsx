@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, Suspense } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -9,6 +10,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { AlertCircle, Loader2, CheckCircle2, ArrowLeft, Eye, EyeOff } from 'lucide-react'
+
+interface EsitoToken {
+  valid: boolean
+  error?: string
+}
 
 function ResetPasswordForm() {
   const router = useRouter()
@@ -19,38 +25,36 @@ function ResetPasswordForm() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [isValidating, setIsValidating] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isSuccess, setIsSuccess] = useState(false)
-  const [isTokenValid, setIsTokenValid] = useState(false)
 
-  // Verifica validità token all'avvio
-  useEffect(() => {
-    if (!token) {
-      setError('Token mancante. Richiedi un nuovo link di reset.')
-      setIsValidating(false)
-      return
-    }
+  // Verifica validità token all'avvio: una volta sola, senza ritentativi, come
+  // faceva la fetch al mount.
+  const {
+    data: esitoToken,
+    isPending: verificaInCorso,
+    isError: verificaFallita,
+  } = useQuery({
+    queryKey: ['reset-password-token', token],
+    queryFn: async (): Promise<EsitoToken> => {
+      const response = await fetch(`/api/auth/reset-password?token=${token}`)
+      return response.json()
+    },
+    enabled: !!token,
+    retry: false,
+    staleTime: Infinity,
+  })
 
-    const validateToken = async () => {
-      try {
-        const response = await fetch(`/api/auth/reset-password?token=${token}`)
-        const data = await response.json()
-
-        if (data.valid) {
-          setIsTokenValid(true)
-        } else {
-          setError(data.error || 'Il link per il reset è scaduto o non valido.')
-        }
-      } catch {
-        setError('Errore nella verifica del link')
-      } finally {
-        setIsValidating(false)
-      }
-    }
-
-    validateToken()
-  }, [token])
+  // Senza token non c'è niente da verificare: l'esito si conosce già al render.
+  const isValidating = !!token && verificaInCorso
+  const isTokenValid = esitoToken?.valid === true
+  const erroreToken = !token
+    ? 'Token mancante. Richiedi un nuovo link di reset.'
+    : verificaFallita
+      ? 'Errore nella verifica del link'
+      : esitoToken && !esitoToken.valid
+        ? esitoToken.error || 'Il link per il reset è scaduto o non valido.'
+        : null
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -119,7 +123,7 @@ function ResetPasswordForm() {
           <div>
             <p className="font-medium">Link non valido</p>
             <p className="mt-1 text-red-600/80 dark:text-red-400/80">
-              {error || 'Il link per il reset è scaduto o non valido.'}
+              {erroreToken || 'Il link per il reset è scaduto o non valido.'}
             </p>
           </div>
         </div>

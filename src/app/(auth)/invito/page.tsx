@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, Suspense } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -10,10 +11,12 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { AlertCircle, Loader2, CheckCircle2, ArrowLeft, Eye, EyeOff } from 'lucide-react'
 
-interface InviteData {
-  firstName: string | null
-  lastName: string | null
-  email: string | null
+interface EsitoInvito {
+  valid: boolean
+  error?: string
+  firstName?: string | null
+  lastName?: string | null
+  email?: string | null
 }
 
 function InviteForm() {
@@ -21,55 +24,56 @@ function InviteForm() {
   const searchParams = useSearchParams()
   const token = searchParams.get('token')
 
-  const [isValidating, setIsValidating] = useState(true)
-  const [isTokenValid, setIsTokenValid] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
 
-  // Form state
-  const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
-  const [email, setEmail] = useState('')
+  // Valida token al mount: una volta sola, senza ritentativi, come faceva la fetch.
+  const {
+    data: esitoInvito,
+    isPending: verificaInCorso,
+    isError: verificaFallita,
+  } = useQuery({
+    queryKey: ['invito-token', token],
+    queryFn: async (): Promise<EsitoInvito> => {
+      const response = await fetch(`/api/staff/invite/complete?token=${token}`)
+      return response.json()
+    },
+    enabled: !!token,
+    retry: false,
+    staleTime: Infinity,
+  })
+
+  // Senza token non c'è niente da verificare: l'esito si conosce già al render.
+  const isValidating = !!token && verificaInCorso
+  const isTokenValid = esitoInvito?.valid === true
+  const erroreToken = !token
+    ? 'Token mancante. Il link potrebbe non essere valido.'
+    : verificaFallita
+      ? 'Errore nella verifica del link'
+      : esitoInvito && !esitoInvito.valid
+        ? esitoInvito.error || 'Il link di invito non e valido.'
+        : null
+
+  // Form state: nome, cognome ed email arrivano precompilati dall'invito, ma sono
+  // modificabili. In stato tengo solo la modifica dell'utente e leggo il dato
+  // dell'invito finche quella manca; la stringa vuota e una modifica a tutti gli
+  // effetti, quindi un campo svuotato resta vuoto.
+  const datiInvito = isTokenValid ? esitoInvito : undefined
+  const [firstNameModificato, setFirstName] = useState<string | null>(null)
+  const [lastNameModificato, setLastName] = useState<string | null>(null)
+  const [emailModificata, setEmail] = useState<string | null>(null)
+  const firstName = firstNameModificato ?? datiInvito?.firstName ?? ''
+  const lastName = lastNameModificato ?? datiInvito?.lastName ?? ''
+  const email = emailModificata ?? datiInvito?.email ?? ''
+
   const [phoneNumber, setPhoneNumber] = useState('')
   const [birthDate, setBirthDate] = useState('')
   const [address, setAddress] = useState('')
   const [fiscalCode, setFiscalCode] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-
-  // Valida token al mount
-  useEffect(() => {
-    if (!token) {
-      setError('Token mancante. Il link potrebbe non essere valido.')
-      setIsValidating(false)
-      return
-    }
-
-    const validateToken = async () => {
-      try {
-        const response = await fetch(`/api/staff/invite/complete?token=${token}`)
-        const data = await response.json()
-
-        if (data.valid) {
-          setIsTokenValid(true)
-          const inviteData = data as InviteData
-          setFirstName(inviteData.firstName || '')
-          setLastName(inviteData.lastName || '')
-          setEmail(inviteData.email || '')
-        } else {
-          setError(data.error || 'Il link di invito non e valido.')
-        }
-      } catch {
-        setError('Errore nella verifica del link')
-      } finally {
-        setIsValidating(false)
-      }
-    }
-
-    validateToken()
-  }, [token])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -142,7 +146,7 @@ function InviteForm() {
           <div>
             <p className="font-medium">Invito non valido</p>
             <p className="mt-1 text-red-600/80 dark:text-red-400/80">
-              {error || 'Il link di invito e scaduto o non valido.'}
+              {erroreToken || 'Il link di invito e scaduto o non valido.'}
             </p>
           </div>
         </div>
