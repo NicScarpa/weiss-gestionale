@@ -19,6 +19,7 @@ export default function FattureLayout({
     { value: '/fatture/ricevute', label: 'Ricevute' },
     { value: '/fatture/emesse', label: 'Emesse' },
     { value: '/fatture/corrispettivi', label: 'Corrispettivi' },
+    { value: '/fatture/memorie', label: 'Memorie' },
   ]
 
   const isActive = (href: string) => pathname === href
