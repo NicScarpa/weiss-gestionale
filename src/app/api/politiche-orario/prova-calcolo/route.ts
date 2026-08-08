@@ -1,7 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
-import { auth } from '@/lib/auth'
-import { logger } from '@/lib/logger'
+import { NextRequest } from 'next/server'
+import { handleApiError, ok, withAuth } from '@/lib/api-utils'
 import { computeRecognizedDay } from '@/lib/attendance/timekeeping-engine'
 import { toPolicyRules } from '@/lib/attendance/policy-resolver'
 import type { DayPunch } from '@/lib/attendance/timekeeping-types'
@@ -17,17 +15,8 @@ import { provaCalcoloSchema } from '@/lib/validations/politiche-orario'
  * È l'unico modo perché chi configura cinque parametri di arrotondamento
  * capisca cosa sta impostando.
  */
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async (request: NextRequest) => {
   try {
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
-    if (!['admin', 'manager'].includes(session.user.role || '')) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
     const body = await request.json()
 
     // Il calcolatore serve a capire i parametri PRIMA di impegnarsi: si può
@@ -82,16 +71,12 @@ export async function POST(request: NextRequest) {
       shiftWindows,
     })
 
-    return NextResponse.json({ data: risultato })
+    return ok({ data: risultato })
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Dati non validi', details: error.issues },
-        { status: 400 }
-      )
-    }
-
-    logger.error('Errore POST /api/politiche-orario/prova-calcolo', error)
-    return NextResponse.json({ error: 'Errore nel calcolo di prova' }, { status: 500 })
+    return handleApiError(
+      error,
+      'POST /api/politiche-orario/prova-calcolo',
+      'Errore nel calcolo di prova'
+    )
   }
-}
+}, { roles: ['admin', 'manager'] })

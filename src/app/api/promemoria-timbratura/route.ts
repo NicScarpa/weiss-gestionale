@@ -1,11 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
-import { auth } from '@/lib/auth'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
-import { getVenueId } from '@/lib/venue'
+import { badRequest, created, handleApiError, ok, withAuth } from '@/lib/api-utils'
 import { promemoriaTimbraturaSchema } from '@/lib/validations/promemoria-timbratura'
+
+/** I promemoria scrivono sui telefoni di tutti: solo admin e manager. */
+export const RUOLI_PROMEMORIA = ['admin', 'manager'] as const
 
 /** Campi restituiti al client, uguali in lista e dopo il salvataggio. */
 export const promemoriaSelect = {
@@ -21,20 +21,6 @@ export const promemoriaSelect = {
   lastSentDate: true,
   recipients: { select: { userId: true } },
 } as const
-
-export async function guardAdminManager() {
-  const session = await auth()
-  if (!session?.user) {
-    return {
-      error: NextResponse.json({ error: 'Non autorizzato' }, { status: 401 }),
-    }
-  }
-  if (!['admin', 'manager'].includes(session.user.role || '')) {
-    return { error: NextResponse.json({ error: 'Accesso negato' }, { status: 403 }) }
-  }
-
-  return { session }
-}
 
 /**
  * Chi può ricevere un promemoria: l'organico attivo con il portale acceso.
@@ -75,13 +61,8 @@ export async function verificaDestinatari(
 }
 
 // GET /api/promemoria-timbratura - Elenco dei promemoria e destinatari possibili
-export async function GET() {
+export const GET = withAuth(async (_request: NextRequest, { venueId }) => {
   try {
-    const { error } = await guardAdminManager()
-    if (error) return error
-
-    const venueId = await getVenueId()
-
     // I dipendenti viaggiano insieme ai promemoria perché la schermata serve
     // solo a scegliere fra loro: due chiamate separate mostrerebbero per un
     // istante un elenco di destinatari vuoto.
@@ -94,29 +75,25 @@ export async function GET() {
       destinatariPossibili(venueId),
     ])
 
-    return NextResponse.json({ data: promemoria, dipendenti })
+    return ok({ data: promemoria, dipendenti })
   } catch (error) {
-    logger.error('Errore GET /api/promemoria-timbratura', error)
-    return NextResponse.json(
-      { error: 'Errore nel recupero dei promemoria' },
-      { status: 500 }
+    return handleApiError(
+      error,
+      'GET /api/promemoria-timbratura',
+      'Errore nel recupero dei promemoria'
     )
   }
-}
+}, { roles: RUOLI_PROMEMORIA, venueScoped: true })
 
 // POST /api/promemoria-timbratura - Crea un promemoria
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async (request: NextRequest, { user, venueId }) => {
   try {
-    const { session, error } = await guardAdminManager()
-    if (error) return error
-
     const body = await request.json()
     const { recipientIds, ...campi } = promemoriaTimbraturaSchema.parse(body)
-    const venueId = await getVenueId()
 
     const destinatariNonValidi = await verificaDestinatari(recipientIds, venueId)
     if (destinatariNonValidi) {
-      return NextResponse.json({ error: destinatariNonValidi }, { status: 400 })
+      return badRequest(destinatariNonValidi)
     }
 
     const promemoria = await prisma.clockReminder.create({
@@ -129,7 +106,7 @@ export async function POST(request: NextRequest) {
     })
 
     await createAuditLog({
-      userId: session!.user.id,
+      userId: user.id,
       action: 'CREATE',
       entityType: 'ClockReminder',
       entityId: promemoria.id,
@@ -137,19 +114,12 @@ export async function POST(request: NextRequest) {
       newValues: promemoria,
     })
 
-    return NextResponse.json({ data: promemoria }, { status: 201 })
+    return created({ data: promemoria })
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Dati non validi', details: error.issues },
-        { status: 400 }
-      )
-    }
-
-    logger.error('Errore POST /api/promemoria-timbratura', error)
-    return NextResponse.json(
-      { error: 'Errore nella creazione del promemoria' },
-      { status: 500 }
+    return handleApiError(
+      error,
+      'POST /api/promemoria-timbratura',
+      'Errore nella creazione del promemoria'
     )
   }
-}
+}, { roles: RUOLI_PROMEMORIA, venueScoped: true })

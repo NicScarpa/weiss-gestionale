@@ -1,36 +1,18 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { NextRequest } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
-import { getVenueId } from '@/lib/venue'
+import { badRequest, created, handleApiError, notFound, ok, withAuth } from '@/lib/api-utils'
 import { assegnazioneLuogoSchema } from '@/lib/validations/luoghi-lavoro'
+import { RUOLI_CONFIGURAZIONE } from '../../route'
 
-async function guard() {
-  const session = await auth()
-  if (!session?.user) {
-    return { error: NextResponse.json({ error: 'Non autorizzato' }, { status: 401 }) }
-  }
-  if (!['admin', 'manager'].includes(session.user.role || '')) {
-    return { error: NextResponse.json({ error: 'Accesso negato' }, { status: 403 }) }
-  }
-
-  return { session }
-}
+type Params = { id: string }
+const OPZIONI = { roles: RUOLI_CONFIGURAZIONE, venueScoped: true } as const
 
 // POST /api/luoghi-lavoro/[id]/assegnazioni - Abilita un dipendente su un luogo
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const POST = withAuth<Params>(async (request: NextRequest, { params, user, venueId }) => {
   try {
-    const { session, error } = await guard()
-    if (error) return error
-
-    const { id } = await params
-    const venueId = await getVenueId()
+    const { id } = params
 
     const luogo = await prisma.workLocation.findFirst({
       where: { id, venueId },
@@ -38,7 +20,7 @@ export async function POST(
     })
 
     if (!luogo) {
-      return NextResponse.json({ error: 'Luogo non trovato' }, { status: 404 })
+      return notFound('Luogo non trovato')
     }
 
     const body = await request.json()
@@ -47,15 +29,12 @@ export async function POST(
     // Il dipendente deve esistere, essere attivo e della stessa sede: un id
     // qualsiasi finirebbe dritto nella foreign key con un 500 opaco.
     const dipendente = await prisma.user.findFirst({
-      where: { id: dati.userId, isActive: true, ...(venueId && { venueId }) },
+      where: { id: dati.userId, isActive: true, venueId },
       select: { id: true },
     })
 
     if (!dipendente) {
-      return NextResponse.json(
-        { error: 'Dipendente non trovato' },
-        { status: 400 }
-      )
+      return badRequest('Dipendente non trovato')
     }
 
     // Riassegnare qualcuno già abilitato non crea un doppione: aggiorna la
@@ -97,7 +76,7 @@ export async function POST(
     }
 
     await createAuditLog({
-      userId: session!.user.id,
+      userId: user.id,
       action: 'UPDATE',
       entityType: 'WorkLocationAssignment',
       entityId: assegnazione.id,
@@ -109,40 +88,25 @@ export async function POST(
       },
     })
 
-    return NextResponse.json({ data: assegnazione }, { status: 201 })
+    return created({ data: assegnazione })
   } catch (err) {
-    if (err instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Dati non validi', details: err.issues },
-        { status: 400 }
-      )
-    }
-
-    logger.error('Errore POST /api/luoghi-lavoro/[id]/assegnazioni', err)
-    return NextResponse.json(
-      { error: "Errore nell'assegnazione del dipendente" },
-      { status: 500 }
+    return handleApiError(
+      err,
+      'POST /api/luoghi-lavoro/[id]/assegnazioni',
+      "Errore nell'assegnazione del dipendente"
     )
   }
-}
+}, OPZIONI)
 
 // DELETE /api/luoghi-lavoro/[id]/assegnazioni?userId=... - Revoca l'abilitazione
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const DELETE = withAuth<Params>(async (request: NextRequest, { params, user, venueId }) => {
   try {
-    const { session, error } = await guard()
-    if (error) return error
-
-    const { id } = await params
-    const userId = new URL(request.url).searchParams.get('userId')
+    const { id } = params
+    const userId = request.nextUrl.searchParams.get('userId')
 
     if (!userId) {
-      return NextResponse.json({ error: 'Dipendente non indicato' }, { status: 400 })
+      return badRequest('Dipendente non indicato')
     }
-
-    const venueId = await getVenueId()
 
     const assegnazione = await prisma.workLocationAssignment.findFirst({
       where: { userId, workLocationId: id, workLocation: { venueId } },
@@ -150,7 +114,7 @@ export async function DELETE(
     })
 
     if (!assegnazione) {
-      return NextResponse.json({ error: 'Assegnazione non trovata' }, { status: 404 })
+      return notFound('Assegnazione non trovata')
     }
 
     // Si chiude invece di cancellare: le timbrature già registrate su questo
@@ -161,7 +125,7 @@ export async function DELETE(
     })
 
     await createAuditLog({
-      userId: session!.user.id,
+      userId: user.id,
       action: 'UPDATE',
       entityType: 'WorkLocationAssignment',
       entityId: assegnazione.id,
@@ -169,12 +133,12 @@ export async function DELETE(
       newValues: { endedAt: 'ora' },
     })
 
-    return NextResponse.json({ success: true })
+    return ok({ success: true })
   } catch (err) {
-    logger.error('Errore DELETE /api/luoghi-lavoro/[id]/assegnazioni', err)
-    return NextResponse.json(
-      { error: "Errore nella revoca dell'assegnazione" },
-      { status: 500 }
+    return handleApiError(
+      err,
+      'DELETE /api/luoghi-lavoro/[id]/assegnazioni',
+      "Errore nella revoca dell'assegnazione"
     )
   }
-}
+}, OPZIONI)

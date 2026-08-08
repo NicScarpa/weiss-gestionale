@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { prisma } from '@/lib/prisma'
 import { setupIntegrationDb } from '@/test/integration/db'
-import { loginAs, loginAsUser, setSession, type SeedRole } from '@/test/integration/auth-mock'
+import { loginAs, setSession, type SeedRole } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
 import { venueDiTest } from '@/test/integration/fixtures/closures'
 import { romeInstant } from '@/lib/timezone'
