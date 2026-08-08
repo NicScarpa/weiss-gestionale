@@ -15,7 +15,41 @@ export type EntryType =
   | 'USCITA'      // Uscita generica
   | 'VERSAMENTO'  // Da cassa a banca
   | 'PRELIEVO'    // Da banca a cassa
-  | 'GIROCONTO'   // Tra conti
+  | 'GIROCONTO'   // Fra due registri, direzione da indicare
+
+/**
+ * I movimenti che spostano denaro fra i registri invece di farlo entrare o
+ * uscire dall'azienda: valgono due scritture, e il totale non cambia.
+ *
+ * Stanno qui e non in `@/lib/prima-nota-utils` perché servono anche al modulo
+ * di inserimento, che gira nel browser: quel file trascina l'aritmetica del
+ * denaro e il client Prisma, che nel bundle della pagina non hanno niente da
+ * fare. La regola resta comunque in un posto solo.
+ */
+export const TIPI_TRASFERIMENTO = ['VERSAMENTO', 'PRELIEVO', 'GIROCONTO'] as const
+
+export type TipoTrasferimento = (typeof TIPI_TRASFERIMENTO)[number]
+
+export function isTrasferimento(entryType: EntryType): entryType is TipoTrasferimento {
+  return (TIPI_TRASFERIMENTO as readonly EntryType[]).includes(entryType)
+}
+
+export interface RegistriDelTrasferimento {
+  /** Registro da cui il denaro esce: ci va l'AVERE. */
+  da: RegisterType
+  /** Registro in cui il denaro entra: ci va il DARE. */
+  a: RegisterType
+}
+
+/**
+ * Versamento e prelievo hanno la direzione scritta nel nome: sono l'unica cosa
+ * che possono essere, e non c'è niente da chiedere a chi li registra. Il
+ * giroconto non è qui proprio perché la direzione gliela deve dare l'utente.
+ */
+export const REGISTRI_IMPLICITI: Record<'VERSAMENTO' | 'PRELIEVO', RegistriDelTrasferimento> = {
+  VERSAMENTO: { da: 'CASH', a: 'BANK' },
+  PRELIEVO: { da: 'BANK', a: 'CASH' },
+}
 
 // Etichette tipi movimento
 export const ENTRY_TYPE_LABELS: Record<EntryType, string> = {

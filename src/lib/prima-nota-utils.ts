@@ -1,8 +1,67 @@
 import { money, sumMoney, toApi } from '@/lib/money'
-import type { RegisterType, EntryType, JournalEntry } from '@/types/prima-nota'
+import { REGISTRI_IMPLICITI } from '@/types/prima-nota'
+import type {
+  RegisterType,
+  EntryType,
+  JournalEntry,
+  RegistriDelTrasferimento,
+  TipoTrasferimento,
+} from '@/types/prima-nota'
 
 /**
- * Determina se un movimento è DARE o AVERE in base al registro e tipo
+ * Un trasferimento male indicato: manca la destinazione, o coincide con
+ * l'origine. È un dato che chi registra può correggere, non un guasto.
+ */
+export class TrasferimentoNonValidoError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'TrasferimentoNonValidoError'
+  }
+}
+
+/**
+ * Da quale registro a quale registro si muove il denaro.
+ *
+ * Per versamento e prelievo il `registerType` ricevuto viene ignorato: la
+ * direzione è quella canonica anche se il client ne dichiara un'altra, perché
+ * un «versamento dalla banca» non è un'operazione diversa, è un dato sbagliato,
+ * e ciò che l'utente ha scelto è il tipo di operazione. Il giroconto invece non
+ * ha direzione implicita: chi lo registra deve dire da dove a dove, e senza
+ * quell'indicazione la richiesta va rifiutata invece che indovinata.
+ */
+export function registriDelTrasferimento(
+  entryType: TipoTrasferimento,
+  registerType: RegisterType,
+  counterRegisterType?: RegisterType | null
+): RegistriDelTrasferimento {
+  if (entryType !== 'GIROCONTO') {
+    return REGISTRI_IMPLICITI[entryType]
+  }
+
+  if (!counterRegisterType) {
+    throw new TrasferimentoNonValidoError(
+      'Un giroconto richiede il registro di destinazione: indica da dove a dove si sposta il denaro.'
+    )
+  }
+
+  if (counterRegisterType === registerType) {
+    throw new TrasferimentoNonValidoError(
+      'Un giroconto deve spostare il denaro fra due registri diversi.'
+    )
+  }
+
+  return { da: registerType, a: counterRegisterType }
+}
+
+/**
+ * Determina se un movimento è DARE o AVERE in base al registro e tipo.
+ *
+ * Vale per un movimento a riga singola e per **ciascuno dei due lati** di un
+ * trasferimento, presi uno alla volta. Il giroconto è l'eccezione: non avendo
+ * una direzione implicita, la coppia registro+tipo non basta a dire da che
+ * parte va l'importo, e la funzione si ferma invece di rispondere a caso.
+ * Rispondeva DARE per entrambi i registri, ed era il modo in cui un giroconto
+ * registrato a mano faceva comparire denaro dal nulla.
  */
 export function getMovementDirection(
   registerType: RegisterType,
@@ -17,8 +76,6 @@ export function getMovementDirection(
       case 'USCITA':
       case 'VERSAMENTO': // Verso banca → esce da cassa
         return 'CREDIT' // Avere (-)
-      case 'GIROCONTO':
-        return 'DEBIT' // Default, dipende dal contesto
     }
   }
 
@@ -31,12 +88,13 @@ export function getMovementDirection(
       case 'USCITA':
       case 'PRELIEVO': // Verso cassa → esce da banca
         return 'CREDIT' // Avere (-)
-      case 'GIROCONTO':
-        return 'DEBIT' // Default, dipende dal contesto
     }
   }
 
-  return 'DEBIT'
+  throw new TrasferimentoNonValidoError(
+    'Il giroconto non ha una direzione implicita: usa registriDelTrasferimento() ' +
+      'per sapere da quale registro esce e in quale entra.'
+  )
 }
 
 /**

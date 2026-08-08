@@ -7,7 +7,13 @@ import {
   createJournalEntrySchema,
   journalEntryFiltersSchema,
 } from '@/lib/validations/prima-nota'
-import { toDebitCredit, calculateTotals } from '@/lib/prima-nota-utils'
+import {
+  toDebitCredit,
+  calculateTotals,
+  registriDelTrasferimento,
+  TrasferimentoNonValidoError,
+} from '@/lib/prima-nota-utils'
+import { isTrasferimento } from '@/types/prima-nota'
 import type { JournalEntry } from '@/types/prima-nota'
 import { getVenueId } from '@/lib/venue'
 
@@ -403,6 +409,78 @@ export async function POST(request: NextRequest) {
     const validatedData = createJournalEntrySchema.parse(body)
     const venueId = await getVenueId()
 
+    // Ciò che le due righe di un trasferimento hanno in comune con il movimento
+    // singolo, e fra loro: cambiano solo il registro e il lato dell'importo.
+    const comune = {
+      venueId,
+      date: validatedData.date,
+      description: validatedData.description,
+      documentRef: validatedData.documentRef,
+      documentType: validatedData.documentType,
+      accountId: validatedData.accountId,
+      createdById: session.user.id,
+    }
+
+    const relazioni = {
+      venue: { select: { id: true, name: true, code: true } },
+      account: { select: { id: true, code: true, name: true } },
+    }
+
+    if (isTrasferimento(validatedData.entryType)) {
+      const { da, a } = registriDelTrasferimento(
+        validatedData.entryType,
+        validatedData.registerType,
+        validatedData.counterRegisterType
+      )
+
+      // Le due righe stanno in una transazione perché sono un'operazione sola:
+      // se ne sopravvivesse una, il denaro risulterebbe uscito da un registro
+      // senza essere entrato nell'altro, e la liquidità totale cambierebbe di
+      // un importo che nessuno ha mai incassato né speso.
+      //
+      // L'IVA non viene riportata su nessuna delle due: spostare contante da un
+      // registro all'altro non è un'operazione imponibile, e ricopiarla su
+      // entrambe le righe la conterebbe due volte.
+      const [uscita, entrata] = await prisma.$transaction([
+        prisma.journalEntry.create({
+          data: { ...comune, registerType: da, creditAmount: validatedData.amount },
+          include: relazioni,
+        }),
+        prisma.journalEntry.create({
+          data: { ...comune, registerType: a, debitAmount: validatedData.amount },
+          include: relazioni,
+        }),
+      ])
+
+      await createAuditLog({
+        userId: session.user.id,
+        action: 'CREATE',
+        entityType: 'JournalEntry',
+        entityId: uscita.id,
+        venueId,
+        newValues: {
+          entryType: validatedData.entryType,
+          da,
+          a,
+          description: validatedData.description,
+          amount: validatedData.amount,
+          entryIds: [uscita.id, entrata.id],
+        },
+      })
+
+      return NextResponse.json(
+        {
+          trasferimento: { entryType: validatedData.entryType, da, a },
+          entries: [uscita, entrata].map((entry) => ({
+            ...entry,
+            debitAmount: entry.debitAmount ? Number(entry.debitAmount) : null,
+            creditAmount: entry.creditAmount ? Number(entry.creditAmount) : null,
+          })),
+        },
+        { status: 201 }
+      )
+    }
+
     // Converti in dare/avere
     const { debitAmount, creditAmount } = toDebitCredit(
       validatedData.registerType,
@@ -413,26 +491,13 @@ export async function POST(request: NextRequest) {
     // Crea il movimento
     const entry = await prisma.journalEntry.create({
       data: {
-        venueId,
-        date: validatedData.date,
+        ...comune,
         registerType: validatedData.registerType,
-        description: validatedData.description,
-        documentRef: validatedData.documentRef,
-        documentType: validatedData.documentType,
         debitAmount,
         creditAmount,
         vatAmount: validatedData.vatAmount,
-        accountId: validatedData.accountId,
-        createdById: session.user.id,
       },
-      include: {
-        venue: {
-          select: { id: true, name: true, code: true },
-        },
-        account: {
-          select: { id: true, code: true, name: true },
-        },
-      },
+      include: relazioni,
     })
 
     await createAuditLog({
@@ -459,6 +524,12 @@ export async function POST(request: NextRequest) {
         { error: 'Dati non validi', details: error.issues },
         { status: 400 }
       )
+    }
+
+    // Un trasferimento senza destinazione, o diretto al registro da cui parte:
+    // è un dato che l'utente può correggere, non un guasto del server.
+    if (error instanceof TrasferimentoNonValidoError) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
     logger.error('Errore POST /api/prima-nota', error)

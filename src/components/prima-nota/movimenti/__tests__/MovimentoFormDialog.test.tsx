@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest'
 import { render, cleanup, fireEvent, act } from '@testing-library/react'
 import { MovimentoFormDialog } from '../MovimentoFormDialog'
+import type { EntryType, RegisterType } from '@/types/prima-nota'
 
 /**
  * Il campo IVA dice «opzionale» e deve comportarsi come tale.
@@ -33,11 +34,12 @@ function campo(nome: string): HTMLInputElement {
   return input
 }
 
+/** Il bottone di conferma: si chiama «Aggiorna» quando il modulo apre su un movimento esistente. */
 function bottoneSalva(): HTMLButtonElement {
-  const bottone = Array.from(document.querySelectorAll('button')).find(
-    (b) => b.textContent?.trim() === 'Salva'
+  const bottone = Array.from(document.querySelectorAll('button')).find((b) =>
+    ['Salva', 'Aggiorna'].includes(b.textContent?.trim() ?? '')
   )
-  if (!bottone) throw new Error('Bottone "Salva" non trovato')
+  if (!bottone) throw new Error('Bottone di conferma non trovato')
   return bottone
 }
 
@@ -56,6 +58,29 @@ async function salva() {
 function montaModulo() {
   const onSave = vi.fn()
   render(<MovimentoFormDialog open onSave={onSave} />)
+  return onSave
+}
+
+/**
+ * Monta il modulo già su un tipo di movimento preciso. I selettori Radix non si
+ * pilotano con `fireEvent` — aprono su eventi di puntatore che jsdom non
+ * produce — e il tipo è comunque un valore iniziale come un altro.
+ */
+function montaModuloCon(entryType: EntryType, registerType: RegisterType = 'CASH') {
+  const onSave = vi.fn()
+  render(
+    <MovimentoFormDialog
+      open
+      onSave={onSave}
+      entry={{
+        date: new Date('2026-08-05'),
+        registerType,
+        entryType,
+        amount: 0,
+        description: '',
+      }}
+    />
+  )
   return onSave
 }
 
@@ -92,5 +117,75 @@ describe('MovimentoFormDialog, campo IVA', () => {
 
     expect(onSave).toHaveBeenCalledTimes(1)
     expect(onSave.mock.calls[0][0].vatAmount).toBe(22.5)
+  })
+
+  // Spostare contante fra cassa e banca non è un'operazione imponibile: il
+  // server scarta l'IVA dei trasferimenti, e un campo che non ha effetto è
+  // peggio di un campo assente.
+  it.each(['VERSAMENTO', 'PRELIEVO', 'GIROCONTO'] as const)(
+    'non chiede l\'IVA per un %s',
+    (tipo) => {
+      montaModuloCon(tipo)
+
+      expect(document.querySelector('input[name="vatAmount"]')).toBeNull()
+    }
+  )
+})
+
+/**
+ * Un trasferimento è una scrittura in due righe: il modulo deve dire da quale
+ * registro il denaro esce e in quale entra. Ne chiedeva uno solo, e l'altra
+ * riga non veniva mai scritta.
+ */
+describe('MovimentoFormDialog, registri dei trasferimenti', () => {
+  it('il versamento parte dalla cassa e arriva in banca senza chiederlo', async () => {
+    const onSave = montaModuloCon('VERSAMENTO')
+
+    compilaObbligatori()
+    await salva()
+
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      entryType: 'VERSAMENTO',
+      registerType: 'CASH',
+      counterRegisterType: 'BANK',
+    })
+  })
+
+  it('il prelievo parte dalla banca e arriva in cassa', async () => {
+    const onSave = montaModuloCon('PRELIEVO', 'BANK')
+
+    compilaObbligatori()
+    await salva()
+
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      entryType: 'PRELIEVO',
+      registerType: 'BANK',
+      counterRegisterType: 'CASH',
+    })
+  })
+
+  // Il giroconto non ha una direzione implicita nel nome. Senza destinazione il
+  // server risponde 400: il modulo se ne accorge prima, invece di far riscrivere
+  // tutto il movimento.
+  it('il giroconto senza registro di destinazione non viene inviato', async () => {
+    const onSave = montaModuloCon('GIROCONTO')
+
+    compilaObbligatori()
+    await salva()
+
+    expect(onSave).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('Indica il registro di destinazione')
+  })
+
+  it('i movimenti a riga singola non portano con sé un registro di destinazione', async () => {
+    const onSave = montaModuloCon('INCASSO')
+
+    compilaObbligatori()
+    await salva()
+
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onSave.mock.calls[0][0].counterRegisterType).toBeUndefined()
   })
 })
