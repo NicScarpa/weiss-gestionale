@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { generateClosureDescription } from '@/lib/prima-nota-utils'
 import { getSystemAccountOptional } from '@/lib/accounts/system'
-import { risolviCentroDiCosto } from '@/lib/services/cost-center-service'
+import { risolviCentroDiCosto, type OrigineCentro } from '@/lib/services/cost-center-service'
 
 /**
  * Client Prisma o transazione: permette di generare le scritture dentro la
@@ -92,11 +92,16 @@ async function risolviCentroMovimento(
   client: PrismaLike,
   closureId: string,
   input: { accountId: string | null; costCenterId: string | null }
-): Promise<string | null> {
+): Promise<{ id: string; origine: OrigineCentro } | null> {
   try {
     const esito = await risolviCentroDiCosto(client, input)
     if (esito.outcome === 'ok') {
-      return esito.costCenterId
+      // L'origine viaggia insieme all'id: dice se il centro l'ha scelto chi ha
+      // compilato la chiusura o se è il ripiego sul centro di sistema per una
+      // testata rimasta vuota. Scriverla sempre come 'scelto' bloccherebbe per
+      // sempre su STR un movimento che nessuno ha imputato — l'opposto di ciò
+      // che la colonna serve a ottenere.
+      return { id: esito.costCenterId, origine: esito.origine }
     }
 
     logger.warn('Chiusura: centro di costo non risolvibile, movimento senza centro', {
@@ -207,7 +212,8 @@ export async function generateJournalEntriesFromClosure(
       creditAmount: null,
       accountId: conti.corrispettivi,
       counterpartId: conti.cassa,
-      costCenterId: centroTestata,
+      costCenterId: centroTestata?.id ?? null,
+      costCenterSource: centroTestata?.origine ?? null,
       closureId: closure.id,
       createdById: userId,
     })
@@ -231,7 +237,8 @@ export async function generateJournalEntriesFromClosure(
         creditAmount: expense.amount,
         accountId: expense.accountId,
         counterpartId: conti.cassa,
-        costCenterId: centriSpese[index],
+        costCenterId: centriSpese[index]?.id ?? null,
+        costCenterSource: centriSpese[index]?.origine ?? null,
         closureId: closure.id,
         createdById: userId,
       })
@@ -250,7 +257,8 @@ export async function generateJournalEntriesFromClosure(
       creditAmount: null,
       accountId: conti.corrispettivi,
       counterpartId: conti.banca,
-      costCenterId: centroTestata,
+      costCenterId: centroTestata?.id ?? null,
+      costCenterSource: centroTestata?.origine ?? null,
       closureId: closure.id,
       createdById: userId,
     })
@@ -270,7 +278,8 @@ export async function generateJournalEntriesFromClosure(
       creditAmount: bankDeposit,
       accountId: conti.banca,
       counterpartId: conti.cassa,
-      costCenterId: centroTestata,
+      costCenterId: centroTestata?.id ?? null,
+      costCenterSource: centroTestata?.origine ?? null,
       closureId: closure.id,
       createdById: userId,
     })
@@ -286,7 +295,8 @@ export async function generateJournalEntriesFromClosure(
       creditAmount: null,
       accountId: conti.cassa,
       counterpartId: conti.banca,
-      costCenterId: centroTestata,
+      costCenterId: centroTestata?.id ?? null,
+      costCenterSource: centroTestata?.origine ?? null,
       closureId: closure.id,
       createdById: userId,
     })
@@ -294,19 +304,8 @@ export async function generateJournalEntriesFromClosure(
   }
 
   if (entries.length > 0) {
-    // Il centro di questi movimenti è sempre una scelta di chi ha compilato la
-    // chiusura: la testata (campo obbligatorio del form) o l'override della
-    // singola riga spesa. Va detto, altrimenti resta indistinguibile da un
-    // centro indovinato dal sistema e le automazioni lo rivaluterebbero come
-    // tale — in particolare l'ereditarietà delle fette, se il movimento viene
-    // poi riconciliato con una scadenza. Dove il centro non c'è (anagrafica
-    // incompleta, vedi risolviCentroMovimento) non c'è nemmeno una
-    // provenienza da dichiarare.
     await client.journalEntry.createMany({
-      data: entries.map((entry) => ({
-        ...entry,
-        costCenterSource: entry.costCenterId ? 'scelto' : null,
-      })),
+      data: entries,
     })
   }
 

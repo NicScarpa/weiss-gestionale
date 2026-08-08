@@ -94,10 +94,15 @@ export async function PATCH(
 
     // Il conto è l'asse di imputazione: se arriva, la categoria si deriva
     // sempre dalla mappatura (il conto vince su una categoria esplicita).
-    // Una categoria senza conto resta accettata durante la transizione
+    // Una categoria senza conto resta accettata durante la transizione.
+    // `undefined` e non `null` quando non arriva né l'uno né l'altra: un
+    // corpo senza categoria non è una richiesta di cancellarla, e con `null`
+    // una PATCH vuota azzererebbe la categoria del movimento — anche di uno
+    // da chiusura, che il filtro sulle chiavi lascia passare proprio perché
+    // non porta chiavi.
     const budgetCategoryId = validated.accountId
       ? await derivaBudgetCategoryDaConto(validated.accountId)
-      : validated.budgetCategoryId || null
+      : validated.budgetCategoryId || undefined
 
     // Il nuovo conto può richiedere un centro di costo che il movimento non
     // ha: in quel caso la categorizzazione si ferma qui, il centro va scelto

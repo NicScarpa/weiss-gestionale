@@ -454,8 +454,8 @@ model JournalEntry {
   /// Provenienza di costCenterId: 'scelto' (da un umano, nel form o in una
   /// regola che ha configurato), 'piano' (dettata dalla regola del conto —
   /// DEFAULT_STR → STR), 'supposto' (indovinata dal sistema su un percorso
-  /// automatico). Stesso schema di Schedule.dataAttesaSource. Null sui
-  /// movimenti anteriori alla colonna e su quelli da chiusura: provenienza
+  /// automatico). Stesso schema di Schedule.dataAttesaSource. Null solo sui
+  /// movimenti anteriori alla colonna e su quelli senza centro: provenienza
   /// ignota, che si tratta come 'supposto' quando la decisione è se
   /// promuovere il movimento a verificato. Senza questa colonna un WEISS
   /// indovinato all'import è indistinguibile da un WEISS scelto a mano, e il

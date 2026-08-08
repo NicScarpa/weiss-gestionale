@@ -14,7 +14,7 @@ import {
   type JournalEntry,
   type JournalEntryFilters,
 } from '@/types/prima-nota'
-import { resolveMovimentoEditAction } from '@/lib/prima-nota-utils'
+import { isEntryEditable, resolveMovimentoEditAction } from '@/lib/prima-nota-utils'
 import { cn } from '@/lib/utils'
 
 interface MovimentiTableProps {
@@ -151,6 +151,11 @@ export function MovimentiTable({
                 // Movimento da chiusura + non admin: nessuna azione di modifica
                 // (il server la rifiuterebbe comunque con 403, vedi Task 8/15).
                 const editAction = resolveMovimentoEditAction(entry, isAdmin)
+                // La categorizzazione rapida manda solo la categoria budget,
+                // che sui movimenti da chiusura è fuori dal perimetro
+                // ammesso: il server risponderebbe 400. Lì la riclassifica
+                // passa dal dialogo dedicato dell'admin, non da qui.
+                const categorizzabile = isEntryEditable(entry)
 
                 return (
                   <tr
@@ -292,7 +297,7 @@ export function MovimentiTable({
                         onDelete={() => onDelete?.(entry.id)}
                         onVerify={() => onVerify?.(entry.id, !entry.verified)}
                         onHide={() => onHide?.(entry.id, !!entry.hiddenAt)}
-                        onCategorize={() => onCategorize?.(entry)}
+                        onCategorize={categorizzabile ? () => onCategorize?.(entry) : undefined}
                         onSplit={() => onSplit?.(entry)}
                       />
                     </td>

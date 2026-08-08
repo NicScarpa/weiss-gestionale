@@ -101,6 +101,19 @@ describe('PATCH /api/prima-nota/[id]/categorize - la categoria si deriva dal con
     expect(vi.mocked(prisma.journalEntry.update).mock.calls[0][0].data.budgetCategoryId).toBeNull()
   })
 
+  it('corpo vuoto: la categoria non si tocca, non si azzera', async () => {
+    // Un corpo senza campi non è una richiesta di cancellare la categoria.
+    // Il caso è raggiungibile anche sui movimenti da chiusura, dove il
+    // filtro sulle chiavi lascia passare proprio perché non ci sono chiavi.
+    vi.mocked(prisma.journalEntry.update).mockResolvedValue({ id: 'entry-1' } as never)
+
+    const { request, context } = patchCon({})
+    await PATCH(request, context)
+
+    const data = vi.mocked(prisma.journalEntry.update).mock.calls[0][0].data
+    expect(data.budgetCategoryId).toBeUndefined()
+  })
+
   it('senza conto, la categoria esplicita resta accettata (transizione)', async () => {
     vi.mocked(prisma.journalEntry.update).mockResolvedValue({ id: 'entry-1' } as never)
 

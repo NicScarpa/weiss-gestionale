@@ -27,3 +27,21 @@
 
 ALTER TABLE "journal_entries"
   ADD COLUMN IF NOT EXISTS "cost_center_source" TEXT;
+
+-- I tre valori ammessi, dichiarati anche nel database. La colonna è scritta
+-- solo dal server (nessuna route la accetta dal corpo della richiesta), quindi
+-- il vincolo è una rete di sicurezza: rende esplicito nello schema ciò che
+-- oggi è garantito soltanto dal tipo TypeScript. NULL resta ammesso: è la
+-- provenienza ignota dei movimenti anteriori alla colonna e di quelli senza
+-- centro.
+--
+-- Postgres non ha ADD CONSTRAINT IF NOT EXISTS: si usa il blocco DO con
+-- EXCEPTION, come per le FK del DDL del 7 agosto, così la seconda esecuzione
+-- non fallisce.
+DO $$ BEGIN
+  ALTER TABLE "journal_entries" ADD CONSTRAINT "journal_entries_cost_center_source_check"
+    CHECK ("cost_center_source" IS NULL
+           OR "cost_center_source" IN ('scelto', 'piano', 'supposto'));
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;

@@ -113,10 +113,10 @@ async function esigiCentroStrutturale(db: DbCentriDiCosto): Promise<string> {
  *   non c'era nessuna regola;
  * - provenienza ignota (`null`) → si ricade sull'euristica che precede questa
  *   colonna: il centro di sistema davanti a un conto operativo è il ripiego di
- *   quando il conto non c'era, ogni altro centro si rispetta. Serve ai
- *   movimenti anteriori alla colonna e a quelli da chiusura, che non la
- *   valorizzano; è conservativa, quindi non introduce falsi positivi dove la
- *   provenienza non si sa.
+ *   quando il conto non c'era, ogni altro centro si rispetta. Serve ai soli
+ *   movimenti anteriori alla colonna — da quando esiste, tutti i punti di
+ *   scrittura la valorizzano — ed è conservativa, quindi non introduce falsi
+ *   positivi dove la provenienza non si sa.
  */
 export function centroDaRiproporre(
   movimento: { costCenterId: string | null; costCenterSource: string | null },

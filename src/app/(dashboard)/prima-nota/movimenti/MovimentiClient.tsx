@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { MovimentiFilters } from '@/components/prima-nota/movimenti/MovimentiFilters'
 import { MovimentiTable } from '@/components/prima-nota/movimenti/MovimentiTable'
@@ -36,6 +36,7 @@ import {
   resolveMovimentoEditAction,
   countActiveMovimentiFilters,
   DEFAULT_MOVIMENTI_FILTERS,
+  type MovimentiFiltersState,
 } from '@/lib/prima-nota-utils'
 import type { JournalEntry, RegisterType, EntryType } from '@/types/prima-nota'
 
@@ -55,19 +56,46 @@ function deriveEntryType(entry: { registerType: string; debitAmount?: number | n
 }
 
 export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const { venueId, isAdmin } = usePrimaNota()
 
   // Register from URL (set by AccountSelectorToggle)
   const registerFromUrl = searchParams.get('register') as RegisterType | null
 
-  // Filters state
-  const [filters, setFilters] = useState(DEFAULT_MOVIMENTI_FILTERS)
+  // La scheda Cassa/Banca è a tutti gli effetti un filtro sul registro: se
+  // resta fuori dallo stato dei filtri non viene contata fra quelli attivi e
+  // "Cancella filtri" non la tocca, così chi arriva dalla scheda Cassa preme
+  // il pulsante e resta sulla cassa senza capire perché.
+  const [filters, setFilters] = useState<MovimentiFiltersState>(() => ({
+    ...DEFAULT_MOVIMENTI_FILTERS,
+    registerType: registerFromUrl ?? undefined,
+  }))
+
+  // L'URL resta la fonte della navigazione: quando la scheda cambia, il
+  // filtro la segue. Si ritorna lo stesso oggetto se il valore non cambia,
+  // per non rilanciare il caricamento a ogni render.
+  useEffect(() => {
+    setFilters((f) =>
+      f.registerType === (registerFromUrl ?? undefined)
+        ? f
+        : { ...f, registerType: registerFromUrl ?? undefined }
+    )
+  }, [registerFromUrl])
 
   // Usato dal pulsante "Cancella filtri" di MovimentiFilters e per decidere
   // quando mostrarlo.
   const filterCount = countActiveMovimentiFilters(filters)
-  const handleClearFilters = () => setFilters(DEFAULT_MOVIMENTI_FILTERS)
+  const handleClearFilters = () => {
+    setFilters(DEFAULT_MOVIMENTI_FILTERS)
+    // ...e la scheda torna su "Tutti": lasciarla evidenziata mentre la lista
+    // mostra ogni registro sarebbe una contraddizione a schermo.
+    if (registerFromUrl) {
+      const params = new URLSearchParams(searchParams.toString())
+      params.delete('register')
+      router.replace(params.toString() ? `?${params.toString()}` : '?')
+    }
+  }
 
   // Data state
   const [data, setData] = useState<JournalEntry[]>([])
@@ -94,9 +122,7 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
     try {
       const params = new URLSearchParams()
 
-      // Use registerType from URL (AccountSelectorToggle) or filters
-      const activeRegister = registerFromUrl || filters.registerType
-      if (activeRegister) params.set('registerType', activeRegister)
+      if (filters.registerType) params.set('registerType', filters.registerType)
       if (filters.dateFrom) params.set('dateFrom', filters.dateFrom.toISOString())
       if (filters.dateTo) params.set('dateTo', filters.dateTo.toISOString())
       if (filters.entryType) params.set('movementType', filters.entryType)
@@ -133,7 +159,7 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
     } finally {
       setIsLoading(false)
     }
-  }, [filters, registerFromUrl, venueId, pagination.page, sortOrder])
+  }, [filters, venueId, pagination.page, sortOrder])
 
   // Reload on filter/register change
   useEffect(() => {
@@ -241,8 +267,7 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
 
   const handleExport = (format: 'pdf' | 'xlsx' | 'csv') => {
     const params = new URLSearchParams()
-    const activeRegister = registerFromUrl || filters.registerType
-    if (activeRegister) params.set('registerType', activeRegister)
+    if (filters.registerType) params.set('registerType', filters.registerType)
     if (filters.dateFrom) params.set('dateFrom', filters.dateFrom.toISOString())
     if (filters.dateTo) params.set('dateTo', filters.dateTo.toISOString())
     if (venueId) params.set('venueId', venueId)
@@ -254,7 +279,7 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
     if (!categorizeEntry) return
     try {
       const res = await fetch(`/api/prima-nota/${categorizeEntry.id}/categorize`, {
-        method: 'POST',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ budgetCategoryId: categorizeCategoryId || undefined }),
       })
@@ -312,7 +337,7 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
       </div>
 
       <MovimentiFilters
-        registerType={registerFromUrl || filters.registerType}
+        registerType={filters.registerType}
         onRegisterTypeChange={(v) => setFilters(f => ({ ...f, registerType: v }))}
         dateFrom={filters.dateFrom}
         dateTo={filters.dateTo}

@@ -656,6 +656,25 @@ describe('generateJournalEntriesFromClosure', () => {
       }
     })
 
+    it('chiusura storica: quel centro di default NON è una scelta, e la provenienza non deve dirlo', async () => {
+      // Nessuno ha imputato questa chiusura: il centro è il ripiego di
+      // sistema. Marcarlo 'scelto' lo bloccherebbe su STR per sempre, perché
+      // centroDaRiproporre rispetta le scelte umane — e un movimento poi
+      // riconciliato con una fattura di conto OBBLIGATORIO resterebbe sulla
+      // struttura invece di passare al locale. È l'esatto rovescio dello scopo
+      // di questa colonna.
+      conContiDiSistema()
+      conCentriAttivi()
+
+      const { costCenterId: _testata, ...chiusuraStorica } = chiusuraCompleta
+      await generateJournalEntriesFromClosure(chiusuraStorica, userId)
+
+      for (const movimento of movimentiGenerati()) {
+        expect(movimento.costCenterSource).not.toBe('scelto')
+        expect(movimento.costCenterSource).toBe('piano')
+      }
+    })
+
     it('centro disattivato: il movimento nasce senza centro e la chiusura non si blocca', async () => {
       conContiDiSistema()
       vi.mocked(prisma.costCenter.findUnique).mockResolvedValue(
