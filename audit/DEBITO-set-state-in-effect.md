@@ -1,11 +1,16 @@
-# Debito: regole React Compiler — ESTINTO
+# Debito: regole React Compiler — la parte visibile è estinta, ne resta una invisibile
 
-**Rilevato:** 7 agosto 2026, durante la W3. **Estinto:** 8 agosto 2026, in W4, lotto D3.
-**Stato:** chiuso. `eslint-plugin-react-hooks` è alla **7.1.1**, dipendenza diretta e pinnata in
-`package.json`, e `npx eslint src` riporta **zero errori**.
+**Rilevato:** 7 agosto 2026, durante la W3. **Lotto D3:** 8 agosto 2026, in W4.
 
-Questo documento resta come racconto di come un debito possa restare invisibile per mesi. Chi cerca
-lavoro da fare qui non ne troverà: si vada al paragrafo finale, dove restano due cose aperte.
+**Stato:** `eslint-plugin-react-hooks` è alla **7.1.1**, dipendenza diretta e pinnata in
+`package.json`, e `npx eslint src` riporta **zero errori**. Le 43 violazioni bloccanti sono corrette
+e non resta nessun `eslint-disable` di `set-state-in-effect` in tutto `src/`.
+
+**Ma il lavoro non è finito, e il verde da solo inganna.** Restano **otto `queueMicrotask`** che
+producono esattamente la stessa cascata di render e che nessuna regola può segnalare, perché sono
+scritti apposta per non farsi vedere. L'elenco completo è in fondo. Chi legge solo il verde del lint
+concluderà che qui non c'è più niente da fare, ed è precisamente l'errore che questo documento
+esiste per impedire.
 
 ## Cos'era
 
@@ -27,8 +32,9 @@ Sopra a questo si erano stratificati due modi di zittire il controllo, entrambi 
   `scadenzario/ricorrenze`, `create-schedule-sheet`, `saldo-scalare-panel`,
   `create-recurrence-dialog`), messi da chi vedeva la regola scattare, e che con la 7.0.1 il linter
   segnalava addirittura come *inutili*;
-- **due `queueMicrotask`** (in `PunchButton` e `GenerationParamsForm`) che spostavano il `setState`
-  fuori dal corpo sincrono dell'effetto: la regola smette di vederlo, la cascata di render resta.
+- **nove `queueMicrotask`** che spostavano il `setState` fuori dal corpo sincrono dell'effetto: la
+  regola smette di vederlo, la cascata di render resta. Il lotto D3 ne ha tolto uno, in
+  `PunchButton`; gli altri otto sono ancora lì, elencati in fondo.
 
 La lezione: quando il numero di segnalazioni scende, prima di festeggiare va controllato **se è
 sceso il difetto o la capacità di vederlo**.
@@ -86,17 +92,46 @@ Due trappole incontrate, che valgono per chi farà conversioni simili:
 
 ## Cosa resta aperto
 
-1. **Una `incompatible-library` in `src/components/prima-nota/movimenti/MovimentoFormDialog.tsx`**
-   (righe 105 e 381). Il file apparteneva a un altro agente durante il lotto e non è stato toccato.
-   Si risolve come le altre quattro: `form.watch(nome)` → `useWatch({ control: form.control, name })`.
-   Dopo la conversione **va rifatto il lint**, perché rendendo il componente analizzabile possono
-   emergere violazioni finora invisibili — è successo con `UserForm`.
+### 1. Gli otto `queueMicrotask`: lo stesso difetto, reso invisibile
 
-2. **Il `queueMicrotask` in `src/components/shifts/GenerationParamsForm.tsx`** (riga ~65). Nessuna
-   regola lo segnala, ed è precisamente il motivo per cui è segnalato qui: è la stessa cascata di
-   render, scritta in modo che il linter non la veda. Il componente riceve ora il fabbisogno di
-   personale già corretto al primo render, quindi l'effetto che lo risincronizza dovrebbe essere
-   eliminabile del tutto.
+Sono la parte importante di questo elenco. `queueMicrotask(() => setState(...))` dentro un effetto
+sposta il `setState` fuori dal corpo sincrono: la regola smette di vederlo, **la cascata di render
+resta identica**. Non sono una soluzione, sono un modo di non essere segnalati.
+
+Che siano nati così è documentato: `src/components/shifts/CLAUDE.md` conserva la voce *"Wrapped
+setState calls in queueMicrotask for AssignmentDialog form initialization"*, accanto a *"Fixed all 18
+remaining ESLint errors"*. Diciotto errori di lint sono stati chiusi in questo modo.
+
+```
+src/components/settings/AccountManagement.tsx:107   (+ eslint-disable di exhaustive-deps)
+src/components/settings/PrimaNotaSettings.tsx:108
+src/components/portal/ShiftSwapDialog.tsx:112
+src/components/invoices/InvoiceDetail.tsx:188,190
+src/components/invoices/InvoiceImportDialog.tsx:257
+src/components/chiusura/AttendanceSection.tsx:355
+src/components/shifts/GenerationParamsForm.tsx:65
+src/components/shifts/AssignmentDialog.tsx:131
+```
+
+I rimedi sono gli stessi già applicati nel lotto D3, e i casi si riconoscono a vista:
+- `AccountManagement`, `PrimaNotaSettings`, `AttendanceSection:355` sono "carico i dati e li metto
+  nello stato": vanno a TanStack Query.
+- `AssignmentDialog`, `ShiftSwapDialog`, `InvoiceImportDialog` sono "riallineo il form all'apertura
+  del dialog": vanno rimontati con una `key`, come i sei dialog già convertiti.
+- `InvoiceDetail:188` è uno stato derivato da un dato caricato: si calcola durante il render.
+- `GenerationParamsForm:65` dovrebbe essere semplicemente eliminabile: da quando `turni/[id]` passa
+  il fabbisogno di personale derivato dalla cache, il componente lo riceve già corretto al primo
+  render e non ha più nulla da risincronizzare.
+
+**Attenzione a non ripetere l'errore**: togliere un `queueMicrotask` senza correggere il difetto
+sotto farà ricomparire un errore di lint. È il segnale che funziona, non un problema nuovo.
+
+### 2. Una `incompatible-library` in `MovimentoFormDialog.tsx`
+
+Righe 105 e 381. Il file apparteneva a un altro agente durante il lotto e non è stato toccato.
+Si risolve come le altre quattro: `form.watch(nome)` → `useWatch({ control: form.control, name })`.
+Dopo la conversione **va rifatto il lint**, perché rendendo il componente analizzabile possono
+emergere violazioni finora invisibili — è successo con `UserForm`.
 
 ## Come impedire che rientri
 
@@ -106,3 +141,6 @@ hook, e con la 7.1.1 queste regole sono errori bloccanti.
 
 Se in futuro il conteggio delle segnalazioni scende senza che nessuno abbia corretto nulla, la prima
 ipotesi da verificare non è che il codice sia migliorato.
+
+E vale anche al contrario: **il lint verde non è la prova che il difetto non ci sia**, come mostrano
+gli otto `queueMicrotask` qui sopra. Un controllo dice solo ciò che sa guardare.
