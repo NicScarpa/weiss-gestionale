@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
 import { it } from 'date-fns/locale'
@@ -101,52 +101,6 @@ export function ShiftSwapDialog({
   shift,
   currentUserId,
 }: ShiftSwapDialogProps) {
-  const [selectedColleague, setSelectedColleague] = useState<string>('')
-  const [message, setMessage] = useState('')
-
-  const queryClient = useQueryClient()
-
-  // Reset form when dialog opens
-  useEffect(() => {
-    if (open) {
-      queueMicrotask(() => {
-        setSelectedColleague('')
-        setMessage('')
-      })
-    }
-  }, [open])
-
-  const { data: colleagues, isLoading: loadingColleagues } = useQuery({
-    queryKey: ['portal-colleagues', shift?.venue?.id],
-    queryFn: () => fetchColleagues(shift?.venue?.id || ''),
-    enabled: open && !!shift?.venue?.id,
-  })
-
-  const filteredColleagues = colleagues?.filter((c) => c.id !== currentUserId) || []
-
-  const swapMutation = useMutation({
-    mutationFn: createSwapRequest,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['shift-swaps'] })
-      queryClient.invalidateQueries({ queryKey: ['portal-shifts'] })
-      toast.success('Richiesta di scambio inviata!')
-      onOpenChange(false)
-    },
-    onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Errore nella richiesta')
-    },
-  })
-
-  const handleSubmit = () => {
-    if (!shift || !selectedColleague) return
-
-    swapMutation.mutate({
-      assignmentId: shift.id,
-      targetUserId: selectedColleague,
-      message: message || undefined,
-    })
-  }
-
   if (!shift) return null
 
   return (
@@ -162,6 +116,67 @@ export function ShiftSwapDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {/* Radix smonta il contenuto alla chiusura, e la `key` lo rifà da capo
+            quando si passa da un turno all'altro senza chiudere: il form nasce
+            vuoto invece di essere svuotato da un effetto all'apertura. */}
+        <ModuloScambio
+          key={shift.id}
+          shift={shift}
+          currentUserId={currentUserId}
+          onChiudi={() => onOpenChange(false)}
+        />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ModuloScambio({
+  shift,
+  currentUserId,
+  onChiudi,
+}: {
+  shift: ShiftAssignment
+  currentUserId: string
+  onChiudi: () => void
+}) {
+  const [selectedColleague, setSelectedColleague] = useState<string>('')
+  const [message, setMessage] = useState('')
+
+  const queryClient = useQueryClient()
+
+  const { data: colleagues, isLoading: loadingColleagues } = useQuery({
+    queryKey: ['portal-colleagues', shift.venue?.id],
+    queryFn: () => fetchColleagues(shift.venue?.id || ''),
+    enabled: !!shift.venue?.id,
+  })
+
+  const filteredColleagues = colleagues?.filter((c) => c.id !== currentUserId) || []
+
+  const swapMutation = useMutation({
+    mutationFn: createSwapRequest,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shift-swaps'] })
+      queryClient.invalidateQueries({ queryKey: ['portal-shifts'] })
+      toast.success('Richiesta di scambio inviata!')
+      onChiudi()
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Errore nella richiesta')
+    },
+  })
+
+  const handleSubmit = () => {
+    if (!selectedColleague) return
+
+    swapMutation.mutate({
+      assignmentId: shift.id,
+      targetUserId: selectedColleague,
+      message: message || undefined,
+    })
+  }
+
+  return (
+    <>
         <div className="space-y-4">
           {/* Dettagli turno */}
           <div className="p-3 bg-muted rounded-lg space-y-2">
@@ -258,7 +273,7 @@ export function ShiftSwapDialog({
         <DialogFooter>
           <Button
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={onChiudi}
             disabled={swapMutation.isPending}
           >
             Annulla
@@ -275,7 +290,6 @@ export function ShiftSwapDialog({
             Invia richiesta
           </Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </>
   )
 }

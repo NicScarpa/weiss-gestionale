@@ -232,8 +232,10 @@ export default function ScadenzarioPage() {
 
   return (
     <div className="flex-1 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Header: senza flex-wrap le quattro azioni stanno su una riga sola di
+          538px e sono loro, non la tabella, a far scorrere l'intera pagina sul
+          telefono */}
+      <div className="flex flex-wrap items-start justify-between gap-3 sm:items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">
             Scadenzario
@@ -242,10 +244,10 @@ export default function ScadenzarioPage() {
             Gestione scadenze attive e passive
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <label
             htmlFor="saldo-scalare"
-            className="flex items-center gap-2 cursor-pointer"
+            className="flex min-h-11 items-center gap-2 cursor-pointer sm:min-h-0"
           >
             <Switch
               id="saldo-scalare"
@@ -257,10 +259,12 @@ export default function ScadenzarioPage() {
               Mostra saldo scalare
             </span>
           </label>
-          <div className="h-5 w-px bg-border" />
+          {/* Il separatore ha senso solo finché le azioni stanno in linea */}
+          <div className="hidden h-5 w-px bg-border sm:block" />
           <Button
             variant="outline"
             size="sm"
+            className="h-11 sm:h-8"
             onClick={() => {
               const params = new URLSearchParams()
               if (filtri.stato) params.append('stato', filtri.stato as string)
@@ -276,6 +280,7 @@ export default function ScadenzarioPage() {
           <Button
             variant="outline"
             size="sm"
+            className="h-11 sm:h-8"
             onClick={() => router.push('/scadenzario/aging')}
           >
             Aging Analysis

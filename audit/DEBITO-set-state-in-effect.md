@@ -1,16 +1,19 @@
-# Debito: regole React Compiler — la parte visibile è estinta, ne resta una invisibile
+# Debito: regole React Compiler — estinto, tranne una deroga ora dichiarata
 
 **Rilevato:** 7 agosto 2026, durante la W3. **Lotto D3:** 8 agosto 2026, in W4.
+**Lotto E3:** 8 agosto 2026, in W4 fase 3 — i `queueMicrotask` nascosti.
 
 **Stato:** `eslint-plugin-react-hooks` è alla **7.1.1**, dipendenza diretta e pinnata in
-`package.json`, e `npx eslint src` riporta **zero errori**. Le 43 violazioni bloccanti sono corrette
-e non resta nessun `eslint-disable` di `set-state-in-effect` in tutto `src/`.
+`package.json`, e `npx eslint src` riporta **zero errori**. Le 43 violazioni bloccanti sono corrette.
 
-**Ma il lavoro non è finito, e il verde da solo inganna.** Restano **otto `queueMicrotask`** che
-producono esattamente la stessa cascata di render e che nessuna regola può segnalare, perché sono
-scritti apposta per non farsi vedere. L'elenco completo è in fondo. Chi legge solo il verde del lint
-concluderà che qui non c'è più niente da fare, ed è precisamente l'errore che questo documento
-esiste per impedire.
+Degli **otto `queueMicrotask`** che nascondevano la stessa cascata di render, **sette sono estinti**
+correggendo il difetto sotto; l'ottavo — `AttendanceSection` — non rientra in nessuno dei tre schemi
+di rimedio ed è diventato una **deroga dichiarata** con la motivazione scritta accanto al codice.
+Il dettaglio, e perché la classificazione originale di questo documento era sbagliata su due casi,
+sta in fondo.
+
+La differenza che conta: prima il difetto era invisibile a `grep` e al linter; ora l'unico rimasto è
+entrambe le cose.
 
 ## Cos'era
 
@@ -92,39 +95,61 @@ Due trappole incontrate, che valgono per chi farà conversioni simili:
 
 ## Cosa resta aperto
 
-### 1. Gli otto `queueMicrotask`: lo stesso difetto, reso invisibile
+### 1. Gli otto `queueMicrotask`: sette estinti, uno dichiarato
 
-Sono la parte importante di questo elenco. `queueMicrotask(() => setState(...))` dentro un effetto
-sposta il `setState` fuori dal corpo sincrono: la regola smette di vederlo, **la cascata di render
-resta identica**. Non sono una soluzione, sono un modo di non essere segnalati.
+`queueMicrotask(() => setState(...))` dentro un effetto sposta il `setState` fuori dal corpo
+sincrono: la regola smette di vederlo, **la cascata di render resta identica**. Non era una
+soluzione, era un modo di non essere segnalati.
 
 Che siano nati così è documentato: `src/components/shifts/CLAUDE.md` conserva la voce *"Wrapped
 setState calls in queueMicrotask for AssignmentDialog form initialization"*, accanto a *"Fixed all 18
 remaining ESLint errors"*. Diciotto errori di lint sono stati chiusi in questo modo.
 
-```
-src/components/settings/AccountManagement.tsx:107   (+ eslint-disable di exhaustive-deps)
-src/components/settings/PrimaNotaSettings.tsx:108
-src/components/portal/ShiftSwapDialog.tsx:112
-src/components/invoices/InvoiceDetail.tsx:188,190
-src/components/invoices/InvoiceImportDialog.tsx:257
-src/components/chiusura/AttendanceSection.tsx:355
-src/components/shifts/GenerationParamsForm.tsx:65
-src/components/shifts/AssignmentDialog.tsx:131
-```
+Prima di toccare il codice ne è stato tolto uno di prova per misurare invece di fidarsi: la regola
+**vede attraverso la `useCallback`** e segnala anche quando l'effetto si limita a invocare una
+funzione che fa `setState` al suo interno. Erano quindi violazioni vere, tutte e otto.
 
-I rimedi sono gli stessi già applicati nel lotto D3, e i casi si riconoscono a vista:
-- `AccountManagement`, `PrimaNotaSettings`, `AttendanceSection:355` sono "carico i dati e li metto
-  nello stato": vanno a TanStack Query.
-- `AssignmentDialog`, `ShiftSwapDialog`, `InvoiceImportDialog` sono "riallineo il form all'apertura
-  del dialog": vanno rimontati con una `key`, come i sei dialog già convertiti.
-- `InvoiceDetail:188` è uno stato derivato da un dato caricato: si calcola durante il render.
-- `GenerationParamsForm:65` dovrebbe essere semplicemente eliminabile: da quando `turni/[id]` passa
-  il fabbisogno di personale derivato dalla cache, il componente lo riceve già corretto al primo
-  render e non ha più nulla da risincronizzare.
+| file (riga di allora) | rimedio applicato |
+|---|---|
+| `settings/AccountManagement.tsx:107` | TanStack Query, `showInactive` nella `queryKey` |
+| `settings/PrimaNotaSettings.tsx:108` | TanStack Query, due query (sedi e saldi) |
+| `invoices/InvoiceDetail.tsx:188,190` | calcolo durante il render, con la scelta dell'utente che ha la precedenza |
+| `invoices/InvoiceImportDialog.tsx:257` | calcolo durante il render (la sede predefinita è la prima caricata) |
+| `portal/ShiftSwapDialog.tsx:112` | modulo interno rimontato con `key` |
+| `shifts/AssignmentDialog.tsx:131` | modulo interno rimontato con `key` |
+| `shifts/GenerationParamsForm.tsx:65` | effetto eliminato: era ridondante |
+| `chiusura/AttendanceSection.tsx:355` | **deroga dichiarata** (sotto) |
 
-**Attenzione a non ripetere l'errore**: togliere un `queueMicrotask` senza correggere il difetto
-sotto farà ricomparire un errore di lint. È il segnale che funziona, non un problema nuovo.
+**Due classificazioni di questo documento erano sbagliate**, e vale la pena saperlo prima di fidarsi
+di un elenco simile:
+
+- `AttendanceSection:355` non è «carico i dati e li metto nello stato»: **in quell'effetto non c'è
+  nessuna fetch**. Turni e timbrature arrivano già da due `useQuery`; l'effetto pre-compila le
+  presenze e lo notifica al genitore con `onChange`. Mandarlo a TanStack Query non ha senso.
+- `InvoiceImportDialog:257` non è «riallineo il form all'apertura del dialog»: sceglie la sede
+  predefinita quando l'elenco sedi arriva. È lo stesso caso di `InvoiceDetail`, non di un dialog da
+  rimontare.
+
+### 1-bis. La deroga che resta: `AttendanceSection`
+
+`loadFromSchedule` fa due cose insieme: avvisa il genitore (`onChange`) e registra **localmente** che
+il caricamento è avvenuto (`setHasLoadedFromSchedule`). È il secondo che la regola vede — il primo
+no, tanto che l'effetto subito sotto chiama `onChange` in modo sincrono e passa il lint.
+
+Nessuno dei tre schemi si applica: non è un caricamento dati, non è uno stato derivato da una prop
+(l'elenco presenze vive nel genitore), non è un form da rimontare. E soprattutto **la cascata di
+render resterebbe comunque**, perché `onChange` aggiorna lo stato del genitore: eliminarla richiede
+spostare `hasLoadedFromSchedule` accanto ad `attendance` dentro il form della chiusura.
+
+Le due strade tentate e scartate, per non farle ritentare a vuoto:
+
+- **flag derivato dai dati** (`attendance.some(r => r.shiftCode)`) più latch in una `ref`: funziona,
+  ma dipende dal fatto che le righe da turno abbiano sempre `shiftCode` valorizzato, e cambia un
+  caso limite (cancellate tutte le righe, il banner «Carica da turni» ricompare).
+- **eliminare l'effetto**: la pre-compilazione automatica sparirebbe.
+
+Resta quindi una `eslint-disable-next-line` **cercabile**, con la motivazione accanto. È debito, ma
+dichiarato. Scioglierlo è una modifica di disegno del form di chiusura, da concordare.
 
 ### 2. Una `incompatible-library` in `MovimentoFormDialog.tsx`
 
@@ -142,5 +167,9 @@ hook, e con la 7.1.1 queste regole sono errori bloccanti.
 Se in futuro il conteggio delle segnalazioni scende senza che nessuno abbia corretto nulla, la prima
 ipotesi da verificare non è che il codice sia migliorato.
 
-E vale anche al contrario: **il lint verde non è la prova che il difetto non ci sia**, come mostrano
-gli otto `queueMicrotask` qui sopra. Un controllo dice solo ciò che sa guardare.
+E vale anche al contrario: **il lint verde non è la prova che il difetto non ci sia**, come hanno
+mostrato gli otto `queueMicrotask`. Un controllo dice solo ciò che sa guardare.
+
+Corollario pratico, dal lotto E3: quando una deroga è inevitabile, va scritta come deroga. Una
+`eslint-disable` con la motivazione accanto si trova con un `grep` e si discute; un
+`queueMicrotask` no, e infatti è rimasto lì per mesi.

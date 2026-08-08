@@ -344,7 +344,21 @@ export function AttendanceSection({
     setHasLoadedFromSchedule(true)
   }, [scheduledShifts, actualAttendance, onChange])
 
-  // Pre-popola da turni schedulati se non ci sono presenze e ci sono turni
+  // Pre-popola da turni schedulati se non ci sono presenze e ci sono turni.
+  //
+  // Deroga dichiarata, al posto del `queueMicrotask` che stava qui e che
+  // nascondeva questa stessa violazione senza lasciare traccia cercabile.
+  // Nessuno dei tre rimedi usati altrove si applica: non è un caricamento dati
+  // (turni e timbrature arrivano già da due useQuery), non è uno stato derivato
+  // da una prop (l'elenco presenze vive nel genitore, qui si può solo
+  // notificarlo con onChange), e non è un form da rimontare con una `key`.
+  // `loadFromSchedule` fa due cose insieme: avvisa il genitore e registra
+  // localmente che il caricamento è avvenuto — ed è quel secondo `setState` che
+  // la regola vede. La cascata di render resta comunque, perché `onChange`
+  // aggiorna lo stato del genitore: toglierla richiede spostare
+  // `hasLoadedFromSchedule` accanto ad `attendance` nel form della chiusura,
+  // che è una modifica di disegno da concordare, non un rifacimento locale.
+  // Vedi audit/DEBITO-set-state-in-effect.md.
   useEffect(() => {
     if (
       scheduledShifts &&
@@ -352,7 +366,8 @@ export function AttendanceSection({
       attendance.length === 0 &&
       !hasLoadedFromSchedule
     ) {
-      queueMicrotask(() => loadFromSchedule())
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      loadFromSchedule()
     }
   }, [scheduledShifts, attendance.length, hasLoadedFromSchedule, loadFromSchedule])
 
