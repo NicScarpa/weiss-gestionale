@@ -58,6 +58,32 @@ interface ReconcileInput {
 }
 
 /**
+ * Aliquota IVA di ciascuna riga dello snapshot, per numero di linea.
+ *
+ * Lo snapshot è JSON e arriva dal parser FatturaPA, quindi va trattato come
+ * dato esterno: si accettano solo numeri finiti e non negativi, e una riga
+ * senza aliquota leggibile semplicemente non entra nella mappa. Le fatture
+ * importate da un fornitore che non compila `AliquotaIVA` ricadono così nel
+ * comportamento precedente, che è approssimato ma non arbitrario.
+ */
+function aliquoteDelloSnapshot(lineItems: unknown[]): Map<number, number> {
+  const mappa = new Map<number, number>()
+  for (const riga of lineItems) {
+    if (typeof riga !== 'object' || riga === null) continue
+    const { numeroLinea, aliquotaIVA } = riga as Record<string, unknown>
+    if (typeof numeroLinea !== 'number' || !Number.isFinite(numeroLinea)) continue
+    if (typeof aliquotaIVA !== 'number' || !Number.isFinite(aliquotaIVA) || aliquotaIVA < 0) continue
+    mappa.set(numeroLinea, aliquotaIVA)
+  }
+  return mappa
+}
+
+/** Imponibile riportato al lordo. Senza aliquota nota, l'imponibile stesso. */
+function alLordo(imponibile: number, aliquota: number | undefined): number {
+  return aliquota === undefined ? imponibile : imponibile * (1 + aliquota / 100)
+}
+
+/**
  * Eredità pro-quota: se la scadenza viene da una fattura le cui righe sono
  * TUTTE categorizzate per conto, il movimento che la salda eredita le stesse
  * fette (Fase 3). Chiamata dentro la transazione di `reconcileScheduleWithEntry`:
@@ -115,7 +141,7 @@ async function ereditaFetteDaFattura(
   // parte. Un difetto che cancellava le proprie tracce.
   const imputazioni = await tx.invoiceLineAccount.findMany({
     where: { invoiceId, stato: 'confermata' },
-    select: { accountId: true, importo: true },
+    select: { accountId: true, importo: true, numeroLinea: true },
   })
 
   // La guardia contava le righe senza guardarne lo stato, quindi una fattura
@@ -129,6 +155,16 @@ async function ereditaFetteDaFattura(
     })
     return
   }
+
+  // I pesi sono i `PrezzoTotale` delle righe, cioè IMPONIBILI; la quota da
+  // ripartire è un pagamento, cioè LORDO. Applicare proporzioni al netto su un
+  // importo lordo sbaglia ogni volta che le aliquote non sono uniformi:
+  // alimentari 1.000 € + 4% e detersivi 200 € + 22% fanno 1.284 € pagati, ma
+  // sui soli imponibili la ripartizione dà 1.070 € e 214 € invece di 1.040 € e
+  // 244 €. Trenta euro sul conto sbagliato, il 2,3% della fattura, e su una
+  // fattura di sole bevande e detersivi lo scarto è più marcato ancora. Con
+  // aliquote uguali fra le righe il fattore si semplifica e non cambia nulla.
+  const aliquotePerLinea = aliquoteDelloSnapshot(invoice.lineItems)
 
   const manuali = await tx.journalEntryAllocation.findMany({
     where: { journalEntryId, origine: 'manuale' },
@@ -161,7 +197,10 @@ async function ereditaFetteDaFattura(
   }
 
   const pesi = calcolaPesiDaRighe(
-    imputazioni.map((r) => ({ accountId: r.accountId, importo: Number(r.importo) }))
+    imputazioni.map((r) => ({
+      accountId: r.accountId,
+      importo: alLordo(Number(r.importo), aliquotePerLinea.get(r.numeroLinea)),
+    }))
   )
   const fette = ripartisciProQuota(pesi, quota)
   if (fette.length === 0) return
