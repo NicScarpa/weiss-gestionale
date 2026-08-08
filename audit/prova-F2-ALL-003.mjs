@@ -1,3 +1,24 @@
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║ REPERTO STORICO — IL DIFETTO CHE QUESTO FILE MOSTRA È GIÀ CORRETTO.      ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+//
+// Se lo esegui oggi stamperà comunque i suoi tre centesimi di sbilancio, e non
+// vuol dire che il fix non funzioni: **questo file non importa il modulo**,
+// contiene una copia congelata della funzione com'era l'8 agosto 2026 (lo dice
+// la riga qui sotto). Continuerà a stampare lo stesso risultato per sempre,
+// qualunque cosa succeda al codice vero.
+//
+// Il codice vero è in `src/lib/services/allocation-service.ts`. F2-ALL-003 —
+// l'ultima fetta con residuo negativo veniva scartata invece che sottratta, e
+// la somma superava la quota — è stato chiuso nel lotto ALLOCAZIONE, con test
+// permanenti che lo difendono. Per sapere come si comporta la funzione **oggi**
+// si guarda lì e si eseguono quei test, non questo file.
+//
+// Serve solo a due cose: capire il ragionamento con cui il difetto fu trovato,
+// e riprodurre i numeri citati nella relazione `W5-F2-allocation-memoria.md`.
+// Non riscriverlo per farlo tornare verde: un reperto che si aggiorna non è
+// più un reperto, e la relazione che lo cita smetterebbe di essere verificabile.
+//
 // Copia INTEGRALE di ripartisciProQuota (src/lib/services/allocation-service.ts:17-30).
 // Nessuna modifica: solo i tipi TypeScript rimossi.
 function ripartisciProQuota(fette, quota) {

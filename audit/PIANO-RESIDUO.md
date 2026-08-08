@@ -3,6 +3,24 @@
 **Scritto l'8 agosto 2026, a remediation conclusa.** Questo documento è autosufficiente: contiene
 tutto ciò che serve per riprendere in una sessione nuova senza ricostruire il contesto.
 
+> ### ⚠️ Numeri ricontati l'8 agosto 2026, sera
+>
+> Sei affermazioni di questo documento e del suo gemello erano **false**, e sono state corrette
+> dopo averle misurate una per una. Le due che facevano perdere più tempo:
+>
+> - **`next build --webpack` NON fallisce** (esce 0 in 1m36s): il difetto è stato corretto e la
+>   riga era rimasta. Chi la leggeva partiva a caccia di un guasto inesistente.
+> - **Non ci sono «quattro route API senza validatore dei tipi»**: sono validate **202 su 202**, e
+>   il controllo si dimostra acceso rompendolo apposta. Vedi §3.1, dov'è raccontata come esempio di
+>   come si sbaglia.
+>
+> Le altre quattro: i `test.fail()` residui (erano 2, non 4/6/7, e ora sono 0), gli handler senza
+> `withAuth` (255, non 292), le copie di `entraCome()` (17, non 5), e la e2e «né type-checked né
+> lintata» (eslint la copriva già; il buco era `tsc`, e sugli **altri** test è ancora aperto).
+>
+> **La regola che ne esce è in §3.1: conta, non riportare.** Ogni numero qui dentro porta il comando
+> che lo produce: rieseguirlo costa secondi, fidarsene costa ore.
+
 ---
 
 ## 0. Come riprendere in una sessione nuova
@@ -194,21 +212,57 @@ finestra del modello, nessun ciclo possibile.
 ## PRIORITÀ 2 — Debito tecnico accumulato
 
 ### 2A — Accessi
-- **292 handler ancora con l'autorizzazione scritta a mano.** Censimento esatto:
-  `node scripts/check-route-auth.mjs` → 27 `withAuth`, 292 inline, 11 pubbliche, 2 cron, 2 senza
-  controllo (verificate innocue). Convertirli, poi rendere lo script **bloccante** in CI con
-  `--strict`.
-- **39 route presenze su 39 senza `withAuth`** (incluse nel conteggio sopra).
+
+**Numeri ricontati l'8 agosto 2026 con `node scripts/check-route-auth.mjs`, ramo per ramo.** Non
+riportarli: rieseguire lo script, che è la fonte.
+
+| Ramo | route | handler | `withAuth` | inline | senza controllo | pubbliche | cron |
+|---|---|---|---|---|---|---|---|
+| `origin/main` | 199 | 333 | 27 | 292 | 1 | 11 | 2 |
+| `residuo/auth-presenze` | 199 | 333 | **64** | **255** | 1 | 11 | 2 |
+
+Il lotto AUTH-PRESENZE ha convertito **37 handler**. Restano **255 inline** da convertire, non 292:
+quel numero descriveva `main` prima dell'ondata ed è ora storia.
+
+- **L'unico handler «senza controllo» non è un buco.** È `DELETE /api/venues`, e risponde **sempre**
+  403 con «Non è possibile eliminare la sede»: è un tappo deliberato, tre righe, nessun accesso al
+  database. Il censimento lo conta fra i senza-controllo perché cerca un guard e lì non ce n'è —
+  giustamente, perché non serve. Verificato leggendo il corpo della funzione, non dedotto.
+  *(Il piano diceva «2 senza controllo»: ne è rimasto uno.)*
+- Convertiti i 255, rendere lo script **bloccante** in CI con `--strict`.
 
 ### 2B — Test
-- **4 `test.fail()` residui** in `e2e/` (offline). Vanno rieseguiti e tolti **solo dopo averli visti
-  passare**: toglierli sulla fiducia li rende asserzioni finte.
-- **La e2e non è in CI.** Serve un servizio Postgres nel job. Da aggiungere come passo non bloccante
-  prima, bloccante poi.
+
+- ~~**4 `test.fail()` residui**~~ — **FATTO l'8 agosto 2026, e il numero era sbagliato tre volte.**
+  Questo documento diceva 4, `STATO-REMEDIATION` diceva 6 in un punto e 7 in un altro. **Erano 2**
+  (`chiusura-cassa.spec.ts` e `prima-nota.spec.ts`); il conteggio a 4/6/7 nasceva da `grep -c
+  'test.fail('`, che conta anche le righe di **commento** che citano `test.fail()`, e includeva un
+  `if (pagina.difettoNoto) test.fail()` in `mobile.spec.ts` dove **nessuna pagina porta quella
+  proprietà**. Eseguita la suite contro Postgres seedato e browser vero: entrambi hanno dato
+  «Expected to fail, but passed», cioè **stavano fallendo in silenzio da quando i difetti erano
+  stati corretti** (`857f4ef` le chiusure, `f5a56e2` l'IVA). Annotazioni tolte dopo l'esecuzione, i
+  due test sono ora guardie di regressione. **Oggi la suite non contiene nessun `test.fail()`.**
+- **La e2e non è in CI**, ed è il motivo per cui quei due rossi non li aveva visti nessuno. Serve:
+  servizio Postgres nel job, Node 22, `DATABASE_URL` + `ENCRYPTION_KEY` (32 byte **decodificati**,
+  in base64) + `NEXTAUTH_SECRET`/`AUTH_SECRET`, `prisma db push` e `tsx prisma/seed.ts`,
+  `playwright install --with-deps chromium`, e server e `E2E_BASE_URL` **entrambi su `127.0.0.1`**.
+  ⚠️ **La suite offline NON va in un job bloccante** finché non è capito il rosso al 50% descritto
+  in 2F: una CI rossa una volta su due insegna a ignorare il rosso, ed è peggio di non averla.
 - **Aree e2e deliberatamente scoperte**: presenze/timbrature, portale, turni, ferie, import fatture.
   Richiedono geolocalizzazione simulata e dati di seed che non ci sono.
-- **Promuovere `entraCome()`** in `src/test/integration/auth-mock.ts`: da quando `withAuth` fa valere
-  `mustChangePassword`, `loginAs` non basta più (403) e l'helper è duplicato in ~5 file.
+- **Promuovere `entraCome()`** in `src/test/integration/auth-mock.ts`. **Le copie sono 17, non 5**
+  (`git grep -lE '(function|const) entraCome' residuo/auth-presenze -- 'src/**'`): erano 8 su `main`
+  e sono **più che raddoppiate durante questa ondata**, perché ogni lotto che ha scritto test di
+  autorizzazione se l'è riscritta. Più si aspetta, più cresce.
+- **Nessun test di questo repository è mai passato sotto il compilatore.** `tsconfig.json` esclude
+  `**/*.test.ts`, `**/*.spec.ts` e `**/__tests__/**` — non solo `e2e`. Accendendoli: **39 errori in
+  8 file**, misurati con un tsconfig di prova. Due sono sostanziali e non cosmetici:
+  `src/lib/attendance/__tests__/timesheet.test.ts` costruisce oggetti che il tipo di produzione non
+  ammette (2 errori: `PayrollRecord`, `PayrollSummary` — cioè il test verifica una forma che il
+  codice vero non produce), e `src/lib/line-categorization/__tests__/index.test.ts` ha un mock che
+  restituisce `Promise` dove Prisma vuole `PrismaPromise`. Il grosso — 26 errori — sta in
+  `src/app/api/chiusure/__tests__/route.test.ts`. Il buco su `e2e` è già stato chiuso (PULIZIA,
+  `cf96195`, con `tsconfig.e2e.json`); **quello sugli altri test no.**
 - Soglie di coverage nello script npm invece che in `vitest.config.ts`.
 
 ### 2C — Qualità
@@ -219,8 +273,12 @@ finestra del modello, nessun ciclo possibile.
 - `next` 16.1.6 → 16.3.0 è entrato senza un giro in staging: candidato a una verifica dedicata.
 - Scrubbing PII di Sentry duplicato in 3 file: unificarlo in `src/lib/`.
 - `eslint.config.mjs` non ignora `coverage/`: se generata in locale produce warning fantasma.
-- **`next build --webpack` fallisce** per simboli non consentiti esportati da
-  `api/luoghi-lavoro` e `api/promemoria-timbratura`.
+- ~~**`next build --webpack` fallisce** per simboli non consentiti esportati da `api/luoghi-lavoro`
+  e `api/promemoria-timbratura`~~ — **FALSO, non cercarlo.** Eseguito l'8 agosto 2026 su
+  `residuo/memoria-fornitore`: `npx next build --webpack` **esce con 0** in 1 minuto e 36 secondi.
+  Il difetto c'era ed è stato corretto (AUTH-PRESENZE, `d2f13bc`, «i simboli condivisi escono dalle
+  route»), ma la riga è rimasta qui. Chi la leggeva partiva a caccia di un build rotto che non è
+  rotto.
 - La classe `scrollbar-hide` **non è definita da nessuna parte**: è inerte dove è usata.
 - Passo CI per `knip` (il pacchetto è installato, lo script c'è, manca il passo).
 
@@ -245,6 +303,27 @@ finestra del modello, nessun ciclo possibile.
 - `InvoiceDetail.tsx` — modifica di 3 righe non verificata sul browser (dichiarata).
 - **Una funzione che dichiari i dipendenti di `CashStation`**: se un domani si aggiunge un altro
   figlio con `onDelete: Restrict`, il PUT delle chiusure torna a rispondere 500 nello stesso modo.
+
+### 2F — Difetti trovati **eseguendo**, non leggendo (8 agosto 2026)
+
+Nessuno di questi era in un audit. Sono venuti fuori facendo girare il codice, ed è il motivo per
+cui la voce «la e2e non è in CI» qui sopra conta più di come suona.
+
+| Difetto | Stato |
+|---|---|
+| **La scheda presenze non ha mai funzionato.** Nata rotta il 22/2/2026: cinque mesi e mezzo. | trovato |
+| **IDOR su `portal/colleagues`**: la sede si prende dalla query string, quindi si leggono i colleghi di un'altra sede. | trovato |
+| **Le ricorrenze padre/figlio saltano un'occorrenza su due**: un affitto mensile entra nel previsionale una volta ogni due mesi. Deterministico, non intermittente. | fix in corso |
+| **Offline: la pagina appena visitata mostra «Sei offline» invece del modulo, 5 volte su 10.** Dettaglio in `e2e/README.md`. | da decidere, possibile P1 |
+| **Nessun test è mai passato sotto `tsc`** (vedi 2B): 39 errori in 8 file. | trovato |
+| **Un flake sul client NON riproducibile**: 40 esecuzioni, mai ricomparso. Scritto così apposta — «non riproducibile» è un'informazione, «misterioso» non lo è. Se ricompare, si riparte da 40 tentativi falliti e non da zero. | archiviato |
+
+**Il dato che inquadra tutti e sei: l'impatto sui dati di produzione è ZERO.** 7 timbrature, 0
+allocazioni, 0 memorie fornitore, 0 ricorrenze, 2 scadenze. Non stiamo riparando un gestionale in
+servizio con anni di dati dentro: **lo stiamo correggendo prima che entri in servizio.** Vale per
+ogni priorità di questo documento — nessuna correzione qui richiede una bonifica dati, e nessun
+numero già visto da qualcuno si muoverà. È la ragione per cui si può ancora cambiare struttura
+invece di aggirare.
 
 ---
 
@@ -380,6 +459,40 @@ inesistente nel codice.
   **dieci volte**, e ogni volta la segnalazione è valsa più dell'obbedienza — inclusa una **verifica
   del lead fatta male** che sembrava confermare un finding.
 - **Non fidarsi del racconto, nemmeno del proprio.** Verificare sempre di persona.
+
+### 3.1 — Conta, non riportare
+
+**Metà dei numeri sbagliati in questi due documenti nasce da qualcuno che ha ricopiato una cifra
+invece di misurarla**, e poi dal successivo che si è fidato del documento. L'8 agosto 2026 sono
+stati ricontati tutti: sei erano falsi. Prima di scrivere un numero qui dentro, eseguire il comando
+che lo produce e incollarne l'esito — con **il ramo e la data**, perché un numero senza ramo in un
+progetto con dodici worktree non vuol dire niente.
+
+Tre modi in cui è andata storta, tutti veri:
+
+1. **Lo strumento contava altro.** «Sei `test.fail()`» veniva da `grep -c 'test.fail('`, che conta
+   anche i **commenti** che citano `test.fail()`. Erano due. Lo stesso è successo a chi scrive: un
+   conteggio di `withAuth` dava zero perché `git grep -E` usa la ERE POSIX, dove **`\s` non esiste**
+   e il pattern non poteva mai corrispondere. Uno zero prodotto da una regex rotta ha esattamente
+   l'aspetto di uno zero vero. **Controllare lo strumento su un caso di esito noto, prima di
+   credergli.**
+2. **Il numero era giusto su un altro ramo.** «292 handler inline» era esatto su `main` e falso
+   ovunque dopo AUTH-PRESENZE. Non era sbagliato: era **scaduto**.
+3. **Premesse vere, tesi falsa.** Il caso peggiore, perché regge alla lettura. Si era concluso che
+   «quattro route API non hanno il validatore dei tipi generato da Next», partendo da osservazioni
+   corrette. La tesi è falsa e si smonta in tre modi, tutti eseguibili: `.next/types/app/`
+   **non esiste** (Next 16 emette un unico `.next/types/validator.ts`); le route validate sono
+   **202 su 202** (`grep -oE '"[^"]*/route\.ts"' .next/types/validator.ts | sort -u | wc -l`
+   contro `find src/app/api -name route.ts | wc -l`); e la **prova al contrario** — cambiare i
+   `Params` di una di quelle route in `{ slug: string }` fa esplodere `tsc` con `TS2344` —
+   dimostra che il controllo è acceso **proprio lì dove lo si diceva spento**.
+
+La lezione del terzo caso è quella che costa di più: **una correlazione verificata non è la tesi
+verificata.** Chi l'ha scritta aveva controllato che le quattro route avessero qualcosa in comune, e
+ha creduto di aver controllato che fossero scoperte. Quando una tesi ha una prova al contrario
+disponibile — «se il controllo fosse spento, rompendolo apposta non succederebbe niente» — quella
+prova va fatta prima di scrivere, perché è l'unica che distingue una spiegazione plausibile da una
+vera.
 
 ---
 
