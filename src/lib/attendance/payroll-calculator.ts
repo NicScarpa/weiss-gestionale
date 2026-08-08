@@ -14,6 +14,7 @@ import {
   neutralPolicy,
   resolvePolicyRules,
 } from './policy-resolver'
+import { AUTORE_SISTEMA } from './manual-punch'
 import { dstShiftBetween, groupPunchesByWorkday, toWorkdayMinutes } from './workday'
 import {
   nextDateKey,
@@ -145,7 +146,7 @@ interface AttendanceRecordData {
  */
 function origineDi(record: AttendanceRecordData): DayPunch['origine'] {
   if (record.correctionRequestId) return 'correzione'
-  if (record.manualEntryBy === 'SYSTEM') return 'sistema'
+  if (record.manualEntryBy === AUTORE_SISTEMA) return 'sistema'
   return undefined
 }
 
