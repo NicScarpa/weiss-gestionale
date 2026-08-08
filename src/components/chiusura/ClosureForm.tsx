@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
@@ -121,8 +121,11 @@ export function ClosureForm({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [previousCoffeeCount, setPreviousCoffeeCount] = useState<number | null>(null)
 
-  // Inizializza stazioni da template (include tutte, verranno filtrate in visualizzazione)
-  const initializeStations = useCallback((): (CashStationData & { isEventOnly?: boolean })[] => {
+  // Inizializza stazioni da template (include tutte, verranno filtrate in visualizzazione).
+  // Serve una volta sola, all'inizializzazione dello stato: memoizzarla non dava
+  // alcun vantaggio e le dipendenze dichiarate a mano non coincidevano con quelle
+  // che il compiler deduce, il che gli impediva di ottimizzare tutto il componente.
+  const initializeStations = (): (CashStationData & { isEventOnly?: boolean })[] => {
     if (initialData?.stations?.length) {
       // Per chiusure esistenti, aggiungi isEventOnly dal template
       return initialData.stations.map((station) => {
@@ -140,10 +143,10 @@ export function ClosureForm({
       ...emptyCashStation,
       cashCount: { ...emptyCashCount },
     }))
-  }, [initialData?.stations, cashStationTemplates])
+  }
 
   // State form
-  const [formData, setFormData] = useState<ClosureFormData>({
+  const [formData, setFormData] = useState<ClosureFormData>(() => ({
     date: initialData?.date || new Date(),
     venueId,
     isEvent: initialData?.isEvent || false,
@@ -160,7 +163,7 @@ export function ClosureForm({
     })),
     expenses: initialData?.expenses || [],
     attendance: initialData?.attendance || [],
-  })
+  }))
 
   // Calcoli totali (extracted to hook)
   const totals = useClosureCalculations({

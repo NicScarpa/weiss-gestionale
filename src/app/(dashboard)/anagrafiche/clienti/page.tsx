@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -18,9 +19,6 @@ export default function ClientiPage() {
   const { data: session, status } = useSession()
   const currentUserRole = (session?.user?.role as UserRole) || 'staff'
 
-  const [customers, setCustomers] = useState<CustomerData[]>([])
-  const [filteredCustomers, setFilteredCustomers] = useState<CustomerData[]>([])
-  const [isLoading, setIsLoading] = useState(true)
   const [filters, setFilters] = useState<CustomerFiltersValue>({
     search: '',
     showInactive: false,
@@ -37,9 +35,19 @@ export default function ClientiPage() {
   }, [session, status, currentUserRole, router])
 
   // Carica clienti
-  const fetchCustomers = useCallback(async () => {
-    try {
-      setIsLoading(true)
+  const {
+    data: risposta,
+    isPending,
+    isFetching,
+    isError,
+    refetch: fetchCustomers,
+  } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryKey: ['customers', filters.showInactive],
+    enabled: !!session?.user && currentUserRole === 'admin',
+    queryFn: async (): Promise<{ customers?: CustomerData[] }> => {
       const params = new URLSearchParams()
       if (filters.showInactive) {
         params.set('showOnlyInactive', 'true')
@@ -48,24 +56,22 @@ export default function ClientiPage() {
 
       const response = await fetch(`/api/customers?${params.toString()}`)
       if (!response.ok) throw new Error('Errore caricamento clienti')
-      const data = await response.json()
-      setCustomers(data.customers || [])
-    } catch {
-      toast.error('Errore nel caricamento dei clienti')
-    } finally {
-      setIsLoading(false)
-    }
-  }, [filters.showInactive])
+      return response.json()
+    },
+  })
 
   useEffect(() => {
-    if (session?.user && currentUserRole === 'admin') {
-      fetchCustomers()
+    if (isError) {
+      toast.error('Errore nel caricamento dei clienti')
     }
-  }, [session, currentUserRole, fetchCustomers])
+  }, [isError])
+
+  const customers = useMemo(() => risposta?.customers || [], [risposta])
+  const isLoading = isPending || isFetching
 
   // Applica filtri
-  useEffect(() => {
-    let result = [...customers]
+  const filteredCustomers = useMemo(() => {
+    let result = customers
 
     // Filtro ricerca
     if (filters.search) {
@@ -81,9 +87,7 @@ export default function ClientiPage() {
 
     // Filtro attivo/inattivo
     // Di default mostra solo attivi, se showInactive è true mostra solo inattivi
-    result = result.filter(c => filters.showInactive ? !c.attivo : c.attivo)
-
-    setFilteredCustomers(result)
+    return result.filter(c => filters.showInactive ? !c.attivo : c.attivo)
   }, [customers, filters])
 
   const handleToggleActive = async (customerId: string, attivo: boolean) => {

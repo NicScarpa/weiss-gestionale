@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Plus, X } from 'lucide-react'
@@ -95,9 +95,9 @@ export function RegolaFormDialog({
     },
   })
 
-  const keywords = form.watch('keywords')
+  const keywords = useWatch({ control: form.control, name: 'keywords' })
   const [keywordInput, setKeywordInput] = React.useState('')
-  const _direction = form.watch('direction')
+  const _direction = useWatch({ control: form.control, name: 'direction' })
 
   const addKeyword = () => {
     if (keywordInput.trim()) {

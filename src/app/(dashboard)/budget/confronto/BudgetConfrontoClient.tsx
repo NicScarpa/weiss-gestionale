@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import {
   ArrowLeft,
@@ -125,14 +126,16 @@ interface BudgetConfrontoClientProps {
   availableYears: number[]
 }
 
+interface DatiConfronto {
+  comparisons: Comparison[]
+  summary: Summary | null
+  categoryData: CategoryAggregation | null
+}
+
 export function BudgetConfrontoClient({
   venueId,
   availableYears,
 }: BudgetConfrontoClientProps) {
-  const [comparisons, setComparisons] = useState<Comparison[]>([])
-  const [summary, setSummary] = useState<Summary | null>(null)
-  const [categoryData, setCategoryData] = useState<CategoryAggregation | null>(null)
-  const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<'categories' | 'accounts'>('categories')
 
   const [filters, setFilters] = useState({
@@ -142,11 +145,20 @@ export function BudgetConfrontoClient({
   })
 
   // Fetch comparison data
-  const fetchComparison = useCallback(async () => {
-    if (!filters.venueId || !filters.year) return
-
-    setLoading(true)
-    try {
+  const {
+    data: risposta,
+    isPending,
+    isFetching,
+    isError,
+    error,
+    refetch: fetchComparison,
+  } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryKey: ['budget-confronto', filters.venueId, filters.year, filters.accountType],
+    enabled: !!filters.venueId && !!filters.year,
+    queryFn: async (): Promise<DatiConfronto> => {
       const params = new URLSearchParams({
         venueId: filters.venueId,
         year: filters.year.toString(),
@@ -155,42 +167,48 @@ export function BudgetConfrontoClient({
 
       const res = await fetch(`/api/budget/confronto?${params.toString()}`)
       if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || 'Errore nel caricamento')
+        const errore = await res.json()
+        throw new Error(errore.error || 'Errore nel caricamento')
       }
 
       const data = await res.json()
-      setComparisons(data.comparisons)
-      setSummary(data.summary)
 
       // Se abbiamo un budgetId, carichiamo anche le categorie
+      let categorie: CategoryAggregation | null = null
       if (data.summary?.budgetId) {
         try {
           const catRes = await fetch(`/api/budget/${data.summary.budgetId}/categories`)
           if (catRes.ok) {
-            const catData = await catRes.json()
-            setCategoryData(catData)
+            categorie = await catRes.json()
           }
         } catch {
           logger.warn('Impossibile caricare categorie budget')
         }
       }
-    } catch (error: unknown) {
+
+      return {
+        comparisons: data.comparisons,
+        summary: data.summary,
+        categoryData: categorie,
+      }
+    },
+  })
+
+  useEffect(() => {
+    if (isError) {
       logger.error('Errore fetch confronto', error)
       if (error instanceof Error) {
         toast.error(error.message)
       }
-      setComparisons([])
-      setSummary(null)
-      setCategoryData(null)
-    } finally {
-      setLoading(false)
     }
-  }, [filters])
+  }, [isError, error])
 
-  useEffect(() => {
-    fetchComparison()
-  }, [fetchComparison])
+  // In caso di errore la pagina torna vuota, come faceva prima
+  const dati = isError ? null : risposta
+  const comparisons = dati?.comparisons ?? []
+  const summary = dati?.summary ?? null
+  const categoryData = dati?.categoryData ?? null
+  const loading = isPending || isFetching
 
   // Variance badge
   const getVarianceBadge = (percent: number, type: string) => {
@@ -233,7 +251,7 @@ export function BudgetConfrontoClient({
             </p>
           </div>
         </div>
-        <Button variant="outline" onClick={fetchComparison}>
+        <Button variant="outline" onClick={() => fetchComparison()}>
           <RefreshCw className="h-4 w-4 mr-2" />
           Aggiorna
         </Button>

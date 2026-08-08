@@ -1,8 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useEffect, useCallback } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState, useEffect, useSyncExternalStore } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -25,6 +25,19 @@ import { logger } from '@/lib/logger'
 
 type ServiceWorkerRegistrationWithSync = ServiceWorkerRegistration & {
   sync: { register(tag: string): Promise<void> }
+}
+
+function sottoscriviStatoRete(onStoreChange: () => void) {
+  window.addEventListener('online', onStoreChange)
+  window.addEventListener('offline', onStoreChange)
+  return () => {
+    window.removeEventListener('online', onStoreChange)
+    window.removeEventListener('offline', onStoreChange)
+  }
+}
+
+function letturaStatoRete() {
+  return navigator.onLine
 }
 
 type PunchType = 'IN' | 'OUT' | 'BREAK_START' | 'BREAK_END'
@@ -210,50 +223,33 @@ export function PunchButton({
 }: PunchButtonProps) {
   const queryClient = useQueryClient()
   const [isGettingLocation, setIsGettingLocation] = useState(false)
-  const [isOnline, setIsOnline] = useState(true)
-  const [pendingCount, setPendingCount] = useState(0)
-  const [isSyncing, setIsSyncing] = useState(false)
   const [notaAperta, setNotaAperta] = useState(false)
   const [nota, setNota] = useState('')
 
-  // Rileva stato online/offline
-  useEffect(() => {
-    const updateOnlineStatus = () => setIsOnline(navigator.onLine)
+  // Lo stato della rete appartiene al browser: si legge alla fonte invece di
+  // tenerne una copia in stato. Prima l'inizializzazione passava da un
+  // queueMicrotask, messo lì solo per aggirare il controllo sugli effetti.
+  const isOnline = useSyncExternalStore(sottoscriviStatoRete, letturaStatoRete, () => true)
 
-    // Stato iniziale
-    queueMicrotask(() => setIsOnline(navigator.onLine))
+  // Il conteggio delle timbrature in coda sta su IndexedDB, non in React.
+  const { data: pendingCount = 0, refetch: ricaricaPendenti } = useQuery({
+    queryKey: ['punch-pending-count'],
+    queryFn: getPendingPunchCount,
+    staleTime: 0,
+    refetchOnMount: 'always',
+  })
 
-    window.addEventListener('online', updateOnlineStatus)
-    window.addEventListener('offline', updateOnlineStatus)
+  // La sincronizzazione è un'azione con un suo stato di avanzamento: come
+  // mutation lo stato vive nel query client e non fa ripartire il render del
+  // pulsante a catena.
+  const { mutate: performSync, isPending: isSyncing } = useMutation({
+    // Due sincronizzazioni non si sovrappongono: lo scope le mette in fila.
+    scope: { id: 'sincronizza-timbrature' },
+    mutationFn: async () => {
+      // Controlla direttamente da IndexedDB per evitare stale closures
+      const currentPending = await getPendingPunchCount()
+      if (currentPending === 0) return
 
-    return () => {
-      window.removeEventListener('online', updateOnlineStatus)
-      window.removeEventListener('offline', updateOnlineStatus)
-    }
-  }, [])
-
-  // Carica conteggio timbrature pendenti
-  useEffect(() => {
-    const loadPendingCount = async () => {
-      try {
-        const count = await getPendingPunchCount()
-        setPendingCount(count)
-      } catch (error) {
-        logger.error('Errore caricamento pendenti', error)
-      }
-    }
-
-    loadPendingCount()
-  }, [])
-
-  // Funzione per sincronizzare - usa useCallback per avere sempre i valori aggiornati
-  const performSync = useCallback(async () => {
-    // Controlla direttamente da IndexedDB per evitare stale closures
-    const currentPending = await getPendingPunchCount()
-    if (currentPending === 0) return
-
-    setIsSyncing(true)
-    try {
       const result = await syncAllPendingPunches()
       if (result.synced > 0) {
         toast.success(`${result.synced} timbrature sincronizzate`)
@@ -276,21 +272,21 @@ export function PunchButton({
       if (result.failed > 0) {
         toast.warning(`${result.failed} timbrature non sincronizzate`)
       }
-      const newCount = await getPendingPunchCount()
-      setPendingCount(newCount)
-    } catch (error) {
+    },
+    onError: (error) => {
       logger.error('Errore sync', error)
-    } finally {
-      setIsSyncing(false)
-    }
-  }, [queryClient])
+    },
+    onSettled: () => {
+      ricaricaPendenti()
+    },
+  })
 
   // Sincronizza quando torna online
   useEffect(() => {
-    if (isOnline && !isSyncing) {
+    if (isOnline) {
       performSync()
     }
-  }, [isOnline, isSyncing, performSync])
+  }, [isOnline, performSync])
 
   // Ascolta messaggi dal service worker per Background Sync
   useEffect(() => {
@@ -421,7 +417,7 @@ export function PunchButton({
           }
         }
 
-        setPendingCount(prev => prev + 1)
+        queryClient.setQueryData(['punch-pending-count'], (n: number = 0) => n + 1)
         return
       }
 
@@ -476,7 +472,7 @@ export function PunchButton({
             }
           }
 
-          setPendingCount(prev => prev + 1)
+          queryClient.setQueryData(['punch-pending-count'], (n: number = 0) => n + 1)
         } catch {
           toast.error('Errore nel salvataggio offline')
         }

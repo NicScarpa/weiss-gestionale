@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -73,8 +74,6 @@ const initialFormData = {
 }
 
 export function BancheEContiClient() {
-  const [accounts, setAccounts] = useState<BankAccount[]>([])
-  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -84,26 +83,32 @@ export function BancheEContiClient() {
   const [activeTab, setActiveTab] = useState<string>('BANK')
   const [showInactive, setShowInactive] = useState(false)
 
-  const fetchAccounts = async () => {
-    try {
-      setLoading(true)
+  const {
+    data,
+    isFetching: loading,
+    error: erroreCaricamento,
+    refetch: fetchAccounts,
+  } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryKey: ['bank-accounts', showInactive],
+    queryFn: async (): Promise<{ accounts?: BankAccount[] }> => {
       const params = new URLSearchParams()
       if (showInactive) params.set('includeInactive', 'true')
       const res = await fetch(`/api/bank-accounts?${params}`)
       if (!res.ok) throw new Error('Errore nel caricamento')
-      const data = await res.json()
-      setAccounts(data.accounts)
-    } catch {
-      toast.error('Errore nel caricamento dei conti')
-    } finally {
-      setLoading(false)
-    }
-  }
+      return res.json()
+    },
+  })
 
   useEffect(() => {
-    fetchAccounts()
-  }, [showInactive]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (erroreCaricamento) {
+      toast.error('Errore nel caricamento dei conti')
+    }
+  }, [erroreCaricamento])
 
+  const accounts = data?.accounts ?? []
   const filteredAccounts = accounts.filter((a) => a.accountType === activeTab)
 
   const openCreate = (type: AccountType) => {

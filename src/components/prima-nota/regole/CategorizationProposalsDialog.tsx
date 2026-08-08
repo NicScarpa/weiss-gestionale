@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -51,30 +52,41 @@ export function CategorizationProposalsDialog({
   budgetCategories,
   onProposalApplied,
 }: CategorizationProposalsDialogProps) {
-  const [proposals, setProposals] = useState<Proposal[]>([])
-  const [isLoading, setIsLoading] = useState(false)
+  const queryClient = useQueryClient()
   const [selectedCategories, setSelectedCategories] = useState<Record<number, string>>({})
   const [applyingIndex, setApplyingIndex] = useState<number | null>(null)
 
-  const fetchProposals = useCallback(async () => {
-    setIsLoading(true)
-    try {
+  const chiaveProposte = ['categorization-proposals', venueId]
+
+  const {
+    data: datiProposte,
+    isFetching: isLoading,
+    error: erroreProposte,
+  } = useQuery({
+    queryKey: chiaveProposte,
+    queryFn: async (): Promise<{ proposals?: Proposal[] }> => {
       const res = await fetch(`/api/categorization-rules/proposals?venueId=${venueId}`)
       if (!res.ok) throw new Error('Errore nel caricamento proposte')
-      const json = await res.json()
-      setProposals(json.proposals || [])
-      setSelectedCategories({})
-    } catch (error) {
-      console.error('Errore caricamento proposte:', error)
-      toast.error('Impossibile caricare le proposte')
-    } finally {
-      setIsLoading(false)
-    }
-  }, [venueId])
+      return res.json()
+    },
+    enabled: open,
+    staleTime: 0,
+  })
 
   useEffect(() => {
-    if (open) fetchProposals()
-  }, [open, fetchProposals])
+    if (erroreProposte) {
+      console.error('Errore caricamento proposte:', erroreProposte)
+      toast.error('Impossibile caricare le proposte')
+    }
+  }, [erroreProposte])
+
+  const proposals = datiProposte?.proposals || []
+
+  // Alla chiusura le categorie scelte e non applicate non devono restare per la volta dopo
+  const cambiaApertura = (aperto: boolean) => {
+    if (!aperto) setSelectedCategories({})
+    onOpenChange(aperto)
+  }
 
   const handleApply = async (index: number) => {
     const proposal = proposals[index]
@@ -104,7 +116,10 @@ export function CategorizationProposalsDialog({
       toast.success(`Regola creata: "${proposal.keyword}" -> ${category?.name || 'categoria'}`)
 
       // Rimuovi la proposta applicata dalla lista
-      setProposals(prev => prev.filter((_, i) => i !== index))
+      queryClient.setQueryData<{ proposals?: Proposal[] }>(chiaveProposte, (precedente) => ({
+        ...precedente,
+        proposals: (precedente?.proposals || []).filter((_, i) => i !== index),
+      }))
       setSelectedCategories(prev => {
         const next = { ...prev }
         delete next[index]
@@ -120,7 +135,7 @@ export function CategorizationProposalsDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={cambiaApertura}>
       <DialogContent className="max-w-[750px] max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Proposte di categorizzazione</DialogTitle>

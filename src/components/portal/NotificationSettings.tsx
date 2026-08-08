@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bell, BellOff, Loader2, AlertTriangle, Send } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
@@ -40,83 +41,105 @@ const defaultPreferences: NotificationPreferences = {
 }
 
 export function NotificationSettings() {
-  const [preferences, setPreferences] = useState<NotificationPreferences>(defaultPreferences)
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [diagnosi, setDiagnosi] = useState<DiagnosiPush | null>(null)
+  const queryClient = useQueryClient()
   const [attivazioneInCorso, setAttivazioneInCorso] = useState(false)
   const [provaInCorso, setProvaInCorso] = useState(false)
 
-  const aggiornaDiagnosi = useCallback(async () => {
-    try {
-      setDiagnosi(await diagnosticaPush())
-    } catch (error) {
-      logger.error('Diagnostica push fallita', error)
-      setDiagnosi({
-        stato: 'non-configurato',
-        dettaglio: 'Impossibile determinare lo stato delle notifiche.',
-      })
-    }
-  }, [])
-
-  useEffect(() => {
-    aggiornaDiagnosi()
-    loadPreferences()
-  }, [aggiornaDiagnosi])
-
-  const loadPreferences = async () => {
-    try {
-      const res = await fetch('/api/notifications/preferences')
-      if (res.ok) {
-        const data = await res.json()
-        if (data) {
-          setPreferences({
-            pushEnabled: data.pushEnabled ?? true,
-            newShiftPublished: data.newShiftPublished ?? true,
-            shiftReminder: data.shiftReminder ?? true,
-            anomalyCreated: data.anomalyCreated ?? true,
-            anomalyResolved: data.anomalyResolved ?? true,
-            leaveApproved: data.leaveApproved ?? true,
-            leaveRejected: data.leaveRejected ?? true,
-            leaveReminder: data.leaveReminder ?? true,
-          })
+  // Lo stato delle push lo sa il browser, non React: la diagnostica si rilegge
+  // quando serve invece di essere copiata in uno stato da un effetto.
+  const { data: diagnosi = null, refetch: rileggiDiagnosi } = useQuery<DiagnosiPush>({
+    queryKey: ['diagnostica-push'],
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryFn: async () => {
+      try {
+        return await diagnosticaPush()
+      } catch (error) {
+        logger.error('Diagnostica push fallita', error)
+        return {
+          stato: 'non-configurato',
+          dettaglio: 'Impossibile determinare lo stato delle notifiche.',
         }
       }
-    } catch (error) {
-      logger.error('Error loading preferences', error)
-    } finally {
-      setLoading(false)
-    }
+    },
+  })
+
+  const aggiornaDiagnosi = async () => {
+    await rileggiDiagnosi()
   }
 
-  const savePreferences = async (newPreferences: NotificationPreferences) => {
-    setSaving(true)
-    try {
+  const { data: preferences = defaultPreferences, isPending: loading } = useQuery({
+    queryKey: ['notification-preferences'],
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryFn: async (): Promise<NotificationPreferences> => {
+      // Come prima: una risposta di errore o vuota lascia i valori predefiniti
+      // senza avvisare, invece di bloccare la schermata.
+      try {
+        const res = await fetch('/api/notifications/preferences')
+        if (!res.ok) return defaultPreferences
+        const data = await res.json()
+        if (!data) return defaultPreferences
+        return {
+          pushEnabled: data.pushEnabled ?? true,
+          newShiftPublished: data.newShiftPublished ?? true,
+          shiftReminder: data.shiftReminder ?? true,
+          anomalyCreated: data.anomalyCreated ?? true,
+          anomalyResolved: data.anomalyResolved ?? true,
+          leaveApproved: data.leaveApproved ?? true,
+          leaveRejected: data.leaveRejected ?? true,
+          leaveReminder: data.leaveReminder ?? true,
+        }
+      } catch (error) {
+        logger.error('Error loading preferences', error)
+        return defaultPreferences
+      }
+    },
+  })
+
+  const salvataggio = useMutation({
+    mutationFn: async (nuove: NotificationPreferences) => {
       const res = await fetch('/api/notifications/preferences', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newPreferences),
+        body: JSON.stringify(nuove),
       })
-
-      if (res.ok) {
-        toast.success('Preferenze salvate')
-      } else {
-        throw new Error('Failed to save')
+      if (!res.ok) throw new Error('Failed to save')
+      return nuove
+    },
+    // L'interruttore si muove subito, come prima, quando lo stato era locale.
+    onMutate: async (nuove) => {
+      await queryClient.cancelQueries({ queryKey: ['notification-preferences'] })
+      const precedenti = queryClient.getQueryData<NotificationPreferences>([
+        'notification-preferences',
+      ])
+      queryClient.setQueryData(['notification-preferences'], nuove)
+      return { precedenti }
+    },
+    onSuccess: () => {
+      toast.success('Preferenze salvate')
+    },
+    onError: (_errore, _nuove, contesto) => {
+      // Prima l'interruttore restava dov'era finito anche se il salvataggio
+      // falliva, e mostrava una preferenza che il server non aveva.
+      if (contesto?.precedenti) {
+        queryClient.setQueryData(['notification-preferences'], contesto.precedenti)
       }
-    } catch {
       toast.error('Impossibile salvare le preferenze')
-    } finally {
-      setSaving(false)
-    }
+    },
+  })
+
+  const saving = salvataggio.isPending
+
+  const savePreferences = async (newPreferences: NotificationPreferences) => {
+    await salvataggio.mutateAsync(newPreferences).catch(() => {})
   }
 
   const handleToggle = (key: keyof NotificationPreferences) => {
-    const newPreferences = {
+    salvataggio.mutate({
       ...preferences,
       [key]: !preferences[key],
-    }
-    setPreferences(newPreferences)
-    savePreferences(newPreferences)
+    })
   }
 
   const attivaNotifiche = async () => {
@@ -124,9 +147,7 @@ export function NotificationSettings() {
     try {
       await attivaPush()
 
-      const newPreferences = { ...preferences, pushEnabled: true }
-      setPreferences(newPreferences)
-      await savePreferences(newPreferences)
+      await savePreferences({ ...preferences, pushEnabled: true })
 
       toast.success('Dispositivo registrato: le notifiche arriveranno qui')
     } catch (error) {

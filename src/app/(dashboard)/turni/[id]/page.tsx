@@ -1,6 +1,6 @@
 'use client'
 
-import { use, useState, useEffect } from 'react'
+import { use, useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -67,7 +67,6 @@ export default function ScheduleDetailPage({ params }: PageProps) {
   const resolvedParams = use(params)
   const queryClient = useQueryClient()
   const [isGenerating, setIsGenerating] = useState(false)
-  const [staffingRequirements, setStaffingRequirements] = useState<Record<string, number>>({})
   const [dialogState, setDialogState] = useState<DialogState>({
     open: false,
     mode: 'add',
@@ -110,13 +109,14 @@ export default function ScheduleDetailPage({ params }: PageProps) {
 
   const allStaff = staffData?.staff || []
 
-  // Inizializza staffingRequirements quando schedule viene caricato
-  useEffect(() => {
-    if (schedule && schedule.staffingRequirements !== undefined) {
-      const requirements = schedule.staffingRequirements as Record<string, number> | null
-      setStaffingRequirements(requirements ?? {})
-    }
-  }, [schedule])
+  // Il fabbisogno di personale vive nella scheda sul server: qui viene solo
+  // letto. Prima era copiato in uno stato locale da un effetto che lo
+  // riallineava a ogni refetch; la copia serviva perché il salvataggio arrivava
+  // dopo, e ora non serve più perché la mutation aggiorna subito la cache.
+  const staffingRequirements = useMemo(
+    () => (schedule?.staffingRequirements as Record<string, number> | null) ?? {},
+    [schedule?.staffingRequirements]
+  )
 
   // Mutation per salvare staffingRequirements
   const saveStaffingMutation = useMutation({
@@ -132,15 +132,29 @@ export default function ScheduleDetailPage({ params }: PageProps) {
       }
       return res.json()
     },
-    onSuccess: () => {
+    // Scrive in cache il valore appena scelto prima che la richiesta parta:
+    // senza, il calendario tornerebbe ai numeri vecchi finché non risponde.
+    onMutate: async (requirements) => {
+      await queryClient.cancelQueries({ queryKey: ['schedule', resolvedParams.id] })
+      const precedente = queryClient.getQueryData(['schedule', resolvedParams.id])
+      queryClient.setQueryData(['schedule', resolvedParams.id], (vecchio: unknown) =>
+        vecchio ? { ...(vecchio as Record<string, unknown>), staffingRequirements: requirements } : vecchio
+      )
+      return { precedente }
+    },
+    onError: (_errore, _variabili, contesto) => {
+      if (contesto?.precedente !== undefined) {
+        queryClient.setQueryData(['schedule', resolvedParams.id], contesto.precedente)
+      }
+      toast.error('Fabbisogno di personale non salvato')
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['schedule', resolvedParams.id] })
     },
   })
 
   // Handler per il cambio di staffingRequirements con salvataggio automatico
   const handleStaffingChange = (requirements: Record<string, number>) => {
-    setStaffingRequirements(requirements)
-    // Salva nel database (debounced tramite React Query)
     saveStaffingMutation.mutate(requirements)
   }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
@@ -203,8 +203,13 @@ export function AttendanceSection({
     enabled: !!closureDate && !disabled,
     refetchInterval: 60_000,
   })
-  const aperte = timbratureAperte ?? []
+  // Memoizzato: senza, `?? []` produce un array nuovo a ogni render e tutto
+  // ciò che dipende da `aperte` riparte ogni volta. Grazie alla condivisione
+  // strutturale di TanStack Query l'identità cambia solo quando cambia davvero
+  // l'elenco delle sessioni aperte.
+  const aperte = useMemo(() => timbratureAperte ?? [], [timbratureAperte])
 
+  // Solo le correzioni dell'operatore: la proposta non si tiene in stato.
   const [orariUscita, setOrariUscita] = useState<Record<string, string>>({})
 
   useEffect(() => {
@@ -213,21 +218,16 @@ export function AttendanceSection({
 
   // L'orario proposto è "adesso": inviare la chiusura è la fine del servizio.
   // Per chi è andato via prima senza timbrare, l'operatore lo corregge.
-  useEffect(() => {
-    if (aperte.length === 0) return
-    setOrariUscita((prev) => {
-      const adesso = new Date().toTimeString().slice(0, 5)
-      let cambiato = false
-      const next = { ...prev }
-      for (const sessione of aperte) {
-        if (!next[sessione.userId]) {
-          next[sessione.userId] = adesso
-          cambiato = true
-        }
-      }
-      return cambiato ? next : prev
-    })
+  // Si ricalcola quando cambia l'elenco delle sessioni aperte, non a ogni
+  // render: le caselle non devono muoversi sotto le mani dell'operatore.
+  const proposteUscita = useMemo(() => {
+    const adesso = new Date().toTimeString().slice(0, 5)
+    return Object.fromEntries(aperte.map((sessione) => [sessione.userId, adesso]))
   }, [aperte])
+
+  // Ciò che si vede è anche ciò che si invia: prima la casella poteva mostrare
+  // un orario e la richiesta partire con un altro, calcolato al momento.
+  const orarioUscitaDi = (userId: string) => orariUscita[userId] ?? proposteUscita[userId] ?? ''
 
   const confermaUscite = useMutation({
     mutationFn: async () => {
@@ -239,7 +239,7 @@ export function AttendanceSection({
           date: closureDate,
           uscite: aperte.map((sessione) => ({
             userId: sessione.userId,
-            orario: orariUscita[sessione.userId] || fallback,
+            orario: orarioUscitaDi(sessione.userId) || fallback,
           })),
         }),
       })
@@ -548,7 +548,7 @@ export function AttendanceSection({
                 <Input
                   type="time"
                   className="w-28"
-                  value={orariUscita[sessione.userId] ?? ''}
+                  value={orarioUscitaDi(sessione.userId)}
                   onChange={(e) =>
                     setOrariUscita((prev) => ({
                       ...prev,

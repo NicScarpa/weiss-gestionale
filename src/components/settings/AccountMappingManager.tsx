@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -53,6 +54,15 @@ interface Venue {
   name: string
   code: string
 }
+
+interface MappingApi {
+  accountId: string
+  budgetCategoryId: string
+  account?: Account
+}
+
+// Identità stabile per il caso "nessuna modifica in sospeso"
+const NESSUNA_MODIFICA: Map<string, string | null> = new Map()
 
 // Componente draggable per un account
 function DraggableAccount({ account, onRemove }: { account: Account; onRemove?: () => void }) {
@@ -161,17 +171,14 @@ function DroppableCategory({
 }
 
 export function AccountMappingManager() {
-  const [venues, setVenues] = useState<Venue[]>([])
-  const [selectedVenueId, setSelectedVenueId] = useState<string>('')
-  const [categories, setCategories] = useState<BudgetCategory[]>([])
-  const [unmappedAccounts, setUnmappedAccounts] = useState<Account[]>([])
-  const [mappedAccountsData, setMappedAccountsData] = useState<Account[]>([]) // Store mapped account data
-  const [mappings, setMappings] = useState<Map<string, string>>(new Map()) // accountId -> categoryId
-  const [loading, setLoading] = useState(true)
+  // Sede scelta esplicitamente dall'utente: se manca si usa la prima disponibile
+  const [sceltaSede, setSceltaSede] = useState<string>('')
+  // Modifiche non ancora salvate, legate alla sede su cui sono state fatte:
+  // accountId -> categoryId, oppure null se il conto è stato tolto da una categoria
+  const [modifiche, setModifiche] = useState<{ sedeId: string; mappe: Map<string, string | null> } | null>(null)
   const [saving, setSaving] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [activeAccount, setActiveAccount] = useState<Account | null>(null)
-  const [hasChanges, setHasChanges] = useState(false)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -182,71 +189,122 @@ export function AccountMappingManager() {
     useSensor(KeyboardSensor)
   )
 
-  useEffect(() => {
-    fetchVenues()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
-    if (selectedVenueId) {
-      fetchData()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedVenueId])
-
-  const fetchVenues = async () => {
-    try {
+  const {
+    data: rispostaSedi,
+    isError: erroreSedi,
+    error: dettaglioErroreSedi,
+  } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryKey: ['venues'],
+    queryFn: async (): Promise<{ venues?: Venue[] } | Venue[]> => {
       const res = await fetch('/api/venues')
-      const data = await res.json()
-      // API returns { venues: [...] } or array directly
-      const venuesList = Array.isArray(data) ? data : (data.venues || [])
-      setVenues(venuesList)
-      if (venuesList.length > 0 && !selectedVenueId) {
-        setSelectedVenueId(venuesList[0].id)
-      }
-    } catch (error) {
-      logger.error('Errore caricamento sedi', error)
-      setVenues([])
-    }
-  }
+      return res.json()
+    },
+  })
 
-  const fetchData = async () => {
-    setLoading(true)
-    try {
+  useEffect(() => {
+    if (erroreSedi) {
+      logger.error('Errore caricamento sedi', dettaglioErroreSedi)
+    }
+  }, [erroreSedi, dettaglioErroreSedi])
+
+  // API returns { venues: [...] } or array directly
+  const venues = useMemo(
+    () => (Array.isArray(rispostaSedi) ? rispostaSedi : rispostaSedi?.venues || []),
+    [rispostaSedi]
+  )
+  const selectedVenueId = sceltaSede || venues[0]?.id || ''
+
+  const {
+    data: datiMapping,
+    isPending,
+    isFetching,
+    isError,
+    error: dettaglioErrore,
+    refetch: ricaricaDati,
+  } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryKey: ['budget-categories', 'mapping', selectedVenueId],
+    enabled: !!selectedVenueId,
+    queryFn: async (): Promise<{
+      categories: BudgetCategory[]
+      mappings: MappingApi[]
+      unmappedAccounts: Account[]
+    }> => {
       // Carica categorie
       const catRes = await fetch(`/api/budget-categories?venueId=${selectedVenueId}`)
       const catData = await catRes.json()
-      setCategories(catData.categories || [])
 
       // Carica mapping esistenti
       const mapRes = await fetch(`/api/budget-categories/mappings?venueId=${selectedVenueId}`)
       const mapData = await mapRes.json()
 
-      // Popola la mappa dei mapping e memorizza i dati degli account mappati
-      const newMappings = new Map<string, string>()
-      const mappedAccounts: Account[] = []
-      for (const m of mapData.mappings || []) {
-        newMappings.set(m.accountId, m.budgetCategoryId)
-        if (m.account) {
-          mappedAccounts.push(m.account)
-        }
-      }
-      setMappings(newMappings)
-      setMappedAccountsData(mappedAccounts)
-
       // Carica conti non mappati
       const unmapRes = await fetch(`/api/budget-categories/mappings?venueId=${selectedVenueId}&unmappedOnly=true`)
       const unmapData = await unmapRes.json()
-      setUnmappedAccounts(unmapData.unmappedAccounts || [])
 
-      setHasChanges(false)
-    } catch (error) {
-      logger.error('Errore caricamento dati', error)
+      return {
+        categories: catData.categories || [],
+        mappings: mapData.mappings || [],
+        unmappedAccounts: unmapData.unmappedAccounts || [],
+      }
+    },
+  })
+
+  useEffect(() => {
+    if (isError) {
+      logger.error('Errore caricamento dati', dettaglioErrore)
       toast.error('Impossibile caricare i dati')
-    } finally {
-      setLoading(false)
     }
-  }
+  }, [isError, dettaglioErrore])
+
+  const loading = isPending || isFetching
+  const categories = useMemo(() => datiMapping?.categories ?? [], [datiMapping])
+
+  // Le modifiche valgono solo per la sede su cui sono state fatte
+  const modificheCorrenti =
+    modifiche && modifiche.sedeId === selectedVenueId ? modifiche.mappe : NESSUNA_MODIFICA
+  const hasChanges = modificheCorrenti.size > 0
+
+  // Mapping salvati sul server con sopra le modifiche in sospeso
+  const mappings = useMemo(() => {
+    const result = new Map<string, string>()
+    for (const m of datiMapping?.mappings ?? []) {
+      result.set(m.accountId, m.budgetCategoryId)
+    }
+    modificheCorrenti.forEach((categoryId, accountId) => {
+      if (categoryId === null) {
+        result.delete(accountId)
+      } else {
+        result.set(accountId, categoryId)
+      }
+    })
+    return result
+  }, [datiMapping, modificheCorrenti])
+
+  // Mappa di tutti gli account (unmapped + mapped) per lookup rapido
+  const allAccountsMap = useMemo(() => {
+    const map = new Map<string, Account>()
+    for (const a of datiMapping?.unmappedAccounts ?? []) {
+      map.set(a.id, a)
+    }
+    for (const m of datiMapping?.mappings ?? []) {
+      if (m.account) {
+        map.set(m.account.id, m.account)
+      }
+    }
+    return map
+  }, [datiMapping])
+
+  // I conti senza categoria: quelli non mappati sul server più quelli tolti qui
+  const unmappedAccounts = useMemo(
+    () => Array.from(allAccountsMap.values()).filter(a => !mappings.has(a.id)),
+    [allAccountsMap, mappings]
+  )
 
   // Filtra conti non mappati per ricerca
   const filteredUnmapped = useMemo(() => {
@@ -256,14 +314,6 @@ export function AccountMappingManager() {
       a => a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q)
     )
   }, [unmappedAccounts, searchQuery])
-
-  // Mappa di tutti gli account (unmapped + mapped) per lookup rapido
-  const allAccountsMap = useMemo(() => {
-    const map = new Map<string, Account>()
-    unmappedAccounts.forEach(a => map.set(a.id, a))
-    mappedAccountsData.forEach(a => map.set(a.id, a))
-    return map
-  }, [unmappedAccounts, mappedAccountsData])
 
   // Raggruppa conti mappati per categoria
   const accountsByCategory = useMemo(() => {
@@ -299,37 +349,17 @@ export function AccountMappingManager() {
     if (overId.startsWith('category-')) {
       const categoryId = overId.replace('category-', '')
 
-      // Get the account data before removing it from unmapped
-      const account = allAccountsMap.get(accountId)
-
-      const newMappings = new Map(mappings)
-      newMappings.set(accountId, categoryId)
-      setMappings(newMappings)
-      setHasChanges(true)
-
-      // If account was in unmapped list, move it to mapped
-      if (unmappedAccounts.find(a => a.id === accountId)) {
-        setUnmappedAccounts(prev => prev.filter(a => a.id !== accountId))
-        if (account && !mappedAccountsData.find(a => a.id === accountId)) {
-          setMappedAccountsData(prev => [...prev, account])
-        }
-      }
+      const nuoveModifiche = new Map(modificheCorrenti)
+      nuoveModifiche.set(accountId, categoryId)
+      setModifiche({ sedeId: selectedVenueId, mappe: nuoveModifiche })
     }
   }
 
   const handleRemoveMapping = (accountId: string) => {
-    const account = allAccountsMap.get(accountId)
-
-    const newMappings = new Map(mappings)
-    newMappings.delete(accountId)
-    setMappings(newMappings)
-    setHasChanges(true)
-
-    // Move the account back to unmapped
-    if (account) {
-      setMappedAccountsData(prev => prev.filter(a => a.id !== accountId))
-      setUnmappedAccounts(prev => [...prev, account])
-    }
+    // null segna il conto come tolto dalla sua categoria
+    const nuoveModifiche = new Map(modificheCorrenti)
+    nuoveModifiche.set(accountId, null)
+    setModifiche({ sedeId: selectedVenueId, mappe: nuoveModifiche })
   }
 
   const saveChanges = async () => {
@@ -353,8 +383,8 @@ export function AccountMappingManager() {
 
       if (res.ok) {
         toast.success(`${mappingsArray.length} mapping salvati con successo`)
-        setHasChanges(false)
-        fetchData()
+        setModifiche(null)
+        ricaricaDati()
       } else {
         const data = await res.json()
         throw new Error(data.error)
@@ -385,7 +415,14 @@ export function AccountMappingManager() {
             </CardDescription>
           </div>
           <div className="flex items-center gap-4">
-            <Select value={selectedVenueId} onValueChange={setSelectedVenueId}>
+            <Select
+              value={selectedVenueId}
+              onValueChange={(v) => {
+                // Cambiando sede si riparte dai mapping salvati
+                setSceltaSede(v)
+                setModifiche(null)
+              }}
+            >
               <SelectTrigger className="w-48">
                 <SelectValue placeholder="Seleziona sede" />
               </SelectTrigger>
