@@ -6,9 +6,10 @@ import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
 import { requireRole } from '@/lib/api-utils'
 import { getVenueId } from '@/lib/venue'
-import { romeDateKey, romeInstant, toRomeParts } from '@/lib/timezone'
+import { romeDateKey, romeInstant, romeTimeString, toRomeParts } from '@/lib/timezone'
 import { trovaSessioniAperte } from '@/lib/attendance/sessioni-aperte'
 import { createManualPunch } from '@/lib/attendance/manual-punch'
+import { notifyUsciteRegistrateDaAltri } from '@/lib/notifications/triggers'
 
 /**
  * Le timbrature ancora aperte della giornata, per la chiusura di cassa.
@@ -175,6 +176,26 @@ export async function POST(request: NextRequest) {
           motivo: 'chiusura di cassa',
         },
       })
+    }
+
+    // Chi si vede scrivere l'uscita da un altro deve saperlo subito. Si
+    // aspetta l'invio invece di lasciarlo correre da solo: è l'unica
+    // contromisura a un orario deciso da terzi sulle ore pagate di qualcuno,
+    // e se non parte vogliamo trovarlo nel log di questa richiesta. I
+    // destinatari sono una manciata e i push partono in parallelo.
+    try {
+      await notifyUsciteRegistrateDaAltri({
+        autoreId: session!.user.id,
+        dateKey: body.date,
+        uscite: records.map((record) => ({
+          userId: record.userId,
+          orarioUscita: romeTimeString(record.punchedAt),
+        })),
+      })
+    } catch (error) {
+      // Le uscite sono già registrate: un guasto del canale push non deve
+      // far credere all'operatore che la chiusura non sia passata.
+      logger.error('Errore invio avviso uscite registrate in chiusura', error)
     }
 
     return NextResponse.json({
