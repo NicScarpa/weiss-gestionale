@@ -433,6 +433,19 @@ model JournalEntry {
   notes                String?
   verified             Boolean             @default(false)
   paymentId            String?             @unique @map("payment_id")
+  /// Lega fra loro le due righe di un trasferimento — versamento, prelievo,
+  /// giroconto — che sono una scrittura sola: il denaro esce da un registro ed
+  /// entra nell'altro, e la liquidità totale non cambia. Senza questo legame
+  /// cancellare un lato lasciava l'altro in piedi, e il saldo complessivo si
+  /// spostava dell'intero importo.
+  ///
+  /// Nullo su tutto il resto: i movimenti a riga singola non hanno una gemella,
+  /// e i trasferimenti scritti prima di questa colonna restano non legati. Non
+  /// si tenta di appaiarli a posteriori: l'accoppiamento andrebbe indovinato
+  /// per data e importo, e due versamenti dello stesso giorno per la stessa
+  /// cifra sono indistinguibili — un'ipotesi sbagliata cancellerebbe la riga di
+  /// un'altra operazione.
+  transferId           String?             @map("transfer_id")
   bankTransaction      BankTransaction?
   electronicInvoice    ElectronicInvoice?
   account              Account?            @relation(fields: [accountId], references: [id])
@@ -453,6 +466,7 @@ model JournalEntry {
   @@index([accountId])
   @@index([budgetCategoryId])
   @@index([closureId])
+  @@index([transferId])
   @@map("journal_entries")
 }
 
