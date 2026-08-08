@@ -21,6 +21,7 @@ import {
   AlertCircle,
   AlertTriangle,
   Lock,
+  Brain,
 } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -362,6 +363,15 @@ export function InvoiceList() {
               Elimina ({selectedIds.size})
             </Button>
           )}
+          {/* Unico accesso a cosa il sistema ha imparato a imputare da solo:
+              la memoria fornitore-prodotto nasce qui, dalle conferme sulle
+              righe delle fatture, ed è qui che si viene a cercarla. */}
+          <Button variant="outline" asChild>
+            <Link href="/fatture/memorie">
+              <Brain className="mr-2 h-4 w-4" />
+              Memorie fornitore
+            </Link>
+          </Button>
           <Button onClick={() => setImportDialogOpen(true)}>
             <Upload className="mr-2 h-4 w-4" />
             Importa Fattura
