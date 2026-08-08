@@ -5,6 +5,11 @@ il contesto. Se stai leggendo questo file in una sessione nuova, **leggilo tutto
 
 ---
 
+> ## ⚠️ SE STAI RIPRENDENDO IL LAVORO, LEGGI PRIMA `audit/PIANO-RESIDUO.md`
+> Contiene il piano completo di ciò che resta — priorità, comandi esatti, prompt pronti per gli
+> agenti e le quindici trappole d'ambiente. Questo documento racconta invece **come ci siamo
+> arrivati**, e serve per capire il perché delle scelte.
+
 ## 1. In una pagina
 
 Un audit completo (8 agenti, report in `audit/A1..A8-*.md`) ha diagnosticato ~112 problemi nel
