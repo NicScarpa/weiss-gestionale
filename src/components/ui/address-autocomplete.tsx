@@ -44,6 +44,34 @@ interface AddressAutocompleteProps {
     placeholder?: string
 }
 
+// Lo script di Google Maps vive su window, fuori da React: si legge con
+// useSyncExternalStore invece di copiarlo in uno stato dentro un effetto.
+// Il flag di modulo copre il caso in cui sia questo componente a caricarlo.
+let scriptMappeSegnalato = false
+const listenerScriptMappe = new Set<() => void>()
+
+function subscribeScriptMappe(onStoreChange: () => void) {
+    listenerScriptMappe.add(onStoreChange)
+    return () => {
+        listenerScriptMappe.delete(onStoreChange)
+    }
+}
+
+function getScriptMappeCaricato() {
+    if (typeof window === 'undefined') return false
+    return scriptMappeSegnalato || !!window.google?.maps?.places
+}
+
+// Lato server window non esiste: lo script non è mai caricato.
+function getServerScriptMappeCaricato() {
+    return false
+}
+
+function segnalaScriptMappeCaricato() {
+    scriptMappeSegnalato = true
+    listenerScriptMappe.forEach((listener) => listener())
+}
+
 export function AddressAutocomplete({
     value,
     onChange,
@@ -52,15 +80,13 @@ export function AddressAutocomplete({
     placeholder = 'Cerca indirizzo...',
 }: AddressAutocompleteProps) {
     const [open, setOpen] = React.useState(false)
-    const [scriptLoaded, setScriptLoaded] = React.useState(false)
 
-    // Load Google Maps Script if not already loaded
-    React.useEffect(() => {
-        if (window.google?.maps?.places) {
-            setScriptLoaded(true)
-            return
-        }
-    }, [])
+    // Vero se lo script di Google Maps è già disponibile su window
+    const scriptLoaded = React.useSyncExternalStore(
+        subscribeScriptMappe,
+        getScriptMappeCaricato,
+        getServerScriptMappeCaricato
+    )
 
     const {
         ready,
@@ -106,7 +132,7 @@ export function AddressAutocomplete({
             {!scriptLoaded && (
                 <Script
                     src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`}
-                    onLoad={() => setScriptLoaded(true)}
+                    onLoad={segnalaScriptMappeCaricato}
                     strategy="lazyOnload"
                 />
             )}

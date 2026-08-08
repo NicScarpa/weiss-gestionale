@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Check, ChevronsUpDown, Building2, Clock } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
@@ -48,43 +49,31 @@ export function PayeeAutocomplete({
 }: PayeeAutocompleteProps) {
   const [open, setOpen] = React.useState(false)
   const [inputValue, setInputValue] = React.useState(value)
-  const [suggestions, setSuggestions] = React.useState<PayeeSuggestion[]>([])
-  const [loading, setLoading] = React.useState(false)
+  const [valorePrecedente, setValorePrecedente] = React.useState(value)
 
   const debouncedInput = useDebounce(inputValue, 300)
 
   // Sincronizza inputValue con value prop (per quando il valore cambia dall'esterno)
-  React.useEffect(() => {
+  if (value !== valorePrecedente) {
+    setValorePrecedente(value)
     setInputValue(value)
-  }, [value])
+  }
 
-  // Fetch suggerimenti quando l'input debounced cambia
-  React.useEffect(() => {
-    if (!debouncedInput || debouncedInput.length < 2) {
-      setSuggestions([])
-      return
-    }
+  // Suggerimenti per l'input debounced: sotto i 2 caratteri non si interroga il server
+  const { data: suggestions = [], isFetching: loading } = useQuery({
+    queryKey: ['payee-suggestions', debouncedInput, venueId],
+    enabled: debouncedInput.length >= 2,
+    retry: false,
+    queryFn: async (): Promise<PayeeSuggestion[]> => {
+      const params = new URLSearchParams({ q: debouncedInput })
+      if (venueId) params.set('venueId', venueId)
 
-    const fetchSuggestions = async () => {
-      setLoading(true)
-      try {
-        const params = new URLSearchParams({ q: debouncedInput })
-        if (venueId) params.set('venueId', venueId)
-
-        const res = await fetch(`/api/payee-suggestions?${params}`)
-        if (res.ok) {
-          const data = await res.json()
-          setSuggestions(data.suggestions || [])
-        }
-      } catch {
-        setSuggestions([])
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchSuggestions()
-  }, [debouncedInput, venueId])
+      const res = await fetch(`/api/payee-suggestions?${params}`)
+      if (!res.ok) throw new Error('Errore nel caricamento dei beneficiari')
+      const data = await res.json()
+      return data.suggestions || []
+    },
+  })
 
   const supplierSuggestions = suggestions.filter((s) => s.source === 'supplier')
   const historicalSuggestions = suggestions.filter((s) => s.source === 'historical')
