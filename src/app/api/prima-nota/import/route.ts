@@ -88,6 +88,7 @@ export async function POST(request: NextRequest) {
                             debitAmount: isInflow ? Math.abs(amount) : null,
                             creditAmount: !isInflow ? Math.abs(amount) : null,
                             costCenterId: centro.costCenterId,
+                            costCenterSource: centro.origine,
                             categorizationSource: 'import',
                             // Il centro è una supposizione del sistema e il
                             // conto non c'è ancora: l'imputazione va approvata

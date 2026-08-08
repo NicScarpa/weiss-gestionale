@@ -58,6 +58,10 @@ export async function POST(request: NextRequest) {
           documentRef: validatedData.documentRef,
           creditAmount: validatedData.amount,
           costCenterId: centro.costCenterId,
+          costCenterSource: centro.origine,
+          // Il centro è una supposizione del sistema: esplicito come
+          // nell'import, invece di affidarsi al default dello schema.
+          verified: false,
           createdById: session.user.id,
         },
         include: {
@@ -76,6 +80,10 @@ export async function POST(request: NextRequest) {
           documentRef: validatedData.documentRef,
           debitAmount: validatedData.amount,
           costCenterId: centro.costCenterId,
+          costCenterSource: centro.origine,
+          // Il centro è una supposizione del sistema: esplicito come
+          // nell'import, invece di affidarsi al default dello schema.
+          verified: false,
           createdById: session.user.id,
         },
         include: {

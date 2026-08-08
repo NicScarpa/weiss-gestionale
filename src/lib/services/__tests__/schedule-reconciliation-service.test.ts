@@ -103,7 +103,10 @@ beforeEach(() => {
   )
   // Default: il conto dominante non pretende un centro.
   vi.mocked(prisma.account.findMany).mockResolvedValue([] as never)
-  vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({ costCenterId: null } as never)
+  vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
+    costCenterId: null,
+    costCenterSource: null,
+  } as never)
 })
 
 describe('reconcileScheduleWithEntry - dataAttesa', () => {
@@ -407,10 +410,12 @@ describe('reconcileScheduleWithEntry - ereditarietà pro-quota dalla fattura (Fa
       .mockResolvedValueOnce([
         { accountId: 'conto-birra', importo: new Prisma.Decimal(1000) },
       ] as never)
-    // Il movimento importato porta il centro di sistema: non è una scelta,
-    // è il ripiego di quando il conto ancora non c'era.
+    // Il movimento è anteriore alla colonna di provenienza (source null) e
+    // porta il centro di sistema: non è una scelta, è il ripiego di quando il
+    // conto ancora non c'era.
     vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
       costCenterId: 'cc-str',
+      costCenterSource: null,
     } as never)
     vi.mocked(prisma.account.findMany).mockResolvedValue([
       { id: 'conto-birra', code: '600020', name: 'Acquisti bevande', costCenterRule: 'OBBLIGATORIO' },
@@ -437,6 +442,57 @@ describe('reconcileScheduleWithEntry - ereditarietà pro-quota dalla fattura (Fa
     )
   })
 
+  it('il movimento già sul centro operativo perché supposto resta lì, e resta da approvare', async () => {
+    // Movimento importato dopo la colonna di provenienza: il centro è già
+    // WEISS, ma indovinato. Non essendo una scelta, l'ereditarietà lo
+    // rivaluta lo stesso — e la rivalutazione conferma WEISS, senza che il
+    // movimento diventi per questo approvato.
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      scadenza({ invoiceId: 'inv-1', importoTotale: new Prisma.Decimal(1000) }) as never
+    )
+    vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue(
+      movimento({ creditAmount: new Prisma.Decimal(1000) }) as never
+    )
+    vi.mocked(prisma.electronicInvoice.findUnique).mockResolvedValue({
+      lineItems: [{ numeroLinea: 1 }],
+    } as never)
+    vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([
+      { accountId: 'conto-birra', importo: new Prisma.Decimal(1000) },
+    ] as never)
+    vi.mocked(prisma.journalEntryAllocation.findMany)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { accountId: 'conto-birra', importo: new Prisma.Decimal(1000) },
+      ] as never)
+    vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
+      costCenterId: 'cc-weiss',
+      costCenterSource: 'supposto',
+    } as never)
+    vi.mocked(prisma.account.findMany).mockResolvedValue([
+      { id: 'conto-birra', code: '600020', name: 'Acquisti bevande', costCenterRule: 'OBBLIGATORIO' },
+    ] as never)
+
+    await reconcileScheduleWithEntry({
+      scheduleId: 'sched-1',
+      journalEntryId: 'entry-1',
+      venueId: VENUE,
+      userId: 'user-1',
+    })
+
+    expect(prisma.journalEntry.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          costCenterId: 'cc-weiss',
+          costCenterSource: 'supposto',
+          verified: false,
+        }),
+      })
+    )
+    // Il centro supposto non è stato riproposto come se fosse una scelta:
+    // nessuna findUnique di validazione, la risoluzione è ripartita dal conto.
+    expect(prisma.costCenter.findUnique).not.toHaveBeenCalled()
+  })
+
   it('un centro scelto da un umano (CAS) non viene sovrascritto dall\'ereditarietà', async () => {
     vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
       scadenza({ invoiceId: 'inv-1', importoTotale: new Prisma.Decimal(1000) }) as never
@@ -457,6 +513,7 @@ describe('reconcileScheduleWithEntry - ereditarietà pro-quota dalla fattura (Fa
       ] as never)
     vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
       costCenterId: 'cc-cas',
+      costCenterSource: 'scelto',
     } as never)
     vi.mocked(prisma.costCenter.findUnique).mockResolvedValue({
       id: 'cc-cas', isActive: true,

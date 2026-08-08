@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
 import {
+  centroDaRiproporre,
   risolviCentroDiCosto,
   trovaCentroStrutturale,
   type ContestoRisoluzione,
@@ -71,30 +72,28 @@ export type TransactionClient = Omit<
  * centro che si dà a chi non ne ha uno, e solo alla riconciliazione eredita
  * dalla fattura un conto che invece un centro lo pretendeva.
  *
- * Una scelta umana non si tocca mai: se il movimento porta un centro diverso
- * da quello di sistema, quello è. Il centro di sistema (STR) su un conto
- * operativo, invece, non è una scelta: è il ripiego di quando il conto ancora
- * non c'era, e va trattato come assente perché la regola del conto possa
- * rivalutarlo (→ WEISS, il centro operativo predefinito).
+ * Cosa si rivaluta e cosa no lo decide `centroDaRiproporre` sulla provenienza
+ * persistita: una scelta umana non si tocca mai, il resto sì.
  */
 async function rivalutaCentroSuPercorsoAutomatico(
   tx: TransactionClient,
   journalEntryId: string,
   accountIdDominante: string
-): Promise<{ costCenterId?: string }> {
+): Promise<{ costCenterId?: string; costCenterSource?: string }> {
   const movimento = await tx.journalEntry.findUnique({
     where: { id: journalEntryId },
-    select: { costCenterId: true },
+    select: { costCenterId: true, costCenterSource: true },
   })
   const strutturale = await trovaCentroStrutturale(tx)
-  const centroScelto =
-    movimento?.costCenterId && movimento.costCenterId !== strutturale?.id
-      ? movimento.costCenterId
-      : null
 
   const esito = await risolviCentroDiCosto(
     tx,
-    { accountId: accountIdDominante, costCenterId: centroScelto },
+    {
+      accountId: accountIdDominante,
+      costCenterId: movimento
+        ? centroDaRiproporre(movimento, strutturale?.id ?? null)
+        : null,
+    },
     'automatico'
   )
   if (esito.outcome !== 'ok') {
@@ -109,7 +108,7 @@ async function rivalutaCentroSuPercorsoAutomatico(
     })
     return {}
   }
-  return { costCenterId: esito.costCenterId }
+  return { costCenterId: esito.costCenterId, costCenterSource: esito.origine }
 }
 
 /**
@@ -124,8 +123,7 @@ async function rivalutaCentroSuPercorsoAutomatico(
  * validato le fette contro il centro del movimento (setEntryAllocations, che
  * risponde 400 se non tornano). Sul percorso `automatico` — l'ereditarietà
  * dalla fattura alla riconciliazione — il centro va invece rivalutato contro
- * il nuovo conto, e il movimento resta `verified: false`: un bonifico
- * importato e riconciliato dal sistema passa da un'approvazione manuale.
+ * il conto nuovo, e il movimento torna da verificare.
  */
 export async function aggiornaContoDominante(
   tx: TransactionClient,
@@ -141,6 +139,10 @@ export async function aggiornaContoDominante(
   const dominante = tutte.reduce((max, f) =>
     Number(f.importo) > Number(max.importo) ? f : max
   )
+  // `verified: false` incondizionato, e non perché il centro sia supposto:
+  // questa funzione RISCRIVE il conto del movimento. Una verifica umana
+  // riferita al conto di prima non dice nulla sul conto nuovo, quindi decade
+  // insieme a quello — anche quando il centro non cambia affatto.
   const imputazioneAutomatica =
     contesto === 'automatico'
       ? {

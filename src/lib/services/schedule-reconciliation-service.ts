@@ -439,6 +439,13 @@ export async function undoScheduleReconciliation({
     // (stesso principio del no-op di setEntryAllocations).
     if (fetteRitirate.count === 0) return
 
+    // Contesto interattivo, asimmetrico rispetto all'ereditarietà, e di
+    // proposito: l'undo è un gesto umano deliberato, e il centro precedente
+    // non è ripristinabile perché non se ne tiene lo storico. Il movimento
+    // conserva quindi il centro che l'ereditarietà gli aveva dato, ma con la
+    // sua provenienza: se era 'supposto' resta 'supposto', quindi nessuna
+    // automazione lo promuoverà a verificato e la prossima riconciliazione lo
+    // rivaluterà da capo.
     const numeroFette = await aggiornaContoDominante(tx, reconciliation.journalEntryId)
     if (numeroFette === 0) {
       // Fette ereditate ritirate e nessuna residua: il movimento torna alla

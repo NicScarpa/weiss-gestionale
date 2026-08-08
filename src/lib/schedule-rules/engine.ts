@@ -30,7 +30,7 @@
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
-import { risolviCentroDiCosto } from '@/lib/services/cost-center-service'
+import { risolviCentroDiCosto, type OrigineCentro } from '@/lib/services/cost-center-service'
 import {
   ScheduleDocumentType,
   SchedulePaymentMethod,
@@ -329,8 +329,10 @@ export async function applicaRegolaCreaMovimento(params: {
     )
 
     let costCenterId: string
+    let origineCentro: OrigineCentro
     if (risoluzione.outcome === 'ok') {
       costCenterId = risoluzione.costCenterId
+      origineCentro = risoluzione.origine
     } else {
       // In contesto automatico resta 'invalid' solo il centro indicato dalla
       // regola ma nel frattempo cancellato o disattivato: si indovina come se
@@ -344,9 +346,13 @@ export async function applicaRegolaCreaMovimento(params: {
       })
       const centroDefault = await risolviCentroDiCosto(prisma, {}, 'automatico')
       if (centroDefault.outcome !== 'ok') {
+        // Irraggiungibile: senza conto e in automatico la risoluzione o
+        // risponde 'ok' o lancia (centri non configurati). Il tipo lo prevede,
+        // i dati no — stesso ramo, con lo stesso commento, in import/route.ts.
         return { applicata: false, motivo: 'centro di costo di default non disponibile' }
       }
       costCenterId = centroDefault.costCenterId
+      origineCentro = centroDefault.origine
     }
 
     const entry = await prisma.journalEntry.create({
@@ -360,6 +366,7 @@ export async function applicaRegolaCreaMovimento(params: {
         creditAmount: isIncasso ? null : residuo,
         accountId: contoMovimento,
         costCenterId,
+        costCenterSource: origineCentro,
         budgetCategoryId: categoriaDerivata,
         counterpartName: schedule.controparteNome,
         categorizationSource: 'rule',

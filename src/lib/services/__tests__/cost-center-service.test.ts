@@ -5,7 +5,7 @@ vi.mock('@/lib/logger', () => ({
 }))
 
 import { logger } from '@/lib/logger'
-import { risolviCentroDiCosto } from '../cost-center-service'
+import { centroDaRiproporre, risolviCentroDiCosto } from '../cost-center-service'
 
 function creaDbMock() {
   return {
@@ -40,7 +40,7 @@ describe('risolviCentroDiCosto', () => {
 
     const esito = await risolviCentroDiCosto(db as never, { costCenterId: 'cc-1' })
 
-    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-1', supposto: false })
+    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-1', origine: 'scelto' })
     expect(db.costCenter.findUnique).toHaveBeenCalledWith({ where: { id: 'cc-1' } })
     // Nessuna query aggiuntiva: il centro fornito è già valido.
     expect(db.account.findMany).not.toHaveBeenCalled()
@@ -98,7 +98,7 @@ describe('risolviCentroDiCosto', () => {
 
     const esito = await risolviCentroDiCosto(db as never, { accountId: 'acc-2' })
 
-    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-str', supposto: false })
+    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-str', origine: 'piano' })
     expect(db.costCenter.findFirst).toHaveBeenCalledWith({
       where: { isDefault: true, isActive: true },
     })
@@ -110,7 +110,7 @@ describe('risolviCentroDiCosto', () => {
 
     const esito = await risolviCentroDiCosto(db as never, {})
 
-    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-str', supposto: false })
+    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-str', origine: 'piano' })
     expect(db.account.findMany).not.toHaveBeenCalled()
   })
 
@@ -164,7 +164,7 @@ describe('risolviCentroDiCosto', () => {
       accountIdsFette: ['acc-a', 'acc-c'],
     })
 
-    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-str', supposto: false })
+    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-str', origine: 'piano' })
   })
 
   it('nessun centro di default configurato → throw (errore di configurazione)', async () => {
@@ -174,6 +174,45 @@ describe('risolviCentroDiCosto', () => {
     await expect(risolviCentroDiCosto(db as never, {})).rejects.toThrow(
       'Nessun centro di costo di default configurato'
     )
+  })
+})
+
+/**
+ * Decide se il centro già sul movimento va riproposto alla risoluzione quando
+ * il conto cambia sotto (fette ereditate, batch di ricategorizzazione). È la
+ * funzione che rende inutili le euristiche: la provenienza è persistita.
+ */
+describe('centroDaRiproporre', () => {
+  it('provenienza scelto → si ripropone: una scelta umana non si riscrive', () => {
+    expect(
+      centroDaRiproporre({ costCenterId: 'cc-cas', costCenterSource: 'scelto' }, 'cc-str')
+    ).toBe('cc-cas')
+  })
+
+  it('provenienza supposto → si tratta come assente, anche se non è il centro di sistema', () => {
+    expect(
+      centroDaRiproporre({ costCenterId: 'cc-weiss', costCenterSource: 'supposto' }, 'cc-str')
+    ).toBeNull()
+  })
+
+  it('provenienza piano → si tratta come assente: la regola riguardava il conto di prima', () => {
+    expect(
+      centroDaRiproporre({ costCenterId: 'cc-str', costCenterSource: 'piano' }, 'cc-str')
+    ).toBeNull()
+  })
+
+  it('provenienza ignota sul centro di sistema → assente (è il ripiego di quando il conto non c\'era)', () => {
+    expect(centroDaRiproporre({ costCenterId: 'cc-str', costCenterSource: null }, 'cc-str')).toBeNull()
+  })
+
+  it('provenienza ignota su un altro centro → si ripropone, per prudenza sullo storico', () => {
+    expect(
+      centroDaRiproporre({ costCenterId: 'cc-vv', costCenterSource: null }, 'cc-str')
+    ).toBe('cc-vv')
+  })
+
+  it('movimento senza centro → niente da riproporre', () => {
+    expect(centroDaRiproporre({ costCenterId: null, costCenterSource: null }, 'cc-str')).toBeNull()
   })
 })
 
@@ -194,7 +233,7 @@ describe('risolviCentroDiCosto — contesto automatico', () => {
 
     const esito = await risolviCentroDiCosto(db as never, { accountId: 'acc-1' }, 'automatico')
 
-    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-weiss', supposto: true })
+    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-weiss', origine: 'supposto' })
   })
 
   it('conto con regola DEFAULT_STR → resta STR anche in automatico (è il piano ufficiale, non una supposizione)', async () => {
@@ -206,7 +245,7 @@ describe('risolviCentroDiCosto — contesto automatico', () => {
 
     const esito = await risolviCentroDiCosto(db as never, { accountId: 'acc-2' }, 'automatico')
 
-    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-str', supposto: false })
+    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-str', origine: 'piano' })
   })
 
   it('nessun conto da interrogare (movimento appena importato) → centro operativo (WEISS)', async () => {
@@ -215,7 +254,7 @@ describe('risolviCentroDiCosto — contesto automatico', () => {
 
     const esito = await risolviCentroDiCosto(db as never, { accountId: null }, 'automatico')
 
-    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-weiss', supposto: true })
+    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-weiss', origine: 'supposto' })
     expect(db.account.findMany).not.toHaveBeenCalled()
   })
 
@@ -230,7 +269,7 @@ describe('risolviCentroDiCosto — contesto automatico', () => {
       'automatico'
     )
 
-    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-cas', supposto: false })
+    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-cas', origine: 'scelto' })
   })
 
   it('centro esplicito disattivato → invalid anche in automatico: il chiamante decide come ripiegare', async () => {
@@ -262,7 +301,7 @@ describe('risolviCentroDiCosto — contesto automatico', () => {
 
     const esito = await risolviCentroDiCosto(db as never, { accountId: 'acc-1' }, 'automatico')
 
-    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-str', supposto: true })
+    expect(esito).toEqual({ outcome: 'ok', costCenterId: 'cc-str', origine: 'supposto' })
     expect(logger.warn).toHaveBeenCalledWith(
       'Centro operativo predefinito non disponibile: si ripiega sul centro di sistema',
       { code: 'WEISS' }

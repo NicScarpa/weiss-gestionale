@@ -74,6 +74,7 @@ export async function POST(
         debitAmount: Number(payment.importo),
         creditAmount: undefined,
         costCenterId: centro.costCenterId,
+        costCenterSource: centro.origine,
         createdById: session.user.id,
         paymentId: payment.id,
         verified: true,

@@ -451,6 +451,17 @@ model JournalEntry {
   /// produzione prima del deploy del codice che lo valorizza; il NOT NULL è
   /// un follow-up successivo.
   costCenterId         String?             @map("cost_center_id")
+  /// Provenienza di costCenterId: 'scelto' (da un umano, nel form o in una
+  /// regola che ha configurato), 'piano' (dettata dalla regola del conto —
+  /// DEFAULT_STR → STR), 'supposto' (indovinata dal sistema su un percorso
+  /// automatico). Stesso schema di Schedule.dataAttesaSource. Null sui
+  /// movimenti anteriori alla colonna e su quelli da chiusura: provenienza
+  /// ignota, che si tratta come 'supposto' quando la decisione è se
+  /// promuovere il movimento a verificato. Senza questa colonna un WEISS
+  /// indovinato all'import è indistinguibile da un WEISS scelto a mano, e il
+  /// batch di ricategorizzazione lo verificherebbe senza che nessuno lo abbia
+  /// guardato.
+  costCenterSource     String?             @map("cost_center_source")
   azienda              String              @default("WEISS S.r.l.")
   bankTransaction      BankTransaction?
   electronicInvoice    ElectronicInvoice?

@@ -4,7 +4,11 @@ import { prisma } from '@/lib/prisma'
 import { getVenueId } from '@/lib/venue'
 import { createAuditLog } from '@/lib/audit'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
-import { risolviCentroDiCosto } from '@/lib/services/cost-center-service'
+import {
+  centroDaRiproporre,
+  risolviCentroDiCosto,
+  trovaCentroStrutturale,
+} from '@/lib/services/cost-center-service'
 import { logger } from '@/lib/logger'
 
 /**
@@ -62,6 +66,12 @@ export async function POST(request: NextRequest) {
 
     let updated = 0
     let daApprovare = 0
+    let saltati = 0
+
+    // Il centro di sistema serve a `centroDaRiproporre` per i movimenti che
+    // non portano una provenienza (anteriori alla colonna): si legge una volta
+    // per batch, non a ogni riga.
+    const strutturale = await trovaCentroStrutturale(prisma)
 
     for (const entry of entries) {
       for (const rule of rules) {
@@ -101,27 +111,42 @@ export async function POST(request: NextRequest) {
           // chiederlo, quindi il centro si suppone (operativo) invece di
           // saltare la riga. Il where del batch tocca solo movimenti non
           // verificati e senza fette: nulla di ciò che un umano ha approvato.
+          //
+          // La regola assegna un conto NUOVO: il centro che il movimento si
+          // porta dietro va riproposto solo se qualcuno l'ha scelto. Se
+          // l'aveva dettato la regola del conto di prima, o l'aveva supposto
+          // il sistema, non giustifica più niente e si rivaluta sul conto
+          // nuovo (stessa regola dell'ereditarietà delle fette).
           const centro = await risolviCentroDiCosto(
             prisma,
-            { accountId: rule.accountId, costCenterId: entry.costCenterId },
+            {
+              accountId: rule.accountId,
+              costCenterId: centroDaRiproporre(entry, strutturale?.id ?? null),
+            },
             'automatico'
           )
           if (centro.outcome === 'invalid') {
-            // Resta possibile solo se il centro già sul movimento è sparito o
-            // è stato disattivato: lì la regola non c'entra, si lascia stare.
+            // Resta possibile solo se il centro scelto sul movimento è sparito
+            // o è stato disattivato: lì la regola non c'entra, si lascia stare.
             logger.warn('Ricategorizzazione: movimento saltato, il suo centro non è più valido', {
               journalEntryId: entry.id,
               ruleId: rule.id,
               code: centro.code,
             })
+            saltati++
             break // La regola vincente è questa: nessun'altra viene provata
           }
 
-          // La spunta `autoVerify` della regola vale per il conto che
-          // l'utente ha configurato, non per un centro che il sistema ha
-          // indovinato dopo: se il centro è supposto, il movimento resta da
-          // approvare comunque.
-          if (centro.supposto) daApprovare++
+          // Nessuna automazione può promuovere a verificato un movimento il
+          // cui centro è stato indovinato: la spunta `autoVerify` della regola
+          // vale per il conto che l'utente ha configurato, non per un centro
+          // supposto dopo. Un centro dettato dal piano ('piano') invece la
+          // rispetta, altrimenti `autoVerify` non si applicherebbe più a
+          // nulla. La provenienza ignota è già stata trattata come non scelta
+          // da `centroDaRiproporre`, quindi qui il centro è stato appena
+          // rivalutato e l'origine è quella vera.
+          const centroSupposto = centro.origine === 'supposto'
+          if (centroSupposto) daApprovare++
 
           await prisma.journalEntry.update({
             where: { id: entry.id },
@@ -129,8 +154,9 @@ export async function POST(request: NextRequest) {
               budgetCategoryId,
               accountId: rule.accountId,
               costCenterId: centro.costCenterId,
+              costCenterSource: centro.origine,
               appliedRuleId: rule.id,
-              verified: centro.supposto ? false : rule.autoVerify,
+              verified: centroSupposto ? false : rule.autoVerify,
               categorizationSource: 'rule',
             },
           })
@@ -146,7 +172,7 @@ export async function POST(request: NextRequest) {
       entityType: 'JournalEntry',
       entityId: 'bulk-recategorize',
       venueId,
-      newValues: { processed: entries.length, updated, daApprovare, rules: rules.length },
+      newValues: { processed: entries.length, updated, daApprovare, saltati, rules: rules.length },
     })
 
     return NextResponse.json({
@@ -154,6 +180,8 @@ export async function POST(request: NextRequest) {
       updated,
       /** Righe categorizzate su un centro supposto dal sistema: restano da approvare a mano */
       daApprovare,
+      /** Righe non toccate perché il centro scelto sul movimento non è più valido */
+      saltati,
       rules: rules.length,
     })
   } catch (error) {

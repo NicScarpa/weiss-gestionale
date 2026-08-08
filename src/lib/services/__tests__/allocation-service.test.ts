@@ -428,6 +428,7 @@ describe('aggiornaContoDominante — percorso automatico', () => {
         budgetCategoryId: 'cat-birra',
         categorizationSource: 'split',
         costCenterId: 'cc-weiss',
+        costCenterSource: 'supposto',
         verified: false,
       },
     })

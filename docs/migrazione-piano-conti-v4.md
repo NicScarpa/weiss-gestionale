@@ -88,6 +88,11 @@ read -rs "DB_BERSAGLIO?URL di connessione: " && export DB_BERSAGLIO   # zsh
 # 1. DDL: tabella cost_centers, colonne di supporto, RLS (idempotente)
 psql "$DB_BERSAGLIO" -f prisma/migrations/2026-08-07_piano_v4_centri_costo.sql
 
+# 1-bis. DDL additivo: provenienza del centro di costo sul movimento
+#    (idempotente). Va applicato PRIMA del deploy del codice: da qui in avanti
+#    ogni scrittura di prima nota valorizza journal_entries.cost_center_source.
+psql "$DB_BERSAGLIO" -f prisma/migrations/2026-08-08_centro_operativo_provenienza.sql
+
 # 2. dati minimi indispensabili: i 4 centri di costo, le system_key sui conti
 #    patrimoniali, il permesso di riclassifica (idempotente, nessun --execute)
 DATABASE_URL="$DB_BERSAGLIO" npx tsx scripts/piano-v4/01-centri-e-sistema.ts

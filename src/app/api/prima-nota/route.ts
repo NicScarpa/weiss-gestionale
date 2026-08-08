@@ -455,6 +455,7 @@ export async function POST(request: NextRequest) {
         vatAmount: validatedData.vatAmount,
         accountId: validatedData.accountId,
         costCenterId: centro.costCenterId,
+        costCenterSource: centro.origine,
         createdById: session.user.id,
       },
       include: {

@@ -136,6 +136,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         vatAmount: invoice.vatAmount,
         accountId: invoice.accountId,
         costCenterId: centro.costCenterId,
+        costCenterSource: centro.origine,
         budgetCategoryId: invoice.accountId
           ? await derivaBudgetCategoryDaConto(invoice.accountId)
           : null,
