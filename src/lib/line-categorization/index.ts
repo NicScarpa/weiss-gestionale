@@ -12,6 +12,17 @@ const MODELLO_AI = 'claude-haiku-4-5'
 const MAX_TOKENS_AI = 4096
 
 /**
+ * Tempo massimo per la chiamata al modello.
+ *
+ * Un minuto è largo per una fattura lunga e stretto rispetto ai dieci minuti
+ * per tentativo che la libreria concede senza indicazioni — con tre tentativi,
+ * mezz'ora. Un tentativo di riserva basta: se il servizio non risponde entro un
+ * minuto, la categorizzazione può aspettare il prossimo giro senza che nessuno
+ * resti fermo a guardare.
+ */
+const TIMEOUT_AI_MS = 60_000
+
+/**
  * Riconduce entro i limiti la sicurezza dichiarata dal modello, o la dichiara
  * ignota.
  *
@@ -170,7 +181,14 @@ export async function categorizzaRigheFattura({
 
     let response
     try {
-      const client = new Anthropic()
+      // Senza indicazioni la libreria aspetta fino a DIECI MINUTI per
+      // tentativo e ne fa tre: mezz'ora nel caso peggiore. Finché questa
+      // chiamata stava dentro l'attesa dell'utente, quella era l'attesa del
+      // browser su una fattura già salvata.
+      const client = new Anthropic({
+        timeout: TIMEOUT_AI_MS,
+        maxRetries: 1,
+      })
       response = await client.messages.parse({
         model: MODELLO_AI,
         max_tokens: MAX_TOKENS_AI,
