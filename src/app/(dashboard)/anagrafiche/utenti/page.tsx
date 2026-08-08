@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -18,7 +18,6 @@ export default function UtentiPage() {
   const currentUserRole = (session?.user?.role as UserRole) || 'staff'
 
   const [users, setUsers] = useState<UserData[]>([])
-  const [filteredUsers, setFilteredUsers] = useState<UserData[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [filters, setFilters] = useState<UserFiltersValue>({
     search: '',
@@ -57,8 +56,8 @@ export default function UtentiPage() {
   }, [session, currentUserRole, fetchUsers])
 
   // Applica filtri
-  useEffect(() => {
-    let result = [...users]
+  const filteredUsers = useMemo(() => {
+    let result = users
 
     // Filtro ricerca
     if (filters.search) {
@@ -83,7 +82,7 @@ export default function UtentiPage() {
       )
     }
 
-    setFilteredUsers(result)
+    return result
   }, [users, filters])
 
   const handleResetPassword = async (userId: string) => {

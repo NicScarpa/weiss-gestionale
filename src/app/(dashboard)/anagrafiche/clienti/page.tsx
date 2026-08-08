@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -19,7 +19,6 @@ export default function ClientiPage() {
   const currentUserRole = (session?.user?.role as UserRole) || 'staff'
 
   const [customers, setCustomers] = useState<CustomerData[]>([])
-  const [filteredCustomers, setFilteredCustomers] = useState<CustomerData[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [filters, setFilters] = useState<CustomerFiltersValue>({
     search: '',
@@ -64,8 +63,8 @@ export default function ClientiPage() {
   }, [session, currentUserRole, fetchCustomers])
 
   // Applica filtri
-  useEffect(() => {
-    let result = [...customers]
+  const filteredCustomers = useMemo(() => {
+    let result = customers
 
     // Filtro ricerca
     if (filters.search) {
@@ -81,9 +80,7 @@ export default function ClientiPage() {
 
     // Filtro attivo/inattivo
     // Di default mostra solo attivi, se showInactive è true mostra solo inattivi
-    result = result.filter(c => filters.showInactive ? !c.attivo : c.attivo)
-
-    setFilteredCustomers(result)
+    return result.filter(c => filters.showInactive ? !c.attivo : c.attivo)
   }, [customers, filters])
 
   const handleToggleActive = async (customerId: string, attivo: boolean) => {
