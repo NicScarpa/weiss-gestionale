@@ -19,7 +19,35 @@ interface AttendanceRecord {
   punchType: 'IN' | 'OUT' | 'BREAK_START' | 'BREAK_END'
   punchedAt: string
   isManual: boolean
+  /** 'SYSTEM' quando l'orario l'ha scritto la chiusura automatica. */
+  manualEntryBy?: string | null
+  manualEntryReason?: string | null
   notes?: string
+}
+
+/** Autore delle timbrature scritte dalla chiusura automatica. */
+const AUTORE_SISTEMA = 'SYSTEM'
+
+type Origine = 'dipendente' | 'sistema' | 'manuale'
+
+/**
+ * Chi ha prodotto l'orario.
+ *
+ * Va mostrato perché non sono tutti la stessa cosa: quello timbrato dalla
+ * persona è un fatto, quello scritto dalla chiusura automatica è una
+ * supposizione del programma, e finiscono entrambi in busta paga. Prima
+ * `isManual` veniva scaricato e mai usato: il titolare non aveva modo di
+ * sapere quale orario fosse reale.
+ */
+function origineDi(record: AttendanceRecord): Origine {
+  if (!record.isManual) return 'dipendente'
+  return record.manualEntryBy === AUTORE_SISTEMA ? 'sistema' : 'manuale'
+}
+
+const ETICHETTA_ORIGINE: Record<Origine, string | null> = {
+  dipendente: null,
+  sistema: 'sistema',
+  manuale: 'a mano',
 }
 
 export function AttendanceTab({ userId }: AttendanceTabProps) {
@@ -128,18 +156,30 @@ export function AttendanceTab({ userId }: AttendanceTabProps) {
                     <div className="flex-1 ml-4 flex gap-1">
                       {dayRecords
                         .filter(r => r.punchType === 'IN' || r.punchType === 'OUT')
-                        .map(r => (
-                          <span
-                            key={r.id}
-                            className={`text-xs px-1.5 py-0.5 rounded ${
-                              r.punchType === 'IN'
-                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                            }`}
-                          >
-                            {r.punchType === 'IN' ? '▶' : '■'} {format(new Date(r.punchedAt), 'HH:mm')}
-                          </span>
-                        ))}
+                        .map(r => {
+                          const origine = origineDi(r)
+                          const etichetta = ETICHETTA_ORIGINE[origine]
+
+                          return (
+                            <span
+                              key={r.id}
+                              data-origine={origine}
+                              title={r.manualEntryReason ?? undefined}
+                              className={`text-xs px-1.5 py-0.5 rounded inline-flex items-center gap-1 ${
+                                r.punchType === 'IN'
+                                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                  : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                              } ${etichetta ? 'ring-1 ring-inset ring-amber-500/60' : ''}`}
+                            >
+                              {r.punchType === 'IN' ? '▶' : '■'} {format(new Date(r.punchedAt), 'HH:mm')}
+                              {etichetta && (
+                                <span className="text-[10px] uppercase tracking-wide opacity-80">
+                                  {etichetta}
+                                </span>
+                              )}
+                            </span>
+                          )
+                        })}
                     </div>
                   </div>
                 )

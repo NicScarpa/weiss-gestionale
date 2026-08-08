@@ -10,10 +10,12 @@ import { AttendanceTab } from '../AttendanceTab'
  * La scheda presenze del dipendente: la sola schermata in cui il titolare
  * vede, giorno per giorno, gli orari di una persona.
  *
- * Il difetto che questi test tengono chiuso: la scheda leggeva
+ * Due difetti che questi test tengono chiusi. Il primo: la scheda leggeva
  * `data.records`, mentre `GET /api/attendance/records` risponde `{ data,
- * pagination }`. Ogni giorno mostrava "-" e il totale del mese era 0,0 h,
- * qualunque cosa fosse stata timbrata — dal giorno in cui la scheda è nata.
+ * pagination }` — ogni giorno mostrava "-" e il totale del mese era 0,0 h,
+ * qualunque cosa fosse stata timbrata. Il secondo: `isManual` veniva
+ * scaricato e mai mostrato, quindi l'orario scritto dalla chiusura automatica
+ * era indistinguibile da quello timbrato dalla persona.
  *
  * Si monta con `createRoot` + `act`: il progetto ha `@testing-library/react`
  * ma non il suo peer `@testing-library/dom`, e importarlo fa fallire la suite.
@@ -121,10 +123,66 @@ describe('AttendanceTab', () => {
     expect(testoDellaPagina()).toContain('4.0h')
   })
 
+  it("dice quale orario l'ha scritto il sistema", async () => {
+    await montare([entrataVera, uscitaDiSistema])
+
+    const testo = testoDellaPagina()
+
+    // Senza un segno visibile, un orario supposto dal programma vale in
+    // schermata quanto uno timbrato dalla persona: sono ore in busta paga.
+    expect(testo).toMatch(/sistema/i)
+  })
+
+  it('spiega perché il sistema ha scritto quell orario', async () => {
+    await montare([entrataVera, uscitaDiSistema])
+
+    const marcati = Array.from(
+      container!.querySelectorAll<HTMLElement>('[data-origine="sistema"]')
+    )
+
+    expect(marcati).toHaveLength(1)
+    expect(marcati[0].getAttribute('title')).toContain('fine del turno pianificato')
+  })
+
+  it('non marca come inserite a mano le timbrature vere', async () => {
+    await montare([entrataVera, uscitaDiSistema])
+
+    const vere = Array.from(
+      container!.querySelectorAll<HTMLElement>('[data-origine="dipendente"]')
+    )
+
+    expect(vere).toHaveLength(1)
+    expect(vere[0].textContent).toContain('09:00')
+  })
+
+  it('distingue chi ha inserito a mano un orario dal sistema che lo suppone', async () => {
+    await montare([
+      entrataVera,
+      {
+        id: 'rec-out-manuale',
+        punchType: 'OUT' as const,
+        punchedAt: oggiAlle(13),
+        isManual: true,
+        manualEntryBy: 'utente-responsabile',
+        manualEntryReason: 'Dimenticanza confermata a voce',
+      },
+    ])
+
+    const testo = testoDellaPagina()
+
+    expect(
+      container!.querySelectorAll('[data-origine="manuale"]')
+    ).toHaveLength(1)
+    expect(testo).not.toMatch(/sistema/i)
+  })
+
   it('con nessuna timbratura resta vuota senza inventare ore', async () => {
     await montare([])
 
-    expect(testoDellaPagina()).toContain('0.0h')
+    const testo = testoDellaPagina()
+
+    expect(testo).toContain('0.0h')
+    expect(testo).not.toMatch(/sistema/i)
   })
 
   it('chiede alla API il mese mostrato', async () => {
