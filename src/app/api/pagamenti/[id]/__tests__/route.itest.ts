@@ -196,7 +196,11 @@ describe('DELETE /api/pagamenti/[id]', () => {
     const risposta = await elimina(pagamento.id)
 
     expect(risposta.status).toBe(200)
-    const cancellato = await prisma.payment.findUniqueOrThrow({ where: { id: pagamento.id } })
+    // Per rileggere un record cancellato bisogna chiederlo: nominare `deletedAt`
+    // nella where disattiva il filtro automatico del client.
+    const cancellato = await prisma.payment.findUniqueOrThrow({
+      where: { id: pagamento.id, deletedAt: { not: null } },
+    })
     expect(cancellato.deletedAt).not.toBeNull()
   })
 

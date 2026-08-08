@@ -20,7 +20,11 @@ export async function POST(
 
     const { id } = await params
 
-    await ignoreTransaction(id, session.user.id)
+    const ignorata = await ignoreTransaction(id, session.user.id)
+
+    if (!ignorata) {
+      return NextResponse.json({ error: 'Transazione non trovata' }, { status: 404 })
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {
