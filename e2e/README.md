@@ -42,13 +42,13 @@ proprio: `ServiceWorkerRegistration` esce subito quando
 contro `next dev` verificherebbe l'assenza del service worker, non il
 comportamento offline.
 
-**Attenzione**: la build di produzione non parla con un Postgres locale
-qualunque. `src/lib/prisma.ts:47` impone TLS quando `NODE_ENV=production` e non
-prevede una via d'uscita, quindi `npm start` contro un Postgres senza SSL muore
-con «The server does not support SSL connections». Per eseguire la prova serve
-un Postgres locale con `ssl = on` e `DATABASE_CA_CERT` valorizzato con il suo
-certificato. È un ostacolo reale alla verifica locale del comportamento di
-produzione, ed è segnalato come tale.
+Il TLS non è più un ostacolo: `src/lib/db-tls.ts` esenta dalla cifratura le sole
+connessioni verso un host di loopback, quindi `npm start` con
+`NODE_ENV=production` parla con un Postgres locale senza SSL. L'eccezione
+dipende da dove punta `DATABASE_URL` e non da un interruttore, così non c'è modo
+di allentarla per sbaglio su Railway. Prima serviva un Postgres locale con
+`ssl = on` (o un proxy TLS montato a mano), e questa prova non la eseguiva
+nessuno.
 
 ## Come è fatta
 
@@ -71,7 +71,7 @@ non parlerebbe del prodotto.
 
 ## `test.fail()`: i difetti trovati e non corretti
 
-Sei test sono marcati `test.fail()`. Non sono test disattivati: **vengono
+Cinque test sono marcati `test.fail()`. Non sono test disattivati: **vengono
 eseguiti e devono fallire**. Sono riproduzioni eseguibili di difetti del
 prodotto che questa suite ha trovato e che non le competeva correggere. Quando
 il difetto verrà risolto il test diventerà rosso — ed è quello il segnale per
@@ -82,6 +82,10 @@ togliere l'annotazione.
 | `chiusura-cassa.spec.ts` | `PUT /api/chiusure/[id]` risponde sempre 500: cancella le postazioni contando su un cascade verso `cash_counts` che non c'è (`onDelete: Restrict`). Nessuna chiusura è modificabile né inviabile da `/chiusura-cassa/[id]/modifica`. |
 | `prima-nota.spec.ts` | Il campo «IVA (opzionale)» lasciato vuoto produce `NaN` e blocca il salvataggio: un campo dichiarato opzionale è di fatto obbligatorio. |
 | `mobile.spec.ts` | A 390 px sfondano orizzontalmente la prima nota (32 px) e lo scadenzario (405 px). |
-| `offline.spec.ts` | Una chiusura compilata offline non finisce in coda: l'infrastruttura esiste ma non è collegata al form. Una rotta mai visitata dà `net::ERR_FAILED` invece della pagina «Sei offline», che non è precacheata. |
 
 Il dettaglio, con file e riga, sta nel commento sopra ciascun test.
+
+I due difetti di `offline.spec.ts` — la coda mai riempita e il fallback a una
+pagina non precacheata — sono stati corretti in W4. L'annotazione è stata tolta
+dopo aver visto i test passare contro una build di produzione, non prima:
+toglierla e basta li avrebbe trasformati in asserzioni finte.

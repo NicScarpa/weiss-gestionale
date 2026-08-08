@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { apriConSessioneAdmin } from './helpers/app'
+import { chiudiDb, liberaGiornoChiusura, statoChiusuraDelGiorno } from './helpers/db'
 
 /**
  * Che cosa succede davvero senza rete.
@@ -10,6 +11,12 @@ import { apriConSessioneAdmin } from './helpers/app'
  * non dice che l'offline funzioni, e nessuno l'aveva mai provato: questi test
  * lo provano, e dicono quello che succede, non quello che dovrebbe succedere.
  *
+ * Due di loro nascono come `test.fail()`, cioè come riproduzioni eseguibili di
+ * altrettanti difetti: la coda che non veniva mai riempita e il fallback a una
+ * pagina che non era in cache. Sono stati corretti (W4, agente E2) e
+ * l'annotazione è stata tolta dopo averli visti passare davvero — toglierla
+ * senza rieseguirli li avrebbe trasformati in asserzioni finte.
+ *
  * Va eseguito contro una build di produzione — vedi playwright.offline.config.ts
  * ed e2e/README.md.
  */
@@ -17,6 +24,10 @@ import { apriConSessioneAdmin } from './helpers/app'
 const GIORNO_PROVA = '2019-06-01'
 
 test.describe('Funzionamento offline', () => {
+  test.afterAll(async () => {
+    await chiudiDb()
+  })
+
   test('il service worker viene servito, si registra e prende il controllo', async ({ page }) => {
     const risposta = await page.request.get('/sw.js')
     expect(risposta.status()).toBe(200)
@@ -45,7 +56,7 @@ test.describe('Funzionamento offline', () => {
     expect(stato.controlla).toBe(true)
   })
 
-  test('offline: una pagina già visitata si ricarica e resta compilabile', async ({
+  test('offline: la pagina appena visitata si ricarica e resta compilabile', async ({
     page,
     context,
   }) => {
@@ -53,14 +64,19 @@ test.describe('Funzionamento offline', () => {
     await page.waitForLoadState('networkidle')
     await attendiServiceWorkerAlComando(page)
 
-    // Serve un secondo caricamento *online*, e non è una scorciatoia del test:
-    // il documento entra in cache solo se a chiederlo è il service worker, e
-    // alla primissima visita il service worker si installa mentre la pagina è
-    // già arrivata dalla rete. Tradotto: su un dispositivo che apre
-    // l'applicazione per la prima volta, offline non c'è niente. Funziona dalla
-    // seconda visita in poi.
-    await page.reload()
-    await page.waitForLoadState('networkidle')
+    // Nessun secondo caricamento online, ed è il punto del test. Il documento
+    // entra in cache solo se a chiederlo è il service worker, e alla primissima
+    // visita il worker si installa quando la pagina è già arrivata dalla rete:
+    // prima, su un dispositivo che apriva l'applicazione per la prima volta,
+    // offline non c'era niente. Ora appena il worker prende il controllo il
+    // client richiede la pagina corrente una volta (src/lib/offline/sync.ts),
+    // e quella richiesta passa da lui.
+    // Il riscaldamento della cache è asincrono: parte quando il service worker
+    // prende il controllo e dura quanto una richiesta di documento. Andare
+    // offline prima che finisca non misurerebbe il prodotto ma chi dei due è
+    // arrivato primo — e la pagina che si vedrebbe sarebbe il fallback
+    // «Sei offline», con tanto di stato 200.
+    await attendiPaginaInCache(page)
 
     await context.setOffline(true)
 
@@ -73,79 +89,97 @@ test.describe('Funzionamento offline', () => {
     await expect(page.locator('#cash-0')).toHaveValue('50')
   })
 
-  test("offline: il salvataggio non riesce e l'utente viene avvisato", async ({ page, context }) => {
+  /**
+   * Il difetto peggiore che questa suite aveva trovato, e che qui è chiuso:
+   * salvando senza rete comparivano DUE avvisi opposti nello stesso momento —
+   * «Errore salvataggio bozza» e «le modifiche verranno sincronizzate» — e la
+   * coda restava vuota. All'operatore veniva detto che il lavoro era al sicuro
+   * mentre non lo era.
+   */
+  test('offline: il salvataggio mette in coda, e lo dice una volta sola', async ({
+    page,
+    context,
+  }) => {
     await compilaChiusura(page)
 
     await context.setOffline(true)
     await page.getByRole('button', { name: 'Salva Bozza' }).click()
 
-    // Il caso peggiore sarebbe il silenzio: l'operatore che crede di aver
-    // salvato e chiude la pagina. Almeno questo non succede.
-    const avviso = page.locator('[data-sonner-toast]').filter({ hasText: 'Errore salvataggio bozza' })
-    await expect(avviso).toBeVisible({ timeout: 15_000 })
-    await expect(page).toHaveURL(/\/chiusura-cassa\/nuova$/)
-
-    // Insieme all'errore compare l'avviso di `OfflineIndicator`, che promette
-    // «Le modifiche verranno salvate localmente e sincronizzate quando tornerai
-    // online» (src/components/OfflineIndicator.tsx:23). Quella promessa non è
-    // mantenuta — vedi il test qui sotto — e l'utente se la vede accanto a un
-    // errore di salvataggio: due messaggi che dicono il contrario.
+    const avvisi = page.locator('[data-sonner-toast]')
     await expect(
-      page.locator('[data-sonner-toast]').filter({ hasText: 'Sei offline' })
-    ).toBeVisible()
+      avvisi.filter({ hasText: 'salvata su questo dispositivo' })
+    ).toBeVisible({ timeout: 15_000 })
+
+    // Un solo messaggio: gli avvisi di rete e coda passano tutti dallo stesso
+    // id sonner (AVVISO_OFFLINE), quindi si sostituiscono invece di impilarsi.
+    await expect(avvisi).toHaveCount(1)
+    await expect(avvisi.filter({ hasText: 'Errore' })).toHaveCount(0)
+
+    // Si resta sulla pagina: la chiusura non ha ancora un id sul server.
+    await expect(page).toHaveURL(/\/chiusura-cassa\/nuova$/)
   })
 
-  /**
-   * DIFETTO — la promessa non è mantenuta. Non correggere qui: `src/**` è di
-   * altri proprietari.
-   *
-   * `src/app/offline/page.tsx:32` dice all'utente che offline può «Compilare
-   * nuove chiusure (verranno sincronizzate)». L'infrastruttura per farlo esiste
-   * — `savePendingClosure` in src/lib/offline/db.ts:119, lo store
-   * `pendingClosures`, la sincronizzazione in src/lib/offline/sync.ts e il tag
-   * `sync-closures` in src/app/sw.ts:50 — ma NON è collegata a niente: l'unico
-   * che espone `savePendingClosure` è `useOffline` (src/hooks/useOffline.ts:128),
-   * e il solo consumatore di `useOffline` è `OfflineIndicator`, che quel metodo
-   * non lo usa. Il form chiama `fetch('/api/chiusure')` e basta.
-   *
-   * Misurato: dopo un salvataggio offline lo store `pendingClosures` resta
-   * vuoto. I dati restano nello stato di React e spariscono alla prima
-   * navigazione.
-   */
-  test('offline: la chiusura compilata finisce in coda (difetto: non ci finisce)', async ({
+  test('offline: la chiusura compilata finisce in coda, con dentro i soldi contati', async ({
     page,
     context,
   }) => {
-    test.fail()
-
     await compilaChiusura(page)
 
     await context.setOffline(true)
     await page.getByRole('button', { name: 'Salva Bozza' }).click()
     await expect(page.locator('[data-sonner-toast]')).toBeVisible({ timeout: 15_000 })
 
-    expect(await chiusureInCoda(page)).toBeGreaterThan(0)
+    const inCoda = await chiusureInCoda(page)
+    expect(inCoda).toHaveLength(1)
+
+    // Che ci sia una riga non basta: dentro ci deve essere il conteggio, o al
+    // ritorno della rete si sincronizzerebbe il vuoto.
+    const stazioni = (inCoda[0] as { data: { stations: { cashAmount?: number }[] } }).data.stations
+    expect(stazioni[0].cashAmount).toBe(50)
   })
 
   /**
-   * DIFETTO — non correggere qui.
-   *
-   * `src/app/sw.ts:36` configura il fallback `/offline` per le richieste di
-   * documento, ma `/offline` non è precacheato: `serwist.config.mjs` include
-   * solo `static/**\/*.{js,css,woff2}` sotto `.next`, cioè nessun documento
-   * (145 URL, tutti `/_next/static/...`). Il fallback punta a una pagina che
-   * non c'è in cache, quindi non scatta.
-   *
-   * Misurato: una navigazione offline verso una rotta mai visitata fallisce
-   * con `net::ERR_FAILED` — l'utente vede l'errore di rete del browser, non la
-   * pagina «Sei offline» che l'applicazione ha scritto apposta.
+   * L'altra metà della promessa. Una coda che si riempie e non si svuota da
+   * sola sarebbe solo un modo più lento di perdere il lavoro: qui la chiusura
+   * si cerca dove conta, cioè in Postgres, dopo aver ridato la rete.
    */
-  test('offline: una rotta mai visitata mostra la pagina «Sei offline» (difetto: errore di rete)', async ({
+  test('al ritorno della rete la coda parte da sola e la chiusura arriva sul server', async ({
     page,
     context,
   }) => {
-    test.fail()
+    await liberaGiornoChiusura(GIORNO_PROVA)
 
+    await compilaChiusura(page)
+    await context.setOffline(true)
+    await page.getByRole('button', { name: 'Salva Bozza' }).click()
+    await expect(
+      page.locator('[data-sonner-toast]').filter({ hasText: 'salvata su questo dispositivo' })
+    ).toBeVisible({ timeout: 15_000 })
+
+    await context.setOffline(false)
+
+    await expect(
+      page.locator('[data-sonner-toast]').filter({ hasText: 'Sincronizzazione completata' })
+    ).toBeVisible({ timeout: 30_000 })
+
+    await expect.poll(async () => (await chiusureInCoda(page)).length, { timeout: 15_000 }).toBe(0)
+
+    const salvata = await statoChiusuraDelGiorno(GIORNO_PROVA)
+    expect(salvata?.status).toBe('DRAFT')
+  })
+
+  /**
+   * `/offline` è precacheata a parte (`additionalPrecacheEntries` in
+   * serwist.config.mjs, revisione = BUILD_ID): prima il fallback dichiarato in
+   * `src/app/sw.ts` puntava a una pagina che in cache non c'era mai, perché il
+   * manifest conteneva solo `static/**` — nessun documento. Una rotta mai
+   * visitata dava `net::ERR_FAILED`, cioè l'errore di rete del browser al posto
+   * della pagina che l'applicazione aveva scritto apposta.
+   */
+  test('offline: una rotta mai visitata mostra la pagina «Sei offline»', async ({
+    page,
+    context,
+  }) => {
     await apriConSessioneAdmin(page, '/chiusura-cassa/nuova')
     await page.waitForLoadState('networkidle')
     await attendiServiceWorkerAlComando(page)
@@ -183,15 +217,24 @@ async function compilaChiusura(page: Page) {
   await page.locator('#pos-0').fill('50')
 }
 
-/** Quante chiusure aspettano di essere sincronizzate, secondo IndexedDB. */
-async function chiusureInCoda(page: Page): Promise<number> {
+/** Aspetta che il documento della pagina corrente sia davvero in una cache. */
+async function attendiPaginaInCache(page: Page) {
+  await page.waitForFunction(
+    async () => !!(await caches.match(window.location.href)),
+    undefined,
+    { timeout: 30_000 }
+  )
+}
+
+/** Le chiusure che aspettano di essere sincronizzate, lette da IndexedDB. */
+async function chiusureInCoda(page: Page): Promise<unknown[]> {
   return page.evaluate(async () => {
     const apertura = indexedDB.open('weiss-gestionale')
     const db: IDBDatabase = await new Promise((res, rej) => {
       apertura.onsuccess = () => res(apertura.result)
       apertura.onerror = () => rej(apertura.error)
     })
-    if (!db.objectStoreNames.contains('pendingClosures')) return 0
+    if (!db.objectStoreNames.contains('pendingClosures')) return []
     const richiesta = db.transaction('pendingClosures', 'readonly')
       .objectStore('pendingClosures')
       .getAll()
@@ -199,6 +242,6 @@ async function chiusureInCoda(page: Page): Promise<number> {
       richiesta.onsuccess = () => res(richiesta.result)
       richiesta.onerror = () => res([])
     })
-    return righe.length
+    return righe
   })
 }
