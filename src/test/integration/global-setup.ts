@@ -141,7 +141,7 @@ async function assertSchemaApplied(): Promise<void> {
  * Il file appartiene a F3: qui viene solo eseguito, mai modificato.
  */
 const CONSTRAINTS_SQL = fileURLToPath(
-  new URL('../../../prisma/migrations/post-push/constraints.sql', import.meta.url)
+  new URL('../../../prisma/sql/constraints.sql', import.meta.url)
 )
 
 /**
@@ -207,7 +207,7 @@ async function assertConstraintsApplied(expected: string[]): Promise<void> {
         `${missing.join(', ')}. Nel database risultano ${partialUnique} indici unici ` +
         'parziali. Senza questi vincoli i test sui duplicati contabili darebbero un ' +
         "verdetto sull'ambiente invece che sul codice: controlla applyConstraints() e " +
-        'prisma/migrations/post-push/constraints.sql.'
+        'prisma/sql/constraints.sql.'
     )
   }
 }
