@@ -110,6 +110,12 @@ describe('buildClosurePayload', () => {
             posAmount: 200,
             floatAmount: 114,
             cashCount: {
+              // Il test si chiama «with all fields», ma i due tagli più alti
+              // mancavano: `CashCountValues` li richiede entrambi e il
+              // compilatore non guardava questo file. Zero è il valore giusto
+              // per una cassa che non ne contiene, e nessuna asserzione cambia.
+              bills500: 0,
+              bills200: 0,
               bills100: 2,
               bills50: 1,
               bills20: 2,

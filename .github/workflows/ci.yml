@@ -81,6 +81,17 @@ jobs:
       - name: Type Check della suite e2e
         run: npm run typecheck:e2e
 
+      # Stessa storia per i test unitari e di integrazione, che il tsconfig
+      # principale esclude con `**/*.test.ts` e `**/__tests__/**`. In un
+      # progetto con oltre mille test, nessuno era mai passato sotto `tsc`:
+      # dentro c'erano dati finti più poveri di quelli veri e un valore di enum
+      # inesistente che a runtime valeva `undefined`. I 39 errori che sono
+      # emersi accendendolo sono stati corretti prima di mettere questo passo,
+      # perché un controllo bloccante che nasce rosso lo si impara solo ad
+      # aggirare.
+      - name: Type Check dei test
+        run: npm run typecheck:test
+
       # tsconfig.strict.json non passa ancora: il cricchetto impedisce che il
       # numero di errori salga. La baseline vive in scripts/strict-ratchet.mjs.
       - name: Strict mode ratchet

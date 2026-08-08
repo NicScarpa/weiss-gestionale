@@ -1,8 +1,22 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import * as Sentry from '@sentry/nextjs'
-import type { Envelope, Event } from '@sentry/nextjs'
+import type { Event } from '@sentry/nextjs'
 
 import { opzioniSentryClient } from './instrumentation-client'
+
+/**
+ * Il tipo dell'envelope, ricavato dal transport invece che importato.
+ *
+ * `Envelope` sta in `@sentry/core` e `@sentry/nextjs` non lo riespone: questo
+ * import esisteva ma non ha mai risolto — il file non passava sotto il
+ * compilatore e l'errore non lo vedeva nessuno. Prenderlo da `@sentry/core`
+ * significherebbe importare un pacchetto che il progetto non dichiara fra le
+ * dipendenze, cosa che knip blocca in CI, e a ragione. Derivarlo dalla firma
+ * pubblica di `Sentry.init` dà lo stesso tipo, esatto, senza aggiungere nulla.
+ */
+type OpzioniInit = NonNullable<Parameters<typeof Sentry.init>[0]>
+type FabbricaTrasporto = NonNullable<OpzioniInit['transport']>
+type Envelope = Parameters<ReturnType<FabbricaTrasporto>['send']>[0]
 
 /**
  * Verifica end-to-end che un errore forzato attraversi davvero la pipeline

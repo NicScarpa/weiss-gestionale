@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import { toast } from 'sonner'
 import { CreateScheduleDialog } from '../create-schedule-sheet'
+import type { CreateScheduleInput } from '@/types/schedule'
 import { ScheduleType, ScheduleDocumentType, SchedulePriority } from '@/types/schedule'
 import {
   installaStubDom,
@@ -89,7 +90,7 @@ describe('CreateScheduleDialog', () => {
   })
 
   it('le date del payload sono giorni civili, non istanti UTC', async () => {
-    const onSubmit = vi.fn(() => Promise.resolve())
+    const onSubmit = vi.fn<(data: CreateScheduleInput) => Promise<void>>(() => Promise.resolve())
     await montare(<CreateScheduleDialog open onOpenChange={vi.fn()} onSubmit={onSubmit} />)
     await compilaScadenzaMinima()
 
@@ -105,7 +106,7 @@ describe('CreateScheduleDialog', () => {
     const tzOriginale = process.env.TZ
     process.env.TZ = 'Europe/Rome'
     try {
-      const onSubmit = vi.fn(() => Promise.resolve())
+      const onSubmit = vi.fn<(data: CreateScheduleInput) => Promise<void>>(() => Promise.resolve())
       await montare(<CreateScheduleDialog open onOpenChange={vi.fn()} onSubmit={onSubmit} />)
       await compilaScadenzaMinima()
 
@@ -142,7 +143,7 @@ describe('CreateScheduleDialog', () => {
   })
 
   it('in modifica non invia i campi che il server deriva dai pagamenti', async () => {
-    const onSubmit = vi.fn(() => Promise.resolve())
+    const onSubmit = vi.fn<(data: CreateScheduleInput) => Promise<void>>(() => Promise.resolve())
     await montare(
       <CreateScheduleDialog
         mode="edit"
@@ -155,7 +156,12 @@ describe('CreateScheduleDialog', () => {
           importoTotale: 1200,
           dataScadenza: new Date('2026-09-30T00:00:00.000Z'),
           dataEmissione: new Date('2026-09-01T00:00:00.000Z'),
-          tipoDocumento: ScheduleDocumentType.FATTURA,
+          // Era `ScheduleDocumentType.FATTURA`, che in questo enum non esiste:
+          // i valori sono FATTURA_VENDITA e FATTURA_ACQUISTO. A runtime quel
+          // campo valeva `undefined`, e il test passava lo stesso perché
+          // controlla quali chiavi il payload NON contiene, non questa.
+          // Trattandosi di una scadenza PASSIVA, la fattura è d'acquisto.
+          tipoDocumento: ScheduleDocumentType.FATTURA_ACQUISTO,
           priorita: SchedulePriority.NORMALE,
         }}
       />
