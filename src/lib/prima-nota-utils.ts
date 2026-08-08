@@ -1,46 +1,22 @@
 import { money, sumMoney, toApi } from '@/lib/money'
-import type { RegisterType, EntryType, JournalEntry } from '@/types/prima-nota'
+import { REGISTRI_IMPLICITI } from '@/types/prima-nota'
+import type {
+  RegisterType,
+  EntryType,
+  JournalEntry,
+  RegistriDelTrasferimento,
+  TipoTrasferimento,
+} from '@/types/prima-nota'
 
 /**
- * I movimenti che spostano denaro fra i registri invece di farlo entrare o
- * uscire dall'azienda.
- *
- * Un versamento porta contante dalla cassa alla banca, un prelievo fa il
- * contrario, un giroconto sposta fra due registri qualsiasi: in tutti e tre i
- * casi la liquidità complessiva non cambia. Sono quindi **due** scritture, e
- * chi ne scrive una sola muove il saldo totale dell'intero importo — in un
- * verso o nell'altro a seconda del registro capitato.
+ * Un trasferimento male indicato: manca la destinazione, o coincide con
+ * l'origine. È un dato che chi registra può correggere, non un guasto.
  */
-export const TIPI_TRASFERIMENTO = ['VERSAMENTO', 'PRELIEVO', 'GIROCONTO'] as const
-
-export type TipoTrasferimento = (typeof TIPI_TRASFERIMENTO)[number]
-
-export function isTrasferimento(entryType: EntryType): entryType is TipoTrasferimento {
-  return (TIPI_TRASFERIMENTO as readonly EntryType[]).includes(entryType)
-}
-
-/** Un trasferimento male indicato: manca la destinazione, o coincide con l'origine. */
 export class TrasferimentoNonValidoError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'TrasferimentoNonValidoError'
   }
-}
-
-export interface RegistriDelTrasferimento {
-  /** Registro da cui il denaro esce: ci va l'AVERE. */
-  da: RegisterType
-  /** Registro in cui il denaro entra: ci va il DARE. */
-  a: RegisterType
-}
-
-/**
- * Versamento e prelievo hanno la direzione scritta nel nome: sono l'unica cosa
- * che possono essere, e non c'è niente da chiedere a chi li registra.
- */
-const DIREZIONE_IMPLICITA: Record<'VERSAMENTO' | 'PRELIEVO', RegistriDelTrasferimento> = {
-  VERSAMENTO: { da: 'CASH', a: 'BANK' },
-  PRELIEVO: { da: 'BANK', a: 'CASH' },
 }
 
 /**
@@ -59,7 +35,7 @@ export function registriDelTrasferimento(
   counterRegisterType?: RegisterType | null
 ): RegistriDelTrasferimento {
   if (entryType !== 'GIROCONTO') {
-    return DIREZIONE_IMPLICITA[entryType]
+    return REGISTRI_IMPLICITI[entryType]
   }
 
   if (!counterRegisterType) {

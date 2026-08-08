@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import type { JournalEntry } from '@/types/prima-nota'
+import { isTrasferimento } from '@/types/prima-nota'
 import {
   getMovementDirection,
-  isTrasferimento,
   registriDelTrasferimento,
   TrasferimentoNonValidoError,
   toDebitCredit,

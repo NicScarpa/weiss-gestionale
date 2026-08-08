@@ -10,10 +10,10 @@ import {
 import {
   toDebitCredit,
   calculateTotals,
-  isTrasferimento,
   registriDelTrasferimento,
   TrasferimentoNonValidoError,
 } from '@/lib/prima-nota-utils'
+import { isTrasferimento } from '@/types/prima-nota'
 import type { JournalEntry } from '@/types/prima-nota'
 import { getVenueId } from '@/lib/venue'
 
