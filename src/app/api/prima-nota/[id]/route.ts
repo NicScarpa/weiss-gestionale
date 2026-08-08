@@ -113,7 +113,12 @@ export async function PUT(
     // Verifica che il movimento esista e appartenga al venue
     const existingEntry = await prisma.journalEntry.findFirst({
       where: { id, venueId },
-      select: { id: true, closureId: true },
+      select: {
+        id: true,
+        closureId: true,
+        accountId: true,
+        _count: { select: { allocations: true } },
+      },
     })
 
     if (!existingEntry) {
@@ -128,6 +133,30 @@ export async function PUT(
       return NextResponse.json(
         { error: 'I movimenti generati da chiusure non sono modificabili' },
         { status: 400 }
+      )
+    }
+
+    // Un movimento suddiviso in fette ha il conto governato dalla
+    // suddivisione: `aggiornaContoDominante` lo riscrive sul conto della fetta
+    // più grossa a ogni modifica delle fette. Cambiarlo da qui non dava un
+    // effetto duraturo, dava un movimento che dichiarava un conto che nessuna
+    // delle sue fette sosteneva — e che si dichiarava comunque
+    // `categorizationSource: 'split'`, finché la prima riconciliazione
+    // successiva non lo riscriveva. Le altre due strade lo vietavano già
+    // (`categorize` risponde 409, `recategorize` esclude a monte con
+    // `allocations: { none: {} }`): questa era la terza, ed era l'unica aperta.
+    //
+    // Si rifiuta il *cambio* di conto, non l'intera modifica: il form
+    // rispedisce tutti i campi, conto compreso, e rifiutare a prescindere
+    // renderebbe immodificabile perfino la descrizione di un movimento
+    // suddiviso.
+    const cambiaConto =
+      validatedData.accountId !== undefined &&
+      validatedData.accountId !== existingEntry.accountId
+    if (cambiaConto && existingEntry._count.allocations > 0) {
+      return NextResponse.json(
+        { error: 'Il movimento è suddiviso in fette: rimuovi prima la suddivisione' },
+        { status: 409 }
       )
     }
 
