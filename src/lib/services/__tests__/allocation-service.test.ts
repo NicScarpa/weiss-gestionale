@@ -3,6 +3,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // setEntryAllocations è tutto accesso al database: si mocca prisma e si
 // osserva cosa scrive. $transaction esegue la callback passando il mock
 // stesso come tx (pattern di schedule-reconciliation-service.test.ts).
+//
+// `$queryRaw` c'è perché il movimento viene bloccato con `SELECT … FOR UPDATE`
+// prima di qualunque decisione: qui la riga risulta sempre trovata, e ciò che
+// il lock protegge davvero — due richieste simultanee — sta in
+// `allocation-service.itest.ts`, perché su un Prisma finto non esiste nulla da
+// contendere.
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     journalEntry: { findFirst: vi.fn(), update: vi.fn() },
@@ -13,6 +19,7 @@ vi.mock('@/lib/prisma', () => ({
       aggregate: vi.fn(),
     },
     account: { findMany: vi.fn() },
+    $queryRaw: vi.fn(),
     $transaction: vi.fn(),
   },
 }))
@@ -86,6 +93,9 @@ describe('setEntryAllocations', () => {
     vi.mocked(prisma.$transaction).mockImplementation(
       async (cb: unknown) => (cb as (tx: typeof prisma) => Promise<unknown>)(prisma)
     )
+    // Il `SELECT … FOR UPDATE` di bloccaMovimento trova la riga: senza questo
+    // il movimento risulterebbe inesistente in ogni test.
+    vi.mocked(prisma.$queryRaw).mockResolvedValue([{ id: 'entry-1' }] as never)
     // Di default il movimento non ha fette ereditate: la guardia di
     // quadratura (manuali + ereditate ≤ importo utile) è un no-op silenzioso.
     vi.mocked(prisma.journalEntryAllocation.aggregate).mockResolvedValue({

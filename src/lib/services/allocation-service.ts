@@ -2,6 +2,12 @@ import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
+// Il lock di riga sul movimento è uno solo in tutto il progetto: quello usato
+// dalla riconciliazione. Riusarlo — invece di scrivere qui un secondo
+// `FOR UPDATE` — è ciò che garantisce che i due percorsi si mettano davvero in
+// fila sulla stessa riga. `stato-schedule.ts` importa da qui solo il tipo
+// `TransactionClient` (`import type`), quindi il ciclo non esiste a runtime.
+import { bloccaMovimento } from '@/lib/scadenzario/stato-schedule'
 
 export interface FettaInput {
   accountId: string
@@ -103,6 +109,18 @@ export type SetAllocationsOutcome =
  * TUTTE le fette rimaste dopo la scrittura. Array vuoto = rimuove lo split e
  * torna alla categorizzazione semplice ('manual'), lasciando accountId e
  * categoria correnti del movimento invariati.
+ *
+ * **Tutto dentro una transazione, letture comprese, con il movimento bloccato
+ * per primo.** La versione precedente leggeva fuori — esistenza del movimento,
+ * somma delle fette ereditate, validità dei conti — e scriveva dentro: due
+ * richieste simultanee sullo stesso movimento non vedevano l'una le righe
+ * dell'altra, entrambe cancellavano il nulla e poi scrivevano le proprie fette.
+ * Sei fette per 2.000 € su un movimento da 1.000 €, cioè esattamente
+ * l'invariante che questo modulo esiste per difendere. Lo stesso schema (lock
+ * di riga con `SELECT … FOR UPDATE`, poi decidi) è quello della
+ * riconciliazione, ed è deliberato che sia lo stesso: `bloccaMovimento` va
+ * sempre preso PRIMA di un eventuale lock sulla scadenza, altrimenti due
+ * percorsi che li acquisissero in ordine opposto si bloccherebbero a vicenda.
  */
 export async function setEntryAllocations({
   journalEntryId, venueId, userId, fette,
@@ -112,44 +130,44 @@ export async function setEntryAllocations({
   userId: string | null
   fette: FettaInput[]
 }): Promise<SetAllocationsOutcome> {
-  const entry = await prisma.journalEntry.findFirst({
-    where: { id: journalEntryId, venueId, deletedAt: null },
-    select: { id: true, debitAmount: true, creditAmount: true, accountId: true },
-  })
-  if (!entry) return { outcome: 'entry_not_found' }
-
-  const importoUtile = Number(entry.debitAmount ?? entry.creditAmount ?? 0)
-
+  // Controllo puro sull'input: non dipende dal database, non merita una
+  // transazione (né una connessione) per essere respinto.
   if (fette.some((f) => f.importo <= 0)) {
     return { outcome: 'invalid', motivo: 'Ogni fetta deve avere un importo positivo' }
   }
-  const somma = fette.reduce((s, f) => s + f.importo, 0)
-  // Il vincolo di quadratura copre l'intero movimento: le fette manuali
-  // proposte più quelle già ereditate dalla riconciliazione (Fase 3) non
-  // possono superare l'importo utile, anche se le manuali da sole ci
-  // starebbero (altrimenti la somma delle fette eccede il movimento).
-  const aggregatoEreditate = await prisma.journalEntryAllocation.aggregate({
-    where: { journalEntryId, origine: 'ereditata' },
-    _sum: { importo: true },
-  })
-  const sommaEreditate = Number(aggregatoEreditate._sum.importo ?? 0)
-  if (somma + sommaEreditate > importoUtile + 0.01) {
-    return {
-      outcome: 'invalid',
-      motivo: `La somma delle fette (${(somma + sommaEreditate).toFixed(2)} €) supera l'importo del movimento (${importoUtile.toFixed(2)} €)`,
-    }
-  }
-  if (fette.length > 0) {
-    const conti = await prisma.account.findMany({
-      where: { id: { in: fette.map((f) => f.accountId) }, isActive: true },
-      select: { id: true },
-    })
-    if (conti.length !== new Set(fette.map((f) => f.accountId)).size) {
-      return { outcome: 'invalid', motivo: 'Uno o più conti non esistono o non sono attivi' }
-    }
-  }
 
-  const risultato = await prisma.$transaction(async (tx) => {
+  const risultato = await prisma.$transaction(async (tx): Promise<SetAllocationsOutcome> => {
+    const entry = await bloccaMovimento(tx, journalEntryId, venueId)
+    if (!entry) return { outcome: 'entry_not_found' }
+
+    const importoUtile = Number(entry.debitAmount ?? entry.creditAmount ?? 0)
+
+    const somma = fette.reduce((s, f) => s + f.importo, 0)
+    // Il vincolo di quadratura copre l'intero movimento: le fette manuali
+    // proposte più quelle già ereditate dalla riconciliazione (Fase 3) non
+    // possono superare l'importo utile, anche se le manuali da sole ci
+    // starebbero (altrimenti la somma delle fette eccede il movimento).
+    const aggregatoEreditate = await tx.journalEntryAllocation.aggregate({
+      where: { journalEntryId, origine: 'ereditata' },
+      _sum: { importo: true },
+    })
+    const sommaEreditate = Number(aggregatoEreditate._sum.importo ?? 0)
+    if (somma + sommaEreditate > importoUtile + 0.01) {
+      return {
+        outcome: 'invalid',
+        motivo: `La somma delle fette (${(somma + sommaEreditate).toFixed(2)} €) supera l'importo del movimento (${importoUtile.toFixed(2)} €)`,
+      }
+    }
+    if (fette.length > 0) {
+      const conti = await tx.account.findMany({
+        where: { id: { in: fette.map((f) => f.accountId) }, isActive: true },
+        select: { id: true },
+      })
+      if (conti.length !== new Set(fette.map((f) => f.accountId)).size) {
+        return { outcome: 'invalid', motivo: 'Uno o più conti non esistono o non sono attivi' }
+      }
+    }
+
     const deleted = await tx.journalEntryAllocation.deleteMany({
       where: { journalEntryId, origine: 'manuale' },
     })
@@ -167,7 +185,7 @@ export async function setEntryAllocations({
     }
     // No-op se non è stato rimosso nulla e non stiamo scrivendo nuove fette
     if (deleted.count === 0 && fette.length === 0) {
-      return 0
+      return { outcome: 'ok', allocazioni: 0 }
     }
     // Il dominante si calcola su TUTTE le fette rimaste (manuali + ereditate)
     const numeroFette = await aggiornaContoDominante(tx, journalEntryId)
@@ -179,9 +197,14 @@ export async function setEntryAllocations({
         data: { categorizationSource: 'manual' },
       })
     }
-    return numeroFette
+    return { outcome: 'ok', allocazioni: numeroFette }
   })
 
-  logger.info('Fette del movimento aggiornate', { journalEntryId, allocazioni: risultato })
-  return { outcome: 'ok', allocazioni: risultato }
+  if (risultato.outcome === 'ok') {
+    logger.info('Fette del movimento aggiornate', {
+      journalEntryId,
+      allocazioni: risultato.allocazioni,
+    })
+  }
+  return risultato
 }
