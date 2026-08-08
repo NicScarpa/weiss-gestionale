@@ -9,6 +9,7 @@ vi.mock('@/lib/prisma', () => ({
   prisma: {
     scheduleRule: { findUnique: vi.fn(), update: vi.fn() },
     account: { findUnique: vi.fn() },
+    bankAccount: { findFirst: vi.fn() },
     costCenter: { findFirst: vi.fn() },
   },
 }))
@@ -23,6 +24,7 @@ vi.mock('@/lib/logger', () => ({
 
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getVenueId } from '@/lib/venue'
 
 const sessione = { user: { id: 'user-1', role: 'admin' } } as unknown as Session
 
@@ -33,6 +35,7 @@ function esistente(overrides: Record<string, unknown> = {}) {
     tipoDocumento: 'TD01',
     tipoPagamento: null,
     contoId: null,
+    bankAccountId: null,
     costCenterId: null,
     ...overrides,
   }
@@ -50,6 +53,49 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(auth).mockResolvedValue(sessione as never)
   vi.mocked(prisma.scheduleRule.update).mockResolvedValue({ id: 'regola-1' } as never)
+  vi.mocked(getVenueId).mockResolvedValue('venue-1' as never)
+})
+
+describe('PATCH /api/scadenzario/regole/[id] - conto bancario (difetto: campo scartato da zod)', () => {
+  it('aggiorna bankAccountId quando il conto esiste, è attivo e appartiene alla sede', async () => {
+    vi.mocked(prisma.scheduleRule.findUnique).mockResolvedValue(esistente() as never)
+    vi.mocked(prisma.bankAccount.findFirst).mockResolvedValue({ id: 'ba-nuovo', isActive: true } as never)
+
+    const { request, context } = patchCon({ bankAccountId: 'ba-nuovo' })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(200)
+    // Prima della correzione lo schema non conosceva bankAccountId: zod lo
+    // scartava e questa chiamata a update non lo avrebbe mai contenuto.
+    expect(prisma.scheduleRule.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ bankAccountId: 'ba-nuovo' }),
+      })
+    )
+  })
+
+  it('rifiuta con 404 se il nuovo conto bancario non esiste, è disattivato o è di un\'altra sede', async () => {
+    vi.mocked(prisma.scheduleRule.findUnique).mockResolvedValue(esistente() as never)
+    vi.mocked(prisma.bankAccount.findFirst).mockResolvedValue(null)
+
+    const { request, context } = patchCon({ bankAccountId: 'ba-inesistente' })
+    const response = await PATCH(request, context)
+    const json = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(json.error).toContain('Conto bancario')
+    expect(prisma.scheduleRule.update).not.toHaveBeenCalled()
+  })
+
+  it('se il conto indicato è lo stesso già assegnato, non lo riverifica', async () => {
+    vi.mocked(prisma.scheduleRule.findUnique).mockResolvedValue(esistente({ bankAccountId: 'ba-attuale' }) as never)
+
+    const { request, context } = patchCon({ bankAccountId: 'ba-attuale' })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(200)
+    expect(prisma.bankAccount.findFirst).not.toHaveBeenCalled()
+  })
 })
 
 describe('PATCH /api/scadenzario/regole/[id] - centro di costo (Task 13)', () => {

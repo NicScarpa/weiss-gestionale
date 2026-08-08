@@ -11,6 +11,10 @@ const updateRuleSchema = z.object({
   tipoPagamento: z.string().nullable().optional(),
   azione: z.string().optional(),
   contoId: z.string().nullable().optional(),
+  /** Conto bancario su cui creare il movimento quando la regola si applica.
+   *  Mancava in questo schema: il form di modifica lo invia sempre, ma zod
+   *  lo scartava in silenzio e l'aggiornamento non arrivava mai al DB. */
+  bankAccountId: z.string().min(1, 'Conto bancario obbligatorio').optional(),
   /** Centro di costo esplicito e opzionale (Task 13). */
   costCenterId: z.string().nullable().optional(),
   isActive: z.boolean().optional(),
@@ -110,6 +114,17 @@ export async function PATCH(
       const conto = await prisma.account.findUnique({ where: { id: validated.contoId } })
       if (!conto) {
         return NextResponse.json({ error: 'Conto non trovato' }, { status: 404 })
+      }
+    }
+
+    // Se bankAccountId cambia, verifica esistenza e appartenenza alla sede
+    if (validated.bankAccountId && validated.bankAccountId !== existing.bankAccountId) {
+      const venueId = await getVenueId()
+      const bankAccount = await prisma.bankAccount.findFirst({
+        where: { id: validated.bankAccountId, venueId, isActive: true },
+      })
+      if (!bankAccount) {
+        return NextResponse.json({ error: 'Conto bancario non trovato' }, { status: 404 })
       }
     }
 
