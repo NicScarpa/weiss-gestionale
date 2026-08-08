@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { createAuditLog } from '@/lib/audit'
 import { badRequest, handleApiError, notFound, ok, withAuth } from '@/lib/api-utils'
 import { promemoriaTimbraturaSchema } from '@/lib/validations/promemoria-timbratura'
-import { promemoriaSelect, RUOLI_PROMEMORIA, verificaDestinatari } from '../route'
+import { promemoriaSelect, RUOLI_PROMEMORIA, verificaDestinatari } from '../condiviso'
 
 type Params = { id: string }
 const OPZIONI = { roles: RUOLI_PROMEMORIA, venueScoped: true } as const

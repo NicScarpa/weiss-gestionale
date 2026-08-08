@@ -8,7 +8,7 @@ import { getVenueId } from '@/lib/venue'
 import { createManualPunch } from '@/lib/attendance/manual-punch'
 import { approvazioneCorrezioneSchema } from '@/lib/validations/richieste-correzione'
 import { notifyCorrectionApproved } from '@/lib/notifications/triggers'
-import { richiestaSelect } from '../../route'
+import { richiestaSelect } from '../../condiviso'
 
 // POST /api/richieste-correzione/[id]/approva
 //

@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { createAuditLog } from '@/lib/audit'
 import { badRequest, handleApiError, notFound, ok, withAuth } from '@/lib/api-utils'
 import { luogoLavoroSchema } from '@/lib/validations/luoghi-lavoro'
-import { luogoSelect, RUOLI_CONFIGURAZIONE } from '../route'
+import { luogoSelect, RUOLI_CONFIGURAZIONE } from '../condiviso'
 
 type Params = { id: string }
 const OPZIONI = { roles: RUOLI_CONFIGURAZIONE, venueScoped: true } as const

@@ -7,7 +7,7 @@ import { createAuditLog } from '@/lib/audit'
 import { getVenueId } from '@/lib/venue'
 import { rifiutoCorrezioneSchema } from '@/lib/validations/richieste-correzione'
 import { notifyCorrectionRejected } from '@/lib/notifications/triggers'
-import { richiestaSelect } from '../../route'
+import { richiestaSelect } from '../../condiviso'
 
 // POST /api/richieste-correzione/[id]/rifiuta
 // Il motivo è obbligatorio: un rifiuto muto lascia il dipendente al punto di

@@ -3,29 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { createAuditLog } from '@/lib/audit'
 import { badRequest, created, handleApiError, ok, withAuth } from '@/lib/api-utils'
 import { luogoLavoroSchema } from '@/lib/validations/luoghi-lavoro'
-
-/** Chi decide dove si timbra decide anche le ore: solo admin e manager. */
-export const RUOLI_CONFIGURAZIONE = ['admin', 'manager'] as const
-
-export const luogoSelect = {
-  id: true,
-  name: true,
-  address: true,
-  latitude: true,
-  longitude: true,
-  geofenceRadiusMeters: true,
-  isActive: true,
-  timekeepingPolicyId: true,
-  timekeepingPolicy: { select: { id: true, name: true } },
-  assignments: {
-    where: { endedAt: null },
-    select: {
-      id: true,
-      trackingMode: true,
-      user: { select: { id: true, firstName: true, lastName: true } },
-    },
-  },
-} as const
+import { luogoSelect, RUOLI_CONFIGURAZIONE } from './condiviso'
 
 // GET /api/luoghi-lavoro - Elenco dei luoghi di lavoro
 export const GET = withAuth(

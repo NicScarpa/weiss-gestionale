@@ -3,42 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { createAuditLog } from '@/lib/audit'
 import { created, handleApiError, ok, withAuth } from '@/lib/api-utils'
 import { politicaOrarioSchema } from '@/lib/validations/politiche-orario'
-
-/** Le regole orario decidono le ore pagate di tutti: solo admin e manager. */
-export const RUOLI_REGOLE = ['admin', 'manager'] as const
-
-/** Campi restituiti al client, uguali in lista e in dettaglio. */
-export const politicaSelect = {
-  id: true,
-  name: true,
-  isDefault: true,
-  isActive: true,
-  dayStartMinutes: true,
-  dayEndMinutes: true,
-  lunchStartMinutes: true,
-  lunchEndMinutes: true,
-  flexMinutes: true,
-  roundingMinutes: true,
-  roundingToleranceMinutes: true,
-  roundingOutMinutes: true,
-  roundingOutToleranceMinutes: true,
-  maxDailyMinutes: true,
-  contractWeeklyHours: true,
-  saturdayAsOvertime: true,
-  blockSunday: true,
-  singlePunchMode: true,
-  useShiftAsWindow: true,
-  createdAt: true,
-  updatedAt: true,
-  extraBreaks: {
-    select: { id: true, name: true, startMinutes: true, endMinutes: true },
-    orderBy: { startMinutes: 'asc' },
-  },
-  // Il conteggio deve combaciare con la guardia dell'eliminazione, che conta
-  // dipendenti E luoghi: mostrare solo i dipendenti fa cercare assegnazioni
-  // che non esistono.
-  _count: { select: { users: true, workLocations: true } },
-} as const
+import { politicaSelect, RUOLI_REGOLE } from './condiviso'
 
 // GET /api/politiche-orario - Elenco delle regole orario
 export const GET = withAuth(async (_request: NextRequest, { venueId }) => {

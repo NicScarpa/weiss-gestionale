@@ -12,7 +12,7 @@ import {
 } from '@/lib/api-utils'
 import { politicaOrarioSchema } from '@/lib/validations/politiche-orario'
 import { toDateOnlyUtc } from '@/lib/timezone'
-import { politicaSelect, RUOLI_REGOLE } from '../route'
+import { politicaSelect, RUOLI_REGOLE } from '../condiviso'
 
 type Params = { id: string }
 const OPZIONI = { roles: RUOLI_REGOLE, venueScoped: true } as const

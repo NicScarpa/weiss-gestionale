@@ -14,23 +14,7 @@ import {
 import { romeInstant, toDateOnlyUtc } from '@/lib/timezone'
 import { richiestaCorrezioneSchema } from '@/lib/validations/richieste-correzione'
 import { notifyNewCorrectionRequest } from '@/lib/notifications/triggers'
-
-/** Campi restituiti al client, uguali in lista e nelle azioni. */
-export const richiestaSelect = {
-  id: true,
-  date: true,
-  requestedClockIn: true,
-  requestedClockOut: true,
-  reason: true,
-  status: true,
-  reviewNotes: true,
-  reviewedAt: true,
-  createdAt: true,
-  user: { select: { id: true, firstName: true, lastName: true } },
-  workLocation: { select: { id: true, name: true } },
-  reviewedBy: { select: { id: true, firstName: true, lastName: true } },
-  anomaly: { select: { id: true, anomalyType: true, status: true } },
-} as const
+import { richiestaSelect } from './condiviso'
 
 // GET /api/richieste-correzione?status=&month=&year= - Elenco richieste.
 // Lo staff vede solo le proprie; admin e manager tutte quelle della sede.
