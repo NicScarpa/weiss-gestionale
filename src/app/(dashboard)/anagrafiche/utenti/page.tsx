@@ -43,6 +43,7 @@ export default function UtentiPage() {
   } = useQuery({
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
+    staleTime: 0,
     queryKey: ['users', 'con-inattivi'],
     enabled: !!session?.user && canAccessUserManagement(currentUserRole),
     queryFn: async (): Promise<{ data?: UserData[] }> => {

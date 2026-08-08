@@ -70,6 +70,7 @@ export function VenueManagement() {
   } = useQuery({
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
+    staleTime: 0,
     queryKey: ['venues'],
     queryFn: async (): Promise<{ venues?: Venue[] }> => {
       const res = await fetch('/api/venues')

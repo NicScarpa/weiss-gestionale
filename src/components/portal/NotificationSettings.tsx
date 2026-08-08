@@ -71,6 +71,7 @@ export function NotificationSettings() {
   const { data: preferences = defaultPreferences, isPending: loading } = useQuery({
     queryKey: ['notification-preferences'],
     refetchOnMount: 'always',
+    staleTime: 0,
     queryFn: async (): Promise<NotificationPreferences> => {
       // Come prima: una risposta di errore o vuota lascia i valori predefiniti
       // senza avvisare, invece di bloccare la schermata.

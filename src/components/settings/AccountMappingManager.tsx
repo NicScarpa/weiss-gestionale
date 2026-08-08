@@ -196,6 +196,7 @@ export function AccountMappingManager() {
   } = useQuery({
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
+    staleTime: 0,
     queryKey: ['venues'],
     queryFn: async (): Promise<{ venues?: Venue[] } | Venue[]> => {
       const res = await fetch('/api/venues')
@@ -226,6 +227,7 @@ export function AccountMappingManager() {
   } = useQuery({
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
+    staleTime: 0,
     queryKey: ['budget-categories', 'mapping', selectedVenueId],
     enabled: !!selectedVenueId,
     queryFn: async (): Promise<{

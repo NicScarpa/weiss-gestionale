@@ -1,5 +1,6 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { vi } from 'vitest'
 
 /**
@@ -39,12 +40,20 @@ export function installaStubDom() {
   }
 }
 
+/**
+ * Nell'applicazione il QueryClientProvider sta nel layout radice, quindi i
+ * componenti lo danno per scontato. Qui si monta un client per ogni test, senza
+ * ritentativi: una richiesta fallita non deve tenere occupata la suite.
+ */
 export async function montare(ui: React.ReactElement): Promise<HTMLElement> {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
   await act(async () => {
-    root!.render(ui)
+    root!.render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
   })
   return container
 }

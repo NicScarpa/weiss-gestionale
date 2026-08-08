@@ -105,6 +105,7 @@ export function BudgetDetailClient({
   const { data: risposta, isPending, isFetching, isError, error, refetch } = useQuery({
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
+    staleTime: 0,
     queryKey: ['budget-lines', budgetId],
     queryFn: async (): Promise<{ data: BudgetLine[] }> => {
       const res = await fetch(`/api/budget/${budgetId}/lines`)

@@ -87,6 +87,7 @@ export function SupplierManagement() {
   } = useQuery({
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
+    staleTime: 0,
     queryKey: ['suppliers', 'full', showInactive],
     queryFn: async (): Promise<{ suppliers?: Supplier[] }> => {
       const res = await fetch(`/api/suppliers?full=true&showOnlyInactive=${showInactive}`)
@@ -99,6 +100,7 @@ export function SupplierManagement() {
   const { data: datiConti, error: erroreConti } = useQuery({
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
+    staleTime: 0,
     queryKey: ['accounts', 'COSTO'],
     queryFn: async (): Promise<{ accounts?: Account[] }> => {
       const res = await fetch('/api/accounts?type=COSTO')

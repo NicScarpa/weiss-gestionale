@@ -91,6 +91,7 @@ export function BancheEContiClient() {
   } = useQuery({
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
+    staleTime: 0,
     queryKey: ['bank-accounts', showInactive],
     queryFn: async (): Promise<{ accounts?: BankAccount[] }> => {
       const params = new URLSearchParams()

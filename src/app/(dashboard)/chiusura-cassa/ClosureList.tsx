@@ -133,6 +133,7 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
   } = useQuery({
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
+    staleTime: 0,
     queryKey: [
       'chiusure',
       venueId ?? null,

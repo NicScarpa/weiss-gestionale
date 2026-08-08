@@ -29,6 +29,7 @@ export function RiconciliazioneClient() {
   const { data: sedi, isError: erroreSedi, error: erroreSediDettaglio } = useQuery({
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
+    staleTime: 0,
     queryKey: ['venues'],
     queryFn: async (): Promise<{ venues?: Array<{ id: string; isActive?: boolean }>; data?: Array<{ id: string; isActive?: boolean }> }> => {
       const res = await fetch('/api/venues')
@@ -59,6 +60,7 @@ export function RiconciliazioneClient() {
   } = useQuery({
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
+    staleTime: 0,
     queryKey: ['riconciliazione', venueId, statusFilter],
     enabled: !!venueId,
     queryFn: async (): Promise<{

@@ -115,6 +115,7 @@ export function BudgetCategoryManagement() {
   } = useQuery({
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
+    staleTime: 0,
     queryKey: ['venues'],
     queryFn: async (): Promise<{ venues?: Venue[] } | Venue[]> => {
       const res = await fetch('/api/venues')
@@ -142,6 +143,7 @@ export function BudgetCategoryManagement() {
   } = useQuery({
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
+    staleTime: 0,
     queryKey: ['budget-categories', selectedVenueId, 'includeInactive'],
     enabled: !!selectedVenueId,
     queryFn: async (): Promise<{ categories?: BudgetCategory[]; hierarchy?: BudgetCategory[] }> => {
@@ -160,6 +162,7 @@ export function BudgetCategoryManagement() {
   const { data: datiConti, isError: erroreConti, error: dettaglioErroreConti } = useQuery({
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
+    staleTime: 0,
     queryKey: ['budget-category-mappings', selectedVenueId, 'unmapped'],
     enabled: !!selectedVenueId,
     queryFn: async (): Promise<{ unmappedAccounts?: Account[] }> => {

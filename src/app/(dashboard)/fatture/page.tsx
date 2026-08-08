@@ -57,6 +57,7 @@ export default function FattureSituazionePage() {
   } = useQuery({
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
+    staleTime: 0,
     queryKey: ['invoices', 'stats', year],
     queryFn: async (): Promise<InvoiceStats> => {
       const res = await fetch(`/api/invoices/stats?year=${year}`)

@@ -107,6 +107,7 @@ export function BudgetList({ venueId, isAdmin }: BudgetListProps) {
   } = useQuery({
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
+    staleTime: 0,
     queryKey: ['budgets', venueId ?? null, yearFilter, statusFilter],
     queryFn: async (): Promise<{ data: Budget[] }> => {
       const params = new URLSearchParams()

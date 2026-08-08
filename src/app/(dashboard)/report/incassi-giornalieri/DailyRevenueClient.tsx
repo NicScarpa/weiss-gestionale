@@ -214,6 +214,7 @@ export function DailyRevenueClient() {
   } = useQuery({
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
+    staleTime: 0,
     queryKey: ['report', 'incassi-giornalieri', filters.dateFrom, filters.dateTo],
     queryFn: async (): Promise<ReportData> => {
       const params = new URLSearchParams()

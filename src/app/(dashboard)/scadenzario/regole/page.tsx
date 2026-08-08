@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -26,35 +27,38 @@ import { toast } from 'sonner'
 
 type SubTab = 'emessi' | 'ricevuti'
 
+type RispostaRegole = { data?: ScheduleRule[] }
+
 export default function RegolePage() {
   const router = useRouter()
-  const [rules, setRules] = useState<ScheduleRule[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const queryClient = useQueryClient()
   const [subTab, setSubTab] = useState<SubTab>('emessi')
   const [deleteRule, setDeleteRule] = useState<ScheduleRule | null>(null)
 
-  const fetchRules = useCallback(async () => {
-    setIsLoading(true)
-    try {
+  const chiaveRegole = ['scadenzario-regole', subTab]
+
+  const {
+    data: risposta,
+    isPending,
+    isFetching,
+    refetch: fetchRules,
+  } = useQuery({
+    // Come prima: ricarica a ogni montaggio e a ogni cambio di sotto-scheda.
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryKey: chiaveRegole,
+    queryFn: async (): Promise<RispostaRegole> => {
       const params = new URLSearchParams()
       params.append('direzione', subTab)
 
       const resp = await fetch(`/api/scadenzario/regole?${params}`)
-      const data = await resp.json()
+      if (!resp.ok) throw new Error('Errore nel caricamento delle regole')
+      return resp.json()
+    },
+  })
 
-      if (resp.ok) {
-        setRules(data.data || [])
-      }
-    } catch (error) {
-      console.error('Errore fetch regole:', error)
-    }
-    setIsLoading(false)
-  }, [subTab])
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount/subTab change is intentional
-    fetchRules()
-  }, [fetchRules])
+  const rules = risposta?.data ?? []
+  const isLoading = isPending || isFetching
 
   const reorderRules = async (orderedIds: string[]) => {
     try {
@@ -65,8 +69,8 @@ export default function RegolePage() {
       })
 
       if (resp.ok) {
-        const data = await resp.json()
-        setRules(data.data || [])
+        const data: RispostaRegole = await resp.json()
+        queryClient.setQueryData<RispostaRegole>(chiaveRegole, data)
       }
     } catch {
       toast.error('Errore nel riordino')

@@ -155,6 +155,7 @@ export function BudgetConfrontoClient({
   } = useQuery({
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
+    staleTime: 0,
     queryKey: ['budget-confronto', filters.venueId, filters.year, filters.accountType],
     enabled: !!filters.venueId && !!filters.year,
     queryFn: async (): Promise<DatiConfronto> => {

@@ -114,6 +114,7 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
   } = useQuery({
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
+    staleTime: 0,
     queryKey: ['prima-nota', 'movimenti', queryString],
     queryFn: async (): Promise<{
       data: JournalEntry[]

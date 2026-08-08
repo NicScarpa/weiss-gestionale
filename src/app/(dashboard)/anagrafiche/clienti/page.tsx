@@ -44,6 +44,7 @@ export default function ClientiPage() {
   } = useQuery({
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
+    staleTime: 0,
     queryKey: ['customers', filters.showInactive],
     enabled: !!session?.user && currentUserRole === 'admin',
     queryFn: async (): Promise<{ customers?: CustomerData[] }> => {
