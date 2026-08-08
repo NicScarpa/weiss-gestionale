@@ -99,16 +99,33 @@ async function ereditaFetteDaFattura(
     return
   }
 
+  // SOLO le imputazioni che un essere umano ha confermato.
+  //
+  // Senza questo filtro esisteva un percorso interamente automatico
+  // dall'ipotesi del modello fino al conto su cui il budget conta i soldi:
+  // le righe 'proposta' — quelle gialle che nessuno ha ancora guardato —
+  // pesavano quanto le confermate, `aggiornaContoDominante` riscriveva
+  // `JournalEntry.accountId` con il conto della fetta più grossa, e il budget
+  // imputava lì l'INTERO importo del movimento. Fattura mista da 1.200 €
+  // ipotizzata 700 «Pulizie» / 500 «Alimentari» → 1.200 € su Pulizie.
+  //
+  // Il conto scelto dal titolare o da una regola dello scadenzario veniva
+  // sovrascritto senza avviso, e l'audit registra la riconciliazione ma non la
+  // riscrittura del conto: il valore precedente non è salvato da nessuna
+  // parte. Un difetto che cancellava le proprie tracce.
   const imputazioni = await tx.invoiceLineAccount.findMany({
-    where: { invoiceId },
+    where: { invoiceId, stato: 'confermata' },
     select: { accountId: true, importo: true },
   })
 
+  // La guardia contava le righe senza guardarne lo stato, quindi una fattura
+  // interamente gialla la superava. Col filtro sopra, una fattura mezza
+  // confermata non arriva al conteggio pieno e l'astensione scatta da sé.
   if (imputazioni.length < invoice.lineItems.length) {
-    logger.info('Righe fattura non tutte categorizzate: nessuna ereditarietà pro-quota', {
+    logger.info('Righe fattura non tutte confermate: nessuna ereditarietà pro-quota', {
       invoiceId,
       righe: invoice.lineItems.length,
-      imputazioni: imputazioni.length,
+      confermate: imputazioni.length,
     })
     return
   }

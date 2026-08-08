@@ -636,8 +636,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Proposta delle imputazioni per riga: memoria del fornitore + AI.
-    // Best-effort: la pipeline non lancia mai, non serve un try/catch qui.
-    await categorizzaRigheFattura({ invoiceId: invoice.id })
+    //
+    // NON si aspetta. La fattura è già salvata — la transazione si è chiusa
+    // sopra — e far attendere il browser una chiamata a pagamento significava
+    // che, con il servizio esterno lento o irraggiungibile, chi aveva caricato
+    // la fattura vedeva un import fallito, ricaricava lo stesso file e si
+    // sentiva rispondere «fattura già importata». Il lavoro era andato a buon
+    // fine ed era impossibile capirlo.
+    //
+    // Le imputazioni compaiono poco dopo, da sole. La pipeline è best-effort e
+    // non lancia mai, ma il `catch` c'è lo stesso: una promessa non attesa che
+    // rifiutasse abbatterebbe il processo Node.
+    void categorizzaRigheFattura({ invoiceId: invoice.id }).catch((err) =>
+      logger.error('Categorizzazione righe fattura fallita', err, { invoiceId: invoice.id })
+    )
 
     return NextResponse.json(
       {

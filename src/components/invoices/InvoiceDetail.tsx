@@ -177,6 +177,22 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const { data: invoice, isLoading, error } = useQuery({
     queryKey: ['invoice', invoiceId],
     queryFn: () => fetchInvoice(invoiceId),
+    // La categorizzazione delle righe non è più attesa dall'import: la
+    // fattura si salva subito e le imputazioni arrivano poco dopo. Finché non
+    // ce n'è nemmeno una, si ricontrolla ogni pochi secondi così compaiono da
+    // sole, senza che nessuno debba ricaricare la pagina.
+    //
+    // Il controllo si ferma da solo: se dopo un minuto non è arrivato niente,
+    // vuol dire che non arriverà (nessun conto di costo configurato, chiave
+    // assente, servizio giù) e continuare a interrogare il server non serve.
+    refetchInterval: (query) => {
+      const dati = query.state.data as Invoice | undefined
+      const righe = dati?.parsedData?.dettaglioLinee
+      if (!righe?.length) return false
+      if (righe.some((r) => r.imputazione)) return false
+      if (query.state.dataUpdateCount > 20) return false
+      return 3000
+    },
   })
 
   const { data: accounts } = useQuery({
