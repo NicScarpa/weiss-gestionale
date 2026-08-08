@@ -103,6 +103,7 @@ export async function PATCH(
     // ha: in quel caso la categorizzazione si ferma qui, il centro va scelto
     // prima (dal dettaglio del movimento).
     let costCenterId: string | undefined
+    let costCenterSource: string | undefined
     if (validated.accountId) {
       const centro = await risolviCentroDiCosto(prisma, {
         accountId: validated.accountId,
@@ -115,24 +116,31 @@ export async function PATCH(
         )
       }
       costCenterId = centro.costCenterId
+      // Il centro si scrive sempre accompagnato dalla sua provenienza: senza,
+      // resterebbe indistinguibile da uno indovinato dal sistema e le
+      // automazioni lo tratterebbero come tale.
+      costCenterSource = centro.origine
     }
 
     // Sui movimenti da chiusura la scrittura resta dentro il perimetro
-    // dichiarato sopra: solo il conto (con centro di costo e categoria
-    // budget come conseguenza automatica del conto, non campi scelti a
-    // parte). notes, categorizationSource e verified restano quelli del
-    // movimento da chiusura: non è la categorizzazione manuale a deciderli
-    // qui.
+    // dichiarato sopra: solo il conto (con centro di costo, provenienza del
+    // centro e categoria budget come conseguenza automatica del conto, non
+    // campi scelti a parte — il perimetro riguarda le chiavi ammesse nel
+    // body, non i campi che il server ne deriva). notes,
+    // categorizationSource e verified restano quelli del movimento da
+    // chiusura: non è la categorizzazione manuale a deciderli qui.
     const data = isMovimentoDaChiusura
       ? {
           accountId: validated.accountId || undefined,
           costCenterId,
+          costCenterSource,
           budgetCategoryId,
         }
       : {
           budgetCategoryId,
           accountId: validated.accountId || undefined,
           costCenterId,
+          costCenterSource,
           notes: validated.notes || undefined,
           categorizationSource: 'manual',
           verified: true, // Auto-verify su categorizzazione manuale

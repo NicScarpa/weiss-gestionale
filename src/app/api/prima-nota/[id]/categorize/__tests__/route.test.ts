@@ -169,7 +169,51 @@ describe('PATCH /api/prima-nota/[id]/categorize - il centro di costo del nuovo c
     await PATCH(request, context)
 
     expect(vi.mocked(prisma.journalEntry.update).mock.calls[0][0].data.costCenterId).toBeUndefined()
+    expect(vi.mocked(prisma.journalEntry.update).mock.calls[0][0].data.costCenterSource).toBeUndefined()
     expect(prisma.costCenter.findFirst).not.toHaveBeenCalled()
+  })
+
+  it('il centro si scrive sempre con la sua provenienza, altrimenti passa per indovinato', async () => {
+    vi.mocked(derivaBudgetCategoryDaConto).mockResolvedValue('cat-derivata')
+    vi.mocked(prisma.journalEntry.update).mockResolvedValue({ id: 'entry-1' } as never)
+
+    const { request, context } = patchCon({ accountId: 'conto-1' })
+    await PATCH(request, context)
+
+    // Conto senza obbligo di centro: la regola del piano manda su STR, e la
+    // provenienza lo dice ('piano'), così una rivalutazione successiva sa che
+    // quel centro seguiva il conto di prima e non una scelta di qualcuno.
+    expect(vi.mocked(prisma.journalEntry.update).mock.calls[0][0].data).toMatchObject({
+      costCenterId: 'cc-str',
+      costCenterSource: 'piano',
+    })
+  })
+
+  it('anche su un movimento da chiusura il centro scritto porta la sua provenienza', async () => {
+    vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
+      id: 'entry-1',
+      costCenterId: 'cc-produzione',
+      closureId: 'chiusura-1',
+      _count: { allocations: 0 },
+    } as never)
+    vi.mocked(prisma.costCenter.findUnique).mockResolvedValue({
+      id: 'cc-produzione', isActive: true,
+    } as never)
+    vi.mocked(derivaBudgetCategoryDaConto).mockResolvedValue('cat-derivata')
+    vi.mocked(prisma.journalEntry.update).mockResolvedValue({ id: 'entry-1' } as never)
+
+    const { request, context } = patchCon({ accountId: 'conto-1' })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(200)
+    // Il perimetro ristretto dei movimenti da chiusura riguarda le chiavi
+    // ammesse nel body, non i campi che il server deriva: se scrive il centro
+    // deve scriverne anche la provenienza, o resta il buco che la colonna
+    // serve a chiudere.
+    expect(vi.mocked(prisma.journalEntry.update).mock.calls[0][0].data).toMatchObject({
+      costCenterId: 'cc-produzione',
+      costCenterSource: 'scelto',
+    })
   })
 })
 
@@ -234,10 +278,16 @@ describe('PATCH /api/prima-nota/[id]/categorize - su un movimento da chiusura sc
     expect(data).not.toHaveProperty('notes')
     expect(data).not.toHaveProperty('categorizationSource')
     expect(data).not.toHaveProperty('verified')
-    // Il conto resta scrivibile, come nel PUT; budgetCategoryId e centro di
-    // costo sono conseguenza automatica di accountId, non campi scelti a
-    // parte (questa route non ha mai avuto un campo costCenterId proprio).
-    expect(data).toMatchObject({ accountId: 'conto-1', budgetCategoryId: 'cat-derivata' })
+    // Il conto resta scrivibile, come nel PUT; budgetCategoryId, centro di
+    // costo e la sua provenienza sono conseguenza automatica di accountId,
+    // non campi scelti a parte (questa route non ha mai avuto un campo
+    // costCenterId proprio). 'piano': il conto ha regola DEFAULT_STR, non è
+    // una supposizione del sistema.
+    expect(data).toMatchObject({
+      accountId: 'conto-1',
+      budgetCategoryId: 'cat-derivata',
+      costCenterSource: 'piano',
+    })
   })
 
   it('admin su movimento da chiusura con costCenterId nel body (mai stato un campo di questa route): 400, fuori perimetro', async () => {
@@ -309,6 +359,7 @@ describe('PATCH /api/prima-nota/[id]/categorize - su un movimento da chiusura sc
       notes: 'nota manuale',
       categorizationSource: 'manual',
       verified: true,
+      costCenterSource: 'piano',
     })
   })
 })

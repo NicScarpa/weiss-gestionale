@@ -186,7 +186,9 @@ describe('PUT /api/prima-nota/[id] - riclassifica admin dei movimenti da chiusur
     expect(response.status).toBe(200)
     expect(prisma.journalEntry.update).toHaveBeenCalledWith({
       where: { id: 'entry-1' },
-      data: { accountId: 'conto-nuovo', costCenterId: 'cc-nuovo' },
+      // Il centro l'ha indicato l'admin nella riclassifica: provenienza
+      // 'scelto', quindi nessuna automazione potrà rivalutarlo.
+      data: { accountId: 'conto-nuovo', costCenterId: 'cc-nuovo', costCenterSource: 'scelto' },
       select: { id: true, updatedAt: true },
     })
     expect(createAuditLog).toHaveBeenCalledWith({

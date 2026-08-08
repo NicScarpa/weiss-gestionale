@@ -159,6 +159,7 @@ export async function PUT(
       const cambiaContoRiclassifica = validatedData.accountId !== undefined
       const cambiaCentroRiclassifica = validatedData.costCenterId !== undefined
       let costCenterIdRiclassificato = existingEntry.costCenterId ?? undefined
+      let costCenterSourceRiclassificato: string | undefined
 
       if (cambiaContoRiclassifica || cambiaCentroRiclassifica) {
         const centro = await risolviCentroDiCosto(prisma, {
@@ -172,6 +173,7 @@ export async function PUT(
           )
         }
         costCenterIdRiclassificato = centro.costCenterId
+        costCenterSourceRiclassificato = centro.origine
       }
 
       const riclassificato = await prisma.journalEntry.update({
@@ -181,6 +183,7 @@ export async function PUT(
           costCenterId: cambiaContoRiclassifica || cambiaCentroRiclassifica
             ? costCenterIdRiclassificato
             : undefined,
+          costCenterSource: costCenterSourceRiclassificato,
         },
         select: { id: true, updatedAt: true },
       })
@@ -210,6 +213,7 @@ export async function PUT(
     const cambiaConto = validatedData.accountId !== undefined
     const cambiaCentro = validatedData.costCenterId !== undefined
     let costCenterId: string | undefined
+    let costCenterSource: string | undefined
 
     if (cambiaConto || cambiaCentro) {
       const centro = await risolviCentroDiCosto(prisma, {
@@ -223,6 +227,7 @@ export async function PUT(
         )
       }
       costCenterId = centro.costCenterId
+      costCenterSource = centro.origine
     }
 
     // Aggiorna
@@ -235,6 +240,7 @@ export async function PUT(
         documentType: validatedData.documentType,
         accountId: validatedData.accountId,
         costCenterId,
+        costCenterSource,
         vatAmount: validatedData.vatAmount,
       },
       select: { id: true, updatedAt: true },
