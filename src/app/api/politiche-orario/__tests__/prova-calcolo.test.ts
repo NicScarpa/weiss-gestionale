@@ -8,7 +8,7 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
 
-import { auth } from '@/lib/auth'
+import { authDiRoute } from '@/test/auth-unitari'
 import { POST } from '../prova-calcolo/route'
 
 const sessione = { user: { id: 'user-1', role: 'admin' } } as unknown as Session
@@ -44,7 +44,7 @@ function richiesta(body: Record<string, unknown>) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(auth).mockResolvedValue(sessione)
+  vi.mocked(authDiRoute).mockResolvedValue(sessione)
 })
 
 describe('POST /api/politiche-orario/prova-calcolo', () => {
@@ -115,7 +115,7 @@ describe('POST /api/politiche-orario/prova-calcolo', () => {
   })
 
   it('nega l accesso a chi non è amministratore', async () => {
-    vi.mocked(auth).mockResolvedValue({
+    vi.mocked(authDiRoute).mockResolvedValue({
       user: { id: 'user-2', role: 'staff' },
     } as unknown as Session)
 

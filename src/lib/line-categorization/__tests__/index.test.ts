@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+import { prismaPromise } from '@/test/prisma-mock'
+
 // La pipeline è best-effort assoluto: si mocka prisma, il parser, il mapping
 // budget e l'SDK Anthropic per osservare esattamente cosa viene scritto senza
 // mai colpire una vera API o un vero database.
@@ -251,16 +253,27 @@ describe('categorizzaRigheFattura', () => {
       codiceArticolo: 'ART001',
       accountId: 'acc-venue-diverso',
       conferme: 10,
+      // Le due colonne che Prisma valorizza da sé. Mancavano, e il vecchio
+      // `as never` sul risultato del mock le nascondeva: il finto database
+      // restituiva righe che il database vero non può produrre.
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
     }
-    vi.mocked(prisma.supplierProductAccount.findMany).mockImplementation(async (args) => {
-      const where = (args as { where: { supplierId: string; venueId?: string } }).where
+    // `args` è opzionale nella firma di `findMany` — si può chiamare senza
+    // argomenti — quindi va accettato opzionale anche qui, o la funzione non
+    // è sostituibile a quella vera.
+    vi.mocked(prisma.supplierProductAccount.findMany).mockImplementation((args?) => {
+      const where = (args?.where ?? {}) as { supplierId?: string; venueId?: string }
       // Replica il comportamento reale di Prisma: se il where non porta la
       // chiave venueId, il filtro semplicemente non la considera (leak); se
       // la porta, deve corrispondere esattamente.
       const filtraPerVenue = 'venueId' in where
-      return [memoriaDiUnAltroVenue].filter(
-        (m) => m.supplierId === where.supplierId && (!filtraPerVenue || m.venueId === where.venueId)
-      ) as never
+      return prismaPromise(
+        [memoriaDiUnAltroVenue].filter(
+          (m) =>
+            m.supplierId === where.supplierId && (!filtraPerVenue || m.venueId === where.venueId)
+        )
+      )
     })
 
     await categorizzaRigheFattura({ invoiceId: INVOICE_ID })

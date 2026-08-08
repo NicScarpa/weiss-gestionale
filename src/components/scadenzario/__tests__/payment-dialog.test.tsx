@@ -88,7 +88,7 @@ describe('PaymentDialog', () => {
   })
 
   it('la data di pagamento viaggia come giorno civile, non come istante UTC', async () => {
-    const onSubmit = vi.fn(() => Promise.resolve())
+    const onSubmit = vi.fn<(data: PaymentFormData) => Promise<void>>(() => Promise.resolve())
     await montare(
       <PaymentDialog open onOpenChange={vi.fn()} onSubmit={onSubmit} importoResiduo={100} />
     )
@@ -105,7 +105,7 @@ describe('PaymentDialog', () => {
     const tzOriginale = process.env.TZ
     process.env.TZ = 'Europe/Rome'
     try {
-      const onSubmit = vi.fn(() => Promise.resolve())
+      const onSubmit = vi.fn<(data: PaymentFormData) => Promise<void>>(() => Promise.resolve())
       await montare(
         <PaymentDialog open onOpenChange={vi.fn()} onSubmit={onSubmit} importoResiduo={100} />
       )

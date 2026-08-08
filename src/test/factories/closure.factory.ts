@@ -2,6 +2,8 @@
  * Factory functions for creating test data for daily closures
  */
 
+import type { Session } from 'next-auth'
+
 export interface TestStationData {
   name: string
   position?: number
@@ -301,21 +303,35 @@ export function createMockDbClosure(input: TestClosureData, id = 'closure-mock-1
 }
 
 /**
- * Creates a mock user session
+ * Sessione utente finta, completa come quella vera.
+ *
+ * Il tipo di ritorno è dichiarato `Session` di proposito: prima l'oggetto ne
+ * riempiva sei campi su undici e il tipo veniva dedotto da quelli, così una
+ * sessione a cui mancava — per dire — `mustChangePassword` passava per buona
+ * nei test mentre in produzione quel campo c'è sempre. Dichiararlo obbliga
+ * questa factory a restare fedele a ciò che le route ricevono davvero.
  */
 export function createMockSession(overrides?: {
   userId?: string
   role?: 'admin' | 'manager' | 'staff'
   venueId?: string
-}) {
+}): Session {
   return {
     user: {
       id: overrides?.userId || 'user-test-123',
       email: 'test@example.com',
+      username: 'test.user',
       firstName: 'Test',
       lastName: 'User',
       role: overrides?.role || 'manager',
+      roleId: 'role-test-123',
       venueId: overrides?.venueId || 'venue-test-123',
+      venueName: 'Weiss Test',
+      venueCode: 'TEST',
+      mustChangePassword: false,
     },
+    // NextAuth la vuole in ISO. Un'ora avanti: nessun test dipende dalla
+    // scadenza, ma una sessione già scaduta sarebbe un dato incoerente.
+    expires: new Date(Date.now() + 3_600_000).toISOString(),
   }
 }

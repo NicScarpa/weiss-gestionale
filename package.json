@@ -13,6 +13,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "knip": "knip",
     "test": "vitest",
     "test:run": "vitest run",
