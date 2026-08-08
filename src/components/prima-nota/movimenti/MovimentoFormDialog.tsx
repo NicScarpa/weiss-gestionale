@@ -63,6 +63,19 @@ const MOVIMENTO_SCHEMA = z.object({
 
 type MovimentoFormData = z.infer<typeof MOVIMENTO_SCHEMA>
 
+/**
+ * Lettura di un campo numerico facoltativo: la casella vuota vale «assente».
+ *
+ * Va usata al posto di `valueAsNumber`, che sulla casella vuota non restituisce
+ * `undefined` ma `NaN`. Uno schema che accetta `number | undefined` rifiuta
+ * `NaN`, quindi un campo etichettato «opzionale» diventava obbligatorio e il
+ * modulo non si salvava più: per l'IVA significava bloccare versamenti,
+ * prelievi e giroconti, che l'IVA non ce l'hanno affatto.
+ */
+function numeroFacoltativo(valore: unknown): number | undefined {
+  return valore === '' || valore === null || valore === undefined ? undefined : Number(valore)
+}
+
 interface MovimentoFormDialogProps {
   entry?: JournalEntryFormData
   accounts?: Array<{ id: string; code: string; name: string }>
@@ -334,7 +347,7 @@ export function MovimentoFormDialog({
                       type="number"
                       step="0.01"
                       placeholder="0.00"
-                      {...form.register('vatAmount', { valueAsNumber: true })}
+                      {...form.register('vatAmount', { setValueAs: numeroFacoltativo })}
                       className="pl-8"
                     />
                     <span className="absolute left-2.5 top-2.5 text-sm text-muted-foreground">

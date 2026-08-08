@@ -433,8 +433,25 @@ export async function PUT(
         select: { id: true, updatedAt: true },
       })
 
-      // 2. Se stations fornite: delete + recreate (cascade elimina CashCount)
+      // 2. Se stations fornite: delete + recreate.
+      //
+      // I conteggi vanno cancellati per primi, ed esplicitamente. Il commento
+      // che stava qui prometteva un cascade che nello schema non esiste:
+      // `CashCount.station` è `onDelete: Restrict` (prisma/schema.prisma), come
+      // ogni relazione figlia della contabilità, e un conteggio tiene in vita
+      // la postazione a cui appartiene. Poiché l'interfaccia invia sempre la
+      // griglia dei tagli, ogni postazione ne ha uno e la cancellazione veniva
+      // rifiutata dal database: la PUT rispondeva 500 e nessuna chiusura era
+      // più correggibile.
+      //
+      // Il `Restrict` non si tocca: protegge le altre strade, dove una
+      // postazione cancellata porterebbe via un conteggio che nessuno ha
+      // chiesto di rifare. Qui la distruzione è voluta e circoscritta — le
+      // stesse righe vengono riscritte subito sotto dai valori appena
+      // validati, dentro la stessa transazione — e va detta a voce alta invece
+      // che ottenuta allentando il vincolo per tutti.
       if (stations !== undefined) {
+        await tx.cashCount.deleteMany({ where: { station: { closureId: id } } })
         await tx.cashStation.deleteMany({ where: { closureId: id } })
         if (stations.length > 0) {
           for (const [index, station] of stations.entries()) {
