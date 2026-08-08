@@ -271,13 +271,15 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      {/* Senza flex-wrap titolo e azioni stanno su una riga sola più larga
+          dello schermo, e a scorrere lateralmente è la pagina intera */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold">Movimenti</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline">
-                <DownloadIcon className="h-4 w-4 mr-2" />
+                <DownloadIcon aria-hidden="true" className="h-4 w-4 mr-2" />
                 Esporta
               </Button>
             </DropdownMenuTrigger>
@@ -290,7 +292,7 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button>
-                <PlusIcon className="h-4 w-4 mr-2" />
+                <PlusIcon aria-hidden="true" className="h-4 w-4 mr-2" />
                 Nuovo
               </Button>
             </DropdownMenuTrigger>
