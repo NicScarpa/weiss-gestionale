@@ -198,9 +198,8 @@ const DOPPIA_USCITA_TOLLERANZA_MINUTI = 15
  * fine del turno lo estende (vale l'ultima); **oltre quel margine l'uscita è
  * orfana**, cioè le manca l'entrata, e viene scartata invece di allungare il
  * turno precedente; un'uscita senza nessuna entrata prima si ignora; un
- * inizio pausa doppio dentro una pausa aperta si ignora (vale il primo), per
- * la stessa ragione dell'entrata doppia — e perché due pause sovrapposte
- * dedurrebbero gli stessi minuti due volte.
+ * inizio pausa che ne sostituisce un altro ancora aperto vale come quello
+ * buono, ma la pausa sostituita viene segnalata: non è mai stata chiusa.
  */
 function pairPunches(ordered: DayPunch[]): {
   segments: Interval[]
@@ -209,12 +208,13 @@ function pairPunches(ordered: DayPunch[]): {
   danglingIn: number | null
   /** Uscite troppo lontane per essere un doppio tocco: manca la loro entrata. */
   orphanExits: number[]
-  /** Inizio della pausa rimasta aperta: manca il suo BREAK_END. */
-  danglingBreak: number | null
+  /** Inizi di pausa rimasti senza BREAK_END: segnalati, non dedotti. */
+  danglingBreaks: number[]
 } {
   const segments: Interval[] = []
   const punchedBreaks: Interval[] = []
   const orphanExits: number[] = []
+  const danglingBreaks: number[] = []
   let openIn: number | null = null
   let openBreak: number | null = null
   let hasIn = false
@@ -241,9 +241,13 @@ function pairPunches(ordered: DayPunch[]): {
         }
       }
     } else if (punch.type === 'BREAK_START') {
-      if (openBreak === null) {
-        openBreak = punch.minutes
+      // Un inizio pausa che ne sostituisce un altro ancora aperto lascia
+      // indietro una pausa mai chiusa: il calcolo resta quello di sempre
+      // (vale l'ultimo inizio), ma quella sostituita va segnalata.
+      if (openBreak !== null) {
+        danglingBreaks.push(openBreak)
       }
+      openBreak = punch.minutes
     } else if (punch.type === 'BREAK_END' && openBreak !== null) {
       if (punch.minutes > openBreak) {
         punchedBreaks.push({ start: openBreak, end: punch.minutes })
@@ -252,41 +256,18 @@ function pairPunches(ordered: DayPunch[]): {
     }
   }
 
+  if (openBreak !== null) {
+    danglingBreaks.push(openBreak)
+  }
+
   return {
     segments,
     punchedBreaks,
     hasIn,
     danglingIn: openIn,
     orphanExits,
-    danglingBreak: openBreak,
+    danglingBreaks: danglingBreaks.sort((a, b) => a - b),
   }
-}
-
-/**
- * La pausa iniziata e mai chiusa, trasformata in una pausa che arriva fino
- * alla fine del turno in cui è cominciata.
- *
- * Prima non veniva registrata affatto, e quindi **non veniva dedotta**: il
- * BREAK_END dimenticato regalava tutto il tempo dalla pausa all'uscita. Nove
- * ore pagate per cinque lavorate, tutte in straordinario, con la lista degli
- * avvisi vuota — è il difetto 1 dell'audit dei bordi, e colpisce proprio i
- * turni serali del bar, dove le pause sono lunghe e la regola non ha una
- * pausa pranzo che le deduca comunque.
- *
- * Si chiude alla fine del turno perché il rientro non è mai stato timbrato:
- * il motore non lo può indovinare, e la stessa prudenza vale già per l'entrata
- * senza uscita (turno non contato) e per l'uscita orfana (scartata). Il
- * rimedio previsto è la richiesta di correzione, che l'avviso rende visibile.
- * Fermarla alla fine del turno e non all'ultima uscita della giornata conta
- * nel turno spezzato: la pausa aperta del mattino non si mangia il pomeriggio.
- */
-function chiudiPausaAperta(
-  inizio: number,
-  segments: Interval[]
-): Interval | null {
-  const segmento = segments.find((s) => s.start <= inizio && inizio < s.end)
-
-  return segmento ? { start: inizio, end: segmento.end } : null
 }
 
 /** Minuti dell'intervallo [start, end] che cadono dentro i segmenti. */
@@ -581,28 +562,20 @@ export function computeRecognizedDay(
     )
   }
 
-  // La pausa senza BREAK_END si chiude alla fine del suo turno. Va fatto qui,
-  // sui turni timbrati: la finestra della giornata e il turno pianificato
-  // ritagliano dopo, e la parte di pausa fuori dall'orario contato sparisce
-  // da sola nell'intersezione dentro `finishDay`.
-  let punchedBreaks = paired.punchedBreaks
-  if (paired.danglingBreak !== null) {
+  // La pausa iniziata e mai chiusa NON viene dedotta: le ore restano quelle
+  // di prima. È una decisione di prodotto presa da chi paga gli stipendi —
+  // nessuno viene pagato di meno per una dimenticanza — e per questo il
+  // motore non tocca il calcolo. Cambia che il dato incompleto si dichiara:
+  // la giornata alza un avviso, e su quell'avviso l'export delle paghe si
+  // rifiuta di partire finché un umano non ha guardato. Prima l'ora regalata
+  // passava muta fino al consulente del lavoro.
+  if (paired.danglingBreaks.length > 0) {
     warnings.push('PAUSA_NON_CHIUSA')
-    const chiusa = chiudiPausaAperta(paired.danglingBreak, segments)
-
-    if (chiusa) {
-      punchedBreaks = [...punchedBreaks, chiusa]
-      steps.push(
-        `Pausa iniziata alle ${formatMinutes(paired.danglingBreak)} e mai chiusa: ` +
-          `dedotta fino alla fine del turno (${formatMinutes(chiusa.end)}). ` +
-          'Serve una correzione.'
-      )
-    } else {
-      steps.push(
-        `Pausa iniziata alle ${formatMinutes(paired.danglingBreak)} e mai chiusa, ` +
-          'fuori dai turni timbrati: nessuna deduzione. Serve una correzione.'
-      )
-    }
+    const orari = paired.danglingBreaks.map(formatMinutes).join(', ')
+    steps.push(
+      `Pausa iniziata alle ${orari} e mai chiusa: le ore restano quelle ` +
+        "timbrate, ma la giornata va verificata prima dell'export."
+    )
   }
 
   if (policy.useShiftAsWindow) {
@@ -628,7 +601,7 @@ export function computeRecognizedDay(
 
     return finishDay(
       applied.segments,
-      punchedBreaks,
+      paired.punchedBreaks,
       policy,
       context,
       steps,
@@ -692,7 +665,7 @@ export function computeRecognizedDay(
     return { start: roundedIn, end: Math.max(roundedOut, roundedIn) }
   })
 
-  return finishDay(segments, punchedBreaks, policy, context, steps, warnings)
+  return finishDay(segments, paired.punchedBreaks, policy, context, steps, warnings)
 }
 
 /**

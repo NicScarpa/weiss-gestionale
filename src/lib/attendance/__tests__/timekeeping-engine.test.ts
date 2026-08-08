@@ -642,24 +642,26 @@ describe('computeRecognizedDay', () => {
     expect(giorno.workedMinutes).toBe(at(8) + 30)
   })
 
-  it('la pausa iniziata e mai chiusa non si fa pagare', () => {
+  it('segnala la pausa iniziata e mai chiusa senza toccare le ore', () => {
     // Il turno serale del bar: regola senza pausa pranzo, pausa lunga presa
-    // davvero e BREAK_END dimenticato. Prima erano 9 ore piene, con la pausa
-    // regalata tutta in straordinario e nessun avviso.
+    // davvero e BREAK_END dimenticato.
+    //
+    // Le ore restano nove: nessuno viene pagato di meno per una dimenticanza,
+    // ed è una decisione di chi paga gli stipendi, non del motore. Ciò che
+    // cambia è che la giornata lo dichiara — e su quell'avviso l'export delle
+    // paghe si ferma. Prima l'ora regalata arrivava muta al consulente.
     const giorno = computeRecognizedDay(
       [inAt(at(9)), punch('BREAK_START', at(13)), outAt(at(18))],
       makePolicy({ lunch: null }),
       makeContext()
     )
 
-    expect(giorno.breakMinutes).toBe(300)
-    expect(giorno.workedMinutes).toBe(at(4))
+    expect(giorno.workedMinutes).toBe(at(9))
+    expect(giorno.breakMinutes).toBe(0)
     expect(giorno.warnings).toContain('PAUSA_NON_CHIUSA')
   })
 
-  it('la pausa mai chiusa si ferma alla fine del turno in cui è iniziata', () => {
-    // Turno spezzato: la pausa aperta nel turno del mattino non può mangiarsi
-    // anche il pomeriggio, che è stato timbrato per intero.
+  it('la pausa mai chiusa non cambia le ore nemmeno nel turno spezzato', () => {
     const giorno = computeRecognizedDay(
       [
         inAt(at(7)),
@@ -677,8 +679,8 @@ describe('computeRecognizedDay', () => {
       makeContext()
     )
 
-    expect(giorno.breakMinutes).toBe(60)
-    expect(giorno.workedMinutes).toBe(at(10))
+    expect(giorno.workedMinutes).toBe(at(11))
+    expect(giorno.breakMinutes).toBe(0)
     expect(giorno.warnings).toContain('PAUSA_NON_CHIUSA')
   })
 
@@ -699,10 +701,11 @@ describe('computeRecognizedDay', () => {
     expect(giorno.warnings).not.toContain('PAUSA_NON_CHIUSA')
   })
 
-  it('una seconda pausa aperta non raddoppia la deduzione', () => {
-    // Due BREAK_START e un solo BREAK_END: vale la prima apertura, come per
-    // l'entrata doppia. Contarle entrambe dedurrebbe gli stessi minuti due
-    // volte e potrebbe azzerare una giornata lavorata davvero.
+  it('due pause aperte e una sola chiusa: la prima resta comunque segnalata', () => {
+    // Il calcolo è quello di sempre — vale l'ultimo inizio pausa, 30 minuti —
+    // ma la pausa delle 13:00 non è mai stata chiusa e la giornata lo deve
+    // dire. Senza questo, il caso sfuggirebbe proprio perché un BREAK_END
+    // in fondo alla giornata c'è.
     const giorno = computeRecognizedDay(
       [
         inAt(at(9)),
@@ -715,9 +718,9 @@ describe('computeRecognizedDay', () => {
       makeContext()
     )
 
-    expect(giorno.breakMinutes).toBe(150)
-    expect(giorno.workedMinutes).toBe(at(6, 30))
-    expect(giorno.warnings).not.toContain('PAUSA_NON_CHIUSA')
+    expect(giorno.breakMinutes).toBe(30)
+    expect(giorno.workedMinutes).toBe(at(8, 30))
+    expect(giorno.warnings).toContain('PAUSA_NON_CHIUSA')
   })
 
   it('la pausa mai chiusa lascia una traccia con gli orari', () => {
@@ -729,6 +732,20 @@ describe('computeRecognizedDay', () => {
 
     expect(giorno.steps.join(' ')).toContain('13:00')
     expect(giorno.steps.join(' ')).toContain('mai chiusa')
+  })
+
+  it('con la pausa pranzo della regola la deduzione resta quella di prima', () => {
+    // La regola deduce comunque la sua ora di pranzo: la pausa aperta non
+    // aggiunge né toglie nulla al calcolo, segnala soltanto.
+    const giorno = computeRecognizedDay(
+      [inAt(at(9)), punch('BREAK_START', at(13)), outAt(at(18))],
+      makePolicy(),
+      makeContext()
+    )
+
+    expect(giorno.breakMinutes).toBe(60)
+    expect(giorno.workedMinutes).toBe(at(8))
+    expect(giorno.warnings).toContain('PAUSA_NON_CHIUSA')
   })
 
   it('lascia una traccia leggibile dei passaggi, per il calcolatore di prova', () => {
