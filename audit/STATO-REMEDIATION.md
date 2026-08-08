@@ -341,7 +341,79 @@ strict 24 · audit 0/0 · build OK. **26 commit sopra la produzione attuale.**
   `audit/00-REGISTRO.md` con gli esiti** (nota già acquisita: A8-UI-005 era già risolto dal commit
   `b495446` di gennaio; il criterio giusto per l'overflow è `main.scrollWidth`, non il body).
 
-### W5 — Audit delle aree mai esaminate (sola lettura)
+### ~~W5~~ — COMPLETA l'8 agosto 2026. Tre relazioni in `audit/W5-F1/F2/F3-*.md`
+
+**Nessun P0 in nessuna delle tre aree.** Ma un filo comune, che è la conclusione dell'ondata:
+
+> **Le difese stanno dove qualcuno si aspettava il pericolo, non dove il pericolo capita.**
+> Il motore delle presenze gestisce mezzanotte, cambi d'ora e turni spezzati — e non gestisce
+> uno che si dimentica di timbrare. La categorizzazione è ben difesa contro il modello che
+> inventa un conto inesistente — e indifesa contro il modello che sbaglia in modo verosimile.
+> La ripartizione ha guardie sofisticate — e un `if (centesimi > 0)` che scarta il resto.
+> **E in tutti e tre i casi l'errore è silenzioso**: nessun avviso, nessuna traccia, l'export passa.
+
+**F1 — categorizzazione automatica (8 finding: 3 P1).** Il rischio finanziario che temevo **non
+c'è**: ~2 €/mese, tetto invalicabile di ~20 centesimi per chiamata imposto dalla finestra del
+modello, nessun ciclo possibile. Il pericolo è contabile: la sicurezza restituita dal modello non è
+mai limitata fra 0 e 1 (`line-categorization/index.ts:19`) mentre la colonna accetta max 9,99
+(`schema.prisma:1627`). Un `87` invece di `0.87` — scivolone plausibile, i modelli pensano in
+percentuali — fa rifiutare la scrittura e **interrompe la categorizzazione di tutte le righe
+successive, in silenzio**. Delle quattro colonne `Decimal(3,2)` del progetto, questa è l'unica
+alimentata da fuori il nostro controllo e l'unica senza un controllo al confine.
+**NOTA: il lead aveva riferito il difetto come presente in due punti. Sbagliato**: la riga 666 è
+`ScheduleReconciliation`, difesa due volte e alimentata da codice nostro — è il contro-esempio.
+**Chi correggerà non deve toccare la riconciliazione.**
+
+**F2 — ripartizione costi e memoria (13 finding: 2 P1).** Il più serio: esiste un percorso
+**interamente automatico** dall'ipotesi del modello fino al conto su cui il budget conta i soldi,
+senza un essere umano in mezzo. `schedule-reconciliation-service.ts:102` legge le righe fattura
+**senza filtrare lo stato**: le proposte mai confermate pesano quanto le confermate, il conto
+dominante riscrive `JournalEntry.accountId` e il budget imputa lì l'**intero** importo. Fattura
+mista da 1.200 € → 1.200 € su "Pulizie". **L'audit registra la riconciliazione, non la riscrittura
+del conto, e il valore precedente non è salvato**: un difetto che cancella le proprie tracce.
+Secondo P1: le fette non entrano in nessun report, quindi "Suddiviso 700/300" vale 1.000 su un conto
+e 0 sull'altro.
+Sullo scarto di arrotondamento (`allocation-service.ts:23-28`): **riprodotto** con dataset e script
+eseguibile (`audit/prova-F2-ALL-003.mjs`), ma **declassato dall'agente stesso dopo averlo
+misurato** — 2-3 centesimi in ~1 caso su 500, mai su fatture normali. Conta perché il commento
+promette «SEMPRE esattamente la quota» ed è falso. Il lead non riusciva a riprodurlo su 200.000
+combinazioni: **serve una riga di coda da pochi centesimi accanto a molti conti**, e generando pesi
+dello stesso ordine di grandezza la condizione non può scattare. *Un risultato negativo non è una
+smentita finché non si sa cosa si stava cercando.*
+
+**F3 — presenze (13 finding: 6 P1). Perimetro reale 39 route, non 15.**
+**Il motore è la parte migliore del progetto**: puro, 139 test verdi, mezzanotte / cambio d'ora nei
+due sensi / turno spezzato / arrotondamenti / tetto **verificati per esecuzione**. La
+storicizzazione delle regole regge. Timbrare l'*entrata* per un altro è impossibile.
+Ma i sei P1 stanno tutti ai bordi e sono tutti silenziosi:
+1. `timekeeping-engine.ts:171-173` — un'uscita tardiva estende il turno **senza limite di distanza**:
+   `IN 09:00, OUT 13:00, OUT 22:00` → **780 minuti invece di 240**, `warnings: []`. Chi rientra dalla
+   pausa senza timbrare si fa pagare la pausa: **+123 € in un giorno**.
+2. `auto-clockout/route.ts:83-85` — chiude a entrata+12h, **un orario inventato**: turno 07-13
+   dimenticato → 12h pagate invece di 6, **+84 €**. Il sistema sa già calcolare la fine turno
+   (`sessioni-aperte.ts:93-107`, usata dalla cassa) e non la importa.
+3. `auto-clockout/route.ts:55` — `gte: now-24h` lascia **12 ore utili**: se il servizio sta fermo
+   mezza giornata, quella timbratura non la guarda più nessuno e la giornata vale zero.
+4. `payroll-calculator.ts:550` — ferie approvate + timbrature reali: le ore si buttano e il
+   cartellino stampa entrata e uscita vere accanto a «0 ore».
+5. `payroll-calculator.ts:256-259` — chi cessa a metà mese **sparisce dall'export con le ore già
+   lavorate**: ~960 € sull'ultimo mese.
+6. Nessuna route modifica una timbratura: le 12 ore sbagliate si tolgono **solo dal database**.
+Fra i P2: `anomalies/[id]` GET **senza controllo di ruolo** espone posizione e dispositivo di un
+collega; **39 route su 39 senza `withAuth`**; l'interruttore `autoClockOutEnabled` della pagina
+Impostazioni **non è letto da nessuna parte** — spegnerlo non ferma niente.
+
+**Raccomandazione dell'agente, che il lead sottoscrive e mette in cima**: se si potesse fare una
+cosa sola prima di correggere i numeri, sarebbe **far alzare un avviso a ognuna di queste
+situazioni**. Un numero sbagliato che si vede costa molto meno di uno che non si vede — e oggi
+`warnings` resta vuoto, il cartellino esce pulito, l'export passa: l'errore arriva al consulente del
+lavoro **senza attrito**.
+
+**Da verificare in produzione** (nessun agente ha toccato il database vero): conteggio delle
+timbrature orfane oltre la finestra delle 24h (query nel report F3), ed esistenza della riga
+`attendance_policies` — se manca, i controlli sulla posizione sono spenti in silenzio.
+
+### W5 — mandato originale (riferimento storico)
 `allocation-service.ts`, `line-categorization/` (SDK Anthropic in produzione), memoria
 fornitore-prodotto, modulo presenze NoBadge. **Presenze: audit sì, fix no** finché è attiva la
 sessione parallela su `presenze/regole-orario`.
