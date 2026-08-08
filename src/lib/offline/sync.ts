@@ -92,7 +92,7 @@ async function scaldaLaPaginaCorrente() {
   } catch (error) {
     // Se fallisce si torna al comportamento di prima: la pagina entrerà in
     // cache al prossimo caricamento online. Non c'è niente da dire all'utente.
-    logger.warn('[Offline] Pagina corrente non messa in cache', error)
+    logger.warn('[Offline] Pagina corrente non messa in cache', { motivo: String(error) })
   }
 }
 
