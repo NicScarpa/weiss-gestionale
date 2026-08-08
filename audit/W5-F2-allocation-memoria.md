@@ -78,6 +78,15 @@ L'unico caso in cui il sistema si ferma è se il movimento ha già una suddivisi
 (`schedule-reconciliation-service.ts:116-119`, «le fette manuali vincono sempre»). Una semplice
 categorizzazione manuale del movimento, senza suddivisione, non lo protegge.
 
+**Chi lo innesca, e quando se ne accorge qualcuno.** Lo innesca chiunque riconcili un pagamento con la
+scadenza di una fattura: a mano dallo scadenzario, oppure da solo il motore delle regole, che crea il
+movimento e lo riconcilia nella stessa operazione (`engine.ts:331-341`). Non serve nessun consenso e non
+compare nessun avviso. L'audit registra la riconciliazione — scadenza, movimento, stato
+(`riconciliazioni/route.ts:187-197`) — e **non** il fatto che il conto del movimento è stato riscritto:
+il vecchio conto non è salvato da nessuna parte. Nell'elenco dei movimenti si vede solo il conto nuovo,
+con accanto il badge "Suddiviso". Chi guarda se ne accorge quando controlla i costi per conto a fine
+mese o a fine anno, trovando una categoria gonfia senza una traccia che spieghi perché.
+
 **Verifica:** importare una fattura con `ANTHROPIC_API_KEY` configurata, non confermare nessuna riga,
 riconciliare il pagamento, e rileggere `accountId` e `categorizationSource` del movimento.
 
@@ -128,9 +137,24 @@ Serve che l'ultima fetta (la più piccola, perché `calcolaPesiDaRighe` ordina p
 sia minuscola rispetto alle altre: una riga di arrotondamento, un contributo CONAI, un imballo da pochi
 centesimi.
 
-Sono cifre irrisorie in sé. Contano per due motivi: il commento dichiara un'invariante che il codice non
-mantiene, e sopra quell'invariante sono costruiti i controlli di quadratura altrove (che infatti
-tollerano ±0,01 € proprio per compensare).
+**Quanto spesso capita davvero.** Ho misurato, rieseguendo la funzione su 900.000 ripartizioni con pesi
+casuali ma realistici (righe da 5 a 900 €, quote da 50 a 3.000 €):
+
+| Fattura | Casi con scarto | Scarto massimo |
+|---|---|---|
+| da 3 a 8 conti, nessuna riga micro | **0 su 300.000** | — |
+| gli stessi, più una riga da 0,01–1,00 € | 0,18% | 2 centesimi |
+| da 8 a 14 conti, più una riga da 0,01–1,00 € | 0,96% | 3 centesimi |
+
+Cioè: su una fattura normale non succede mai. Serve una riga di coda da pochi centesimi — un contributo
+CONAI, un imballo, un arrotondamento — e anche allora capita in circa un caso su cinquecento, per due o
+tre centesimi. In un anno di riconciliazioni parliamo di pochi centesimi in tutto.
+
+Sono cifre irrisorie, e lo dico chiaramente: **non è un problema di denaro**. Conta per due motivi. Il
+commento del codice dichiara un'invariante assoluta («SEMPRE») che il codice non mantiene, e su
+quell'invariante sono appoggiati i controlli di quadratura degli altri percorsi — che infatti tollerano
+±0,01 € proprio per compensare quello che qui può arrivare a 0,03 €. È un difetto da correggere quando
+si tocca la funzione, non una ragione per toccarla.
 
 **Aritmetica in virgola mobile.** Il progetto ha `src/lib/money.ts` come unico modulo per i conti in
 denaro (nato in W1, l'unico che usa `decimal.js`). L'allocazione non lo usa: `ripartisciProQuota`,
