@@ -3,6 +3,10 @@
 import * as React from "react"
 import * as TabsPrimitive from "@radix-ui/react-tabs"
 
+import {
+  SFUMATURA_SCORRIMENTO,
+  useStrisciaScorrevole,
+} from "@/hooks/useStrisciaScorrevole"
 import { cn } from "@/lib/utils"
 
 function Tabs({
@@ -18,15 +22,28 @@ function Tabs({
   )
 }
 
+/**
+ * `max-w-full overflow-x-auto` sta qui e non nelle singole pagine perché il
+ * difetto è del contenitore, non di chi lo usa: `w-fit` lo allarga quanto le
+ * tab, e su schermo stretto la striscia esce dal riquadro trascinandosi dietro
+ * l'intera pagina. Misurato a 390 px su turni, riconciliazione, anomalie,
+ * ferie e analisi costi.
+ */
 function TabsList({
   className,
   ...props
 }: React.ComponentProps<typeof TabsPrimitive.List>) {
+  const { rifStriscia, restaDaScorrere, centraAttivo } =
+    useStrisciaScorrevole<HTMLDivElement>()
+
   return (
     <TabsPrimitive.List
+      ref={rifStriscia}
       data-slot="tabs-list"
+      onFocus={centraAttivo}
       className={cn(
-        "bg-muted text-muted-foreground inline-flex h-9 w-fit items-center justify-center rounded-lg p-[3px]",
+        "bg-muted text-muted-foreground inline-flex h-9 w-fit max-w-full items-center justify-center overflow-x-auto rounded-lg p-[3px]",
+        restaDaScorrere && SFUMATURA_SCORRIMENTO,
         className
       )}
       {...props}
