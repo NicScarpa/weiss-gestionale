@@ -294,8 +294,19 @@ export async function generateJournalEntriesFromClosure(
   }
 
   if (entries.length > 0) {
+    // Il centro di questi movimenti è sempre una scelta di chi ha compilato la
+    // chiusura: la testata (campo obbligatorio del form) o l'override della
+    // singola riga spesa. Va detto, altrimenti resta indistinguibile da un
+    // centro indovinato dal sistema e le automazioni lo rivaluterebbero come
+    // tale — in particolare l'ereditarietà delle fette, se il movimento viene
+    // poi riconciliato con una scadenza. Dove il centro non c'è (anagrafica
+    // incompleta, vedi risolviCentroMovimento) non c'è nemmeno una
+    // provenienza da dichiarare.
     await client.journalEntry.createMany({
-      data: entries,
+      data: entries.map((entry) => ({
+        ...entry,
+        costCenterSource: entry.costCenterId ? 'scelto' : null,
+      })),
     })
   }
 

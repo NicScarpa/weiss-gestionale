@@ -686,6 +686,39 @@ describe('generateJournalEntriesFromClosure', () => {
       }
       expect(logger.error).toHaveBeenCalled()
     })
+
+    it('il centro di questi movimenti è dichiarato scelto: nessuna automazione potrà rivalutarlo', async () => {
+      // Il centro viene dalla testata della chiusura (campo obbligatorio del
+      // form) o dall'override della riga: è sempre una scelta di chi compila.
+      // Senza dirlo, un movimento da chiusura poi riconciliato con una
+      // scadenza si vedrebbe rivalutare il centro dall'ereditarietà delle
+      // fette, che tratta come ripiego ogni centro di provenienza ignota
+      // pari a quello di sistema.
+      conContiDiSistema()
+      conCentriAttivi()
+
+      await generateJournalEntriesFromClosure(chiusuraCompleta, userId)
+
+      const movimenti = movimentiGenerati()
+      expect(movimenti).toHaveLength(5)
+      for (const movimento of movimenti) {
+        expect(movimento.costCenterSource).toBe('scelto')
+      }
+    })
+
+    it('senza centro non si dichiara nessuna provenienza', async () => {
+      conContiDiSistema()
+      vi.mocked(prisma.costCenter.findUnique).mockResolvedValue(
+        { id: 'cc-weiss', isActive: false } as never
+      )
+
+      await generateJournalEntriesFromClosure(chiusuraCompleta, userId)
+
+      for (const movimento of movimentiGenerati()) {
+        expect(movimento.costCenterId).toBeNull()
+        expect(movimento.costCenterSource).toBeNull()
+      }
+    })
   })
 
   /**
