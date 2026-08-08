@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import type { ClosureStatus } from '@prisma/client'
+import { calculateTotalCounted } from '@/lib/closure-calculations'
 
 /**
  * Fixture per le chiusure di cassa.
@@ -18,6 +19,17 @@ export async function venueDiTest() {
   return venue
 }
 
+/** Pezzi contati nel cassetto: solo i tagli che servono al test. */
+export interface ConteggioFixture {
+  bills50?: number
+  bills20?: number
+  bills10?: number
+  bills5?: number
+  coins2?: number
+  coins1?: number
+  coins050?: number
+}
+
 export interface PostazioneFixture {
   name?: string
   /** Contante in cassa a fine giornata. */
@@ -25,6 +37,14 @@ export interface PostazioneFixture {
   posAmount?: number
   /** Fondo cassa da lasciare in postazione. */
   floatAmount?: number
+  /**
+   * Conteggio fisico del cassetto. Va valorizzato ogni volta che il test deve
+   * somigliare alla produzione: l'interfaccia di chiusura invia sempre la
+   * griglia dei tagli, quindi in produzione una postazione senza conteggio non
+   * esiste. Una fixture che lo ometteva è il motivo per cui la PUT ha potuto
+   * rispondere 500 per settimane con la suite tutta verde.
+   */
+  conteggio?: ConteggioFixture
 }
 
 export interface UscitaFixture {
@@ -65,6 +85,18 @@ export async function creaChiusura(fixture: ChiusuraFixture = {}) {
           cashAmount: p.cashAmount ?? 0,
           posAmount: p.posAmount ?? 0,
           floatAmount: p.floatAmount ?? 114,
+          ...(p.conteggio
+            ? {
+                cashCount: {
+                  create: {
+                    ...p.conteggio,
+                    totalCounted: calculateTotalCounted(p.conteggio),
+                    expectedTotal: p.cashAmount ?? 0,
+                    difference: calculateTotalCounted(p.conteggio) - (p.cashAmount ?? 0),
+                  },
+                },
+              }
+            : {}),
         })),
       },
       expenses: {
@@ -77,7 +109,7 @@ export async function creaChiusura(fixture: ChiusuraFixture = {}) {
         })),
       },
     },
-    include: { stations: true, expenses: true },
+    include: { stations: { include: { cashCount: true } }, expenses: true },
   })
 
   return closure
