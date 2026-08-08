@@ -44,3 +44,13 @@ export function inAt(minutes: number): DayPunch {
 export function outAt(minutes: number): DayPunch {
   return punch('OUT', minutes)
 }
+
+/** Uscita scritta dalla chiusura automatica, non dal dipendente. */
+export function outDiSistema(minutes: number): DayPunch {
+  return { type: 'OUT', minutes, origine: 'sistema' }
+}
+
+/** Uscita nata da una richiesta di correzione approvata. */
+export function outCorretta(minutes: number): DayPunch {
+  return { type: 'OUT', minutes, origine: 'correzione' }
+}

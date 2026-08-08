@@ -1,6 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import { computeRecognizedDay, roundEntry, roundExit } from '../timekeeping-engine'
-import { at, inAt, makeContext, makePolicy, outAt, punch } from './fixtures'
+import {
+  at,
+  inAt,
+  makeContext,
+  makePolicy,
+  outAt,
+  outCorretta,
+  outDiSistema,
+  punch,
+} from './fixtures'
 
 describe('roundEntry', () => {
   it("senza intervallo lascia l'orario com'è", () => {
@@ -382,6 +391,114 @@ describe('computeRecognizedDay', () => {
 
     expect(giorno.clockOut).toBe(at(22, 5))
     expect(giorno.workedMinutes).toBe(at(5) + 5)
+  })
+
+  it("sul confine della tolleranza la doppia uscita estende ancora", () => {
+    const giorno = computeRecognizedDay(
+      [inAt(at(17)), outAt(at(22)), outAt(at(22, 15))],
+      makePolicy({ dayStartMinutes: at(6), dayEndMinutes: at(23), lunch: null }),
+      makeContext()
+    )
+
+    expect(giorno.clockOut).toBe(at(22, 15))
+    expect(giorno.workedMinutes).toBe(at(5) + 15)
+  })
+
+  it("oltre la tolleranza l'uscita orfana non estende il turno", () => {
+    // Un minuto oltre il confine: non è più il doppio tocco sul telefono.
+    const giorno = computeRecognizedDay(
+      [inAt(at(17)), outAt(at(22)), outAt(at(22, 16))],
+      makePolicy({ dayStartMinutes: at(6), dayEndMinutes: at(23), lunch: null }),
+      makeContext()
+    )
+
+    expect(giorno.clockOut).toBe(at(22))
+    expect(giorno.workedMinutes).toBe(at(5))
+    expect(giorno.warnings).toContain('ENTRATA_MANCANTE')
+  })
+
+  it('chi rientra dalla pausa senza timbrare non si fa pagare la pausa', () => {
+    // Il caso dell'audit W5-F3 difetto 1, eseguito sul motore: Giulia entra
+    // alle 9, esce alle 13, rientra alle 17 senza timbrare e timbra l'uscita
+    // alle 22. Prima si vedeva pagare 780 minuti — 13 ore invece di 4, cioè
+    // 123 € lordi in più in un giorno, con la lista degli avvisi VUOTA.
+    const giorno = computeRecognizedDay(
+      [inAt(at(9)), outAt(at(13)), outAt(at(22))],
+      makePolicy({ dayStartMinutes: at(6), dayEndMinutes: at(23), lunch: null }),
+      makeContext()
+    )
+
+    expect(giorno.workedMinutes).toBe(at(4))
+    expect(giorno.clockOut).toBe(at(13))
+    expect(giorno.warnings).toContain('ENTRATA_MANCANTE')
+  })
+
+  it("l'uscita orfana non gonfia nemmeno il turno spezzato", () => {
+    // Stesso difetto sul turno spezzato: 750 minuti invece di 660.
+    const giorno = computeRecognizedDay(
+      [inAt(at(7)), outAt(at(13)), inAt(at(17)), outAt(at(22)), outAt(at(23, 30))],
+      makePolicy({ dayStartMinutes: at(6), dayEndMinutes: at(24), lunch: null }),
+      makeContext()
+    )
+
+    expect(giorno.workedMinutes).toBe(at(11))
+    expect(giorno.warnings).toContain('ENTRATA_MANCANTE')
+  })
+
+  it('una correzione approvata batte l uscita scritta dal sistema', () => {
+    // Difetto 6 dell'audit W5-F3. La chiusura automatica ha scritto le 13:15,
+    // il dipendente ha chiesto la correzione alle 13:05 e un responsabile
+    // l'ha approvata. Senza distinguere le due, il motore teneva la più
+    // tarda: le dodici ore sbagliate si toglievano solo entrando nel
+    // database, perché nessuna route modifica una timbratura.
+    const giorno = computeRecognizedDay(
+      [inAt(at(7)), outCorretta(at(13, 5)), outDiSistema(at(13, 15))],
+      makePolicy({ dayStartMinutes: at(6), dayEndMinutes: at(23), lunch: null }),
+      makeContext()
+    )
+
+    expect(giorno.clockOut).toBe(at(13, 5))
+    expect(giorno.workedMinutes).toBe(at(6) + 5)
+  })
+
+  it('la correzione vale anche quando il sistema aveva sbagliato di ore', () => {
+    // Il caso dell'auto-clockout a entrata+12h: uscita inventata alle 18:58,
+    // correzione approvata alle 13:05. La giornata è stata sistemata da un
+    // umano, quindi NON deve restare segnalata come dato sporco.
+    const giorno = computeRecognizedDay(
+      [inAt(at(6, 58)), outCorretta(at(13, 5)), outDiSistema(at(18, 58))],
+      makePolicy({ dayStartMinutes: at(6), dayEndMinutes: at(23), lunch: null }),
+      makeContext()
+    )
+
+    expect(giorno.clockOut).toBe(at(13, 5))
+    expect(giorno.workedMinutes).toBe(367)
+    expect(giorno.warnings).not.toContain('ENTRATA_MANCANTE')
+  })
+
+  it("senza correzione l'uscita di sistema resta quella buona", () => {
+    // Il comportamento da NON rompere: se nessuno ha corretto, l'orario
+    // scritto dal sistema è l'unico che c'è.
+    const giorno = computeRecognizedDay(
+      [inAt(at(7)), outDiSistema(at(13, 15))],
+      makePolicy({ dayStartMinutes: at(6), dayEndMinutes: at(23), lunch: null }),
+      makeContext()
+    )
+
+    expect(giorno.clockOut).toBe(at(13, 15))
+    expect(giorno.workedMinutes).toBe(at(6) + 15)
+  })
+
+  it('una correzione non cancella le timbrature vere del dipendente', () => {
+    // La correzione sostituisce ciò che ha scritto il SISTEMA, non i fatti:
+    // il turno spezzato timbrato davvero resta intero.
+    const giorno = computeRecognizedDay(
+      [inAt(at(7)), outAt(at(13)), inAt(at(17)), outCorretta(at(22))],
+      makePolicy({ dayStartMinutes: at(6), dayEndMinutes: at(23), lunch: null }),
+      makeContext()
+    )
+
+    expect(giorno.workedMinutes).toBe(at(11))
   })
 
   it("arrotonda l'entrata di ciascun turno, non solo la prima", () => {

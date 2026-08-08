@@ -71,6 +71,17 @@ export interface ShiftReview {
 export interface DayPunch {
   type: 'IN' | 'OUT' | 'BREAK_START' | 'BREAK_END'
   minutes: number
+  /**
+   * Chi ha prodotto la timbratura, quando non è il dipendente.
+   *
+   * - `'sistema'`: scritta dalla chiusura automatica. È una supposizione, non
+   *   un fatto, e una correzione approvata la sostituisce.
+   * - `'correzione'`: nata da una richiesta di correzione approvata da un
+   *   responsabile. Prevale su ciò che ha scritto il sistema.
+   *
+   * Assente per le timbrature vere, che sono fatti e non si sostituiscono.
+   */
+  origine?: 'sistema' | 'correzione'
 }
 
 export interface DayContext {
