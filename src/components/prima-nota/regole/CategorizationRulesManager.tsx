@@ -249,9 +249,12 @@ export function CategorizationRulesManager({
 
   return (
     <div className="p-6 space-y-4">
-      {/* Header con sub-tabs e azioni */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1">
+      {/* Header con sub-tabs e azioni.
+          I due gruppi occupano insieme 830 px: senza `flex-wrap` restano su
+          una riga sola e a 390 px escono dallo schermo portandosi dietro
+          l'elenco delle regole */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-1">
           <button
             onClick={() => setActiveDirection('INFLOW')}
             className={`
@@ -280,7 +283,7 @@ export function CategorizationRulesManager({
           </button>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             size="sm"
@@ -297,8 +300,8 @@ export function CategorizationRulesManager({
       </div>
 
       {/* Filtri */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-xs">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative min-w-0 flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Ricerca keywords..."

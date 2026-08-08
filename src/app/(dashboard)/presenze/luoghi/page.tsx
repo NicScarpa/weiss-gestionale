@@ -233,14 +233,14 @@ export default function LuoghiLavoroPage() {
 
   return (
     <div className="container mx-auto py-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" asChild>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-4">
+          <Button variant="ghost" size="icon" className="shrink-0" asChild>
             <Link href="/presenze">
               <ChevronLeft className="h-5 w-5" />
             </Link>
           </Button>
-          <div>
+          <div className="min-w-0">
             <h1 className="text-3xl font-bold tracking-tight">Luoghi di lavoro</h1>
             <p className="text-muted-foreground">
               Dove si timbra, con quale raggio e chi è abilitato in ciascun posto

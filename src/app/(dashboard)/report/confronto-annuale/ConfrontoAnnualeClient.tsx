@@ -194,14 +194,14 @@ export function ConfrontoAnnualeClient() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/report">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-4">
+          <Link href="/report" className="shrink-0">
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
-          <div>
+          <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight">Confronto Annuale</h1>
             <p className="text-muted-foreground">
               Analisi year-over-year degli incassi
@@ -420,11 +420,14 @@ export function ConfrontoAnnualeClient() {
 
                   return (
                     <div key={month.monthNumber} className="space-y-1">
-                      <div className="flex items-center justify-between text-sm">
+                      {/* Mese e importi su una riga sola non stanno in un
+                          telefono: sotto sm il mese sta sopra e i tre valori
+                          si distribuiscono sulla riga che segue */}
+                      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm">
                         <span className="font-medium capitalize w-24">{month.monthShort}</span>
-                        <div className="flex items-center gap-4">
-                          <span className="text-blue-600 w-24 text-right">{formatCurrency(month.current.gross)}</span>
-                          <span className="text-gray-400 w-24 text-right">{formatCurrency(month.previous.gross)}</span>
+                        <div className="flex w-full items-center justify-between gap-2 text-xs sm:w-auto sm:justify-end sm:gap-4 sm:text-sm">
+                          <span className="min-w-0 truncate text-right tabular-nums text-blue-600 sm:w-24">{formatCurrency(month.current.gross)}</span>
+                          <span className="min-w-0 truncate text-right tabular-nums text-gray-400 sm:w-24">{formatCurrency(month.previous.gross)}</span>
                           {getChangeBadge(month.change.percentage)}
                         </div>
                       </div>

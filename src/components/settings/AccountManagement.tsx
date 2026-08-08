@@ -241,9 +241,9 @@ export function AccountManagement() {
   return (
     <div className="space-y-6">
       {/* Controlli */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4 flex-1">
-          <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-4">
+          <div className="relative min-w-0 flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Cerca conto..."
@@ -271,7 +271,9 @@ export function AccountManagement() {
 
       {/* Tabs per tipo */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AccountType)}>
-        <TabsList className="grid w-full grid-cols-4">
+        {/* Quattro colonne uguali in un telefono danno 70 px a testa e le
+            etichette si sovrappongono: sotto sm la striscia scorre */}
+        <TabsList className="flex w-full sm:grid sm:grid-cols-4">
           {ACCOUNT_TYPES.map((type) => {
             const Icon = type.icon
             return (

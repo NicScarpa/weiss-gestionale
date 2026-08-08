@@ -417,7 +417,7 @@ export function BudgetCategoryManagement() {
               <p className="text-muted-foreground mb-4">
                 Inizia con le categorie predefinite o creane di nuove
               </p>
-              <div className="flex items-center justify-center gap-4">
+              <div className="flex flex-wrap items-center justify-center gap-4">
                 <Button onClick={seedCategories} disabled={seeding}>
                   {seeding ? (
                     <>
