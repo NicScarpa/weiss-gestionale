@@ -252,6 +252,62 @@ describe('POST /api/attendance/auto-clockout', () => {
     expect(daApprovare).toBe(0)
   })
 
+  it("una correzione approvata prevale sull'orario scritto dal sistema", async () => {
+    // Questo test presidia una **stringa**: il motore riconosce che un orario
+    // è una supposizione del programma da `manualEntryBy === 'SYSTEM'`
+    // (`AUTORE_SISTEMA`), e solo per questo una correzione approvata lo
+    // sostituisce. Scritta e riletta stanno in due file diversi: se un domani
+    // qualcuno cambia la costante da una parte sola, senza questo test le ore
+    // tornerebbero sbagliate in silenzio.
+    //
+    // Turno del mattino, uscita dimenticata: il sistema chiude alle 13:00. La
+    // persona era invece uscita alle 15:00 e la correzione viene approvata.
+    // Senza il riconoscimento l'uscita delle 15:00 resterebbe orfana e la
+    // giornata varrebbe 4 ore invece di 6.
+    const { utente, venue, giorno } = await preparaScenario({
+      entrataMinuti: 9 * 60,
+      turno: { inizio: 9 * 60, fine: 13 * 60 },
+      useShiftAsWindow: false,
+    })
+
+    await eseguiChiusuraAutomatica()
+
+    const richiesta = await prisma.attendanceCorrectionRequest.create({
+      data: {
+        userId: utente.id,
+        venueId: venue.id,
+        date: toDateOnlyUtc(giorno),
+        requestedClockOut: romeInstant(giorno, 15 * 60),
+        reason: 'Uscita reale alle 15:00',
+        status: 'APPROVED',
+      },
+    })
+
+    await prisma.attendanceRecord.create({
+      data: {
+        userId: utente.id,
+        venueId: venue.id,
+        punchType: 'OUT',
+        punchMethod: 'MANUAL',
+        punchedAt: romeInstant(giorno, 15 * 60),
+        isManual: true,
+        manualEntryBy: utente.id,
+        manualEntryReason: 'Correzione approvata',
+        correctionRequestId: richiesta.id,
+      },
+    })
+
+    const [anno, mese] = giorno.split('-').map(Number)
+    const paghe = await generatePayrollData(mese, anno, venue.id, {
+      userIds: [utente.id],
+    })
+    const giornata = paghe.records.find(
+      (r) => r.date.toISOString().slice(0, 10) === giorno
+    )
+
+    expect(giornata?.hours.total).toBe(6)
+  })
+
   it('chiude una sola volta la stessa entrata', async () => {
     const { utente } = await preparaScenario({
       entrataMinuti: 14 * 60,
