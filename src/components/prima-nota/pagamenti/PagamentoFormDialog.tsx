@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { CreditCardIcon } from 'lucide-react'
@@ -86,6 +86,8 @@ export function PagamentoFormDialog({
       beneficiarioNome: '',
     },
   })
+
+  const importoTotale = useWatch({ control: form.control, name: 'importo' })
 
   const onSubmit = async (data: PagamentoFormData) => {
     try {
@@ -276,7 +278,7 @@ export function PagamentoFormDialog({
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Totale Pagamento:</span>
               <span className="font-semibold text-lg">
-                €{form.watch('importo')?.toFixed(2) || '0.00'}
+                €{importoTotale?.toFixed(2) || '0.00'}
               </span>
             </div>
           </div>
