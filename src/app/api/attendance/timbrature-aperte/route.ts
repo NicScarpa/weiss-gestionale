@@ -178,11 +178,15 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Chi si vede scrivere l'uscita da un altro deve saperlo subito. Si
-    // aspetta l'invio invece di lasciarlo correre da solo: è l'unica
-    // contromisura a un orario deciso da terzi sulle ore pagate di qualcuno,
-    // e se non parte vogliamo trovarlo nel log di questa richiesta. I
-    // destinatari sono una manciata e i push partono in parallelo.
+    // Chi si vede scrivere l'uscita da un altro deve saperlo subito.
+    //
+    // NON convertire in fire-and-forget (`notify(...).catch(...)`) per
+    // uniformarlo agli altri trigger: qui l'attesa è deliberata. Questo avviso
+    // è l'unica contromisura a un orario deciso da terzi sulle ore pagate di
+    // qualcuno, e un invio perso in silenzio riporta il difetto intero. Se
+    // fallisce, vogliamo trovarlo nel log di QUESTA richiesta, non in un
+    // rejection orfano. I destinatari sono una manciata e i push partono in
+    // parallelo: l'attesa aggiunta è quella di un push solo.
     try {
       await notifyUsciteRegistrateDaAltri({
         autoreId: session!.user.id,
