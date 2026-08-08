@@ -279,9 +279,10 @@ export default function PresenzePage() {
                       !selectedDate && 'text-muted-foreground'
                     )}
                   >
-                    <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-                    {/* Per esteso la data non entra in un telefono e verrebbe
-                        troncata proprio dove serve: sotto sm va in forma breve */}
+                    {/* Sotto sm i 24 px dell'icona sono la differenza fra
+                        vedere la data e vederla troncata: il calendario si
+                        apre lo stesso toccando il bottone */}
+                    <CalendarIcon className="mr-2 hidden h-4 w-4 shrink-0 sm:block" />
                     <span className="truncate sm:hidden">
                       {format(selectedDate, 'EEE d MMM yyyy', { locale: it })}
                     </span>

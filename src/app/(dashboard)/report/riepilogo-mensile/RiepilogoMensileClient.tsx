@@ -185,14 +185,16 @@ export function RiepilogoMensileClient() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/report">
+      {/* Senza `flex-wrap` il bottone tiene la sua larghezza e al titolo
+          resta una colonna di poche lettere, che va a capo quattro volte */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-4">
+          <Link href="/report" className="shrink-0">
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
-          <div>
+          <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight">Riepilogo Mensile</h1>
             <p className="text-muted-foreground">
               Entrate, uscite e margini per mese
