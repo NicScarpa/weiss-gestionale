@@ -23,16 +23,15 @@ const LARGHEZZA = 390
 const PAGINE = [
   { nome: 'dashboard', url: '/' },
   { nome: 'nuova chiusura cassa', url: '/chiusura-cassa/nuova' },
-  {
-    nome: 'prima nota / movimenti',
-    url: '/prima-nota/movimenti',
-    difettoNoto: 'sfonda di 32px (main 358 su 326 disponibili)',
-  },
-  {
-    nome: 'scadenzario',
-    url: '/scadenzario',
-    difettoNoto: 'sfonda di 405px (main 731 su 326 disponibili): la tabella a dieci colonne non ha un contenitore che scorra per conto suo',
-  },
+  // Queste due sfondavano — 358 su 326 la prima nota, 731 su 326 lo scadenzario —
+  // ed erano marcate `difettoNoto`. Corrette in W4: la causa non era la tabella,
+  // che shadcn avvolge già in `overflow-x-auto`, ma la riga delle azioni
+  // nell'intestazione e la striscia delle tab larga a contenuto. La marcatura è
+  // stata tolta **dopo** aver eseguito la suite e visto i due test passare
+  // davvero: toglierla sulla fiducia li avrebbe trasformati in asserzioni finte,
+  // che è ciò per cui la suite precedente è stata cancellata.
+  { nome: 'prima nota / movimenti', url: '/prima-nota/movimenti' },
+  { nome: 'scadenzario', url: '/scadenzario' },
 ]
 
 test.use({ viewport: { width: LARGHEZZA, height: 844 }, isMobile: true, hasTouch: true })
