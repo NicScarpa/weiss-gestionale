@@ -24,6 +24,24 @@ export interface SendBulkNotificationOptions {
   channels?: NotificationChannel[]
 }
 
+/**
+ * Corpo del messaggio Web Push, così come il service worker lo legge
+ * nell'evento `push` (vedi src/app/sw.ts).
+ */
+export interface PushPayload {
+  title: string
+  body: string
+  /** Serve al service worker per scegliere le azioni della notifica. */
+  type?: NotificationType
+  icon?: string
+  badge?: string
+  /** Notifiche con lo stesso tag si sostituiscono invece di accumularsi. */
+  tag?: string
+  /** Letto al click: `url` decide dove atterra l'utente. */
+  data?: Record<string, string>
+  requireInteraction?: boolean
+}
+
 export interface NotificationResult {
   success: boolean
   messageId?: string

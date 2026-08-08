@@ -40,7 +40,8 @@ import {
   SchedulePaymentMethod,
 } from '@/types/schedule'
 import { ScheduleSourceBadge } from '@/components/scadenzario/schedule-source-badge'
-import { formatCurrency, cn } from '@/lib/utils'
+import { cn } from '@/lib/utils'
+import { formatCurrency } from '@/lib/formatters'
 import { format, differenceInCalendarDays } from 'date-fns'
 import { it } from 'date-fns/locale'
 import {
@@ -357,7 +358,7 @@ export default function ScadenzarioDetailPage() {
                 {schedule.verificata ? '✓ Verificata' : '○ Da verificare'}
               </Badge>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">
               {schedule.descrizione}
             </h1>
           </div>

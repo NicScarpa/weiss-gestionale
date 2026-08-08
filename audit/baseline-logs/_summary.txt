@@ -1,0 +1,13 @@
+01-npm-ci|exit=0|secs=25
+02-prisma-generate|exit=0|secs=2
+03-tsc|exit=0|secs=6
+04-tsc-strict|exit=2|secs=11
+05-lint|exit=0|secs=13
+05b-eslint-dot|exit=0|secs=12
+06-test|exit=0|secs=4
+07-coverage|exit=0|secs=4
+08-build|exit=0|secs=27
+09-npm-audit|exit=1|secs=2
+10-depcheck|exit=255|secs=10
+11-knip|exit=1|secs=5
+DONE

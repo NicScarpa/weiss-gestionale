@@ -249,7 +249,7 @@ export function LeaveRequestForm() {
           <div className="flex items-center justify-between rounded-lg border p-4">
             <div className="space-y-0.5">
               <Label>Giornata parziale</Label>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted-foreground">
                 Richiedi solo alcune ore del giorno
               </p>
             </div>
@@ -303,7 +303,7 @@ export function LeaveRequestForm() {
             <Button
               type="button"
               variant="outline"
-              className="flex-1 border-gray-200 text-gray-600 rounded-xl"
+              className="flex-1 border-border text-muted-foreground rounded-xl"
               onClick={() => router.back()}
             >
               Annulla

@@ -9,16 +9,18 @@ import 'dotenv/config'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { Pool } from 'pg'
 
+import { assertNotProdOrExit } from '../scripts/guards/assert-not-prod'
+
+// Prima di aprire qualunque connessione: il seed scrive dati e non deve mai
+// poterlo fare sulla produzione. Il controllo è su DATABASE_URL, non su
+// NODE_ENV, che in sviluppo non vale mai 'production' e quindi non protegge.
+assertNotProdOrExit()
+
 const pool = new Pool({ connectionString: process.env.DATABASE_URL })
 const adapter = new PrismaPg(pool)
 const prisma = new PrismaClient({ adapter })
 
 async function main() {
-  if (process.env.NODE_ENV === 'production') {
-    console.error('SEED BLOCCATO IN PRODUZIONE')
-    process.exit(1)
-  }
-
   console.log('🌱 Inizio seed database...')
 
   // ==================== RUOLI ====================

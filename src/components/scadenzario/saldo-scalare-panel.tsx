@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SaldoScalareChart } from './saldo-scalare-chart'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency } from '@/lib/formatters'
 import { format, parseISO, addDays } from 'date-fns'
 import { it } from 'date-fns/locale'
 import { Info, Loader2, X } from 'lucide-react'
@@ -146,7 +146,7 @@ export function SaldoScalarePanel({ visible }: SaldoScalarePanelProps) {
                 </div>
                 <p className={cn(
                   "text-xl font-bold",
-                  data.saldoOggi >= 0 ? 'text-slate-900' : 'text-rose-600'
+                  data.saldoOggi >= 0 ? 'text-foreground' : 'text-rose-600'
                 )}>
                   {formatCurrency(data.saldoOggi)}
                 </p>
@@ -199,7 +199,7 @@ export function SaldoScalarePanel({ visible }: SaldoScalarePanelProps) {
                 </div>
                 <p className={cn(
                   "text-xl font-bold",
-                  data.saldoFinale >= 0 ? 'text-slate-900' : 'text-rose-600'
+                  data.saldoFinale >= 0 ? 'text-foreground' : 'text-rose-600'
                 )}>
                   {formatCurrency(data.saldoFinale)}
                 </p>

@@ -11,7 +11,7 @@ interface JournalEntryBadgeProps {
 }
 
 export function JournalEntryBadge({ type, showLabel = false, variant = 'default' }: JournalEntryBadgeProps) {
-  const colorClass = ENTRY_TYPE_COLORS[type as keyof typeof ENTRY_TYPE_COLORS] || 'text-gray-600'
+  const colorClass = ENTRY_TYPE_COLORS[type as keyof typeof ENTRY_TYPE_COLORS] || 'text-muted-foreground'
   const label = ENTRY_TYPE_LABELS[type as keyof typeof ENTRY_TYPE_LABELS] || type
 
   return (

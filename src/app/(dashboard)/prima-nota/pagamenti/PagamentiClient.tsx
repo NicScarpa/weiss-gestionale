@@ -178,10 +178,12 @@ export function PagamentiClient() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      {/* Senza flex-wrap il bottone finisce incollato al bordo dello schermo
+          sotto sm: titolo e azione ci stanno solo da ~640px in su */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold">Pagamenti</h1>
         <Button onClick={handleNewPagamento}>
-          <PlusIcon className="h-4 w-4 mr-2" />
+          <PlusIcon aria-hidden="true" className="h-4 w-4 mr-2" />
           Nuovo Pagamento
         </Button>
       </div>

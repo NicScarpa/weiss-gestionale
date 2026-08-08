@@ -28,6 +28,7 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/components/ui/tabs'
+import { formatCurrency, formatPercentage } from '@/lib/formatters'
 
 interface CategoryData {
   id: string
@@ -176,17 +177,6 @@ export function AnalisiCostiClient() {
 
     fetchData()
   }, [quickPeriod])
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('it-IT', {
-      style: 'currency',
-      currency: 'EUR',
-    }).format(value)
-  }
-
-  const formatPercentage = (value: number) => {
-    return `${value.toFixed(1)}%`
-  }
 
   const getChangeIcon = (value: number) => {
     if (value > 0) return <TrendingUp className="h-4 w-4 text-red-600" />

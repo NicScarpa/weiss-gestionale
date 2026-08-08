@@ -2,19 +2,29 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import {
+  salvaSottoscrizione,
+  trovaPerEndpoint,
+  rimuoviSottoscrizione,
+} from '@/lib/notifications/subscriptions'
 
 import { logger } from '@/lib/logger'
+
 /**
- * Iscrizione del browser alle notifiche push (Web Push, VAPID).
+ * Una sottoscrizione Web Push è la tripletta (endpoint, p256dh, auth) prodotta
+ * dal browser con `pushManager.subscribe()`. Le due chiavi servono a cifrare il
+ * payload: senza, non si può inviare nulla.
  *
- * `endpoint` è l'indirizzo che il servizio di push del browser assegna al
- * dispositivo, `p256dh` e `auth` le chiavi con cui si cifra il contenuto.
- * Li produce `pushManager.subscribe()` sul client: qui si conservano e basta.
+ * I limiti di lunghezza tengono conto che questi valori arrivano dal client e
+ * finiscono in colonne di testo senza tetto: le misure vere stanno molto sotto.
  */
 const subscribeSchema = z.object({
   endpoint: z.string().url().max(1000),
-  p256dh: z.string().min(1).max(500),
-  auth: z.string().min(1).max(500),
+  keys: z.object({
+    p256dh: z.string().min(1).max(500),
+    auth: z.string().min(1).max(500),
+  }),
+  expirationTime: z.number().nullable().optional(),
   deviceName: z.string().max(120).optional(),
   deviceType: z.enum(['ios', 'android', 'web']).optional(),
   browserName: z.string().max(80).optional(),
@@ -24,7 +34,7 @@ const unsubscribeSchema = z.object({
   endpoint: z.string().url().max(1000),
 })
 
-// POST /api/notifications/subscribe - Registra l'iscrizione push del browser
+// POST /api/notifications/subscribe - Registra la sottoscrizione di un dispositivo
 export async function POST(request: NextRequest) {
   try {
     const session = await auth()
@@ -36,51 +46,16 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = subscribeSchema.parse(body)
 
-    // Lo stesso browser che si re-iscrive presenta lo stesso endpoint: si
-    // aggiorna, non si duplica.
-    const existing = await prisma.pushSubscription.findUnique({
-      where: { endpoint: data.endpoint },
-    })
-
-    if (existing) {
-      // Aggiorna la subscription esistente
-      const updated = await prisma.pushSubscription.update({
-        where: { id: existing.id },
-        data: {
-          userId: session.user.id,
-          p256dh: data.p256dh,
-          auth: data.auth,
-          deviceName: data.deviceName,
-          deviceType: data.deviceType,
-          browserName: data.browserName,
-          isActive: true,
-          lastUsedAt: new Date(),
-        },
-      })
-
-      return NextResponse.json({
-        success: true,
-        subscription: {
-          id: updated.id,
-          deviceName: updated.deviceName,
-          deviceType: updated.deviceType,
-        },
-      })
-    }
-
-    // Crea nuova subscription
-    const subscription = await prisma.pushSubscription.create({
-      data: {
-        userId: session.user.id,
+    const subscription = await salvaSottoscrizione({
+      userId: session.user.id,
+      dati: {
         endpoint: data.endpoint,
-        p256dh: data.p256dh,
-        auth: data.auth,
-        deviceName: data.deviceName,
-        deviceType: data.deviceType,
-        browserName: data.browserName,
-        isActive: true,
-        lastUsedAt: new Date(),
+        keys: data.keys,
+        expirationTime: data.expirationTime,
       },
+      deviceName: data.deviceName,
+      deviceType: data.deviceType,
+      browserName: data.browserName,
     })
 
     // Crea preferenze di default se non esistono
@@ -90,14 +65,7 @@ export async function POST(request: NextRequest) {
       update: {},
     })
 
-    return NextResponse.json({
-      success: true,
-      subscription: {
-        id: subscription.id,
-        deviceName: subscription.deviceName,
-        deviceType: subscription.deviceType,
-      },
-    })
+    return NextResponse.json({ success: true, subscription })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
@@ -114,7 +82,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// DELETE /api/notifications/subscribe - Rimuovi l'iscrizione push
+// DELETE /api/notifications/subscribe - Rimuovi la sottoscrizione di un dispositivo
 export async function DELETE(request: NextRequest) {
   try {
     const session = await auth()
@@ -126,13 +94,10 @@ export async function DELETE(request: NextRequest) {
     const body = await request.json()
     const data = unsubscribeSchema.parse(body)
 
-    // Trova e disattiva la subscription
-    const subscription = await prisma.pushSubscription.findUnique({
-      where: { endpoint: data.endpoint },
-    })
+    const subscription = await trovaPerEndpoint(data.endpoint)
 
     if (!subscription) {
-      return NextResponse.json({ success: true, message: 'Iscrizione non trovata' })
+      return NextResponse.json({ success: true, message: 'Sottoscrizione non trovata' })
     }
 
     // Verifica che appartenga all'utente corrente
@@ -140,9 +105,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 })
     }
 
-    await prisma.pushSubscription.delete({
-      where: { id: subscription.id },
-    })
+    await rimuoviSottoscrizione(subscription.id)
 
     return NextResponse.json({ success: true })
   } catch (error) {
@@ -161,7 +124,7 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
-// GET /api/notifications/subscribe - Lista subscriptions dell'utente
+// GET /api/notifications/subscribe - Lista dispositivi sottoscritti dell'utente
 export async function GET(_request: NextRequest) {
   try {
     const session = await auth()

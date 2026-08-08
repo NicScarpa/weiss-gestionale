@@ -9,7 +9,15 @@ if command -v gitleaks >/dev/null 2>&1; then
     exit 1
   }
 else
-  echo "ATTENZIONE: gitleaks non installato (brew install gitleaks) - scan segreti saltato"
+  echo ""
+  echo "########################################################################"
+  echo "#  RISCHIO: gitleaks NON e' installato, lo scan dei segreti e' SALTATO  #"
+  echo "#                                                                      #"
+  echo "#  Questo commit puo' contenere credenziali senza che nulla lo fermi.   #"
+  echo "#  Installalo prima del prossimo commit:  brew install gitleaks         #"
+  echo "#  Poi ricontrolla la history:  gitleaks detect --redact                #"
+  echo "########################################################################"
+  echo ""
 fi
 
 # Lint

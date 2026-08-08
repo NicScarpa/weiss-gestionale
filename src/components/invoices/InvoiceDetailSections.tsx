@@ -31,9 +31,9 @@ import {
   getDocumentTypeColor,
   getDocumentTypeLabel,
   getPaymentMethodLabel,
-  formatCurrency,
   formatDateIT,
 } from '@/lib/invoice-utils'
+import { formatCurrencyOrZero as formatCurrency } from '@/lib/formatters'
 import { NATURA_OPERAZIONE } from '@/lib/sdi/types'
 import { AccountGroupedSelect } from '@/components/prima-nota/shared/AccountGroupedSelect'
 
@@ -154,7 +154,7 @@ export function DocumentInfoSection({
             {getDocumentTypeAbbrev(documentType)} - {getDocumentTypeLabel(documentType)}
           </Badge>
         )}
-        <Badge className={isRegistered ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}>
+        <Badge className={isRegistered ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-muted-foreground'}>
           {isRegistered ? 'Registrata' : 'Non registrata'}
         </Badge>
       </div>
@@ -195,9 +195,9 @@ export function SupplierSection({
       </CardHeader>
       <CardContent className="space-y-1 pt-0">
         <p className="font-semibold">{data.denominazione}</p>
-        <p className="text-sm text-slate-600">P.IVA: {data.partitaIva}</p>
+        <p className="text-sm text-muted-foreground">P.IVA: {data.partitaIva}</p>
         {data.codiceFiscale && (
-          <p className="text-sm text-slate-600">C.F.: {data.codiceFiscale}</p>
+          <p className="text-sm text-muted-foreground">C.F.: {data.codiceFiscale}</p>
         )}
         {data.sede.indirizzo && (
           <p className="text-sm text-slate-500">
@@ -243,10 +243,10 @@ export function CustomerSection({ cessionarioCommittente, codiceDestinatario }: 
       <CardContent className="space-y-1 pt-0">
         <p className="font-semibold">{data.denominazione}</p>
         {data.partitaIva && (
-          <p className="text-sm text-slate-600">P.IVA: {data.partitaIva}</p>
+          <p className="text-sm text-muted-foreground">P.IVA: {data.partitaIva}</p>
         )}
         {data.codiceFiscale && (
-          <p className="text-sm text-slate-600">C.F.: {data.codiceFiscale}</p>
+          <p className="text-sm text-muted-foreground">C.F.: {data.codiceFiscale}</p>
         )}
         {data.sede.indirizzo && (
           <p className="text-sm text-slate-500">
@@ -289,7 +289,7 @@ export function CausaleSection({ causale }: CausaleSectionProps) {
       <CardContent className="pt-0">
         <div className="bg-slate-50 rounded-md p-3">
           {causale.map((c, idx) => (
-            <p key={idx} className="text-sm text-slate-700 whitespace-pre-wrap">
+            <p key={idx} className="text-sm text-foreground whitespace-pre-wrap">
               {c}
             </p>
           ))}
@@ -546,22 +546,22 @@ export function DocumentTotalsSection({
       </CardHeader>
       <CardContent className="pt-0 space-y-2">
         <div className="flex justify-between text-sm">
-          <span className="text-slate-600">Totale imponibile</span>
+          <span className="text-muted-foreground">Totale imponibile</span>
           <span className="font-mono">{formatCurrency(netAmount)}</span>
         </div>
         <div className="flex justify-between text-sm">
-          <span className="text-slate-600">Totale IVA</span>
+          <span className="text-muted-foreground">Totale IVA</span>
           <span className="font-mono">{formatCurrency(vatAmount)}</span>
         </div>
         {hasBollo && (
           <div className="flex justify-between text-sm">
-            <span className="text-slate-600">Bollo virtuale</span>
+            <span className="text-muted-foreground">Bollo virtuale</span>
             <span className="font-mono">{formatCurrency(datiBollo?.importoBollo || 2)}</span>
           </div>
         )}
         {arrotondamento !== undefined && arrotondamento !== 0 && (
           <div className="flex justify-between text-sm">
-            <span className="text-slate-600">Arrotondamento</span>
+            <span className="text-muted-foreground">Arrotondamento</span>
             <span className="font-mono">{formatCurrency(arrotondamento)}</span>
           </div>
         )}
@@ -599,12 +599,12 @@ export function BolloSection({ datiBollo }: BolloSectionProps) {
       </CardHeader>
       <CardContent className="pt-0 space-y-1">
         <div className="flex justify-between text-sm">
-          <span className="text-slate-600">Bollo Virtuale</span>
+          <span className="text-muted-foreground">Bollo Virtuale</span>
           <Badge variant="outline">Sì</Badge>
         </div>
         {datiBollo.importoBollo && (
           <div className="flex justify-between text-sm">
-            <span className="text-slate-600">Importo</span>
+            <span className="text-muted-foreground">Importo</span>
             <span className="font-mono">{formatCurrency(datiBollo.importoBollo)}</span>
           </div>
         )}
@@ -722,7 +722,7 @@ export function PaymentSection({ datiPagamento, deadlines, schedules }: PaymentS
                     {payment.iban ? (
                       <span className="font-mono text-xs break-all">{payment.iban}</span>
                     ) : 'istitutoFinanziario' in payment && payment.istitutoFinanziario ? (
-                      <span className="text-sm text-slate-600">{payment.istitutoFinanziario}</span>
+                      <span className="text-sm text-muted-foreground">{payment.istitutoFinanziario}</span>
                     ) : (
                       <span className="text-slate-400">-</span>
                     )}

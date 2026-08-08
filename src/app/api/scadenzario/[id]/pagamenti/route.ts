@@ -2,11 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
-import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
-import { ScheduleStatus } from '@/types/schedule'
 import { ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
+import {
+  bloccaScadenza,
+  ricalcolaStatoSchedule,
+  sommaPagamenti,
+  TOLLERANZA_IMPORTI,
+} from '@/lib/scadenzario/stato-schedule'
 
 const createPaymentSchema = z.object({
   importo: z.number().positive('Importo deve essere positivo'),
@@ -75,113 +79,85 @@ export async function POST(
       return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
-    // Verifica esistenza scadenza
-    const schedule = await prisma.schedule.findFirst({
-      where: { id: id },
-      select: {
-        id: true,
-        venueId: true,
-        tipo: true,
-        supplierId: true,
-        importoTotale: true,
-        importoPagato: true,
-        stato: true,
-        dataPagamento: true,
-        invoiceId: true,
-      },
-    })
-
-    if (!schedule) {
-      return NextResponse.json({ error: 'Scadenza non trovata' }, { status: 404 })
-    }
-
     const body = await request.json()
     const validatedData = createPaymentSchema.parse(body)
 
     const dataPagamento = new Date(validatedData.dataPagamento)
 
-    // Crea pagamento
-    const payment = await prisma.schedulePayment.create({
-      data: {
-        scheduleId: id,
-        importo: validatedData.importo,
-        dataPagamento,
-        metodo: validatedData.metodo,
-        riferimento: validatedData.riferimento,
-        note: validatedData.note,
-      },
-    })
+    // Creazione del pagamento e ricalcolo della scadenza in una transazione
+    // sola, con la scadenza bloccata: prima erano cinque chiamate slegate che
+    // leggevano il residuo prima di scrivere, e due richieste simultanee
+    // potevano registrare insieme più del dovuto.
+    const esito = await prisma.$transaction(async (tx) => {
+      const schedule = await bloccaScadenza(tx, id)
+      if (!schedule) return { errore: 'not_found' } as const
 
-    // Calcola nuovo totale pagato
-    const aggregatedPayments = await prisma.schedulePayment.aggregate({
-      where: { scheduleId: id },
-      _sum: { importo: true },
-    })
+      if (schedule.stato === 'annullata') {
+        return {
+          errore: 'chiusa',
+          messaggio: 'La scadenza è annullata: non accetta pagamenti',
+        } as const
+      }
 
-    const nuovoImportoPagato = Number(aggregatedPayments._sum.importo || 0)
-    const importoTotale = Number(schedule.importoTotale)
+      const { pagato } = await sommaPagamenti(tx, id)
+      const residuo = Number(schedule.importoTotale) - pagato
 
-    // Determina nuovo stato
-    let nuovoStato = schedule.stato
-    if (nuovoImportoPagato >= importoTotale) {
-      nuovoStato = ScheduleStatus.PAGATA
-    } else if (nuovoImportoPagato > 0) {
-      nuovoStato = ScheduleStatus.PARZIALMENTE_PAGATA
-    }
+      if (validatedData.importo > residuo + TOLLERANZA_IMPORTI) {
+        return {
+          errore: 'sfora',
+          messaggio:
+            `Il pagamento di ${validatedData.importo.toFixed(2)} € supera il residuo ` +
+            `della scadenza (${Math.max(0, residuo).toFixed(2)} €)`,
+        } as const
+      }
 
-    // Aggiorna schedule
-    const updatedSchedule = await prisma.schedule.update({
-      where: { id: id },
-      data: {
-        importoPagato: nuovoImportoPagato,
-        stato: nuovoStato,
-        ...(nuovoStato === ScheduleStatus.PAGATA && !schedule.dataPagamento && {
-          dataPagamento: dataPagamento,
-        }),
-      },
-    })
-
-    // Se la scadenza nasce da una fattura, la fattura risulta pagata solo
-    // quando tutte le sue rate sono state saldate
-    if (schedule.invoiceId && nuovoStato === ScheduleStatus.PAGATA) {
-      const rateAperte = await prisma.schedule.count({
-        where: {
-          invoiceId: schedule.invoiceId,
-          stato: { not: ScheduleStatus.PAGATA },
+      const payment = await tx.schedulePayment.create({
+        data: {
+          scheduleId: id,
+          importo: validatedData.importo,
+          dataPagamento,
+          metodo: validatedData.metodo,
+          riferimento: validatedData.riferimento,
+          note: validatedData.note,
         },
       })
 
-      if (rateAperte === 0) {
-        await prisma.electronicInvoice.update({
-          where: { id: schedule.invoiceId },
-          data: { status: 'PAID' },
-        })
+      const stato = await ricalcolaStatoSchedule(tx, id)
+      return { payment, stato: stato! } as const
+    })
+
+    if ('errore' in esito) {
+      if (esito.errore === 'not_found') {
+        return NextResponse.json({ error: 'Scadenza non trovata' }, { status: 404 })
       }
+      // 422 e non 400: la richiesta è ben formata, è l'importo a non stare in
+      // piedi rispetto a quanto resta da pagare
+      return NextResponse.json({ error: esito.messaggio }, { status: 422 })
     }
 
     // La storia del fornitore è cambiata: aggiorna le stime delle sue
     // scadenze aperte. Best-effort: non blocca la registrazione
-    if (
-      nuovoStato === ScheduleStatus.PAGATA &&
-      schedule.tipo === 'passiva' &&
-      schedule.supplierId
-    ) {
-      await ricalcolaStimeFornitore(schedule.supplierId, schedule.venueId)
+    if (esito.stato.saldata && esito.stato.tipo === 'passiva' && esito.stato.supplierId) {
+      await ricalcolaStimeFornitore(esito.stato.supplierId, esito.stato.venueId)
     }
 
     await createAuditLog({
       userId: session.user.id,
       action: 'CREATE',
       entityType: 'SchedulePayment',
-      entityId: payment.id,
+      entityId: esito.payment.id,
       newValues: { scheduleId: id, importo: validatedData.importo },
     })
 
     return NextResponse.json({
-      payment,
+      payment: esito.payment,
       schedule: {
-        ...updatedSchedule,
-        importoResiduo: importoTotale - nuovoImportoPagato,
+        id,
+        stato: esito.stato.stato,
+        importoTotale: esito.stato.importoTotale,
+        importoPagato: esito.stato.importoPagato,
+        importoResiduo: esito.stato.importoResiduo,
+        dataPagamento: esito.stato.dataPagamento,
       },
     })
   } catch (error) {

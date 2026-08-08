@@ -1,6 +1,10 @@
 // Category Aggregator - Logica per aggregare budget/actual per categoria
+import type { AccountType } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
+import { money, toApi, type Money } from '@/lib/money'
+import { liquiditaAlGiorno, movimentiPerContoEMese } from '@/lib/saldi'
 import {
+  type MonthKey,
   type MonthlyValues,
   MONTH_KEYS,
   MONTH_NUMBER_TO_KEY,
@@ -10,6 +14,23 @@ import {
   calculateAnnualTotal,
   budgetLineToMonthlyValues,
 } from '@/lib/budget-utils'
+
+/**
+ * Confronto fra budget e consuntivo, categoria per categoria.
+ *
+ * Gli actual vengono dalla **prima nota**. Prima venivano dalle uscite delle
+ * chiusure di cassa, e quella scelta aveva due conseguenze: i costi pagati per
+ * banca — cioè le fatture dei fornitori, la parte più grossa dei costi di un
+ * bar — non entravano mai nel confronto; e le uscite di chiusura, che a fine
+ * validazione diventano comunque scritture di prima nota, sarebbero state
+ * contate due volte non appena si fosse aggiunta la prima nota alla somma.
+ * Leggendo solo la prima nota si ottengono entrambe le cose: tutti i costi, una
+ * volta sola.
+ *
+ * L'imputazione parte dal **conto**, non dalla categoria: la categoria si
+ * deriva dal conto tramite `AccountBudgetMapping`, quindi rimappare un conto
+ * sposta subito anche lo storico, senza dover riscrivere i movimenti.
+ */
 
 export type CategoryType = 'REVENUE' | 'COST' | 'KPI' | 'TAX' | 'INVESTMENT' | 'VAT'
 
@@ -39,6 +60,14 @@ export interface BudgetKPIs {
   totalCosts: MonthlyValues & { annual: number }
   profit: MonthlyValues & { annual: number }
   profitMargin: MonthlyValues & { annual: number }
+  /**
+   * Ricavi che nessun conto rivendica: la differenza fra il fatturato delle
+   * chiusure validate e quanto è finito su conti di ricavo in prima nota. Oggi
+   * coincide praticamente con tutto l'incasso di cassa, perché le scritture
+   * generate dalla chiusura non portano un conto di ricavo. Finché questo
+   * numero non è vicino a zero, le categorie di ricavo mostrano meno del vero.
+   */
+  unassignedRevenue: MonthlyValues & { annual: number }
   liquidity: number
 }
 
@@ -48,6 +77,44 @@ export interface CategoryAggregationResult {
   venue: { id: string; name: string; code: string }
   kpis: BudgetKPIs
   categories: CategoryData[]
+}
+
+/** Dodici mesi di importi, tenuti in `Money` finché non escono verso la UI. */
+type ValoriMensili = Record<MonthKey, Money>
+
+function mesiVuoti(): ValoriMensili {
+  return MONTH_KEYS.reduce((acc, key) => {
+    acc[key] = money(0)
+    return acc
+  }, {} as ValoriMensili)
+}
+
+function sommaMesi(a: ValoriMensili, b: ValoriMensili): ValoriMensili {
+  return MONTH_KEYS.reduce((acc, key) => {
+    acc[key] = a[key].plus(b[key])
+    return acc
+  }, {} as ValoriMensili)
+}
+
+function totaleAnnuo(valori: ValoriMensili): Money {
+  return MONTH_KEYS.reduce((somma, key) => somma.plus(valori[key]), money(0))
+}
+
+/** Converte in ciò che l'API espone: numeri, arrotondati una volta sola. */
+function versoApi(valori: ValoriMensili): MonthlyValues & { annual: number } {
+  const mensili = MONTH_KEYS.reduce((acc, key) => {
+    acc[key] = toApi(valori[key])
+    return acc
+  }, {} as MonthlyValues)
+
+  return { ...mensili, annual: toApi(totaleAnnuo(valori)) }
+}
+
+function daMonthlyValues(valori: MonthlyValues): ValoriMensili {
+  return MONTH_KEYS.reduce((acc, key) => {
+    acc[key] = money(valori[key])
+    return acc
+  }, {} as ValoriMensili)
 }
 
 /**
@@ -77,84 +144,163 @@ export async function getMonthlyTargets(
 }
 
 /**
- * Recupera i ricavi actual dalle chiusure validate
+ * Fatturato delle chiusure validate, mese per mese.
+ *
+ * Resta la fonte dei ricavi complessivi perché è il dato fiscale: scontrini e
+ * fatture emesse. La prima nota registra l'incasso, non il fatturato, e i due
+ * numeri non coincidono (il POS arriva in banca con giorni di ritardo, il
+ * sospeso non arriva affatto).
  */
-async function getActualRevenue(
-  venueId: string,
-  year: number
-): Promise<MonthlyValues> {
-  const yearStart = new Date(year, 0, 1)
-  const yearEnd = new Date(year, 11, 31, 23, 59, 59)
-
+async function ricaviDalleChiusure(venueId: string, year: number): Promise<ValoriMensili> {
   const closures = await prisma.dailyClosure.findMany({
     where: {
       venueId,
       status: 'VALIDATED',
-      date: { gte: yearStart, lte: yearEnd },
+      date: { gte: new Date(Date.UTC(year, 0, 1)), lte: new Date(Date.UTC(year, 11, 31)) },
     },
     select: {
       date: true,
-      stations: {
-        select: { receiptAmount: true, invoiceAmount: true },
-      },
+      stations: { select: { receiptAmount: true, invoiceAmount: true } },
     },
   })
 
-  const monthlyValues = emptyMonthlyValues()
+  const valori = mesiVuoti()
 
   for (const closure of closures) {
-    const month = new Date(closure.date).getMonth() + 1
-    const monthKey = MONTH_NUMBER_TO_KEY[month]
-    const total = closure.stations.reduce(
-      (sum, s) => sum + Number(s.receiptAmount) + Number(s.invoiceAmount),
-      0
-    )
-    monthlyValues[monthKey] += total
+    const monthKey = MONTH_NUMBER_TO_KEY[closure.date.getUTCMonth() + 1]
+
+    for (const station of closure.stations) {
+      valori[monthKey] = valori[monthKey]
+        .plus(money(station.receiptAmount))
+        .plus(money(station.invoiceAmount))
+    }
   }
 
-  return monthlyValues
+  return valori
+}
+
+interface MovimentiDelConto {
+  /** Entrate: alimentano i conti di ricavo. */
+  entrate: ValoriMensili
+  /** Uscite: alimentano i conti di costo. */
+  uscite: ValoriMensili
 }
 
 /**
- * Recupera i costi actual per account dalle spese delle chiusure validate
+ * Movimenti di prima nota dell'anno, per conto e mese.
+ *
+ * Non applica alcun segno: quale delle due colonne rappresenti il consuntivo
+ * dipende dalla natura della categoria, e la decisione sta dove quella natura
+ * è nota.
  */
-async function getActualCostsByAccount(
+async function movimentiPerConto(
+  venueId: string,
+  year: number
+): Promise<Record<string, MovimentiDelConto>> {
+  const righe = await movimentiPerContoEMese(venueId, year)
+  const perConto: Record<string, MovimentiDelConto> = {}
+
+  for (const riga of righe) {
+    // I movimenti senza conto (incassi e versamenti generati dalla chiusura)
+    // non appartengono a nessuna categoria di budget.
+    if (!riga.accountId) continue
+
+    const conto = (perConto[riga.accountId] ??= {
+      entrate: mesiVuoti(),
+      uscite: mesiVuoti(),
+    })
+
+    const monthKey = MONTH_NUMBER_TO_KEY[riga.mese]
+    conto.entrate[monthKey] = conto.entrate[monthKey].plus(riga.dare)
+    conto.uscite[monthKey] = conto.uscite[monthKey].plus(riga.avere)
+  }
+
+  return perConto
+}
+
+/**
+ * Consuntivo di un conto secondo la **natura del conto**: un conto di ricavo è
+ * alimentato da ciò che entra, ogni altro da ciò che esce. Il verso opposto
+ * viene sottratto, così una nota di credito o uno storno riducono il
+ * consuntivo invece di gonfiare l'altra colonna.
+ *
+ * La regola guarda il conto e non la categoria che lo ospita perché è il conto
+ * a sapere cosa rappresenta; ed è la stessa regola che serve a
+ * `/api/budget/confronto`, che ragiona per conto e di categorie non ne ha.
+ */
+function consuntivoDelConto(
+  movimenti: MovimentiDelConto | undefined,
+  natura: AccountType | undefined
+): ValoriMensili {
+  if (!movimenti) return mesiVuoti()
+
+  const entrante = natura === 'RICAVO'
+  const positivo = entrante ? movimenti.entrate : movimenti.uscite
+  const negativo = entrante ? movimenti.uscite : movimenti.entrate
+
+  return MONTH_KEYS.reduce((acc, key) => {
+    acc[key] = positivo[key].minus(negativo[key])
+    return acc
+  }, {} as ValoriMensili)
+}
+
+/**
+ * Consuntivo dell'anno per ogni conto movimentato, già orientato.
+ *
+ * Vive qui perché lo usano entrambe le viste del budget: quella per categoria
+ * (`/api/budget/[id]/categories`) e quella per conto (`/api/budget/confronto`).
+ * Erano due implementazioni separate e mostravano numeri diversi sugli stessi
+ * dati.
+ */
+export async function actualPerConto(
   venueId: string,
   year: number
 ): Promise<Record<string, MonthlyValues>> {
-  const yearStart = new Date(year, 0, 1)
-  const yearEnd = new Date(year, 11, 31, 23, 59, 59)
+  const [movimenti, natura] = await Promise.all([
+    movimentiPerConto(venueId, year),
+    naturaDeiConti(),
+  ])
 
-  const expenses = await prisma.dailyExpense.findMany({
-    where: {
-      closure: {
-        venueId,
-        status: 'VALIDATED',
-        date: { gte: yearStart, lte: yearEnd },
-      },
-    },
-    select: {
-      amount: true,
-      accountId: true,
-      closure: { select: { date: true } },
-    },
-  })
+  return Object.fromEntries(
+    Object.entries(movimenti).map(([accountId, movimentiConto]) => [
+      accountId,
+      versoApi(consuntivoDelConto(movimentiConto, natura[accountId])),
+    ])
+  )
+}
 
-  const byAccount: Record<string, MonthlyValues> = {}
+/**
+ * Quanto fatturato non è imputato ad alcun conto di ricavo: la differenza fra
+ * il fatturato delle chiusure validate e i movimenti finiti su conti di ricavo.
+ *
+ * Serve a entrambe le viste del budget, e serve perché oggi vale quasi il
+ * fatturato intero: le scritture generate dalla chiusura non portano un conto
+ * di ricavo, quindi quel denaro non può ancora comparire su nessuna riga.
+ * Dirlo esplicitamente è l'unico modo perché non sparisca in silenzio.
+ */
+export async function ricaviNonAttribuiti(
+  venueId: string,
+  year: number
+): Promise<MonthlyValues & { annual: number }> {
+  const [chiusure, movimenti, natura] = await Promise.all([
+    ricaviDalleChiusure(venueId, year),
+    movimentiPerConto(venueId, year),
+    naturaDeiConti(),
+  ])
 
-  for (const expense of expenses) {
-    if (!expense.accountId) continue
+  let daConti = mesiVuoti()
 
-    if (!byAccount[expense.accountId]) {
-      byAccount[expense.accountId] = emptyMonthlyValues()
-    }
-
-    const month = new Date(expense.closure.date).getMonth() + 1
-    const monthKey = MONTH_NUMBER_TO_KEY[month]
-    byAccount[expense.accountId][monthKey] += Number(expense.amount)
+  for (const [accountId, movimentiConto] of Object.entries(movimenti)) {
+    if (natura[accountId] !== 'RICAVO') continue
+    daConti = sommaMesi(daConti, consuntivoDelConto(movimentiConto, 'RICAVO'))
   }
 
-  return byAccount
+  return versoApi(
+    MONTH_KEYS.reduce((acc, key) => {
+      acc[key] = chiusure[key].minus(daConti[key])
+      return acc
+    }, {} as ValoriMensili)
+  )
 }
 
 /**
@@ -205,63 +351,15 @@ async function getBudgetByAccount(
 }
 
 /**
- * Recupera il saldo liquidita (cassa + banca) dalla Prima Nota
+ * Percentuale di incidenza sui ricavi, mese per mese.
  */
-async function getLiquidity(venueId: string): Promise<number> {
-  // Somma tutti i movimenti di CASH e BANK
-  const result = await prisma.journalEntry.aggregate({
-    where: {
-      venueId,
-      registerType: { in: ['CASH', 'BANK'] },
-    },
-    _sum: {
-      debitAmount: true,
-      creditAmount: true,
-    },
-  })
-
-  const totalDebit = Number(result._sum?.debitAmount) || 0
-  const totalCredit = Number(result._sum?.creditAmount) || 0
-
-  // Saldo = Debiti - Crediti (per registri patrimoniali attivi)
-  return totalDebit - totalCredit
-}
-
-/**
- * Somma due MonthlyValues
- */
-function addMonthlyValues(a: MonthlyValues, b: MonthlyValues): MonthlyValues {
-  const result = emptyMonthlyValues()
-  for (const key of MONTH_KEYS) {
-    result[key] = (a[key] || 0) + (b[key] || 0)
-  }
-  return result
-}
-
-/**
- * Sottrae due MonthlyValues (a - b)
- */
-function subtractMonthlyValues(a: MonthlyValues, b: MonthlyValues): MonthlyValues {
-  const result = emptyMonthlyValues()
-  for (const key of MONTH_KEYS) {
-    result[key] = (a[key] || 0) - (b[key] || 0)
-  }
-  return result
-}
-
-/**
- * Calcola percentuale di MonthlyValues rispetto a totale
- */
-function calculatePercentOfTotal(
-  values: MonthlyValues,
-  totals: MonthlyValues
-): MonthlyValues {
-  const result = emptyMonthlyValues()
-  for (const key of MONTH_KEYS) {
-    const total = totals[key] || 0
-    result[key] = total > 0 ? (values[key] / total) * 100 : 0
-  }
-  return result
+function incidenzaSuiRicavi(valori: ValoriMensili, ricavi: ValoriMensili): MonthlyValues {
+  return MONTH_KEYS.reduce((acc, key) => {
+    acc[key] = ricavi[key].isZero()
+      ? 0
+      : valori[key].dividedBy(ricavi[key]).times(100).toNumber()
+    return acc
+  }, {} as MonthlyValues)
 }
 
 /**
@@ -293,6 +391,12 @@ function determineStatus(
   return 'ok'
 }
 
+/** Natura contabile dei conti citati, per separare ricavi e costi nei KPI. */
+async function naturaDeiConti(): Promise<Record<string, AccountType>> {
+  const conti = await prisma.account.findMany({ select: { id: true, type: true } })
+  return Object.fromEntries(conti.map((conto) => [conto.id, conto.type]))
+}
+
 /**
  * Aggrega ricorsivamente le categorie con budget e actual
  */
@@ -301,7 +405,6 @@ export async function aggregateCategoriesForBudget(
   venueId: string,
   year: number
 ): Promise<CategoryAggregationResult> {
-  // 1. Recupera venue
   const venue = await prisma.venue.findUnique({
     where: { id: venueId },
     select: { id: true, name: true, code: true },
@@ -311,7 +414,6 @@ export async function aggregateCategoriesForBudget(
     throw new Error('Venue non trovata')
   }
 
-  // 2. Recupera tutte le categorie con mapping
   const categories = await prisma.budgetCategory.findMany({
     where: { venueId, isActive: true },
     include: {
@@ -323,93 +425,96 @@ export async function aggregateCategoriesForBudget(
     orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
   })
 
-  // 3. Recupera dati budget e actual
-  const [budgetByAccount, actualCostsByAccount, actualRevenue, targets, liquidity] =
+  const [budgetByAccount, movimenti, ricaviChiusure, tipoDelConto, targets, liquidity] =
     await Promise.all([
       getBudgetByAccount(budgetId),
-      getActualCostsByAccount(venueId, year),
-      getActualRevenue(venueId, year),
+      movimentiPerConto(venueId, year),
+      ricaviDalleChiusure(venueId, year),
+      naturaDeiConti(),
       getMonthlyTargets(venueId, year),
-      getLiquidity(venueId),
+      // Stessa funzione della prima nota e del cash flow: è ciò che tiene
+      // allineata la liquidità mostrata dalle tre schermate.
+      liquiditaAlGiorno(venueId),
     ])
 
-  // 4. Calcola totali per KPI
-  const totalRevenueValues = actualRevenue
-  const totalRevenueAnnual = calculateAnnualTotal(totalRevenueValues)
+  // KPI di ricavo e costo: si sommano i conti per natura contabile e non per
+  // categoria di budget, così un conto non ancora mappato pesa comunque sul
+  // totale invece di sparire dal margine.
+  let ricaviDaConti = mesiVuoti()
+  let totalCostsValues = mesiVuoti()
 
-  let totalCostsValues = emptyMonthlyValues()
-  for (const accountId in actualCostsByAccount) {
-    totalCostsValues = addMonthlyValues(
-      totalCostsValues,
-      actualCostsByAccount[accountId]
-    )
+  for (const [accountId, movimentiConto] of Object.entries(movimenti)) {
+    const natura = tipoDelConto[accountId]
+    if (natura !== 'RICAVO' && natura !== 'COSTO') continue
+
+    const consuntivo = consuntivoDelConto(movimentiConto, natura)
+
+    if (natura === 'RICAVO') {
+      ricaviDaConti = sommaMesi(ricaviDaConti, consuntivo)
+    } else {
+      totalCostsValues = sommaMesi(totalCostsValues, consuntivo)
+    }
   }
-  const totalCostsAnnual = calculateAnnualTotal(totalCostsValues)
 
-  const profitValues = subtractMonthlyValues(totalRevenueValues, totalCostsValues)
-  const profitAnnual = totalRevenueAnnual - totalCostsAnnual
+  const totalRevenueValues = ricaviChiusure
+  const unassignedRevenue = MONTH_KEYS.reduce((acc, key) => {
+    acc[key] = totalRevenueValues[key].minus(ricaviDaConti[key])
+    return acc
+  }, {} as ValoriMensili)
 
-  // Profit margin per mese
-  const profitMarginValues = emptyMonthlyValues()
-  for (const key of MONTH_KEYS) {
-    const revenue = totalRevenueValues[key] || 0
-    profitMarginValues[key] = revenue > 0 ? (profitValues[key] / revenue) * 100 : 0
-  }
-  const profitMarginAnnual =
-    totalRevenueAnnual > 0 ? (profitAnnual / totalRevenueAnnual) * 100 : 0
+  const profitValues = MONTH_KEYS.reduce((acc, key) => {
+    acc[key] = totalRevenueValues[key].minus(totalCostsValues[key])
+    return acc
+  }, {} as ValoriMensili)
 
-  // 5. Costruisci gerarchia categorie con dati aggregati
+  const profitMarginValues = incidenzaSuiRicavi(profitValues, totalRevenueValues)
+  const totalRevenueAnnual = totaleAnnuo(totalRevenueValues)
+  const profitMarginAnnual = totalRevenueAnnual.isZero()
+    ? 0
+    : totaleAnnuo(profitValues).dividedBy(totalRevenueAnnual).times(100).toNumber()
+
+  // Prima passata: valori di ogni categoria, dai conti che le sono mappati.
   const categoryMap = new Map<string, CategoryData>()
 
-  // Prima passata: calcola valori per ogni categoria (dai suoi account mappati)
   for (const cat of categories) {
-    let budgetValues = emptyMonthlyValues()
-    let actualValues = emptyMonthlyValues()
+    const categoryType = cat.categoryType as CategoryType
+    let budgetValues = mesiVuoti()
+    let actualValues = mesiVuoti()
 
     for (const mapping of cat.accountMappings) {
       const accountBudget = budgetByAccount[mapping.accountId]
       if (accountBudget) {
-        budgetValues = addMonthlyValues(budgetValues, accountBudget)
+        budgetValues = sommaMesi(budgetValues, daMonthlyValues(accountBudget))
       }
 
-      // Per i ricavi usa totalRevenue, per i costi usa per-account
-      if (cat.categoryType === 'REVENUE') {
-        // I ricavi sono un totale aggregato, non per-account
-        // Si assume che la categoria REVENUE mappi ai conti ricavo
-        actualValues = totalRevenueValues
-      } else {
-        const accountActual = actualCostsByAccount[mapping.accountId]
-        if (accountActual) {
-          actualValues = addMonthlyValues(actualValues, accountActual)
-        }
-      }
+      actualValues = sommaMesi(
+        actualValues,
+        consuntivoDelConto(movimenti[mapping.accountId], tipoDelConto[mapping.accountId])
+      )
     }
 
-    const budgetAnnual = calculateAnnualTotal(budgetValues)
-    const actualAnnual = calculateAnnualTotal(actualValues)
+    const varianceValues = MONTH_KEYS.reduce((acc, key) => {
+      acc[key] = actualValues[key].minus(budgetValues[key])
+      return acc
+    }, {} as ValoriMensili)
 
-    const varianceValues = subtractMonthlyValues(actualValues, budgetValues)
-    const varianceAnnual = actualAnnual - budgetAnnual
-
-    const percentOfRevenueValues = calculatePercentOfTotal(
-      actualValues,
-      totalRevenueValues
-    )
-    const percentOfRevenueAnnual =
-      totalRevenueAnnual > 0 ? (actualAnnual / totalRevenueAnnual) * 100 : 0
+    const actualAnnual = totaleAnnuo(actualValues)
+    const percentOfRevenueAnnual = totalRevenueAnnual.isZero()
+      ? 0
+      : actualAnnual.dividedBy(totalRevenueAnnual).times(100).toNumber()
 
     const status = determineStatus(
       percentOfRevenueAnnual,
       cat.benchmarkPercentage ? Number(cat.benchmarkPercentage) : null,
       cat.alertThresholdPercent ? Number(cat.alertThresholdPercent) : 10,
-      cat.categoryType as CategoryType
+      categoryType
     )
 
     categoryMap.set(cat.id, {
       id: cat.id,
       code: cat.code,
       name: cat.name,
-      categoryType: cat.categoryType as CategoryType,
+      categoryType,
       benchmarkPercentage: cat.benchmarkPercentage
         ? Number(cat.benchmarkPercentage)
         : null,
@@ -421,10 +526,13 @@ export async function aggregateCategoriesForBudget(
       level: cat.parentId ? 1 : 0,
       parentId: cat.parentId,
       displayOrder: cat.displayOrder,
-      budget: { ...budgetValues, annual: budgetAnnual },
-      actual: { ...actualValues, annual: actualAnnual },
-      variance: { ...varianceValues, annual: varianceAnnual },
-      percentOfRevenue: { ...percentOfRevenueValues, annual: percentOfRevenueAnnual },
+      budget: versoApi(budgetValues),
+      actual: versoApi(actualValues),
+      variance: versoApi(varianceValues),
+      percentOfRevenue: {
+        ...incidenzaSuiRicavi(actualValues, totalRevenueValues),
+        annual: percentOfRevenueAnnual,
+      },
       status,
       children: [],
     })
@@ -452,17 +560,17 @@ export async function aggregateCategoriesForBudget(
     cat.children.sort((a, b) => a.displayOrder - b.displayOrder)
   }
 
-  // 6. Costruisci risultato
   return {
     budgetId,
     year,
     venue,
     kpis: {
       targetRevenue: targets,
-      totalRevenue: { ...totalRevenueValues, annual: totalRevenueAnnual },
-      totalCosts: { ...totalCostsValues, annual: totalCostsAnnual },
-      profit: { ...profitValues, annual: profitAnnual },
+      totalRevenue: versoApi(totalRevenueValues),
+      totalCosts: versoApi(totalCostsValues),
+      profit: versoApi(profitValues),
       profitMargin: { ...profitMarginValues, annual: profitMarginAnnual },
+      unassignedRevenue: versoApi(unassignedRevenue),
       liquidity,
     },
     categories: rootCategories,

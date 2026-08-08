@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,6 +18,10 @@ import { it } from 'date-fns/locale'
 interface PaymentDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /**
+   * Deve sollevare un errore se il salvataggio fallisce: è così che il dialog
+   * sa di dover restare aperto con i dati che l'utente ha già inserito.
+   */
   onSubmit: (data: PaymentFormData) => Promise<void>
   isLoading?: boolean
   importoResiduo: number
@@ -24,7 +29,12 @@ interface PaymentDialogProps {
 
 export interface PaymentFormData {
   importo: number
-  dataPagamento: Date
+  /**
+   * Giorno civile 'yyyy-MM-dd'. Una `Date` diventerebbe un istante UTC nel
+   * JSON: un pagamento registrato dopo le 22:00 italiane arriverebbe al
+   * server con la data del giorno prima.
+   */
+  dataPagamento: string
   metodo?: SchedulePaymentMethod
   riferimento?: string
   note?: string
@@ -42,25 +52,57 @@ export function PaymentDialog({
   const [metodo, setMetodo] = useState<SchedulePaymentMethod | undefined>()
   const [riferimento, setRiferimento] = useState('')
   const [note, setNote] = useState('')
+  const [invioInCorso, setInvioInCorso] = useState(false)
+
+  /**
+   * Il solo `disabled` sul bottone non basta: fra il click e il re-render
+   * React passa un attimo in cui altri click arrivano lo stesso, e ognuno
+   * registrava un pagamento. Il ref cambia valore nello stesso giro di
+   * esecuzione dell'handler, prima di qualunque await.
+   */
+  const invioRef = useRef(false)
+
+  // Il form si svuota quando il dialog si chiude, non appena il submit
+  // ritorna: se il salvataggio fallisce il dialog resta aperto e quello che
+  // l'utente ha scritto deve restare lì.
+  useEffect(() => {
+    if (!open) {
+      setImporto('')
+      setDataPagamento(new Date())
+      setMetodo(undefined)
+      setRiferimento('')
+      setNote('')
+    }
+  }, [open])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    await onSubmit({
-      importo: parseFloat(importo),
-      dataPagamento,
-      metodo,
-      riferimento: riferimento || undefined,
-      note: note || undefined,
-    })
-    // Reset form
-    setImporto('')
-    setDataPagamento(new Date())
-    setMetodo(undefined)
-    setRiferimento('')
-    setNote('')
+    if (invioRef.current) return
+    invioRef.current = true
+    setInvioInCorso(true)
+
+    try {
+      await onSubmit({
+        importo: parseFloat(importo),
+        dataPagamento: format(dataPagamento, 'yyyy-MM-dd'),
+        metodo,
+        riferimento: riferimento || undefined,
+        note: note || undefined,
+      })
+    } catch (error) {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Non è stato possibile registrare il pagamento'
+      )
+    } finally {
+      invioRef.current = false
+      setInvioInCorso(false)
+    }
   }
 
   const importoNum = parseFloat(importo) || 0
+  const inAttesa = isLoading || invioInCorso
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -161,12 +203,12 @@ export function PaymentDialog({
               type="button"
               variant="ghost"
               onClick={() => onOpenChange(false)}
-              disabled={isLoading}
+              disabled={inAttesa}
             >
               Annulla
             </Button>
-            <Button type="submit" disabled={isLoading || importoNum <= 0 || importoNum > importoResiduo}>
-              {isLoading ? 'Registrazione...' : 'Registra Pagamento'}
+            <Button type="submit" disabled={inAttesa || importoNum <= 0 || importoNum > importoResiduo}>
+              {inAttesa ? 'Registrazione...' : 'Registra Pagamento'}
             </Button>
           </DialogFooter>
         </form>

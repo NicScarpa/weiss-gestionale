@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { toast } from 'sonner'
 import {
   Dialog,
   DialogContent,
@@ -45,12 +46,39 @@ import { cn } from '@/lib/utils'
 
 interface CreateScheduleDialogProps {
   trigger?: React.ReactNode
+  /**
+   * Deve sollevare un errore se il salvataggio fallisce: è così che il dialog
+   * sa di dover restare aperto con i dati che l'utente ha già inserito.
+   */
   onSubmit: (data: CreateScheduleInput) => Promise<void>
   isLoading?: boolean
   initialData?: Partial<CreateScheduleInput> & { id?: string }
   mode?: 'create' | 'edit'
   open?: boolean
   onOpenChange?: (open: boolean) => void
+}
+
+/**
+ * Le date nel payload sono giorni civili 'yyyy-MM-dd' e non `Date`.
+ * `JSON.stringify` di una `Date` produce l'istante UTC: una scadenza scelta
+ * per il 15 e inserita dopo le 22:00 italiane arrivava al server come il 14,
+ * cioè già scaduta. `CreateScheduleInput` continua a dichiararle `Date` perché
+ * è condiviso con altri consumatori: l'asserzione qui sotto è il solo punto in
+ * cui le due rappresentazioni si incontrano.
+ */
+type PayloadScadenza = Omit<
+  CreateScheduleInput,
+  'dataScadenza' | 'dataEmissione' | 'ricorrenzaFine' | 'dataAttesa'
+> & {
+  dataScadenza: string
+  dataEmissione?: string
+  ricorrenzaFine?: string
+  dataAttesa?: string | null
+}
+
+/** Il giorno mostrato nel calendario, non l'istante che gli sta sotto. */
+function giornoCivile(data: Date): string {
+  return format(data, 'yyyy-MM-dd')
 }
 
 export function CreateScheduleDialog({
@@ -110,6 +138,16 @@ export function CreateScheduleDialog({
 
   // Collapsible state
   const [advancedOpen, setAdvancedOpen] = useState(false)
+
+  const [invioInCorso, setInvioInCorso] = useState(false)
+
+  /**
+   * Il solo `disabled` sul bottone non basta: fra il click e il re-render
+   * React passa un attimo in cui altri click arrivano lo stesso, e ognuno
+   * creava una scadenza. Il ref cambia valore nello stesso giro di esecuzione
+   * dell'handler, prima di qualunque await.
+   */
+  const invioRef = useRef(false)
 
   // Popover states
   const [emissionePopoverOpen, setEmissionePopoverOpen] = useState(false)
@@ -184,13 +222,28 @@ export function CreateScheduleDialog({
     setAdvancedOpen(false)
   }
 
+  // Il form si svuota quando il dialog si chiude, non appena il submit
+  // ritorna: se il salvataggio fallisce il dialog resta aperto e quello che
+  // l'utente ha scritto deve restare lì. In modifica non serve, ci pensa
+  // l'effetto qui sopra a ricaricare i dati della scadenza all'apertura.
+  useEffect(() => {
+    if (!open && !isEdit) {
+      resetForm()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isEdit])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (invioRef.current) return
+    invioRef.current = true
+    setInvioInCorso(true)
+
     const commonData = {
       tipo,
       descrizione,
       valuta: 'EUR' as const,
-      dataEmissione,
+      dataEmissione: giornoCivile(dataEmissione),
       tipoDocumento,
       numeroDocumento: numeroDocumento || undefined,
       controparteNome: controparteNome || undefined,
@@ -199,28 +252,54 @@ export function CreateScheduleDialog({
       metodoPagamento,
       isRicorrente,
       ricorrenzaTipo,
-      ricorrenzaFine,
+      ricorrenzaFine: ricorrenzaFine ? giornoCivile(ricorrenzaFine) : undefined,
       ricorrenzaAttiva,
       note: note || undefined,
       ...(isEdit && dataAttesaTouched
-        ? { dataAttesa: dataAttesa ?? null }
+        ? { dataAttesa: dataAttesa ? giornoCivile(dataAttesa) : null }
         : {}),
     }
-    // Crea una schedule per ogni riga scadenza
-    for (const row of scadenze) {
-      await onSubmit({
-        ...commonData,
-        importoTotale: parseFloat(row.importo),
-        dataScadenza: row.dataScadenza,
-      })
+
+    // Una scadenza per ogni riga, in sequenza
+    const daSalvare = scadenze
+    let salvate = 0
+    try {
+      for (const row of daSalvare) {
+        const payload: PayloadScadenza = {
+          ...commonData,
+          importoTotale: parseFloat(row.importo),
+          dataScadenza: giornoCivile(row.dataScadenza),
+        }
+        await onSubmit(payload as unknown as CreateScheduleInput)
+        salvate++
+      }
+    } catch (error) {
+      const messaggio =
+        error instanceof Error && error.message
+          ? error.message
+          : 'Non è stato possibile salvare la scadenza'
+      // Le righe già salvate escono dal form: se restassero, il tentativo
+      // successivo le creerebbe una seconda volta.
+      if (salvate > 0) {
+        setScadenze(daSalvare.slice(salvate))
+        toast.error(
+          `${messaggio}. Le prime ${salvate} scadenze su ${daSalvare.length} sono state salvate: ` +
+            'nel form restano solo quelle da riprovare'
+        )
+      } else {
+        toast.error(messaggio)
+      }
+      return
+    } finally {
+      invioRef.current = false
+      setInvioInCorso(false)
     }
-    if (!isEdit) {
-      resetForm()
-    }
+
     setOpen(false)
   }
 
   const hasValidScadenze = scadenze.every(r => r.importo && parseFloat(r.importo) > 0)
+  const inAttesa = isLoading || invioInCorso
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -647,22 +726,19 @@ export function CreateScheduleDialog({
             type="button"
             variant="outline"
             onClick={() => setOpen(false)}
-            disabled={isLoading}
+            disabled={inAttesa}
           >
             Annulla
           </Button>
           <Button
             type="submit"
             form="create-schedule-form"
-            disabled={isLoading || !descrizione || !hasValidScadenze}
+            disabled={inAttesa || !descrizione || !hasValidScadenze}
           >
-            {isLoading ? (isEdit ? 'Salvataggio...' : 'Creazione...') : (isEdit ? 'Salva modifiche' : 'Conferma')}
+            {inAttesa ? (isEdit ? 'Salvataggio...' : 'Creazione...') : (isEdit ? 'Salva modifiche' : 'Conferma')}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   )
 }
-
-// Backward-compatible alias
-export const CreateScheduleSheet = CreateScheduleDialog

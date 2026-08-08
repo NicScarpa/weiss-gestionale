@@ -6,7 +6,13 @@
  */
 
 import { prisma } from '@/lib/prisma'
-import { sendWebPush } from './webpush'
+import { inviaPushMultiplo, SOTTOSCRIZIONE_DEFUNTA } from './web-push'
+import {
+  sottoscrizioniAttive,
+  sottoscrizioniAttiveDi,
+  disattivaSottoscrizione,
+  type SottoscrizionePush,
+} from './subscriptions'
 import type { NotificationLog, NotificationType } from '@prisma/client'
 import {
   NotificationPayload,
@@ -14,10 +20,15 @@ import {
   SendBulkNotificationOptions,
   NotificationResult,
   BulkNotificationResult,
+  PushPayload,
   NotificationChannel,
 } from './types'
 
 import { logger } from '@/lib/logger'
+
+/** Nessun browser registrato per quella persona: l'avviso resta solo in-app. */
+const NESSUN_DISPOSITIVO = 'Nessun dispositivo registrato'
+
 /**
  * Invia una notifica a un singolo utente
  */
@@ -92,67 +103,46 @@ export async function sendBulkNotification(
   })
 
   if (channels.includes('PUSH')) {
-    // Iscrizioni push di tutti i destinatari
-    const subscriptions = await prisma.pushSubscription.findMany({
-      where: {
-        userId: { in: eligibleUserIds },
-        isActive: true,
-      },
-    })
+    const subscriptions = await sottoscrizioniAttiveDi(eligibleUserIds)
 
-    const iscrizioniPerUtente = new Map<string, typeof subscriptions>()
+    const sottoscrizioniPerUtente = new Map<string, SottoscrizionePush[]>()
     for (const sub of subscriptions) {
-      const lista = iscrizioniPerUtente.get(sub.userId)
+      const lista = sottoscrizioniPerUtente.get(sub.userId)
       if (lista) {
         lista.push(sub)
       } else {
-        iscrizioniPerUtente.set(sub.userId, [sub])
+        sottoscrizioniPerUtente.set(sub.userId, [sub])
       }
     }
 
-    // Si itera sui destinatari, non sulle iscrizioni: chi non ha un
-    // dispositivo registrato deve comunque trovare l'avviso nella campanella
-    // dell'app. Prima il ciclo partiva dalle iscrizioni, e senza dispositivi
-    // la notifica spariva senza lasciare traccia da nessuna parte.
-    for (const userId of eligibleUserIds) {
-      const iscrizioni = iscrizioniPerUtente.get(userId) ?? []
+    const corpo = componiPushPayload(payload)
 
-      if (iscrizioni.length === 0) {
+    // Si itera sui destinatari, non sulle sottoscrizioni: chi non ha un
+    // dispositivo registrato deve comunque trovare l'avviso nella campanella
+    // dell'app. Iterando sulle sottoscrizioni la notifica spariva senza
+    // lasciare traccia, e chi aveva tre dispositivi la vedeva tre volte.
+    for (const userId of eligibleUserIds) {
+      const sottoscrizioni = sottoscrizioniPerUtente.get(userId) ?? []
+
+      if (sottoscrizioni.length === 0) {
+        const result = { success: false, error: NESSUN_DISPOSITIVO }
         failureCount++
-        results.push({
-          userId,
-          success: false,
-          error: 'Nessun dispositivo registrato',
-        })
-        await logNotification({
-          userId,
-          payload,
-          channel: 'PUSH',
-          result: { success: false, error: 'Nessun dispositivo registrato' },
-        })
+        results.push({ userId, success: false, error: NESSUN_DISPOSITIVO })
+        await logNotification({ userId, payload, channel: 'PUSH', result })
         continue
       }
 
-      const esiti = await Promise.all(
-        iscrizioni.map((sub) =>
-          sendWebPush(
-            { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
-            payload
-          ).then((result) => ({ sub, result }))
-        )
-      )
+      const esiti = await inviaPushMultiplo(sottoscrizioni, corpo)
 
-      for (const { sub, result } of esiti) {
-        if (!result.success && result.error === 'invalid_token') {
-          await prisma.pushSubscription.update({
-            where: { id: sub.id },
-            data: { isActive: false },
-          })
+      for (let i = 0; i < esiti.length; i++) {
+        if (esiti[i].error === SOTTOSCRIZIONE_DEFUNTA) {
+          await disattivaSottoscrizione(sottoscrizioni[i].id)
         }
       }
 
-      // Basta un dispositivo raggiunto perché la persona sia stata avvisata.
-      const riuscito = esiti.find((e) => e.result.success)
+      // Basta un dispositivo raggiunto perché la persona sia stata avvisata:
+      // un solo esito e un solo log per destinatario.
+      const riuscito = esiti.find((e) => e.success)
       if (riuscito) {
         successCount++
         results.push({ userId, success: true })
@@ -161,7 +151,7 @@ export async function sendBulkNotification(
         results.push({
           userId,
           success: false,
-          error: esiti.map((e) => e.result.error).join(', '),
+          error: esiti.map((e) => e.error).join(', '),
         })
       }
 
@@ -169,7 +159,7 @@ export async function sendBulkNotification(
         userId,
         payload,
         channel: 'PUSH',
-        result: riuscito?.result ?? esiti[0].result,
+        result: riuscito ?? esiti[0],
       })
     }
   }
@@ -182,39 +172,24 @@ export async function sendBulkNotification(
 }
 
 /**
- * Invia la notifica push a tutti i dispositivi di una persona.
- * Chi non ne ha registrato nessuno riceve comunque la traccia in-app: il
- * `logNotification` di chi chiama avviene sempre, anche in caso di errore.
+ * Invia push notification a un utente
  */
 async function sendPushToUser(
   userId: string,
   payload: NotificationPayload
 ): Promise<NotificationResult> {
-  const subscriptions = await prisma.pushSubscription.findMany({
-    where: {
-      userId,
-      isActive: true,
-    },
-  })
+  const subscriptions: SottoscrizionePush[] = await sottoscrizioniAttive(userId)
 
   if (subscriptions.length === 0) {
-    return { success: false, error: 'Nessun dispositivo registrato' }
+    return { success: false, error: NESSUN_DISPOSITIVO }
   }
 
-  const results = await Promise.all(
-    subscriptions.map((sub) =>
-      sendWebPush({ endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth }, payload)
-    )
-  )
+  const results = await inviaPushMultiplo(subscriptions, componiPushPayload(payload))
 
-  // Un'iscrizione revocata o scaduta si spegne: continuare a scriverle
-  // significherebbe un errore a ogni notifica, per sempre.
+  // Le sottoscrizioni revocate dal browser non torneranno valide: vanno spente.
   for (let i = 0; i < results.length; i++) {
-    if (results[i].error === 'invalid_token') {
-      await prisma.pushSubscription.update({
-        where: { id: subscriptions[i].id },
-        data: { isActive: false },
-      })
+    if (results[i].error === SOTTOSCRIZIONE_DEFUNTA) {
+      await disattivaSottoscrizione(subscriptions[i].id)
     }
   }
 
@@ -224,6 +199,37 @@ async function sendPushToUser(
     success,
     messageId: results.find((r) => r.messageId)?.messageId,
     error: success ? undefined : results.map((r) => r.error).join(', '),
+  }
+}
+
+/**
+ * Traduce la notifica applicativa nel corpo che viaggia sul canale push.
+ * La forma è quella che il service worker legge in `event.data.json()`:
+ * `data.url` è ciò che determina dove atterra l'utente al click.
+ *
+ * I campi di sistema vengono dopo lo spread di `data`: un payload arbitrario
+ * non deve poter dirottare l'url del click. Quelli vuoti però non sovrascrivono
+ * un valore già presente in `data`, che è l'ordine con cui `logNotification`
+ * persiste la stessa notifica in-app.
+ */
+export function componiPushPayload(payload: NotificationPayload): PushPayload {
+  return {
+    title: payload.title,
+    body: payload.body,
+    type: payload.type,
+    tag: payload.type,
+    icon: '/icons/icon-192.png',
+    badge: '/icons/badge-72.png',
+    data: {
+      referenceId: '',
+      referenceType: '',
+      url: '',
+      ...payload.data,
+      type: payload.type,
+      ...(payload.referenceId ? { referenceId: payload.referenceId } : {}),
+      ...(payload.referenceType ? { referenceType: payload.referenceType } : {}),
+      ...(payload.url ? { url: payload.url } : {}),
+    },
   }
 }
 

@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { getVenueId } from '@/lib/venue'
+import { liquiditaAlGiorno } from '@/lib/saldi'
 import { ForecastStatus, ForecastType, Prisma } from '@prisma/client'
-import { addDays, startOfDay, endOfDay } from 'date-fns'
 
 // GET /api/cashflow/forecasts - Lista cash flow forecasts
 export async function GET(request: NextRequest) {
@@ -86,7 +86,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Crea forecast con righe generate
+    // Il punto di partenza è la liquidità di oggi, non zero: una previsione che
+    // parte da una cifra mai esistita non si può confrontare con niente. È la
+    // stessa fonte della card "Saldo Attuale" (`@/lib/saldi`), così le due
+    // schermate non possono discordare.
+    const partenza =
+      saldoIniziale === undefined || saldoIniziale === null || saldoIniziale === ''
+        ? await liquiditaAlGiorno(venueId)
+        : saldoIniziale
+
+    // La previsione nasce vuota. Prima si generava una riga per ogni giorno del
+    // periodo, tutte a zero euro e tutte di tipo USCITA: righe che nessuno
+    // aveva chiesto, che rendevano illeggibile l'elenco e che bloccavano
+    // l'eliminazione della previsione stessa (`onDelete: Restrict`).
     const forecast = await prisma.cashFlowForecast.create({
       data: {
         venueId,
@@ -95,8 +107,8 @@ export async function POST(request: NextRequest) {
         descrizione,
         dataInizio: new Date(dataInizio),
         dataFine: new Date(dataFine),
-        saldoIniziale: saldoIniziale || 0,
-        saldoFinale: 0,
+        saldoIniziale: partenza,
+        saldoFinale: partenza,
         totaleEntrate: 0,
         totaleUscite: 0,
         stato: ForecastStatus.BOZZA,
@@ -107,29 +119,6 @@ export async function POST(request: NextRequest) {
         createdBy: { select: { id: true, firstName: true, lastName: true } },
       },
     })
-
-    // Genera righe vuote per ogni giorno
-    const daysDiff = Math.ceil(
-      (new Date(dataFine).getTime() - new Date(dataInizio).getTime()) / (1000 * 60 * 60 * 24)
-    ) + 1
-
-    const lines = []
-    for (let i = 0; i < daysDiff; i++) {
-      const date = addDays(new Date(dataInizio), i)
-      lines.push({
-        forecastId: forecast.id,
-        data: startOfDay(date),
-        tipo: 'USCITA',
-        importo: 0,
-        confidenza: 'MEDIA',
-      })
-    }
-
-    if (lines.length > 0) {
-      await prisma.cashFlowForecastLine.createMany({
-        data: lines,
-      })
-    }
 
     return NextResponse.json(forecast, { status: 201 })
   } catch (error) {

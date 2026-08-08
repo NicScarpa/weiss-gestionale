@@ -119,7 +119,7 @@ export function RuleTable({
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-3">
-                  <div className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-medium text-slate-600">
+                  <div className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-medium text-muted-foreground">
                     {contoInitials}
                   </div>
                   <span className="font-medium">{rule.conto?.name || '—'}</span>

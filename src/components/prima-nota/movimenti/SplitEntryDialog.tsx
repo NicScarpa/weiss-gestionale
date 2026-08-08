@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { AccountGroupedSelect } from '@/components/prima-nota/shared/AccountGroupedSelect'
 import type { JournalEntry } from '@/types/prima-nota'
 import { cn } from '@/lib/utils'
+import { formatCurrency } from '@/lib/formatters'
 
 interface SplitRow {
   key: string
@@ -31,9 +32,6 @@ interface SplitEntryDialogProps {
   onSaved: () => void
 }
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(amount)
-}
 
 function round2(n: number) {
   return Math.round(n * 100) / 100

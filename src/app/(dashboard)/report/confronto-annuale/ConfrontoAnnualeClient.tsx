@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { formatCurrency, formatPercentage as formatPercentageBase } from '@/lib/formatters'
 
 interface MonthData {
   month: string
@@ -121,17 +122,7 @@ export function ConfrontoAnnualeClient() {
     fetchData()
   }, [selectedYear])
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('it-IT', {
-      style: 'currency',
-      currency: 'EUR',
-    }).format(value)
-  }
-
-  const formatPercentage = (value: number) => {
-    const sign = value > 0 ? '+' : ''
-    return `${sign}${value.toFixed(1)}%`
-  }
+  const formatPercentage = (value: number) => formatPercentageBase(value, { segno: true })
 
   const getChangeIcon = (percentage: number) => {
     if (percentage > 0) return <TrendingUp className="h-4 w-4 text-green-600" />

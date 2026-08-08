@@ -66,10 +66,10 @@ import {
   getDocumentTypeAbbrev,
   getDocumentTypeColor,
   getSimpleStatus,
-  formatCurrency,
   generateYearOptions,
   ITALIAN_MONTHS,
 } from '@/lib/invoice-utils'
+import { formatCurrencyOrZero as formatCurrency } from '@/lib/formatters'
 
 
 interface Invoice {
@@ -123,7 +123,7 @@ function SortableHeader({ field, label, className = '', sortBy, sortOrder, onSor
   const isActive = sortBy === field
   return (
     <button
-      className={`flex items-center gap-1 hover:text-slate-900 transition-colors ${className}`}
+      className={`flex items-center gap-1 hover:text-foreground transition-colors ${className}`}
       onClick={() => onSort(field)}
     >
       {label}
@@ -552,7 +552,7 @@ export function InvoiceList() {
                     </TableCell>
 
                     {/* Data */}
-                    <TableCell className="text-slate-600">
+                    <TableCell className="text-muted-foreground">
                       {format(new Date(invoice.invoiceDate), 'dd/MM/yyyy', { locale: it })}
                     </TableCell>
 

@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { withAuth, forbidden } from '@/lib/api-utils'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { ClosurePdfDocument } from '@/lib/pdf/ClosurePdfTemplate'
 import { format } from 'date-fns'
@@ -20,21 +20,22 @@ function getWeatherForTimeSlot(
   return weatherEvening
 }
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+/**
+ * GET /api/chiusure/[id]/pdf - Riepilogo della chiusura in PDF
+ *
+ * Il flusso di fine turno apre questo PDF subito dopo l'invio, quindi lo staff
+ * deve poterlo leggere; ciò che non deve poter fare è sfogliare le chiusure dei
+ * colleghi, e per questo resta dentro quelle che ha inviato lui. Admin e
+ * manager le vedono tutte.
+ */
+export const GET = withAuth<{ id: string }>(
+  async (request, { user, params, venueId }) => {
   try {
-    const session = await auth()
-    const { id } = await params
-
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
+    const { id } = params
 
     // Recupera la chiusura con tutti i dati necessari
-    const closure = await prisma.dailyClosure.findUnique({
-      where: { id },
+    const closure = await prisma.dailyClosure.findFirst({
+      where: { id, venueId },
       include: {
         venue: {
           select: {
@@ -96,6 +97,10 @@ export async function GET(
 
     if (!closure) {
       return NextResponse.json({ error: 'Chiusura non trovata' }, { status: 404 })
+    }
+
+    if (user.role === 'staff' && closure.submittedBy?.id !== user.id) {
+      return forbidden('Puoi scaricare solo le chiusure che hai inviato')
     }
 
     // Calcola totali dalle stazioni
@@ -217,4 +222,6 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+  },
+  { roles: ['admin', 'manager', 'staff'], venueScoped: true }
+)

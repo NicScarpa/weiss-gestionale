@@ -1,14 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { AlertTriangle, CheckCircle, X } from 'lucide-react'
+import { AlertTriangle, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
-import { cn } from '@/lib/utils'
 import { AlertType, AlertStatus } from '@/types/cash-flow'
 
 const ALERT_TYPE_LABELS: Record<AlertType, string> = {

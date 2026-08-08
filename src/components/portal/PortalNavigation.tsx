@@ -54,7 +54,7 @@ export function PortalNavigation() {
   const pathname = usePathname()
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-100">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t">
       <div className="flex items-center justify-around h-16">
         {navItems.map((item) => {
           const isActive = pathname === item.href ||
@@ -64,19 +64,20 @@ export function PortalNavigation() {
             <Link
               key={item.href}
               href={item.href}
+              aria-current={isActive ? 'page' : undefined}
               className={cn(
                 // flex-1 e niente larghezza minima: con otto voci una barra a
                 // larghezza fissa traboccherebbe sugli schermi stretti
-                'flex flex-col items-center justify-center flex-1 min-w-0 h-full px-1 transition-colors duration-200',
+                'flex flex-col items-center justify-center flex-1 min-w-0 h-full px-0.5 transition-colors duration-200 sm:px-1',
                 isActive
-                  ? 'text-gray-900'
-                  : 'text-gray-400 hover:text-gray-600'
+                  ? 'text-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
               )}
             >
               <div className={cn(
                 'flex items-center justify-center mb-1 transition-all duration-200',
                 isActive
-                  ? 'bg-gray-100 rounded-full h-10 w-10'
+                  ? 'bg-accent rounded-full h-10 w-10'
                   : 'h-5 w-5'
               )}>
                 <item.icon className={cn(
@@ -84,8 +85,11 @@ export function PortalNavigation() {
                   isActive && 'stroke-[2.5]'
                 )} />
               </div>
+              {/* A 390px le otto voci hanno ~48px a testa: senza w-full+truncate
+                  le etichette lunghe (Documenti, Cartellino) sbordano dalla
+                  propria cella e si attaccano a quella accanto */}
               <span className={cn(
-                'text-[10px]',
+                'w-full truncate text-center text-[9px] tracking-tight sm:text-[10px] sm:tracking-normal',
                 isActive ? 'font-medium' : 'font-normal'
               )}>{item.label}</span>
             </Link>

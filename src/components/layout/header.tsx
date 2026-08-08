@@ -16,6 +16,7 @@ import { LogOut, User, Building2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { OfflineIndicator } from '@/components/OfflineIndicator'
 import { NotificationBell } from '@/components/notifications/NotificationBell'
+import { ThemeToggle } from '@/components/theme/theme-toggle'
 
 export function Header() {
   const { data: session } = useSession()
@@ -29,7 +30,7 @@ export function Header() {
   }
 
   return (
-    <header className="h-16 border-b bg-white flex items-center justify-between px-6">
+    <header className="h-16 border-b bg-card flex items-center justify-between px-6">
       <div className="flex items-center gap-4">
         {session?.user?.venueName && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -41,6 +42,7 @@ export function Header() {
 
       <div className="flex items-center gap-4">
         <OfflineIndicator />
+        <ThemeToggle />
         <NotificationBell />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

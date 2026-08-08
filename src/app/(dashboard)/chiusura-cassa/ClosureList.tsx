@@ -38,7 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { formatCurrency } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import { DeleteClosureDialog } from '@/components/chiusura/DeleteClosureDialog'

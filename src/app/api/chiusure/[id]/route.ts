@@ -7,6 +7,14 @@ import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
 import { getVenueId } from '@/lib/venue'
 import { buildStationCreateData } from '@/lib/closure-calculations'
+import {
+  deleteJournalEntriesForClosure,
+  findClosureJournalLinks,
+  generateJournalEntriesFromClosure,
+  summarizeJournalEntriesForClosure,
+  JournalEntriesLockedError,
+} from '@/lib/closure-journal-entries'
+import { calculateBankDeposit } from '@/lib/services/closure-service'
 
 const dateSchema = z
   .string()
@@ -390,8 +398,34 @@ export async function PUT(
     // Separa metadati dai dati relazionali
     const { stations, partials, expenses, attendance, ...metadata } = validatedData
 
+    // Una chiusura validata ha già le sue scritture di prima nota, calcolate
+    // sugli importi di allora. Correggerla senza rifarle lascerebbe lo stesso
+    // giorno con due verità — quella della chiusura e quella dei registri — e
+    // nessuna delle due dichiarata sbagliata. Le nuove scritture nascono qui
+    // dentro, nella stessa transazione che cambia gli importi.
+    //
+    // Si rigenera per ogni modifica, senza distinguere i campi che entrano
+    // davvero nel calcolo (data, postazioni, uscite) da quelli che non ci
+    // entrano: l'elenco andrebbe tenuto allineato a mano al generatore, e
+    // sbagliarlo riporterebbe in vita esattamente il difetto che questo codice
+    // chiude. Il prezzo è qualche scrittura rifatta identica dopo una correzione
+    // di sole note.
+    const deveRigenerare = existingClosure.status === 'VALIDATED'
+
     // Aggiorna in transazione: metadati + delete/recreate relazioni
     const updated = await prisma.$transaction(async (tx) => {
+      // 0. Prima di toccare qualunque cosa: la rigenerazione è praticabile?
+      // Se le scritture attuali sono già state lavorate a valle, annullarle
+      // spezzerebbe quei collegamenti. Meglio fermare la correzione.
+      const links = deveRigenerare ? await findClosureJournalLinks(id, tx) : []
+      if (links.length > 0) {
+        throw new JournalEntriesLockedError(links)
+      }
+
+      const journalBefore = deveRigenerare
+        ? await summarizeJournalEntriesForClosure(id, tx)
+        : null
+
       // 1. Aggiorna metadati DailyClosure
       const closure = await tx.dailyClosure.update({
         where: { id },
@@ -475,24 +509,75 @@ export async function PUT(
         }
       }
 
-      return closure
+      // 6. Rigenera la prima nota sugli importi appena scritti. I dati si
+      // rileggono dalla transazione invece di rimontarli dal corpo della
+      // richiesta: così le scritture nascono dalle stesse righe che il resto
+      // dell'applicazione andrà a leggere, anche per i campi che la PUT non
+      // ha toccato.
+      let journalAfter = null
+      if (deveRigenerare) {
+        const fresh = await tx.dailyClosure.findUniqueOrThrow({
+          where: { id },
+          include: { stations: true, expenses: true },
+        })
+
+        await deleteJournalEntriesForClosure(id, tx)
+
+        journalAfter = await generateJournalEntriesFromClosure(
+          {
+            id: fresh.id,
+            date: fresh.date,
+            venueId: fresh.venueId,
+            bankDeposit: calculateBankDeposit(fresh.stations, fresh.expenses),
+            stations: fresh.stations.map((s) => ({
+              cashAmount: s.cashAmount ? Number(s.cashAmount) : null,
+              posAmount: s.posAmount ? Number(s.posAmount) : null,
+              floatAmount: s.floatAmount ? Number(s.floatAmount) : null,
+            })),
+            expenses: fresh.expenses.map((e) => ({
+              amount: Number(e.amount),
+              payee: e.payee,
+              description: e.description,
+              documentRef: e.documentRef,
+              accountId: e.accountId,
+            })),
+          },
+          session.user.id,
+          tx
+        )
+      }
+
+      return { ...closure, journalBefore, journalAfter }
     })
 
+    const { journalBefore, journalAfter, ...closure } = updated
+
+    // Fuori dalla transazione: createAuditLog non accetta un client di
+    // transazione e ingoia i propri errori, quindi dentro non lascerebbe
+    // traccia di sé né si annullerebbe insieme al resto.
     await createAuditLog({
       userId: session.user.id,
       action: 'UPDATE',
       entityType: 'DailyClosure',
       entityId: id,
       venueId,
+      ...(journalBefore ? { oldValues: { journalEntries: journalBefore } } : {}),
+      ...(journalAfter ? { newValues: { journalEntries: journalAfter } } : {}),
     })
 
-    return NextResponse.json(updated)
+    return NextResponse.json(
+      journalAfter ? { ...closure, journalEntries: journalAfter } : closure
+    )
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         { error: 'Dati non validi', details: error.issues },
         { status: 400 }
       )
+    }
+
+    if (error instanceof JournalEntriesLockedError) {
+      return NextResponse.json({ error: error.message }, { status: 409 })
     }
 
     logger.error('Errore PUT /api/chiusure/[id]', error)

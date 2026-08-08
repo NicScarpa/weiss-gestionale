@@ -3,7 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { CheckCircle2, Clock, AlertTriangle, Ban, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { formatCurrency } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 import type { ReconciliationSummary } from '@/types/reconciliation'
 
 interface ReconciliationSummaryCardsProps {
@@ -60,7 +60,7 @@ export function ReconciliationSummaryCards({
       title: 'Ignorati',
       value: summary?.ignored ?? 0,
       icon: Ban,
-      color: 'text-gray-600',
+      color: 'text-muted-foreground',
       bgColor: 'bg-gray-100',
     },
     {

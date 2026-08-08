@@ -1,0 +1,4 @@
+# I rapporti contengono dati aziendali (importi, beneficiari, ragioni sociali):
+# la cartella resta tracciata, il suo contenuto no.
+*
+!.gitignore

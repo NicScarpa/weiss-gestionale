@@ -39,14 +39,14 @@ export default function PortalProfiloPage() {
       <Card>
         <CardContent className="pt-6">
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center">
-              <User className="h-8 w-8 text-gray-700" />
+            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
+              <User className="h-8 w-8 text-foreground" />
             </div>
             <div className="flex-1">
-              <h1 className="text-xl font-bold text-gray-900">
+              <h1 className="text-xl font-bold text-foreground">
                 {user?.firstName} {user?.lastName}
               </h1>
-              <p className="text-sm text-gray-500">{user?.email}</p>
+              <p className="text-sm text-muted-foreground">{user?.email}</p>
               <Badge className="mt-1 bg-gray-900 text-white rounded-full">
                 {user?.role === 'admin'
                   ? 'Amministratore'
@@ -63,15 +63,15 @@ export default function PortalProfiloPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Settings className="h-5 w-5 text-gray-700" />
+            <Settings className="h-5 w-5 text-foreground" />
             Informazioni
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-3">
-            <Mail className="h-5 w-5 text-gray-700" />
+            <Mail className="h-5 w-5 text-foreground" />
             <div>
-              <p className="text-xs text-gray-400 uppercase">Email</p>
+              <p className="text-xs text-muted-foreground uppercase">Email</p>
               <p className="font-medium">{user?.email}</p>
             </div>
           </div>
@@ -79,9 +79,9 @@ export default function PortalProfiloPage() {
           <Separator />
 
           <div className="flex items-center gap-3">
-            <MapPin className="h-5 w-5 text-gray-700" />
+            <MapPin className="h-5 w-5 text-foreground" />
             <div>
-              <p className="text-xs text-gray-400 uppercase">Sede</p>
+              <p className="text-xs text-muted-foreground uppercase">Sede</p>
               <p className="font-medium">
                 {user?.venueName || 'Non assegnata'}
               </p>

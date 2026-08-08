@@ -259,7 +259,11 @@ model DailyClosure {
   partials         HourlyPartial[]
   journalEntries   JournalEntry[]
 
-  @@unique([venueId, date])
+  // L'unicità di (venueId, date) vive come indice PARZIALE in
+  // prisma/migrations/post-push/constraints.sql: qui non può stare perché
+  // Prisma non esprime il `WHERE deleted_at IS NULL`, e senza quel filtro una
+  // chiusura cancellata per errore terrebbe occupato quel giorno per sempre.
+  @@index([venueId, date])
   @@map("daily_closures")
 }
 
@@ -617,6 +621,9 @@ model Schedule {
   venue                   Venue                       @relation(fields: [venueId], references: [id])
 
   @@index([venueId, dataScadenza])
+  // Il previsionale ordina per dataAttesa ?? dataScadenza: senza questo indice
+  // la proiezione di cassa scansiona tutte le scadenze della sede.
+  @@index([venueId, dataAttesa])
   @@index([stato])
   @@index([tipo])
   @@index([invoiceId])
@@ -759,7 +766,9 @@ model Budget {
   createdBy   User?         @relation(fields: [createdById], references: [id])
   venue       Venue         @relation(fields: [venueId], references: [id])
 
-  @@unique([venueId, year])
+  // Unicità di (venueId, year) come indice PARZIALE in
+  // prisma/migrations/post-push/constraints.sql: vedi DailyClosure.
+  @@index([venueId, year])
   @@map("budgets")
 }
 
@@ -1525,6 +1534,8 @@ model PushSubscription {
   endpoint    String    @unique
   p256dh      String
   auth        String
+  /// Scadenza dichiarata dal browser: nella pratica quasi sempre assente.
+  expiresAt   DateTime? @map("expires_at")
   deviceName  String?   @map("device_name")
   deviceType  String?   @map("device_type")
   browserName String?   @map("browser_name")
@@ -1755,7 +1766,9 @@ model BankTransaction {
   matchedEntry    JournalEntry?        @relation(fields: [matchedEntryId], references: [id])
   venue           Venue                @relation(fields: [venueId], references: [id])
 
-  @@unique([venueId, bankReference])
+  // Unicità di (venueId, bankReference) come indice PARZIALE in
+  // prisma/migrations/post-push/constraints.sql: vedi DailyClosure.
+  @@index([venueId, bankReference])
   @@index([venueId, status])
   @@index([transactionDate])
   @@index([importBatchId])
@@ -1858,6 +1871,8 @@ model Payment {
   journalEntry       JournalEntry? @relation(fields: [journalEntryId], references: [id])
   venue              Venue         @relation(fields: [venueId], references: [id])
 
+  @@index([venueId, stato])
+  @@index([dataEsecuzione])
   @@map("payments")
 }
 
@@ -1880,6 +1895,7 @@ model CategorizationRule {
   venue            Venue           @relation(fields: [venueId], references: [id])
   journalEntries   JournalEntry[]
 
+  @@index([venueId])
   @@map("categorization_rules")
 }
 
@@ -1907,6 +1923,7 @@ model CashFlowForecast {
   venue         Venue                  @relation(fields: [venueId], references: [id])
   scenarios     CashFlowScenario[]
 
+  @@index([venueId])
   @@map("cash_flow_forecasts")
 }
 

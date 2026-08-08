@@ -30,6 +30,14 @@ jobs:
       - name: Run ESLint
         run: npm run lint
 
+      # Censimento dell'autorizzazione sulle route API. Oggi è solo un rapporto
+      # (lo script esce sempre 0): la conversione a withAuth è appena
+      # cominciata e bloccare qui fermerebbe ogni commit. Quando sarà completa
+      # diventa `node scripts/check-route-auth.mjs --strict`, che fallisce se
+      # ricompaiono guard scritti a mano.
+      - name: Autorizzazione delle route API (rapporto)
+        run: node scripts/check-route-auth.mjs
+
   typecheck:
     name: Type Check
     runs-on: ubuntu-latest
@@ -51,6 +59,11 @@ jobs:
       - name: Run TypeScript Check
         run: npx tsc --noEmit
 
+      # tsconfig.strict.json non passa ancora: il cricchetto impedisce che il
+      # numero di errori salga. La baseline vive in scripts/strict-ratchet.mjs.
+      - name: Strict mode ratchet
+        run: npm run strict:ratchet
+
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -69,12 +82,10 @@ jobs:
       - name: Generate Prisma Client
         run: npx prisma generate
 
-      - name: Run Tests
-        run: npm test -- --run --reporter=verbose
-
+      # Un'unica esecuzione: test:coverage:ci gira gli stessi test e in più
+      # applica le soglie di copertura, che sono bloccanti.
       - name: Run Tests with Coverage
-        run: npm run test:coverage
-        continue-on-error: true
+        run: npm run test:coverage:ci -- --reporter=verbose
 
   build:
     name: Build
@@ -115,16 +126,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Blocca davvero: una vulnerabilità critica in ciò che gira in
-      # produzione non deve poter essere mergiata. Oggi ne abbiamo zero,
-      # quindi il gate è sostenibile. Le dipendenze di sviluppo sono escluse:
-      # non girano sul server, e le loro falle non sono lo stesso rischio.
-      - name: Vulnerabilità critiche in produzione (blocca)
-        run: npm audit --omit=dev --audit-level=critical
+      # Blocca davvero, su critical e high in produzione: la baseline del
+      # cricchetto è a zero su entrambe, quindi copre anche il controllo
+      # `--audit-level=critical` che stava qui prima ed è più severo di quello.
+      # Le dipendenze di sviluppo restano escluse: non girano sul server.
+      - name: Audit ratchet
+        run: npm run audit:ratchet
 
-      # Informativo: resta visibile nel log senza fermare la pipeline. Oggi
-      # segnala minimatch (plugin di build Sentry) ed exceljs/uuid, il cui
-      # unico rimedio offerto sarebbe un downgrade peggiore del problema.
-      - name: Vulnerabilità alte e moderate (solo segnalazione)
+      # Informativo: resta visibile nel log senza fermare la pipeline. Il
+      # cricchetto non conta le moderate, per le quali npm propone come unico
+      # rimedio un downgrade major all'indietro, che non è un fix.
+      - name: Vulnerabilità moderate (solo segnalazione)
         run: npm audit --omit=dev --audit-level=moderate
         continue-on-error: true

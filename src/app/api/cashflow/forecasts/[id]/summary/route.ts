@@ -23,8 +23,10 @@ export async function GET(
 
     const { id } = await params
 
-    const forecast = await prisma.cashFlowForecast.findUnique({
-      where: { id },
+    const forecast = await prisma.cashFlowForecast.findFirst({
+      // Una previsione eliminata non ha più righe da leggere né da aggiungere:
+      // `findUnique` non passa dall'estensione che filtra i cancellati.
+      where: { id, deletedAt: null },
       select: {
         id: true,
         venueId: true,

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { AgingChart } from '@/components/scadenzario/aging-chart'
 import { ArrowLeft, Loader2 } from 'lucide-react'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency } from '@/lib/formatters'
 
 interface AgingBand {
   fascia: string
@@ -67,7 +67,7 @@ export default function AgingPage() {
           <ArrowLeft className="h-4 w-4" />
           Scadenzario
         </Button>
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">
           Aging Scadenze
         </h1>
         <p className="text-muted-foreground">

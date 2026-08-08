@@ -1,17 +1,22 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Bell, BellOff, Loader2 } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Bell, BellOff, Loader2, AlertTriangle, Send } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { Separator } from '@/components/ui/separator'
+import {
+  diagnosticaPush,
+  attivaPush,
+  disattivaPush,
+  inviaNotificaDiProva,
+  type DiagnosiPush,
+} from '@/lib/push-client'
 
 import { logger } from '@/lib/logger'
-import { iscriviAllePush, disiscriviDallePush } from '@/lib/notifications/client'
-
 interface NotificationPreferences {
   pushEnabled: boolean
   newShiftPublished: boolean
@@ -38,21 +43,26 @@ export function NotificationSettings() {
   const [preferences, setPreferences] = useState<NotificationPreferences>(defaultPreferences)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [pushSupported, setPushSupported] = useState(false)
-  const [pushPermission, setPushPermission] = useState<NotificationPermission>('default')
+  const [diagnosi, setDiagnosi] = useState<DiagnosiPush | null>(null)
+  const [attivazioneInCorso, setAttivazioneInCorso] = useState(false)
+  const [provaInCorso, setProvaInCorso] = useState(false)
 
-  useEffect(() => {
-    // Check push notification support
-    if ('Notification' in window && 'serviceWorker' in navigator) {
-      queueMicrotask(() => {
-        setPushSupported(true)
-        setPushPermission(Notification.permission)
+  const aggiornaDiagnosi = useCallback(async () => {
+    try {
+      setDiagnosi(await diagnosticaPush())
+    } catch (error) {
+      logger.error('Diagnostica push fallita', error)
+      setDiagnosi({
+        stato: 'non-configurato',
+        dettaglio: 'Impossibile determinare lo stato delle notifiche.',
       })
     }
-
-    // Load preferences
-    loadPreferences()
   }, [])
+
+  useEffect(() => {
+    aggiornaDiagnosi()
+    loadPreferences()
+  }, [aggiornaDiagnosi])
 
   const loadPreferences = async () => {
     try {
@@ -107,41 +117,50 @@ export function NotificationSettings() {
     }
     setPreferences(newPreferences)
     savePreferences(newPreferences)
-
-    // Spegnere le push non è solo una preferenza: il dispositivo va tolto
-    // dai destinatari, altrimenti il server continuerebbe a scrivergli.
-    if (key === 'pushEnabled' && !newPreferences.pushEnabled) {
-      disiscriviDallePush().catch((error) =>
-        logger.error('Errore disiscrizione push', error)
-      )
-    }
   }
 
-  const requestPushPermission = async () => {
-    if (!pushSupported) return
-
-    setSaving(true)
+  const attivaNotifiche = async () => {
+    setAttivazioneInCorso(true)
     try {
-      // L'iscrizione registra il dispositivo sul server: senza, il permesso
-      // del browser da solo non fa arrivare nulla.
-      const esito = await iscriviAllePush()
-      setPushPermission(Notification.permission)
-
-      if (!esito.ok) {
-        toast.error('Notifiche non attivate', { description: esito.motivo })
-        return
-      }
+      await attivaPush()
 
       const newPreferences = { ...preferences, pushEnabled: true }
       setPreferences(newPreferences)
       await savePreferences(newPreferences)
 
-      toast.success('Notifiche attivate su questo dispositivo')
+      toast.success('Dispositivo registrato: le notifiche arriveranno qui')
     } catch (error) {
-      logger.error('Error requesting push permission', error)
-      toast.error('Impossibile attivare le notifiche')
+      logger.error('Attivazione notifiche fallita', error)
+      toast.error(error instanceof Error ? error.message : 'Impossibile attivare le notifiche')
     } finally {
-      setSaving(false)
+      await aggiornaDiagnosi()
+      setAttivazioneInCorso(false)
+    }
+  }
+
+  const disattivaNotifiche = async () => {
+    setAttivazioneInCorso(true)
+    try {
+      await disattivaPush()
+      toast.success('Dispositivo rimosso')
+    } catch (error) {
+      logger.error('Disattivazione notifiche fallita', error)
+      toast.error('Impossibile rimuovere il dispositivo')
+    } finally {
+      await aggiornaDiagnosi()
+      setAttivazioneInCorso(false)
+    }
+  }
+
+  const provaNotifica = async () => {
+    setProvaInCorso(true)
+    try {
+      await inviaNotificaDiProva()
+      toast.success('Notifica di prova inviata')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Invio non riuscito')
+    } finally {
+      setProvaInCorso(false)
     }
   }
 
@@ -149,7 +168,7 @@ export function NotificationSettings() {
     return (
       <Card>
         <CardContent className="pt-6 flex justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </CardContent>
       </Card>
     )
@@ -167,37 +186,63 @@ export function NotificationSettings() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Push notification status */}
-        {pushSupported && (
+        {/* Stato reale del canale push su questo dispositivo */}
+        {diagnosi && (
           <>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label className="text-base">Notifiche Push</Label>
-                <p className="text-sm text-gray-500">
-                  {pushPermission === 'granted'
-                    ? 'Le notifiche push sono attive'
-                    : pushPermission === 'denied'
-                    ? 'Le notifiche sono bloccate dal browser'
-                    : 'Attiva le notifiche per ricevere aggiornamenti'}
-                </p>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <Label className="text-base">Notifiche Push</Label>
+                  <p className="text-sm text-muted-foreground">{diagnosi.dettaglio}</p>
+                </div>
+
+                {diagnosi.stato === 'attivo' ? (
+                  <Switch
+                    checked={preferences.pushEnabled}
+                    onCheckedChange={() => handleToggle('pushEnabled')}
+                    disabled={saving}
+                  />
+                ) : diagnosi.stato === 'da-attivare' ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={attivaNotifiche}
+                    disabled={attivazioneInCorso}
+                  >
+                    {attivazioneInCorso && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Attiva
+                  </Button>
+                ) : diagnosi.stato === 'non-configurato' ? (
+                  <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500" />
+                ) : (
+                  <BellOff className="h-5 w-5 shrink-0 text-muted-foreground" />
+                )}
               </div>
-              {pushPermission === 'granted' ? (
-                <Switch
-                  checked={preferences.pushEnabled}
-                  onCheckedChange={() => handleToggle('pushEnabled')}
-                  disabled={saving}
-                />
-              ) : pushPermission === 'denied' ? (
-                <BellOff className="h-5 w-5 text-gray-400" />
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={requestPushPermission}
-                  className="border-gray-300 text-gray-900 hover:bg-gray-100"
-                >
-                  Attiva
-                </Button>
+
+              {diagnosi.stato === 'attivo' && (
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={provaNotifica}
+                    disabled={provaInCorso}
+                  >
+                    {provaInCorso ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Send className="mr-2 h-4 w-4" />
+                    )}
+                    Invia notifica di prova
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={disattivaNotifiche}
+                    disabled={attivazioneInCorso}
+                  >
+                    Rimuovi questo dispositivo
+                  </Button>
+                </div>
               )}
             </div>
             <Separator />
@@ -206,7 +251,7 @@ export function NotificationSettings() {
 
         {/* Notification types */}
         <div className="space-y-4">
-          <Label className="text-sm font-semibold text-gray-900">
+          <Label className="text-sm font-semibold text-foreground">
             Tipi di notifica
           </Label>
 
@@ -214,7 +259,7 @@ export function NotificationSettings() {
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Nuovi turni pubblicati</Label>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-muted-foreground">
                   Quando vengono pubblicati nuovi turni
                 </p>
               </div>
@@ -228,7 +273,7 @@ export function NotificationSettings() {
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Promemoria turno</Label>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-muted-foreground">
                   Avviso prima dell&apos;inizio del turno
                 </p>
               </div>
@@ -242,7 +287,7 @@ export function NotificationSettings() {
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Anomalie rilevate</Label>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-muted-foreground">
                   Quando viene creata un&apos;anomalia
                 </p>
               </div>
@@ -256,7 +301,7 @@ export function NotificationSettings() {
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Anomalie risolte</Label>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-muted-foreground">
                   Quando un&apos;anomalia viene risolta
                 </p>
               </div>
@@ -270,7 +315,7 @@ export function NotificationSettings() {
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Ferie approvate</Label>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-muted-foreground">
                   Quando una richiesta ferie viene approvata
                 </p>
               </div>
@@ -284,7 +329,7 @@ export function NotificationSettings() {
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Ferie rifiutate</Label>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-muted-foreground">
                   Quando una richiesta ferie viene rifiutata
                 </p>
               </div>

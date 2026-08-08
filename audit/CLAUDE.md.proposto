@@ -1,0 +1,81 @@
+# weiss-gestionale — Convenzioni di progetto
+
+Gestionale amministrativo-contabile di Weiss Cafè (sede unica). Gestisce dati reali:
+chiusure di cassa, prima nota, scadenzario, fatture, presenze, turni, stipendi.
+**Ogni modifica ai moduli contabili deve preservare la quadratura dei numeri.**
+
+## Stack
+
+- Next.js 16 (App Router) · React 19 · TypeScript 5
+- Prisma 7 + PostgreSQL (produzione: Supabase; deploy: Railway)
+- NextAuth v5 (JWT) · TailwindCSS 4 + shadcn/ui · TanStack Query · Zod 4
+- Test: Vitest (jsdom, `src/**/*.test.ts{x}`) · Playwright in `e2e/`
+- PWA: Serwist + IndexedDB (`idb`) per la timbratura offline
+
+## Ambiente
+
+- **Node 22 obbligatorio** (`engine-strict=true`): anteporre `nvm use 22` a ogni comando npm.
+  Il Node di sistema (v25) fa fallire npm.
+- **ATTENZIONE: `.env` punta al database di PRODUZIONE (Supabase).**
+  Mai eseguire `db:reset`, `db:push --force-reset` o `db:seed` senza aver verificato `DATABASE_URL`.
+- Lo schema si applica con `prisma db push` (non esistono migrazioni versionate — vedi audit).
+
+## Comandi
+
+```bash
+npm run dev            # server di sviluppo
+npm run build          # prisma generate + next build
+npm run lint           # eslint
+npm run test:run       # vitest una tantum (i test NON toccano il DB: env mockato in vitest.setup.ts)
+npm run test:coverage  # coverage (solo src/lib)
+npx tsc --noEmit       # typecheck (non esiste script dedicato)
+```
+
+## Struttura
+
+```
+src/app/(auth)/        # login, recupero password
+src/app/(dashboard)/   # app amministrativa (admin/manager): chiusura-cassa, prima-nota,
+                       #   scadenzario, fatture, riconciliazione, budget, cash-flow, report,
+                       #   anagrafiche, staff, turni, presenze, ferie-permessi, documenti-dipendenti
+src/app/(portal)/      # portale dipendenti (mobile-first): timbrature, richieste
+src/app/api/           # ~180 route REST
+src/components/        # UI per dominio + components/ui (shadcn)
+src/lib/               # logica: services/, scadenzario/, reconciliation/, sdi/, attendance/,
+                       #   validations/, encryption.ts, api-utils.ts, logger.ts
+prisma/schema.prisma   # ~66 modelli, snake_case sul DB via @map
+```
+
+## Glossario di dominio (nomi da usare, coerenti col DB)
+
+| Concetto | Nel codice/DB | Note |
+|----------|---------------|------|
+| Chiusura cassa | `CashClosure`, route `chiusure` | genera scritture di prima nota alla validazione |
+| Prima nota | `JournalEntry`, route `prima-nota` | scritture contabili; soft delete obbligatorio |
+| Scadenza | `Schedule`, route `scadenzario` | ita nel dominio, eng nei modelli |
+| Movimento bancario | `BankTransaction` | porta l'imputazione contabile (modello Sibill) |
+| Riconciliazione | lega Schedule ↔ BankTransaction (N:M) | mai movimento ↔ documento |
+| Fornitore | `Supplier`, UI "fornitori" | |
+| Fattura | `Invoice`, import SDI XML/P7M | genera le scadenze |
+
+Il modello di riferimento del ciclo di tesoreria è documentato in
+`docs/Ciclo_Tesoreria_Modello_Sibill.md`: leggerlo prima di toccare scadenzario/riconciliazione.
+
+## Convenzioni
+
+- **Commit in italiano**, stile conventional: `feat(scadenzario): …`, `fix(presenze): …`,
+  `docs: …`, minuscolo, descrittivo del comportamento (non dell'implementazione).
+- **Importi**: `Decimal` su DB e `decimal.js` in logica; mai `parseFloat`/aritmetica float su denaro.
+- **Date/ore presenze**: fuso Europe/Rome gestito esplicitamente; i test girano con TZ=UTC.
+- **Operazioni multi-tabella contabili**: sempre dentro `prisma.$transaction`.
+- **API**: validare il body con Zod (`src/lib/validations/`), rispondere con le utility di
+  `src/lib/api-utils.ts`, filtrare sempre per venue/utente autorizzato.
+- **Log**: usare `src/lib/logger.ts` (pino), non `console.*`.
+- La lingua dell'interfaccia e dei messaggi è l'italiano.
+
+## Da NON fare
+
+- Niente `any`, niente cast `as unknown as` per far tacere il compilatore.
+- Niente hard delete su dati contabili (soft delete con `deletedAt`).
+- Niente nuove route duplicate ita/eng: riusare il dominio esistente.
+- Niente credenziali in file tracciati; le credenziali locali stanno solo in `.env` (gitignored).

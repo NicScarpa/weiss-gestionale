@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ScheduleSummary } from '@/types/schedule'
 import { ArrowDownLeft, ArrowUpRight, CalendarClock, AlertTriangle } from 'lucide-react'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency } from '@/lib/formatters'
 
 interface ScheduleSummaryCardsProps {
   summary: ScheduleSummary

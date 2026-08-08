@@ -176,7 +176,7 @@ export function BudgetSetupWizard({
               >
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                    <Target className="h-5 w-5 text-slate-600" />
+                    <Target className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div>
                     <h3 className="font-medium">Inizia da zero</h3>

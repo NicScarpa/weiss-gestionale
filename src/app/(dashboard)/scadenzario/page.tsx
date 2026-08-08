@@ -21,7 +21,23 @@ import { Switch } from '@/components/ui/switch'
 import { CalendarClock, CalendarDays, Plus, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { format, isAfter, startOfDay } from 'date-fns'
 import { it } from 'date-fns/locale'
-import { formatCurrency, cn } from '@/lib/utils'
+import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
+import { formatCurrency } from '@/lib/formatters'
+
+/**
+ * Il messaggio che il server ha dato, o un ripiego leggibile. Serve a farlo
+ * arrivare fino al dialog, che lo mostra e resta aperto con i dati dentro:
+ * prima l'errore finiva solo in console e l'utente riprovava, duplicando.
+ */
+async function erroreDalServer(resp: Response, ripiego: string): Promise<Error> {
+  try {
+    const corpo = await resp.json()
+    return new Error(corpo?.error || ripiego)
+  } catch {
+    return new Error(ripiego)
+  }
+}
 
 function SortIcon({ column, sortBy, sortOrder }: { column: string; sortBy: string; sortOrder: 'asc' | 'desc' }) {
   if (sortBy !== column) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-30" />
@@ -70,8 +86,10 @@ export default function ScadenzarioPage() {
         if (filtri.priorita) params.append('priorita', filtri.priorita as string)
         if (filtri.source) params.append('source', filtri.source)
         if (filtri.search) params.append('search', filtri.search)
-        if (filtri.dataInizio) params.append('dataInizio', filtri.dataInizio.toISOString())
-        if (filtri.dataFine) params.append('dataFine', filtri.dataFine.toISOString())
+        // Giorno civile, non istante: `toISOString()` di una mezzanotte
+        // italiana è ancora il giorno prima, e il filtro perdeva un giorno
+        if (filtri.dataInizio) params.append('dataInizio', format(filtri.dataInizio, 'yyyy-MM-dd'))
+        if (filtri.dataFine) params.append('dataFine', format(filtri.dataFine, 'yyyy-MM-dd'))
         if (filtri.isRicorrente !== undefined) params.append('isRicorrente', String(filtri.isRicorrente))
         if (filtri.verificata !== undefined) params.append('verificata', String(filtri.verificata))
         params.append('page', String(page))
@@ -142,44 +160,44 @@ export default function ScadenzarioPage() {
     }
   }
 
+  // Gli errori risalgono al dialog, che li mostra e resta aperto: qui non si
+  // catturano, o il salvataggio fallito passerebbe di nuovo per riuscito.
   const handlePayment = async (data: PaymentFormData) => {
     if (!selectedSchedule) return
 
-    try {
-      const resp = await fetch(`/api/scadenzario/${selectedSchedule.id}/pagamenti`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      })
+    const resp = await fetch(`/api/scadenzario/${selectedSchedule.id}/pagamenti`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
 
-      if (resp.ok) {
-        const result = await resp.json()
-        setSchedules(prev => prev.map(s =>
-          s.id === selectedSchedule.id ? result.schedule : s
-        ))
-        setPaymentDialogOpen(false)
-        setSelectedSchedule(null)
-      }
-    } catch (error) {
-      console.error('Errore registrazione pagamento:', error)
+    if (!resp.ok) {
+      throw await erroreDalServer(resp, 'Non è stato possibile registrare il pagamento')
     }
+
+    const result = await resp.json()
+    setSchedules(prev => prev.map(s =>
+      s.id === selectedSchedule.id ? { ...s, ...result.schedule } : s
+    ))
+    setPaymentDialogOpen(false)
+    setSelectedSchedule(null)
+    toast.success('Pagamento registrato')
   }
 
   const handleCreateSchedule = async (data: CreateScheduleInput) => {
-    try {
-      const resp = await fetch('/api/scadenzario', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      })
+    const resp = await fetch('/api/scadenzario', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
 
-      if (resp.ok) {
-        const result = await resp.json()
-        setSchedules(prev => [result.schedule, ...prev])
-      }
-    } catch (error) {
-      console.error('Errore creazione scadenza:', error)
+    if (!resp.ok) {
+      throw await erroreDalServer(resp, 'Non è stato possibile creare la scadenza')
     }
+
+    const result = await resp.json()
+    setSchedules(prev => [result.schedule, ...prev])
+    toast.success('Scadenza creata')
   }
 
   const toggleSort = (column: string) => {
@@ -217,7 +235,7 @@ export default function ScadenzarioPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">
             Scadenzario
           </h1>
           <p className="text-muted-foreground">
@@ -235,7 +253,7 @@ export default function ScadenzarioPage() {
               onCheckedChange={setShowSaldoScalare}
               className="h-[22px] w-[42px] border border-neutral-300 data-[state=checked]:border-neutral-900 shadow-none data-[state=unchecked]:bg-neutral-300 data-[state=checked]:bg-neutral-900 [&>span]:size-[18px]"
             />
-            <span className="text-sm font-medium select-none text-slate-600">
+            <span className="text-sm font-medium select-none text-muted-foreground">
               Mostra saldo scalare
             </span>
           </label>

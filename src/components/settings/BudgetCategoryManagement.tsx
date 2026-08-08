@@ -83,7 +83,7 @@ const CATEGORY_TYPE_COLORS: Record<string, string> = {
   KPI: 'bg-blue-100 text-blue-800',
   TAX: 'bg-purple-100 text-purple-800',
   INVESTMENT: 'bg-amber-100 text-amber-800',
-  VAT: 'bg-gray-100 text-gray-800',
+  VAT: 'bg-gray-100 text-foreground',
 }
 
 export function BudgetCategoryManagement() {

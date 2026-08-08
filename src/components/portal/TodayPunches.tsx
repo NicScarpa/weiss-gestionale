@@ -129,7 +129,7 @@ export function TodayPunches({ venueId, className }: TodayPunchesProps) {
               return (
                 <div
                   key={punch.id}
-                  className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 border border-gray-100"
+                  className="flex items-center justify-between p-3 rounded-2xl bg-muted border border-border"
                 >
                   <div className="flex items-center gap-3">
                     <div

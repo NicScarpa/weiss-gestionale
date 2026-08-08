@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { getVenueId } from '@/lib/venue'
+import { saldiAlGiorno } from '@/lib/saldi'
+import { withAuth } from '@/lib/api-utils'
 import {
   addDays,
   subDays,
@@ -60,16 +60,9 @@ interface ForecastResult {
 }
 
 // GET /api/dashboard/forecast - Previsione cash flow
-export async function GET(request: NextRequest) {
+export const GET = withAuth(async (request, { venueId }) => {
   try {
-    const session = await auth()
-
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
     const { searchParams } = new URL(request.url)
-    const venueId = await getVenueId()
     const days = parseInt(searchParams.get('days') || '30')
 
     const forecastDays = Math.min(Math.max(days, 7), 90)
@@ -247,48 +240,25 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+}, { roles: ['admin', 'manager'], venueScoped: true })
 
-// Calcola saldo attuale da prima nota
+/**
+ * Il saldo da cui la previsione parte: la liquidità di oggi, letta da
+ * `@/lib/saldi` come la card «Saldo Attuale» che le sta accanto sullo schermo.
+ *
+ * Il conteggio fatto qui prima sbagliava in tre modi insieme: sommava al saldo
+ * iniziale dell'anno in corso i movimenti di *tutti* gli anni (contando due
+ * volte la storia già chiusa), contava i movimenti nascosti, e contava anche
+ * quelli datati nel futuro — cioè le scadenze non ancora pagate, che venivano
+ * sottratte dal saldo di oggi e poi ancora dalla previsione dei giorni a venire.
+ */
 async function calculateCurrentBalance(venueId: string) {
-  const currentYear = new Date().getFullYear()
-
-  // Saldo iniziale
-  const initialBalance = await prisma.initialBalance.findUnique({
-    where: {
-      venueId_year: { venueId, year: currentYear },
-    },
-  })
-
-  const cashOpening = initialBalance ? Number(initialBalance.cashBalance) : 0
-  const bankOpening = initialBalance ? Number(initialBalance.bankBalance) : 0
-
-  // Movimenti da inizio anno
-  const [cashAgg, bankAgg] = await Promise.all([
-    prisma.journalEntry.aggregate({
-      where: { venueId, registerType: 'CASH' },
-      _sum: { debitAmount: true, creditAmount: true },
-    }),
-    prisma.journalEntry.aggregate({
-      where: { venueId, registerType: 'BANK' },
-      _sum: { debitAmount: true, creditAmount: true },
-    }),
-  ])
-
-  const cashBalance =
-    cashOpening +
-    Number(cashAgg._sum.debitAmount || 0) -
-    Number(cashAgg._sum.creditAmount || 0)
-
-  const bankBalance =
-    bankOpening +
-    Number(bankAgg._sum.debitAmount || 0) -
-    Number(bankAgg._sum.creditAmount || 0)
+  const saldi = await saldiAlGiorno(venueId)
 
   return {
-    cash: Math.round(cashBalance * 100) / 100,
-    bank: Math.round(bankBalance * 100) / 100,
-    total: Math.round((cashBalance + bankBalance) * 100) / 100,
+    cash: saldi.cashBalance,
+    bank: saldi.bankBalance,
+    total: saldi.totalAvailable,
   }
 }
 
@@ -429,6 +399,16 @@ function calculateExpectedIncome(
   }
 }
 
+/**
+ * Il mese (0-11) su cui ancorare una ricorrenza lunga: quello da cui la spesa è
+ * attiva. Le date `@db.Date` sono mezzanotte UTC del giorno civile, quindi il
+ * mese si legge in UTC — con l'ora locale una spesa attiva dal 1° del mese
+ * finirebbe nel mese precedente.
+ */
+function meseDiPartenza(startDate: Date | null | undefined, predefinito: number): number {
+  return startDate ? new Date(startDate).getUTCMonth() : predefinito
+}
+
 // Calcola spese previste per un giorno
 function calculateExpectedExpenses(
   date: Date,
@@ -479,14 +459,19 @@ function calculateExpectedExpenses(
         break
 
       case 'QUARTERLY':
-        // Trimestrale: mesi 0,3,6,9 (gen,apr,lug,ott)
+        // Ogni tre mesi a partire dal mese in cui la spesa è entrata in vigore.
+        // Erano fissi gen/apr/lug/ott: un canone trimestrale attivo da febbraio
+        // veniva previsto con due mesi di scarto rispetto a quando esce davvero.
         applies =
-          expense.dayOfMonth === dayOfMonth && [0, 3, 6, 9].includes(month)
+          expense.dayOfMonth === dayOfMonth &&
+          (month - meseDiPartenza(expense.startDate, 0) + 12) % 3 === 0
         break
 
       case 'YEARLY':
-        // Annuale: verifica mese e giorno
-        applies = expense.dayOfMonth === dayOfMonth && month === 0 // Gennaio
+        // Nel mese in cui la spesa è entrata in vigore, non a gennaio: il mese
+        // fisso faceva sparire dalla previsione l'assicurazione di settembre.
+        applies =
+          expense.dayOfMonth === dayOfMonth && month === meseDiPartenza(expense.startDate, 0)
         break
     }
 

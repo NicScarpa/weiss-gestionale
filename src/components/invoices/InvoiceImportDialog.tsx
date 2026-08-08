@@ -51,6 +51,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { toast } from 'sonner'
 
 import { logger } from '@/lib/logger'
+import { formatCurrency } from '@/lib/formatters'
 interface InvoiceImportDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -207,14 +208,6 @@ async function fetchAccounts(): Promise<Account[]> {
   if (!res.ok) throw new Error('Errore caricamento conti')
   const data = await res.json()
   return data.accounts || []
-}
-
-// Helper outside component
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat('it-IT', {
-    style: 'currency',
-    currency: 'EUR',
-  }).format(value)
 }
 
 export function InvoiceImportDialog({
@@ -774,7 +767,7 @@ export function InvoiceImportDialog({
              
              <div className="grid grid-cols-3 gap-4 text-center">
                 <div className="p-3 bg-slate-50 rounded-lg">
-                   <p className="text-2xl font-bold text-slate-700">{stats.total}</p>
+                   <p className="text-2xl font-bold text-foreground">{stats.total}</p>
                    <p className="text-xs text-slate-500 uppercase">Totali</p>
                 </div>
                 <div className="p-3 bg-green-50 rounded-lg">
