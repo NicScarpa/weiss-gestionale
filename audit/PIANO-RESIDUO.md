@@ -42,54 +42,70 @@ sono documentati e NON corretti** — sono il grosso di ciò che resta.
 
 ---
 
-## PRIORITÀ 0 — Il registro delle migrazioni (urgente, mezz'ora)
+## ~~PRIORITÀ 0~~ — Il registro delle migrazioni. **FATTA l'8 agosto 2026**
 
-### Perché adesso
+Ramo `migrazioni/baseline-registro` (worktree `riconciliazione`), gate verde:
+885 test unit · 250 di integrazione · strict 24 · audit 0/0 · build OK.
+Backup preventivo in `~/Desktop/backup-pre-baseline-20260808-1557.dump`.
 
-**Non esiste alcuna migrazione versionata** e in produzione la tabella `_prisma_migrations` **non
-esiste** (verificato: 0 righe). Ogni modifica allo schema è stata applicata con `prisma db push`,
-che sincronizza e non lascia storia.
+**In produzione `_prisma_migrations` ora esiste** e contiene `0_baseline`, dichiarata applicata con
+`migrate resolve` (che registra e non esegue). Il database non è stato modificato: 79 tabelle prima,
+79 più il registro dopo, 8 indici parziali intatti.
 
-Era rimandabile finché toccava lo schema una persona sola. **Non lo è più**: nelle ultime 48 ore il
-database di produzione è stato modificato **due volte**, e sul ramo `conti/piano-v4` c'è una terza
-sessione che ha già scritto due file SQL a mano (`2026-08-07_piano_v4_centri_costo.sql`,
-`2026-08-08_centro_operativo_provenienza.sql`). Più persone modificano lo stesso schema di
-produzione **senza un registro condiviso di cosa è stato applicato e quando**.
+### Il piano era giusto sul cosa, sbagliato su due dettagli. Entrambi misurati.
 
-### Come farlo
+**1. La baseline generata era sbagliata, e in modo pericoloso.** Questo documento diceva che un
+`migrate reset` avrebbe *perso* gli indici parziali. Non li perde: **li falsifica in senso più
+stretto**. Prisma non modella gli indici parziali — l'introspezione ne conserva nome e colonne e
+**scarta la clausola `WHERE`**. Nel file da 2.655 righe non c'era una sola occorrenza di `WHERE`.
 
-```bash
-cd ~/Desktop/accounting-wt/riconciliazione   # o un worktree pulito da origin/main
-source ~/.nvm/nvm.sh && nvm use 22
-URL=$(grep -m1 '^DATABASE_URL=' ~/Desktop/accounting/.env | cut -d= -f2- | tr -d '"')
+Un ambiente ricostruito da quella baseline avrebbe reintrodotto tre bug che `constraints.sql`
+dichiara di aver risolto. Provato per esecuzione su `suppliers`: con l'indice parziale due fornitori
+senza P.IVA entrano (ed è legittimo, lo dice il file stesso); con l'indice pieno che generava Prisma,
+`ERROR: duplicate key value violates unique constraint`.
 
-# 1. BACKUP (obbligatorio, il client di sistema è la 16 e NON basta: serve libpq 18)
-/opt/homebrew/opt/libpq/bin/pg_dump "$URL" -Fc -f ~/Desktop/backup-pre-baseline-$(date +%Y%m%d-%H%M).dump
-/opt/homebrew/opt/libpq/bin/pg_restore -l ~/Desktop/backup-pre-baseline-*.dump | grep -c 'TABLE DATA'
+Un vincolo perso è un buco silenzioso. **Un vincolo troppo stretto blocca il lavoro in produzione.**
+Gli 8 predicati sono stati riattaccati a mano dalle definizioni vere di `pg_indexes`.
 
-# 2. Fotografia dello stato attuale come migrazione iniziale
-mkdir -p prisma/migrations/0_baseline
-DATABASE_URL="$URL" npx prisma migrate diff \
-  --from-empty --to-config-datasource --script > prisma/migrations/0_baseline/migration.sql
+**2. `post-push/` dentro `prisma/migrations/` rompeva `migrate deploy`.** Prisma tratta ogni
+sottocartella come una migrazione: non trovando `post-push/migration.sql` si fermava con
+`Error: P3015`. Misurato su un database locale: il deploy applicava `0_baseline` e poi moriva. **La
+regola nuova si sarebbe rotta al primo uso.** La cartella è ora `prisma/sql/` (con dentro anche
+`enable_rls_all_tables.sql`); aggiornato `src/test/integration/global-setup.ts`, che la usa.
 
-# 3. Dichiarala già applicata (NON la esegue: registra soltanto)
-DATABASE_URL="$URL" npx prisma migrate resolve --applied 0_baseline
+### Fedeltà della baseline, verificata applicandola a un PostgreSQL vuoto
 
-# 4. Verifica
-psql "$URL" -tAc "SELECT migration_name, finished_at FROM _prisma_migrations;"
-```
+235 indici · 1.081 colonne · 235 vincoli (156 FK, 79 PK) · 252 valori di enum: **identici** alla
+produzione, zero differenze. **59 policy RLS: assenti** — sono oggetti Supabase, fuori dal modello
+Prisma. Un ambiente ricostruito nasce senza RLS; per la produzione non cambia nulla (l'app si
+connette come `postgres`, che RLS lo bypassa), ma un ambiente nuovo esposto a PostgREST sarebbe
+aperto. Documentato in `prisma/sql/README.md`.
 
-### Dopo, la regola cambia per tutti
+> ⚠️ **Un confronto è tornato verde perché era rotto da entrambe le parti.** La query sui vincoli
+> aveva un `ORDER BY 2` su una `SELECT` a una colonna: falliva identicamente su produzione e locale,
+> `0 = 0`, «nessuna differenza». Se ne è accorto solo il conteggio: 0 vincoli su un database con 156
+> chiavi esterne non è plausibile. **Controllare sempre che il numero abbia senso, non solo che i
+> due lati coincidano.**
 
-- In produzione **mai più `db push`**: solo `prisma migrate deploy`.
-- Ogni modifica allo schema nasce come `prisma migrate dev --name <nome>` e viaggia in git.
-- **Va comunicato alle altre sessioni**, altrimenti la prima che fa `db push` disallinea il registro.
-- I due file SQL scritti a mano su `conti/piano-v4` vanno riconciliati con questo impianto: o
-  diventano migrazioni vere, o vanno dichiarati applicati.
+### La regola, adesso
 
-⚠️ **`prisma/migrations/post-push/constraints.sql` resta com'è**: contiene gli 8 indici unici
-**parziali** (`WHERE deleted_at IS NULL`) che Prisma non sa esprimere. Sono già in produzione dal
-7 agosto e **non vanno rieseguiti**. Vanno però ricordati: un `migrate reset` li perderebbe.
+- In produzione **mai più `db push`**: solo `npm run db:migrate:deploy`.
+- Ogni modifica nasce come `npm run db:migrate -- --name <nome>` e viaggia in git.
+- `npm run db:migrate:status` dice cosa risulta applicato.
+- **Dentro `prisma/migrations/` solo migrazioni vere.** Qualunque altro SQL in `prisma/sql/`.
+- **Va comunicato alle altre sessioni**: la prima che fa `db push` disallinea il registro.
+
+Documentazione: `prisma/migrations/README.md` (la regola) e `prisma/sql/README.md` (cosa Prisma non
+modella — indici parziali, RLS, `CHECK` — e come accorgersene).
+
+### Resta aperto: i due SQL di `conti/piano-v4`
+
+**Nessun oggetto di piano-v4 è in produzione** (verificato: `cost_centers`, l'enum e le due colonne
+sono tutti assenti). Quindi sono **da applicare**, non da dichiarare applicati: il caso semplice.
+Istruzioni verificate in **`audit/MIGRAZIONI-CONSEGNA-PIANO-V4.md`**, incluse le due trappole che
+quel ramo porta con sé — un **nono** indice parziale (`cost_centers_one_default`, che senza predicato
+ammetterebbe *un solo centro di costo in tutto il sistema*) e il **primo** vincolo `CHECK` del
+progetto. **Il ramo non è stato toccato**: è di un'altra sessione ed è derivato 190 commit fa.
 
 ---
 
