@@ -6,6 +6,8 @@ import { logger } from '@/lib/logger'
 import { parseFatturaPA } from '@/lib/sdi/parser'
 import { normalizeProductName } from '@/lib/price-tracking'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
+import { abbinaMemoria, codiciNonIdentificanti } from './memoria-match'
+import type { EsitoAbbinamento } from './memoria-match'
 import type { DettaglioLinea } from '@/lib/sdi/types'
 
 const MODELLO_AI = 'claude-haiku-4-5'
@@ -133,23 +135,35 @@ export async function categorizzaRigheFattura({
         })
       : []
 
-    const righeMatchate = new Map<number, { accountId: string }>()
+    // Le regole di identità di un prodotto stanno in memoria-match.ts, con il
+    // ragionamento per esteso. Qui basta sapere che il nome è identità e il
+    // codice articolo è solo un indizio.
+    const righeNormalizzate = righeDaProcessare.map((riga) => ({
+      riga,
+      nomeNormalizzato: normalizeProductName(riga.descrizione),
+      codiceArticolo: riga.codiceArticolo ?? null,
+    }))
+    const codiciSospetti = codiciNonIdentificanti(righeNormalizzate)
 
-    for (const riga of righeDaProcessare) {
-      const nomeNormalizzato = normalizeProductName(riga.descrizione)
-      const memoriaPerCodice = riga.codiceArticolo
-        ? memorie.find((m) => m.codiceArticolo && m.codiceArticolo === riga.codiceArticolo)
-        : undefined
-      const memoria = memoriaPerCodice ?? memorie.find((m) => m.nomeNormalizzato === nomeNormalizzato)
+    const righeMatchate = new Map<number, EsitoAbbinamento>()
 
-      if (memoria) {
-        righeMatchate.set(riga.numeroLinea, { accountId: memoria.accountId })
+    for (const { riga, nomeNormalizzato, codiceArticolo } of righeNormalizzate) {
+      const esito = abbinaMemoria({
+        riga: { nomeNormalizzato, codiceArticolo },
+        memorie,
+        codiciNonIdentificanti: codiciSospetti,
+      })
+      if (esito) {
+        righeMatchate.set(riga.numeroLinea, esito)
       }
     }
 
-    // Le righe matchate si scrivono subito: confermate dalla memoria, mai
-    // sovrascritte da qui in avanti (solo l'eventuale dubbio dell'AI le
-    // riporta a 'proposta', più sotto).
+    // Le righe abbinate si scrivono subito, e lo stato segue la forza della
+    // prova: il nome è la chiave con cui la memoria è indicizzata, quindi
+    // 'confermata'; il solo codice articolo è un indizio, quindi 'proposta' —
+    // gialla, in lista di controllo. Da qui in avanti non vengono più
+    // sovrascritte (l'eventuale dubbio dell'AI, più sotto, aggiunge solo il
+    // motivo).
     for (const riga of righeDaProcessare) {
       const match = righeMatchate.get(riga.numeroLinea)
       if (!match) continue
@@ -161,7 +175,7 @@ export async function categorizzaRigheFattura({
           codiceArticolo: riga.codiceArticolo ?? null,
           importo: riga.prezzoTotale,
           accountId: match.accountId,
-          stato: 'confermata',
+          stato: match.certezza === 'nome' ? 'confermata' : 'proposta',
           fonte: 'regola-appresa',
         },
       })
@@ -300,7 +314,7 @@ async function costruisciPrompt({
   conti: ContoCosto[]
   memorie: MemoriaFornitore[]
   righeDaProcessare: DettaglioLinea[]
-  righeMatchate: Map<number, { accountId: string }>
+  righeMatchate: Map<number, EsitoAbbinamento>
 }): Promise<string> {
   const nomeConto = new Map(conti.map((c) => [c.id, c.name]))
 
@@ -342,6 +356,12 @@ async function costruisciPrompt({
       const base = `Riga ${r.numeroLinea}: "${descrizione}"${codice ? ` (codice articolo: ${codice})` : ''} — importo ${r.prezzoTotale}`
       if (!match) return base
       const nomeContoAssegnato = nomeConto.get(match.accountId) ?? match.accountId
+      if (match.certezza === 'codice') {
+        // Dedotta dal solo codice articolo: il nome del prodotto non
+        // corrisponde a nessuna memoria. È il caso in cui un parere in più
+        // serve davvero, quindi lo si chiede esplicitamente.
+        return `${base} — imputazione PROVVISORIA dedotta dal solo codice articolo al conto ${nomeContoAssegnato} (id: ${match.accountId}), il nome del prodotto non risulta in memoria: se ti sembra sbagliata restituiscila con dubbioSuMemoria: true e il motivo.`
+      }
       return `${base} — GIÀ IMPUTATA dalla memoria al conto ${nomeContoAssegnato} (id: ${match.accountId}): includila nella risposta SOLO se questa imputazione ti sembra sbagliata (dubbioSuMemoria: true).`
     })
     .join('\n')

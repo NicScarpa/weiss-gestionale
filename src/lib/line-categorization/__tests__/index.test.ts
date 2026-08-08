@@ -97,7 +97,7 @@ beforeEach(() => {
 })
 
 describe('categorizzaRigheFattura', () => {
-  it('match memoria per codice esatto: la riga viene scritta confermata/regola-appresa, e l\'AI riceve comunque la riga per un eventuale dubbio', async () => {
+  it('match memoria per nome esatto: la riga viene scritta confermata/regola-appresa, e l\'AI riceve comunque la riga per un eventuale dubbio', async () => {
     vi.mocked(prisma.supplierProductAccount.findMany).mockResolvedValue([
       {
         id: 'mem-1',
@@ -132,6 +132,104 @@ describe('categorizzaRigheFattura', () => {
     )
     const promptInviato = mockAnthropicParse.mock.calls[0][0].messages[0].content as string
     expect(promptInviato).toContain('acc-pane')
+  })
+
+  it('abbinamento retto dal solo codice articolo: la riga si scrive proposta, non confermata', async () => {
+    // Il fornitore ha riscritto la descrizione: il nome non corrisponde più a
+    // nessuna memoria, resta il codice. È un indizio, non l'identità del
+    // prodotto, e non deve produrre una riga verde che nessuno riguarderà.
+    vi.mocked(prisma.supplierProductAccount.findMany).mockResolvedValue([
+      {
+        id: 'mem-1',
+        venueId: VENUE_ID,
+        supplierId: 'fornitore-1',
+        nomeNormalizzato: 'pane di una volta',
+        codiceArticolo: 'ART001',
+        accountId: 'acc-pane',
+        conferme: 3,
+      },
+    ] as never)
+
+    await categorizzaRigheFattura({ invoiceId: INVOICE_ID })
+
+    expect(prisma.invoiceLineAccount.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        numeroLinea: 1,
+        accountId: 'acc-pane',
+        stato: 'proposta',
+        fonte: 'regola-appresa',
+      }),
+    })
+  })
+
+  it('due memorie con lo stesso codice: la riga non viene abbinata a caso, passa all\'AI', async () => {
+    vi.mocked(prisma.supplierProductAccount.findMany).mockResolvedValue([
+      {
+        id: 'mem-1',
+        venueId: VENUE_ID,
+        supplierId: 'fornitore-1',
+        nomeNormalizzato: 'pane di una volta',
+        codiceArticolo: 'ART001',
+        accountId: 'acc-pane',
+        conferme: 3,
+      },
+      {
+        id: 'mem-2',
+        venueId: VENUE_ID,
+        supplierId: 'fornitore-1',
+        nomeNormalizzato: 'acqua di una volta',
+        codiceArticolo: 'ART001',
+        accountId: 'acc-acqua',
+        conferme: 1,
+      },
+    ] as never)
+    mockAnthropicParse.mockResolvedValue({
+      stop_reason: 'end_turn',
+      parsed_output: {
+        righe: [
+          {
+            numeroLinea: 1,
+            accountId: 'acc-pane',
+            confidence: 0.9,
+            motivo: 'pane',
+            dubbioSuMemoria: false,
+          },
+        ],
+      },
+    })
+
+    await categorizzaRigheFattura({ invoiceId: INVOICE_ID })
+
+    // Nessuna scrittura da memoria: la riga arriva all'AI come scoperta.
+    expect(prisma.invoiceLineAccount.create).not.toHaveBeenCalledWith({
+      data: expect.objectContaining({ numeroLinea: 1, fonte: 'regola-appresa' }),
+    })
+    expect(prisma.invoiceLineAccount.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ numeroLinea: 1, fonte: 'ai', stato: 'proposta' }),
+    })
+  })
+
+  it('un codice che nella fattura stessa copre prodotti diversi non abbina nessuna delle due righe', async () => {
+    vi.mocked(parseFatturaPA).mockReturnValue({
+      dettaglioLinee: [rigaPane, { ...rigaAcqua, codiceArticolo: 'ART001' }],
+    } as never)
+    vi.mocked(prisma.supplierProductAccount.findMany).mockResolvedValue([
+      {
+        id: 'mem-1',
+        venueId: VENUE_ID,
+        supplierId: 'fornitore-1',
+        nomeNormalizzato: 'pane di una volta',
+        codiceArticolo: 'ART001',
+        accountId: 'acc-pane',
+        conferme: 3,
+      },
+    ] as never)
+
+    await categorizzaRigheFattura({ invoiceId: INVOICE_ID })
+
+    expect(prisma.invoiceLineAccount.create).not.toHaveBeenCalledWith({
+      data: expect.objectContaining({ fonte: 'regola-appresa' }),
+    })
   })
 
   it('la memoria è scoping per venue: una mappatura confermata in un altro venue non deve mai matchare una riga di questa fattura', async () => {
