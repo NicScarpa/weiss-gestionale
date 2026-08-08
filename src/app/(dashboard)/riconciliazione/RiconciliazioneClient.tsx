@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -23,35 +24,47 @@ import { logger } from '@/lib/logger'
 type StatusFilter = 'all' | ReconciliationStatus
 
 export function RiconciliazioneClient() {
-  const [venueId, setVenueId] = useState<string>('')
-
   // Sede unica dell'installazione: l'API ne restituisce una sola
   // (architettura single-venue, vedi src/lib/venue.ts)
+  const { data: sedi, isError: erroreSedi, error: erroreSediDettaglio } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    queryKey: ['venues'],
+    queryFn: async (): Promise<{ venues?: Array<{ id: string; isActive?: boolean }>; data?: Array<{ id: string; isActive?: boolean }> }> => {
+      const res = await fetch('/api/venues')
+      return res.json()
+    },
+  })
+
   useEffect(() => {
-    fetch('/api/venues')
-      .then(r => r.json())
-      .then(data => {
-        const venues = data.venues ?? data.data ?? []
-        const active = venues.find((v: { isActive?: boolean }) => v.isActive !== false) ?? venues[0]
-        if (active) setVenueId(active.id)
-      })
-      .catch(err => logger.error('Impossibile caricare la sede', err))
-  }, [])
+    if (erroreSedi) logger.error('Impossibile caricare la sede', erroreSediDettaglio)
+  }, [erroreSedi, erroreSediDettaglio])
+
+  const venues = sedi?.venues ?? sedi?.data ?? []
+  const venueId = (venues.find(v => v.isActive !== false) ?? venues[0])?.id ?? ''
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [summary, setSummary] = useState<ReconciliationSummary | null>(null)
-  const [transactions, setTransactions] = useState<BankTransactionWithMatch[]>([])
-  const [loading, setLoading] = useState(true)
   const [importOpen, setImportOpen] = useState(false)
   const [matchTransactionId, setMatchTransactionId] = useState<string | null>(null)
   const [detailsTransactionId, setDetailsTransactionId] = useState<string | null>(null)
   const [reconciling, setReconciling] = useState(false)
 
-  const loadData = useCallback(async () => {
-    if (!venueId) return
-
-    setLoading(true)
-    try {
+  const {
+    data: dati,
+    isPending,
+    isFetching,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    queryKey: ['riconciliazione', venueId, statusFilter],
+    enabled: !!venueId,
+    queryFn: async (): Promise<{
+      summary: ReconciliationSummary
+      transactions: BankTransactionWithMatch[]
+    }> => {
       // Load summary and transactions in parallel
       const [summaryRes, transactionsRes] = await Promise.all([
         fetch(`/api/reconciliation/summary?venueId=${venueId}`),
@@ -70,19 +83,21 @@ export function RiconciliazioneClient() {
         transactionsRes.json(),
       ])
 
-      setSummary(summaryData)
-      setTransactions(transactionsData.data || [])
-    } catch (error) {
-      logger.error('Load error', error)
-      toast.error('Errore nel caricamento dati')
-    } finally {
-      setLoading(false)
-    }
-  }, [venueId, statusFilter])
+      return { summary: summaryData, transactions: transactionsData.data || [] }
+    },
+  })
 
   useEffect(() => {
-    loadData()
-  }, [loadData])
+    if (isError) {
+      logger.error('Load error', error)
+      toast.error('Errore nel caricamento dati')
+    }
+  }, [isError, error])
+
+  const summary = dati?.summary ?? null
+  const transactions = dati?.transactions ?? []
+  // Finché la sede non è nota la query resta ferma: la pagina deve restare in caricamento
+  const loading = isPending || isFetching
 
   const handleReconcile = async () => {
     if (!venueId) return
@@ -103,7 +118,7 @@ export function RiconciliazioneClient() {
       toast.success(
         `Riconciliazione completata: ${result.matched} matchati, ${result.toReview} da verificare`
       )
-      loadData()
+      refetch()
     } catch (error) {
       logger.error('Reconcile error', error)
       toast.error('Errore nella riconciliazione automatica')
@@ -121,7 +136,7 @@ export function RiconciliazioneClient() {
       throw new Error(data.error || 'Errore nella conferma')
     }
     toast.success('Match confermato')
-    loadData()
+    refetch()
   }
 
   const handleIgnore = async (id: string) => {
@@ -133,7 +148,7 @@ export function RiconciliazioneClient() {
       throw new Error(data.error || 'Errore nell\'ignorare')
     }
     toast.success('Transazione ignorata')
-    loadData()
+    refetch()
   }
 
   const handleUnmatch = async (id: string) => {
@@ -145,7 +160,7 @@ export function RiconciliazioneClient() {
       throw new Error(data.error || 'Errore nell\'annullamento')
     }
     toast.success('Match annullato')
-    loadData()
+    refetch()
   }
 
   return (
@@ -223,7 +238,7 @@ export function RiconciliazioneClient() {
         <Button
           variant="ghost"
           size="icon"
-          onClick={loadData}
+          onClick={() => refetch()}
           disabled={loading}
         >
           <RefreshCw className={loading ? 'animate-spin' : ''} />
@@ -248,14 +263,14 @@ export function RiconciliazioneClient() {
       <ImportDialog
         open={importOpen}
         onOpenChange={setImportOpen}
-        onSuccess={loadData}
+        onSuccess={() => refetch()}
       />
 
       <MatchDialog
         open={matchTransactionId !== null}
         onOpenChange={(open) => !open && setMatchTransactionId(null)}
         transactionId={matchTransactionId}
-        onSuccess={loadData}
+        onSuccess={() => refetch()}
       />
 
       <TransactionDetailsDialog

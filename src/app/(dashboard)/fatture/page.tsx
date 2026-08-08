@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent } from '@/components/ui/card'
 import { BarChart, Bar, CartesianGrid, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts'
 import { formatCurrency } from '@/lib/formatters'
@@ -46,28 +47,33 @@ function EmptyState({ message = "Nessun dato disponibile per il periodo selezion
 export default function FattureSituazionePage() {
   const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [year, setYear] = useState(String(new Date().getFullYear()))
-  const [stats, setStats] = useState<InvoiceStats | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
 
-  const loadStats = useCallback(async () => {
-    setIsLoading(true)
-    try {
+  const {
+    data,
+    isFetching: isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    queryKey: ['invoices', 'stats', year],
+    queryFn: async (): Promise<InvoiceStats> => {
       const res = await fetch(`/api/invoices/stats?year=${year}`)
       if (!res.ok) throw new Error('Errore nel caricamento')
-      const data = await res.json()
-      setStats(data)
-    } catch (error) {
-      console.error('Errore caricamento statistiche fatture:', error)
-      toast.error('Impossibile caricare le statistiche')
-      setStats(null)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [year])
+      return res.json()
+    },
+  })
 
   useEffect(() => {
-    loadStats()
-  }, [loadStats])
+    if (isError) {
+      console.error('Errore caricamento statistiche fatture:', error)
+      toast.error('Impossibile caricare le statistiche')
+    }
+  }, [isError, error])
+
+  // In caso di errore la pagina mostra gli stati vuoti, non i numeri del tentativo precedente
+  const stats = isError ? null : data ?? null
 
   const hasMonthlyData = stats?.monthly.some(m => m.ricavi > 0 || m.costi > 0)
   const hasIvaData = stats?.monthly.some(m => m.aCredito > 0 || m.aDebito > 0)
@@ -77,7 +83,7 @@ export default function FattureSituazionePage() {
       <CaricaFattureDialog
         open={importDialogOpen}
         onOpenChange={setImportDialogOpen}
-        onImportComplete={loadStats}
+        onImportComplete={() => refetch()}
       />
       <div className="space-y-6">
         {/* Filters Header */}

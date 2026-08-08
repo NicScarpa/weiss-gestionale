@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useEffect, useRef } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   Dialog,
   DialogContent,
@@ -78,34 +79,32 @@ export function TransactionDetailsDialog({
   onOpenChange,
   transactionId,
 }: TransactionDetailsDialogProps) {
-  const [transaction, setTransaction] = useState<BankTransactionWithMatch | null>(null)
-  const [loading, setLoading] = useState(false)
-
-  const loadTransaction = useCallback(async () => {
-    if (!transactionId) return
-
-    setLoading(true)
-    try {
+  const {
+    data: transaction,
+    isFetching: loading,
+    error: erroreCaricamento,
+  } = useQuery({
+    queryKey: ['bank-transaction', transactionId],
+    queryFn: async (): Promise<BankTransactionWithMatch> => {
       const res = await fetch(`/api/bank-transactions/${transactionId}`)
       if (!res.ok) throw new Error('Errore nel caricamento')
-      const data = await res.json()
-      setTransaction(data)
-    } catch (error) {
-      logger.error('Load error', error)
-      toast.error('Errore nel caricamento della transazione')
-      onOpenChange(false)
-    } finally {
-      setLoading(false)
-    }
-  }, [transactionId, onOpenChange])
+      return res.json()
+    },
+    enabled: open && !!transactionId,
+    staleTime: 0,
+  })
+
+  const onOpenChangeRef = useRef(onOpenChange)
+  useEffect(() => {
+    onOpenChangeRef.current = onOpenChange
+  })
 
   useEffect(() => {
-    if (open && transactionId) {
-      loadTransaction()
-    } else {
-      setTransaction(null)
-    }
-  }, [open, transactionId, loadTransaction])
+    if (!erroreCaricamento) return
+    logger.error('Load error', erroreCaricamento)
+    toast.error('Errore nel caricamento della transazione')
+    onOpenChangeRef.current(false)
+  }, [erroreCaricamento])
 
   const status = transaction?.status ? statusConfig[transaction.status] : null
 

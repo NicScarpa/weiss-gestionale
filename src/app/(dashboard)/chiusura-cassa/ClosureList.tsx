@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import {
   Plus,
@@ -97,10 +98,16 @@ interface ClosureListProps {
   isAdmin: boolean
 }
 
+interface ChiusureResponse {
+  data: Closure[]
+  pagination: {
+    total: number
+    totalPages: number
+  }
+}
+
 export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
   const router = useRouter()
-  const [closures, setClosures] = useState<Closure[]>([])
-  const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState({
     status: '',
     dateFrom: '',
@@ -109,18 +116,34 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 20,
-    total: 0,
-    totalPages: 0,
   })
 
   // Selezione multipla
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
 
-  // Fetch closures - useCallback per evitare loop infiniti
-  const fetchClosures = useCallback(async () => {
-    setLoading(true)
-    try {
+  // Fetch closures
+  const {
+    data: risposta,
+    isPending,
+    isFetching,
+    isError,
+    error,
+    refetch: fetchClosures,
+  } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    queryKey: [
+      'chiusure',
+      venueId ?? null,
+      filter.status,
+      filter.dateFrom,
+      filter.dateTo,
+      pagination.page,
+      pagination.limit,
+    ],
+    placeholderData: keepPreviousData,
+    queryFn: async (): Promise<ChiusureResponse> => {
       const params = new URLSearchParams()
       if (venueId) params.set('venueId', venueId)
       if (filter.status) params.set('status', filter.status)
@@ -132,28 +155,23 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
       const res = await fetch(`/api/chiusure?${params.toString()}`)
       if (!res.ok) throw new Error('Errore nel caricamento')
 
-      const data = await res.json()
-      setClosures(data.data)
-      setPagination((prev) => ({
-        ...prev,
-        total: data.pagination.total,
-        totalPages: data.pagination.totalPages,
-      }))
-      // Reset selezioni quando cambiano i dati
-      setSelectedIds(new Set())
-    } catch (error) {
+      return res.json()
+    },
+  })
+
+  useEffect(() => {
+    if (isError) {
       logger.error('Errore fetch chiusure', error)
       toast.error('Caricamento fallito', {
         description: 'Impossibile recuperare le chiusure. Riprova tra qualche secondo.',
       })
-    } finally {
-      setLoading(false)
     }
-  }, [venueId, filter.status, filter.dateFrom, filter.dateTo, pagination.page, pagination.limit])
+  }, [isError, error])
 
-  useEffect(() => {
-    fetchClosures()
-  }, [fetchClosures])
+  const closures = risposta?.data ?? []
+  const total = risposta?.pagination.total ?? 0
+  const totalPages = risposta?.pagination.totalPages ?? 0
+  const loading = isPending || isFetching
 
   // Gestione selezione
   const toggleSelection = (id: string) => {
@@ -267,9 +285,10 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <Select
               value={filter.status || 'all'}
-              onValueChange={(v) =>
+              onValueChange={(v) => {
                 setFilter((prev) => ({ ...prev, status: v === 'all' ? '' : v }))
-              }
+                clearSelection()
+              }}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Tutti gli stati" />
@@ -285,24 +304,29 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
             <Input
               type="date"
               value={filter.dateFrom}
-              onChange={(e) =>
+              onChange={(e) => {
                 setFilter((prev) => ({ ...prev, dateFrom: e.target.value }))
-              }
+                clearSelection()
+              }}
               placeholder="Da data"
             />
 
             <Input
               type="date"
               value={filter.dateTo}
-              onChange={(e) =>
+              onChange={(e) => {
                 setFilter((prev) => ({ ...prev, dateTo: e.target.value }))
-              }
+                clearSelection()
+              }}
               placeholder="A data"
             />
 
             <Button
               variant="outline"
-              onClick={() => setFilter({ status: '', dateFrom: '', dateTo: '' })}
+              onClick={() => {
+                setFilter({ status: '', dateFrom: '', dateTo: '' })
+                clearSelection()
+              }}
             >
               Pulisci filtri
             </Button>
@@ -315,7 +339,7 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
         <CardHeader>
           <CardTitle>Storico Chiusure</CardTitle>
           <CardDescription>
-            {pagination.total} chiusure trovate
+            {total} chiusure trovate
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -419,6 +443,7 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
                               toast.success('Chiusura eliminata', {
                                 description: 'La chiusura è stata rimossa correttamente.',
                               })
+                              clearSelection()
                               fetchClosures()
                             }}
                             trigger={
@@ -441,18 +466,19 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
           )}
 
           {/* Pagination */}
-          {pagination.totalPages > 1 && (
+          {totalPages > 1 && (
             <div className="flex items-center justify-between mt-4 pt-4 border-t">
               <p className="text-sm text-muted-foreground">
-                Pagina {pagination.page} di {pagination.totalPages}
+                Pagina {pagination.page} di {totalPages}
               </p>
               <div className="flex gap-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() =>
+                  onClick={() => {
                     setPagination((prev) => ({ ...prev, page: prev.page - 1 }))
-                  }
+                    clearSelection()
+                  }}
                   disabled={pagination.page === 1}
                 >
                   Precedente
@@ -460,10 +486,11 @@ export function ClosureList({ venueId, isAdmin }: ClosureListProps) {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() =>
+                  onClick={() => {
                     setPagination((prev) => ({ ...prev, page: prev.page + 1 }))
-                  }
-                  disabled={pagination.page === pagination.totalPages}
+                    clearSelection()
+                  }}
+                  disabled={pagination.page === totalPages}
                 >
                   Successiva
                 </Button>

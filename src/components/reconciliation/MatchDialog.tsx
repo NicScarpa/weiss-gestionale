@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   Dialog,
   DialogContent,
@@ -40,43 +41,49 @@ export function MatchDialog({
   transactionId,
   onSuccess,
 }: MatchDialogProps) {
-  const [transaction, setTransaction] = useState<TransactionDetails | null>(null)
-  const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null)
+  // La scelta esplicita dell'utente, legata alla transazione su cui e stata fatta
+  const [sceltaUtente, setSceltaUtente] = useState<{
+    transactionId: string
+    journalEntryId: string
+  } | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
 
-  const loadTransaction = useCallback(async () => {
-    if (!transactionId) return
-
-    setLoading(true)
-    try {
+  const {
+    data: transaction,
+    isFetching: loading,
+    error: erroreCaricamento,
+  } = useQuery({
+    queryKey: ['bank-transaction', transactionId],
+    queryFn: async (): Promise<TransactionDetails> => {
       const res = await fetch(`/api/bank-transactions/${transactionId}`)
       if (!res.ok) throw new Error('Errore nel caricamento')
-      const data = await res.json()
-      setTransaction(data)
-
-      // Pre-seleziona il migliore candidato se esiste
-      if (data.matchCandidates?.length > 0) {
-        setSelectedEntryId(data.matchCandidates[0].journalEntryId)
-      }
-    } catch (error) {
-      logger.error('Load error', error)
-      toast.error('Errore nel caricamento della transazione')
-    } finally {
-      setLoading(false)
-    }
-  }, [transactionId])
+      return res.json()
+    },
+    enabled: open && !!transactionId,
+    staleTime: 0,
+  })
 
   useEffect(() => {
-    if (open && transactionId) {
-      loadTransaction()
-    } else {
-      setTransaction(null)
-      setSelectedEntryId(null)
+    if (erroreCaricamento) {
+      logger.error('Load error', erroreCaricamento)
+      toast.error('Errore nel caricamento della transazione')
+    }
+  }, [erroreCaricamento])
+
+  // Finche l'utente non sceglie, vale il migliore candidato proposto
+  const selectedEntryId =
+    (sceltaUtente?.transactionId === transactionId ? sceltaUtente?.journalEntryId : null) ??
+    transaction?.matchCandidates?.[0]?.journalEntryId ??
+    null
+
+  const chiudi = (aperto: boolean) => {
+    if (!aperto) {
+      setSceltaUtente(null)
       setSearchTerm('')
     }
-  }, [open, transactionId, loadTransaction])
+    onOpenChange(aperto)
+  }
 
   const handleMatch = async () => {
     if (!transactionId || !selectedEntryId) return
@@ -96,7 +103,7 @@ export function MatchDialog({
 
       toast.success('Match effettuato con successo')
       onSuccess?.()
-      onOpenChange(false)
+      chiudi(false)
     } catch (error) {
       logger.error('Match error', error)
       toast.error(error instanceof Error ? error.message : 'Errore nel match')
@@ -110,7 +117,7 @@ export function MatchDialog({
   )
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={chiudi}>
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle>Match Manuale</DialogTitle>
@@ -167,7 +174,11 @@ export function MatchDialog({
               <ScrollArea className="h-[250px] rounded-md border">
                 <RadioGroup
                   value={selectedEntryId || ''}
-                  onValueChange={setSelectedEntryId}
+                  onValueChange={(value) => {
+                    if (transactionId) {
+                      setSceltaUtente({ transactionId, journalEntryId: value })
+                    }
+                  }}
                   className="p-4 space-y-2"
                 >
                   {filteredCandidates.map((candidate) => (
@@ -229,7 +240,7 @@ export function MatchDialog({
         ) : null}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => chiudi(false)}>
             Annulla
           </Button>
           <Button

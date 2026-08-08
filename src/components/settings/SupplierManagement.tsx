@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -66,9 +67,6 @@ const initialFormData = {
 }
 
 export function SupplierManagement() {
-  const [suppliers, setSuppliers] = useState<Supplier[]>([])
-  const [accounts, setAccounts] = useState<Account[]>([])
-  const [loading, setLoading] = useState(true)
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
@@ -81,38 +79,49 @@ export function SupplierManagement() {
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false)
 
   // Carica lista fornitori
-  const fetchSuppliers = async () => {
-    try {
-      setLoading(true)
+  const {
+    data: datiFornitori,
+    isFetching: loading,
+    error: erroreFornitori,
+    refetch: fetchSuppliers,
+  } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    queryKey: ['suppliers', 'full', showInactive],
+    queryFn: async (): Promise<{ suppliers?: Supplier[] }> => {
       const res = await fetch(`/api/suppliers?full=true&showOnlyInactive=${showInactive}`)
       if (!res.ok) throw new Error('Errore nel caricamento')
-      const data = await res.json()
-      setSuppliers(data.suppliers || [])
-    } catch (error) {
-      logger.error('Errore', error)
-      toast.error('Errore nel caricamento dei fornitori')
-    } finally {
-      setLoading(false)
-    }
-  }
+      return res.json()
+    },
+  })
 
   // Carica conti per select
-  const fetchAccounts = async () => {
-    try {
+  const { data: datiConti, error: erroreConti } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    queryKey: ['accounts', 'COSTO'],
+    queryFn: async (): Promise<{ accounts?: Account[] }> => {
       const res = await fetch('/api/accounts?type=COSTO')
       if (!res.ok) throw new Error('Errore nel caricamento conti')
-      const data = await res.json()
-      setAccounts(data.accounts || [])
-    } catch (error) {
-      logger.error('Errore', error)
-    }
-  }
+      return res.json()
+    },
+  })
+
+  const suppliers = datiFornitori?.suppliers || []
+  const accounts = datiConti?.accounts || []
 
   useEffect(() => {
-    fetchSuppliers()
-    fetchAccounts()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showInactive])
+    if (erroreFornitori) {
+      logger.error('Errore', erroreFornitori)
+      toast.error('Errore nel caricamento dei fornitori')
+    }
+  }, [erroreFornitori])
+
+  useEffect(() => {
+    if (erroreConti) {
+      logger.error('Errore', erroreConti)
+    }
+  }, [erroreConti])
 
   // Filtra fornitori per ricerca
   const filteredSuppliers = suppliers.filter((s) =>
