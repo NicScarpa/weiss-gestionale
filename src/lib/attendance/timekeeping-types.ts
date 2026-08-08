@@ -111,6 +111,8 @@ export type DayWarning =
   | 'ENTRATA_MANCANTE'
   | 'USCITA_MANCANTE'
   | 'PAUSA_PRANZO_NON_TIMBRATA'
+  /** Pausa iniziata e mai chiusa: dedotta fino alla fine del turno. */
+  | 'PAUSA_NON_CHIUSA'
   | 'FUORI_FINESTRA'
   | 'OLTRE_TETTO_GIORNALIERO'
   /** Ore oltre la fine del turno pianificato: sospese in attesa di revisione. */
