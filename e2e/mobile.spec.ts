@@ -19,8 +19,33 @@ const LARGHEZZA = 390
  * ma è dichiarato in fallimento atteso. Quando la pagina verrà sistemata
  * diventerà rosso, e sarà il segnale per togliere la marcatura. Non correggere
  * il layout da qui: `src/**` è di altri proprietari.
+ *
+ * Il tipo è dichiarato apposta, e non è pignoleria. Finché `PAGINE` è stato un
+ * letterale senza annotazione il suo tipo inferito era `{ nome, url }[]`, che
+ * `difettoNoto` non lo contiene affatto: i tre accessi qui sotto erano errori
+ * `TS2339` che nessuno poteva vedere, perché `e2e` era escluso da
+ * `tsconfig.json` e non nominato in eslint. Non codice morto per distrazione —
+ * codice rotto sotto un controllo spento.
+ *
+ * Perché il refuso vada fermato: da `difettoNoto` dipende anche il **titolo**
+ * del test, non solo `test.fail()`. Scrivere `difettoNotto` spegnerebbe il
+ * fallimento atteso *e* rimetterebbe il titolo pulito, cancellando insieme la
+ * protezione e l'unica traccia visibile che quella pagina fosse marcata. Il
+ * risultato sarebbe un test verde che non prova niente e non lo dice: la
+ * stessa famiglia dei 34 `expect(true).toBe(true)` per cui la suite precedente
+ * è stata cancellata.
  */
-const PAGINE = [
+interface PaginaDaMisurare {
+  nome: string
+  url: string
+  /**
+   * Valorizzato solo finché la pagina sfonda: il testo è la misura, e finisce
+   * nel titolo del test perché si legga senza aprire il file.
+   */
+  difettoNoto?: string
+}
+
+const PAGINE: PaginaDaMisurare[] = [
   { nome: 'dashboard', url: '/' },
   { nome: 'nuova chiusura cassa', url: '/chiusura-cassa/nuova' },
   // Queste due sfondavano — 358 su 326 la prima nota, 731 su 326 lo scadenzario —
