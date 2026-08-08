@@ -12,14 +12,21 @@ import {
   savePendingClosure,
   getCachedData,
   getCachedItem,
+  type EsitoSincronizzazione,
 } from '@/lib/offline'
+
+/** Chiave della query che tiene il conteggio della coda: la invalidano anche
+ *  i punti che mettono in coda una chiusura, per non lasciare il contatore
+ *  indietro rispetto a quello che l'utente ha appena fatto. */
+export const CHIAVE_STATO_CODA = ['offline-pending-status'] as const
 
 interface UseOfflineReturn {
   isOnline: boolean
   isSyncing: boolean
   pendingCount: number
   hasPending: boolean
-  syncNow: () => Promise<void>
+  /** `null` se non c'era niente da fare (offline, o una sincronizzazione già in corso). */
+  syncNow: () => Promise<EsitoSincronizzazione | null>
   prefetchData: () => Promise<void>
   savePendingClosure: (data: unknown) => Promise<string>
   getCachedClosures: <T>() => Promise<T[]>
@@ -68,7 +75,7 @@ export function useOffline(): UseOfflineReturn {
   // Conteggio delle chiusure in attesa: sta su IndexedDB, quindi si legge
   // al montaggio e si ricarica dopo ogni sincronizzazione o salvataggio.
   const { data: pendingStatus, refetch: refetchPendingStatus } = useQuery({
-    queryKey: ['offline-pending-status'],
+    queryKey: CHIAVE_STATO_CODA,
     // Come prima: ogni montaggio rilegge il conteggio.
     staleTime: 0,
     refetchOnMount: 'always',
@@ -108,11 +115,11 @@ export function useOffline(): UseOfflineReturn {
   }, [updatePendingStatus])
 
   // Sync now function
-  const syncNow = useCallback(async () => {
-    if (!isOnline || isSyncing) return
+  const syncNow = useCallback(async (): Promise<EsitoSincronizzazione | null> => {
+    if (!isOnline || isSyncing) return null
     setIsSyncing(true)
     try {
-      await syncPendingData()
+      return await syncPendingData()
     } finally {
       setIsSyncing(false)
       await updatePendingStatus()

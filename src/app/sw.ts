@@ -32,6 +32,14 @@ const serwist = new Serwist({
   clientsClaim: true,
   navigationPreload: true,
   runtimeCaching: [apiNetworkOnly, ...defaultCache],
+  // `/offline` è nel precache (serwist.config.mjs): il fallback lo cerca lì, e
+  // finché non c'era non scattava mai.
+  //
+  // Il `matcher` non è una rifinitura: Serwist attacca questo fallback a TUTTE
+  // le regole di runtime caching, `apiNetworkOnly` compresa. Senza il filtro
+  // sul documento, una POST a /api/chiusure fatta senza rete non fallirebbe —
+  // si prenderebbe la pagina «Sei offline» con stato 200, e chi l'ha chiamata
+  // crederebbe di aver salvato.
   fallbacks: {
     entries: [
       {

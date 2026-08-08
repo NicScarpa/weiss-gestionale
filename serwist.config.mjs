@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+
 import { serwist } from '@serwist/next/config'
 
 /**
@@ -12,6 +14,28 @@ import { serwist } from '@serwist/next/config'
  * (`npm run build:sw`, incluso in `npm run build`), che con Turbopack non ha
  * nulla da spartire.
  */
+
+/**
+ * `/offline` non è un file sul disco: è una pagina che il service worker va a
+ * prendere dal server mentre si installa. Va precacheata esplicitamente perché
+ * il fallback dichiarato in `src/app/sw.ts` la cerca nel precache: senza,
+ * puntava a qualcosa che in cache non c'era mai, e una rotta mai visitata dava
+ * l'errore di rete del browser invece della pagina «Sei offline» scritta
+ * apposta.
+ *
+ * La revisione è il BUILD_ID: cambia a ogni build, così il documento in cache
+ * non resta indietro rispetto ai chunk che cita.
+ */
+function revisioneDellaBuild() {
+  try {
+    return readFileSync('.next/BUILD_ID', 'utf8').trim()
+  } catch {
+    throw new Error(
+      '.next/BUILD_ID assente: `serwist build` va eseguito dopo `next build` (vedi lo script `build` in package.json).'
+    )
+  }
+}
+
 export default serwist.withNextConfig(() => ({
   swSrc: 'src/app/sw.ts',
   swDest: 'public/sw.js',
@@ -19,4 +43,5 @@ export default serwist.withNextConfig(() => ({
   globPatterns: ['static/**/*.{js,css,woff2}'],
   // I file precacheati sono serviti da /_next/, non dalla radice del progetto.
   modifyURLPrefix: { static: '/_next/static' },
+  additionalPrecacheEntries: [{ url: '/offline', revision: revisioneDellaBuild() }],
 }))
