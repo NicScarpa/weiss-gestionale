@@ -42,10 +42,14 @@ jobs:
       # eseguiva knip in CI: la classe di problema che ha prodotto questa
       # ondata — moduli scritti in una sessione e mai collegati a nulla —
       # continuava a passare inosservata.
-      # Blocca, perché oggi è pulito: le severità sono in knip.json, dove file
-      # orfani e dipendenze inutilizzate sono `error` e i singoli export
-      # inutilizzati restano `warn` (sono ancora qualche centinaio e vanno
-      # verificati uno a uno).
+      # Blocca perché oggi esce zero, che non è la stessa cosa che essere
+      # puliti: knip stampa **280 segnalazioni**, tutte `warn` — 159 export
+      # inutilizzati, 117 tipi esportati e mai usati, 4 export duplicati.
+      # Vederle nel log è normale e non è una regressione: le severità stanno
+      # in knip.json, dove sono `error` soltanto i file interamente orfani e le
+      # dipendenze inutilizzate. Se un giorno questo passo diventa rosso è per
+      # una di quelle due, non per le 280, che vanno verificate una a una e
+      # sono il lavoro di un'ondata dedicata.
       - name: Codice morto (knip)
         run: npm run knip
 
