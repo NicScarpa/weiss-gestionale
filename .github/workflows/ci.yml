@@ -70,6 +70,13 @@ jobs:
       - name: Run TypeScript Check
         run: npx tsc --noEmit
 
+      # La suite end-to-end ha un config a sé perché gira sotto Playwright e
+      # non dentro Next. Senza questo passo nessuno la controllava: il
+      # tsconfig principale la esclude, e fuori di lì non la includeva niente.
+      # Bloccante come il controllo qui sopra: oggi è pulita.
+      - name: Type Check della suite e2e
+        run: npm run typecheck:e2e
+
       # tsconfig.strict.json non passa ancora: il cricchetto impedisce che il
       # numero di errori salga. La baseline vive in scripts/strict-ratchet.mjs.
       - name: Strict mode ratchet

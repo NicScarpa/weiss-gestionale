@@ -19,8 +19,13 @@ const LARGHEZZA = 390
  * ma è dichiarato in fallimento atteso. Quando la pagina verrà sistemata
  * diventerà rosso, e sarà il segnale per togliere la marcatura. Non correggere
  * il layout da qui: `src/**` è di altri proprietari.
+ *
+ * Il tipo è dichiarato invece che dedotto: oggi nessuna pagina è marcata, e da
+ * quei soli elementi TypeScript dedurrebbe `{ nome, url }`, rendendo un errore
+ * la lettura di `difettoNoto` più sotto. Con la deduzione, chi vorrà rimarcare
+ * una pagina si troverebbe davanti un meccanismo che non compila.
  */
-const PAGINE = [
+const PAGINE: { nome: string; url: string; difettoNoto?: string }[] = [
   { nome: 'dashboard', url: '/' },
   { nome: 'nuova chiusura cassa', url: '/chiusura-cassa/nuova' },
   // Queste due sfondavano — 358 su 326 la prima nota, 731 su 326 lo scadenzario —

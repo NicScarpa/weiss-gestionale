@@ -12,6 +12,7 @@
     "build:sw": "serwist build serwist.config.mjs",
     "start": "next start",
     "lint": "eslint",
+    "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json",
     "knip": "knip",
     "test": "vitest",
     "test:run": "vitest run",
