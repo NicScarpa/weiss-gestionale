@@ -224,14 +224,6 @@ export interface JournalEntryListResponse {
   }
 }
 
-// Operazione versamento cassa-banca
-export interface BankDepositData {
-  date: Date
-  amount: number
-  description?: string
-  documentRef?: string
-}
-
 // ==================== TIPI PAGAMENTO (Sibill) ====================
 
 // Stati pagamento (da schema.prisma PaymentStatus)

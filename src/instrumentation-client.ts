@@ -1,26 +1,17 @@
 import * as Sentry from '@sentry/nextjs'
 
+import { oscuraPii } from '@/lib/sentry-pii'
+
 /**
  * Inizializzazione di Sentry lato browser.
  *
  * Sostituisce il vecchio sentry.client.config.ts alla radice: con Turbopack,
  * che in Next 16 è il bundler di default, quel file non viene più letto, e
  * tenerli entrambi porterebbe a due Sentry.init() nello stesso bundle.
+ *
+ * L'oscuramento dei dati personali sta in `@/lib/sentry-pii`, in comune con i
+ * runtime Node ed Edge: l'elenco delle chiavi da nascondere è uno solo.
  */
-
-/** Campi che non devono mai lasciare il browser. */
-const CHIAVI_SENSIBILI = [
-  'email', 'password', 'token', 'iban', 'fiscalCode', 'vatNumber',
-  'hourlyRate', 'resetToken', 'phoneNumber', 'phone', 'address',
-  'indirizzo', 'whatsappNumber', 'codiceFiscale', 'partitaIva',
-  'beneficiarioIban', 'controparteIban', 'portalPin',
-]
-
-function oscura(dati: Record<string, unknown>): void {
-  for (const chiave of CHIAVI_SENSIBILI) {
-    if (chiave in dati) dati[chiave] = '[REDACTED]'
-  }
-}
 
 type OpzioniClient = NonNullable<Parameters<typeof Sentry.init>[0]>
 
@@ -64,26 +55,7 @@ export function opzioniSentryClient(dsn: string): OpzioniClient {
 
     sendDefaultPii: false,
 
-    beforeSend(evento) {
-      if (evento.breadcrumbs) {
-        for (const briciola of evento.breadcrumbs) {
-          if (briciola.data) oscura(briciola.data)
-        }
-      }
-
-      const corpo = evento.request?.data
-      if (typeof corpo === 'object' && corpo !== null) {
-        oscura(corpo as Record<string, unknown>)
-      }
-
-      if (evento.user) {
-        delete evento.user.email
-        delete evento.user.ip_address
-        delete evento.user.username
-      }
-
-      return evento
-    },
+    beforeSend: oscuraPii,
   }
 }
 

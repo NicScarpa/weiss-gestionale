@@ -38,6 +38,17 @@ jobs:
       - name: Autorizzazione delle route API (rapporto)
         run: node scripts/check-route-auth.mjs
 
+      # Codice morto. Il pacchetto e lo script c'erano da un pezzo, ma nessuno
+      # eseguiva knip in CI: la classe di problema che ha prodotto questa
+      # ondata — moduli scritti in una sessione e mai collegati a nulla —
+      # continuava a passare inosservata.
+      # Blocca, perché oggi è pulito: le severità sono in knip.json, dove file
+      # orfani e dipendenze inutilizzate sono `error` e i singoli export
+      # inutilizzati restano `warn` (sono ancora qualche centinaio e vanno
+      # verificati uno a uno).
+      - name: Codice morto (knip)
+        run: npm run knip
+
   typecheck:
     name: Type Check
     runs-on: ubuntu-latest
@@ -58,6 +69,13 @@ jobs:
 
       - name: Run TypeScript Check
         run: npx tsc --noEmit
+
+      # La suite end-to-end ha un config a sé perché gira sotto Playwright e
+      # non dentro Next. Senza questo passo nessuno la controllava: il
+      # tsconfig principale la esclude, e fuori di lì non la includeva niente.
+      # Bloccante come il controllo qui sopra: oggi è pulita.
+      - name: Type Check della suite e2e
+        run: npm run typecheck:e2e
 
       # tsconfig.strict.json non passa ancora: il cricchetto impedisce che il
       # numero di errori salga. La baseline vive in scripts/strict-ratchet.mjs.
@@ -82,10 +100,11 @@ jobs:
       - name: Generate Prisma Client
         run: npx prisma generate
 
-      # Un'unica esecuzione: test:coverage:ci gira gli stessi test e in più
-      # applica le soglie di copertura, che sono bloccanti.
+      # Un'unica esecuzione: gira i test e insieme misura la copertura, le cui
+      # soglie stanno in vitest.config.ts e sono bloccanti. Non c'è più uno
+      # script separato per la CI: qui e in locale si misura la stessa cosa.
       - name: Run Tests with Coverage
-        run: npm run test:coverage:ci -- --reporter=verbose
+        run: npm run test:coverage -- --reporter=verbose
 
   build:
     name: Build

@@ -258,3 +258,22 @@
     color: var(--foreground);
   }
 }
+
+/* Nasconde la barra di scorrimento lasciando lo scorrimento attivo.
+   Non è una utility di Tailwind: era usata in `fatture/layout.tsx` senza che
+   nessuno l'avesse mai definita, quindi non faceva nulla e la striscia delle
+   tab mostrava una barra orizzontale dentro un pill alto quaranta pixel.
+   Si definisce invece di togliere l'uso perché quel layout ha già il suo
+   indicatore di «c'è dell'altro a destra»: la sfumatura sul bordo, comandata
+   da `restaDaScorrere`. È l'indicatore giusto sui telefoni, dove le barre
+   overlay non si vedono da ferme; la barra di sistema, dove esiste, si
+   limitava a raddoppiarlo male. Chi naviga da tastiera resta coperto:
+   la tab attiva viene portata in vista con `scrollIntoView`. */
+@utility scrollbar-hide {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* Edge legacy */
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

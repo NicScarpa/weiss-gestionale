@@ -24,6 +24,16 @@ export default defineConfig({
         'src/lib/**/*.spec.ts',
         'src/lib/prisma.ts',
       ],
+      // Le soglie stavano scritte a mano nello script `test:coverage:ci`, in
+      // quattro opzioni da riga di comando: chi lanciava `test:coverage` in
+      // locale misurava una cosa e la CI un'altra, e per sapere quale fosse il
+      // minimo bisognava leggere package.json. Qui valgono per entrambi.
+      thresholds: {
+        lines: 40,
+        statements: 40,
+        functions: 40,
+        branches: 40,
+      },
     },
   },
   resolve: {
