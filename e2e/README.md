@@ -24,6 +24,24 @@ npm run test:e2e          # avvia da sé `next dev`, o riusa quello già attivo
 npm run test:e2e:ui       # stessa suite, con l'interfaccia di Playwright
 ```
 
+**`127.0.0.1`, non `localhost`.** Su macOS `localhost` risolve prima a IPv6
+(`::1`) mentre `next dev` ascolta su IPv4, e la suite fallisce con errori di
+connessione che sembrano un'applicazione rotta. Si passa l'indirizzo esplicito,
+e conviene avviare anche il server sullo stesso:
+
+```sh
+npm run dev -- -p 3020 -H 127.0.0.1
+E2E_BASE_URL=http://127.0.0.1:3020 E2E_PORT=3020 npm run test:e2e
+```
+
+Porta e indirizzo sono variabili apposta: più copie di lavoro del repository
+girano insieme sulla stessa macchina, e due suite sulla stessa porta si
+rubano il server a vicenda. Vale anche per il database: `weiss_dev_e2e_<copia>`,
+mai uno condiviso, perché le spec liberano giorni e archiviano righe.
+
+`prisma db push` **non** accetta `--skip-generate`: passarglielo non dà errore,
+stampa la guida e non fa niente.
+
 ## La prova offline è a parte, e perché
 
 `npm run test:e2e:offline` usa `playwright.offline.config.ts` e **richiede una
@@ -69,23 +87,55 @@ e le scadenze si accumulano: ogni test libera il proprio giorno e archivia le
 proprie righe prima di cominciare, altrimenti dal secondo giro in poi il rosso
 non parlerebbe del prodotto.
 
-## `test.fail()`: i difetti trovati e non corretti
+## `test.fail()`: oggi non ce n'è nessuno
 
-Cinque test sono marcati `test.fail()`. Non sono test disattivati: **vengono
-eseguiti e devono fallire**. Sono riproduzioni eseguibili di difetti del
-prodotto che questa suite ha trovato e che non le competeva correggere. Quando
-il difetto verrà risolto il test diventerà rosso — ed è quello il segnale per
-togliere l'annotazione.
+**La suite non contiene più nessun `test.fail()`.** È la notizia buona: ogni
+difetto che questa suite aveva trovato è stato corretto, e i test che li
+riproducevano sono diventati guardie di regressione.
 
-| Dove | Difetto |
+La regola con cui si toglie l'annotazione è l'unica cosa che conta ed è sempre
+la stessa: **si toglie dopo aver visto il test passare davvero**, con database
+seedato e browser vero. `test.fail()` che passa Playwright lo segnala come
+«Expected to fail, but passed» — quello è il segnale, non il commit che dice di
+aver corretto il difetto. Toglierla sulla fiducia trasforma una riproduzione
+eseguibile in un'asserzione finta, che è ciò per cui la suite precedente (34
+`expect(true).toBe(true)`) è stata cancellata.
+
+Storico, per chi si chiede cosa difendono questi test:
+
+| Dove | Difetto, e dov'è stato chiuso |
 | --- | --- |
-| `chiusura-cassa.spec.ts` | `PUT /api/chiusure/[id]` risponde sempre 500: cancella le postazioni contando su un cascade verso `cash_counts` che non c'è (`onDelete: Restrict`). Nessuna chiusura è modificabile né inviabile da `/chiusura-cassa/[id]/modifica`. |
-| `prima-nota.spec.ts` | Il campo «IVA (opzionale)» lasciato vuoto produce `NaN` e blocca il salvataggio: un campo dichiarato opzionale è di fatto obbligatorio. |
-| `mobile.spec.ts` | A 390 px sfondano orizzontalmente la prima nota (32 px) e lo scadenzario (405 px). |
+| `chiusura-cassa.spec.ts` | `PUT /api/chiusure/[id]` rispondeva sempre 500: cancellava le postazioni contando su un cascade verso `cash_counts` che non c'è (`onDelete: Restrict`), e nessuna chiusura era modificabile. Corretto in `857f4ef`, annotazione tolta l'8 ago 2026 dopo esecuzione. |
+| `prima-nota.spec.ts` | Il campo «IVA (opzionale)» lasciato vuoto produceva `NaN` e bloccava il salvataggio: un campo dichiarato opzionale era di fatto obbligatorio. Corretto in `f5a56e2`, annotazione tolta l'8 ago 2026 dopo esecuzione. |
+| `mobile.spec.ts` | A 390 px sfondavano la prima nota (32 px) e lo scadenzario (405 px). Corretti in W4; la marcatura `difettoNoto` era già stata tolta allora. |
+| `offline.spec.ts` | La coda mai riempita e il fallback a una pagina non precacheata. Corretti in W4, annotazioni tolte allora dopo esecuzione contro una build di produzione. |
 
-Il dettaglio, con file e riga, sta nel commento sopra ciascun test.
+Resta in `mobile.spec.ts` il ramo `if (pagina.difettoNoto) test.fail()`: nessuna
+delle pagine elencate porta più quella proprietà, quindi il ramo non viene mai
+preso. Non dà errore di tipo perché `e2e` è escluso da `tsconfig.json` e non è
+nominato in `eslint.config.mjs`: **questa cartella oggi non è né type-checked né
+lintata**, ed è il motivo per cui un accesso a una proprietà inesistente ci vive
+tranquillo.
 
-I due difetti di `offline.spec.ts` — la coda mai riempita e il fallback a una
-pagina non precacheata — sono stati corretti in W4. L'annotazione è stata tolta
-dopo aver visto i test passare contro una build di produzione, non prima:
-toglierla e basta li avrebbe trasformati in asserzioni finte.
+## Un rosso vero, intermittente
+
+`offline.spec.ts` › «la pagina appena visitata si ricarica e resta compilabile»
+**fallisce circa una volta su due** (misurato: 5 rossi su 10 esecuzioni contro
+una build di produzione). Quando fallisce, la pagina ricaricata senza rete
+mostra la pagina «Sei offline» invece del modulo — cioè esattamente lo scenario
+che `attendiPaginaInCache` esiste per escludere.
+
+Quello che si sa, verificato:
+
+- il documento **è** correttamente in cache (`others`) e contiene la pagina
+  vera: controllato quattro volte su quattro, mai il fallback;
+- inserendo un centinaio di millisecondi di lavoro fra l'attesa e
+  `setOffline(true)` il test passa quattro volte su quattro.
+
+Quindi l'attesa si dichiara soddisfatta troppo presto: il documento c'è, ma
+qualcos'altro che serve alla navigazione offline non è ancora pronto. **Non è
+stato aggiunto un ritardo per farlo passare**, perché nasconderebbe la domanda
+che conta: se la corsa è nel prodotto e non nel test, un operatore che perde la
+rete subito dopo aver aperto la chiusura si vede «Sei offline» al posto del
+modulo che stava compilando. Distinguere i due casi richiede di guardare la
+configurazione del service worker, che non è di questa cartella.
