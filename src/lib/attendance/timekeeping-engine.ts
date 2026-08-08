@@ -138,22 +138,40 @@ interface Interval {
 }
 
 /**
+ * Distanza entro cui una seconda uscita è ancora il doppio tocco sul telefono
+ * e non una timbratura nuova.
+ *
+ * Senza questo limite l'estensione valeva a qualunque distanza, e nove ore
+ * dopo faceva pagare tutto il buco: `IN 09:00, OUT 13:00, OUT 22:00` dava 780
+ * minuti invece di 240 — 123 € lordi in più in un giorno — con la lista degli
+ * avvisi vuota. È il difetto 1 dell'audit W5-F3, e succedeva nel caso più
+ * ordinario che ci sia: chi rientra dalla pausa e non timbra l'entrata, perché
+ * quel giorno una timbratura l'ha già fatta.
+ */
+const DOPPIA_USCITA_TOLLERANZA_MINUTI = 15
+
+/**
  * Accoppia le timbrature in turni [entrata, uscita]. Una giornata può averne
  * più d'uno — il turno spezzato del bar, 07:00-13:00 e 17:00-22:00 — e il
  * buco fra i turni non è lavoro.
  *
  * Regole di tolleranza sui dati sporchi: un'entrata doppia dentro un turno
- * aperto si ignora (vale la prima); un'uscita doppia dopo un turno chiuso lo
- * estende (vale l'ultima); un'uscita senza nessuna entrata prima si ignora.
+ * aperto si ignora (vale la prima); un'uscita doppia entro pochi minuti dalla
+ * fine del turno lo estende (vale l'ultima); **oltre quel margine l'uscita è
+ * orfana**, cioè le manca l'entrata, e viene scartata invece di allungare il
+ * turno precedente; un'uscita senza nessuna entrata prima si ignora.
  */
 function pairPunches(ordered: DayPunch[]): {
   segments: Interval[]
   punchedBreaks: Interval[]
   hasIn: boolean
   danglingIn: number | null
+  /** Uscite troppo lontane per essere un doppio tocco: manca la loro entrata. */
+  orphanExits: number[]
 } {
   const segments: Interval[] = []
   const punchedBreaks: Interval[] = []
+  const orphanExits: number[] = []
   let openIn: number | null = null
   let openBreak: number | null = null
   let hasIn = false
@@ -170,7 +188,14 @@ function pairPunches(ordered: DayPunch[]): {
         openIn = null
       } else if (segments.length > 0) {
         const lastSegment = segments[segments.length - 1]
-        lastSegment.end = Math.max(lastSegment.end, punch.minutes)
+        // La distanza si misura dalla fine del turno già chiuso. Un'uscita
+        // anteriore a quella fine dà differenza negativa e resta dentro la
+        // tolleranza: il Math.max la assorbe come prima.
+        if (punch.minutes - lastSegment.end <= DOPPIA_USCITA_TOLLERANZA_MINUTI) {
+          lastSegment.end = Math.max(lastSegment.end, punch.minutes)
+        } else {
+          orphanExits.push(punch.minutes)
+        }
       }
     } else if (punch.type === 'BREAK_START') {
       openBreak = punch.minutes
@@ -182,7 +207,7 @@ function pairPunches(ordered: DayPunch[]): {
     }
   }
 
-  return { segments, punchedBreaks, hasIn, danglingIn: openIn }
+  return { segments, punchedBreaks, hasIn, danglingIn: openIn, orphanExits }
 }
 
 /** Minuti dell'intervallo [start, end] che cadono dentro i segmenti. */
@@ -409,6 +434,20 @@ export function computeRecognizedDay(
   if (!paired.hasIn) {
     warnings.push('ENTRATA_MANCANTE')
     return emptyDay(warnings, ['Nessuna entrata registrata.'])
+  }
+
+  // Un'uscita troppo lontana dal turno chiuso non lo estende: le manca
+  // l'entrata. Il turno vale quello che è stato timbrato davvero, e la
+  // giornata va segnalata — altrimenti l'errore arriva muto al cedolino.
+  // I passaggi nominano l'orario scartato: prima la riga diceva «entrata
+  // 09:00, uscita 22:00» e nascondeva proprio ciò che doveva far scoprire.
+  if (paired.orphanExits.length > 0) {
+    warnings.push('ENTRATA_MANCANTE')
+    const orari = paired.orphanExits.map(formatMinutes).join(', ')
+    steps.push(
+      `Uscita senza entrata alle ${orari}: non estende il turno precedente ` +
+        'e non viene contata. Serve una correzione.'
+    )
   }
 
   const dayStart = policy.dayStartMinutes

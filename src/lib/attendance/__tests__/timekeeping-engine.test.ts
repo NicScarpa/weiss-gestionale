@@ -384,6 +384,58 @@ describe('computeRecognizedDay', () => {
     expect(giorno.workedMinutes).toBe(at(5) + 5)
   })
 
+  it("sul confine della tolleranza la doppia uscita estende ancora", () => {
+    const giorno = computeRecognizedDay(
+      [inAt(at(17)), outAt(at(22)), outAt(at(22, 15))],
+      makePolicy({ dayStartMinutes: at(6), dayEndMinutes: at(23), lunch: null }),
+      makeContext()
+    )
+
+    expect(giorno.clockOut).toBe(at(22, 15))
+    expect(giorno.workedMinutes).toBe(at(5) + 15)
+  })
+
+  it("oltre la tolleranza l'uscita orfana non estende il turno", () => {
+    // Un minuto oltre il confine: non è più il doppio tocco sul telefono.
+    const giorno = computeRecognizedDay(
+      [inAt(at(17)), outAt(at(22)), outAt(at(22, 16))],
+      makePolicy({ dayStartMinutes: at(6), dayEndMinutes: at(23), lunch: null }),
+      makeContext()
+    )
+
+    expect(giorno.clockOut).toBe(at(22))
+    expect(giorno.workedMinutes).toBe(at(5))
+    expect(giorno.warnings).toContain('ENTRATA_MANCANTE')
+  })
+
+  it('chi rientra dalla pausa senza timbrare non si fa pagare la pausa', () => {
+    // Il caso dell'audit W5-F3 difetto 1, eseguito sul motore: Giulia entra
+    // alle 9, esce alle 13, rientra alle 17 senza timbrare e timbra l'uscita
+    // alle 22. Prima si vedeva pagare 780 minuti — 13 ore invece di 4, cioè
+    // 123 € lordi in più in un giorno, con la lista degli avvisi VUOTA.
+    const giorno = computeRecognizedDay(
+      [inAt(at(9)), outAt(at(13)), outAt(at(22))],
+      makePolicy({ dayStartMinutes: at(6), dayEndMinutes: at(23), lunch: null }),
+      makeContext()
+    )
+
+    expect(giorno.workedMinutes).toBe(at(4))
+    expect(giorno.clockOut).toBe(at(13))
+    expect(giorno.warnings).toContain('ENTRATA_MANCANTE')
+  })
+
+  it("l'uscita orfana non gonfia nemmeno il turno spezzato", () => {
+    // Stesso difetto sul turno spezzato: 750 minuti invece di 660.
+    const giorno = computeRecognizedDay(
+      [inAt(at(7)), outAt(at(13)), inAt(at(17)), outAt(at(22)), outAt(at(23, 30))],
+      makePolicy({ dayStartMinutes: at(6), dayEndMinutes: at(24), lunch: null }),
+      makeContext()
+    )
+
+    expect(giorno.workedMinutes).toBe(at(11))
+    expect(giorno.warnings).toContain('ENTRATA_MANCANTE')
+  })
+
   it("arrotonda l'entrata di ciascun turno, non solo la prima", () => {
     // 9:06 -> 9:30 e 17:06 -> 17:30 con intervallo 30 e tolleranza 5
     const giorno = computeRecognizedDay(
