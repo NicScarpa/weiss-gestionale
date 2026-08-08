@@ -6,6 +6,16 @@ import { createAuditLog } from '@/lib/audit'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
 import { risolviCentroDiCosto } from '@/lib/services/cost-center-service'
 
+// A differenza di PUT /api/prima-nota/[id] (CAMPI_RICLASSIFICABILI in
+// [id]/route.ts: accountId + costCenterId, entrambi scelte indipendenti),
+// questo schema non ha mai avuto un campo costCenterId proprio: l'unica leva
+// è il conto, da cui centro di costo e categoria seguono come conseguenza
+// automatica (risolviCentroDiCosto/derivaBudgetCategoryDaConto), non come
+// scelte a parte. Riusare qui la lista di PUT sarebbe stato lo stesso
+// difetto del bankAccountId in scadenzario/regole: una chiave che sembra
+// ammessa ma che lo schema scarta comunque in silenzio.
+const CAMPI_RICLASSIFICABILI_CHIUSURA: readonly string[] = ['accountId']
+
 const categorizeSchema = z.object({
   budgetCategoryId: z.string().optional(),
   accountId: z.string().optional(),
@@ -45,13 +55,32 @@ export async function PATCH(
       return NextResponse.json({ error: 'Movimento non trovato' }, { status: 404 })
     }
 
-    // Un movimento generato da chiusura segue lo stesso gate del PUT: solo
-    // l'admin può riclassificarlo (vedi CAMPI_RICLASSIFICABILI in [id]/route.ts).
-    if (current.closureId && session.user.role !== 'admin') {
-      return NextResponse.json(
-        { error: 'Solo un amministratore può riclassificare i movimenti generati da chiusura' },
-        { status: 403 }
+    // Un movimento generato da chiusura segue lo stesso gate di ruolo del
+    // PUT (solo admin) e un perimetro di scrittura altrettanto stretto, qui
+    // ristretto a CAMPI_RICLASSIFICABILI_CHIUSURA (vedi commento in testa al
+    // file sul perché è più stretto della whitelist del PUT).
+    const isMovimentoDaChiusura = Boolean(current.closureId)
+
+    if (isMovimentoDaChiusura) {
+      if (session.user.role !== 'admin') {
+        return NextResponse.json(
+          { error: 'Solo un amministratore può riclassificare i movimenti generati da chiusura' },
+          { status: 403 }
+        )
+      }
+
+      const chiaviExtra = Object.keys(body).filter(
+        (chiave) => !CAMPI_RICLASSIFICABILI_CHIUSURA.includes(chiave)
       )
+      if (chiaviExtra.length > 0) {
+        return NextResponse.json(
+          {
+            error: 'Sui movimenti generati da chiusura si possono modificare solo conto e centro di costo.',
+            code: 'MOVIMENTO_DA_CHIUSURA_SOLO_RICLASSIFICA',
+          },
+          { status: 400 }
+        )
+      }
     }
 
     // Un movimento suddiviso in fette (Allocation) è governato dalla
@@ -88,16 +117,30 @@ export async function PATCH(
       costCenterId = centro.costCenterId
     }
 
+    // Sui movimenti da chiusura la scrittura resta dentro il perimetro
+    // dichiarato sopra: solo il conto (con centro di costo e categoria
+    // budget come conseguenza automatica del conto, non campi scelti a
+    // parte). notes, categorizationSource e verified restano quelli del
+    // movimento da chiusura: non è la categorizzazione manuale a deciderli
+    // qui.
+    const data = isMovimentoDaChiusura
+      ? {
+          accountId: validated.accountId || undefined,
+          costCenterId,
+          budgetCategoryId,
+        }
+      : {
+          budgetCategoryId,
+          accountId: validated.accountId || undefined,
+          costCenterId,
+          notes: validated.notes || undefined,
+          categorizationSource: 'manual',
+          verified: true, // Auto-verify su categorizzazione manuale
+        }
+
     const updated = await prisma.journalEntry.update({
       where: { id: id },
-      data: {
-        budgetCategoryId,
-        accountId: validated.accountId || undefined,
-        costCenterId,
-        notes: validated.notes || undefined,
-        categorizationSource: 'manual',
-        verified: true, // Auto-verify su categorizzazione manuale
-      },
+      data,
     })
 
     await createAuditLog({

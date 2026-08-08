@@ -210,6 +210,109 @@ describe('PATCH /api/prima-nota/[id]/categorize - un movimento da chiusura segue
   })
 })
 
+describe('PATCH /api/prima-nota/[id]/categorize - su un movimento da chiusura scrive solo conto (difetto: perimetro diverso dal PUT)', () => {
+  // Prima della correzione, superato il gate di ruolo, la route scriveva
+  // sempre anche notes, categorizationSource e verified: true — campi che
+  // PUT /api/prima-nota/[id] rifiuta con 400 per lo stesso movimento da
+  // chiusura. Due strade sullo stesso oggetto con regole diverse, che
+  // nessuno aveva deciso.
+
+  it('admin su movimento da chiusura: la scrittura non include notes, categorizationSource né verified', async () => {
+    vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
+      id: 'entry-1',
+      costCenterId: null,
+      closureId: 'chiusura-1',
+      _count: { allocations: 0 },
+    } as never)
+    vi.mocked(derivaBudgetCategoryDaConto).mockResolvedValue('cat-derivata')
+    vi.mocked(prisma.journalEntry.update).mockResolvedValue({ id: 'entry-1' } as never)
+
+    const { request, context } = patchCon({ accountId: 'conto-1' })
+    await PATCH(request, context)
+
+    const data = vi.mocked(prisma.journalEntry.update).mock.calls[0][0].data
+    expect(data).not.toHaveProperty('notes')
+    expect(data).not.toHaveProperty('categorizationSource')
+    expect(data).not.toHaveProperty('verified')
+    // Il conto resta scrivibile, come nel PUT; budgetCategoryId e centro di
+    // costo sono conseguenza automatica di accountId, non campi scelti a
+    // parte (questa route non ha mai avuto un campo costCenterId proprio).
+    expect(data).toMatchObject({ accountId: 'conto-1', budgetCategoryId: 'cat-derivata' })
+  })
+
+  it('admin su movimento da chiusura con costCenterId nel body (mai stato un campo di questa route): 400, fuori perimetro', async () => {
+    vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
+      id: 'entry-1',
+      costCenterId: 'cc-vecchio',
+      closureId: 'chiusura-1',
+      _count: { allocations: 0 },
+    } as never)
+
+    const { request, context } = patchCon({ costCenterId: 'cc-nuovo' })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(400)
+    expect(prisma.journalEntry.update).not.toHaveBeenCalled()
+  })
+
+  it('admin su movimento da chiusura con un campo fuori perimetro (notes): 400 con lo stesso code del PUT, update mai chiamato', async () => {
+    vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
+      id: 'entry-1',
+      costCenterId: null,
+      closureId: 'chiusura-1',
+      _count: { allocations: 0 },
+    } as never)
+
+    const { request, context } = patchCon({ accountId: 'conto-1', notes: 'nota manuale' })
+    const response = await PATCH(request, context)
+    const body = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(body.code).toBe('MOVIMENTO_DA_CHIUSURA_SOLO_RICLASSIFICA')
+    expect(body.error).toBe(
+      'Sui movimenti generati da chiusura si possono modificare solo conto e centro di costo.'
+    )
+    expect(prisma.journalEntry.update).not.toHaveBeenCalled()
+  })
+
+  it('admin su movimento da chiusura con budgetCategoryId esplicito (senza accountId): 400, fuori perimetro', async () => {
+    vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
+      id: 'entry-1',
+      costCenterId: null,
+      closureId: 'chiusura-1',
+      _count: { allocations: 0 },
+    } as never)
+
+    const { request, context } = patchCon({ budgetCategoryId: 'cat-1' })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(400)
+    expect(prisma.journalEntry.update).not.toHaveBeenCalled()
+  })
+
+  it('un movimento NON da chiusura mantiene il comportamento pieno (notes, categorizationSource, verified)', async () => {
+    vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
+      id: 'entry-1',
+      costCenterId: null,
+      closureId: null,
+      _count: { allocations: 0 },
+    } as never)
+    vi.mocked(derivaBudgetCategoryDaConto).mockResolvedValue('cat-derivata')
+    vi.mocked(prisma.journalEntry.update).mockResolvedValue({ id: 'entry-1' } as never)
+
+    const { request, context } = patchCon({ accountId: 'conto-1', notes: 'nota manuale' })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(200)
+    const data = vi.mocked(prisma.journalEntry.update).mock.calls[0][0].data
+    expect(data).toMatchObject({
+      notes: 'nota manuale',
+      categorizationSource: 'manual',
+      verified: true,
+    })
+  })
+})
+
 describe('PATCH /api/prima-nota/[id]/categorize - un movimento suddiviso in fette è protetto', () => {
   it('movimento con fette: 409 e update mai chiamato', async () => {
     vi.mocked(prisma.journalEntry.findUnique).mockResolvedValue({
