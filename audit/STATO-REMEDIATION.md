@@ -175,7 +175,68 @@ con titolo, corpo e url corretti — più la prova per decifratura del payload (
   (oggi in 3 file); ignore di `coverage/` in `eslint.config.mjs`; soglie coverage in `vitest.config.ts`
   invece che nello script npm.
 
-### W4 — Coda seriale (mai in parallelo) — arricchita dagli esiti di W3
+### W4 — IN CORSO (8 agosto 2026). Fase 1 completa e integrata
+
+- **D1-SOFTDELETE — fatto** (`merge` su `remediation/riconciliazione-main`). L'estensione copriva 7
+  metodi su 11: `findUnique`, `findUniqueOrThrow`, `update`, `delete` restavano scoperti, e c'erano
+  211 chiamate ai primi due. Il filtro è ora **iniettato nella query** grazie a
+  `extendedWhereUnique` (GA da Prisma 5) — non applicato al risultato, come avevo erroneamente
+  proposto: il post-filtro sarebbe stato **cieco su `findUnique({select:…})`**, dove il record che
+  torna non porta `deletedAt`. Verifica per inversione: 6 test su 11 rossi.
+  Bug trovato di conseguenza: `undoScheduleReconciliation` si fermava se il movimento era stato
+  cancellato con la chiusura che l'aveva generato → **la scadenza restava pagata per sempre**.
+  Aggiunta una guardia unit che confronta `SOFT_DELETE_MODELS` con lo schema, così un nono modello
+  aggiunto domani non resta scoperto in silenzio.
+- **D4-E2E — fatto.** Cancellate le spec vecchie (34 asserzioni `expect(true).toBe(true)`, login che
+  cercava un'etichetta sparita a gennaio) e installata Playwright **nello stesso commit**. 17 test
+  funzionali + 5 sull'offline; 6 sono `test.fail()` dichiarati, che riproducono difetti veri.
+  **La e2e non entra nel gate**: vuole dev server e DB seedato (istruzioni in `e2e/README.md`).
+
+#### Difetti di prodotto trovati dalla e2e — NON ancora corretti (in lavorazione, agente D2)
+
+| | |
+|---|---|
+| **P0** | `src/app/api/chiusure/[id]/route.ts:436` — il PUT **risponde sempre 500**. Cancella le postazioni contando su un cascade che non esiste: il commento dice «cascade elimina CashCount», `prisma/schema.prisma:315` dice `onDelete: Restrict`, e ogni postazione ha sempre un conteggio. **In produzione oggi nessuna chiusura è modificabile né inviabile.** Ci eravamo passati accanto due volte: l'audit lo sospettava senza confermarlo, e l'agente che in W1 ha riscritto quella route non l'ha visto perché i suoi test non passavano mai `stations` |
+| Alto | `MovimentoFormDialog.tsx:337` — «IVA (opzionale)» registrata con `valueAsNumber`: vuota dà `NaN` e zod la rifiuta. **Nessun movimento si salva senza IVA** |
+| Medio | Mobile 390px: **prima nota sfonda di 32px, scadenzario di 405px** (tabella a 10 colonne senza contenitore che scorra). La W2 aveva corretto chiusura, portale e pagamenti, non queste |
+| Medio | `src/lib/prisma.ts:47` — TLS imposto quando `NODE_ENV=production` **senza via d'uscita**: `npm start` non parla con un Postgres locale, quindi non si può verificare in locale il comportamento di produzione (PWA e offline compresi). Due agenti hanno già dovuto aggirarlo con un proxy TLS |
+
+#### L'offline: esito vero della prova (mai fatta prima)
+
+Funziona **a metà**, e la parte mancante è quella che l'interfaccia promette:
+- una pagina **già visitata** si ricarica offline e resta compilabile — questo funziona;
+- serve però **un secondo caricamento online** perché il documento entri in cache: al primissimo
+  avvio offline non c'è nulla;
+- una rotta **mai visitata** dà `net::ERR_FAILED` invece della pagina «Sei offline»
+  (`src/app/sw.ts:36` punta a `/offline`, che non è precacheato: `serwist.config.mjs` include solo
+  `static/**`, 145 URL tutti sotto `/_next/static`);
+- **salvando una chiusura offline** compaiono due toast che si contraddicono — «Errore salvataggio
+  bozza» e «le modifiche verranno sincronizzate» — e `pendingClosures` **resta vuoto**:
+  `savePendingClosure` (`src/lib/offline/db.ts:119`) è esposto solo da `useOffline`, il cui unico
+  consumatore (`OfflineIndicator.tsx:23`) **non la chiama**. La promessa di
+  `src/app/offline/page.tsx:32` non è mantenuta. Codice scritto e mai collegato, con l'aggravante
+  di una promessa esplicita a chi lavora.
+
+#### Fase 2 — in corso
+- **D2-P0-CHIUSURE**: il P0, l'IVA opzionale, la via d'uscita TLS per host locali.
+- **D3-REACT**: il debito React Compiler (39 violazioni), con l'obbligo di **alzare il plugin alla
+  7.1.x nello stesso lotto** — è la prova che il debito è estinto e impedisce che rientri.
+
+#### Resta da fare in W4 (non ancora assegnato)
+- **292 handler ancora con auth scritta a mano** (censimento di C1) → `withAuth`, poi
+  `scripts/check-route-auth.mjs --strict` bloccante in CI.
+- **Il versamento manuale a riga singola** (§5 n.19): difetto contabile, va con test.
+- **Collegare la coda offline** delle chiusure (vedi sopra) e precacheare `/offline`.
+- Gli sfondamenti mobile di prima nota e scadenzario.
+- Promuovere `entraCome()` in `src/test/integration/auth-mock.ts` (5 copie sparse nei test).
+- `budget.delete` è una **hard delete su un modello con `deletedAt`**: decisione di prodotto, perché
+  `BudgetLine` non ha soft delete e le righe resterebbero orfane visibili.
+- Il **404 sulla seconda DELETE** (7 route) ora è corretto lato server: verificare che l'interfaccia
+  non mostri un errore rosso a chi fa doppio clic.
+
+---
+
+### W4 — mandato originale (riferimento storico)
 - **294 handler ancora con auth scritta a mano** (numero esatto dal censimento di C1): convertirli a
   `withAuth` e rendere `scripts/check-route-auth.mjs --strict` bloccante in CI.
 - **Il versamento manuale a riga singola** (§5 n.19): è un difetto contabile, va con test.
