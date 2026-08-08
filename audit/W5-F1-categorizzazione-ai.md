@@ -75,13 +75,29 @@ Va sottolineato che il vincolo **non è imponibile** dal controllo formale della
 servizio esterno non sa far rispettare limiti minimi e massimi sui numeri, quindi va
 imposto dal nostro codice dopo aver ricevuto la risposta.
 
-**Che il progetto sappia già farlo lo dimostra un altro suo file:**
-`src/app/api/scadenzario/[id]/riconciliazioni/route.ts:18` usa esattamente il controllo che
-qui manca — `z.number().min(0).max(1)`.
+**Il difetto è in un punto solo, e va corretto lì.** Nello schema esistono quattro colonne
+dello stesso tipo `Decimal(3,2)`: è importante non confonderle, perché **tre sono già al
+sicuro e una sola no.**
 
-**Come verificarlo senza spendere:** le tre righe sopra sono la prova completa. Una ricerca
-di `confidence` in tutto `src/` conferma che in questo modulo non esiste nessun punto in cui
-il valore venga ricondotto entro i limiti.
+| Colonna | Chi la riempie | Protezione |
+|---|---|---|
+| `InvoiceLineAccount.confidence` (riga **1627**) | **la macchina**, direttamente | **nessuna — è questo il difetto** |
+| `ScheduleReconciliation.confidence` (riga 666) | il nostro codice di abbinamento | doppia: `z.number().min(0).max(1)` in `scadenzario/[id]/riconciliazioni/route.ts:18` **e** `toFixed(2)` in `schedule-reconciliation-service.ts:265` |
+| `BankTransaction.matchConfidence` (riga 1773) | il nostro codice di abbinamento | limitata per costruzione: `calculateMatchScore` chiude con `Math.min(1, …)` e arrotonda (`reconciliation/matcher.ts:127` e `131`) |
+| `rateMultiplier` (riga 981) | configurazione | non è una sicurezza: è un moltiplicatore di tariffa |
+
+La riga 666 **non è una seconda occorrenza del difetto: è il contro-esempio**, cioè la prova
+che il progetto sa già difendersi e che qui non l'ha fatto. Chi correggerà **non deve
+toccare la riconciliazione**, che è a posto: l'unico intervento è sulla categorizzazione.
+
+Ed è proprio questo a rendere il difetto quello che è: `InvoiceLineAccount.confidence` è
+**l'unico di questi numeri che arriva da fuori il nostro controllo** — lo scrive la
+macchina — e l'unico a cui nessuno chiede se sia sensato prima di consegnarlo al database.
+
+**Come verificarlo senza spendere:** le tre righe citate sopra sono la prova completa, e la
+tabella si ricostruisce cercando `Decimal(3, 2)` in `prisma/schema.prisma` e risalendo a chi
+scrive ciascuna colonna. Una ricerca di `confidence` in tutto `src/` conferma che in questo
+modulo non esiste nessun punto in cui il valore venga ricondotto entro i limiti.
 
 ---
 
