@@ -274,9 +274,9 @@ export function SupplierManagement() {
   return (
     <div className="space-y-6">
       {/* Controlli */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4 flex-1">
-          <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-4">
+          <div className="relative min-w-0 flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Cerca fornitore..."

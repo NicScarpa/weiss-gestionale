@@ -197,8 +197,8 @@ export function BancheEContiClient() {
   return (
     <div className="space-y-6">
       {/* Filtri */}
-      <div className="flex items-center justify-between">
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="min-w-0 max-w-full">
           <TabsList>
             <TabsTrigger value="BANK" className="gap-2">
               <Building2 className="h-4 w-4" />
@@ -217,7 +217,7 @@ export function BancheEContiClient() {
           </TabsList>
         </Tabs>
 
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
             <Switch
               checked={showInactive}

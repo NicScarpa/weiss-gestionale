@@ -121,8 +121,8 @@ export default function RegolePage() {
   return (
     <div className="flex-1 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
           <h1 className="text-3xl font-bold tracking-tight text-foreground">
             Regole
           </h1>
@@ -140,7 +140,7 @@ export default function RegolePage() {
       </div>
 
       {/* Sub-tabs emessi / ricevuti */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {subTabs.map((tab) => {
           const Icon = tab.icon
           const isActive = subTab === tab.value
