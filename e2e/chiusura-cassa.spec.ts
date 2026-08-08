@@ -1,377 +1,202 @@
-import { test, expect } from '@playwright/test'
-import { loginAsAdmin } from './helpers/auth'
+import { expect, test, type Locator, type Page } from '@playwright/test'
+import { apriConSessioneAdmin, euro } from './helpers/app'
+import { chiudiDb, liberaGiornoChiusura, statoChiusuraDelGiorno } from './helpers/db'
 
-test.describe('Chiusura Cassa - Lista', () => {
-  test.beforeEach(async ({ page }) => {
-    await loginAsAdmin(page)
+/**
+ * Il ciclo di vita della chiusura cassa: bozza → invio → validazione, e la
+ * quadratura di cassa.
+ *
+ * Le asserzioni sui numeri non guardano che «compaia un importo», ma che
+ * compaia *quello atteso*: 120 di contanti + 80 di POS devono fare 200 nel
+ * riepilogo, 200 nella colonna Incasso dello storico e DRAFT/SUBMITTED/VALIDATED
+ * nel database. Se il calcolo cambia di un centesimo il test diventa rosso, ed
+ * è tutto il punto.
+ *
+ * I giorni di prova sono nel 2019 e uno per test: le chiusure sono uniche per
+ * (sede, giorno), e giorni condivisi farebbero fallire il secondo test con un
+ * 409 che non dice nulla sul prodotto.
+ */
+
+const CONTANTI = 120
+const POS = 80
+const TOTALE = CONTANTI + POS
+
+test.describe('Chiusura cassa', () => {
+  test.afterAll(async () => {
+    await chiudiDb()
   })
 
-  test('mostra pagina lista chiusure', async ({ page }) => {
-    await page.goto('/chiusura-cassa')
-    await expect(page).toHaveURL('/chiusura-cassa')
+  test('salva la bozza con i numeri e il giorno che sono stati inseriti', async ({ page }) => {
+    const giorno = '2019-04-17'
+    await liberaGiornoChiusura(giorno)
+    await apriConSessioneAdmin(page, '/chiusura-cassa/nuova')
+    await expect(page.getByRole('heading', { name: 'Nuova Chiusura' })).toBeVisible()
 
-    // Verifica titolo o heading
-    await expect(
-      page.getByRole('heading', { name: /chiusura cassa/i })
-    ).toBeVisible({ timeout: 10000 })
+    await page.locator('#date').fill(giorno)
+    // La postazione BAR è in posizione 0 ed è l'unica già espansa.
+    await page.locator('#cash-0').fill(String(CONTANTI))
+    await page.locator('#pos-0').fill(String(POS))
+
+    const riepilogo = cardRiepilogo(page)
+    await expect(voce(riepilogo, 'Totale:')).toHaveText(euro(TOTALE))
+    await expect(voce(riepilogo, 'POS:')).toHaveText(euro(POS))
+
+    await page.getByRole('button', { name: 'Salva Bozza' }).click()
+
+    // `[a-z0-9]{20,}` e non `[a-z0-9]+`: quest'ultimo è soddisfatto anche da
+    // `/chiusura-cassa/nuova`, cioè dalla pagina da cui non ci si è ancora
+    // mossi — l'asserzione passava prima che il salvataggio partisse.
+    await expect(page).toHaveURL(/\/chiusura-cassa\/[a-z0-9]{20,}$/, { timeout: 20_000 })
+    await expect(page.getByText('Bozza', { exact: true })).toBeVisible()
+
+    const salvata = await statoChiusuraDelGiorno(giorno)
+    expect(salvata?.status).toBe('DRAFT')
+    // Il giorno salvato è quello scelto e non il precedente: la data passa da
+    // un `<input type="date">` a un `Date` e poi a una colonna `@db.Date`, ed è
+    // esattamente il tipo di percorso in cui un giorno si perde.
+    expect(salvata?.date.toISOString().slice(0, 10)).toBe(giorno)
   })
 
-  test('mostra pulsante nuova chiusura', async ({ page }) => {
-    await page.goto('/chiusura-cassa')
+  test('invio per validazione e approvazione', async ({ page }) => {
+    const giorno = '2019-04-18'
+    await liberaGiornoChiusura(giorno)
+    await apriConSessioneAdmin(page, '/chiusura-cassa/nuova')
+    await page.locator('#date').fill(giorno)
+    await page.locator('#cash-0').fill(String(CONTANTI))
+    await page.locator('#pos-0').fill(String(POS))
 
-    // Cerca link/pulsante per nuova chiusura
-    await expect(
-      page
-        .getByRole('link', { name: /nuova|crea|aggiungi/i })
-        .or(page.getByRole('button', { name: /nuova|crea|aggiungi/i }))
-    ).toBeVisible({ timeout: 10000 })
+    // Il form chiede conferma via window.confirm quando non ci sono uscite
+    // manuali. Accettare è la scelta dell'operatore reale in questo scenario;
+    // resta scritto quali domande sono state poste, e il test verifica che
+    // siano quelle attese: se ne comparisse una nuova, il test la registra.
+    const domande = raccogliConferme(page)
+
+    // L'invio apre il PDF in una scheda nuova: senza aspettarla, la scheda si
+    // apre a test finito e Playwright chiude il contesto a metà richiesta.
+    const pdf = page.waitForEvent('popup').catch(() => null)
+    await page.getByRole('button', { name: 'Invia per Validazione' }).click()
+    await expect(page).toHaveURL(/\/chiusura-cassa$/, { timeout: 30_000 })
+    await pdf
+
+    expect(domande.join(' ')).toContain('nessuna uscita manuale registrata')
+
+    const inviata = await statoChiusuraDelGiorno(giorno)
+    expect(inviata?.status).toBe('SUBMITTED')
+
+    // Lo storico mostra l'incasso, e deve essere quello inserito. Si cerca la
+    // riga *di questo giorno*: contare le righe con un certo importo su tutta
+    // la tabella dipende da cosa hanno lasciato gli altri test.
+    const riga = page.getByRole('row').filter({ hasText: dataCompatta(giorno) })
+    await expect(riga).toHaveCount(1, { timeout: 20_000 })
+    await expect(riga).toContainText(euro(TOTALE))
+
+    await page.goto(`/chiusura-cassa/${inviata!.id}`)
+    await expect(page.getByText('In attesa di validazione')).toBeVisible()
+
+    await page.getByRole('button', { name: 'Approva Chiusura' }).click()
+    await expect(page.getByText('Validata', { exact: true })).toBeVisible({ timeout: 20_000 })
+
+    const validata = await statoChiusuraDelGiorno(giorno)
+    expect(validata?.status).toBe('VALIDATED')
   })
 
-  test('naviga a nuova chiusura', async ({ page }) => {
-    await page.goto('/chiusura-cassa')
+  test('la quadratura confronta il contato con i contanti battuti', async ({ page }) => {
+    const giorno = '2019-04-19'
+    await liberaGiornoChiusura(giorno)
+    await apriConSessioneAdmin(page, '/chiusura-cassa/nuova')
+    await page.locator('#date').fill(giorno)
 
-    // Click sul link nuova chiusura
-    const nuovaLink = page
-      .getByRole('link', { name: /nuova/i })
-      .first()
+    // Il conteggio fisico popola da solo i contanti della postazione: due da 50
+    // e uno da 20 fanno 120, che è quello che ci si aspetta di trovare.
+    await page.getByLabel('Pezzi da € 50', { exact: true }).fill('2')
+    await page.getByLabel('Pezzi da € 20', { exact: true }).fill('1')
+    await expect(page.locator('#cash-0')).toHaveValue(String(CONTANTI))
 
-    await nuovaLink.click()
-    await expect(page).toHaveURL(/\/chiusura-cassa\/nuova/)
+    await page.locator('#pos-0').fill(String(POS))
+
+    const riepilogo = cardRiepilogo(page)
+    await expect(voce(riepilogo, 'Cassa Contata:')).toHaveText(euro(CONTANTI))
+    await expect(voce(riepilogo, 'Differenza:')).toHaveText(`+${euro(0)}`)
+    await expect(voce(riepilogo, 'Totale:')).toHaveText(euro(TOTALE))
+    await expect(riepilogo.getByText('Differenza Cassa')).toHaveCount(0)
+
+    // Ora i contanti battuti scendono a 100 ma in cassa ce ne sono 120: la
+    // differenza è +20, sopra la soglia dei 5 €, e va segnalata.
+    await page.locator('#cash-0').fill('100')
+    await expect(voce(riepilogo, 'Differenza:')).toHaveText(`+${euro(20)}`)
+    await expect(riepilogo.getByText('Differenza Cassa')).toBeVisible()
   })
 
-  test('mostra filtri e ricerca', async ({ page }) => {
-    await page.goto('/chiusura-cassa')
+  /**
+   * DIFETTO NOTO — non correggere qui: il file è di un altro proprietario.
+   *
+   * `PUT /api/chiusure/[id]` cancella le postazioni con `deleteMany` contando
+   * su un cascade verso `cash_counts` che non esiste: la relazione è
+   * `onDelete: Restrict` (prisma/schema.prisma:315) e il vincolo in Postgres è
+   * `confdeltype = 'r'`. Ogni postazione ha sempre un conteggio, quindi la
+   * chiamata fallisce SEMPRE con 500 «Errore nell'aggiornamento della chiusura»
+   * e nessuna chiusura può essere modificata né inviata dalla pagina
+   * `/chiusura-cassa/[id]/modifica`. Vedi src/app/api/chiusure/[id]/route.ts:436.
+   *
+   * `test.fail()` significa: questo test DEVE fallire finché il difetto c'è.
+   * Quando verrà corretto tornerà rosso, e sarà il segnale per togliere questa
+   * annotazione — non un test finto, ma una riproduzione eseguibile.
+   */
+  test('modifica di una bozza esistente (difetto noto: 500 dal PUT)', async ({ page }) => {
+    test.fail()
 
-    // La lista dovrebbe avere filtri o una tabella
-    const table = page.getByRole('table')
-    const grid = page.locator('[role="grid"]')
+    const giorno = '2019-04-20'
+    await liberaGiornoChiusura(giorno)
+    await apriConSessioneAdmin(page, '/chiusura-cassa/nuova')
+    await page.locator('#date').fill(giorno)
+    await page.locator('#cash-0').fill(String(CONTANTI))
+    await page.locator('#pos-0').fill(String(POS))
+    await page.getByRole('button', { name: 'Salva Bozza' }).click()
+    await expect(page).toHaveURL(/\/chiusura-cassa\/[a-z0-9]{20,}$/, { timeout: 20_000 })
 
-    // Almeno uno dei due dovrebbe essere visibile
-    await expect(table.or(grid)).toBeVisible({ timeout: 10000 })
-  })
-})
+    const bozza = await statoChiusuraDelGiorno(giorno)
+    await page.goto(`/chiusura-cassa/${bozza!.id}/modifica`)
+    await expect(page.getByRole('heading', { name: 'Modifica Chiusura' })).toBeVisible()
 
-test.describe('Chiusura Cassa - Creazione', () => {
-  test.beforeEach(async ({ page }) => {
-    await loginAsAdmin(page)
-  })
+    await page.locator('#pos-0').fill('90')
+    await page.getByRole('button', { name: 'Salva Bozza' }).click()
 
-  test('mostra form nuova chiusura', async ({ page }) => {
-    await page.goto('/chiusura-cassa/nuova')
-
-    await expect(page).toHaveURL('/chiusura-cassa/nuova')
-
-    // Verifica elementi base del form
-    await expect(
-      page.getByRole('heading', { name: /nuova chiusura|chiusura/i })
-    ).toBeVisible({ timeout: 10000 })
-  })
-
-  test('mostra sezione conteggio banconote', async ({ page }) => {
-    await page.goto('/chiusura-cassa/nuova')
-
-    await page.waitForLoadState('networkidle')
-
-    // Cerca la griglia conteggio o i campi delle banconote
-    const billFields = [
-      page.getByLabel(/500/),
-      page.getByLabel(/200/),
-      page.getByLabel(/100/),
-      page.getByLabel(/50/),
-      page.getByText(/banconote|conteggio/i),
-    ]
-
-    let foundBillSection = false
-    for (const field of billFields) {
-      if (await field.isVisible()) {
-        foundBillSection = true
-        break
-      }
-    }
-
-    expect(foundBillSection).toBe(true)
-  })
-
-  test('mostra sezione spese', async ({ page }) => {
-    await page.goto('/chiusura-cassa/nuova')
-
-    await page.waitForLoadState('networkidle')
-
-    // Cerca la sezione spese
-    await expect(
-      page.getByText(/spese|uscite|pagamenti/i).first()
-    ).toBeVisible({ timeout: 10000 })
-  })
-
-  test('mostra sezione presenze staff', async ({ page }) => {
-    await page.goto('/chiusura-cassa/nuova')
-
-    await page.waitForLoadState('networkidle')
-
-    // Cerca la sezione presenze
-    await expect(
-      page.getByText(/presenze|staff|personale|dipendenti/i).first()
-    ).toBeVisible({ timeout: 10000 })
-  })
-
-  test('salva bozza chiusura', async ({ page }) => {
-    await page.goto('/chiusura-cassa/nuova')
-
-    await page.waitForLoadState('networkidle')
-
-    // Cerca pulsante salva bozza
-    const saveDraftButton = page.getByRole('button', {
-      name: /salva bozza|salva|draft/i,
-    })
-
-    if (await saveDraftButton.isVisible()) {
-      await saveDraftButton.click()
-
-      // Attendi redirect o messaggio di successo
-      await expect(
-        page.getByText(/salvat|success/i).or(page.locator('[data-sonner-toast]'))
-      ).toBeVisible({ timeout: 10000 })
-    } else {
-      // Se non c'è pulsante salva bozza, potrebbe esserci solo un pulsante "Salva"
-      const saveButton = page.getByRole('button', { name: /salva/i }).first()
-      if (await saveButton.isVisible()) {
-        // Non clicchiamo per evitare side effects non voluti
-        expect(true).toBe(true)
-      }
-    }
-  })
-
-  test('calcola totale automaticamente', async ({ page }) => {
-    await page.goto('/chiusura-cassa/nuova')
-
-    await page.waitForLoadState('networkidle')
-
-    // Prova a inserire un valore nel campo €50 (o simile)
-    const cinquantaField = page.locator('input[name*="50"]').first()
-
-    if (await cinquantaField.isVisible()) {
-      await cinquantaField.fill('2')
-
-      // Il totale dovrebbe aggiornarsi
-      await page.waitForTimeout(500) // Aspetta calcolo
-
-      // Cerca un campo totale che mostri 100
-      void page.getByText(/100|€\s*100/i)
-      // Il test passa anche se il totale non è esattamente 100 (dipende dalla struttura)
-      expect(true).toBe(true)
-    } else {
-      // Se non troviamo il campo specifico, skippiamo
-      test.skip(true, 'Campo €50 non trovato nel form')
-    }
-  })
-})
-
-test.describe('Chiusura Cassa - Validazione', () => {
-  test.beforeEach(async ({ page }) => {
-    await loginAsAdmin(page)
-  })
-
-  test('mostra differenza cassa', async ({ page }) => {
-    await page.goto('/chiusura-cassa/nuova')
-
-    await page.waitForLoadState('networkidle')
-
-    // La sezione dovrebbe mostrare la differenza tra conteggio e incasso RT
-    void page.getByText(/differenza|sbilancio|discrepanza/i)
-
-    // Potrebbe non essere visibile se non ci sono dati
-    expect(true).toBe(true)
-  })
-
-  test('admin può validare chiusura', async ({ page }) => {
-    await page.goto('/chiusura-cassa')
-
-    await page.waitForLoadState('networkidle')
-
-    // Cerca una chiusura in stato "inviata" nella lista
-    const inviataRow = page.getByText(/inviat|pending|da validare/i).first()
-
-    if (await inviataRow.isVisible()) {
-      // Clicca sulla riga per vedere il dettaglio
-      await inviataRow.click()
-
-      // Nel dettaglio cerca il pulsante valida
-      const validaButton = page.getByRole('button', { name: /valida|approva/i })
-
-      if (await validaButton.isVisible()) {
-        // Verifica che il pulsante sia presente (non clicchiamo per evitare modifiche)
-        expect(true).toBe(true)
-      }
-    } else {
-      // Nessuna chiusura da validare
-      test.skip(true, 'Nessuna chiusura in stato inviata da testare')
-    }
+    // Il salvataggio dovrebbe riportare al dettaglio della chiusura.
+    await expect(page).toHaveURL(/\/chiusura-cassa\/[a-z0-9]{20,}$/, { timeout: 15_000 })
   })
 })
 
-test.describe('Chiusura Cassa - Integrazione Presenze', () => {
-  test.beforeEach(async ({ page }) => {
-    await loginAsAdmin(page)
+/** Il giorno come lo scrive lo storico delle chiusure: «GIO 18/04/19». */
+function dataCompatta(giorno: string): string {
+  const giorniSettimana = ['DOM', 'LUN', 'MAR', 'MER', 'GIO', 'VEN', 'SAB']
+  const [anno, mese, dì] = giorno.split('-')
+  const d = new Date(`${giorno}T12:00:00`)
+  return `${giorniSettimana[d.getDay()]} ${dì}/${mese}/${anno.slice(-2)}`
+}
+
+function cardRiepilogo(page: Page): Locator {
+  return page.locator('div[data-slot="card"]').filter({ hasText: 'Riepilogo' }).last()
+}
+
+/**
+ * Nel riepilogo etichetta e importo sono due `<span>` fratelli. Prendere «lo
+ * span monospace dentro la card» non basta: «Contanti:» compare due volte
+ * (movimentazione e quadratura) e si finirebbe a verificare un numero diverso
+ * da quello che si crede — è così che il primo tentativo di questo test
+ * confrontava il totale con la differenza di cassa.
+ */
+function voce(riepilogo: Locator, etichetta: string): Locator {
+  return riepilogo.locator(
+    `xpath=.//span[normalize-space(.)='${etichetta}']/following-sibling::span[1]`
+  )
+}
+
+/** Registra le conferme native che l'applicazione chiede, e le accetta. */
+function raccogliConferme(page: Page): string[] {
+  const domande: string[] = []
+  page.on('dialog', (dialog) => {
+    domande.push(dialog.message())
+    void dialog.accept()
   })
-
-  test('mostra timbrature del giorno nella sezione presenze', async ({
-    page,
-  }) => {
-    await page.goto('/chiusura-cassa/nuova')
-
-    await page.waitForLoadState('networkidle')
-
-    // Cerca la sezione presenze con eventuali dati di timbratura
-    const presenzeSection = page.getByText(/presenze|timbrature|ore lavorate/i)
-
-    if (await presenzeSection.isVisible()) {
-      // La sezione è visibile - potrebbe mostrare "Nessun dato" se non ci sono timbrature
-      expect(true).toBe(true)
-    } else {
-      // La sezione potrebbe essere collassata o in un tab
-      const tab = page.getByRole('tab', { name: /presenze|personale/i })
-      if (await tab.isVisible()) {
-        await tab.click()
-        await page.waitForTimeout(500)
-      }
-      expect(true).toBe(true)
-    }
-  })
-
-  test('può selezionare codice presenza per staff', async ({ page }) => {
-    await page.goto('/chiusura-cassa/nuova')
-
-    await page.waitForLoadState('networkidle')
-
-    // Cerca select o dropdown per codice presenza
-    const codiceSelect = page
-      .getByRole('combobox', { name: /codice|stato|presenza/i })
-      .first()
-
-    if (await codiceSelect.isVisible()) {
-      // Apri il dropdown
-      await codiceSelect.click()
-
-      // Verifica che ci siano opzioni
-      const options = page.getByRole('option')
-      expect(await options.count()).toBeGreaterThan(0)
-    } else {
-      // Potrebbe usare un altro pattern UI
-      test.skip(true, 'Dropdown codice presenza non trovato')
-    }
-  })
-})
-
-test.describe('Chiusura Cassa - Export', () => {
-  test.beforeEach(async ({ page }) => {
-    await loginAsAdmin(page)
-  })
-
-  test('mostra opzione export PDF', async ({ page }) => {
-    await page.goto('/chiusura-cassa')
-
-    await page.waitForLoadState('networkidle')
-
-    // Cerca pulsante export
-    const exportButton = page.getByRole('button', { name: /export|scarica|pdf/i })
-
-    if (await exportButton.isVisible()) {
-      expect(true).toBe(true)
-    } else {
-      // L'export potrebbe essere nel menu dropdown
-      const menuButton = page.getByRole('button', { name: /menu|azioni/i })
-      if (await menuButton.isVisible()) {
-        await menuButton.click()
-        await page.waitForTimeout(300)
-
-        const pdfOption = page.getByText(/pdf|export/i)
-        if (await pdfOption.isVisible()) {
-          expect(true).toBe(true)
-        }
-      }
-    }
-  })
-
-  test('mostra opzione export Excel', async ({ page }) => {
-    await page.goto('/chiusura-cassa')
-
-    await page.waitForLoadState('networkidle')
-
-    // Cerca nel menu o nei pulsanti
-    const excelButton = page.getByRole('button', { name: /excel|xlsx/i })
-
-    if (await excelButton.isVisible()) {
-      expect(true).toBe(true)
-    } else {
-      // Potrebbe essere in un dropdown
-      const menuButton = page
-        .getByRole('button', { name: /export|scarica|azioni/i })
-        .first()
-
-      if (await menuButton.isVisible()) {
-        await menuButton.click()
-        await page.waitForTimeout(300)
-
-        const excelOption = page.getByText(/excel|xlsx/i)
-        expect(await excelOption.isVisible()).toBe(true)
-      }
-    }
-  })
-})
-
-test.describe('Chiusura Cassa - Modifica', () => {
-  test.beforeEach(async ({ page }) => {
-    await loginAsAdmin(page)
-  })
-
-  test('può modificare chiusura in bozza', async ({ page }) => {
-    await page.goto('/chiusura-cassa')
-
-    await page.waitForLoadState('networkidle')
-
-    // Cerca una chiusura in bozza
-    const bozzaRow = page.getByText(/bozza|draft/i).first()
-
-    if (await bozzaRow.isVisible()) {
-      // Trova il link modifica nella stessa riga
-      const row = bozzaRow.locator('xpath=ancestor::tr | ancestor::div[@role="row"]')
-      const editLink = row.getByRole('link', { name: /modifica|edit/i })
-
-      if (await editLink.isVisible()) {
-        await editLink.click()
-        await expect(page).toHaveURL(/\/chiusura-cassa\/[^/]+\/modifica/)
-      }
-    } else {
-      test.skip(true, 'Nessuna chiusura in bozza da modificare')
-    }
-  })
-
-  test('non può modificare chiusura validata', async ({ page }) => {
-    await page.goto('/chiusura-cassa')
-
-    await page.waitForLoadState('networkidle')
-
-    // Cerca una chiusura validata
-    const validataRow = page.getByText(/validat|approvata|completata/i).first()
-
-    if (await validataRow.isVisible()) {
-      // Clicca per vedere il dettaglio
-      await validataRow.click()
-
-      // Nel dettaglio non dovrebbe esserci pulsante modifica
-      await page.waitForTimeout(1000)
-
-      const editButton = page.getByRole('button', { name: /modifica|edit/i })
-
-      // Il pulsante non dovrebbe essere visibile o dovrebbe essere disabilitato
-      if (await editButton.isVisible()) {
-        const isDisabled = await editButton.isDisabled()
-        expect(isDisabled).toBe(true)
-      } else {
-        expect(true).toBe(true) // Non c'è pulsante = OK
-      }
-    } else {
-      test.skip(true, 'Nessuna chiusura validata da testare')
-    }
-  })
-})
+  return domande
+}
