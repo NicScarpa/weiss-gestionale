@@ -163,6 +163,18 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       // È l'approvazione in blocco di proposte che l'utente ha guardato: il
       // segnale è lo stesso, e prima andava perduto proprio nel percorso più
       // usato — l'AI ricominciava da capo a ogni fattura dello stesso fornitore.
+      //
+      // COSTO, ed è una scelta deliberata: due query per riga — una lettura per
+      // sapere se il conto è cambiato (serve a tenere onesto il contatore delle
+      // conferme, vedi alimentaMemoriaFornitore) e l'upsert. Su una fattura da
+      // cento righe sono circa duecento query, stimate 0,4-2 s su un'azione
+      // interattiva: al limite del percepibile, non oltre. Si dimezzerebbero
+      // con una sola lettura in blocco prima del ciclo — un `findMany` sui
+      // `nomeNormalizzato` di queste righe, da cui una mappa nome → conto
+      // precedente da passare alla scrittura. Non è stato fatto perché
+      // l'ottimizzazione non era chiesta e il ciclo per riga, con il suo
+      // try/catch, garantisce che una riga che non si scrive non fermi le
+      // altre. Chi ci torna sappia che la strada è questa.
       if (invoice.supplierId) {
         for (const proposta of proposte) {
           await alimentaMemoriaFornitore({
