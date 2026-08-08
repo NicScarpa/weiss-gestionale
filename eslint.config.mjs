@@ -29,6 +29,10 @@ const eslintConfig = defineConfig([
     "scripts/**",
     // Service worker compilato da `npm run build:sw`: codice generato.
     "public/sw.js",
+    // Rapporto HTML di `npm run test:coverage`: è generato, non è nel
+    // repository, e chi lo produce in locale si trova centinaia di avvisi su
+    // file che non ha scritto.
+    "coverage/**",
   ]),
 ]);
 
