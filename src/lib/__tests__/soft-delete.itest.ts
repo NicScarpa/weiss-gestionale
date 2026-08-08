@@ -61,12 +61,15 @@ describe('cancellazione logica: letture per chiave unica', () => {
     expect(trovata).toBeNull()
   })
 
-  it('findUnique non lo restituisce per chiave composta', async () => {
+  it('non lo restituisce nemmeno quando il chiamante ha già filtrato per conto suo', async () => {
+    // La `where` di una ricerca per chiave unica accetta filtri qualsiasi
+    // accanto alla chiave: il filtro aggiunto qui non deve prendere il posto di
+    // quello sulla cancellazione, né essere scavalcato da esso.
     const venue = await venueDiTest()
-    await chiusuraCancellata()
+    const id = await chiusuraCancellata()
 
     const trovata = await prisma.dailyClosure.findUnique({
-      where: { venueId_date: { venueId: venue.id, date: GIORNO } },
+      where: { id, venueId: venue.id },
     })
 
     expect(trovata).toBeNull()

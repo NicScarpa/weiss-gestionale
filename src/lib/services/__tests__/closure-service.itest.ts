@@ -319,9 +319,10 @@ describe('rifiuto di una chiusura', () => {
 
     expect(await scrittureVive(closure.id)).toHaveLength(0)
 
-    // Annullata, non cancellata: la riga resta tracciabile
+    // Annullata, non cancellata: la riga resta tracciabile, ma per rileggerla
+    // bisogna nominare `deletedAt` — è la via di fuga dal filtro automatico.
     const annullata = await prisma.journalEntry.findUnique({
-      where: { id: scrittura.id },
+      where: { id: scrittura.id, deletedAt: { not: null } },
     })
     expect(annullata!.deletedAt).toBeInstanceOf(Date)
 

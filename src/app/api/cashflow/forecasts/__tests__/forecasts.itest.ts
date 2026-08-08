@@ -172,7 +172,11 @@ describe('CRUD previsioni di cassa', () => {
     )
     expect(dettaglio.status).toBe(404)
 
-    const rimasta = await prisma.cashFlowForecast.findUnique({ where: { id: previsione.id } })
+    // La riga resta nel database, ma per rileggerla bisogna nominare
+    // `deletedAt`: senza, il client la nasconde come una riga che non c'è.
+    const rimasta = await prisma.cashFlowForecast.findUnique({
+      where: { id: previsione.id, deletedAt: { not: null } },
+    })
     expect(rimasta?.deletedAt).toBeInstanceOf(Date)
   })
 
