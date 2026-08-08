@@ -271,7 +271,9 @@ export function AccountManagement() {
 
       {/* Tabs per tipo */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AccountType)}>
-        <TabsList className="grid w-full grid-cols-4">
+        {/* Quattro colonne uguali in un telefono danno 70 px a testa e le
+            etichette si sovrappongono: sotto sm la striscia scorre */}
+        <TabsList className="flex w-full sm:grid sm:grid-cols-4">
           {ACCOUNT_TYPES.map((type) => {
             const Icon = type.icon
             return (
