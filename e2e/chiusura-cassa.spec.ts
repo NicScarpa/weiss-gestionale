@@ -128,23 +128,27 @@ test.describe('Chiusura cassa', () => {
   })
 
   /**
-   * DIFETTO NOTO — non correggere qui: il file è di un altro proprietario.
+   * GUARDIA DI REGRESSIONE — questo test è nato rosso, apposta.
    *
-   * `PUT /api/chiusure/[id]` cancella le postazioni con `deleteMany` contando
-   * su un cascade verso `cash_counts` che non esiste: la relazione è
-   * `onDelete: Restrict` (prisma/schema.prisma:315) e il vincolo in Postgres è
+   * `PUT /api/chiusure/[id]` cancellava le postazioni con `deleteMany`
+   * contando su un cascade verso `cash_counts` che non esiste: la relazione è
+   * `onDelete: Restrict` (prisma/schema.prisma) e il vincolo in Postgres è
    * `confdeltype = 'r'`. Ogni postazione ha sempre un conteggio, quindi la
-   * chiamata fallisce SEMPRE con 500 «Errore nell'aggiornamento della chiusura»
-   * e nessuna chiusura può essere modificata né inviata dalla pagina
-   * `/chiusura-cassa/[id]/modifica`. Vedi src/app/api/chiusure/[id]/route.ts:436.
+   * chiamata falliva SEMPRE con 500 «Errore nell'aggiornamento della chiusura»
+   * e nessuna chiusura era modificabile né inviabile dalla pagina
+   * `/chiusura-cassa/[id]/modifica`.
    *
-   * `test.fail()` significa: questo test DEVE fallire finché il difetto c'è.
-   * Quando verrà corretto tornerà rosso, e sarà il segnale per togliere questa
-   * annotazione — non un test finto, ma una riproduzione eseguibile.
+   * Corretto in `857f4ef`: i conteggi si cancellano prima delle postazioni
+   * (src/app/api/chiusure/[id]/route.ts:454). L'annotazione `test.fail()` è
+   * stata tolta l'8 ago 2026 **dopo** aver eseguito la suite contro un
+   * database seedato e un browser vero, e aver visto Playwright dichiarare
+   * «Expected to fail, but passed»: toglierla sulla fiducia avrebbe
+   * trasformato una riproduzione eseguibile in un'asserzione finta.
+   *
+   * Da qui in avanti il test difende la correzione: se il cascade tornasse a
+   * mancare, questo diventa rosso.
    */
-  test('modifica di una bozza esistente (difetto noto: 500 dal PUT)', async ({ page }) => {
-    test.fail()
-
+  test('modifica di una bozza esistente', async ({ page }) => {
     const giorno = '2019-04-20'
     await liberaGiornoChiusura(giorno)
     await apriConSessioneAdmin(page, '/chiusura-cassa/nuova')

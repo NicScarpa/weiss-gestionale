@@ -43,7 +43,14 @@ test.describe('Login', () => {
   test('admin: accede e arriva alla dashboard', async ({ page }) => {
     await login(page, UTENTI.admin)
 
-    await expect(page).toHaveURL(/localhost:\d+\/(\?.*)?$/, { timeout: 20_000 })
+    // L'host non si inchioda. Prima l'espressione pretendeva `localhost:\d+`,
+    // e la suite diventava rossa proprio con la configurazione che il README
+    // raccomanda: `E2E_BASE_URL=http://127.0.0.1:<porta>`, l'unico modo di
+    // aggirare il `localhost` che risolve a IPv6 mentre il dev server ascolta
+    // su IPv4. Il rosso diceva «unexpected value http://127.0.0.1:3020/» — cioè
+    // il login era andato benissimo. Quello che conta è di essere sulla radice
+    // e non su /login; il resto lo prova il saluto qui sotto.
+    await expect(page).toHaveURL(/^https?:\/\/[^/]+\/(\?.*)?$/, { timeout: 20_000 })
     // Non basta l'URL: il saluto contiene il nome che arriva dalla sessione, quindi
     // prova che la sessione c'è ed è stata letta lato server.
     await expect(page.getByRole('heading', { name: 'Benvenuto, Admin' })).toBeVisible()
