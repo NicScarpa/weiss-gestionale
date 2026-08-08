@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { Pool } from 'pg'
 import { fieldEncryptionExtension } from './prisma-encryption'
+import { opzioneTls } from './db-tls'
 
 const globalForPrisma = globalThis as unknown as {
   prisma: ReturnType<typeof createPrismaClient> | undefined
@@ -55,13 +56,9 @@ function excludeDeleted({ args, query, model }: QueryHook) {
 function createPrismaClient() {
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    // Supabase's pooler presents a chain signed by Supabase's private root CA,
-    // which is not in Node's trust store: strict verification needs DATABASE_CA_CERT
-    ssl: process.env.NODE_ENV === 'production'
-      ? process.env.DATABASE_CA_CERT
-        ? { ca: process.env.DATABASE_CA_CERT, rejectUnauthorized: true }
-        : { rejectUnauthorized: true }
-      : false,
+    // TLS imposto in produzione, tranne verso un PostgreSQL sulla macchina
+    // stessa: la politica, e il perché dell'eccezione, stanno in db-tls.ts.
+    ssl: opzioneTls(process.env),
     max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
