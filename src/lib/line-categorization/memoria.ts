@@ -39,10 +39,25 @@ export async function alimentaMemoriaFornitore({
   if (!nomeNormalizzato) return
 
   try {
+    const chiave = { venueId_supplierId_nomeNormalizzato: { venueId, supplierId, nomeNormalizzato } }
+
+    // Il contatore conta le conferme di QUESTA mappatura, non del prodotto.
+    // Prima cresceva anche quando l'utente cambiava il conto: una memoria
+    // appena corretta si dichiarava confermata trenta volte, quando quelle
+    // trenta valevano per il conto vecchio. Ora che il contatore ordina gli
+    // esempi che finiscono nel prompt (memoriePerIlPrompt), deve dire il vero.
+    //
+    // Una lettura in più per riga confermata. La corsa fra due conferme
+    // simultanee può sfalsare il conteggio di uno: è un criterio di
+    // ordinamento, non un saldo.
+    const esistente = await prisma.supplierProductAccount.findUnique({
+      where: chiave,
+      select: { accountId: true },
+    })
+    const contoCambiato = !!esistente && esistente.accountId !== accountId
+
     await prisma.supplierProductAccount.upsert({
-      where: {
-        venueId_supplierId_nomeNormalizzato: { venueId, supplierId, nomeNormalizzato },
-      },
+      where: chiave,
       create: {
         venueId,
         supplierId,
@@ -53,7 +68,7 @@ export async function alimentaMemoriaFornitore({
       },
       update: {
         accountId,
-        conferme: { increment: 1 },
+        conferme: contoCambiato ? 1 : { increment: 1 },
         // Il codice si scrive solo se questa fattura ne porta uno (F2-ALL-012).
         // Prima il ramo update assegnava `codiceArticolo ?? null`: bastava
         // riconfermare lo stesso prodotto partendo da una fattura che quella

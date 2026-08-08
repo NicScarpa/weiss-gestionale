@@ -14,7 +14,7 @@ vi.mock('@/lib/prisma', () => ({
     electronicInvoice: { findFirst: vi.fn() },
     invoiceLineAccount: { findMany: vi.fn(), upsert: vi.fn(), updateMany: vi.fn() },
     account: { findMany: vi.fn() },
-    supplierProductAccount: { upsert: vi.fn() },
+    supplierProductAccount: { findUnique: vi.fn(), upsert: vi.fn() },
   },
 }))
 
@@ -78,6 +78,7 @@ beforeEach(() => {
   } as never)
   vi.mocked(prisma.account.findMany).mockResolvedValue([{ id: 'conto-1', type: 'COSTO' }] as never)
   vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([] as never)
+  vi.mocked(prisma.supplierProductAccount.findUnique).mockResolvedValue(null)
   vi.mocked(prisma.supplierProductAccount.upsert).mockResolvedValue({} as never)
 })
 
