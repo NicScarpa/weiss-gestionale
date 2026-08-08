@@ -20,8 +20,11 @@ stessa cifra (con un test permanente che lo pretende), gli import sono atomici e
 **esiste**, prima non veniva generato affatto), previsioni e spese ricorrenti hanno un'interfaccia,
 il tema scuro si accende.
 
-Tutto il lavoro vive sul branch `remediation/integrazione`, **non è ancora su `main`** per scelta
-del committente: si porta su main solo a revisione completata.
+**RILASCIATO IN PRODUZIONE l'8 agosto 2026.** Il lavoro è su `main` (`bb393a0`) e distribuito su
+Railway. Prima del rilascio è stato riconciliato con 10 commit che altre sessioni avevano portato su
+`main` nel frattempo (notifiche push implementate una seconda volta, dipendenze, modulo presenze):
+vedi §4 "Riconciliazione". Il database di produzione è stato migrato in due passi, nell'ordine
+obbligato schema → vincoli, con backup preventivo in `~/Desktop/backup-pre-remediation-*.dump`.
 
 ---
 
