@@ -1,9 +1,11 @@
 'use client'
 
 import {
-  getPendingClosures,
+  getSyncableClosures,
+  requeueStalledClosures,
   updatePendingClosureStatus,
   deletePendingClosure,
+  blockPendingClosure,
   cacheData,
   hasPendingSync,
   getPendingCount,
@@ -13,12 +15,16 @@ import { logger } from '@/lib/logger'
 // Event types for sync updates
 type SyncEventType = 'sync-start' | 'sync-progress' | 'sync-complete' | 'sync-error' | 'online' | 'offline'
 
-interface SyncEvent {
+export interface SyncEvent {
   type: SyncEventType
   data?: {
     total?: number
     synced?: number
     error?: string
+    /** Righe che restano in coda e si riproveranno. */
+    daRiprovare?: number
+    /** Righe che hanno esaurito i tentativi: le deve guardare una persona. */
+    bloccate?: number
   }
 }
 
@@ -61,29 +67,110 @@ if (typeof window !== 'undefined') {
       syncPendingData()
     }
   })
+
+  // Alla primissima visita il documento arriva dalla rete *prima* che il
+  // service worker prenda il controllo: non passa da lui, non entra in nessuna
+  // cache, e offline quella pagina non c'è — bisognava ricaricarla una seconda
+  // volta con la rete ancora buona perché fosse disponibile senza. Appena il
+  // controllo arriva la si richiede una volta: quella richiesta passa dal
+  // service worker, che la mette in cache. Costa un documento in più, la prima
+  // volta e a ogni aggiornamento del worker.
+  navigator.serviceWorker?.addEventListener('controllerchange', () => {
+    void scaldaLaPaginaCorrente()
+  })
 }
 
+async function scaldaLaPaginaCorrente() {
+  try {
+    const risposta = await fetch(window.location.href, { credentials: 'same-origin' })
+    // Il corpo va letto fino in fondo, anche se non ce ne facciamo niente:
+    // una risposta lasciata a metà tiene la connessione aperta per sempre.
+    // Misurato — la pagina non raggiungeva più `networkidle`, e i test offline
+    // andavano tutti in timeout su una richiesta che risultava «in corso» venti
+    // secondi dopo essere arrivata.
+    await risposta.arrayBuffer()
+  } catch (error) {
+    // Se fallisce si torna al comportamento di prima: la pagina entrerà in
+    // cache al prossimo caricamento online. Non c'è niente da dire all'utente.
+    logger.warn('[Offline] Pagina corrente non messa in cache', error)
+  }
+}
+
+/**
+ * Codici che non sono un giudizio sul contenuto della chiusura ma sul momento
+ * in cui è stata inviata: sessione scaduta, richiesta troppo lenta, troppe
+ * richieste. Su questi si riprova, altrimenti una sessione scaduta bloccherebbe
+ * per sempre una chiusura buona.
+ */
+const RITENTABILI = new Set([401, 408, 429])
+
+/**
+ * Che cosa fare di una chiusura, letto dalla risposta del server.
+ * Funzione pura, così la politica dei tentativi si può leggere e provare senza
+ * un browser intorno.
+ */
+export function classificaRisposta(status: number): 'consegnata' | 'riprova' | 'definitivo' {
+  if (status >= 200 && status < 300) return 'consegnata'
+  if (status >= 500 || RITENTABILI.has(status)) return 'riprova'
+  return 'definitivo'
+}
+
+export interface EsitoSincronizzazione {
+  /** Chiusure arrivate al server in questo giro. */
+  inviate: number
+  /** Righe che restano in coda e si riproveranno. */
+  daRiprovare: number
+  /** Righe che hanno esaurito i tentativi: nessuno le invierà più da solo. */
+  bloccate: number
+  /** Il primo motivo di fallimento, da mostrare a chi sta guardando. */
+  motivo?: string
+}
+
+/**
+ * Il giro di sincronizzazione in corso, se ce n'è uno.
+ *
+ * Al ritorno della rete partono due richiami: l'ascoltatore `online` di questo
+ * modulo e l'effetto di `OfflineIndicator`. Senza questa guardia leggono la
+ * coda insieme e la stessa chiusura viene spedita due volte; la seconda si
+ * prende un 409 e finisce in errore, cioè un difetto inventato dal codice che
+ * doveva salvarla.
+ */
+let sincronizzazioneInCorso: Promise<EsitoSincronizzazione> | null = null
+
 // Sync pending closures to server
-export async function syncPendingData(): Promise<{ success: boolean; synced: number; errors: number }> {
+export function syncPendingData(): Promise<EsitoSincronizzazione> {
+  if (sincronizzazioneInCorso) return sincronizzazioneInCorso
+
+  sincronizzazioneInCorso = eseguiSincronizzazione().finally(() => {
+    sincronizzazioneInCorso = null
+  })
+
+  return sincronizzazioneInCorso
+}
+
+async function eseguiSincronizzazione(): Promise<EsitoSincronizzazione> {
   if (!isOnline) {
-    return { success: false, synced: 0, errors: 0 }
+    return { inviate: 0, daRiprovare: 0, bloccate: 0 }
   }
 
-  const pending = await getPendingClosures()
+  await requeueStalledClosures()
+  const daInviare = await getSyncableClosures()
 
-  if (pending.length === 0) {
-    return { success: true, synced: 0, errors: 0 }
+  if (daInviare.length === 0) {
+    return { inviate: 0, daRiprovare: 0, bloccate: 0 }
   }
 
   notifySyncListeners({
     type: 'sync-start',
-    data: { total: pending.length },
+    data: { total: daInviare.length },
   })
 
-  let synced = 0
-  let errors = 0
+  let inviate = 0
+  let daRiprovare = 0
+  let bloccate = 0
+  let motivo: string | undefined
 
-  for (const item of pending) {
+  for (const item of daInviare) {
     try {
       await updatePendingClosureStatus(item.id, 'syncing')
 
@@ -96,34 +183,53 @@ export async function syncPendingData(): Promise<{ success: boolean; synced: num
 
       if (response.ok) {
         await deletePendingClosure(item.id)
-        synced++
+        inviate++
         notifySyncListeners({
           type: 'sync-progress',
-          data: { total: pending.length, synced },
+          data: { total: daInviare.length, synced: inviate },
         })
+        continue
+      }
+
+      const errorData = await response.json().catch(() => ({}))
+      const dettaglio: string = errorData.error || `Il server ha risposto ${response.status}`
+      motivo ??= dettaglio
+
+      if (classificaRisposta(response.status) === 'definitivo') {
+        await blockPendingClosure(item.id, dettaglio)
+        bloccate++
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-        await updatePendingClosureStatus(item.id, 'error', errorData.error)
-        errors++
+        await updatePendingClosureStatus(item.id, 'error', dettaglio)
+        daRiprovare++
       }
     } catch (error) {
-      await updatePendingClosureStatus(
-        item.id,
-        'error',
-        error instanceof Error ? error.message : 'Network error'
-      )
-      errors++
+      // Qui la rete è caduta di nuovo a metà giro: la riga torna in attesa,
+      // non è colpa sua.
+      const dettaglio = error instanceof Error ? error.message : 'Errore di rete'
+      motivo ??= dettaglio
+      await updatePendingClosureStatus(item.id, 'error', dettaglio)
+      daRiprovare++
     }
   }
 
-  const success = errors === 0
+  const tutteConsegnate = daRiprovare === 0 && bloccate === 0
 
+  // L'esito viaggia sugli eventi e non solo nel valore restituito: chi lo
+  // racconta all'utente non è chi ha avviato il giro. La sincronizzazione può
+  // partire dall'ascoltatore `online` qui sopra o da un messaggio del service
+  // worker, e in quei casi non c'è nessuna chiamata di cui leggere il ritorno.
   notifySyncListeners({
-    type: success ? 'sync-complete' : 'sync-error',
-    data: { total: pending.length, synced },
+    type: tutteConsegnate ? 'sync-complete' : 'sync-error',
+    data: {
+      total: daInviare.length,
+      synced: inviate,
+      error: motivo,
+      daRiprovare,
+      bloccate,
+    },
   })
 
-  return { success, synced, errors }
+  return { inviate, daRiprovare, bloccate, motivo }
 }
 
 // Pre-cache data for offline use

@@ -16,6 +16,12 @@ import { ClosureSummaryCard } from './ClosureSummaryCard'
 import { ClosureActions } from './ClosureActions'
 import { useClosureCalculations } from './hooks/useClosureCalculations'
 import { toast } from 'sonner'
+import {
+  AVVISO_OFFLINE,
+  ErroreSenzaRete,
+  esitoOppureNiente,
+  type EsitoSalvataggio,
+} from '@/lib/offline'
 
 import { logger } from '@/lib/logger'
 
@@ -97,8 +103,8 @@ interface ClosureFormProps {
   accounts: { id: string; code: string; name: string }[]
   closureId?: string
   status?: 'DRAFT' | 'SUBMITTED' | 'VALIDATED'
-  onSave?: (data: ClosureFormData) => Promise<void>
-  onSubmit?: (data: ClosureFormData) => Promise<void>
+  onSave?: (data: ClosureFormData) => Promise<EsitoSalvataggio | void>
+  onSubmit?: (data: ClosureFormData) => Promise<EsitoSalvataggio | void>
 }
 
 export function ClosureForm({
@@ -293,11 +299,38 @@ export function ClosureForm({
 
     setIsSaving(true)
     try {
-      await onSave(formData)
+      const esito = esitoOppureNiente(await onSave(formData))
+
+      // Conflitto: il messaggio e il cambio di pagina sono già partiti da chi
+      // ha parlato col server. Un «Bozza salvata» qui sopra sarebbe il secondo
+      // messaggio, e direbbe il contrario del primo.
+      if (esito?.esito === 'conflitto') return
+
+      if (esito?.esito === 'in-coda') {
+        toast.success('Chiusura salvata su questo dispositivo', {
+          id: AVVISO_OFFLINE,
+          description:
+            'Sei offline: partirà da sola appena torna la rete. Puoi chiudere la pagina.',
+          duration: 8000,
+        })
+        return
+      }
+
       toast.success('Bozza salvata', {
         description: 'La chiusura è stata salvata correttamente.',
       })
     } catch (error) {
+      // Senza rete e senza coda: quello che si può dire è solo questo, e va
+      // detto sul canale degli avvisi offline, che così ne mostra uno solo.
+      if (error instanceof ErroreSenzaRete) {
+        toast.warning('Chiusura non salvata', {
+          id: AVVISO_OFFLINE,
+          description: error.message,
+          duration: 10000,
+        })
+        return
+      }
+
       logger.error('Errore salvataggio', error)
       const err = error instanceof Error ? error : new Error('Errore nel salvataggio')
       const details = Array.isArray((err as unknown as { details?: unknown }).details)
@@ -432,12 +465,37 @@ export function ClosureForm({
 
     setIsSubmitting(true)
     try {
-      await onSubmit(formData)
+      const esito = esitoOppureNiente(await onSubmit(formData))
+
+      if (esito?.esito === 'conflitto') return
+
+      if (esito?.esito === 'in-coda') {
+        // La coda porta al server una bozza: l'invio per validazione è un
+        // secondo passo che il server deve accettare, e non si può fingere che
+        // sia già avvenuto.
+        toast.success('Chiusura salvata su questo dispositivo', {
+          id: AVVISO_OFFLINE,
+          description:
+            "Sei offline: partirà come bozza appena torna la rete. L'invio per validazione va rifatto da lì.",
+          duration: 10000,
+        })
+        return
+      }
+
       toast.success('Inviata per validazione', {
         description: 'La chiusura è stata inviata correttamente.',
       })
       router.push('/chiusura-cassa')
     } catch (error) {
+      if (error instanceof ErroreSenzaRete) {
+        toast.warning('Chiusura non inviata', {
+          id: AVVISO_OFFLINE,
+          description: error.message,
+          duration: 10000,
+        })
+        return
+      }
+
       logger.error('Errore invio', error)
       const err = error instanceof Error ? error : new Error("Errore nell'invio")
       const details = Array.isArray((err as unknown as { details?: unknown }).details)

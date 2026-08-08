@@ -116,6 +116,20 @@ export async function getDB(): Promise<IDBPDatabase<WeissDB>> {
 }
 
 // Pending closures operations
+
+/** Una chiusura che aspetta di arrivare al server. */
+export type ChiusuraInCoda = WeissDB['pendingClosures']['value']
+
+/**
+ * Quante volte si riprova a inviare una chiusura prima di smettere.
+ *
+ * Smettere non vuol dire buttarla: la riga resta in coda e resta contata,
+ * perché contiene il conteggio di cassa di una serata e non spetta al codice
+ * decidere di perderlo. Il limite serve solo a non ribattere sul server, a ogni
+ * riconnessione e per sempre, un errore che da sé non cambierà.
+ */
+export const MAX_TENTATIVI_INVIO = 5
+
 export async function savePendingClosure(data: unknown): Promise<string> {
   const db = await getDB()
   const id = `pending-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
@@ -131,9 +145,56 @@ export async function savePendingClosure(data: unknown): Promise<string> {
   return id
 }
 
-export async function getPendingClosures() {
+/**
+ * Tutto ciò che non è ancora arrivato al server, in qualunque stato: in attesa,
+ * in invio, o rifiutato.
+ *
+ * Il numero mostrato all'utente si legge da qui e non dal solo stato `pending`:
+ * una chiusura che il server ha rifiutato uscirebbe dal contatore pur restando
+ * in IndexedDB, e l'utente vedrebbe «0 da sincronizzare» sopra un lavoro mai
+ * consegnato. È la stessa promessa non mantenuta, spostata di un passo.
+ */
+export async function getQueuedClosures(): Promise<ChiusuraInCoda[]> {
   const db = await getDB()
-  return db.getAllFromIndex('pendingClosures', 'by-status', 'pending')
+  return db.getAll('pendingClosures')
+}
+
+/** Le righe che ha senso provare a inviare adesso. */
+export async function getSyncableClosures(): Promise<ChiusuraInCoda[]> {
+  const inCoda = await getQueuedClosures()
+  return inCoda.filter(
+    (riga) =>
+      riga.status === 'pending' ||
+      (riga.status === 'error' && riga.retryCount < MAX_TENTATIVI_INVIO)
+  )
+}
+
+/** Le righe che hanno esaurito i tentativi: le deve guardare una persona. */
+export async function getBlockedClosures(): Promise<ChiusuraInCoda[]> {
+  const inCoda = await getQueuedClosures()
+  return inCoda.filter(
+    (riga) => riga.status === 'error' && riga.retryCount >= MAX_TENTATIVI_INVIO
+  )
+}
+
+/**
+ * Rimette in attesa le righe ferme in `syncing`.
+ *
+ * Ci restano quando la scheda viene chiusa a metà invio — cioè proprio la sera
+ * in cui la connessione balla. `syncing` non è uno stato da cui qualcuno
+ * riparta: senza questo, quelle righe resterebbero contate e mai più inviate.
+ * Si chiama all'inizio di ogni giro, quando per costruzione nessun invio è in
+ * corso.
+ */
+export async function requeueStalledClosures(): Promise<number> {
+  const db = await getDB()
+  const ferme = (await getQueuedClosures()).filter((riga) => riga.status === 'syncing')
+
+  for (const riga of ferme) {
+    await db.put('pendingClosures', { ...riga, status: 'pending' })
+  }
+
+  return ferme.length
 }
 
 export async function updatePendingClosureStatus(
@@ -150,6 +211,25 @@ export async function updatePendingClosureStatus(
       status,
       errorMessage,
       retryCount: status === 'error' ? closure.retryCount + 1 : closure.retryCount,
+    })
+  }
+}
+
+/**
+ * Ferma i tentativi su una riga che il server continuerà a rifiutare (una data
+ * già chiusa, dati che non passano la validazione). La riga resta, con il
+ * motivo scritto sopra: è l'unico modo perché qualcuno possa rimediare.
+ */
+export async function blockPendingClosure(id: string, errorMessage: string) {
+  const db = await getDB()
+  const closure = await db.get('pendingClosures', id)
+
+  if (closure) {
+    await db.put('pendingClosures', {
+      ...closure,
+      status: 'error',
+      errorMessage,
+      retryCount: MAX_TENTATIVI_INVIO,
     })
   }
 }
@@ -233,12 +313,12 @@ export async function getSyncMeta(store: string) {
 
 // Check if we have pending items to sync
 export async function hasPendingSync(): Promise<boolean> {
-  const pending = await getPendingClosures()
-  return pending.length > 0
+  const inCoda = await getQueuedClosures()
+  return inCoda.length > 0
 }
 
 // Get pending count
 export async function getPendingCount(): Promise<number> {
-  const pending = await getPendingClosures()
-  return pending.length
+  const inCoda = await getQueuedClosures()
+  return inCoda.length
 }
