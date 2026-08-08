@@ -391,7 +391,7 @@ export async function undoScheduleReconciliation({
     // Stesso ordine di acquisizione dei lock della riconciliazione
     // (movimento, poi scadenza): invertirlo qui basterebbe a produrre deadlock
     // fra un annullo e una riconciliazione concorrenti.
-    await bloccaMovimento(tx, riferimento.journalEntryId)
+    const movimento = await bloccaMovimento(tx, riferimento.journalEntryId)
     await bloccaScadenza(tx, riferimento.scheduleId)
 
     const reconciliation = await tx.scheduleReconciliation.findFirst({
@@ -418,7 +418,13 @@ export async function undoScheduleReconciliation({
 
     // Nessuna fetta ritirata: niente è cambiato sul movimento, non si tocca
     // (stesso principio del no-op di setEntryAllocations).
-    if (fetteRitirate.count > 0) {
+    //
+    // Il movimento può anche non esserci più: eliminare una chiusura di cassa
+    // cancella le scritture che ha generato, riconciliate comprese. L'annullo
+    // deve comunque liberare la scadenza — altrimenti resterebbe pagata per
+    // sempre a fronte di un movimento inesistente — ma su una riga cancellata
+    // non si scrive.
+    if (movimento && fetteRitirate.count > 0) {
       const numeroFette = await aggiornaContoDominante(tx, reconciliation.journalEntryId)
       if (numeroFette === 0) {
         // Fette ereditate ritirate e nessuna residua: il movimento torna alla

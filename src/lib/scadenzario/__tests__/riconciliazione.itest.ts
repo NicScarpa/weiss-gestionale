@@ -231,3 +231,52 @@ describe('lettura della scadenza dentro la transazione', () => {
     expect(dopo.stato).toBe('parzialmente_pagata')
   })
 })
+
+describe('annullo con il movimento cancellato', () => {
+  it('libera comunque la scadenza e non tocca il movimento', async () => {
+    // Succede davvero: eliminare una chiusura di cassa cancella anche le
+    // scritture che ha generato, comprese quelle già riconciliate. Se
+    // l'annullo si rifiutasse di procedere, la scadenza resterebbe pagata per
+    // sempre a fronte di un movimento che non esiste più.
+    const scadenza = await creaScadenza({ importoTotale: 100 })
+    const movimento = await creaMovimento({ uscita: 100 })
+    const riconciliazione = await riconcilia(scadenza.id, movimento.id)
+    expect(riconciliazione.status).toBe(201)
+
+    // Fetta ereditata dalla riconciliazione: è lei a far entrare l'annullo nel
+    // ramo che poi riscrive il movimento.
+    const conto = await prisma.account.findFirstOrThrow({ where: { isActive: true } })
+    await prisma.journalEntryAllocation.create({
+      data: {
+        journalEntryId: movimento.id,
+        accountId: conto.id,
+        importo: 100,
+        origine: 'ereditata',
+        reconciliationId: riconciliazione.body.id!,
+      },
+    })
+
+    await prisma.journalEntry.updateMany({
+      where: { id: movimento.id },
+      data: { deletedAt: new Date() },
+    })
+
+    const esito = await callRoute(
+      DELETE_riconciliazione,
+      jsonRequest(
+        `/api/scadenzario/${scadenza.id}/riconciliazioni/${riconciliazione.body.id}`,
+        { method: 'DELETE' }
+      ),
+      { id: scadenza.id, reconciliationId: riconciliazione.body.id! }
+    )
+
+    expect(esito.status).toBe(200)
+    expect((await rileggiScadenza(scadenza.id)).stato).toBe('aperta')
+
+    // Il movimento cancellato resta com'era: non si scrive su ciò che non c'è.
+    const grezzo = await prisma.$queryRaw<{ categorization_source: string | null }[]>`
+      SELECT categorization_source FROM journal_entries WHERE id = ${movimento.id}
+    `
+    expect(grezzo[0]?.categorization_source).not.toBe('manual')
+  })
+})
