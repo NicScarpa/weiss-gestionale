@@ -1,108 +1,108 @@
-# Debito: regole React Compiler — 40 errori in 34 file
+# Debito: regole React Compiler — ESTINTO
 
-**Rilevato:** 7 agosto 2026, durante la W3. **Stato:** non corretto, pianificato.
+**Rilevato:** 7 agosto 2026, durante la W3. **Estinto:** 8 agosto 2026, in W4, lotto D3.
+**Stato:** chiuso. `eslint-plugin-react-hooks` è alla **7.1.1**, dipendenza diretta e pinnata in
+`package.json`, e `npx eslint src` riporta **zero errori**.
 
-> **Rettifica del 7 ago (fonte: C2-ORFANI).** La prima stesura di questo documento attribuiva tutte
-> e 40 le occorrenze a `set-state-in-effect`. È sbagliato: quella regola ne fa **30**. Le altre 10
-> sono difetti diversi, con rimedi diversi, ed è per questo che l'elenco qui sotto è ora diviso per
-> regola. Chi pianifica il lotto tratti i quattro gruppi separatamente.
+Questo documento resta come racconto di come un debito possa restare invisibile per mesi. Chi cerca
+lavoro da fare qui non ne troverà: si vada al paragrafo finale, dove restano due cose aperte.
 
-## Perché è debito con una data di scadenza
+## Cos'era
 
 Chiamare `setState` **sincronamente dentro un effetto** innesca un secondo render immediato: il
 componente si disegna, l'effetto parte, lo stato cambia, il componente si ridisegna. Su una tabella
 o una pagina con più effetti concatenati diventa una cascata di render che l'utente percepisce come
 lentezza o sfarfallio.
 
-Oggi il progetto non se ne accorge perché con `eslint-plugin-react-hooks` **7.0.1 la regola non si
-attiva affatto**: `npx eslint src` sul ramo di integrazione riporta **zero** occorrenze di
-`set-state-in-effect` e di `exhaustive-deps` — solo 67 `no-unused-vars` e 4 `incompatible-library`.
-Nella **7.1.1 le stesse righe diventano errori bloccanti**: al primo aggiornamento legittimo del
-plugin — che arriverà con un `npm update` o dietro Next — **la CI si ferma su 40 errori**.
+## Perché è rimasto invisibile, ed è la parte che vale la pena ricordare
 
-> **Attenzione a non concludere che il problema non esista.** Cercandole oggi non si trova nulla, ed
-> è precisamente ciò che rende questo debito insidioso. Che le righe siano reali lo dimostra un
-> dettaglio indipendente: nel codice **esistono già deroghe scritte a mano** per quella regola —
-> `scadenzario/regole/page.tsx:55`, `scadenzario/ricorrenze/page.tsx:45`,
-> `create-schedule-sheet.tsx:170`, `saldo-scalare-panel.tsx:70`, `create-recurrence-dialog.tsx:129` —
-> e con la 7.0.1 il linter le segnala come *inutili* ("no problems were reported"). Qualcuno le ha
-> messe perché la regola scattava; oggi non scatta più; domani riscatterà.
+Il progetto non se ne accorgeva perché con `eslint-plugin-react-hooks` **7.0.1 la regola non si
+attiva affatto**. Il plugin non era una dipendenza diretta: arrivava per via transitiva da
+`eslint-config-next`, quindi la versione effettiva dipendeva da come npm risolveva l'albero. Nessuno
+l'aveva scelta, e nessuno si accorgeva che cambiasse.
 
-Sono emerse per caso, da un worktree con l'ambiente andato alla deriva (vedi `STATO-REMEDIATION.md`
-§6 n.10), ma **non sono un artefatto**: il codice è quello, e il difetto è reale a prescindere dalla
-versione del plugin che lo segnala.
+Sopra a questo si erano stratificati due modi di zittire il controllo, entrambi in buona fede:
 
-## Come affrontarle (proposta)
+- **cinque `eslint-disable` scritti a mano** per `set-state-in-effect` (in `scadenzario/regole`,
+  `scadenzario/ricorrenze`, `create-schedule-sheet`, `saldo-scalare-panel`,
+  `create-recurrence-dialog`), messi da chi vedeva la regola scattare, e che con la 7.0.1 il linter
+  segnalava addirittura come *inutili*;
+- **due `queueMicrotask`** (in `PunchButton` e `GenerationParamsForm`) che spostavano il `setState`
+  fuori dal corpo sincrono dell'effetto: la regola smette di vederlo, la cascata di render resta.
 
-Non è lavoro da infilare in un'ondata in corso: tocca 34 file di dominio diverso, molti dei quali
-appartengono ad altri lotti. Va fatto come lotto a sé, con un agente dedicato, in W4:
+La lezione: quando il numero di segnalazioni scende, prima di festeggiare va controllato **se è
+sceso il difetto o la capacità di vederlo**.
 
-1. Raggruppare per schema ricorrente. La maggioranza sarà "carico i dati e li metto nello stato"
-   (va sostituita con il caricamento dichiarativo di TanStack Query, già usato altrove nel progetto)
-   oppure "sincronizzo uno stato derivato da una prop" (va calcolato durante il render, non in un
-   effetto).
-2. Un commit per gruppo, non uno per file, così la revisione è leggibile.
-3. Alla fine, **alzare `eslint-plugin-react-hooks` alla 7.1.x nello stesso lotto**: è la prova che
-   il debito è estinto, e impedisce che rientri.
+## Cosa si è trovato davvero, contro cosa diceva questo documento
 
-## Gruppo 1 — `set-state-in-effect`: 29 occorrenze (il grosso del lavoro)
+La stima di questo documento era di 40 occorrenze, poi corrette in 39. Alzando il plugin alla 7.1.1
+prima di toccare il codice — che è stato il primo commit del lotto, proprio per misurare invece di
+fidarsi — sono emersi **43 errori bloccanti**. La ripartizione per regola era diversa da quella
+scritta qui:
 
-> Erano 30. **`src/app/(dashboard)/cash-flow/page.tsx:78` è già stata estinta** in W3 da C4, che ha
-> riscritto la pagina con TanStack Query: nessun `useEffect`, i `useState` rimasti tengono solo i
-> filtri di data. È esattamente il rimedio proposto qui sotto al punto 1, e vale come prova che
-> funziona.
+| regola | diceva il documento | era davvero |
+|---|---|---|
+| `set-state-in-effect` | 29 errori | **36 errori** |
+| `exhaustive-deps` | 8 errori | **1 warning** (non blocca) |
+| `immutability` | 1 errore | **6 errori** |
+| `preserve-manual-memoization` | 1 errore | 1 errore |
+| `incompatible-library` | 5 warning irrisolvibili | **5 warning, tutti risolti** |
 
-```
-src/app/(auth)/invito/page.tsx:45
-src/app/(auth)/login/page.tsx:52
-src/app/(auth)/reset-password/page.tsx:30
-src/app/(dashboard)/anagrafiche/clienti/page.tsx:62,86
-src/app/(dashboard)/anagrafiche/utenti/page.tsx:55,86
-src/app/(dashboard)/budget/BudgetList.tsx:123
-src/app/(dashboard)/budget/[id]/BudgetDetailClient.tsx:120
-src/app/(dashboard)/budget/confronto/BudgetConfrontoClient.tsx:192
-src/app/(dashboard)/chiusura-cassa/ClosureList.tsx:155
-src/app/(dashboard)/fatture/page.tsx:69
-src/app/(dashboard)/prima-nota/movimenti/MovimentiClient.tsx:137
-src/app/(dashboard)/prima-nota/pagamenti/PagamentiClient.tsx:63
-src/app/(dashboard)/report/incassi-giornalieri/DailyRevenueClient.tsx:229
-src/app/(dashboard)/riconciliazione/RiconciliazioneClient.tsx:84
-src/app/(dashboard)/turni/[id]/page.tsx:117
-src/components/portal/PunchButton.tsx:291
-src/components/prima-nota/movimenti/SplitEntryDialog.tsx:80
-src/components/prima-nota/regole/CategorizationProposalsDialog.tsx:76
-src/components/prima-nota/regole/CategorizationRulesManager.tsx:85
-src/components/reconciliation/MatchDialog.tsx:72
-src/components/reconciliation/TransactionDetailsDialog.tsx:103
-src/components/scadenzario/payment-dialog.tsx:70
-src/components/settings/VenueManagement.tsx:69
-src/components/ui/address-autocomplete.tsx:60
-src/components/ui/payee-autocomplete.tsx:58,64
-src/hooks/useOffline.ts:49
-```
+Gli errori attribuiti a `exhaustive-deps` erano in realtà `immutability` (funzioni usate prima di
+essere dichiarate) e `set-state-in-effect`. E ai 43 vanno aggiunte le occorrenze nascoste dalle
+cinque deroghe, che nessun conteggio poteva vedere.
 
-## Gruppo 2 — `exhaustive-deps`: 8 occorrenze (errori)
+**Le `incompatible-library` non erano irrisolvibili.** `react-hook-form` offre `useWatch`, che è
+l'equivalente memoizzabile di `form.watch(nome)`. La cosa contava più di un avviso in meno: il
+messaggio della regola è *"Compilation Skipped"*, cioè finché c'è il compiler **non analizza affatto
+quel componente** e nessun'altra regola gira su di esso. Appena `UserForm` è tornato analizzabile è
+emersa una violazione di `set-state-in-effect` che nessuno aveva mai visto. Mettere a tacere quegli
+avvisi, come questo documento proponeva, avrebbe lasciato cinque componenti fuori dai controlli.
 
-Dipendenze di effetti dichiarate male: rimedio diverso, spesso la dipendenza va aggiunta o l'effetto
-va eliminato del tutto.
+## Come è stato affrontato
 
-```
-src/components/scadenzario/create-schedule-sheet.tsx:231
-src/components/settings/AccountMappingManager.tsx:186,192
-src/components/settings/BancheEContiClient.tsx:104
-src/components/settings/BudgetCategoryManagement.tsx:115,121,122
-src/components/settings/SupplierManagement.tsx:112
-```
+Un commit per gruppo, non per file:
 
-## Gruppo 3 — un caso ciascuno
+1. l'aggiornamento del plugin alla 7.1.1, che rende visibile il debito;
+2. lo stato derivato calcolato durante il render invece che in un effetto;
+3. il caricamento dati passato a **TanStack Query** (18 file), che il progetto già usava altrove;
+4. le funzioni usate prima di essere dichiarate, nei manager delle impostazioni;
+5. le pagine di autenticazione;
+6. lo stato del browser letto con `useSyncExternalStore` invece che copiato;
+7. il portale e la memoizzazione manuale di `ClosureForm`;
+8. i sei dialog il cui form era riallineato da un effetto, ora rimontati con una `key`;
+9. `watch()` → `useWatch`;
+10. le ultime tre deroghe scritte a mano.
 
-- `preserve-manual-memoization`: `src/components/chiusura/ClosureForm.tsx:122`
-- `immutability`: `src/components/portal/NotificationSettings.tsx:52`
+Due trappole incontrate, che valgono per chi farà conversioni simili:
 
-## Gruppo 4 — restano avvisi anche nella 7.1.1 (non bloccano)
+- **L'oggetto restituito da `useMutation` cambia identità a ogni render.** Usarlo come dipendenza di
+  un effetto che lo invoca produce un ciclo infinito. Vanno usati `mutate` e `isPending`, che
+  TanStack Query mantiene stabili.
+- **`refetchOnMount: 'always'` non basta.** Copre il montaggio, ma quando cambia la `queryKey` a
+  componente montato il ricaricamento passa da `shouldFetchOptionally`, subordinato alla staleness.
+  Con lo `staleTime` globale di 60s si sarebbe tornati su un filtro usato da meno di un minuto
+  vedendo dati vecchi. Serve `staleTime: 0` accanto, ed è così in tutte le 22 query del lotto.
 
-- `incompatible-library`, 5: `LeaveRequestForm.tsx:235`, `MovimentoFormDialog.tsx:105`,
-  `PagamentoFormDialog.tsx:279`, `RegolaFormDialog.tsx:98`, `UserForm.tsx:115`. Tutti sul `watch()`
-  di react-hook-form, che restituisce funzioni non memoizzabili dal React Compiler: **verosimilmente
-  non risolvibili**. Vanno esclusi con una deroga motivata, non "corretti".
-- `exhaustive-deps`, 1: `create-recurrence-dialog.tsx:147`.
+## Cosa resta aperto
+
+1. **Una `incompatible-library` in `src/components/prima-nota/movimenti/MovimentoFormDialog.tsx`**
+   (righe 105 e 381). Il file apparteneva a un altro agente durante il lotto e non è stato toccato.
+   Si risolve come le altre quattro: `form.watch(nome)` → `useWatch({ control: form.control, name })`.
+   Dopo la conversione **va rifatto il lint**, perché rendendo il componente analizzabile possono
+   emergere violazioni finora invisibili — è successo con `UserForm`.
+
+2. **Il `queueMicrotask` in `src/components/shifts/GenerationParamsForm.tsx`** (riga ~65). Nessuna
+   regola lo segnala, ed è precisamente il motivo per cui è segnalato qui: è la stessa cascata di
+   render, scritta in modo che il linter non la veda. Il componente riceve ora il fabbisogno di
+   personale già corretto al primo render, quindi l'effetto che lo risincronizza dovrebbe essere
+   eliminabile del tutto.
+
+## Come impedire che rientri
+
+`eslint-plugin-react-hooks` è ora una **dipendenza diretta e pinnata** in `package.json`: non può più
+cambiare versione da sola dietro `eslint-config-next`. Il lint fa parte del gate e del pre-commit
+hook, e con la 7.1.1 queste regole sono errori bloccanti.
+
+Se in futuro il conteggio delle segnalazioni scende senza che nessuno abbia corretto nulla, la prima
+ipotesi da verificare non è che il codice sia migliorato.
