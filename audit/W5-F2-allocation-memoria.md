@@ -161,8 +161,33 @@ denaro (nato in W1, l'unico che usa `decimal.js`). L'allocazione non lo usa: `ri
 `calcolaPesiDaRighe` e i controlli di quadratura di `setEntryAllocations` lavorano con i numeri a
 virgola mobile di JavaScript, e le somme dei `Decimal` letti dal database passano tutte da `Number()`.
 
-**Verifica:** `ripartisciProQuota` è una funzione pura senza accessi al database — basta chiamarla con i
-pesi qui sopra e sommare il risultato.
+**Perché è difficile da incontrare per caso.** Lo scarto compare solo se la quota esatta spettante
+all'**ultima** fetta, espressa in centesimi, è più piccola di quanto gli arrotondamenti delle fette
+precedenti hanno già consumato — al massimo mezzo centesimo per fetta, quindi circa `(N-1)/2`. In
+formula: serve `quota × peso_minimo ÷ totale_pesi` sotto i due o tre centesimi. Con conti di importo
+paragonabile fra loro non succede mai: nel caso 2 qui sotto la fetta più piccola vale
+`731,34 × 0,01 ÷ 5.375,75 = 0,0014 €`, cioè un settimo di centesimo, contro tre centesimi di
+arrotondamenti accumulati. Chi cerca il difetto generando importi tutti dello stesso ordine di
+grandezza non lo trova, ed è il motivo per cui una ricerca su 200.000 combinazioni può dare zero.
+
+**Riproduzione.** La funzione è pura e non tocca il database: il file
+`audit/prova-F2-ALL-003.mjs` contiene la copia integrale di `ripartisciProQuota` (solo i tipi rimossi)
+e i tre casi qui sotto. Si esegue con `node audit/prova-F2-ALL-003.mjs`.
+
+| Caso | Conti | Quota | Somma delle fette | Scarto |
+|---|---|---|---|---|
+| 1 — nove conti di peso identico | 9 | 0,05 € | 0,08 € | **+3 cent** |
+| 2 — pesi realistici, ultima riga da 0,01 € | 11 | 731,34 € | 731,37 € | **+3 cent** |
+| controprova — il caso 2 **senza** la riga da 0,01 € | 10 | 731,34 € | 731,34 € | 0 |
+
+Il caso 1 si verifica a mente: nove conti di peso uguale, quota 5 centesimi. La quota esatta di ciascuno
+è `5 ÷ 9 = 0,555…` centesimi, che `Math.round` porta a 1. Le prime otto fette prendono 1 centesimo
+ciascuna, cioè 8 in tutto, su una quota che ne valeva 5. Il residuo per la nona è `5 − 8 = −3`, e
+`if (centesimi > 0)` lo butta via invece di sottrarlo: restano otto fette da un centesimo, 0,08 € contro
+0,05 €.
+
+La controprova è la parte che conta: gli stessi identici dieci conti del caso 2, tolta soltanto la riga
+da un centesimo, quadrano al centesimo. È quella riga a fare la differenza, non i pesi.
 
 ---
 
