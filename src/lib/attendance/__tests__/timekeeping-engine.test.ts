@@ -642,6 +642,112 @@ describe('computeRecognizedDay', () => {
     expect(giorno.workedMinutes).toBe(at(8) + 30)
   })
 
+  it('segnala la pausa iniziata e mai chiusa senza toccare le ore', () => {
+    // Il turno serale del bar: regola senza pausa pranzo, pausa lunga presa
+    // davvero e BREAK_END dimenticato.
+    //
+    // Le ore restano nove: nessuno viene pagato di meno per una dimenticanza,
+    // ed è una decisione di chi paga gli stipendi, non del motore. Ciò che
+    // cambia è che la giornata lo dichiara — e su quell'avviso l'export delle
+    // paghe si ferma. Prima l'ora regalata arrivava muta al consulente.
+    const giorno = computeRecognizedDay(
+      [inAt(at(9)), punch('BREAK_START', at(13)), outAt(at(18))],
+      makePolicy({ lunch: null }),
+      makeContext()
+    )
+
+    expect(giorno.workedMinutes).toBe(at(9))
+    expect(giorno.breakMinutes).toBe(0)
+    expect(giorno.warnings).toContain('PAUSA_NON_CHIUSA')
+  })
+
+  it('la pausa mai chiusa non cambia le ore nemmeno nel turno spezzato', () => {
+    const giorno = computeRecognizedDay(
+      [
+        inAt(at(7)),
+        punch('BREAK_START', at(12)),
+        outAt(at(13)),
+        inAt(at(17)),
+        outAt(at(22)),
+      ],
+      makePolicy({
+        dayStartMinutes: at(7),
+        dayEndMinutes: at(22),
+        lunch: null,
+        contractDailyMinutes: null,
+      }),
+      makeContext()
+    )
+
+    expect(giorno.workedMinutes).toBe(at(11))
+    expect(giorno.breakMinutes).toBe(0)
+    expect(giorno.warnings).toContain('PAUSA_NON_CHIUSA')
+  })
+
+  it('con la pausa chiusa regolarmente non segnala nulla', () => {
+    const giorno = computeRecognizedDay(
+      [
+        inAt(at(9)),
+        punch('BREAK_START', at(13)),
+        punch('BREAK_END', at(14)),
+        outAt(at(18)),
+      ],
+      makePolicy({ lunch: null }),
+      makeContext()
+    )
+
+    expect(giorno.breakMinutes).toBe(60)
+    expect(giorno.workedMinutes).toBe(at(8))
+    expect(giorno.warnings).not.toContain('PAUSA_NON_CHIUSA')
+  })
+
+  it('due pause aperte e una sola chiusa: la prima resta comunque segnalata', () => {
+    // Il calcolo è quello di sempre — vale l'ultimo inizio pausa, 30 minuti —
+    // ma la pausa delle 13:00 non è mai stata chiusa e la giornata lo deve
+    // dire. Senza questo, il caso sfuggirebbe proprio perché un BREAK_END
+    // in fondo alla giornata c'è.
+    const giorno = computeRecognizedDay(
+      [
+        inAt(at(9)),
+        punch('BREAK_START', at(13)),
+        punch('BREAK_START', at(15)),
+        punch('BREAK_END', at(15, 30)),
+        outAt(at(18)),
+      ],
+      makePolicy({ lunch: null }),
+      makeContext()
+    )
+
+    expect(giorno.breakMinutes).toBe(30)
+    expect(giorno.workedMinutes).toBe(at(8, 30))
+    expect(giorno.warnings).toContain('PAUSA_NON_CHIUSA')
+  })
+
+  it('la pausa mai chiusa lascia una traccia con gli orari', () => {
+    const giorno = computeRecognizedDay(
+      [inAt(at(9)), punch('BREAK_START', at(13)), outAt(at(18))],
+      makePolicy({ lunch: null }),
+      makeContext()
+    )
+
+    expect(giorno.steps.join(' ')).toContain('13:00')
+    expect(giorno.steps.join(' ')).toContain('mai chiusa')
+  })
+
+  it('con la pausa pranzo della regola la deduzione resta quella di prima', () => {
+    // La regola deduce comunque la sua ora di pranzo: la pausa aperta non
+    // aggiunge né toglie nulla al calcolo, segnala soltanto.
+    const giorno = computeRecognizedDay(
+      [inAt(at(9)), punch('BREAK_START', at(13)), outAt(at(18))],
+      makePolicy(),
+      makeContext()
+    )
+
+    expect(giorno.breakMinutes).toBe(60)
+    expect(giorno.workedMinutes).toBe(at(8))
+    expect(giorno.warnings).toContain('PAUSA_NON_CHIUSA')
+  })
+
   it('lascia una traccia leggibile dei passaggi, per il calcolatore di prova', () => {
     const giorno = computeRecognizedDay(
       [inAt(at(8)), outAt(at(18, 20))],

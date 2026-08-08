@@ -34,13 +34,27 @@ export type TransactionClient = Omit<
  * e uscita insieme, e o entrano entrambe o nessuna.
  */
 
+/**
+ * Autore delle timbrature scritte dalla chiusura automatica.
+ *
+ * Non è un id utente: nessuna persona ha deciso quell'orario. È la stringa su
+ * cui il motore riconosce una supposizione del sistema — e quindi la sostituisce
+ * quando arriva una correzione approvata (`payroll-calculator.ts`, `origineDi`).
+ * Sta qui, in un punto solo, perché scritta e riletta devono coincidere: un
+ * refuso da una parte sola farebbe rileggere quegli orari come timbrature vere.
+ */
+export const AUTORE_SISTEMA = 'SYSTEM'
+
 export interface ManualPunchInput {
   userId: string
   venueId: string
   workLocationId?: string | null
   punchType: PunchType
   punchedAt: Date
-  /** Chi la sta inserendo (admin, manager o revisore della richiesta). */
+  /**
+   * Chi la sta inserendo (admin, manager o revisore della richiesta), oppure
+   * `AUTORE_SISTEMA` per la chiusura automatica, che non ha un utente dietro.
+   */
   enteredById: string
   reason: string
   notes?: string | null

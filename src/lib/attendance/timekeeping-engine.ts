@@ -197,7 +197,9 @@ const DOPPIA_USCITA_TOLLERANZA_MINUTI = 15
  * aperto si ignora (vale la prima); un'uscita doppia entro pochi minuti dalla
  * fine del turno lo estende (vale l'ultima); **oltre quel margine l'uscita è
  * orfana**, cioè le manca l'entrata, e viene scartata invece di allungare il
- * turno precedente; un'uscita senza nessuna entrata prima si ignora.
+ * turno precedente; un'uscita senza nessuna entrata prima si ignora; un
+ * inizio pausa che ne sostituisce un altro ancora aperto vale come quello
+ * buono, ma la pausa sostituita viene segnalata: non è mai stata chiusa.
  */
 function pairPunches(ordered: DayPunch[]): {
   segments: Interval[]
@@ -206,10 +208,13 @@ function pairPunches(ordered: DayPunch[]): {
   danglingIn: number | null
   /** Uscite troppo lontane per essere un doppio tocco: manca la loro entrata. */
   orphanExits: number[]
+  /** Inizi di pausa rimasti senza BREAK_END: segnalati, non dedotti. */
+  danglingBreaks: number[]
 } {
   const segments: Interval[] = []
   const punchedBreaks: Interval[] = []
   const orphanExits: number[] = []
+  const danglingBreaks: number[] = []
   let openIn: number | null = null
   let openBreak: number | null = null
   let hasIn = false
@@ -236,6 +241,12 @@ function pairPunches(ordered: DayPunch[]): {
         }
       }
     } else if (punch.type === 'BREAK_START') {
+      // Un inizio pausa che ne sostituisce un altro ancora aperto lascia
+      // indietro una pausa mai chiusa: il calcolo resta quello di sempre
+      // (vale l'ultimo inizio), ma quella sostituita va segnalata.
+      if (openBreak !== null) {
+        danglingBreaks.push(openBreak)
+      }
       openBreak = punch.minutes
     } else if (punch.type === 'BREAK_END' && openBreak !== null) {
       if (punch.minutes > openBreak) {
@@ -245,7 +256,18 @@ function pairPunches(ordered: DayPunch[]): {
     }
   }
 
-  return { segments, punchedBreaks, hasIn, danglingIn: openIn, orphanExits }
+  if (openBreak !== null) {
+    danglingBreaks.push(openBreak)
+  }
+
+  return {
+    segments,
+    punchedBreaks,
+    hasIn,
+    danglingIn: openIn,
+    orphanExits,
+    danglingBreaks: danglingBreaks.sort((a, b) => a - b),
+  }
 }
 
 /** Minuti dell'intervallo [start, end] che cadono dentro i segmenti. */
@@ -537,6 +559,22 @@ export function computeRecognizedDay(
           .map((s) => `${formatMinutes(s.start)}-${formatMinutes(s.end)}`)
           .join(', ') +
         '.'
+    )
+  }
+
+  // La pausa iniziata e mai chiusa NON viene dedotta: le ore restano quelle
+  // di prima. È una decisione di prodotto presa da chi paga gli stipendi —
+  // nessuno viene pagato di meno per una dimenticanza — e per questo il
+  // motore non tocca il calcolo. Cambia che il dato incompleto si dichiara:
+  // la giornata alza un avviso, e su quell'avviso l'export delle paghe si
+  // rifiuta di partire finché un umano non ha guardato. Prima l'ora regalata
+  // passava muta fino al consulente del lavoro.
+  if (paired.danglingBreaks.length > 0) {
+    warnings.push('PAUSA_NON_CHIUSA')
+    const orari = paired.danglingBreaks.map(formatMinutes).join(', ')
+    steps.push(
+      `Pausa iniziata alle ${orari} e mai chiusa: le ore restano quelle ` +
+        "timbrate, ma la giornata va verificata prima dell'export."
     )
   }
 

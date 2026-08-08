@@ -96,6 +96,43 @@ export async function GET(request: NextRequest) {
       venueId || undefined
     )
 
+    // Secondo blocco: le giornate che il motore sa incomplete.
+    //
+    // Una pausa iniziata e mai chiusa non cambia le ore — il titolare ha
+    // deciso che nessuno viene pagato di meno per una dimenticanza — ma
+    // quell'ora regalata non deve arrivare al consulente del lavoro senza
+    // che un umano l'abbia guardata. Si sblocca completando il dato: la
+    // timbratura mancante si inserisce da `POST /api/attendance/manual`,
+    // oppure la porta una richiesta di correzione approvata.
+    //
+    // Il controllo sta qui e non sulle anomalie salvate perché nessun
+    // percorso di scrittura se ne accorge: quando arriva il BREAK_START non
+    // si sa ancora che il BREAK_END non arriverà, e il cron della chiusura
+    // automatica guarda solo chi non ha timbrato l'uscita. Lo sa soltanto il
+    // calcolo — che è anche l'unico modo di coprire i mesi già archiviati.
+    const giornateIncomplete = records.filter((r) =>
+      r.dayWarnings.includes('PAUSA_NON_CHIUSA')
+    )
+
+    if (giornateIncomplete.length > 0) {
+      const dettagli = giornateIncomplete.map(
+        (r) =>
+          `${r.lastName} ${r.firstName} — ` +
+          `${r.date.toISOString().slice(0, 10).split('-').reverse().join('/')} ` +
+          '(pausa iniziata e mai chiusa)'
+      )
+      return NextResponse.json(
+        {
+          error:
+            `Export bloccato: ${giornateIncomplete.length} giornate con una pausa ` +
+            'iniziata e mai chiusa. Le ore restano quelle timbrate, ma il dato è ' +
+            "incompleto: inserisci la fine della pausa mancante, poi riprova.",
+          details: dettagli,
+        },
+        { status: 409 }
+      )
+    }
+
     // Nome mese
     const monthDate = new Date(filters.year, filters.month - 1)
     const monthName = format(monthDate, 'MMMM yyyy', { locale: it })
