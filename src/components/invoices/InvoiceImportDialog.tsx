@@ -5,7 +5,7 @@
  * Supports Batch Upload
  */
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import {
@@ -226,7 +226,9 @@ export function InvoiceImportDialog({
   const [, setZipExtraction] = useState<ZipExtractionState | null>(null)
   
   // Review Item State
-  const [selectedVenueId, setSelectedVenueId] = useState<string>('')
+  // Finché l'utente non sceglie vale la prima sede caricata: è un valore
+  // derivato dalla risposta, non uno stato da riallineare con un effetto.
+  const [sedeScelta, setSedeScelta] = useState<string | null>(null)
   const [selectedAccountId, setSelectedAccountId] = useState<string>('_none')
   const [createNewSupplier, setCreateNewSupplier] = useState(false)
   const [, setSupplierFormOpen] = useState(true)
@@ -250,13 +252,8 @@ export function InvoiceImportDialog({
     enabled: open,
   })
 
-  // Set default venue (single-venue: use first venue from API)
-  useEffect(() => {
-    if (venues?.length && !selectedVenueId) {
-      const venueId = venues[0].id
-      queueMicrotask(() => setSelectedVenueId(venueId))
-    }
-  }, [venues, selectedVenueId])
+  // Sede predefinita (installazione a sede unica: la prima che l'API restituisce)
+  const selectedVenueId = sedeScelta ?? venues?.[0]?.id ?? ''
 
   const resetDialog = useCallback(() => {
     setStep('upload')
@@ -723,7 +720,7 @@ export function InvoiceImportDialog({
             <div className="grid grid-cols-2 gap-4">
                <div className="space-y-2">
                 <Label>Sede *</Label>
-                <Select value={selectedVenueId} onValueChange={setSelectedVenueId}>
+                <Select value={selectedVenueId} onValueChange={setSedeScelta}>
                   <SelectTrigger>
                     <SelectValue placeholder="Seleziona sede" />
                   </SelectTrigger>

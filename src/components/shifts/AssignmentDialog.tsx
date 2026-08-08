@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import {
   Dialog,
@@ -87,6 +87,33 @@ interface AssignmentDialogProps {
   isReadOnly?: boolean
 }
 
+/** I valori con cui il form nasce: quelli dell'assegnazione, o quelli del turno tipo scelto. */
+function datiIniziali(
+  assignment: Assignment | undefined,
+  shiftDefId: string | undefined,
+  shiftDefinitions: ShiftDefinition[]
+) {
+  if (assignment) {
+    return {
+      userId: assignment.userId,
+      shiftDefinitionId: assignment.shiftDefinitionId || '',
+      startTime: assignment.startTime,
+      endTime: assignment.endTime,
+      breakMinutes: assignment.breakMinutes,
+      notes: assignment.notes || '',
+    }
+  }
+  const selectedShift = shiftDefinitions.find(s => s.id === shiftDefId)
+  return {
+    userId: '',
+    shiftDefinitionId: shiftDefId || '',
+    startTime: selectedShift?.startTime || '09:00',
+    endTime: selectedShift?.endTime || '17:00',
+    breakMinutes: selectedShift?.breakMinutes || 0,
+    notes: '',
+  }
+}
+
 export function AssignmentDialog({
   open,
   onOpenChange,
@@ -98,19 +125,68 @@ export function AssignmentDialog({
   assignment,
   isReadOnly = false,
 }: AssignmentDialogProps) {
+  const isEditMode = !!assignment
+  const displayDate = date || (assignment ? new Date(assignment.date) : new Date())
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle>
+            {isEditMode ? 'Modifica Turno' : 'Assegna Turno'}
+          </DialogTitle>
+          <DialogDescription>
+            {format(displayDate, 'EEEE d MMMM yyyy', { locale: it })}
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Radix smonta il contenuto alla chiusura, quindi il form nasce da capo
+            a ogni apertura; la `key` lo rifà anche quando si passa da
+            un'assegnazione all'altra senza chiudere. Prima a riallinearlo era un
+            effetto, che è il motivo per cui serviva il queueMicrotask. */}
+        <ModuloAssegnazione
+          key={assignment?.id ?? `nuova-${shiftDefId ?? ''}-${date?.toISOString() ?? ''}`}
+          scheduleId={scheduleId}
+          venueId={venueId}
+          shiftDefinitions={shiftDefinitions}
+          date={date}
+          shiftDefId={shiftDefId}
+          assignment={assignment}
+          isReadOnly={isReadOnly}
+          onChiudi={() => onOpenChange(false)}
+        />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ModuloAssegnazione({
+  scheduleId,
+  venueId,
+  shiftDefinitions,
+  date,
+  shiftDefId,
+  assignment,
+  isReadOnly,
+  onChiudi,
+}: {
+  scheduleId: string
+  venueId: string
+  shiftDefinitions: ShiftDefinition[]
+  date?: Date
+  shiftDefId?: string
+  assignment?: Assignment
+  isReadOnly: boolean
+  onChiudi: () => void
+}) {
   const queryClient = useQueryClient()
   const isEditMode = !!assignment
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   // Form state
-  const [formData, setFormData] = useState({
-    userId: '',
-    shiftDefinitionId: '',
-    startTime: '',
-    endTime: '',
-    breakMinutes: 0,
-    notes: '',
-  })
+  const [formData, setFormData] = useState(() =>
+    datiIniziali(assignment, shiftDefId, shiftDefinitions)
+  )
 
   // Carica staff
   const { data: staffData } = useQuery({
@@ -120,40 +196,9 @@ export function AssignmentDialog({
       if (!res.ok) throw new Error('Errore nel caricamento staff')
       return res.json()
     },
-    enabled: open,
   })
 
   const staffList: StaffMember[] = staffData?.data || []
-
-  // Inizializza form quando si apre
-  useEffect(() => {
-    if (open) {
-      queueMicrotask(() => {
-        if (assignment) {
-          // Modifica
-          setFormData({
-            userId: assignment.userId,
-            shiftDefinitionId: assignment.shiftDefinitionId || '',
-            startTime: assignment.startTime,
-            endTime: assignment.endTime,
-            breakMinutes: assignment.breakMinutes,
-            notes: assignment.notes || '',
-          })
-        } else {
-          // Nuova assegnazione
-          const selectedShift = shiftDefinitions.find(s => s.id === shiftDefId)
-          setFormData({
-            userId: '',
-            shiftDefinitionId: shiftDefId || '',
-            startTime: selectedShift?.startTime || '09:00',
-            endTime: selectedShift?.endTime || '17:00',
-            breakMinutes: selectedShift?.breakMinutes || 0,
-            notes: '',
-          })
-        }
-      })
-    }
-  }, [open, assignment, shiftDefId, shiftDefinitions])
 
   // Quando cambia turno, aggiorna orari
   const handleShiftChange = (shiftId: string) => {
@@ -197,7 +242,7 @@ export function AssignmentDialog({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['schedule', scheduleId] })
       toast.success('Turno assegnato')
-      onOpenChange(false)
+      onChiudi()
     },
     onError: (error: Error) => {
       toast.error(error.message)
@@ -224,7 +269,7 @@ export function AssignmentDialog({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['schedule', scheduleId] })
       toast.success('Turno aggiornato')
-      onOpenChange(false)
+      onChiudi()
     },
     onError: (error: Error) => {
       toast.error(error.message)
@@ -246,7 +291,7 @@ export function AssignmentDialog({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['schedule', scheduleId] })
       toast.success('Turno eliminato')
-      onOpenChange(false)
+      onChiudi()
     },
     onError: (error: Error) => {
       toast.error(error.message)
@@ -273,21 +318,9 @@ export function AssignmentDialog({
   }
 
   const selectedStaff = staffList.find(s => s.id === formData.userId)
-  const displayDate = date || (assignment ? new Date(assignment.date) : new Date())
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>
-              {isEditMode ? 'Modifica Turno' : 'Assegna Turno'}
-            </DialogTitle>
-            <DialogDescription>
-              {format(displayDate, 'EEEE d MMMM yyyy', { locale: it })}
-            </DialogDescription>
-          </DialogHeader>
-
           <div className="space-y-4 py-4">
             {/* Selezione dipendente */}
             <div className="space-y-2">
@@ -428,7 +461,7 @@ export function AssignmentDialog({
             <Button
               type="button"
               variant="outline"
-              onClick={() => onOpenChange(false)}
+              onClick={onChiudi}
             >
               {isReadOnly ? 'Chiudi' : 'Annulla'}
             </Button>
@@ -451,8 +484,6 @@ export function AssignmentDialog({
               </Button>
             )}
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Conferma eliminazione */}
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>

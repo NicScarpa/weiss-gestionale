@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -75,8 +76,6 @@ const initialFormData = {
 }
 
 export function AccountManagement() {
-  const [accounts, setAccounts] = useState<Account[]>([])
-  const [loading, setLoading] = useState(true)
   const [editingAccount, setEditingAccount] = useState<Account | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
@@ -88,25 +87,33 @@ export function AccountManagement() {
   const [formData, setFormData] = useState(initialFormData)
 
   // Carica lista conti
-  const fetchAccounts = async () => {
-    try {
-      setLoading(true)
+  const {
+    data: datiConti,
+    isFetching: loading,
+    error: erroreConti,
+    refetch: fetchAccounts,
+  } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    // staleTime: 0 serve al cambio di `showInactive`, dove il refetch passa
+    // dalla staleness e con i 60s globali si tornerebbe su dati vecchi.
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryKey: ['accounts', 'full', showInactive],
+    queryFn: async (): Promise<{ accounts?: Account[] }> => {
       const res = await fetch(`/api/accounts?full=true&includeInactive=${showInactive}`)
       if (!res.ok) throw new Error('Errore nel caricamento')
-      const data = await res.json()
-      setAccounts(data.accounts || [])
-    } catch (error) {
-      logger.error('Errore', error)
-      toast.error('Errore nel caricamento dei conti')
-    } finally {
-      setLoading(false)
-    }
-  }
+      return res.json()
+    },
+  })
+
+  const accounts = datiConti?.accounts || []
 
   useEffect(() => {
-    queueMicrotask(() => fetchAccounts())
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showInactive])
+    if (erroreConti) {
+      logger.error('Errore', erroreConti)
+      toast.error('Errore nel caricamento dei conti')
+    }
+  }, [erroreConti])
 
   // Filtra conti per tipo e ricerca
   const filteredAccounts = accounts.filter(

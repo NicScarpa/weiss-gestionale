@@ -8,7 +8,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { ArrowLeft, BookOpen, Loader2, AlertCircle } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -170,7 +170,9 @@ async function updateRigheConti(id: string, data: RigheContiPayload): Promise<un
 
 export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const queryClient = useQueryClient()
-  const [selectedAccountId, setSelectedAccountId] = useState<string>('')
+  // Finché l'utente non sceglie, vale il conto della fattura: è un valore
+  // derivato dal dato caricato, non uno stato da riallineare con un effetto.
+  const [contoScelto, setContoScelto] = useState<string | null>(null)
 
   const { data: invoice, isLoading, error } = useQuery({
     queryKey: ['invoice', invoiceId],
@@ -182,14 +184,10 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     queryFn: fetchAccounts,
   })
 
-  // Set initial account when invoice loads
-  useEffect(() => {
-    if (invoice?.account) {
-      queueMicrotask(() => setSelectedAccountId(invoice.account!.id))
-    } else if (invoice) {
-      queueMicrotask(() => setSelectedAccountId('_none'))
-    }
-  }, [invoice])
+  // Prima del caricamento resta stringa vuota, come lo stato iniziale di prima:
+  // il Select mostra il placeholder invece di "Nessun conto".
+  const selectedAccountId =
+    contoScelto ?? (invoice ? invoice.account?.id ?? '_none' : '')
 
   const updateMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => updateInvoice(invoiceId, data),
@@ -224,7 +222,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   })
 
   const handleAccountChange = (accountId: string) => {
-    setSelectedAccountId(accountId)
+    setContoScelto(accountId)
     updateMutation.mutate({ accountId: accountId === '_none' ? null : accountId || null })
   }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -55,16 +55,13 @@ export function GenerationParamsForm({
     balanceHours: true,
     minimizeCost: false,
   })
+  // Il fabbisogno arriva già corretto al primo render: `turni/[id]` monta
+  // questo form solo a turno caricato e lo deriva dalla cache della query,
+  // quindi l'inizializzatore dello stato lo prende buono e non resta nulla da
+  // risincronizzare dopo.
   const [staffingRequirements, setStaffingRequirementsState] = useState<Record<string, number>>(
     initialStaffingRequirements || {}
   )
-
-  // Sincronizza quando initialStaffingRequirements cambia (es. caricato dal database)
-  useEffect(() => {
-    if (initialStaffingRequirements && Object.keys(initialStaffingRequirements).length > 0) {
-      queueMicrotask(() => setStaffingRequirementsState(initialStaffingRequirements))
-    }
-  }, [initialStaffingRequirements])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
 
   // Wrapper per aggiornare sia lo state locale che notificare il parent
