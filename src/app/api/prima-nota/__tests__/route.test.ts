@@ -158,7 +158,9 @@ describe('GET /api/prima-nota - costCenterId nel payload (regressione)', () => {
 
   it('ogni voce della lista include costCenterId', async () => {
     vi.mocked(prisma.journalEntry.findMany)
-      .mockResolvedValueOnce([entryConCentro()]) // entries (con include)
+      // `as never`: il fixture porta i soli campi che il test guarda, non
+      // tutti quelli del modello. Pattern già in uso nel resto della suite.
+      .mockResolvedValueOnce([entryConCentro()] as never) // entries (con include)
       .mockResolvedValueOnce([]) // allEntries (solo per i totali)
     vi.mocked(prisma.journalEntry.count).mockResolvedValue(1)
 
@@ -174,7 +176,7 @@ describe('GET /api/prima-nota - costCenterId nel payload (regressione)', () => {
     vi.mocked(prisma.journalEntry.findMany)
       .mockResolvedValueOnce([
         entryConCentro({ costCenter: { id: 'cc-vv', code: 'VV', name: 'Villa Varda' } }),
-      ])
+      ] as never)
       .mockResolvedValueOnce([])
     vi.mocked(prisma.journalEntry.count).mockResolvedValue(1)
 

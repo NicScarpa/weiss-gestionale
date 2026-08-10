@@ -329,6 +329,11 @@ export async function GET(request: NextRequest) {
       accountId: entry.accountId,
       costCenterId: entry.costCenterId,
       closureId: entry.closureId,
+      // Le due righe di un trasferimento hanno lo stesso `transferId`: senza
+      // portarlo fino al client, la lista non ha modo di sapere che sono i due
+      // lati di una sola operazione, e la metà in uscita si presenta come una
+      // spesa qualunque.
+      transferId: entry.transferId,
       runningBalance: entry.runningBalance ? Number(entry.runningBalance) : null,
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt,
@@ -451,6 +456,12 @@ export async function POST(request: NextRequest) {
     const comune = {
       venueId,
       date: validatedData.date,
+      // Il tipo arriva dall'utente e va salvato. Prima serviva solo a scegliere
+      // i registri e poi veniva buttato via: la schermata lo ricalcolava da
+      // registro più verso, che non lo determinano — la riga in avere sulla
+      // cassa di un versamento è identica a una spesa in contanti, e infatti
+      // si presentava come «Uscita».
+      entryType: validatedData.entryType,
       description: validatedData.description,
       documentRef: validatedData.documentRef,
       documentType: validatedData.documentType,

@@ -111,6 +111,44 @@ export async function loginAsUser(userId: string): Promise<Session> {
   return session
 }
 
+/**
+ * Come `loginAs`, ma per un utente che ha già cambiato la password iniziale.
+ *
+ * Tutti gli utenti del seed nascono con `mustChangePassword: true`, e da quando
+ * le route sono protette da `withAuth` il guard risponde 403 a chi non l'ha
+ * cambiata — giustamente: in produzione nessuno usa l'applicazione in quello
+ * stato. `loginAs` da solo produce quindi una sessione che non passa i guard, e
+ * un test sull'autorizzazione per ruolo finirebbe per misurare sempre e solo il
+ * cambio password obbligatorio.
+ *
+ * Serve a così tanti test che era finita ricopiata a mano in diciotto file,
+ * identica a meno del nome delle variabili locali. Chi ne aveva bisogno la
+ * riscriveva perché non sapeva di poterla trovare qui: ora è qui.
+ *
+ * Restituisce la sessione **attiva**, cioè quella con il flag già azzerato. Le
+ * copie sparse restituivano l'oggetto originale, che il flag ce l'aveva ancora:
+ * il valore di ritorno non corrispondeva a quello che la route avrebbe visto, e
+ * i test che ne leggono `user.id` o `user.venueId` lavoravano su una sessione
+ * diversa da quella in vigore.
+ */
+export async function entraCome(role: SeedRole): Promise<Session> {
+  return senzaCambioPassword(await loginAs(role))
+}
+
+/** Come `entraCome`, ma per un utente specifico creato dal test. */
+export async function entraComeUtente(userId: string): Promise<Session> {
+  return senzaCambioPassword(await loginAsUser(userId))
+}
+
+function senzaCambioPassword(session: Session): Session {
+  const attiva: Session = {
+    ...session,
+    user: { ...session.user, mustChangePassword: false },
+  }
+  setSession(attiva)
+  return attiva
+}
+
 async function permissionsOf(userId: string): Promise<string[]> {
   const user = await prisma.user.findUnique({
     where: { id: userId },

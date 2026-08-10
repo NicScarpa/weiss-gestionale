@@ -237,7 +237,6 @@ function ModuloScadenza({
     const commonData = {
       tipo,
       descrizione,
-      valuta: 'EUR' as const,
       dataEmissione: giornoCivile(dataEmissione),
       tipoDocumento,
       numeroDocumento: numeroDocumento || undefined,
@@ -303,7 +302,19 @@ function ModuloScadenza({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="space-y-2">
             <Label>Direzione *</Label>
-            <Select value={tipo} onValueChange={(v) => setTipo(v as ScheduleType)}>
+            {/*
+              In modifica la direzione è bloccata: il server la rifiuta con un
+              400 (`CAMPI_IMMUTABILI` in `api/scadenzario/[id]/route.ts`) perché
+              attiva e passiva stanno su lati opposti dei conti, e su una
+              scadenza già riconciliata cambiarla sposterebbe denaro registrato.
+              Lasciare il menu attivo sarebbe una trappola cortese: l'utente
+              sceglie, salva, e solo allora scopre che non si poteva.
+            */}
+            <Select
+              value={tipo}
+              onValueChange={(v) => setTipo(v as ScheduleType)}
+              disabled={isEdit}
+            >
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>

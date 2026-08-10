@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { setupIntegrationDb } from '@/test/integration/db'
-import { loginAs, setSession, type SeedRole } from '@/test/integration/auth-mock'
+import { entraCome } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
 import { creaChiusura } from '@/test/integration/fixtures/closures'
 import { POST as inviaChiusura } from '../submit/route'
@@ -16,13 +16,6 @@ import { GET as scaricaExcel } from '../excel/route'
  * torna ai soli gestori.
  */
 setupIntegrationDb()
-
-/** Vedi la nota in categorization-rules: gli utenti del seed nascono con `mustChangePassword`. */
-async function entraCome(role: SeedRole) {
-  const session = await loginAs(role)
-  setSession({ ...session, user: { ...session.user, mustChangePassword: false } })
-  return session
-}
 
 describe('POST /api/chiusure/[id]/submit', () => {
   it('consente allo staff di inviare la chiusura che ha compilato', async () => {

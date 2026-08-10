@@ -169,7 +169,6 @@ model Venue {
   payments                Payment[]
   products                Product[]
   recurringExpenses       RecurringExpense[]
-  registerBalances        RegisterBalance[]
   relationshipConstraints RelationshipConstraint[]
   shiftAssignments        ShiftAssignment[]
   shiftDefinitions        ShiftDefinition[]
@@ -427,6 +426,12 @@ model JournalEntry {
   venueId              String              @map("venue_id")
   date                 DateTime            @db.Date
   registerType         RegisterType        @map("register_type")
+  /// Che operazione è, secondo chi l'ha inserita. Nullo sui movimenti creati
+  /// dai percorsi che non lo dichiarano ancora (import, pagamenti, fatture,
+  /// regole di scadenza): là la presentazione ripiega sulla deduzione, che per
+  /// un movimento a riga singola è corretta. Non si riempie a posteriori —
+  /// dedurlo è proprio ciò che questa colonna elimina.
+  entryType            EntryType?          @map("entry_type")
   documentRef          String?             @map("document_ref")
   documentType         String?             @map("document_type")
   description          String
@@ -535,21 +540,6 @@ model JournalEntryAllocation {
   @@index([reconciliationId])
   @@index([accountId])
   @@map("journal_entry_allocations")
-}
-
-model RegisterBalance {
-  id             String       @id @default(cuid())
-  venueId        String       @map("venue_id")
-  registerType   RegisterType @map("register_type")
-  date           DateTime     @db.Date
-  openingBalance Decimal      @map("opening_balance") @db.Decimal(12, 2)
-  totalDebits    Decimal      @map("total_debits") @db.Decimal(12, 2)
-  totalCredits   Decimal      @map("total_credits") @db.Decimal(12, 2)
-  closingBalance Decimal      @map("closing_balance") @db.Decimal(12, 2)
-  venue          Venue        @relation(fields: [venueId], references: [id])
-
-  @@unique([venueId, registerType, date])
-  @@map("register_balances")
 }
 
 model Supplier {
@@ -2196,6 +2186,23 @@ enum AccountType {
 enum RegisterType {
   CASH
   BANK
+}
+
+/// Che operazione è il movimento, secondo chi l'ha inserito.
+///
+/// Non si deduce da registro e verso: quei due dati non lo determinano. Un
+/// versamento e un giroconto cassa→banca hanno le stesse identiche righe, e la
+/// metà in uscita di un versamento è indistinguibile da una spesa in contanti
+/// — per questo si presentava come «Uscita». È la stessa famiglia di errore di
+/// `getMovementDirection`, che rispondeva 'DEBIT' su entrambi i lati di un
+/// giroconto perché «dipende dal contesto»: un contesto che i dati non
+/// contenevano.
+enum EntryType {
+  INCASSO
+  USCITA
+  VERSAMENTO
+  PRELIEVO
+  GIROCONTO
 }
 
 enum BudgetCategoryType {

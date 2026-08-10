@@ -49,11 +49,16 @@ function record(overrides: Partial<PayrollRecord> = {}): PayrollRecord {
     workLocationName: null,
     policyName: null,
     // Obbligatorio in `PayrollRecord` e sempre valorizzato dal calcolatore
-    // (payroll-calculator.ts:604). Mancava qui perché la factory è più vecchia
+    // (payroll-calculator.ts:620). Mancava qui perché la factory è più vecchia
     // del campo, e nessuno se n'era accorto: questi file non passavano sotto
     // il compilatore. Zero è il valore vero per un turno senza minuti sospesi;
     // chi vuole provare il caso opposto lo passa fra gli overrides.
     pendingReviewMinutes: 0,
+    // Stessa storia, un giorno dopo: `dayWarnings` è arrivato con le anomalie
+    // di giornata e il calcolatore lo valorizza sempre
+    // (payroll-calculator.ts:621), ma la factory non lo sapeva. Un turno
+    // regolare non ha avvisi, quindi l'elenco è vuoto.
+    dayWarnings: [],
     ...overrides,
   }
 }

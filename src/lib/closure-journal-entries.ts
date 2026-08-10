@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto'
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
@@ -266,6 +267,7 @@ export async function generateJournalEntriesFromClosure(
       venueId: closure.venueId,
       date: closure.date,
       registerType: 'CASH',
+      entryType: 'INCASSO',
       description: generateClosureDescription('revenue', closure.date),
       debitAmount: cashIncome,
       creditAmount: null,
@@ -286,6 +288,7 @@ export async function generateJournalEntriesFromClosure(
         venueId: closure.venueId,
         date: closure.date,
         registerType: 'CASH',
+        entryType: 'USCITA',
         description: generateClosureDescription('expense', closure.date, {
           payee: expense.payee || undefined,
           description: expense.description || undefined,
@@ -311,6 +314,10 @@ export async function generateJournalEntriesFromClosure(
       venueId: closure.venueId,
       date: closure.date,
       registerType: 'BANK',
+      // Il POS entra in banca in dare, e la vecchia deduzione — banca più
+      // dare — lo chiamava «Versamento». Non è la metà di niente: è un
+      // incasso, e nessun legame fra righe potrebbe correggerlo.
+      entryType: 'INCASSO',
       description: generateClosureDescription('pos', closure.date),
       debitAmount: totalPos,
       creditAmount: null,
@@ -327,11 +334,20 @@ export async function generateJournalEntriesFromClosure(
   // 4. Movimento VERSAMENTO se presente (coppia cassa → banca)
   const bankDeposit = Number(closure.bankDeposit) || 0
   if (bankDeposit > 0) {
+    // Il legame fra le due righe, che qui mancava. Senza, cancellarne una
+    // lasciava l'altra in piedi e la liquidità totale si spostava dell'intero
+    // importo: è il guasto per cui `transferId` era stato introdotto sul
+    // registro manuale, rimasto aperto proprio sulla via automatica — quella
+    // che scrive il versamento di ogni sera.
+    const transferId = randomUUID()
+
     // Uscita da cassa
     entries.push({
       venueId: closure.venueId,
       date: closure.date,
       registerType: 'CASH',
+      entryType: 'VERSAMENTO',
+      transferId,
       description: generateClosureDescription('deposit', closure.date),
       debitAmount: null,
       creditAmount: bankDeposit,
@@ -349,6 +365,8 @@ export async function generateJournalEntriesFromClosure(
       venueId: closure.venueId,
       date: closure.date,
       registerType: 'BANK',
+      entryType: 'VERSAMENTO',
+      transferId,
       description: generateClosureDescription('deposit', closure.date),
       debitAmount: bankDeposit,
       creditAmount: null,

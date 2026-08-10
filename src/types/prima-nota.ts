@@ -86,6 +86,11 @@ export interface JournalEntry {
   costCenterId?: string | null
   counterpartId?: string
   closureId?: string
+  /**
+   * Lega fra loro le due righe di un trasferimento: stesso valore sull'uscita
+   * e sull'entrata, assente sui movimenti a riga singola.
+   */
+  transferId?: string
   runningBalance?: number
   createdById?: string
   createdAt: Date
@@ -160,18 +165,6 @@ export interface JournalEntryAllocation {
   importo: number
   origine: 'manuale' | 'ereditata'
   note?: string
-}
-
-// Saldo registro
-export interface RegisterBalance {
-  id: string
-  venueId: string
-  registerType: RegisterType
-  date: Date
-  openingBalance: number
-  totalDebits: number
-  totalCredits: number
-  closingBalance: number
 }
 
 // Riepilogo saldi

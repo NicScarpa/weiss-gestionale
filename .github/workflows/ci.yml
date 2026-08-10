@@ -137,6 +137,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # I due bundler non sono d'accordo su cosa una route possa esportare.
+      # Turbopack — quello di `npm run build`, e quello con cui gira la
+      # produzione — controlla gli export con un vincolo senza index signature
+      # e lascia passare i simboli estranei; webpack li respinge con TS2344.
+      # Provare solo il primo significa non accorgersi mai di un `export const
+      # qualcosaSelect` in una route: è già successo quattro volte, e tre le ha
+      # introdotte la conversione a `withAuth`, che ha ancora 292 handler
+      # davanti. Va prima del build di produzione perché condividono `.next`.
+      - name: Build (webpack, severità diversa da Turbopack)
+        run: npx next build --webpack
+        env:
+          DATABASE_URL: 'postgresql://placeholder:placeholder@localhost:5432/placeholder'
+          NEXTAUTH_URL: 'http://localhost:3000'
+          NEXTAUTH_SECRET: 'placeholder-secret-for-ci-build'
+          AUTH_SECRET: 'placeholder-secret-for-ci-build'
+
       - name: Build
         run: npm run build
         env:

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { prisma } from '@/lib/prisma'
 import { setupIntegrationDb } from '@/test/integration/db'
-import { loginAs, loginAsUser, setSession, type SeedRole } from '@/test/integration/auth-mock'
+import { entraCome, entraComeUtente } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
 import { GET as colleghi } from '../colleagues/route'
 import { GET as turniMiei } from '../shifts/route'
@@ -16,18 +16,6 @@ import { GET as tipiAssenza } from '../../leave-types/route'
  * nei singoli test.
  */
 setupIntegrationDb()
-
-async function entraCome(role: SeedRole) {
-  const session = await loginAs(role)
-  setSession({ ...session, user: { ...session.user, mustChangePassword: false } })
-  return session
-}
-
-async function entraComeUtente(userId: string) {
-  const session = await loginAsUser(userId)
-  setSession({ ...session, user: { ...session.user, mustChangePassword: false } })
-  return session
-}
 
 async function unAltroStaff(escluso: string) {
   const user = await prisma.user.findFirst({

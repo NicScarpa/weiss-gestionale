@@ -246,7 +246,12 @@ describe('GET /api/report/conto-economico - quadratura', () => {
       if (m.allocations.length > 0) {
         // Le fette valgono quanto il lato valorizzato della testata: qui è
         // tutto dare, quindi contribuiscono negativamente come un costo.
-        return somma - m.allocations.reduce((s, f) => s + f.importo, 0)
+        // Somma esplicita invece di `reduce`: nel fixture `allocations` è un
+        // tipo unione (vuoto su alcuni movimenti, valorizzato su altri) e su
+        // una unione di array TypeScript non risolve l'overload di reduce.
+        let totaleFette = 0
+        for (const f of m.allocations) totaleFette += f.importo
+        return somma - totaleFette
       }
       return somma + (Number(m.creditAmount) || 0) - (Number(m.debitAmount) || 0)
     }, 0)

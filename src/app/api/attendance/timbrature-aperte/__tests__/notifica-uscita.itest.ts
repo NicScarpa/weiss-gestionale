@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { prisma } from '@/lib/prisma'
 import { setupIntegrationDb } from '@/test/integration/db'
-import { loginAsUser, setSession } from '@/test/integration/auth-mock'
+import { entraComeUtente } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
 import { venueDiTest } from '@/test/integration/fixtures/closures'
 import { romeInstant } from '@/lib/timezone'
@@ -18,12 +18,6 @@ import { POST as confermaUscite } from '../route'
 setupIntegrationDb()
 
 const GIORNO = '2026-03-15'
-
-async function entraComeUtente(userId: string) {
-  const session = await loginAsUser(userId)
-  setSession({ ...session, user: { ...session.user, mustChangePassword: false } })
-  return session
-}
 
 /** Due colleghi con ruolo staff: chi è dentro e chi compila la chiusura. */
 async function dueColleghi() {

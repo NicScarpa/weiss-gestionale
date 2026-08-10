@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { setupIntegrationDb } from '@/test/integration/db'
-import { loginAs, setSession, type SeedRole } from '@/test/integration/auth-mock'
+import { entraCome } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
 import { venueDiTest } from '@/test/integration/fixtures/closures'
 import { GET as postazioni } from '../route'
@@ -12,13 +12,6 @@ import { GET as postazioni } from '../route'
  * non corrisponde alla sede dell'utente non deve restituire nulla.
  */
 setupIntegrationDb()
-
-/** Vedi la nota in categorization-rules: gli utenti del seed nascono con `mustChangePassword`. */
-async function entraCome(role: SeedRole) {
-  const session = await loginAs(role)
-  setSession({ ...session, user: { ...session.user, mustChangePassword: false } })
-  return session
-}
 
 describe('GET /api/venues/[id]/cash-stations', () => {
   it('nega la configurazione delle casse a uno staff', async () => {
