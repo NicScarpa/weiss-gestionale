@@ -42,7 +42,7 @@ oggetto per oggetto con la produzione:
 | 1.081 colonne (tipo, nullabilità, default) | identiche |
 | 235 vincoli (156 chiavi esterne, 79 chiavi primarie) | identici |
 | 252 valori di enum | identici |
-| **59 policy RLS** | **assenti dalla baseline** — vedi `prisma/sql/README.md` |
+| **59 policy RLS** (su 80 tabelle) | **assenti dalla baseline** — vedi `prisma/sql/README.md` |
 
 ---
 
@@ -56,14 +56,25 @@ source ~/.nvm/nvm.sh && nvm use 22    # il Node di sistema fa fallire npm
 npm run db:migrate -- --name aggiunge_centro_di_costo
 # 3. Committa insieme: schema.prisma + prisma/migrations/<data>_<nome>/
 # 4. In produzione, al rilascio:
-npm run db:migrate:deploy
+npm run db:migrate:deploy             # applica le migrazioni E riabilita la RLS
 ```
 
 `npm run db:migrate:status` dice cosa risulta applicato e cosa no.
 
 `db:migrate:deploy` è l'unico script senza `guard:not-prod`, di proposito: è il
 solo comando che **deve** poter girare contro la produzione. Non genera nulla e
-non cancella nulla — applica soltanto le migrazioni non ancora registrate.
+non cancella nulla — applica le migrazioni non ancora registrate, poi rimette la
+Row Level Security su tutto (`npm run rls:enable`).
+
+> **Perché la RLS sta attaccata qui e non in un promemoria.** Prisma non modella
+> le policy: una tabella creata da una migrazione **nasce senza RLS**, e su un
+> database esposto all'API PostgREST di Supabase è leggibile da chiunque abbia la
+> `anon key`. È già successo, in grande: al 10 agosto 2026 erano **21 tabelle su
+> 80** — `invitation_tokens`, `bank_accounts`, `employee_documents`,
+> `audit_logs` — tutte accomunate dall'essere nate dopo l'ultimo aggiornamento
+> manuale di un elenco. Il passo è dentro il comando perché un promemoria scritto
+> è esattamente ciò che ha fallito. È idempotente: su un database già a posto non
+> fa nulla e non stampa nulla di allarmante. Dettagli in `prisma/sql/README.md`.
 
 ## Regole che costano ore se si scoprono sul campo
 

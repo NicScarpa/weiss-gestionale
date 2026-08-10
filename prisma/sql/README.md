@@ -6,7 +6,7 @@ che Prisma non sa dire.
 | File | Cosa contiene | Chi lo applica |
 |---|---|---|
 | `constraints.sql` | 8 indici unici **parziali** (`CREATE UNIQUE INDEX … WHERE …`) | l'harness dei test di integrazione; a mano in riparazione |
-| `enable_rls_all_tables.sql` | Row Level Security e policy su 59 tabelle (layer Supabase) | a mano, sul database Supabase |
+| `enable_rls_all_tables.sql` | Row Level Security e policy su **tutte** le tabelle di `public`, lette da `pg_tables` (layer Supabase) | `npm run rls:enable`, a mano |
 
 > ## Perché non sta in `prisma/migrations/`
 >
@@ -52,7 +52,7 @@ silenzio: l'introspezione non avvisa di ciò che non sa leggere.
 | Oggetto | Prisma lo modella? | Oggi in produzione |
 |---|---|---|
 | Indici parziali (`… WHERE …`) | no — tiene nome e colonne, **scarta il predicato** | 8 nella baseline, **+1** da `conti/piano-v4` |
-| Policy e Row Level Security | no | 59 tabelle, 59 policy (+1 tabella da `conti/piano-v4`) |
+| Policy e Row Level Security | no | 59 tabelle su 80, 59 policy — **21 scoperte**, vedi sotto |
 | Vincoli `CHECK` | no | 0 nella baseline, **+1** da `conti/piano-v4` |
 | Trigger, funzioni, viste | no | nessuno |
 
@@ -155,18 +155,73 @@ dietro un indice `INVALID` da rimuovere a mano invece di fallire pulitamente.
 
 ## `enable_rls_all_tables.sql` — e cosa la baseline non sa
 
-La produzione ha **RLS attiva su 59 tabelle con 59 policy**. La baseline ne
-contiene **zero**: sono oggetti Supabase, fuori dal modello Prisma.
+La produzione ha **RLS attiva su 59 tabelle su 80**: **21 sono scoperte**, fra
+cui `invitation_tokens`, `bank_accounts`, `audit_logs`, `employee_documents`,
+`certifications` e `customers`. La baseline Prisma ne contiene **zero**: sono
+oggetti Supabase, fuori dal modello Prisma.
 
 **Conseguenza da conoscere:** un ambiente ricostruito con `migrate deploy`
-— staging, un locale, un ripristino — nasce **senza RLS**. Per la produzione
-non cambia nulla (l'applicazione si connette come `postgres`, che RLS lo
-bypassa), ma un ambiente nuovo esposto all'API PostgREST di Supabase sarebbe
-aperto. Su un ambiente del genere questo file va applicato a mano:
+— staging, un locale, un ripristino — nasce **senza RLS**. Per l'applicazione
+non cambia nulla (si connette come `postgres`, che ha `BYPASSRLS`), ma un
+ambiente esposto all'API PostgREST di Supabase sarebbe aperto.
 
 ```bash
-psql "$DATABASE_URL" -f prisma/sql/enable_rls_all_tables.sql
+npm run rls:check         # sola lettura: dice quali tabelle sono scoperte, esce 1 se ce ne sono
+npm run rls:enable:dry    # elenca cosa cambierebbe, senza toccare nulla
+npm run rls:enable        # applica; idempotente
+psql "$DATABASE_URL" -f prisma/sql/enable_rls_all_tables.sql   # equivalente, senza Node
 ```
+
+### Nessuna lista di tabelle: si legge il catalogo
+
+Il file cicla su `pg_tables` (escluse le tabelle possedute da un'estensione).
+Una tabella nuova è protetta alla prima riesecuzione, **senza che nessuno debba
+ricordarsi di aggiungerla a un elenco**. `scripts/enable-rls.mjs` non duplica la
+logica: esegue *questo* file.
+
+Prima c'erano due liste scritte a mano — 57 nomi qui, 47 in `enable-rls.mjs` —
+divergenti fra loro e dallo schema. Peggio: **questo file non ha mai abilitato
+una sola RLS**. La variabile PL/pgSQL si chiamava `table_name` come la colonna
+di `information_schema.tables` a cui veniva confrontata, il riferimento era
+ambiguo (SQLSTATE 42702), e il blocco `DO` è atomico: moriva alla prima tabella.
+Il `RAISE NOTICE 'RLS abilitato'` veniva emesso *prima* di sapere se l'operazione
+era riuscita, quindi il file annunciava un successo per ogni tabella che non
+proteggeva. Da qui due regole nel file:
+
+1. la variabile del ciclo **non** si chiama come una colonna (oggi `v_tabella`);
+2. il successo si stampa **dopo** l'esecuzione, e l'ultima parola ce l'ha la
+   query di verifica finale, non i `NOTICE`.
+
+### La guardia contro l'autoesclusione
+
+`FORCE ROW LEVEL SECURITY` applica le policy **anche al proprietario**. Chi
+esegue lo script senza `BYPASSRLS` si ritroverebbe fuori dai propri dati:
+`SELECT` a zero righe e `INSERT` rifiutate, senza un errore che spieghi perché.
+Il file quindi si rifiuta di partire se `current_user` non è superuser e non ha
+`BYPASSRLS` (override consapevole: `SET rls.consento_lockout = 'on';`).
+
+In produzione l'applicazione si connette come `postgres`, che **ha** `BYPASSRLS`
+— verificato — e infatti le 59 tabelle già protette con `FORCE` includono le più
+usate (`users`, `daily_closures`, `journal_entries`) senza alcun effetto.
+
+Su un PostgreSQL che non è Supabase il ruolo `service_role` non esiste: lo script
+abilita RLS **senza** policy (default: nega tutto) e lo dice con un `WARNING`.
+
+### È attaccato al rilascio, non affidato alla memoria
+
+`prisma migrate deploy` non sa nulla di RLS: una tabella nuova nasce scoperta.
+Per questo `npm run db:migrate:deploy` **è** `prisma migrate deploy && npm run
+rls:enable`. Un ambiente ricostruito da zero nasce protetto — verificato: 81
+tabelle su 81, `cost_centers` compresa.
+
+Resta scoperto **solo** ciò che crea tabelle senza passare dalle migrazioni
+(`prisma db push` su un ambiente di prova, un `CREATE TABLE` a mano). Lì la rete
+è `npm run rls:check`, che esce 1.
+
+⚠️ **Non metterlo nel gate CI.** In CI il database dei test è costruito con
+`db push` e non ha RLS: il check misurerebbe l'ambiente sbagliato e darebbe un
+verde che non parla della produzione. È il difetto del §5 dell'audit — «il test
+asserisce il valore o solo la forma?» — applicato alla sicurezza.
 
 ## Gli indici di performance, invece, stanno nello schema
 

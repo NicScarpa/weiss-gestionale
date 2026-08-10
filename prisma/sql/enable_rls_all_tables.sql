@@ -1,141 +1,154 @@
 -- =============================================================================
--- Script per abilitare Row Level Security (RLS) su tutte le tabelle
+-- Row Level Security su TUTTE le tabelle dello schema public
 -- Sistema Gestionale Weiss Cafè
 -- =============================================================================
--- Questo script:
--- 1. Abilita RLS su tutte le tabelle del schema public
--- 2. Crea policy che permettono accesso completo al service_role (usato da Prisma)
--- 3. Blocca l'accesso diretto tramite API PostgREST (anon/authenticated)
+-- Che cosa fa, per ogni tabella trovata in pg_tables:
+--   1. ENABLE + FORCE ROW LEVEL SECURITY
+--   2. una policy "service_role_all" che dà accesso pieno al solo service_role
+--   3. di conseguenza: l'API PostgREST (anon / authenticated) non vede nulla
+--
+-- NON c'è una lista di nomi. L'elenco si legge dal catalogo a ogni esecuzione:
+-- una tabella nuova è protetta senza che nessuno debba ricordarsi di aggiungerla.
+-- Questo è il punto: le due liste scritte a mano che questo file aveva prima
+-- (57 nomi qui, 47 in scripts/enable-rls.mjs) divergevano dallo schema e fra loro.
+--
+-- Idempotente: rieseguirlo su un database già protetto non cambia nulla.
+--
+-- Applicazione:
+--   psql "$DATABASE_URL" -f prisma/sql/enable_rls_all_tables.sql
+--   nvm use 22 && node --env-file=.env scripts/enable-rls.mjs   (esegue questo file)
 -- =============================================================================
 
--- Lista di tutte le tabelle da proteggere
+\set ON_ERROR_STOP on
+
+-- ALTER TABLE prende un lock ACCESS EXCLUSIVE. Se una transazione lunga tiene
+-- la tabella, l'ALTER si mette in coda — e dietro di lui si accoda TUTTO il
+-- traffico su quella tabella: l'applicazione si ferma. Con un lock_timeout la
+-- singola tabella fallisce, viene riportata come FALLITA e la si recupera
+-- rieseguendo il file (è idempotente). Meglio una tabella scoperta per cinque
+-- minuti che la produzione bloccata.
+SET lock_timeout = '5s';
+
 DO $$
 DECLARE
-    table_name TEXT;
-    tables TEXT[] := ARRAY[
-        'initial_balances',
-        'budgets',
-        'roles',
-        'venues',
-        'daily_closures',
-        'cash_stations',
-        'cash_counts',
-        'hourly_partials',
-        'daily_expenses',
-        'cash_station_templates',
-        'register_balances',
-        'suppliers',
-        'accounts',
-        'daily_attendance',
-        'journal_entries',
-        'role_permissions',
-        'permissions',
-        'relationship_constraints',
-        'budget_alerts',
-        'relationship_constraint_users',
-        'shift_definitions',
-        'budget_lines',
-        'shift_schedules',
-        'attendance_anomalies',
-        'employee_constraints',
-        'shift_assignments',
-        'leave_requests',
-        'leave_types',
-        'leave_balances',
-        'attendance_policies',
-        'attendance_records',
-        'notification_logs',
-        'push_subscriptions',
-        'notification_preferences',
-        'budget_categories',
-        'account_budget_mappings',
-        'invoice_deadlines',
-        'budget_targets',
-        'electronic_invoices',
-        'bank_transactions',
-        'import_batches',
-        'recurring_expenses',
-        'cash_flow_settings',
-        'products',
-        'price_history',
-        'price_alerts',
-        'timekeeping_policies',
-        'timekeeping_policy_breaks',
-        'timekeeping_policy_versions',
-        'work_locations',
-        'work_location_assignments',
-        'attendance_correction_requests',
-        'clock_reminders',
-        'clock_reminder_recipients',
-        'communications',
-        'communication_reads',
-        'users',
-        'audit_logs',
-        'bank_accounts',
-        'cash_flow_alerts',
-        'cash_flow_forecast_lines',
-        'cash_flow_forecasts',
-        'cash_flow_scenarios',
-        'categorization_rules',
-        'certifications',
-        'customers',
-        'employee_documents',
-        'invitation_tokens',
-        'invoice_line_accounts',
-        'journal_entry_allocations',
-        'payments',
-        'recurrences',
-        'schedule_attachments',
-        'schedule_payments',
-        'schedule_reconciliations',
-        'schedule_reminders',
-        'schedule_rules',
-        'schedules',
-        'supplier_product_accounts',
-        'cost_centers'
-    ];
+    -- ATTENZIONE: NON chiamare questa variabile "table_name" né "tablename".
+    -- Una variabile PL/pgSQL omonima di una colonna referenziata nel corpo rende
+    -- il riferimento ambiguo: SQLSTATE 42702, e siccome il blocco DO è atomico
+    -- muore l'intero script. È il motivo per cui questo file non ha mai
+    -- abilitato una sola RLS pur stampando "RLS abilitato" a ogni giro.
+    v_tabella          TEXT;
+    v_service_role     BOOLEAN;
+    v_bypassa          BOOLEAN;
+    v_ok               INT := 0;
+    v_errori           INT := 0;
+    v_totali           INT := 0;
 BEGIN
-    FOREACH table_name IN ARRAY tables
+    -- -------------------------------------------------------------------------
+    -- Guardia anti-autoesclusione.
+    -- FORCE ROW LEVEL SECURITY applica le policy ANCHE al proprietario della
+    -- tabella. Se chi esegue non bypassa RLS, dopo questo script si trova fuori
+    -- dai propri dati: SELECT a zero righe e INSERT rifiutate, senza errori
+    -- evidenti. In produzione l'applicazione si connette come "postgres", che ha
+    -- BYPASSRLS, e non se ne accorge; un ambiente ricostruito può non averlo.
+    -- -------------------------------------------------------------------------
+    SELECT rolsuper OR rolbypassrls INTO v_bypassa
+    FROM pg_roles WHERE rolname = current_user;
+
+    IF NOT COALESCE(v_bypassa, false)
+       AND COALESCE(current_setting('rls.consento_lockout', true), '') <> 'on' THEN
+        RAISE EXCEPTION
+            'Il ruolo "%" non ha BYPASSRLS né è superuser: con FORCE RLS resterebbe chiuso fuori dalle sue tabelle.',
+            current_user
+        USING HINT = 'Esegui come un ruolo con BYPASSRLS (su Supabase: postgres), oppure — se sai cosa fai — SET rls.consento_lockout = ''on''; prima di questo file.';
+    END IF;
+
+    -- Su un PostgreSQL che non è Supabase il ruolo service_role non esiste e la
+    -- CREATE POLICY fallirebbe. In quel caso si abilita comunque la RLS: senza
+    -- policy la tabella nega tutto a chiunque non bypassi, che è il default sicuro.
+    SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role')
+    INTO v_service_role;
+
+    IF NOT v_service_role THEN
+        RAISE WARNING 'Ruolo "service_role" assente: abilito RLS senza creare policy (default: nega tutto).';
+    END IF;
+
+    -- -------------------------------------------------------------------------
+    -- Il ciclo. Sorgente: pg_tables, non una lista.
+    -- Escluse le sole tabelle appartenenti a un'estensione: non ne siamo
+    -- proprietari, l'ALTER fallirebbe.
+    -- -------------------------------------------------------------------------
+    FOR v_tabella IN
+        SELECT t.tablename
+        FROM pg_tables t
+        WHERE t.schemaname = 'public'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM pg_depend d
+              JOIN pg_class c     ON c.oid = d.objid
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE d.deptype = 'e'
+                AND n.nspname = t.schemaname
+                AND c.relname = t.tablename
+          )
+        ORDER BY t.tablename
     LOOP
-        -- Verifica se la tabella esiste
-        IF EXISTS (
-            SELECT 1 FROM information_schema.tables
-            WHERE table_schema = 'public' AND table_name = table_name
-        ) THEN
-            -- Abilita RLS
-            EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', table_name);
+        v_totali := v_totali + 1;
 
-            -- Forza RLS anche per il table owner (importante per sicurezza)
-            EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', table_name);
+        -- Un blocco con EXCEPTION per tabella: un fallimento isolato non abbatte
+        -- l'intera esecuzione, e soprattutto non si stampa successo prima di averlo.
+        BEGIN
+            EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', v_tabella);
+            EXECUTE format('ALTER TABLE public.%I FORCE  ROW LEVEL SECURITY', v_tabella);
 
-            -- Rimuovi eventuali policy esistenti per evitare conflitti
-            EXECUTE format('DROP POLICY IF EXISTS "service_role_all" ON public.%I', table_name);
-            EXECUTE format('DROP POLICY IF EXISTS "deny_anon" ON public.%I', table_name);
-            EXECUTE format('DROP POLICY IF EXISTS "deny_authenticated" ON public.%I', table_name);
+            EXECUTE format('DROP POLICY IF EXISTS "service_role_all"   ON public.%I', v_tabella);
+            EXECUTE format('DROP POLICY IF EXISTS "deny_anon"          ON public.%I', v_tabella);
+            EXECUTE format('DROP POLICY IF EXISTS "deny_authenticated" ON public.%I', v_tabella);
 
-            -- Crea policy che permette TUTTO al service_role (usato da Prisma)
-            EXECUTE format('
-                CREATE POLICY "service_role_all" ON public.%I
-                FOR ALL
-                TO service_role
-                USING (true)
-                WITH CHECK (true)
-            ', table_name);
+            IF v_service_role THEN
+                EXECUTE format($f$
+                    CREATE POLICY "service_role_all" ON public.%I
+                    FOR ALL
+                    TO service_role
+                    USING (true)
+                    WITH CHECK (true)
+                $f$, v_tabella);
+            END IF;
 
-            RAISE NOTICE 'RLS abilitato su tabella: %', table_name;
-        ELSE
-            RAISE NOTICE 'Tabella non trovata (saltata): %', table_name;
-        END IF;
+            v_ok := v_ok + 1;
+            RAISE NOTICE 'RLS attiva: %', v_tabella;
+        EXCEPTION WHEN OTHERS THEN
+            v_errori := v_errori + 1;
+            RAISE WARNING 'FALLITA %: % (SQLSTATE %)', v_tabella, SQLERRM, SQLSTATE;
+        END;
     END LOOP;
+
+    RAISE NOTICE '--------------------------------------------------';
+    RAISE NOTICE 'Tabelle esaminate: %  ·  protette: %  ·  fallite: %', v_totali, v_ok, v_errori;
+
+    IF v_errori > 0 THEN
+        RAISE WARNING 'Restano % tabelle non protette: vedi le righe FALLITA qui sopra e la verifica finale.', v_errori;
+    END IF;
 END $$;
 
 -- =============================================================================
--- Verifica finale: mostra lo stato RLS di tutte le tabelle
+-- Verifica finale — è questa che dice la verità, non i NOTICE.
+-- Elenca SOLO ciò che è rimasto difettoso: RLS spenta, FORCE mancante, o
+-- nessuna policy. Zero righe = tutto lo schema public è protetto.
+-- La policy mancante conta come difetto solo dove service_role esiste: senza
+-- (PostgreSQL non Supabase) l'assenza di policy è lo stato voluto, non un buco.
 -- =============================================================================
-SELECT
-    schemaname,
-    tablename,
-    rowsecurity as rls_enabled
-FROM pg_tables
-WHERE schemaname = 'public'
-ORDER BY tablename;
+SELECT c.relname                                                     AS tabella,
+       c.relrowsecurity                                              AS rls_attiva,
+       c.relforcerowsecurity                                         AS force_attivo,
+       (SELECT count(*) FROM pg_policy p WHERE p.polrelid = c.oid)   AS policy
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public'
+  AND c.relkind IN ('r', 'p')
+  AND (
+        NOT c.relrowsecurity
+     OR NOT c.relforcerowsecurity
+     OR (    EXISTS (SELECT 1 FROM pg_roles  r WHERE r.rolname  = 'service_role')
+         AND NOT EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid))
+  )
+ORDER BY c.relname;
