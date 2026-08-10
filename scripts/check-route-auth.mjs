@@ -148,10 +148,21 @@ function contieneAuth(testo) {
   )
 }
 
+function contieneSegretoCron(testo) {
+  return /CRON_SECRET/.test(testo)
+}
+
 /**
  * Diverse route non chiamano `auth()` nell'handler ma in una funzione dichiarata
  * in cima al file (spesso si chiama `guard`). Senza riconoscerle risulterebbero
  * prive di qualsiasi controllo, che è l'errore opposto a quello che cerchiamo.
+ *
+ * Vale anche per i cron: `POST /api/saldi/riporto-anno/cron` verifica
+ * `CRON_SECRET` dentro `verificaSegretoCron()`, dichiarata nel preambolo, e
+ * veniva riportata come «nessun controllo di accesso» pur essendo protetta
+ * esattamente come gli altri due cron. Uno strumento di sicurezza che accusa
+ * il codice sano manda a caccia di fantasmi e, alla lunga, insegna a non
+ * credergli.
  */
 function helperDiAutorizzazione(preambolo) {
   const definizioni = []
@@ -164,12 +175,15 @@ function helperDiAutorizzazione(preambolo) {
     })
   }
 
+  const corpoDi = (definizione, i) =>
+    preambolo.slice(definizione.inizio, definizioni[i + 1]?.inizio ?? preambolo.length)
+
   const locali = definizioni
-    .filter((definizione, i) =>
-      contieneAuth(
-        preambolo.slice(definizione.inizio, definizioni[i + 1]?.inizio ?? preambolo.length)
-      )
-    )
+    .filter((definizione, i) => contieneAuth(corpoDi(definizione, i)))
+    .map((definizione) => definizione.nome)
+
+  const localiCron = definizioni
+    .filter((definizione, i) => contieneSegretoCron(corpoDi(definizione, i)))
     .map((definizione) => definizione.nome)
 
   // Alcune route condividono il guard con la route padre importandolo
@@ -181,16 +195,20 @@ function helperDiAutorizzazione(preambolo) {
     .map((nome) => nome.trim().split(/\s+as\s+/).pop().trim())
     .filter((nome) => /guard|^require|auth/i.test(nome))
 
-  return [...locali, ...importati]
+  return { auth: [...locali, ...importati], cron: localiCron }
 }
+
+const chiama = (corpo, nome) => new RegExp(`\\b${nome}\\s*\\(`).test(corpo)
 
 function classifica(corpo, helper) {
   if (/\bwithAuth\s*[<(]/.test(corpo)) return 'withAuth'
   if (contieneAuth(corpo)) return 'inline'
-  if (helper.some((nome) => new RegExp(`\\b${nome}\\s*\\(`).test(corpo))) return 'inline'
+  if (helper.auth.some((nome) => chiama(corpo, nome))) return 'inline'
   // I cron sono chiamati da fuori, senza cookie: si difendono con un segreto
-  // condiviso invece che con la sessione.
-  if (/CRON_SECRET/.test(corpo)) return 'cron'
+  // condiviso invece che con la sessione. Il segreto può essere verificato nel
+  // corpo o in un helper del preambolo: entrambe le forme sono in uso.
+  if (contieneSegretoCron(corpo)) return 'cron'
+  if (helper.cron.some((nome) => chiama(corpo, nome))) return 'cron'
   return 'assente'
 }
 
