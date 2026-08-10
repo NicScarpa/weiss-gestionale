@@ -193,6 +193,109 @@ describe('generateJournalEntriesFromClosure', () => {
     })
   })
 
+  describe('il tipo di operazione viene scritto, non dedotto', () => {
+    /** Le righe passate a createMany dall'ultima chiamata. */
+    function righeScritte(): Record<string, unknown>[] {
+      const chiamata = vi.mocked(prisma.journalEntry.createMany).mock.calls.at(-1)
+      return (chiamata?.[0] as { data: Record<string, unknown>[] }).data
+    }
+
+    const chiusuraCompleta = {
+      id: 'closure-1',
+      date: baseDate,
+      venueId: 'venue-1',
+      bankDeposit: 400,
+      stations: [{ cashAmount: 500, posAmount: 200, floatAmount: 114 }],
+      expenses: [{ amount: 50, payee: 'Fornitore', description: 'Caffè', accountId: 'acc-1', documentRef: null }],
+    }
+
+    it("marca l'incasso contanti come INCASSO", async () => {
+      await generateJournalEntriesFromClosure(chiusuraCompleta, userId)
+
+      const incasso = righeScritte().find(
+        (r) => r.registerType === 'CASH' && r.debitAmount === 550
+      )
+      expect(incasso?.entryType).toBe('INCASSO')
+    })
+
+    it('marca la spesa pagata in contanti come USCITA', async () => {
+      await generateJournalEntriesFromClosure(chiusuraCompleta, userId)
+
+      const spesa = righeScritte().find(
+        (r) => r.registerType === 'CASH' && r.creditAmount === 50
+      )
+      expect(spesa?.entryType).toBe('USCITA')
+    })
+
+    it("marca l'incasso POS come INCASSO, non come versamento", async () => {
+      // Il POS entra in banca in dare, e la vecchia deduzione — banca più dare
+      // — lo chiamava «Versamento». Non è la metà di niente: è un incasso, e
+      // nessun legame fra righe potrebbe correggerlo, perché non c'è coppia.
+      await generateJournalEntriesFromClosure(chiusuraCompleta, userId)
+
+      const pos = righeScritte().find(
+        (r) => r.registerType === 'BANK' && r.debitAmount === 200
+      )
+      expect(pos?.entryType).toBe('INCASSO')
+    })
+
+    it('marca ENTRAMBE le righe del versamento come VERSAMENTO', async () => {
+      await generateJournalEntriesFromClosure(chiusuraCompleta, userId)
+
+      const righe = righeScritte()
+      const uscitaCassa = righe.find(
+        (r) => r.registerType === 'CASH' && r.creditAmount === 400
+      )
+      const entrataBanca = righe.find(
+        (r) => r.registerType === 'BANK' && r.debitAmount === 400
+      )
+
+      expect(uscitaCassa?.entryType).toBe('VERSAMENTO')
+      expect(entrataBanca?.entryType).toBe('VERSAMENTO')
+    })
+
+    it('lega le due righe del versamento con lo stesso transferId', async () => {
+      // Senza il legame, cancellare una riga lascia l'altra in piedi e la
+      // liquidità totale si sposta dell'intero importo: è il guasto che
+      // `transferId` era stato introdotto per chiudere, e sulla via della
+      // chiusura di cassa era rimasto aperto.
+      await generateJournalEntriesFromClosure(chiusuraCompleta, userId)
+
+      const righe = righeScritte()
+      const uscitaCassa = righe.find(
+        (r) => r.registerType === 'CASH' && r.creditAmount === 400
+      )
+      const entrataBanca = righe.find(
+        (r) => r.registerType === 'BANK' && r.debitAmount === 400
+      )
+
+      expect(uscitaCassa?.transferId).toEqual(expect.any(String))
+      expect(uscitaCassa?.transferId).toBe(entrataBanca?.transferId)
+    })
+
+    it('non mette transferId sulle righe che non sono trasferimenti', async () => {
+      await generateJournalEntriesFromClosure(chiusuraCompleta, userId)
+
+      const incasso = righeScritte().find(
+        (r) => r.registerType === 'CASH' && r.debitAmount === 550
+      )
+      expect(incasso?.transferId ?? null).toBeNull()
+    })
+
+    it('due chiusure diverse non condividono lo stesso transferId', async () => {
+      await generateJournalEntriesFromClosure(chiusuraCompleta, userId)
+      const primo = righeScritte().find((r) => r.creditAmount === 400)?.transferId
+
+      await generateJournalEntriesFromClosure(
+        { ...chiusuraCompleta, id: 'closure-2' },
+        userId
+      )
+      const secondo = righeScritte().find((r) => r.creditAmount === 400)?.transferId
+
+      expect(primo).not.toBe(secondo)
+    })
+  })
+
   describe('Complex Scenarios', () => {
     it('should handle complete closure with all components', async () => {
       const closure = {

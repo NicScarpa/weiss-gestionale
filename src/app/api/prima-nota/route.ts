@@ -415,6 +415,12 @@ export async function POST(request: NextRequest) {
     const comune = {
       venueId,
       date: validatedData.date,
+      // Il tipo arriva dall'utente e va salvato. Prima serviva solo a scegliere
+      // i registri e poi veniva buttato via: la schermata lo ricalcolava da
+      // registro più verso, che non lo determinano — la riga in avere sulla
+      // cassa di un versamento è identica a una spesa in contanti, e infatti
+      // si presentava come «Uscita».
+      entryType: validatedData.entryType,
       description: validatedData.description,
       documentRef: validatedData.documentRef,
       documentType: validatedData.documentType,
