@@ -312,6 +312,11 @@ export async function GET(request: NextRequest) {
       vatAmount: entry.vatAmount ? Number(entry.vatAmount) : null,
       accountId: entry.accountId,
       closureId: entry.closureId,
+      // Le due righe di un trasferimento hanno lo stesso `transferId`: senza
+      // portarlo fino al client, la lista non ha modo di sapere che sono i due
+      // lati di una sola operazione, e la metà in uscita si presenta come una
+      // spesa qualunque.
+      transferId: entry.transferId,
       runningBalance: entry.runningBalance ? Number(entry.runningBalance) : null,
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt,

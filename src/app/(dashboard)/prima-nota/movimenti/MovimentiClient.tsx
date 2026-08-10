@@ -32,23 +32,19 @@ import {
 } from '@/components/ui/select'
 import { DangerousDeleteDialog } from '@/components/ui/dangerous-delete-dialog'
 import { usePrimaNota } from '@/components/prima-nota/PrimaNotaContext'
-import type { JournalEntry, RegisterType, EntryType } from '@/types/prima-nota'
+import { tipoDaMostrare } from '@/lib/prima-nota-utils'
+import type { JournalEntry, RegisterType } from '@/types/prima-nota'
 
 interface MovimentiClientProps {
   accounts: Array<{ id: string; name: string; code: string }>
   budgetCategories: Array<{ id: string; name: string; code: string; color?: string }>
 }
 
-/**
- * Derive entryType from registerType + debitAmount/creditAmount
- * since entryType is not stored in the database.
- */
-function deriveEntryType(entry: { registerType: string; debitAmount?: number | null; creditAmount?: number | null }): EntryType {
-  if (entry.registerType === 'CASH') {
-    return (entry.debitAmount && entry.debitAmount > 0) ? 'INCASSO' : 'USCITA'
-  }
-  return (entry.debitAmount && entry.debitAmount > 0) ? 'VERSAMENTO' : 'PRELIEVO'
-}
+// Il tipo del movimento non sta nel database e va ricostruito. La regola sta
+// in `tipoDaMostrare` (src/lib/prima-nota-utils.ts), che a differenza di
+// quella di prima guarda anche `transferId`: senza, la metà in uscita di un
+// versamento si presentava come «Uscita», indistinguibile da una spesa in
+// contanti — un'operazione che nessuno aveva fatto.
 
 export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientProps) {
   const searchParams = useSearchParams()
@@ -140,7 +136,7 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
     () =>
       (risposta?.data ?? []).map((entry) => ({
         ...entry,
-        entryType: deriveEntryType(entry),
+        entryType: tipoDaMostrare(entry),
       })),
     [risposta]
   )
@@ -381,7 +377,7 @@ export function MovimentiClient({ accounts, budgetCategories }: MovimentiClientP
         entry={selectedEntry ? {
           date: new Date(selectedEntry.date),
           registerType: selectedEntry.registerType,
-          entryType: deriveEntryType(selectedEntry),
+          entryType: tipoDaMostrare(selectedEntry),
           amount: Math.abs(Number(selectedEntry.debitAmount || selectedEntry.creditAmount || 0)),
           description: selectedEntry.description,
           documentRef: selectedEntry.documentRef,

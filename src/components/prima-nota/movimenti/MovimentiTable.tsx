@@ -4,6 +4,7 @@ import * as React from 'react'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 import {
+  ArrowLeftRightIcon,
   ArrowUpDownIcon,
   CalendarIcon,
 } from 'lucide-react'
@@ -11,9 +12,11 @@ import { MovimentoRowActions } from './MovimentoRowActions'
 import { JournalEntryBadge } from '../shared/JournalEntryBadge'
 import { CategorizationBadge } from '../shared/CategorizationBadge'
 import {
+  REGISTER_LABELS,
   type JournalEntry,
   type JournalEntryFilters,
 } from '@/types/prima-nota'
+import { latiDelTrasferimento } from '@/lib/prima-nota-utils'
 import { cn } from '@/lib/utils'
 import { formatCurrencyOrDash } from '@/lib/formatters'
 
@@ -133,6 +136,7 @@ export function MovimentiTable({
             <tbody>
               {data.map((entry, idx) => {
                 const dc = getDebitCredit(entry)
+                const trasferimento = latiDelTrasferimento(entry)
 
                 return (
                   <tr
@@ -162,6 +166,18 @@ export function MovimentiTable({
                           </span>
                         )}
                       </div>
+                      {/* Le due righe di un trasferimento riportano qui la
+                          stessa dicitura: è ciò che permette di accoppiarle a
+                          colpo d'occhio, senza aprirle. */}
+                      {trasferimento && (
+                        <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                          <ArrowLeftRightIcon className="h-3 w-3 shrink-0" />
+                          <span>
+                            {REGISTER_LABELS[trasferimento.da]} →{' '}
+                            {REGISTER_LABELS[trasferimento.a]}
+                          </span>
+                        </div>
+                      )}
                     </td>
 
                     {/* Documento */}

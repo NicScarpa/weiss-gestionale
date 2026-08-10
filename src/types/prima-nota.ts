@@ -85,6 +85,11 @@ export interface JournalEntry {
   accountId?: string
   counterpartId?: string
   closureId?: string
+  /**
+   * Lega fra loro le due righe di un trasferimento: stesso valore sull'uscita
+   * e sull'entrata, assente sui movimenti a riga singola.
+   */
+  transferId?: string
   runningBalance?: number
   createdById?: string
   createdAt: Date

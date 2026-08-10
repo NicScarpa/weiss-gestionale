@@ -3,7 +3,9 @@ import type { JournalEntry } from '@/types/prima-nota'
 import { isTrasferimento } from '@/types/prima-nota'
 import {
   getMovementDirection,
+  latiDelTrasferimento,
   registriDelTrasferimento,
+  tipoDaMostrare,
   TrasferimentoNonValidoError,
   toDebitCredit,
   calculateRunningBalances,
@@ -111,6 +113,82 @@ describe('registriDelTrasferimento', () => {
     expect(() => registriDelTrasferimento('GIROCONTO', 'CASH', 'CASH')).toThrow(
       TrasferimentoNonValidoError
     )
+  })
+})
+
+describe('latiDelTrasferimento', () => {
+  const versamentoUscita = {
+    registerType: 'CASH' as const,
+    creditAmount: 250.5,
+    transferId: 't-1',
+  }
+  const versamentoEntrata = {
+    registerType: 'BANK' as const,
+    debitAmount: 250.5,
+    transferId: 't-1',
+  }
+
+  it('dalla riga in uscita ricava che il denaro va dalla cassa alla banca', () => {
+    expect(latiDelTrasferimento(versamentoUscita)).toEqual({ da: 'CASH', a: 'BANK' })
+  })
+
+  it('dalla riga in entrata ricava la stessa direzione', () => {
+    expect(latiDelTrasferimento(versamentoEntrata)).toEqual({ da: 'CASH', a: 'BANK' })
+  })
+
+  it('le due righe dello stesso trasferimento danno la stessa direzione', () => {
+    expect(latiDelTrasferimento(versamentoUscita)).toEqual(
+      latiDelTrasferimento(versamentoEntrata)
+    )
+  })
+
+  it('il prelievo va dalla banca alla cassa, da qualunque riga lo si guardi', () => {
+    expect(
+      latiDelTrasferimento({ registerType: 'BANK', creditAmount: 100, transferId: 't-2' })
+    ).toEqual({ da: 'BANK', a: 'CASH' })
+    expect(
+      latiDelTrasferimento({ registerType: 'CASH', debitAmount: 100, transferId: 't-2' })
+    ).toEqual({ da: 'BANK', a: 'CASH' })
+  })
+
+  it('un movimento a riga singola non ha due lati', () => {
+    expect(latiDelTrasferimento({ registerType: 'CASH', creditAmount: 30 })).toBeNull()
+  })
+})
+
+describe('tipoDaMostrare', () => {
+  it('chiama VERSAMENTO entrambe le righe di un versamento', () => {
+    // È il difetto che questa funzione esiste per correggere: la riga in
+    // uscita dalla cassa si presentava come «Uscita», cioè come una spesa che
+    // nessuno ha fatto.
+    expect(
+      tipoDaMostrare({ registerType: 'CASH', creditAmount: 250.5, transferId: 't-1' })
+    ).toBe('VERSAMENTO')
+    expect(
+      tipoDaMostrare({ registerType: 'BANK', debitAmount: 250.5, transferId: 't-1' })
+    ).toBe('VERSAMENTO')
+  })
+
+  it('chiama PRELIEVO entrambe le righe di un prelievo', () => {
+    expect(
+      tipoDaMostrare({ registerType: 'BANK', creditAmount: 80, transferId: 't-2' })
+    ).toBe('PRELIEVO')
+    expect(
+      tipoDaMostrare({ registerType: 'CASH', debitAmount: 80, transferId: 't-2' })
+    ).toBe('PRELIEVO')
+  })
+
+  it('senza transferId resta il movimento a riga singola: incasso o uscita', () => {
+    expect(tipoDaMostrare({ registerType: 'CASH', debitAmount: 40 })).toBe('INCASSO')
+    expect(tipoDaMostrare({ registerType: 'CASH', creditAmount: 40 })).toBe('USCITA')
+    expect(tipoDaMostrare({ registerType: 'BANK', debitAmount: 40 })).toBe('INCASSO')
+    expect(tipoDaMostrare({ registerType: 'BANK', creditAmount: 40 })).toBe('USCITA')
+  })
+
+  it('una spesa in contanti non viene scambiata per un versamento', () => {
+    // Stessi registro e verso della metà in uscita di un versamento: a
+    // distinguerli è solo `transferId`.
+    expect(tipoDaMostrare({ registerType: 'CASH', creditAmount: 250.5 })).toBe('USCITA')
   })
 })
 
