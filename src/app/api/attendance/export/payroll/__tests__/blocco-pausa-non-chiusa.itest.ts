@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { setupIntegrationDb } from '@/test/integration/db'
-import { loginAs, setSession, type SeedRole } from '@/test/integration/auth-mock'
+import { entraCome } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
 import { prisma } from '@/lib/prisma'
 import { romeDateKey, romeInstant } from '@/lib/timezone'
@@ -18,13 +18,6 @@ import { GET as esportaPaghe } from '../route'
  */
 
 setupIntegrationDb()
-
-/** Vedi la nota in categorization-rules: gli utenti del seed nascono con `mustChangePassword`. */
-async function entraCome(role: SeedRole) {
-  const session = await loginAs(role)
-  setSession({ ...session, user: { ...session.user, mustChangePassword: false } })
-  return session
-}
 
 /** Tre giorni fa: una giornata chiusa, senza dipendere dall'ora del test. */
 function giornoDiTest(): string {

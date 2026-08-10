@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { prisma } from '@/lib/prisma'
 import { setupIntegrationDb } from '@/test/integration/db'
-import { loginAs, loginAsUser, setSession, type SeedRole } from '@/test/integration/auth-mock'
+import { entraCome, entraComeUtente, loginAs, setSession } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
 import { venueDiTest } from '@/test/integration/fixtures/closures'
 import { GET as dettaglioAnomalia, PUT as risolviAnomalia } from '../route'
@@ -14,19 +14,6 @@ import { GET as dettaglioAnomalia, PUT as risolviAnomalia } from '../route'
  * poteva leggere la posizione esatta di un collega.
  */
 setupIntegrationDb()
-
-/** Gli utenti del seed nascono con `mustChangePassword`, che `withAuth` blocca. */
-async function entraCome(role: SeedRole) {
-  const session = await loginAs(role)
-  setSession({ ...session, user: { ...session.user, mustChangePassword: false } })
-  return session
-}
-
-async function entraComeUtente(userId: string) {
-  const session = await loginAsUser(userId)
-  setSession({ ...session, user: { ...session.user, mustChangePassword: false } })
-  return session
-}
 
 /** Un collega diverso da quello restituito da `loginAs('staff')`. */
 async function altroStaff(escluso: string) {

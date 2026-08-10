@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { toDateOnlyUtc } from '@/lib/timezone'
 import { giornoCorrente, giornoIndietro } from '@/lib/saldi'
 import { setupIntegrationDb } from '@/test/integration/db'
-import { loginAs, setSession, type SeedRole } from '@/test/integration/auth-mock'
+import { entraCome } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
 import { venueDiTest } from '@/test/integration/fixtures/closures'
 import { GET as getForecast } from '../route'
@@ -23,21 +23,6 @@ import { GET as getSaldiPrimaNota } from '@/app/api/prima-nota/saldi/route'
 setupIntegrationDb()
 
 const OGGI = giornoCorrente()
-
-/**
- * Entra come utente che ha già cambiato la password iniziale.
- *
- * Tutti gli utenti del seed hanno `mustChangePassword: true`, e da quando
- * questa route è protetta da `withAuth` il guard risponde 403 a chi non l'ha
- * cambiata — giustamente: in produzione nessuno usa l'applicazione in quello
- * stato. `loginAs` da solo produce quindi una sessione che non passa i guard,
- * e ogni test su una route protetta ha bisogno di questo passaggio in più.
- */
-async function entraCome(ruolo: SeedRole) {
-  const sessione = await loginAs(ruolo)
-  setSession({ ...sessione, user: { ...sessione.user, mustChangePassword: false } })
-  return sessione
-}
 
 interface RispostaForecast {
   currentBalance: { cash: number; bank: number; total: number }

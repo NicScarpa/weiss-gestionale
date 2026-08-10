@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { setupIntegrationDb } from '@/test/integration/db'
-import { loginAs, setSession, type SeedRole } from '@/test/integration/auth-mock'
+import { entraCome } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
 import { GET as previsione } from '../route'
 
@@ -11,13 +11,6 @@ import { GET as previsione } from '../route'
  * l'endpoint restava chiamabile direttamente.
  */
 setupIntegrationDb()
-
-/** Vedi la nota in categorization-rules: gli utenti del seed nascono con `mustChangePassword`. */
-async function entraCome(role: SeedRole) {
-  const session = await loginAs(role)
-  setSession({ ...session, user: { ...session.user, mustChangePassword: false } })
-  return session
-}
 
 describe('GET /api/dashboard/forecast', () => {
   it('nega la previsione di cassa a uno staff', async () => {
