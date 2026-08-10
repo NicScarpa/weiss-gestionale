@@ -349,7 +349,11 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
         onRegisterTypeChange={(v) => setFilters(f => ({ ...f, registerType: v }))}
         dateFrom={filters.dateFrom}
         dateTo={filters.dateTo}
-        onDateRangeChange={(range) => setFilters(f => ({ ...f, dateFrom: range.from, dateTo: range.to }))}
+        // Svuotare la selezione emette `undefined`: azzera entrambe le date
+        // invece di lasciare il filtro precedente in vigore.
+        onDateRangeChange={(range) =>
+          setFilters(f => ({ ...f, dateFrom: range?.from, dateTo: range?.to }))
+        }
         entryType={filters.entryType}
         onEntryTypeChange={(v) => setFilters(f => ({ ...f, entryType: v }))}
         accountId={filters.accountId}
@@ -426,12 +430,14 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
           entryType: tipoDaMostrare(selectedEntry),
           amount: Math.abs(Number(selectedEntry.debitAmount || selectedEntry.creditAmount || 0)),
           description: selectedEntry.description,
-          documentRef: selectedEntry.documentRef,
-          documentType: selectedEntry.documentType,
-          accountId: selectedEntry.accountId,
-          costCenterId: selectedEntry.costCenterId,
+          // Sul movimento questi campi sono nullable, nel form sono opzionali:
+          // `null` significherebbe "valore scelto e vuoto" invece di "assente".
+          documentRef: selectedEntry.documentRef ?? undefined,
+          documentType: selectedEntry.documentType ?? undefined,
+          accountId: selectedEntry.accountId ?? undefined,
+          costCenterId: selectedEntry.costCenterId ?? undefined,
           vatAmount: selectedEntry.vatAmount ? Number(selectedEntry.vatAmount) : undefined,
-          notes: selectedEntry.notes,
+          notes: selectedEntry.notes ?? undefined,
         } : undefined}
         open={dialogOpen}
         onOpenChange={(open) => {

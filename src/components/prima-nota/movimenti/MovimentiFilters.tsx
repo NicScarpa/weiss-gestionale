@@ -12,7 +12,9 @@ interface MovimentiFiltersProps {
   onRegisterTypeChange?: (value: RegisterType | undefined) => void
   dateFrom?: Date
   dateTo?: Date
-  onDateRangeChange?: (range: { from?: Date; to?: Date }) => void
+  // `undefined` è il valore che il DateRangePicker emette quando la selezione
+  // viene svuotata: senza, la firma non combacia con quella del componente.
+  onDateRangeChange?: (range: { from?: Date; to?: Date } | undefined) => void
   entryType?: string
   onEntryTypeChange?: (value: string | undefined) => void
   accountId?: string

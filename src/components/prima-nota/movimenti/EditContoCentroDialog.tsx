@@ -123,7 +123,12 @@ function ModuloRiclassifica({
   onSaved: () => void
 }) {
   const [accountId, setAccountId] = React.useState<string | undefined>(entry?.accountId)
-  const [costCenterId, setCostCenterId] = React.useState<string | undefined>(entry?.costCenterId)
+  // `costCenterId` è nullable sul movimento: senza il `?? undefined` lo stato
+  // riceverebbe `null`, che il tipo non ammette (e che il Select tratta come
+  // valore scelto invece che come "nessun centro").
+  const [costCenterId, setCostCenterId] = React.useState<string | undefined>(
+    entry?.costCenterId ?? undefined
+  )
   const [isSubmitting, setIsSubmitting] = React.useState(false)
 
   // Nessun filtro types (vedi sopra): stessa chiave di query di un

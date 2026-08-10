@@ -7,10 +7,13 @@ export default async function RegolePage() {
 
   // Il conto della regola (RegolaFormDialog) ha ora una fetch propria via
   // AccountCombobox: qui serve solo più budgetCategories.
-  const budgetCategories = await prisma.budgetCategory.findMany({
+  // `color` è nullable nel database e opzionale nei componenti: la conversione
+  // null → undefined sta al confine, come in movimenti/page.tsx.
+  const categorie = await prisma.budgetCategory.findMany({
     select: { id: true, name: true, code: true, color: true },
     orderBy: { code: 'asc' },
   })
+  const budgetCategories = categorie.map((c) => ({ ...c, color: c.color ?? undefined }))
 
   return (
     <CategorizationRulesManager

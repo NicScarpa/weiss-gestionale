@@ -224,6 +224,20 @@ export function AccountManagement() {
     setIsDeleteDialogOpen(true)
   }
 
+  /**
+   * `AccountTree` conosce solo i campi che disegna (`AccountTreeAccount`),
+   * mentre il form di modifica e il dialogo di eliminazione vogliono il conto
+   * intero: si ritrova per id nella lista completa. Senza questo adattamento le
+   * due callback non combaciano — una funzione che pretende più campi non può
+   * ricevere un oggetto che ne ha meno.
+   */
+  const conContoIntero =
+    (azione: (account: Account) => void) =>
+    (ridotto: { id: string }) => {
+      const intero = accounts.find((a) => a.id === ridotto.id)
+      if (intero) azione(intero)
+    }
+
   // Salva conto
   const handleSave = async () => {
     if (!formData.code.trim() || !formData.name.trim()) {
@@ -401,8 +415,8 @@ export function AccountManagement() {
                   <AccountTree
                     accounts={filteredAccounts}
                     searchActive={searchActive}
-                    onEdit={handleEdit}
-                    onDelete={handleDeleteConfirm}
+                    onEdit={conContoIntero(handleEdit)}
+                    onDelete={conContoIntero(handleDeleteConfirm)}
                     emptyMessage={
                       searchQuery
                         ? 'Nessun conto trovato'
