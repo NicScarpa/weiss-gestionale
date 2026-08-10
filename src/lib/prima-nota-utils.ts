@@ -53,6 +53,59 @@ export function registriDelTrasferimento(
   return { da: registerType, a: counterRegisterType }
 }
 
+/** Una riga come arriva dalla lista, ridotta a ciò che serve per riconoscerla. */
+export interface RigaDaRiconoscere {
+  registerType: RegisterType
+  debitAmount?: number | null
+  creditAmount?: number | null
+  transferId?: string | null
+}
+
+/**
+ * Da dove a dove si muove il denaro, guardando **una sola** delle due righe.
+ *
+ * Si può fare perché i registri sono due: se il denaro esce dalla cassa può
+ * solo entrare in banca, e viceversa. Il verso lo dà la colonna — l'Avere è il
+ * registro da cui esce, il Dare quello in cui entra.
+ *
+ * Restituisce `null` per un movimento a riga singola, che non ha due lati.
+ */
+export function latiDelTrasferimento(
+  riga: RigaDaRiconoscere
+): RegistriDelTrasferimento | null {
+  if (!riga.transferId) return null
+
+  const altro: RegisterType = riga.registerType === 'CASH' ? 'BANK' : 'CASH'
+  const esce = (riga.creditAmount ?? 0) > 0
+
+  return esce
+    ? { da: riga.registerType, a: altro }
+    : { da: altro, a: riga.registerType }
+}
+
+/**
+ * L'etichetta da mostrare per una riga della lista.
+ *
+ * Il tipo del movimento non sta nel database: lo si ricava dal registro e dal
+ * verso dell'importo. Su un movimento a riga singola basta, ma sulla metà in
+ * uscita di un trasferimento no — cassa in Avere è indistinguibile da una
+ * spesa in contanti, e infatti quella riga si presentava come «Uscita», cioè
+ * come un'operazione che nessuno ha fatto.
+ *
+ * `transferId` è ciò che toglie l'ambiguità: quando c'è, la riga è un lato di
+ * un trasferimento e prende il nome dell'operazione intera, uguale su
+ * entrambe le righe. Il giroconto non è ricostruibile — con due soli registri
+ * coincide con versamento o prelievo, e quale dei due nomi l'utente avesse
+ * scelto non è un dato che qualcuno abbia salvato.
+ */
+export function tipoDaMostrare(riga: RigaDaRiconoscere): EntryType {
+  const lati = latiDelTrasferimento(riga)
+  if (lati) return lati.a === 'BANK' ? 'VERSAMENTO' : 'PRELIEVO'
+
+  const entra = (riga.debitAmount ?? 0) > 0
+  return entra ? 'INCASSO' : 'USCITA'
+}
+
 /**
  * Determina se un movimento è DARE o AVERE in base al registro e tipo.
  *
