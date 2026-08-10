@@ -29,6 +29,33 @@ const ROUTE_PER_CAMPO: Record<(typeof CAMPI_DERIVATI)[number], string> = {
   importoPagato: 'POST /api/scadenzario/[id]/pagamenti',
 }
 
+/**
+ * Il verso della scadenza non si cambia mai.
+ *
+ * `tipo` non è nello schema qui sotto, quindi finiva scartato in silenzio: la
+ * schermata di modifica lo mostra in un menu attivo, l'utente poteva sceglierlo,
+ * salvare, e ritrovarsi la scadenza identica a prima senza sapere perché.
+ *
+ * Si rifiuta il CAMBIO e non la presenza del campo, e la differenza non è
+ * formale: la schermata di modifica rimanda l'intero oggetto — invia un
+ * `CreateScheduleInput`, che ha `tipo` obbligatorio, popolato col valore
+ * corrente — quindi rifiutare la sola presenza renderebbe impossibile
+ * modificare perfino la descrizione di una scadenza qualsiasi.
+ *
+ * (Il gemello `CAMPI_CONGELATI` in `pagamenti/[id]/route.ts` guarda invece la
+ * sola presenza: là il congelamento scatta solo dopo la registrazione in prima
+ * nota, qui il divieto è permanente e il campo arriva sempre. Stessa idea, due
+ * condizioni diverse.)
+ */
+const CAMPI_IMMUTABILI = ['tipo'] as const
+
+const MOTIVO_IMMUTABILE: Record<(typeof CAMPI_IMMUTABILI)[number], string> = {
+  tipo:
+    'Il verso di una scadenza non si cambia: attiva e passiva stanno su lati opposti dei ' +
+    'conti, e su una scadenza già riconciliata sposterebbe denaro già registrato. ' +
+    'Annulla questa scadenza e creane una nuova nel verso giusto.',
+}
+
 const updateScheduleSchema = z.object({
   descrizione: z.string().min(1).optional(),
   importoTotale: z.number().positive().optional(),
@@ -153,6 +180,22 @@ export async function PATCH(
             'Stato e importo pagato si derivano dai pagamenti registrati e non si ' +
             'modificano da qui',
           campi: derivatiRichiesti.map((campo) => ({ campo, usare: ROUTE_PER_CAMPO[campo] })),
+        },
+        { status: 400 }
+      )
+    }
+
+    // Un campo immutabile rimandato col valore che ha già non è un cambio:
+    // l'interfaccia rispedisce sempre l'oggetto intero, e trattarlo come
+    // tentativo di modifica bloccherebbe ogni salvataggio.
+    const immutabiliCambiati = CAMPI_IMMUTABILI.filter(
+      (campo) => campo in body && body[campo] !== existing[campo]
+    )
+    if (immutabiliCambiati.length > 0) {
+      return NextResponse.json(
+        {
+          error: immutabiliCambiati.map((campo) => MOTIVO_IMMUTABILE[campo]).join(' '),
+          campi: immutabiliCambiati,
         },
         { status: 400 }
       )
