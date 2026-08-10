@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextResponse } from 'next/server'
+import { withAuth } from '@/lib/api-utils'
 import { prisma } from '@/lib/prisma'
 import { startOfYear, endOfYear, format, eachMonthOfInterval, startOfMonth, endOfMonth } from 'date-fns'
 import { it } from 'date-fns/locale'
@@ -7,21 +7,10 @@ import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
 // GET /api/report/confronto-annuale - Report confronto year-over-year
-export async function GET(request: NextRequest) {
+export const GET = withAuth(async (request) => {
   try {
-    const session = await auth()
-
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
-    if (!['admin', 'manager'].includes(session.user.role || '')) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
     const { searchParams } = new URL(request.url)
     const yearParam = searchParams.get('year')
-    const venueId = searchParams.get('venueId')
 
     // Anno di default: anno corrente
     const currentYear = yearParam ? parseInt(yearParam) : new Date().getFullYear()
@@ -297,4 +286,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+}, { roles: ['admin', 'manager'] })

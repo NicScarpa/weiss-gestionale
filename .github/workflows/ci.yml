@@ -30,13 +30,13 @@ jobs:
       - name: Run ESLint
         run: npm run lint
 
-      # Censimento dell'autorizzazione sulle route API. Oggi è solo un rapporto
-      # (lo script esce sempre 0): la conversione a withAuth è appena
-      # cominciata e bloccare qui fermerebbe ogni commit. Quando sarà completa
-      # diventa `node scripts/check-route-auth.mjs --strict`, che fallisce se
-      # ricompaiono guard scritti a mano.
-      - name: Autorizzazione delle route API (rapporto)
-        run: node scripts/check-route-auth.mjs
+      # Autorizzazione delle route API, a cricchetto: fallisce se il numero di
+      # handler senza `withAuth` SALE sopra la baseline dello script. Prima era
+      # solo un rapporto in attesa che la conversione finisse, e nel frattempo
+      # il conto è passato da 255 a 260 — l'attesa costava. Quando la baseline
+      # arriverà a zero, questo diventa `--strict`.
+      - name: Autorizzazione delle route API (cricchetto)
+        run: node scripts/check-route-auth.mjs --ratchet
 
       # Codice morto. Il pacchetto e lo script c'erano da un pezzo, ma nessuno
       # eseguiva knip in CI: la classe di problema che ha prodotto questa

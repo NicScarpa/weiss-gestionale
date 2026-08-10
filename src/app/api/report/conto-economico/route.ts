@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextResponse } from 'next/server'
+import { withAuth } from '@/lib/api-utils'
 import { prisma } from '@/lib/prisma'
 import { startOfYear, endOfYear, format, parseISO } from 'date-fns'
 import { getVenueId } from '@/lib/venue'
@@ -20,18 +20,8 @@ const ACCOUNT_SELECT = {
 } as const
 
 // GET /api/report/conto-economico - Conto economico per centro di costo
-export async function GET(request: NextRequest) {
+export const GET = withAuth(async (request) => {
   try {
-    const session = await auth()
-
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
-    if (!['admin', 'manager'].includes(session.user.role || '')) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
     const { searchParams } = new URL(request.url)
     const dateFromParam = searchParams.get('dateFrom')
     const dateToParam = searchParams.get('dateTo')
@@ -92,4 +82,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+}, { roles: ['admin', 'manager'] })

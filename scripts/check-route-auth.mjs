@@ -16,10 +16,25 @@
  *   assente    nessun controllo di alcun tipo
  *   pubblica   esente per scelta (elenco in src/middleware.ts)
  *
- * In questa ondata è solo un rapporto e non fa mai fallire la CI: la
- * conversione è appena cominciata e un cricchetto qui bloccherebbe ogni commit.
- * Con `--strict` esce 1 se restano guard inline o assenti: è la forma che
- * prenderà in CI a conversione completata.
+ * Senza argomenti è solo un rapporto e non fa fallire nulla.
+ *
+ * Con `--ratchet` esce 1 se il numero da convertire **sale** sopra la baseline
+ * qui sotto: è la forma che gira in CI oggi. Con `--strict` esce 1 se ne resta
+ * anche uno solo: è la meta, e diventerà la forma in CI quando la baseline
+ * arriverà a zero.
+ *
+ * PERCHÉ UN CRICCHETTO E NON DIRETTAMENTE --strict
+ * Aspettare la conversione di tutti per accendere il gate ha un costo che si
+ * misura: il documento d'audit ne contava 255, e senza nulla che lo impedisse
+ * sono diventati 260 mentre la conversione era «in corso». Il cricchetto ferma
+ * la crescita subito — chi aggiunge una route deve usare withAuth — e lascia
+ * che la conversione proceda a lotti invece che in un big bang.
+ *
+ * COME AGGIORNARE LA BASELINE
+ * Solo verso il basso, come per strict-ratchet.mjs. Dopo aver convertito degli
+ * handler, esegui `node scripts/check-route-auth.mjs` e riporta il numero.
+ * Alzarla per far passare la CI vanifica il cricchetto: se il tuo commit la
+ * supera, la route nuova va scritta con withAuth, non tollerata.
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -253,7 +268,29 @@ function stampa(risultati) {
   return daConvertire
 }
 
-const daConvertire = stampa(analizza())
+/**
+ * Handler ancora da convertire tollerati. Solo verso il basso: vedi l'intestazione.
+ */
+const BASELINE = 255
+
+const risultati = analizza()
+const daConvertire = stampa(risultati)
+
+// `--elenco` serve a lavorare a lotti: raggruppa per file gli handler da
+// convertire, così un lotto può essere «tutte le route di questo dominio».
+if (process.argv.includes('--elenco')) {
+  const perFile = new Map()
+  for (const r of risultati) {
+    if (r.guard !== 'inline' && r.guard !== 'assente') continue
+    perFile.set(r.file, [...(perFile.get(r.file) ?? []), r.metodo])
+  }
+
+  console.log(`Da convertire, ${perFile.size} file:\n`)
+  for (const [file, metodi] of [...perFile].sort()) {
+    console.log(`  ${metodi.join(',').padEnd(22)} ${file}`)
+  }
+  console.log()
+}
 
 if (process.argv.includes('--strict') && daConvertire > 0) {
   console.error(
@@ -261,4 +298,25 @@ if (process.argv.includes('--strict') && daConvertire > 0) {
       'Convertili con withAuth(handler, { roles, venueScoped }) — vedi src/lib/api-utils.ts.\n'
   )
   process.exit(1)
+}
+
+if (process.argv.includes('--ratchet')) {
+  if (daConvertire > BASELINE) {
+    console.error(
+      `Cricchetto: ${daConvertire} handler da convertire, la baseline è ${BASELINE}.\n` +
+        `Ne sono comparsi ${daConvertire - BASELINE} di nuovi senza withAuth.\n` +
+        'Scrivi la route con withAuth(handler, { roles, venueScoped }) — vedi src/lib/api-utils.ts.\n' +
+        'Alzare la baseline NON è la soluzione: vanifica il cricchetto.\n'
+    )
+    process.exit(1)
+  }
+
+  if (daConvertire < BASELINE) {
+    console.log(
+      `Cricchetto: ${BASELINE - daConvertire} handler in meno della baseline.\n` +
+        `Abbassa BASELINE a ${daConvertire} in scripts/check-route-auth.mjs.\n`
+    )
+  } else {
+    console.log(`Cricchetto: ${daConvertire} da convertire, pari alla baseline.\n`)
+  }
 }

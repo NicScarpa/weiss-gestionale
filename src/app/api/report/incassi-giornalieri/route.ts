@@ -1,27 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextResponse } from 'next/server'
+import { withAuth } from '@/lib/api-utils'
 import { prisma } from '@/lib/prisma'
 import { startOfMonth, endOfMonth, subMonths, format, parseISO } from 'date-fns'
 import { it } from 'date-fns/locale'
 import { logger } from '@/lib/logger'
 import { getVenueId } from '@/lib/venue'
 // GET /api/report/incassi-giornalieri - Report incassi giornalieri
-export async function GET(request: NextRequest) {
+export const GET = withAuth(async (request) => {
   try {
-    const session = await auth()
-
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
-    if (!['admin', 'manager'].includes(session.user.role || '')) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
     const { searchParams } = new URL(request.url)
     const dateFrom = searchParams.get('dateFrom')
     const dateTo = searchParams.get('dateTo')
-    const venueId = searchParams.get('venueId')
     const _groupBy = searchParams.get('groupBy') || 'day' // day, week, month
 
     // Date di default: mese corrente
@@ -216,4 +205,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+}, { roles: ['admin', 'manager'] })
