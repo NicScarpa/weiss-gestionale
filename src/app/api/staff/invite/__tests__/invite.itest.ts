@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { prisma } from '@/lib/prisma'
 import { setupIntegrationDb } from '@/test/integration/db'
-import { loginAs, setSession, type SeedRole } from '@/test/integration/auth-mock'
+import { entraCome } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
 import { GET as leggiInvito, POST as rigeneraInvito } from '../route'
 
@@ -13,13 +13,6 @@ import { GET as leggiInvito, POST as rigeneraInvito } from '../route'
  * L'emissione ora vive solo nella POST.
  */
 setupIntegrationDb()
-
-/** Vedi la nota in categorization-rules: gli utenti del seed nascono con `mustChangePassword`. */
-async function entraCome(role: SeedRole) {
-  const session = await loginAs(role)
-  setSession({ ...session, user: { ...session.user, mustChangePassword: false } })
-  return session
-}
 
 interface RispostaInvito {
   token: string | null
