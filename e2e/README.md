@@ -120,22 +120,45 @@ tranquillo.
 ## Un rosso vero, intermittente
 
 `offline.spec.ts` › «la pagina appena visitata si ricarica e resta compilabile»
-**fallisce circa una volta su due** (misurato: 5 rossi su 10 esecuzioni contro
-una build di produzione). Quando fallisce, la pagina ricaricata senza rete
-mostra la pagina «Sei offline» invece del modulo — cioè esattamente lo scenario
-che `attendiPaginaInCache` esiste per escludere.
+fallisce ogni tanto. Quando fallisce, la pagina ricaricata senza rete mostra
+«Sei offline» invece del modulo — cioè lo scenario che `attendiPaginaInCache`
+esiste per escludere.
 
-Quello che si sa, verificato:
+**Il tasso: ~2,5%.** Misurato il 10 ago 2026 su `main` (`5aeaa98`), build di
+produzione pulita: **1 rosso su 40 esecuzioni**. Contando tutte le
+configurazioni provate quel giorno, ~4 rossi su ~125 esecuzioni.
 
-- il documento **è** correttamente in cache (`others`) e contiene la pagina
-  vera: controllato quattro volte su quattro, mai il fallback;
-- inserendo un centinaio di millisecondi di lavoro fra l'attesa e
-  `setOffline(true)` il test passa quattro volte su quattro.
+> **Correzione di una misura precedente, scritta qui l'8 agosto.** Questa
+> sezione diceva «una volta su due (5 rossi su 10)» e «con un centinaio di
+> millisecondi passa quattro volte su quattro». **Il primo numero non si è
+> riprodotto** e il secondo **non regge a un campione più grande**: provando
+> attese di 0, 10, 25, 50, 100 e 250 ms, otto esecuzioni ciascuna, non c'è
+> nessuna tendenza (0 ms → 7 su 8; 250 ms → 8 su 8). Quel «4 su 4» era n=4, cioè
+> rumore preso per segnale. Ne seguiva che «l'attesa si dichiara soddisfatta
+> troppo presto»: **quella conclusione è ritirata**, non è sostenuta.
 
-Quindi l'attesa si dichiara soddisfatta troppo presto: il documento c'è, ma
-qualcos'altro che serve alla navigazione offline non è ancora pronto. **Non è
-stato aggiunto un ritardo per farlo passare**, perché nasconderebbe la domanda
-che conta: se la corsa è nel prodotto e non nel test, un operatore che perde la
-rete subito dopo aver aperto la chiusura si vede «Sei offline» al posto del
-modulo che stava compilando. Distinguere i due casi richiede di guardare la
-configurazione del service worker, che non è di questa cartella.
+**Che cosa NON è**, ognuno misurato e non dedotto:
+
+- **non è espulsione dalla cache**: `others` contiene esattamente **una** voce,
+  il documento, identica prima e dopo il reload (6 controlli su 6);
+- **non è una finestra temporale fissa**: vedi le attese qui sopra;
+- **non è il carico della macchina**: 12 esecuzioni su 12 verdi con 22 processi
+  che saturavano 11 core;
+- **non è una build contaminata** da un dev server attivo nello stesso worktree:
+  2 rossi su 24, cioè lo stesso ordine di grandezza della build pulita.
+
+**Che cosa è, strutturalmente** — questo è certo e indipendente dal difetto
+intermittente. In `@serwist/next` la regola che dovrebbe gestire le pagine
+seleziona su `request.headers.get("Content-Type")`, **un header di richiesta che
+le navigazioni non mandano mai**: la cache `pages` non viene creata affatto
+(le uniche presenti sono `serwist-precache-v2` e `others`) e ogni documento
+finisce nel secchio generico `others`, un `NetworkFirst` con **32 voci in LRU
+condivise con tutte le altre risorse** della stessa origine. Nel test la cache è
+nuova e contiene una voce sola, quindi lì non morde; su un dispositivo che ha
+navigato un po', il documento che serve offline compete per uno di 32 posti.
+
+**Non è stato aggiunto un ritardo per far passare il test**, e il test non è
+stato toccato: la sua logica è corretta e la sua precondizione è verificata dai
+numeri qui sopra. La correzione sensata è nel service worker — una regola
+esplicita per le navigazioni, prima di `others` — ed è una scelta di prodotto,
+non una svista da sistemare di nascosto.
