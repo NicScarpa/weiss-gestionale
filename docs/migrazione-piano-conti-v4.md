@@ -85,13 +85,19 @@ read -rs "DB_BERSAGLIO?URL di connessione: " && export DB_BERSAGLIO   # zsh
 #   umask 077 && $EDITOR ~/.weiss-migrazione   (una riga: postgresql://…)
 #   export DB_BERSAGLIO="$(cat ~/.weiss-migrazione)"
 
-# 1. DDL: tabella cost_centers, colonne di supporto, RLS (idempotente)
-psql "$DB_BERSAGLIO" -f prisma/migrations/2026-08-07_piano_v4_centri_costo.sql
+# 1. DDL, in una volta sola: tabella cost_centers, colonne di supporto, RLS, e
+#    la colonna journal_entries.cost_center_source con il suo vincolo CHECK.
+#    Dal 10 agosto 2026 i due file non si applicano più a mano con `psql -f`:
+#    sono migrazioni Prisma registrate in _prisma_migrations, e in produzione
+#    si applicano SOLO così. Mai `db push`.
+#
+#    Prima, per vedere cosa verrà applicato senza applicare nulla:
+DATABASE_URL="$DB_BERSAGLIO" npm run db:migrate:status
+#    Attese come "not yet applied": 20260807000000_piano_v4_centri_costo e
+#    20260808000000_centro_operativo_provenienza. Se ne comparissero altre,
+#    fermarsi: vuol dire che il bersaglio non è allineato a main.
 
-# 1-bis. DDL additivo: provenienza del centro di costo sul movimento
-#    (idempotente). Va applicato PRIMA del deploy del codice: da qui in avanti
-#    ogni scrittura di prima nota valorizza journal_entries.cost_center_source.
-psql "$DB_BERSAGLIO" -f prisma/migrations/2026-08-08_centro_operativo_provenienza.sql
+DATABASE_URL="$DB_BERSAGLIO" npm run db:migrate:deploy
 
 # 2. dati minimi indispensabili: i 4 centri di costo, le system_key sui conti
 #    patrimoniali, il permesso di riclassifica (idempotente, nessun --execute)
