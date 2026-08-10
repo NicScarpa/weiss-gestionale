@@ -41,11 +41,52 @@ validaArgomenti([], ['out'])
 
 /**
  * Corrispondenze decise a mano fra vecchio codice e voce del piano v4.
- * Vuota di proposito: si riempie dopo l'approvazione della tabella, così il
- * documento generato porta la decisione presa e non il suggerimento della
- * macchina. Formato: { '<code legacy>': '<code v4>' }.
+ * Formato: { '<code legacy>': '<code v4>' }.
+ *
+ * Compilate il 10 agosto 2026 sui venti conti veri della produzione.
+ *
+ * **La corrispondenza è quasi sempre uno-a-molti**, perché il v4 disaggrega
+ * dove il piano vecchio teneva un conto solo: «Acquisti bevande» si apre in
+ * nove voci fra alcolici (20.1.x) e analcolici (20.2.x), «Utenze» in energia,
+ * gas, acqua e rifiuti. Qui si annota la voce **rappresentativa**, quella dove
+ * finirà la maggior parte di quel costo: serve a sapere fra un anno dove è
+ * andato a finire un conto, non a spostare importi — la migrazione disattiva i
+ * conti legacy, non li rimappa.
+ *
+ * Tre conti non compaiono di proposito: `500` Costi, `520` Costi per servizi e
+ * `530` Costi amministrativi erano **mastri**, e nel v4 i mastri non sono conti
+ * imputabili (vivono denormalizzati su `mastroCode`). Non hanno un equivalente
+ * e restano «da decidere» nel report, che è la risposta giusta.
  */
-const EQUIVALENZE_MANUALI: Record<string, string> = {}
+const EQUIVALENZE_MANUALI: Record<string, string> = {
+  // ─── Ricavi ───
+  // Il v4 non separa bar e caffetteria nei ricavi: un corrispettivo è un
+  // corrispettivo, e la distinzione utile (evento / non evento) sta altrove.
+  '400': '10.01', // Ricavi → Corrispettivi
+  '400.01': '10.01', // Ricavi da vendite bar
+  '400.02': '10.01', // Ricavi da vendite caffetteria
+  // «Eventi» senza altra qualificazione sta sugli eventi serali; i compleanni e
+  // i privati hanno una voce loro (11.02), scelta in chiusura per postazione.
+  '400.03': '11.01', // Ricavi da eventi → Ricavi eventi serali
+
+  // ─── Acquisti ───
+  '500.01': '20.4.01', // Acquisti materie prime → Beni alimentari e gastronomia (uno-a-molti: 20.4.x)
+  '500.02': '20.2.01', // Acquisti bevande → Bibite e soft drink (uno-a-molti: 20.1.x alcolici, 20.2.x analcolici)
+
+  // ─── Personale ───
+  '510': '28.4.05', // Costi personale → Altri costi per personale dipendente
+  '510.01': '28.1.01', // Stipendi dipendenti → Retribuzioni personale dipendente serale (il v4 separa per turno e mansione)
+  '510.02': '28.1.02', // Compensi extra → Retribuzioni personale extra e a chiamata
+
+  // ─── Servizi ───
+  '520.01': '23.03', // Pulizie → Servizi di pulizia esterni (se svolte da personale interno: 28.1.05)
+  '520.02': '22.01', // Utenze → Energia elettrica (uno-a-molti: 22.01 energia, 22.02 gas, 22.03 acqua, 22.05 rifiuti)
+  '520.03': '23.01', // Manutenzioni → Manutenzioni e riparazioni
+
+  // ─── Amministrativi ───
+  '530.01': '32.2.01', // Commissioni bancarie → Spese di tenuta conto e servizi bancari
+  '530.02': '32.3.01', // Commissioni POS → Commissioni Pagobancomat
+}
 
 // ════════════════════════════════════════════════════════════════════════
 //  SUGGERIMENTO DI EQUIVALENZA (euristico, da confermare a mano)
