@@ -237,7 +237,6 @@ function ModuloScadenza({
     const commonData = {
       tipo,
       descrizione,
-      valuta: 'EUR' as const,
       dataEmissione: giornoCivile(dataEmissione),
       tipoDocumento,
       numeroDocumento: numeroDocumento || undefined,

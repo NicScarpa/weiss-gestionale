@@ -67,7 +67,6 @@ const createScheduleSchema = z.object({
   tipo: z.nativeEnum(ScheduleType),
   descrizione: z.string().min(1, 'Descrizione obbligatoria'),
   importoTotale: z.number().positive('Importo totale deve essere positivo'),
-  valuta: z.string().default('EUR'),
   dataScadenza: z.coerce.date().or(z.string()),
   dataEmissione: z.coerce.date().or(z.string()).optional(),
   tipoDocumento: z.nativeEnum(ScheduleDocumentType).default(ScheduleDocumentType.ALTRO),

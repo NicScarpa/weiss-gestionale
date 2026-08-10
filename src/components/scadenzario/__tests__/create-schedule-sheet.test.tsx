@@ -174,6 +174,10 @@ describe('CreateScheduleDialog', () => {
     expect(Object.keys(payload)).not.toContain('stato')
     expect(Object.keys(payload)).not.toContain('dataPagamento')
     expect(Object.keys(payload)).not.toContain('importoPagato')
+    // `valuta` non esiste: non è una colonna di `schedules` e non lo è mai
+    // stata. Il client la spediva col valore fisso 'EUR', il server la
+    // accettava e la buttava via — una funzione dichiarata e mai avuta.
+    expect(Object.keys(payload)).not.toContain('valuta')
     expect(payload.dataScadenza).toBe('2026-09-30')
   })
 
