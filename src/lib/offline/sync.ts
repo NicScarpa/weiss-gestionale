@@ -12,7 +12,7 @@ import {
 } from './db'
 
 import { logger } from '@/lib/logger'
-import { INTESTAZIONE_RISCALDAMENTO } from './cache-pagine'
+import { INTESTAZIONE_RISCALDAMENTO, PAGINA_CHIUSURA } from './cache-pagine'
 // Event types for sync updates
 type SyncEventType = 'sync-start' | 'sync-progress' | 'sync-complete' | 'sync-error' | 'online' | 'offline'
 
@@ -78,6 +78,7 @@ if (typeof window !== 'undefined') {
   // volta e a ogni aggiornamento del worker.
   navigator.serviceWorker?.addEventListener('controllerchange', () => {
     void scaldaLaPaginaCorrente()
+    void scaldaLaChiusuraDiCassa()
   })
 }
 
@@ -110,6 +111,39 @@ async function scaldaLaPaginaCorrente() {
     // Se fallisce si torna al comportamento di prima: la pagina entrerà in
     // cache al prossimo caricamento online. Non c'è niente da dire all'utente.
     logger.warn('[Offline] Pagina corrente non messa in cache', { motivo: String(error) })
+  }
+}
+
+/**
+ * Il modulo di chiusura entra in cache anche se non lo si è ancora aperto.
+ *
+ * È **il** modulo che si compila senza rete, ed è la ragione per cui questa
+ * applicazione è una PWA: chi lo apre in un locale senza segnale deve trovarlo,
+ * non doverlo aver visitato prima con la rete buona.
+ *
+ * Perché scaldarlo qui e non metterlo nel precache: il precache scarica
+ * all'installazione del service worker, che avviene alla prima pagina aperta —
+ * per un utente nuovo, `/login`, cioè proprio quando la sessione non c'è.
+ * Provato: la voce precacheata conteneva il modulo di accesso invece della
+ * chiusura, e sarebbe rimasta così fino al deploy successivo. Qui invece la
+ * sessione c'è per costruzione, perché si scalda solo da una pagina
+ * dell'applicazione; e se per qualunque motivo la risposta fosse comunque un
+ * login, la guardia `cacheWillUpdate` del service worker la scarta.
+ */
+async function scaldaLaChiusuraDiCassa() {
+  // Da `/login` non si scalda niente: senza sessione la risposta sarebbe il
+  // login stesso. È la prima delle due difese, e quella che evita del tutto
+  // una richiesta inutile.
+  if (window.location.pathname.startsWith('/login')) return
+
+  try {
+    const risposta = await fetch(PAGINA_CHIUSURA, {
+      credentials: 'same-origin',
+      headers: { [INTESTAZIONE_RISCALDAMENTO]: '1' },
+    })
+    await risposta.arrayBuffer()
+  } catch (error) {
+    logger.warn('[Offline] Chiusura di cassa non messa in cache', { motivo: String(error) })
   }
 }
 

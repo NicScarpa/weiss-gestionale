@@ -34,3 +34,11 @@ export const NOME_CACHE_PAGINE = 'pagine'
  * pagina. Same-origin e GET: nessun preflight CORS.
  */
 export const INTESTAZIONE_RISCALDAMENTO = 'x-riscaldamento-pagina'
+
+/**
+ * La pagina che si scalda sempre, oltre a quella corrente: è quella che si
+ * compila senza rete. Non sta nel precache perché il precache scarica quando
+ * il worker si installa, cioè spesso prima del login — e quello che finirebbe
+ * in cache sarebbe il modulo di accesso.
+ */
+export const PAGINA_CHIUSURA = '/chiusura-cassa/nuova'

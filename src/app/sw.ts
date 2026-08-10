@@ -63,6 +63,34 @@ const navigazioni = {
   handler: new NetworkFirst({
     cacheName: NOME_CACHE_PAGINE,
     plugins: [
+      {
+        /**
+         * Non si mette in cache una pagina che è in realtà il login.
+         *
+         * Le pagine dell'applicazione stanno dietro autenticazione: chiesta
+         * senza sessione, `/chiusura-cassa/nuova` risponde 307 verso `/login`,
+         * e la richiesta la segue. La risposta che arriva è **200 con il
+         * modulo di accesso dentro**, sotto la chiave della chiusura: senza
+         * questa guardia finirebbe in cache così, e chi apre la chiusura
+         * senza rete si vedrebbe una schermata di accesso al posto del suo
+         * modulo, con l'aria di una sessione scaduta che non lo è.
+         *
+         * Misurato su un tentativo precedente che precacheava quella pagina:
+         * `contieneLogin: true`, `contieneNuovaChiusura: false`. Peggio del
+         * difetto che si voleva togliere, e i test non lo vedevano perché
+         * aprono sempre la sessione prima di installare il worker.
+         */
+        cacheWillUpdate: async ({ response }) => {
+          if (response.status !== 200) return null
+          if (response.redirected) return null
+          try {
+            if (new URL(response.url).pathname.startsWith('/login')) return null
+          } catch {
+            // URL non interpretabile: si lascia passare, la guardia sopra basta.
+          }
+          return response
+        },
+      },
       new ExpirationPlugin({
         maxEntries: 50,
         maxAgeSeconds: 24 * 60 * 60,
