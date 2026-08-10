@@ -54,11 +54,27 @@ print "=== gate su $WT ==="
 passo 'npm ci'        npm ci
 passo 'prisma generate' npx prisma generate
 passo 'tsc'           npx tsc --noEmit
+# I test e la suite e2e hanno un tsconfig ciascuno, perché il principale li
+# esclude. Erano in CI e non qui: un gate che controlla meno della CI manda a
+# fare la PR chi crede di aver già verificato tutto.
+passo 'tsc e2e'       npm run typecheck:e2e
+passo 'tsc test'      npm run typecheck:test
 passo 'lint'          npm run lint
 passo 'test unit'     npm run test:run
 TEST_DB_SUFFIX=$SUFFISSO passo 'test integrazione' npm run test:integration
 passo 'ratchet strict' node scripts/strict-ratchet.mjs
 passo 'ratchet audit'  node scripts/audit-ratchet.mjs
+# I due bundler non sono d'accordo su cosa sia lecito esportare da una route.
+# Turbopack — quello di `npm run build`, e quello della produzione — usa un
+# vincolo senza index signature e lascia passare gli export estranei; webpack
+# no, e li respinge con TS2344. Finché il gate provava solo il primo, un export
+# di troppo in una route passava sempre: è già successo quattro volte, tre per
+# mano della conversione a `withAuth`, che ha ancora 292 handler da convertire.
+#
+# Webpack va per primo perché i due condividono `.next`: così l'artefatto che
+# resta sul disco è quello di produzione, con il BUILD_ID che `build:sw` si
+# aspetta.
+passo 'build webpack'  npx next build --webpack
 passo 'build'          npm run build
 
 print ""
