@@ -176,6 +176,31 @@ test.describe('Funzionamento offline', () => {
    * visitata dava `net::ERR_FAILED`, cioè l'errore di rete del browser al posto
    * della pagina che l'applicazione aveva scritto apposta.
    */
+  /**
+   * La chiusura si apre senza rete anche senza averla visitata prima.
+   *
+   * È il motivo per cui questa applicazione è una PWA: chi la compila in un
+   * locale senza segnale non deve prima averla aperta con la rete buona.
+   */
+  test('offline: la chiusura di cassa si apre anche se non era mai stata visitata', async ({
+    page,
+    context,
+  }) => {
+    await apriConSessioneAdmin(page, '/prima-nota/movimenti')
+    await page.waitForLoadState('networkidle')
+    await attendiServiceWorkerAlComando(page)
+    await page.waitForFunction(
+      async () => !!(await caches.match('/chiusura-cassa/nuova')),
+      undefined,
+      { timeout: 30_000 }
+    )
+
+    await context.setOffline(true)
+    await page.goto('/chiusura-cassa/nuova')
+
+    await expect(page.getByRole('heading', { name: 'Nuova Chiusura' })).toBeVisible()
+  })
+
   test('offline: una rotta mai visitata mostra la pagina «Sei offline»', async ({
     page,
     context,
@@ -245,3 +270,38 @@ async function chiusureInCoda(page: Page): Promise<unknown[]> {
     return righe
   })
 }
+
+/**
+ * La difesa che è mancata al tentativo precedente.
+ *
+ * Il service worker si installa alla prima pagina aperta, che per un utente
+ * nuovo è `/login`: se il riscaldamento partisse lì, metterebbe in cache il
+ * modulo di accesso sotto l'URL della chiusura, e ci resterebbe. La suite non
+ * l'avrebbe mai visto, perché apre sempre la sessione prima di installare il
+ * worker — cioè costruisce un mondo in cui il difetto non può accadere.
+ */
+test.describe('Senza sessione', () => {
+  test.use({ storageState: { cookies: [], origins: [] } })
+
+  test('il worker installato dal login non mette il login in cache come chiusura', async ({
+    page,
+  }) => {
+    await page.goto('/login')
+    await page.waitForLoadState('networkidle')
+    await attendiServiceWorkerAlComando(page)
+    // Il riscaldamento è asincrono: se partisse, arriverebbe entro questo tempo.
+    await page.waitForTimeout(2000)
+
+    const cosaCèInCache = await page.evaluate(async () => {
+      const risposta = await caches.match('/chiusura-cassa/nuova', { ignoreSearch: true })
+      if (!risposta) return { presente: false, contieneLogin: false }
+      const testo = await risposta.clone().text()
+      return { presente: true, contieneLogin: testo.includes('Username') }
+    })
+
+    expect(
+      cosaCèInCache.contieneLogin,
+      'la pagina di accesso non deve finire in cache sotto l\'URL della chiusura'
+    ).toBe(false)
+  })
+})
