@@ -176,6 +176,13 @@ export async function POST(
       case 'invalid_amount':
         return NextResponse.json({ error: esito.motivo }, { status: 400 })
 
+      // Il verso del movimento va bene, gli importi no: è il caso in cui la
+      // scadenza sarebbe sovrapagata o il movimento imputato oltre il suo
+      // valore. 422 e non 400: la richiesta è ben formata, è il contenuto che
+      // non sta in piedi rispetto ai dati.
+      case 'amount_exceeds_capacity':
+        return NextResponse.json({ error: esito.motivo }, { status: 422 })
+
       case 'ok':
         await createAuditLog({
           userId: session.user.id,

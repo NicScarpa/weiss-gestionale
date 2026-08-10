@@ -98,3 +98,7 @@ Piano dei conti/
 # (id e nomi dei conti in produzione). Vanno conservati fuori dal repo, ma
 # vanno conservati: sono la rete di sicurezza del rollback.
 /scripts/piano-v4/snapshots/
+
+# Service worker: artefatto di build, prodotto da `npm run build:sw`
+/public/sw.js
+/public/sw.js.map

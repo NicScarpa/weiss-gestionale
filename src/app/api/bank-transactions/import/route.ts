@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createHash } from 'node:crypto'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { parseCSV, parseXLS, parseCBIXML, parseCBITXT, RELAXBANKING_CONFIG } from '@/lib/reconciliation'
@@ -7,6 +8,170 @@ import type { ImportResult, CSVParserConfig, ImportSource } from '@/types/reconc
 import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
+
+/** Una riga dell'estratto conto, così come la restituiscono i parser. */
+interface RigaEstratto {
+  transactionDate: Date
+  valueDate: Date | null
+  description: string
+  amount: number
+  balance: number | null
+  reference: string | null
+}
+
+/**
+ * Deduplica dell'estratto conto.
+ *
+ * Il criterio precedente scartava ogni riga con stessa data, importo e
+ * descrizione di una già a database. Ma due addebiti identici nello stesso
+ * giorno — due commissioni da 2,50 €, due SDD uguali, due accrediti POS gemelli
+ * — sono ordinaria amministrazione: il secondo spariva in silenzio e il saldo
+ * ricostruito non tornava più con quello della banca.
+ *
+ * Quello che serve non è "somiglia a una riga già vista" ma "è la stessa riga
+ * già importata", e la differenza sta nel *contare* le occorrenze. Ogni riga
+ * riceve un riferimento derivato dal suo contenuto più il numero d'ordine
+ * dell'occorrenza dentro il file: due righe identiche ottengono `…:0` e `…:1`,
+ * distinte fra loro e stabili fra un import e l'altro. Reimportare lo stesso
+ * file ricalcola gli stessi riferimenti, che risultano già presenti e vengono
+ * saltati; un file che ne aggiunge una terza produce `…:2`, che è nuovo.
+ *
+ * Il riferimento è anche la chiave dell'indice unico
+ * `ux_bank_transactions_sede_riferimento`: il criterio del codice e il vincolo
+ * del database sono la stessa cosa, non due opinioni da tenere allineate.
+ */
+const PREFISSO_RIFERIMENTO_CALCOLATO = 'auto:'
+
+/**
+ * Giorno nel fuso del server, che è quello in cui i parser costruiscono le date
+ * (`new Date(anno, mese, giorno)`). Formattarle in UTC sposterebbe di un giorno
+ * le date dei fusi a est di Greenwich, e la stessa riga darebbe impronte
+ * diverse a seconda di dove gira il server.
+ */
+function giorno(data: Date): string {
+  const mese = String(data.getMonth() + 1).padStart(2, '0')
+  const giornoDelMese = String(data.getDate()).padStart(2, '0')
+  return `${data.getFullYear()}-${mese}-${giornoDelMese}`
+}
+
+/**
+ * Impronta del contenuto di una riga. Si usa un digest e non la descrizione
+ * troncata: il riferimento sintetico precedente tagliava a 50 caratteri, e due
+ * righe che differivano solo dopo il cinquantesimo collidevano sul vincolo di
+ * unicità facendo esplodere l'import a metà file.
+ */
+function improntaRiga(riga: RigaEstratto): string {
+  // Separatore NUL, scritto come sequenza di escape: è l'unico carattere
+  // che non può comparire dentro una descrizione bancaria, quindi due righe
+  // non possono ottenere la stessa impronta spostando il confine fra i campi.
+  // Va lasciato in forma di escape: un NUL incorporato nel sorgente lo
+  // farebbe classificare come binario a git, e i diff diventerebbero opachi.
+  const contenuto = [
+    giorno(riga.transactionDate),
+    riga.valueDate ? giorno(riga.valueDate) : '',
+    riga.amount.toFixed(2),
+    riga.description,
+  ].join('\u0000')
+
+  return createHash('sha256').update(contenuto).digest('hex').slice(0, 24)
+}
+
+/**
+ * Riferimento nel formato usato prima di questo fix.
+ *
+ * Serve solo a riconoscere i movimenti già in archivio: senza, reimportare un
+ * estratto conto caricato in passato non ritroverebbe nulla e duplicherebbe
+ * tutto. La formula va lasciata identica all'originale, compreso l'uso di UTC
+ * e il troncamento della descrizione, perché deve produrre le stesse stringhe
+ * che stanno a database.
+ */
+function riferimentoStorico(riga: RigaEstratto): string {
+  return `${riga.transactionDate.toISOString().slice(0, 10)}_${riga.amount}_${riga.description.slice(0, 50)}`
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .slice(0, 100)
+}
+
+interface RigaDaImportare {
+  riga: RigaEstratto
+  bankReference: string
+}
+
+interface EsitoDeduplica {
+  daImportare: RigaDaImportare[]
+  duplicati: number
+}
+
+/**
+ * Decide quali righe del file sono nuove.
+ *
+ * Le righe con un riferimento vero della banca si riconoscono da quello: è
+ * l'identificativo che la banca stessa garantisce unico, e due righe che lo
+ * condividono sono la stessa operazione elencata due volte. Per tutte le altre
+ * vale il conteggio delle occorrenze descritto sopra.
+ */
+async function deduplica(
+  righe: RigaEstratto[],
+  venueId: string,
+  client: Pick<typeof prisma, 'bankTransaction'>
+): Promise<EsitoDeduplica> {
+  const occorrenze = new Map<string, number>()
+
+  // Riferimento assegnato a ciascuna riga, più quello che la stessa riga
+  // avrebbe avuto con la formula precedente: entrambi vanno cercati in archivio.
+  const candidate = righe.map((riga) => {
+    if (riga.reference) {
+      return { riga, riferimento: riga.reference, storico: riga.reference }
+    }
+
+    const impronta = improntaRiga(riga)
+    const occorrenza = occorrenze.get(impronta) ?? 0
+    occorrenze.set(impronta, occorrenza + 1)
+
+    return {
+      riga,
+      riferimento: `${PREFISSO_RIFERIMENTO_CALCOLATO}${impronta}:${occorrenza}`,
+      // Con la formula vecchia le occorrenze successive alla prima venivano
+      // scartate: a database ce n'è al massimo una, e solo la prima riga del
+      // gruppo può corrispondervi.
+      storico: occorrenza === 0 ? riferimentoStorico(riga) : null,
+    }
+  })
+
+  const daCercare = [
+    ...new Set(
+      candidate.flatMap((c) => (c.storico ? [c.riferimento, c.storico] : [c.riferimento]))
+    ),
+  ]
+
+  const presenti = new Set(
+    (
+      await client.bankTransaction.findMany({
+        where: { venueId, bankReference: { in: daCercare } },
+        select: { bankReference: true },
+      })
+    ).map((m) => m.bankReference)
+  )
+
+  const daImportare: RigaDaImportare[] = []
+  let duplicati = 0
+
+  for (const { riga, riferimento, storico } of candidate) {
+    const giaInArchivio = presenti.has(riferimento) || (storico !== null && presenti.has(storico))
+
+    if (giaInArchivio) {
+      duplicati++
+      continue
+    }
+
+    daImportare.push({ riga, bankReference: riferimento })
+    // Un riferimento vero ripetuto nello stesso file è la stessa operazione
+    // elencata due volte: la seconda comparsa va contata come duplicato.
+    presenti.add(riferimento)
+  }
+
+  return { daImportare, duplicati }
+}
+
 // POST /api/bank-transactions/import - Import CSV/XLS
 export async function POST(request: NextRequest) {
   try {
@@ -114,71 +279,55 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Crea batch di import
-    const batch = await prisma.importBatch.create({
-      data: {
-        venueId,
-        filename: file.name,
-        source: sourceType,
-        recordCount: 0, // Aggiornato dopo
-        duplicatesSkipped: 0,
-        errorsCount: errors.length,
-        importedBy: session.user.id,
+    // Il file entra tutto o non entra affatto: batch, movimenti e conteggi in
+    // una sola transazione. Prima il batch nasceva prima del ciclo e il ciclo
+    // scriveva riga per riga fuori transazione — un errore a metà lasciava
+    // metà estratto conto importato, un batch con `recordCount: 0` a
+    // contraddirlo, e nessun modo di sapere dove si era fermato.
+    const { batch, recordsImported, duplicatesSkipped } = await prisma.$transaction(
+      async (tx) => {
+        const { daImportare, duplicati } = await deduplica(rows, venueId, tx)
+
+        const batch = await tx.importBatch.create({
+          data: {
+            venueId,
+            filename: file.name,
+            source: sourceType,
+            recordCount: daImportare.length,
+            duplicatesSkipped: duplicati,
+            errorsCount: errors.length,
+            importedBy: session.user.id,
+          },
+        })
+
+        if (daImportare.length > 0) {
+          await tx.bankTransaction.createMany({
+            data: daImportare.map(({ riga, bankReference }) => ({
+              venueId,
+              transactionDate: riga.transactionDate,
+              valueDate: riga.valueDate,
+              description: riga.description,
+              amount: riga.amount,
+              balanceAfter: riga.balance,
+              bankReference,
+              importBatchId: batch.id,
+              importSource: sourceType,
+              status: 'PENDING' as const,
+            })),
+          })
+        }
+
+        return {
+          batch,
+          recordsImported: daImportare.length,
+          duplicatesSkipped: duplicati,
+        }
       },
-    })
-
-    let recordsImported = 0
-    let duplicatesSkipped = 0
-
-    // Importa ogni riga
-    for (const row of rows) {
-      // Genera un riferimento univoco basato su data + importo + descrizione
-      const bankReference = `${row.transactionDate.toISOString().slice(0, 10)}_${row.amount}_${row.description.slice(0, 50)}`
-        .replace(/[^a-zA-Z0-9_-]/g, '_')
-        .slice(0, 100)
-
-      // Controlla duplicati
-      const existing = await prisma.bankTransaction.findFirst({
-        where: {
-          venueId,
-          transactionDate: row.transactionDate,
-          amount: row.amount,
-          description: row.description,
-        },
-      })
-
-      if (existing) {
-        duplicatesSkipped++
-        continue
-      }
-
-      // Crea transazione
-      await prisma.bankTransaction.create({
-        data: {
-          venueId,
-          transactionDate: row.transactionDate,
-          valueDate: row.valueDate,
-          description: row.description,
-          amount: row.amount,
-          balanceAfter: row.balance,
-          bankReference: row.reference || bankReference,
-          importBatchId: batch.id,
-          importSource: sourceType,
-          status: 'PENDING',
-        },
-      })
-
-      recordsImported++
-    }
-
-    // Aggiorna batch con conteggi finali
-    await prisma.importBatch.update({
-      where: { id: batch.id },
-      data: {
-        recordCount: recordsImported,
-        duplicatesSkipped,
-      },
-    })
+      // Un estratto conto mensile porta qualche centinaio di righe, scritte in
+      // un solo comando: il tetto è largo per i file annuali, non per coprire
+      // lavoro lento.
+      { timeout: 30_000 }
+    )
 
     const result: ImportResult = {
       batchId: batch.id,

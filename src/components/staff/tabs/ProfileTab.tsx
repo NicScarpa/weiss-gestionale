@@ -104,7 +104,7 @@ export function ProfileTab({ employee, isAdmin, roles }: ProfileTabProps) {
           <CardTitle className="text-base">Informazioni personali</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4 [&>*]:min-w-0">
             <div className="space-y-2">
               <Label>Nome</Label>
               <Input
@@ -160,7 +160,7 @@ export function ProfileTab({ employee, isAdmin, roles }: ProfileTabProps) {
               />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4 [&>*]:min-w-0">
             <div className="space-y-2">
               <Label>Luogo di nascita</Label>
               <Input
@@ -276,7 +276,7 @@ export function ProfileTab({ employee, isAdmin, roles }: ProfileTabProps) {
           <CardTitle className="text-base">Contatti</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4 [&>*]:min-w-0">
             <div className="space-y-2">
               <Label>Email</Label>
               <Input

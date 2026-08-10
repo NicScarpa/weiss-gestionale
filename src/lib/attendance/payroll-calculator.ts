@@ -8,12 +8,18 @@
 import { prisma } from '@/lib/prisma'
 import { Prisma, PunchType, LeaveStatus } from '@prisma/client'
 import { computeRecognizedDay } from './timekeeping-engine'
-import type { DayPunch, PolicyRules } from './timekeeping-types'
+import type {
+  DayPunch,
+  DayWarning,
+  PolicyRules,
+  ShiftReview,
+} from './timekeeping-types'
 import {
   loadPolicyResolutionContext,
   neutralPolicy,
   resolvePolicyRules,
 } from './policy-resolver'
+import { AUTORE_SISTEMA } from './manual-punch'
 import { dstShiftBetween, groupPunchesByWorkday, toWorkdayMinutes } from './workday'
 import {
   nextDateKey,
@@ -108,6 +114,16 @@ export interface PayrollRecord {
   workLocationName: string | null
   /** Regola oraria applicata: senza questo nome i numeri sono inspiegabili. */
   policyName: string | null
+  /** Minuti oltre il turno sospesi in attesa di revisione: né pagati né persi. */
+  pendingReviewMinutes: number
+  /**
+   * Avvisi del motore su questa giornata.
+   *
+   * Non tutti valgono un blocco — la pausa pranzo dedotta dalla regola è la
+   * normalità — ma alcuni dicono che il dato è incompleto, e l'export delle
+   * paghe li guarda prima di consegnare un mese al consulente.
+   */
+  dayWarnings: DayWarning[]
 }
 
 export interface PayrollSummary {
@@ -123,12 +139,28 @@ export interface PayrollSummary {
   totalLeaveDays: number
   leaveSummary: Record<string, number> // FE: 2, MA: 1, etc.
   estimatedCost: number
+  /** Minuti del mese in attesa di revisione: finché non sono zero, niente export. */
+  totalPendingReviewMinutes: number
 }
 
 interface AttendanceRecordData {
   punchType: PunchType
   punchedAt: Date
   workLocationId?: string | null
+  /** 'SYSTEM' per gli orari scritti dalla chiusura automatica. */
+  manualEntryBy?: string | null
+  /** Valorizzato quando la timbratura nasce da una correzione approvata. */
+  correctionRequestId?: string | null
+}
+
+/**
+ * Da dove viene l'orario, per il motore: una supposizione del sistema cede a
+ * una correzione approvata, una timbratura vera non si tocca.
+ */
+function origineDi(record: AttendanceRecordData): DayPunch['origine'] {
+  if (record.correctionRequestId) return 'correzione'
+  if (record.manualEntryBy === AUTORE_SISTEMA) return 'sistema'
+  return undefined
 }
 
 /**
@@ -142,15 +174,19 @@ function calculateHoursFromPunches(
   records: AttendanceRecordData[],
   workdayKey: string,
   rules: PolicyRules,
-  shiftWindows?: { startMinutes: number; endMinutes: number }[]
+  shiftWindows?: { startMinutes: number; endMinutes: number }[],
+  shiftReview?: ShiftReview
 ): {
   hours: DailyHours
   clockInMinutes: number | null
   clockOutMinutes: number | null
+  pendingReviewMinutes: number
+  warnings: DayWarning[]
 } {
   const punches: DayPunch[] = records.map((record) => ({
     type: record.punchType as DayPunch['type'],
     minutes: toWorkdayMinutes(record.punchedAt, workdayKey),
+    origine: origineDi(record),
   }))
 
   const sorted = [...records].sort(
@@ -166,6 +202,7 @@ function calculateHoursFromPunches(
     isHoliday: isItalianHoliday(workdayKey),
     dstShiftMinutes,
     shiftWindows,
+    shiftReview,
   })
 
   return {
@@ -179,7 +216,41 @@ function calculateHoursFromPunches(
     },
     clockInMinutes: day.clockIn,
     clockOutMinutes: day.clockOut,
+    pendingReviewMinutes: day.pendingReviewMinutes,
+    warnings: day.warnings,
   }
+}
+
+/** Tipi di anomalia la cui decisione entra nel calcolo delle ore. */
+const REVIEW_ANOMALY_TYPES = ['EARLY_CLOCK_IN', 'OVERTIME'] as const
+
+/**
+ * Le decisioni del revisore per un giorno, dalle anomalie di quel giorno.
+ * Finché una è PENDING la decisione non c'è: il motore tiene le ore sospese.
+ * Fra più anomalie decise dello stesso tipo prevale il rifiuto: meglio non
+ * pagare ore da confermare che pagare ore rifiutate.
+ */
+function reviewFromAnomalies(
+  anomalies: { anomalyType: string; status: string }[]
+): ShiftReview {
+  const review: ShiftReview = {}
+
+  for (const [tipo, campo] of [
+    ['EARLY_CLOCK_IN', 'earlyIn'],
+    ['OVERTIME', 'overtime'],
+  ] as const) {
+    const delTipo = anomalies.filter((a) => a.anomalyType === tipo)
+    if (delTipo.length === 0 || delTipo.some((a) => a.status === 'PENDING')) {
+      continue
+    }
+    if (delTipo.some((a) => a.status === 'REJECTED')) {
+      review[campo] = 'REJECTED'
+    } else if (delTipo.some((a) => a.status === 'APPROVED')) {
+      review[campo] = 'APPROVED'
+    }
+  }
+
+  return review
 }
 
 /**
@@ -285,22 +356,6 @@ export async function generatePayrollData(
     }
   }
 
-  const users = await prisma.user.findMany({
-    where: usersWhere,
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      contractType: true,
-      contractHoursWeek: true,
-      hourlyRateBase: true,
-      hourlyRateExtra: true,
-      hourlyRateHoliday: true,
-      hourlyRateNight: true,
-    },
-    orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
-  })
-
   // Carica le timbrature del periodo, più un margine oltre gli estremi: il
   // turno del 31 sera ha l'uscita nel mese dopo, e quello del mese prima ha
   // l'uscita il giorno 1. È il raggruppamento per giornata lavorativa a
@@ -319,6 +374,10 @@ export async function generatePayrollData(
       punchType: true,
       punchedAt: true,
       workLocationId: true,
+      // Servono al motore per sapere quale orario è una supposizione del
+      // sistema e quale una correzione approvata da un responsabile.
+      manualEntryBy: true,
+      correctionRequestId: true,
     },
     orderBy: { punchedAt: 'asc' },
   })
@@ -340,22 +399,85 @@ export async function generatePayrollData(
     },
   })
 
-  // Carica anomalie non risolte
-  const unresolvedAnomalies = await prisma.attendanceAnomaly.findMany({
+  // Gli utenti si caricano DOPO timbrature e assenze, perché chi ha lavorato
+  // nel mese deve entrare nell'export anche se oggi non è più attivo.
+  //
+  // Prima il filtro era `isActive: true, portalEnabled: true` senza nessun
+  // criterio di data: chi veniva disattivato il 15 spariva dall'export di quel
+  // mese insieme alle due settimane che aveva lavorato — circa 80 ore, 960 €
+  // lordi — e non compariva nemmeno con una riga a zero, quindi la sua assenza
+  // dall'elenco non saltava all'occhio. Ed è proprio l'ultimo mese, quello del
+  // conguaglio, in cui un errore diventa una vertenza. Valeva identicamente
+  // per `portalEnabled: false`, la casella che si toglie a chi non deve più
+  // accedere: un gesto che sembra innocuo e cancellava le ore dal mese.
+  const idsConAttivitaNelMese = [
+    ...new Set([
+      ...attendanceRecords.map((r) => r.userId),
+      ...leaveRequests.map((l) => l.userId),
+    ]),
+  ]
+
+  usersWhere.OR = [
+    { isActive: true, portalEnabled: true },
+    ...(idsConAttivitaNelMese.length > 0
+      ? [{ id: { in: idsConAttivitaNelMese } }]
+      : []),
+  ]
+
+  const users = await prisma.user.findMany({
+    where: usersWhere,
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      contractType: true,
+      contractHoursWeek: true,
+      hourlyRateBase: true,
+      hourlyRateExtra: true,
+      hourlyRateHoliday: true,
+      hourlyRateNight: true,
+      isActive: true,
+    },
+    orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+  })
+
+  // Chi rientra solo perché ha lavorato va segnalato: il consulente deve
+  // sapere che quella riga è di una persona che non è più in forza.
+  const cessatiConOre = users.filter((u) => !u.isActive)
+  cessatiConOre.forEach((u) => {
+    warnings.push(
+      `${u.lastName} ${u.firstName}: non più attivo, ma ha attività nel mese. ` +
+        "Incluso nell'export."
+    )
+  })
+
+  // Anomalie del mese: le PENDING finiscono nelle note e negli avvisi; per
+  // anticipo e straordinario contano anche quelle decise, perché la decisione
+  // del revisore entra nel calcolo delle ore (le sospese si pagano solo se
+  // approvate, il rifiuto taglia la giornata al turno).
+  const monthAnomalies = await prisma.attendanceAnomaly.findMany({
     where: {
       date: {
         gte: firstDay,
         lte: lastDay,
       },
-      status: 'PENDING',
+      OR: [
+        { status: 'PENDING' },
+        {
+          anomalyType: { in: [...REVIEW_ANOMALY_TYPES] },
+          status: { in: ['APPROVED', 'REJECTED'] },
+        },
+      ],
       ...(venueId && { venueId }),
     },
     select: {
       userId: true,
       date: true,
       anomalyType: true,
+      status: true,
     },
   })
+  const unresolvedAnomalies = monthAnomalies.filter((a) => a.status === 'PENDING')
 
   // Organizza le timbrature per utente e giornata lavorativa. Non per giorno
   // civile: un turno che finisce dopo la mezzanotte appartiene per intero al
@@ -406,6 +528,24 @@ export async function generatePayrollData(
     anomaliesByUserDay.get(key)!.push(anomaly.anomalyType)
   })
 
+  // Decisioni del revisore per utente e giorno, da passare al motore.
+  const reviewAnomaliesByUserDay = new Map<
+    string,
+    { anomalyType: string; status: string }[]
+  >()
+  monthAnomalies.forEach((anomaly) => {
+    if (!(REVIEW_ANOMALY_TYPES as readonly string[]).includes(anomaly.anomalyType)) {
+      return
+    }
+    const key = `${anomaly.userId}_${anomaly.date.toISOString().slice(0, 10)}`
+    const lista = reviewAnomaliesByUserDay.get(key)
+    if (lista) {
+      lista.push(anomaly)
+    } else {
+      reviewAnomaliesByUserDay.set(key, [anomaly])
+    }
+  })
+
   // Genera record giornalieri
   const records: PayrollRecord[] = []
   const summariesMap = new Map<string, PayrollSummary>()
@@ -428,6 +568,7 @@ export async function generatePayrollData(
       totalLeaveDays: 0,
       leaveSummary: {},
       estimatedCost: 0,
+      totalPendingReviewMinutes: 0,
     })
 
     // Regole in vigore per questa persona: quelle del locale se ne impone una,
@@ -436,9 +577,17 @@ export async function generatePayrollData(
     const contractWeeklyHours = user.contractHoursWeek
       ? Number(user.contractHoursWeek)
       : null
-    const regolePerGiornata = (workLocationId: string | null) =>
+    // La risoluzione dipende anche dal giorno: una modifica con decorrenza
+    // congela i valori precedenti, e i giorni passati usano quelli.
+    const regolePerGiornata = (workLocationId: string | null, dateKey: string) =>
       policyContext
-        ? resolvePolicyRules(policyContext, user.id, workLocationId, contractWeeklyHours)
+        ? resolvePolicyRules(
+            policyContext,
+            user.id,
+            workLocationId,
+            contractWeeklyHours,
+            dateKey
+          )
         : { rules: neutralPolicy(contractWeeklyHours), policyName: null }
 
     // Processa ogni giorno
@@ -468,23 +617,19 @@ export async function generatePayrollData(
       } | null = null
       let workLocationName: string | null = null
       let policyName: string | null = null
+      let pendingReviewMinutes = 0
+      let dayWarnings: DayWarning[] = []
+      // L'assenza approvata si registra sempre, anche se quel giorno la
+      // persona ha lavorato lo stesso: il permesso è stato concesso, ed è un
+      // fatto. Quello che NON si può fare è dedurne che non abbia lavorato.
       if (leaveCode) {
-        // Giorno di assenza
-        hours = {
-          ordinary: 0,
-          overtime: 0,
-          night: 0,
-          holiday: 0,
-          total: 0,
-          breakMinutes: 0,
-        }
-
-        // Aggiorna summary assenze
         const summary = summariesMap.get(user.id)!
         summary.totalLeaveDays++
         summary.leaveSummary[leaveCode] =
           (summary.leaveSummary[leaveCode] || 0) + 1
-      } else if (punches.length > 0) {
+      }
+
+      if (punches.length > 0) {
         // Il luogo della giornata è quello della prima timbratura: se una
         // persona si sposta fra i locali nella stessa giornata, vale dove ha
         // iniziato.
@@ -494,17 +639,62 @@ export async function generatePayrollData(
           ? (workLocationNames.get(workLocationId) ?? null)
           : null
 
-        const regole = regolePerGiornata(workLocationId)
+        const regole = regolePerGiornata(workLocationId, dateKey)
         policyName = regole.policyName
 
         const risultato = calculateHoursFromPunches(
           punches,
           dateKey,
           regole.rules,
-          turniPerUtenteGiorno.get(key)
+          turniPerUtenteGiorno.get(key),
+          reviewFromAnomalies(reviewAnomaliesByUserDay.get(key) ?? [])
         )
         hours = risultato.hours
         riconosciuto = risultato
+        pendingReviewMinutes = risultato.pendingReviewMinutes
+        dayWarnings = risultato.warnings
+
+        // La pausa iniziata e mai chiusa: le ore restano quelle timbrate — la
+        // deduzione l'ha esclusa il titolare — ma la giornata non si consegna
+        // al consulente senza che qualcuno l'abbia guardata. Il blocco vero
+        // sta nell'export, qui nasce la riga che dice a chi e quando.
+        if (dayWarnings.includes('PAUSA_NON_CHIUSA')) {
+          notes.push('Pausa iniziata e mai chiusa: da verificare')
+          warnings.push(
+            `${user.lastName} ${user.firstName}: pausa iniziata e mai chiusa il ` +
+              dateKey.split('-').reverse().join('/')
+          )
+        }
+
+        if (pendingReviewMinutes > 0) {
+          notes.push(`${pendingReviewMinutes} min oltre il turno in attesa di approvazione`)
+          warnings.push(
+            `${user.lastName} ${user.firstName}: ${pendingReviewMinutes} min oltre il ` +
+              `turno in attesa di approvazione il ` +
+              dateKey.split('-').reverse().join('/')
+          )
+        }
+
+        // Permesso approvato e timbrature nello stesso giorno: succede
+        // davvero — il collega dà forfait e chi è in permesso viene chiamato.
+        // Prima il ramo delle ferie veniva per primo e azzerava tutto senza
+        // guardare le timbrature, così il cartellino stampava «entrata 17:00,
+        // uscita 23:00, ore 0»: l'orario giusto accanto al totale sbagliato,
+        // e nessuna nota che segnalasse la contraddizione.
+        //
+        // Le ore ora si contano. Quale dei due prevalga — se il permesso vada
+        // restituito o le ore pagate come straordinario — è una decisione del
+        // titolare e del consulente, non del programma: qui si rende visibile.
+        if (leaveCode) {
+          notes.push(
+            `Permesso ${leaveCode} e timbrature nello stesso giorno: da verificare`
+          )
+          warnings.push(
+            `${user.lastName} ${user.firstName}: giornata con permesso e timbrature ` +
+              `il ${dateKey.split('-').reverse().join('/')} ` +
+              `(${leaveCode}, ${hours.total.toFixed(2)} ore lavorate): da verificare`
+          )
+        }
 
         // Aggiorna summary
         const summary = summariesMap.get(user.id)!
@@ -513,8 +703,10 @@ export async function generatePayrollData(
         summary.totalNight += hours.night
         summary.totalHoliday += hours.holiday
         summary.totalHours += hours.total
+        summary.totalPendingReviewMinutes += pendingReviewMinutes
       } else {
-        // Nessuna timbratura e nessuna assenza
+        // Nessuna timbratura: la giornata vale zero ore, che sia un'assenza
+        // approvata o un giorno non lavorato.
         hours = {
           ordinary: 0,
           overtime: 0,
@@ -589,6 +781,8 @@ export async function generatePayrollData(
           : null,
         workLocationName,
         policyName,
+        pendingReviewMinutes,
+        dayWarnings,
       })
     })
 

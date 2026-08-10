@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { PagamentiFilters } from '@/components/prima-nota/pagamenti/PagamentiFilters'
 import { PagamentiTable } from '@/components/prima-nota/pagamenti/PagamentiTable'
@@ -23,10 +24,6 @@ export function PagamentiClient() {
     search: '',
   })
 
-  // Data state
-  const [data, setData] = useState<Payment[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
@@ -34,9 +31,25 @@ export function PagamentiClient() {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Load data from API
-  const loadData = useCallback(async () => {
-    setIsLoading(true)
-    try {
+  const {
+    data: risposta,
+    isFetching: isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryKey: [
+      'pagamenti',
+      filters.stato,
+      filters.tipo,
+      filters.dateFrom?.toISOString(),
+      filters.dateTo?.toISOString(),
+      venueId,
+    ],
+    queryFn: async (): Promise<Payment[] | { data?: Payment[] }> => {
       const params = new URLSearchParams()
 
       if (filters.stato) params.set('stato', filters.stato)
@@ -48,20 +61,18 @@ export function PagamentiClient() {
       const res = await fetch(`/api/pagamenti?${params.toString()}`)
       if (!res.ok) throw new Error('Errore nel caricamento')
 
-      const json = await res.json()
-      setData(Array.isArray(json) ? json : json.data || [])
-    } catch (error) {
+      return res.json()
+    },
+  })
+
+  useEffect(() => {
+    if (isError) {
       console.error('Errore caricamento pagamenti:', error)
       toast.error('Impossibile caricare i pagamenti')
-    } finally {
-      setIsLoading(false)
     }
-  }, [filters, venueId])
+  }, [isError, error])
 
-  // Reload on filter change
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  const data: Payment[] = Array.isArray(risposta) ? risposta : risposta?.data || []
 
   // --- Handlers ---
 
@@ -86,7 +97,7 @@ export function PagamentiClient() {
     }
     toast.success('Pagamento eliminato')
     setDeleteTargetId(null)
-    loadData()
+    refetch()
   }
 
   const handleStatusChange = async (id: string, stato: PaymentStatus) => {
@@ -101,7 +112,7 @@ export function PagamentiClient() {
         throw new Error(err.error || 'Errore aggiornamento stato')
       }
       toast.success(`Stato aggiornato: ${stato}`)
-      loadData()
+      refetch()
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Errore sconosciuto'
       toast.error(message)
@@ -119,7 +130,7 @@ export function PagamentiClient() {
         throw new Error(err.error || 'Errore disposizione')
       }
       toast.success('Pagamento disposto e movimento bancario creato')
-      loadData()
+      refetch()
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Errore sconosciuto'
       toast.error(message)
@@ -148,7 +159,7 @@ export function PagamentiClient() {
       toast.success(selectedPayment ? 'Pagamento aggiornato' : 'Pagamento creato')
       setDialogOpen(false)
       setSelectedPayment(null)
-      loadData()
+      refetch()
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Errore sconosciuto'
       toast.error(message)
@@ -178,10 +189,12 @@ export function PagamentiClient() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      {/* Senza flex-wrap il bottone finisce incollato al bordo dello schermo
+          sotto sm: titolo e azione ci stanno solo da ~640px in su */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold">Pagamenti</h1>
         <Button onClick={handleNewPagamento}>
-          <PlusIcon className="h-4 w-4 mr-2" />
+          <PlusIcon aria-hidden="true" className="h-4 w-4 mr-2" />
           Nuovo Pagamento
         </Button>
       </div>

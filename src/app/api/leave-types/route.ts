@@ -1,38 +1,25 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { handleApiError, ok, withAuth } from '@/lib/api-utils'
 
-import { logger } from '@/lib/logger'
 // GET /api/leave-types - Lista tipi assenza
-export async function GET(request: NextRequest) {
+// Basta essere autenticati: l'elenco serve a chiunque debba chiedere ferie o
+// permessi, e non contiene dati di nessuno.
+export const GET = withAuth(async (request: NextRequest) => {
   try {
-    const session = await auth()
-
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
-    const { searchParams } = new URL(request.url)
-    const includeInactive = searchParams.get('includeInactive') === 'true'
-
-    const whereClause: Record<string, unknown> = {}
-    if (!includeInactive) {
-      whereClause.isActive = true
-    }
+    const includeInactive = request.nextUrl.searchParams.get('includeInactive') === 'true'
 
     const leaveTypes = await prisma.leaveType.findMany({
-      where: whereClause,
-      orderBy: [
-        { code: 'asc' },
-      ],
+      where: includeInactive ? {} : { isActive: true },
+      orderBy: [{ code: 'asc' }],
     })
 
-    return NextResponse.json({ data: leaveTypes })
+    return ok({ data: leaveTypes })
   } catch (error) {
-    logger.error('Errore GET /api/leave-types', error)
-    return NextResponse.json(
-      { error: 'Errore nel recupero dei tipi assenza' },
-      { status: 500 }
+    return handleApiError(
+      error,
+      'GET /api/leave-types',
+      'Errore nel recupero dei tipi assenza'
     )
   }
-}
+})

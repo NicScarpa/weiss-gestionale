@@ -1,0 +1,79 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+
+  // Punti d'ingresso che knip non deduce da solo. Senza questo elenco
+  // segnalava come orfani il service worker, l'intera suite e2e e tutti gli
+  // script operativi: falsi positivi che avrebbero reso il controllo inutile.
+  // serwist.config.mjs: lo carica la CLI di Serwist, che lo riceve come
+  //   argomento nello script `build:sw` — una stringa in package.json, non un
+  //   import che knip possa seguire.
+  "entry": [
+    "src/app/sw.ts",
+    "e2e/**/*.spec.ts",
+    "scripts/**/*.{ts,js,mjs,cjs}",
+    "serwist.config.mjs",
+    "prisma/seed-leave-types.ts"
+  ],
+
+  // src/components/ui/**: primitive shadcn/ui generate dal CLI. Si tengono
+  //   intere anche quando una singola variante non è ancora usata, perché il
+  //   prossimo `npx shadcn add` le riscriverebbe comunque.
+  // src/components/attendance/index.ts e src/lib/validations/attendance.ts:
+  //   orfani veri, ma il modulo presenze è fuori dal perimetro di questa
+  //   ondata. Da riprendere quando si tocca quel modulo.
+  // src/components/ErrorBoundary.tsx: orfano perché non è mai stato montato
+  //   (audit A4-INT-007). Qui la scelta non è fra tenerlo e cancellarlo ma fra
+  //   montarlo e cancellarlo, ed è una decisione di prodotto ancora aperta.
+  // audit/**: rapporti della remediation e banchi di prova usati per
+  //   dimostrare un finding. Non sono codice dell'applicazione e nessuno deve
+  //   importarli: se knip li contasse, l'unico modo per farlo tacere sarebbe
+  //   cancellare le prove.
+  "ignore": [
+    "src/components/ui/**",
+    "src/components/attendance/index.ts",
+    "src/lib/validations/attendance.ts",
+    "src/components/ErrorBoundary.tsx",
+    "audit/**"
+  ],
+
+  // pino-pretty: caricata a runtime da pino come `transport.target`, cioè da
+  //   una stringa che nessun analizzatore statico può seguire.
+  // @radix-ui/react-accordion: la usa solo components/ui/accordion.tsx, che
+  //   sta nell'ignore qui sopra.
+  // @prisma/config, glob: arrivano come transitive di prisma e degli script;
+  //   funzionano, ma dichiararle esplicitamente sarebbe più solido (Needs-Dep).
+  // eslint-plugin-react-hooks: la usa eslint-config-next, che la dichiara come
+  //   propria dipendenza; qui è ripetuta e fissata alla 7.1.1 per non
+  //   ritrovarsi due copie. Nessun file la importa per nome, quindi knip la
+  //   crede inutilizzata, ma le sue regole girano davvero: `npm run lint`
+  //   stampa `react-hooks/incompatible-library` su MovimentoFormDialog.
+  "ignoreDependencies": [
+    "pino-pretty",
+    "@radix-ui/react-accordion",
+    "@prisma/config",
+    "glob",
+    "eslint-plugin-react-hooks"
+  ],
+
+  // La CI blocca sui file interamente orfani e sulle dipendenze inutilizzate:
+  // è la classe di problema che ha prodotto questa ondata — moduli scritti in
+  // una sessione e mai collegati a nulla.
+  // I singoli export inutilizzati restano segnalati ma non bloccanti: sono
+  // ancora qualche centinaio, e ognuno va verificato a mano prima di sparire
+  // (alcuni sono API di dominio deliberate, altri codice morto vero). Farli
+  // bloccare oggi costringerebbe a cancellarli in massa senza verifica o a
+  // riempire questo file di eccezioni. Sono il lavoro di un'ondata dedicata.
+  "rules": {
+    "files": "error",
+    "dependencies": "error",
+    "devDependencies": "error",
+    "unlisted": "error",
+    "exports": "warn",
+    "types": "warn",
+    "nsExports": "warn",
+    "nsTypes": "warn",
+    "enumMembers": "warn",
+    "duplicates": "warn",
+    "binaries": "warn"
+  }
+}

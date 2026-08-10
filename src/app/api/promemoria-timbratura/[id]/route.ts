@@ -1,31 +1,21 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
-import { getVenueId } from '@/lib/venue'
+import { badRequest, handleApiError, notFound, ok, withAuth } from '@/lib/api-utils'
 import { promemoriaTimbraturaSchema } from '@/lib/validations/promemoria-timbratura'
-import {
-  guardAdminManager,
-  promemoriaSelect,
-  verificaDestinatari,
-} from '../route'
+import { promemoriaSelect, RUOLI_PROMEMORIA, verificaDestinatari } from '../condiviso'
+
+type Params = { id: string }
+const OPZIONI = { roles: RUOLI_PROMEMORIA, venueScoped: true } as const
 
 // La lettura del singolo promemoria non esiste: la lista di
 // GET /api/promemoria-timbratura porta già tutti i campi, e il form di modifica
 // parte da quelli.
 
 // PUT /api/promemoria-timbratura/[id]
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const PUT = withAuth<Params>(async (request: NextRequest, { params, user, venueId }) => {
   try {
-    const { session, error } = await guardAdminManager()
-    if (error) return error
-
-    const { id } = await params
-    const venueId = await getVenueId()
+    const { id } = params
 
     const esistente = await prisma.clockReminder.findFirst({
       where: { id, venueId },
@@ -33,7 +23,7 @@ export async function PUT(
     })
 
     if (!esistente) {
-      return NextResponse.json({ error: 'Promemoria non trovato' }, { status: 404 })
+      return notFound('Promemoria non trovato')
     }
 
     const body = await request.json()
@@ -41,7 +31,7 @@ export async function PUT(
 
     const destinatariNonValidi = await verificaDestinatari(recipientIds, venueId)
     if (destinatariNonValidi) {
-      return NextResponse.json({ error: destinatariNonValidi }, { status: 400 })
+      return badRequest(destinatariNonValidi)
     }
 
     const promemoria = await prisma.$transaction(async (tx) => {
@@ -60,7 +50,7 @@ export async function PUT(
     })
 
     await createAuditLog({
-      userId: session!.user.id,
+      userId: user.id,
       action: 'UPDATE',
       entityType: 'ClockReminder',
       entityId: id,
@@ -69,34 +59,20 @@ export async function PUT(
       newValues: promemoria,
     })
 
-    return NextResponse.json({ data: promemoria })
+    return ok({ data: promemoria })
   } catch (err) {
-    if (err instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Dati non validi', details: err.issues },
-        { status: 400 }
-      )
-    }
-
-    logger.error('Errore PUT /api/promemoria-timbratura/[id]', err)
-    return NextResponse.json(
-      { error: "Errore nell'aggiornamento del promemoria" },
-      { status: 500 }
+    return handleApiError(
+      err,
+      'PUT /api/promemoria-timbratura/[id]',
+      "Errore nell'aggiornamento del promemoria"
     )
   }
-}
+}, OPZIONI)
 
 // DELETE /api/promemoria-timbratura/[id]
-export async function DELETE(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const DELETE = withAuth<Params>(async (_request: NextRequest, { params, user, venueId }) => {
   try {
-    const { session, error } = await guardAdminManager()
-    if (error) return error
-
-    const { id } = await params
-    const venueId = await getVenueId()
+    const { id } = params
 
     const promemoria = await prisma.clockReminder.findFirst({
       where: { id, venueId },
@@ -104,14 +80,14 @@ export async function DELETE(
     })
 
     if (!promemoria) {
-      return NextResponse.json({ error: 'Promemoria non trovato' }, { status: 404 })
+      return notFound('Promemoria non trovato')
     }
 
     // I destinatari se ne vanno con lui (onDelete: Cascade nello schema).
     await prisma.clockReminder.delete({ where: { id } })
 
     await createAuditLog({
-      userId: session!.user.id,
+      userId: user.id,
       action: 'DELETE',
       entityType: 'ClockReminder',
       entityId: id,
@@ -119,12 +95,12 @@ export async function DELETE(
       oldValues: promemoria,
     })
 
-    return NextResponse.json({ success: true })
+    return ok({ success: true })
   } catch (err) {
-    logger.error('Errore DELETE /api/promemoria-timbratura/[id]', err)
-    return NextResponse.json(
-      { error: "Errore nell'eliminazione del promemoria" },
-      { status: 500 }
+    return handleApiError(
+      err,
+      'DELETE /api/promemoria-timbratura/[id]',
+      "Errore nell'eliminazione del promemoria"
     )
   }
-}
+}, OPZIONI)

@@ -3,9 +3,13 @@ import { prisma } from '@/lib/prisma'
 import {
   romeDateKey,
   romeDayRange,
+  romeTimeString,
+  timeColumnToMinutes,
   toDateOnlyUtc,
   toRomeParts,
 } from '@/lib/timezone'
+import { getEffectiveTimekeepingPolicy } from './policy-resolver'
+import { toWorkdayMinutes } from './workday'
 
 /**
  * Il client dentro `prisma.$transaction`: con il client esteso dall'adapter
@@ -30,27 +34,183 @@ export type TransactionClient = Omit<
  * e uscita insieme, e o entrano entrambe o nessuna.
  */
 
+/**
+ * Autore delle timbrature scritte dalla chiusura automatica.
+ *
+ * Non è un id utente: nessuna persona ha deciso quell'orario. È la stringa su
+ * cui il motore riconosce una supposizione del sistema — e quindi la sostituisce
+ * quando arriva una correzione approvata (`payroll-calculator.ts`, `origineDi`).
+ * Sta qui, in un punto solo, perché scritta e riletta devono coincidere: un
+ * refuso da una parte sola farebbe rileggere quegli orari come timbrature vere.
+ */
+export const AUTORE_SISTEMA = 'SYSTEM'
+
 export interface ManualPunchInput {
   userId: string
   venueId: string
   workLocationId?: string | null
   punchType: PunchType
   punchedAt: Date
-  /** Chi la sta inserendo (admin, manager o revisore della richiesta). */
+  /**
+   * Chi la sta inserendo (admin, manager o revisore della richiesta), oppure
+   * `AUTORE_SISTEMA` per la chiusura automatica, che non ha un utente dietro.
+   */
   enteredById: string
   reason: string
   notes?: string | null
   /** Richiesta di correzione approvata da cui questa timbratura nasce. */
   correctionRequestId?: string | null
+  /**
+   * Giornata lavorativa di appartenenza, 'yyyy-MM-dd'. Senza indicazione vale
+   * il giorno civile italiano della timbratura — ma l'uscita all'1:30 del
+   * turno serale appartiene al giorno prima, e chi lo sa deve dirlo.
+   */
+  workdayKey?: string
+  /**
+   * Esito della segnalazione anticipo/straordinario per le regole che
+   * seguono il turno. 'APPROVED' (default) per gli orari già decisi da un
+   * umano — inserimento admin, correzione approvata — così le ore contano
+   * subito; 'PENDING' quando la revisione deve ancora avvenire, come per le
+   * uscite confermate in chiusura di cassa.
+   */
+  revisioneScostamento?: 'APPROVED' | 'PENDING'
+}
+
+/**
+ * Con le regole che seguono il turno, una timbratura manuale fuori dal
+ * pianificato deve produrre la stessa anomalia della timbratura vera:
+ * senza, le ore oltre il turno resterebbero sospese per sempre, con
+ * l'export bloccato e niente da approvare.
+ */
+async function segnalaScostamentoDalTurno(
+  tx: TransactionClient,
+  input: ManualPunchInput,
+  recordId: string,
+  workdayKey: string
+): Promise<void> {
+  if (input.punchType !== 'IN' && input.punchType !== 'OUT') {
+    return
+  }
+
+  const { rules } = await getEffectiveTimekeepingPolicy(
+    input.userId,
+    input.venueId,
+    input.workLocationId ?? null
+  )
+  if (!rules.useShiftAsWindow) {
+    return
+  }
+
+  const turni = await tx.shiftAssignment.findMany({
+    where: {
+      userId: input.userId,
+      venueId: input.venueId,
+      date: toDateOnlyUtc(workdayKey),
+      schedule: { status: 'PUBLISHED' },
+    },
+    select: { id: true, startTime: true, endTime: true },
+  })
+
+  const finestre = turni
+    .filter((t) => t.startTime && t.endTime)
+    .map((t) => {
+      const inizio = timeColumnToMinutes(t.startTime!)
+      let fine = timeColumnToMinutes(t.endTime!)
+      if (fine <= inizio) {
+        fine += 24 * 60
+      }
+      return { id: t.id, inizio, fine }
+    })
+  if (finestre.length === 0) {
+    return
+  }
+
+  const formatta = (minuti: number) =>
+    `${String(Math.floor((minuti % 1440) / 60)).padStart(2, '0')}:` +
+    String(minuti % 60).padStart(2, '0')
+
+  const minuti = toWorkdayMinutes(input.punchedAt, workdayKey)
+
+  let anomalia: {
+    anomalyType: 'EARLY_CLOCK_IN' | 'OVERTIME'
+    assignmentId: string
+    description: string
+    expectedValue: string
+    differenceMinutes: number
+  } | null = null
+
+  if (input.punchType === 'IN') {
+    const prossima = finestre
+      .filter((f) => f.inizio > minuti)
+      .sort((a, b) => a.inizio - b.inizio)[0]
+    const anticipo = prossima ? prossima.inizio - minuti : 0
+
+    if (prossima && anticipo > rules.entryRounding.toleranceMinutes) {
+      anomalia = {
+        anomalyType: 'EARLY_CLOCK_IN',
+        assignmentId: prossima.id,
+        description:
+          `Entrata ${anticipo} minuti prima dell'inizio del turno ` +
+          'pianificato (timbratura manuale)',
+        expectedValue: formatta(prossima.inizio),
+        differenceMinutes: anticipo,
+      }
+    }
+  } else {
+    const riferimento = [...finestre].sort(
+      (a, b) => Math.abs(a.fine - minuti) - Math.abs(b.fine - minuti)
+    )[0]
+    const oltre = minuti - riferimento.fine
+
+    if (oltre > rules.exitRounding.toleranceMinutes) {
+      anomalia = {
+        anomalyType: 'OVERTIME',
+        assignmentId: riferimento.id,
+        description:
+          `Uscita ${oltre} minuti oltre la fine del turno pianificato ` +
+          '(timbratura manuale)',
+        expectedValue: formatta(riferimento.fine),
+        differenceMinutes: oltre,
+      }
+    }
+  }
+
+  if (!anomalia) {
+    return
+  }
+
+  const esito = input.revisioneScostamento ?? 'APPROVED'
+  await tx.attendanceAnomaly.create({
+    data: {
+      userId: input.userId,
+      venueId: input.venueId,
+      recordId,
+      assignmentId: anomalia.assignmentId,
+      anomalyType: anomalia.anomalyType,
+      status: esito,
+      date: toDateOnlyUtc(workdayKey),
+      description: anomalia.description,
+      actualValue: romeTimeString(input.punchedAt),
+      expectedValue: anomalia.expectedValue,
+      differenceMinutes: anomalia.differenceMinutes,
+      ...(esito === 'APPROVED' && {
+        resolvedBy: input.enteredById,
+        resolvedAt: new Date(),
+        resolutionNotes: 'Decisa insieme alla timbratura manuale',
+      }),
+    },
+  })
 }
 
 export async function createManualPunch(
   tx: TransactionClient,
   input: ManualPunchInput
 ) {
-  // Il giorno è quello civile italiano della timbratura, e `date` è una
-  // colonna @db.Date: si confronta con la mezzanotte UTC del giorno.
-  const giornoItaliano = romeDateKey(input.punchedAt)
+  // Il giorno è quello civile italiano della timbratura — salvo che il
+  // chiamante sappia che la giornata lavorativa è un'altra (l'uscita dopo
+  // mezzanotte del turno serale). `date` è una colonna @db.Date: si
+  // confronta con la mezzanotte UTC del giorno.
+  const giornoItaliano = input.workdayKey ?? romeDateKey(input.punchedAt)
   const giorno = romeDayRange(giornoItaliano)
 
   const assignment = await tx.shiftAssignment.findFirst({
@@ -150,6 +310,8 @@ export async function createManualPunch(
       })
     }
   }
+
+  await segnalaScostamentoDalTurno(tx, input, record.id, giornoItaliano)
 
   return record
 }

@@ -1,41 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { logger } from '@/lib/logger'
 import { getFile } from '@/lib/storage'
+import { forbidden, handleApiError, notFound, withAuth } from '@/lib/api-utils'
 
+type Params = { id: string }
 
 // GET /api/portal/documents/[id] - Download documento (verifica ownership)
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const GET = withAuth<Params>(async (_request: NextRequest, { params, user }) => {
   try {
-    const { id } = await params
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
     const document = await prisma.employeeDocument.findUnique({
-      where: { id },
+      where: { id: params.id },
     })
 
     if (!document) {
-      return NextResponse.json({ error: 'Documento non trovato' }, { status: 404 })
+      return notFound('Documento non trovato')
     }
 
     // Verifica ownership. Un documento ancora da assegnare è intestato solo
     // tecnicamente all'admin che l'ha caricato: dal portale non si scarica.
-    if (document.userId !== session.user.id || document.needsAssignment) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
+    if (document.userId !== user.id || document.needsAssignment) {
+      return forbidden()
     }
 
     const key = `documents/${document.category.toLowerCase()}/${document.filename}`
     const fileData = await getFile(key)
 
     if (!fileData) {
-      return NextResponse.json({ error: 'File non trovato' }, { status: 404 })
+      return notFound('File non trovato')
     }
 
     return new NextResponse(new Uint8Array(fileData), {
@@ -46,7 +37,10 @@ export async function GET(
       },
     })
   } catch (error) {
-    logger.error('Errore GET /api/portal/documents/[id]', error)
-    return NextResponse.json({ error: 'Errore nel download' }, { status: 500 })
+    return handleApiError(
+      error,
+      'GET /api/portal/documents/[id]',
+      'Errore nel download'
+    )
   }
-}
+})

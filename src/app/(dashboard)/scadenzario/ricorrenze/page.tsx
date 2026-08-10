@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,37 +15,35 @@ import { toast } from 'sonner'
 type SubTab = 'passiva' | 'attiva'
 
 export default function RicorrenzePage() {
-  const [recurrences, setRecurrences] = useState<Recurrence[]>([])
-  const [isLoading, setIsLoading] = useState(true)
   const [subTab, setSubTab] = useState<SubTab>('passiva')
   const [search, setSearch] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingRecurrence, setEditingRecurrence] = useState<Recurrence | null>(null)
 
-  const fetchRecurrences = useCallback(async () => {
-    setIsLoading(true)
-    try {
+  const {
+    data: risposta,
+    isPending,
+    isFetching,
+    refetch: fetchRecurrences,
+  } = useQuery({
+    // Come prima: ricarica a ogni montaggio e a ogni cambio di filtro.
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryKey: ['scadenzario-ricorrenze', subTab, search],
+    queryFn: async (): Promise<{ data?: Recurrence[] }> => {
       const params = new URLSearchParams()
       params.append('tipo', subTab)
       params.append('isActive', 'true')
       if (search) params.append('search', search)
 
       const resp = await fetch(`/api/scadenzario/ricorrenze?${params}`)
-      const data = await resp.json()
+      if (!resp.ok) throw new Error('Errore nel caricamento delle ricorrenze')
+      return resp.json()
+    },
+  })
 
-      if (resp.ok) {
-        setRecurrences(data.data || [])
-      }
-    } catch (error) {
-      console.error('Errore fetch ricorrenze:', error)
-    }
-    setIsLoading(false)
-  }, [subTab, search])
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount/dependency change is intentional
-    fetchRecurrences()
-  }, [fetchRecurrences])
+  const recurrences = risposta?.data ?? []
+  const isLoading = isPending || isFetching
 
   const handleCreate = async (data: CreateRecurrenceInput) => {
     try {
@@ -153,7 +152,7 @@ export default function RicorrenzePage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">
             Ricorrenze
           </h1>
           <p className="text-muted-foreground">

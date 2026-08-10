@@ -4,6 +4,12 @@ import { notifyAnomalyCreated } from '@/lib/notifications'
 
 import { logger } from '@/lib/logger'
 import { romeDateKey, toDateOnlyUtc } from '@/lib/timezone'
+import {
+  FINESTRA_RECUPERO_GIORNI,
+  fineTurnoInMinuti,
+  orarioChiusuraAutomatica,
+} from '@/lib/attendance/auto-clockout'
+import { AUTORE_SISTEMA, createManualPunch } from '@/lib/attendance/manual-punch'
 // POST /api/attendance/auto-clockout - Job automatico per clock-out mancanti
 export async function POST(request: NextRequest) {
   try {
@@ -40,19 +46,33 @@ export async function POST(request: NextRequest) {
 
     for (const venue of venues) {
       const policy = venue.attendancePolicy
+
+      // L'interruttore delle Impostazioni presenze ora conta davvero. Prima
+      // veniva letto solo `autoClockOutHours` e mai `autoClockOutEnabled`:
+      // spegnere la chiusura automatica dalla pagina non fermava niente, e
+      // nessuna schermata lo diceva.
+      if (policy && !policy.autoClockOutEnabled) {
+        continue
+      }
+
       const maxHours = policy?.autoClockOutHours ?? 12
 
       // Trova tutte le timbrature IN senza corrispondente OUT
       // che sono più vecchie di maxHours
       const cutoffTime = new Date(now.getTime() - maxHours * 60 * 60 * 1000)
 
-      // Trova utenti con IN ma senza OUT per oggi
       const openPunches = await prisma.attendanceRecord.findMany({
         where: {
           venueId: venue.id,
           punchType: 'IN',
           punchedAt: {
-            gte: new Date(now.getTime() - 24 * 60 * 60 * 1000), // Ultime 24h
+            // La finestra all'indietro è larga di proposito: con le 24 ore di
+            // prima, se il servizio restava fermo mezza giornata l'entrata ne
+            // usciva e nessun giro futuro la guardava più. Vedi il commento
+            // di FINESTRA_RECUPERO_GIORNI.
+            gte: new Date(
+              now.getTime() - FINESTRA_RECUPERO_GIORNI * 24 * 60 * 60 * 1000
+            ),
             lt: cutoffTime, // Più vecchie di maxHours
           },
         },
@@ -62,6 +82,34 @@ export async function POST(request: NextRequest) {
           },
         },
       })
+
+      // I turni pianificati delle giornate coinvolte, in una query sola: è la
+      // fine del turno a dire quando chiudere, non un orario inventato.
+      const giornateCoinvolte = [
+        ...new Set(openPunches.map((p) => romeDateKey(p.punchedAt))),
+      ]
+      const turni = giornateCoinvolte.length
+        ? await prisma.shiftAssignment.findMany({
+            where: {
+              venueId: venue.id,
+              userId: { in: [...new Set(openPunches.map((p) => p.userId))] },
+              date: { in: giornateCoinvolte.map(toDateOnlyUtc) },
+              schedule: { status: 'PUBLISHED' },
+            },
+            select: { userId: true, date: true, startTime: true, endTime: true },
+          })
+        : []
+
+      const turniPerUtenteGiorno = new Map<
+        string,
+        { startTime: Date | null; endTime: Date | null }[]
+      >()
+      for (const turno of turni) {
+        const chiave = `${turno.userId}_${turno.date.toISOString().slice(0, 10)}`
+        const elenco = turniPerUtenteGiorno.get(chiave) ?? []
+        elenco.push({ startTime: turno.startTime, endTime: turno.endTime })
+        turniPerUtenteGiorno.set(chiave, elenco)
+      }
 
       let venueAutoClockouts = 0
 
@@ -79,44 +127,83 @@ export async function POST(request: NextRequest) {
         })
 
         if (!existingOut) {
-          // Crea auto clock-out
-          const autoClockoutTime = new Date(
-            clockIn.punchedAt.getTime() + maxHours * 60 * 60 * 1000
-          )
+          // L'uscita si scrive alla fine del turno pianificato. Prima erano
+          // sempre dodici ore dopo l'entrata — un orario che nessuno ha mai
+          // lavorato: turno 07:00-13:00 dimenticato, uscita scritta alle
+          // 18:58, 12 ore pagate invece di 6.
+          const dateKeyEntrata = romeDateKey(clockIn.punchedAt)
+          const chiave = `${clockIn.userId}_${dateKeyEntrata}`
 
-          await prisma.attendanceRecord.create({
-            data: {
-              userId: clockIn.userId,
-              venueId: venue.id,
-              assignmentId: clockIn.assignmentId,
-              punchType: 'OUT',
-              punchMethod: 'WEB',
-              punchedAt: autoClockoutTime,
-              isManual: true,
-              manualEntryBy: 'SYSTEM',
-              manualEntryReason: `Auto clock-out dopo ${maxHours}h senza uscita`,
-              notes: 'Generato automaticamente dal sistema',
-            },
+          const chiusura = orarioChiusuraAutomatica({
+            entrataAlle: clockIn.punchedAt,
+            dateKeyEntrata,
+            fineTurnoMinuti: fineTurnoInMinuti(turniPerUtenteGiorno.get(chiave) ?? []),
+            maxHours,
           })
 
-          // Crea anomalia. La data è il giorno italiano dell'entrata: il cron
-          // gira in UTC e per un'entrata serale segnerebbe il giorno dopo.
-          const dateForAnomaly = toDateOnlyUtc(romeDateKey(clockIn.punchedAt))
+          const oreChiuse =
+            (chiusura.orario.getTime() - clockIn.punchedAt.getTime()) / (60 * 60 * 1000)
 
-          const anomaly = await prisma.attendanceAnomaly.create({
-            data: {
+          const motivo =
+            chiusura.origine === 'turno'
+              ? 'Uscita non timbrata: chiusa alla fine del turno pianificato'
+              : `Uscita non timbrata e nessun turno pianificato: chiusa dopo ${maxHours}h`
+
+          // La data è il giorno italiano dell'entrata: il cron gira in UTC e
+          // per un'entrata serale segnerebbe il giorno dopo.
+          const dateForAnomaly = toDateOnlyUtc(dateKeyEntrata)
+
+          // L'uscita nasce da `createManualPunch` e non da una `create`
+          // diretta. Non è un dettaglio di stile: quella funzione è l'unico
+          // punto in cui, con le regole che seguono il turno pianificato,
+          // nasce l'anomalia di scostamento. Senza, i minuti fuori dal turno
+          // restavano SOSPESI nel calcolo delle paghe — né pagati né persi —
+          // con l'export del mese bloccato e nessuna riga da approvare in
+          // nessuna schermata. Ore sparite dal cedolino senza che nessuno
+          // avesse deciso di toglierle.
+          //
+          // `revisioneScostamento: 'PENDING'` perché qui non ha deciso
+          // nessuno: l'orario è una supposizione del programma, e chi guarda
+          // le anomalie deve poterla confermare o rifiutare.
+          const { anomaly, scostamenti } = await prisma.$transaction(async (tx) => {
+            const uscita = await createManualPunch(tx, {
               userId: clockIn.userId,
               venueId: venue.id,
-              recordId: clockIn.id,
-              assignmentId: clockIn.assignmentId,
-              anomalyType: 'MISSING_CLOCK_OUT',
-              status: 'PENDING',
-              date: dateForAnomaly,
-              description: `${clockIn.user.firstName} ${clockIn.user.lastName} non ha timbrato l'uscita. Auto clock-out dopo ${maxHours}h.`,
-              expectedValue: 'Timbratura uscita',
-              actualValue: 'Mancante',
-              hoursAffected: maxHours,
-            },
+              workLocationId: clockIn.workLocationId,
+              punchType: 'OUT',
+              punchedAt: chiusura.orario,
+              enteredById: AUTORE_SISTEMA,
+              reason: motivo,
+              notes: 'Generato automaticamente dal sistema',
+              // L'uscita del turno serale cade dopo la mezzanotte, ma la
+              // giornata lavorativa resta quella dell'entrata.
+              workdayKey: dateKeyEntrata,
+              revisioneScostamento: 'PENDING',
+            })
+
+            const anomaly = await tx.attendanceAnomaly.create({
+              data: {
+                userId: clockIn.userId,
+                venueId: venue.id,
+                recordId: clockIn.id,
+                assignmentId: clockIn.assignmentId,
+                anomalyType: 'MISSING_CLOCK_OUT',
+                status: 'PENDING',
+                date: dateForAnomaly,
+                description:
+                  `${clockIn.user.firstName} ${clockIn.user.lastName} non ha timbrato ` +
+                  `l'uscita. ${motivo}: ${oreChiuse.toFixed(2)} ore.`,
+                expectedValue: 'Timbratura uscita',
+                actualValue: 'Mancante',
+                hoursAffected: oreChiuse,
+              },
+            })
+
+            const scostamenti = await tx.attendanceAnomaly.count({
+              where: { recordId: uscita.id },
+            })
+
+            return { anomaly, scostamenti }
           })
 
           // Notifica anomalia creata (async)
@@ -126,7 +213,10 @@ export async function POST(request: NextRequest) {
 
           venueAutoClockouts++
           totalAutoClockouts++
-          totalAnomalies++
+          // Anche gli scostamenti dal turno entrano nel conteggio: il
+          // riepilogo del cron è ciò che si guarda per capire cosa ha fatto
+          // il giro di stanotte, e deve dire il vero.
+          totalAnomalies += 1 + scostamenti
         }
 
         totalProcessed++

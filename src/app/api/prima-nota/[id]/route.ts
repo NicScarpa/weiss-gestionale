@@ -121,7 +121,13 @@ export async function PUT(
     // Verifica che il movimento esista e appartenga al venue
     const existingEntry = await prisma.journalEntry.findFirst({
       where: { id, venueId },
-      select: { id: true, closureId: true, accountId: true, costCenterId: true },
+      select: {
+        id: true,
+        closureId: true,
+        accountId: true,
+        costCenterId: true,
+        _count: { select: { allocations: true } },
+      },
     })
 
     if (!existingEntry) {
@@ -210,14 +216,14 @@ export async function PUT(
     // Cambiare conto o centro rimette in discussione la regola del centro di
     // costo: si rivaluta sullo stato risultante dall'aggiornamento, non su
     // quello attuale. Se nessuno dei due cambia, il movimento resta com'è.
-    const cambiaConto = validatedData.accountId !== undefined
+    const contoInviato = validatedData.accountId !== undefined
     const cambiaCentro = validatedData.costCenterId !== undefined
     let costCenterId: string | undefined
     let costCenterSource: string | undefined
 
-    if (cambiaConto || cambiaCentro) {
+    if (contoInviato || cambiaCentro) {
       const centro = await risolviCentroDiCosto(prisma, {
-        accountId: cambiaConto ? validatedData.accountId : existingEntry.accountId,
+        accountId: contoInviato ? validatedData.accountId : existingEntry.accountId,
         costCenterId: cambiaCentro ? validatedData.costCenterId : existingEntry.costCenterId,
       })
       if (centro.outcome === 'invalid') {
@@ -228,6 +234,30 @@ export async function PUT(
       }
       costCenterId = centro.costCenterId
       costCenterSource = centro.origine
+    }
+
+    // Un movimento suddiviso in fette ha il conto governato dalla
+    // suddivisione: `aggiornaContoDominante` lo riscrive sul conto della fetta
+    // più grossa a ogni modifica delle fette. Cambiarlo da qui non dava un
+    // effetto duraturo, dava un movimento che dichiarava un conto che nessuna
+    // delle sue fette sosteneva — e che si dichiarava comunque
+    // `categorizationSource: 'split'`, finché la prima riconciliazione
+    // successiva non lo riscriveva. Le altre due strade lo vietavano già
+    // (`categorize` risponde 409, `recategorize` esclude a monte con
+    // `allocations: { none: {} }`): questa era la terza, ed era l'unica aperta.
+    //
+    // Si rifiuta il *cambio* di conto, non l'intera modifica: il form
+    // rispedisce tutti i campi, conto compreso, e rifiutare a prescindere
+    // renderebbe immodificabile perfino la descrizione di un movimento
+    // suddiviso.
+    const contoDiverso =
+      validatedData.accountId !== undefined &&
+      validatedData.accountId !== existingEntry.accountId
+    if (contoDiverso && existingEntry._count.allocations > 0) {
+      return NextResponse.json(
+        { error: 'Il movimento è suddiviso in fette: rimuovi prima la suddivisione' },
+        { status: 409 }
+      )
     }
 
     // Aggiorna
@@ -272,6 +302,94 @@ export async function PUT(
   }
 }
 
+/**
+ * Ciò che può trattenere un movimento dalla cancellazione. Sta in una costante
+ * perché la stessa domanda va posta anche all'altra riga di un trasferimento.
+ */
+const LEGAMI_DA_VERIFICARE = {
+  closureId: true,
+  paymentId: true,
+  scheduleReconciliations: {
+    where: { status: 'VERIFIED' as const },
+    select: { id: true, scheduleId: true },
+  },
+  bankTransaction: { select: { id: true } },
+  payment: { select: { id: true } },
+}
+
+interface RigaConLegami {
+  closureId: string | null
+  paymentId: string | null
+  scheduleReconciliations: Array<{ id: string; scheduleId: string }>
+  bankTransaction: { id: string } | null
+  payment: { id: string } | null
+}
+
+interface Blocco {
+  status: number
+  corpo: Record<string, unknown>
+}
+
+/**
+ * Perché questo movimento non si può cancellare, se non si può.
+ *
+ * `gemella` distingue la riga richiesta dall'altra riga dello stesso
+ * trasferimento: senza quella precisazione l'utente cercherebbe l'aggancio
+ * sulla riga che ha in mano, che ne è priva, e il messaggio sembrerebbe falso.
+ */
+function motivoDelBlocco(riga: RigaConLegami, gemella: boolean): Blocco | null {
+  const dove = gemella ? ' (l\'altra riga del trasferimento)' : ''
+
+  // Non eliminabile se generato da chiusura
+  if (riga.closureId) {
+    return {
+      status: 400,
+      corpo: { error: `I movimenti generati da chiusure non sono eliminabili${dove}` },
+    }
+  }
+
+  // Il caso che fa più danno è la riconciliazione: cancellando il movimento la
+  // scadenza resta "pagata" verso qualcosa che non esiste più, e il residuo del
+  // fornitore sparisce dal previsionale senza che sia uscito un euro. La
+  // risposta dice cosa sganciare prima, perché l'operazione resti possibile in
+  // due passi.
+  if (riga.scheduleReconciliations.length > 0) {
+    return {
+      status: 409,
+      corpo: {
+        error:
+          `Il movimento${dove} è riconciliato con una o più scadenze: annulla prima le ` +
+          'riconciliazioni, poi elimina il movimento',
+        scadenze: riga.scheduleReconciliations.map((r) => r.scheduleId),
+      },
+    }
+  }
+
+  if (riga.payment || riga.paymentId) {
+    return {
+      status: 409,
+      corpo: {
+        error:
+          `Il movimento${dove} è collegato a un pagamento: annulla prima il pagamento, poi ` +
+          'elimina il movimento',
+      },
+    }
+  }
+
+  if (riga.bankTransaction) {
+    return {
+      status: 409,
+      corpo: {
+        error:
+          `Il movimento${dove} è abbinato a una transazione bancaria: sgancia prima ` +
+          'l\'abbinamento, poi elimina il movimento',
+      },
+    }
+  }
+
+  return null
+}
+
 // DELETE /api/prima-nota/[id] - Elimina movimento
 export async function DELETE(
   request: NextRequest,
@@ -294,7 +412,7 @@ export async function DELETE(
     // Verifica che il movimento esista e appartenga al venue
     const existingEntry = await prisma.journalEntry.findFirst({
       where: { id, venueId },
-      select: { id: true, closureId: true },
+      select: { id: true, transferId: true, ...LEGAMI_DA_VERIFICARE },
     })
 
     if (!existingEntry) {
@@ -312,30 +430,54 @@ export async function DELETE(
       )
     }
 
-    // Non eliminabile se generato da chiusura
-    if (existingEntry.closureId) {
-      return NextResponse.json(
-        { error: 'I movimenti generati da chiusure non sono eliminabili' },
-        { status: 400 }
-      )
+    // Un trasferimento è una scrittura sola in due righe: cancellarne una
+    // lascerebbe il denaro uscito da un registro senza essere entrato
+    // nell'altro, e il saldo complessivo si sposterebbe dell'intero importo.
+    // Si cancella l'operazione, non la riga — e la si rifiuta se *una
+    // qualsiasi* delle due è agganciata a qualcosa, perché il blocco protegge
+    // l'operazione intera. I trasferimenti scritti prima che esistesse
+    // `transferId` non hanno il legame e si comportano come movimenti singoli:
+    // per loro il vecchio rischio resta, ma non lo si può indovinare a
+    // posteriori (vedi il commento sulla colonna in schema.prisma).
+    const daCancellare = existingEntry.transferId
+      ? await prisma.journalEntry.findMany({
+          where: { transferId: existingEntry.transferId, venueId },
+          select: { id: true, ...LEGAMI_DA_VERIFICARE },
+        })
+      : [existingEntry]
+
+    for (const riga of daCancellare) {
+      const blocco = motivoDelBlocco(riga, riga.id !== id)
+      if (blocco) {
+        return NextResponse.json(blocco.corpo, { status: blocco.status })
+      }
     }
 
     // Cancellazione logica: le scritture contabili non vengono mai rimosse
     // dal database, restano tracciabili tramite deletedAt e l'audit log
-    await prisma.journalEntry.update({
-      where: { id },
-      data: { deletedAt: new Date() },
-    })
+    const adesso = new Date()
+    await prisma.$transaction(
+      daCancellare.map((riga) =>
+        prisma.journalEntry.update({
+          where: { id: riga.id },
+          data: { deletedAt: adesso },
+        })
+      )
+    )
 
-    await createAuditLog({
-      userId: session.user.id,
-      action: 'DELETE',
-      entityType: 'JournalEntry',
-      entityId: id,
-      venueId,
-    })
+    // Un log per riga: la seconda è cancellata quanto la prima, e un registro
+    // che ne nomina una sola racconta metà dell'operazione.
+    for (const riga of daCancellare) {
+      await createAuditLog({
+        userId: session.user.id,
+        action: 'DELETE',
+        entityType: 'JournalEntry',
+        entityId: riga.id,
+        venueId,
+      })
+    }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, eliminati: daCancellare.length })
   } catch (error) {
     logger.error('Errore DELETE /api/prima-nota/[id]', error)
     return NextResponse.json(

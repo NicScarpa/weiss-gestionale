@@ -261,7 +261,11 @@ model DailyClosure {
   partials         HourlyPartial[]
   journalEntries   JournalEntry[]
 
-  @@unique([venueId, date])
+  // L'unicità di (venueId, date) vive come indice PARZIALE in
+  // prisma/sql/constraints.sql: qui non può stare perché Prisma non esprime il
+  // `WHERE deleted_at IS NULL`, e senza quel filtro una chiusura cancellata
+  // per errore terrebbe occupato quel giorno per sempre.
+  @@index([venueId, date])
   @@index([costCenterId])
   @@map("daily_closures")
 }
@@ -463,6 +467,19 @@ model JournalEntry {
   /// guardato.
   costCenterSource     String?             @map("cost_center_source")
   azienda              String              @default("WEISS S.r.l.")
+  /// Lega fra loro le due righe di un trasferimento — versamento, prelievo,
+  /// giroconto — che sono una scrittura sola: il denaro esce da un registro ed
+  /// entra nell'altro, e la liquidità totale non cambia. Senza questo legame
+  /// cancellare un lato lasciava l'altro in piedi, e il saldo complessivo si
+  /// spostava dell'intero importo.
+  ///
+  /// Nullo su tutto il resto: i movimenti a riga singola non hanno una gemella,
+  /// e i trasferimenti scritti prima di questa colonna restano non legati. Non
+  /// si tenta di appaiarli a posteriori: l'accoppiamento andrebbe indovinato
+  /// per data e importo, e due versamenti dello stesso giorno per la stessa
+  /// cifra sono indistinguibili — un'ipotesi sbagliata cancellerebbe la riga di
+  /// un'altra operazione.
+  transferId           String?             @map("transfer_id")
   bankTransaction      BankTransaction?
   electronicInvoice    ElectronicInvoice?
   account              Account?            @relation(fields: [accountId], references: [id])
@@ -485,6 +502,7 @@ model JournalEntry {
   @@index([budgetCategoryId])
   @@index([closureId])
   @@index([costCenterId])
+  @@index([transferId])
   @@map("journal_entries")
 }
 
@@ -653,6 +671,9 @@ model Schedule {
   venue                   Venue                       @relation(fields: [venueId], references: [id])
 
   @@index([venueId, dataScadenza])
+  // Il previsionale ordina per dataAttesa ?? dataScadenza: senza questo indice
+  // la proiezione di cassa scansiona tutte le scadenze della sede.
+  @@index([venueId, dataAttesa])
   @@index([stato])
   @@index([tipo])
   @@index([invoiceId])
@@ -795,7 +816,9 @@ model Budget {
   createdBy   User?         @relation(fields: [createdById], references: [id])
   venue       Venue         @relation(fields: [venueId], references: [id])
 
-  @@unique([venueId, year])
+  // Unicità di (venueId, year) come indice PARZIALE in
+  // prisma/migrations/post-push/constraints.sql: vedi DailyClosure.
+  @@index([venueId, year])
   @@map("budgets")
 }
 
@@ -1243,9 +1266,46 @@ model TimekeepingPolicy {
   extraBreaks                 TimekeepingPolicyBreak[]
   users                       User[]
   workLocations               WorkLocation[]
+  versions                    TimekeepingPolicyVersion[]
 
   @@index([venueId, isActive])
   @@map("timekeeping_policies")
+}
+
+/// Fotografia dei parametri di calcolo di una regola prima di una modifica
+/// con decorrenza: i giorni precedenti alla decorrenza continuano a essere
+/// calcolati con questi valori, così una modifica di ottobre non riscrive il
+/// cartellino di agosto già consegnato al consulente. Solo storia: si crea
+/// al salvataggio della modifica e non si tocca mai più.
+model TimekeepingPolicyVersion {
+  id                          String            @id @default(cuid())
+  policyId                    String            @map("policy_id")
+  /// Primo giorno in cui questi valori NON valgono più: la decorrenza della
+  /// modifica che li ha sostituiti. I giorni precedenti usano questa versione.
+  effectiveUntil              DateTime          @map("effective_until") @db.Date
+  name                        String
+  dayStartMinutes             Int               @map("day_start_minutes")
+  dayEndMinutes               Int               @map("day_end_minutes")
+  lunchStartMinutes           Int?              @map("lunch_start_minutes")
+  lunchEndMinutes             Int?              @map("lunch_end_minutes")
+  useShiftAsWindow            Boolean           @map("use_shift_as_window")
+  flexMinutes                 Int               @map("flex_minutes")
+  roundingMinutes             Int               @map("rounding_minutes")
+  roundingToleranceMinutes    Int               @map("rounding_tolerance_minutes")
+  roundingOutMinutes          Int?              @map("rounding_out_minutes")
+  roundingOutToleranceMinutes Int?              @map("rounding_out_tolerance_minutes")
+  maxDailyMinutes             Int?              @map("max_daily_minutes")
+  contractWeeklyHours         Decimal?          @map("contract_weekly_hours") @db.Decimal(4, 1)
+  saturdayAsOvertime          Boolean           @map("saturday_as_overtime")
+  blockSunday                 Boolean           @map("block_sunday")
+  singlePunchMode             Boolean           @map("single_punch_mode")
+  /// Le pause aggiuntive congelate: [{name, startMinutes, endMinutes}].
+  extraBreaks                 Json              @map("extra_breaks")
+  createdAt                   DateTime          @default(now()) @map("created_at")
+  policy                      TimekeepingPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([policyId, effectiveUntil])
+  @@map("timekeeping_policy_versions")
 }
 
 /// Luogo fisico in cui si timbra: Weiss Cafè, Villa Varda, le Casette.
@@ -1512,10 +1572,20 @@ model NotificationLog {
   @@map("notification_logs")
 }
 
+/// Iscrizione di un browser alle notifiche push (Web Push standard, VAPID).
+///
+/// `endpoint` è l'indirizzo che il browser assegna a quel dispositivo — è
+/// l'identità dell'iscrizione — mentre `p256dh` e `auth` sono le chiavi con
+/// cui si cifra il contenuto: senza, il servizio di push trasporterebbe il
+/// testo in chiaro. Nessun campo qui è un segreto del server.
 model PushSubscription {
   id          String    @id @default(cuid())
   userId      String    @map("user_id")
-  fcmToken    String    @unique @map("fcm_token")
+  endpoint    String    @unique
+  p256dh      String
+  auth        String
+  /// Scadenza dichiarata dal browser: nella pratica quasi sempre assente.
+  expiresAt   DateTime? @map("expires_at")
   deviceName  String?   @map("device_name")
   deviceType  String?   @map("device_type")
   browserName String?   @map("browser_name")
@@ -1746,7 +1816,9 @@ model BankTransaction {
   matchedEntry    JournalEntry?        @relation(fields: [matchedEntryId], references: [id])
   venue           Venue                @relation(fields: [venueId], references: [id])
 
-  @@unique([venueId, bankReference])
+  // Unicità di (venueId, bankReference) come indice PARZIALE in
+  // prisma/migrations/post-push/constraints.sql: vedi DailyClosure.
+  @@index([venueId, bankReference])
   @@index([venueId, status])
   @@index([transactionDate])
   @@index([importBatchId])
@@ -1849,6 +1921,8 @@ model Payment {
   journalEntry       JournalEntry? @relation(fields: [journalEntryId], references: [id])
   venue              Venue         @relation(fields: [venueId], references: [id])
 
+  @@index([venueId, stato])
+  @@index([dataEsecuzione])
   @@map("payments")
 }
 
@@ -1871,6 +1945,7 @@ model CategorizationRule {
   venue            Venue           @relation(fields: [venueId], references: [id])
   journalEntries   JournalEntry[]
 
+  @@index([venueId])
   @@map("categorization_rules")
 }
 
@@ -1898,6 +1973,7 @@ model CashFlowForecast {
   venue         Venue                  @relation(fields: [venueId], references: [id])
   scenarios     CashFlowScenario[]
 
+  @@index([venueId])
   @@map("cash_flow_forecasts")
 }
 

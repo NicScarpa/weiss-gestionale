@@ -21,6 +21,7 @@ import {
   AlertCircle,
   AlertTriangle,
   Lock,
+  Brain,
 } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -66,10 +67,10 @@ import {
   getDocumentTypeAbbrev,
   getDocumentTypeColor,
   getSimpleStatus,
-  formatCurrency,
   generateYearOptions,
   ITALIAN_MONTHS,
 } from '@/lib/invoice-utils'
+import { formatCurrencyOrZero as formatCurrency } from '@/lib/formatters'
 
 
 interface Invoice {
@@ -123,7 +124,7 @@ function SortableHeader({ field, label, className = '', sortBy, sortOrder, onSor
   const isActive = sortBy === field
   return (
     <button
-      className={`flex items-center gap-1 hover:text-slate-900 transition-colors ${className}`}
+      className={`flex items-center gap-1 hover:text-foreground transition-colors ${className}`}
       onClick={() => onSort(field)}
     >
       {label}
@@ -362,6 +363,15 @@ export function InvoiceList() {
               Elimina ({selectedIds.size})
             </Button>
           )}
+          {/* Unico accesso a cosa il sistema ha imparato a imputare da solo:
+              la memoria fornitore-prodotto nasce qui, dalle conferme sulle
+              righe delle fatture, ed è qui che si viene a cercarla. */}
+          <Button variant="outline" asChild>
+            <Link href="/fatture/memorie">
+              <Brain className="mr-2 h-4 w-4" />
+              Memorie fornitore
+            </Link>
+          </Button>
           <Button onClick={() => setImportDialogOpen(true)}>
             <Upload className="mr-2 h-4 w-4" />
             Importa Fattura
@@ -552,7 +562,7 @@ export function InvoiceList() {
                     </TableCell>
 
                     {/* Data */}
-                    <TableCell className="text-slate-600">
+                    <TableCell className="text-muted-foreground">
                       {format(new Date(invoice.invoiceDate), 'dd/MM/yyyy', { locale: it })}
                     </TableCell>
 

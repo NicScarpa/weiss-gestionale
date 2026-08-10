@@ -12,6 +12,51 @@ import { risolviCentroDiCosto, type OrigineCentro } from '@/lib/services/cost-ce
  */
 type PrismaLike = Pick<typeof prisma, 'journalEntry' | 'costCenter' | 'account'>
 
+/** Come sopra, ma serve anche a chi cerca i legami a valle delle scritture. */
+type PrismaLikeWithLinks = PrismaLike &
+  Pick<
+    typeof prisma,
+    | 'bankTransaction'
+    | 'scheduleReconciliation'
+    | 'journalEntryAllocation'
+    | 'payment'
+    | 'electronicInvoice'
+  >
+
+/**
+ * La chiusura ha già scritture vive: generarne altre raddoppierebbe l'incasso
+ * del giorno. È la rete che protegge dalle validazioni concorrenti sopravvissute
+ * al controllo di stato, e da qualunque percorso futuro che chiami la
+ * generazione senza aver prima annullato le scritture precedenti.
+ */
+export class JournalEntriesAlreadyExistError extends Error {
+  constructor(
+    readonly closureId: string,
+    readonly existingEntries: number
+  ) {
+    super(
+      `La chiusura ${closureId} ha già ${existingEntries} scritture di prima nota: ` +
+        'generarne altre duplicherebbe i movimenti del giorno.'
+    )
+    this.name = 'JournalEntriesAlreadyExistError'
+  }
+}
+
+/**
+ * Le scritture della chiusura sono state lavorate a valle (riconciliate,
+ * ripartite fra conti, collegate a un pagamento): rigenerarle lascerebbe quei
+ * collegamenti appesi a righe annullate.
+ */
+export class JournalEntriesLockedError extends Error {
+  constructor(readonly reasons: string[]) {
+    super(
+      'Le scritture di questa chiusura non possono essere rigenerate: ' +
+        `${reasons.join(', ')}. Annulla prima quei collegamenti.`
+    )
+    this.name = 'JournalEntriesLockedError'
+  }
+}
+
 interface CashStation {
   cashAmount: number | null
   posAmount: number | null
@@ -147,6 +192,20 @@ export async function generateJournalEntriesFromClosure(
   userId: string,
   client: PrismaLike = prisma
 ): Promise<{ entriesCreated: number; totalDebits: number; totalCredits: number }> {
+  // Prima di scrivere qualsiasi cosa: se per questa chiusura esistono già
+  // scritture vive, chi ci ha preceduto ha già registrato il giorno. Il
+  // controllo sta qui e non nel chiamante perché è l'ultimo punto comune a
+  // tutti i percorsi — validazione, rigenerazione dopo correzione, eventuali
+  // script — e dentro la transazione: interromperla annulla anche il cambio di
+  // stato che l'ha aperta.
+  const existingEntries = await client.journalEntry.count({
+    where: { closureId: closure.id, deletedAt: null },
+  })
+
+  if (existingEntries > 0) {
+    throw new JournalEntriesAlreadyExistError(closure.id, existingEntries)
+  }
+
   const entries: Prisma.JournalEntryCreateManyInput[] = []
   let totalDebits = 0
   let totalCredits = 0
@@ -313,6 +372,95 @@ export async function generateJournalEntriesFromClosure(
     entriesCreated: entries.length,
     totalDebits,
     totalCredits,
+  }
+}
+
+/**
+ * Cerca i legami a valle delle scritture vive di una chiusura e li descrive.
+ *
+ * Rigenerare le scritture significa annullare le vecchie e crearne di nuove con
+ * id diversi. Tutto ciò che puntava alle vecchie resterebbe agganciato a righe
+ * annullate: il movimento bancario risulterebbe ancora riconciliato con una
+ * scrittura che non esiste più, e la scrittura nuova comparirebbe fra quelle da
+ * riconciliare. Quando la lista non è vuota la correzione va fermata, non
+ * eseguita: sono danni che il database non solleva da solo, perché la
+ * cancellazione è logica e nessuna foreign key protesta.
+ *
+ * Le interrogazioni sono in sequenza e non in parallelo: su un client di
+ * transazione condividono una sola connessione.
+ */
+export async function findClosureJournalLinks(
+  closureId: string,
+  client: PrismaLikeWithLinks = prisma
+): Promise<string[]> {
+  const entries = await client.journalEntry.findMany({
+    where: { closureId, deletedAt: null },
+    select: { id: true },
+  })
+
+  if (entries.length === 0) return []
+
+  const ids = entries.map((e) => e.id)
+  const reasons: string[] = []
+
+  const bankMatches = await client.bankTransaction.count({
+    where: { matchedEntryId: { in: ids } },
+  })
+  if (bankMatches > 0) {
+    reasons.push(`${bankMatches} movimenti bancari già riconciliati`)
+  }
+
+  // Le riconciliazioni rifiutate sono storia: non tengono più agganciato nulla.
+  const scheduleMatches = await client.scheduleReconciliation.count({
+    where: { journalEntryId: { in: ids }, status: 'VERIFIED' },
+  })
+  if (scheduleMatches > 0) {
+    reasons.push(`${scheduleMatches} scadenze abbinate`)
+  }
+
+  const allocations = await client.journalEntryAllocation.count({
+    where: { journalEntryId: { in: ids } },
+  })
+  if (allocations > 0) {
+    reasons.push(`${allocations} ripartizioni fra conti`)
+  }
+
+  const payments = await client.payment.count({
+    where: { journalEntryId: { in: ids } },
+  })
+  if (payments > 0) {
+    reasons.push(`${payments} pagamenti collegati`)
+  }
+
+  const invoices = await client.electronicInvoice.count({
+    where: { journalEntryId: { in: ids } },
+  })
+  if (invoices > 0) {
+    reasons.push(`${invoices} fatture elettroniche collegate`)
+  }
+
+  return reasons
+}
+
+/**
+ * Totali delle scritture vive di una chiusura, nella stessa forma restituita
+ * dalla generazione. Serve a mettere nel registro di audit il "prima" da
+ * confrontare con il "dopo" di una rigenerazione.
+ */
+export async function summarizeJournalEntriesForClosure(
+  closureId: string,
+  client: PrismaLike = prisma
+): Promise<{ entriesCreated: number; totalDebits: number; totalCredits: number }> {
+  const totals = await client.journalEntry.aggregate({
+    where: { closureId, deletedAt: null },
+    _count: true,
+    _sum: { debitAmount: true, creditAmount: true },
+  })
+
+  return {
+    entriesCreated: totals._count,
+    totalDebits: Number(totals._sum.debitAmount ?? 0),
+    totalCredits: Number(totals._sum.creditAmount ?? 0),
   }
 }
 

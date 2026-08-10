@@ -48,6 +48,12 @@ function record(overrides: Partial<PayrollRecord> = {}): PayrollRecord {
     hourlyRateNight: null,
     workLocationName: null,
     policyName: null,
+    // Obbligatorio in `PayrollRecord` e sempre valorizzato dal calcolatore
+    // (payroll-calculator.ts:604). Mancava qui perché la factory è più vecchia
+    // del campo, e nessuno se n'era accorto: questi file non passavano sotto
+    // il compilatore. Zero è il valore vero per un turno senza minuti sospesi;
+    // chi vuole provare il caso opposto lo passa fra gli overrides.
+    pendingReviewMinutes: 0,
     ...overrides,
   }
 }
@@ -66,6 +72,9 @@ function summary(overrides: Partial<PayrollSummary> = {}): PayrollSummary {
     totalLeaveDays: 0,
     leaveSummary: {},
     estimatedCost: 0,
+    // Come sopra: obbligatorio in `PayrollSummary`, e non è un dettaglio —
+    // «finché non sono zero, niente export» dice il commento sul tipo.
+    totalPendingReviewMinutes: 0,
     ...overrides,
   }
 }

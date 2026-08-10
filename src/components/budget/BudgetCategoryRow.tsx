@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, Check, AlertTriangle, AlertCircle } from 'lucide-react'
-import { formatCurrency } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
 
 interface MonthlyWithAnnual {

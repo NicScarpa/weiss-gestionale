@@ -1,32 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { withAuth } from '@/lib/api-utils'
 import { z } from 'zod'
-import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
 import { getVenueId } from '@/lib/venue'
 import { rifiutoCorrezioneSchema } from '@/lib/validations/richieste-correzione'
 import { notifyCorrectionRejected } from '@/lib/notifications/triggers'
-import { richiestaSelect } from '../../route'
+import { richiestaSelect } from '../../condiviso'
 
 // POST /api/richieste-correzione/[id]/rifiuta
 // Il motivo è obbligatorio: un rifiuto muto lascia il dipendente al punto di
 // partenza, senza sapere cosa correggere nella richiesta.
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const POST = withAuth<{ id: string }>(
+  async (request: NextRequest, { params, user: revisore }) => {
   try {
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
-    if (!['admin', 'manager'].includes(session.user.role || '')) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
-    const { id } = await params
+    const { id } = params
     const venueId = await getVenueId()
 
     const body = await request.json()
@@ -52,7 +41,7 @@ export async function POST(
       where: { id },
       data: {
         status: 'REJECTED',
-        reviewedById: session.user.id,
+        reviewedById: revisore.id,
         reviewedAt: new Date(),
         reviewNotes: dati.reviewNotes,
       },
@@ -60,7 +49,7 @@ export async function POST(
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      userId: revisore.id,
       action: 'UPDATE',
       entityType: 'AttendanceCorrectionRequest',
       entityId: id,
@@ -88,4 +77,6 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+},
+  { roles: ['admin', 'manager'] }
+)

@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { MovimentiFilters } from '@/components/prima-nota/movimenti/MovimentiFilters'
@@ -67,21 +68,20 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
   // resta fuori dallo stato dei filtri non viene contata fra quelli attivi e
   // "Cancella filtri" non la tocca, così chi arriva dalla scheda Cassa preme
   // il pulsante e resta sulla cassa senza capire perché.
-  const [filters, setFilters] = useState<MovimentiFiltersState>(() => ({
-    ...DEFAULT_MOVIMENTI_FILTERS,
-    registerType: registerFromUrl ?? undefined,
-  }))
+  const [filtriScelti, setFilters] = useState<MovimentiFiltersState>(DEFAULT_MOVIMENTI_FILTERS)
 
-  // L'URL resta la fonte della navigazione: quando la scheda cambia, il
-  // filtro la segue. Si ritorna lo stesso oggetto se il valore non cambia,
-  // per non rilanciare il caricamento a ogni render.
-  useEffect(() => {
-    setFilters((f) =>
-      f.registerType === (registerFromUrl ?? undefined)
-        ? f
-        : { ...f, registerType: registerFromUrl ?? undefined }
-    )
-  }, [registerFromUrl])
+  // L'URL resta la fonte della navigazione: quando la scheda cambia, il filtro
+  // la segue. È un valore *derivato* durante il render, non una copia
+  // riallineata da un effetto: copiarlo dentro lo stato costava un secondo
+  // render a ogni cambio di scheda, e per un istante la lista mostrava il
+  // registro precedente. La precedenza dell'URL non è nuova — la richiesta
+  // all'API la applicava già — ma ora vale anche per ciò che si vede nel
+  // filtro, che prima poteva dichiarare un registro diverso da quello mostrato.
+  const filters = useMemo<MovimentiFiltersState>(
+    () =>
+      registerFromUrl ? { ...filtriScelti, registerType: registerFromUrl } : filtriScelti,
+    [filtriScelti, registerFromUrl]
+  )
 
   // Usato dal pulsante "Cancella filtri" di MovimentiFilters e per decidere
   // quando mostrarlo.
@@ -97,10 +97,8 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
     }
   }
 
-  // Data state
-  const [data, setData] = useState<JournalEntry[]>([])
-  const [pagination, setPagination] = useState({ page: 1, total: 0, totalPages: 0 })
-  const [isLoading, setIsLoading] = useState(true)
+  // Pagina corrente: totale e numero di pagine arrivano dalla risposta
+  const [page, setPage] = useState(1)
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -116,55 +114,67 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
   const [categorizeCategoryId, setCategorizeCategoryId] = useState<string>('')
   const [splitEntry, setSplitEntry] = useState<JournalEntry | null>(null)
 
+  // Query string della richiesta: cambia esattamente quando cambia ciò che si chiede all'API
+  const queryParams = new URLSearchParams()
+
+  // Il registro dell'URL è già dentro `filters` (vedi sopra)
+  if (filters.registerType) queryParams.set('registerType', filters.registerType)
+  if (filters.dateFrom) queryParams.set('dateFrom', filters.dateFrom.toISOString())
+  if (filters.dateTo) queryParams.set('dateTo', filters.dateTo.toISOString())
+  if (filters.entryType) queryParams.set('movementType', filters.entryType)
+  if (filters.accountId) queryParams.set('accountId', filters.accountId)
+  if (filters.costCenterId) queryParams.set('costCenterId', filters.costCenterId)
+  if (filters.budgetCategoryId) queryParams.set('budgetCategoryId', filters.budgetCategoryId)
+  if (filters.verified !== undefined) queryParams.set('verified', String(filters.verified))
+  if (filters.search) queryParams.set('search', filters.search)
+  if (venueId) queryParams.set('venueId', venueId)
+  queryParams.set('sortOrder', sortOrder)
+  queryParams.set('page', String(page))
+  queryParams.set('limit', '50')
+  const queryString = queryParams.toString()
+
   // Load data from API
-  const loadData = useCallback(async () => {
-    setIsLoading(true)
-    try {
-      const params = new URLSearchParams()
-
-      if (filters.registerType) params.set('registerType', filters.registerType)
-      if (filters.dateFrom) params.set('dateFrom', filters.dateFrom.toISOString())
-      if (filters.dateTo) params.set('dateTo', filters.dateTo.toISOString())
-      if (filters.entryType) params.set('movementType', filters.entryType)
-      if (filters.accountId) params.set('accountId', filters.accountId)
-      if (filters.costCenterId) params.set('costCenterId', filters.costCenterId)
-      if (filters.budgetCategoryId) params.set('budgetCategoryId', filters.budgetCategoryId)
-      if (filters.verified !== undefined) params.set('verified', String(filters.verified))
-      if (filters.search) params.set('search', filters.search)
-      if (venueId) params.set('venueId', venueId)
-      params.set('sortOrder', sortOrder)
-      params.set('page', String(pagination.page))
-      params.set('limit', '50')
-
-      const res = await fetch(`/api/prima-nota?${params.toString()}`)
+  const {
+    data: risposta,
+    isFetching: isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryKey: ['prima-nota', 'movimenti', queryString],
+    queryFn: async (): Promise<{
+      data: JournalEntry[]
+      pagination: { total: number; totalPages: number }
+    }> => {
+      const res = await fetch(`/api/prima-nota?${queryString}`)
       if (!res.ok) throw new Error('Errore nel caricamento')
+      return res.json()
+    },
+    // Il conteggio dei movimenti resta visibile mentre si carica la pagina successiva
+    placeholderData: (precedente) => precedente,
+  })
 
-      const json = await res.json()
-
-      // Derive entryType for each entry (not stored in DB)
-      const entries = json.data.map((entry: JournalEntry) => ({
-        ...entry,
-        entryType: deriveEntryType(entry),
-      }))
-
-      setData(entries)
-      setPagination(prev => ({
-        ...prev,
-        total: json.pagination.total,
-        totalPages: json.pagination.totalPages,
-      }))
-    } catch (error) {
+  useEffect(() => {
+    if (isError) {
       console.error('Errore caricamento movimenti:', error)
       toast.error('Impossibile caricare i movimenti')
-    } finally {
-      setIsLoading(false)
     }
-  }, [filters, venueId, pagination.page, sortOrder])
+  }, [isError, error])
 
-  // Reload on filter/register change
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  // Derive entryType for each entry (not stored in DB)
+  const data = useMemo(
+    () =>
+      (risposta?.data ?? []).map((entry) => ({
+        ...entry,
+        entryType: deriveEntryType(entry),
+      })),
+    [risposta]
+  )
+  const total = risposta?.pagination?.total ?? 0
+  const totalPages = risposta?.pagination?.totalPages ?? 0
 
   // --- Handlers ---
 
@@ -196,7 +206,7 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
     }
     toast.success('Movimento eliminato')
     setDeleteTargetId(null)
-    loadData()
+    refetch()
   }
 
   const handleVerify = async (id: string, verified: boolean) => {
@@ -208,7 +218,7 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
       })
       if (!res.ok) throw new Error('Errore verifica')
       toast.success(verified ? 'Movimento verificato' : 'Verifica rimossa')
-      loadData()
+      refetch()
     } catch {
       toast.error('Impossibile verificare il movimento')
     }
@@ -223,7 +233,7 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
       })
       if (!res.ok) throw new Error('Errore nascondere')
       toast.success(!currentlyHidden ? 'Movimento nascosto' : 'Movimento visibile')
-      loadData()
+      refetch()
     } catch {
       toast.error('Impossibile nascondere/mostrare il movimento')
     }
@@ -251,7 +261,7 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
       toast.success(selectedEntry ? 'Movimento aggiornato' : 'Movimento creato')
       setDialogOpen(false)
       setSelectedEntry(null)
-      loadData()
+      refetch()
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Errore sconosciuto'
       toast.error(message)
@@ -290,7 +300,7 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
       toast.success('Movimento categorizzato')
       setCategorizeEntry(null)
       setCategorizeCategoryId('')
-      loadData()
+      refetch()
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Errore sconosciuto'
       toast.error(message)
@@ -299,13 +309,15 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      {/* Senza flex-wrap titolo e azioni stanno su una riga sola più larga
+          dello schermo, e a scorrere lateralmente è la pagina intera */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold">Movimenti</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline">
-                <DownloadIcon className="h-4 w-4 mr-2" />
+                <DownloadIcon aria-hidden="true" className="h-4 w-4 mr-2" />
                 Esporta
               </Button>
             </DropdownMenuTrigger>
@@ -318,7 +330,7 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button>
-                <PlusIcon className="h-4 w-4 mr-2" />
+                <PlusIcon aria-hidden="true" className="h-4 w-4 mr-2" />
                 Nuovo
               </Button>
             </DropdownMenuTrigger>
@@ -377,28 +389,28 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
       />
 
       {/* Paginazione */}
-      {pagination.totalPages > 1 && (
+      {totalPages > 1 && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>
-            {pagination.total} movimenti totali
+            {total} movimenti totali
           </span>
           <div className="flex gap-2">
             <Button
               variant="outline"
               size="sm"
-              disabled={pagination.page <= 1}
-              onClick={() => setPagination(p => ({ ...p, page: p.page - 1 }))}
+              disabled={page <= 1}
+              onClick={() => setPage(p => p - 1)}
             >
               Precedente
             </Button>
             <span className="flex items-center px-2">
-              Pagina {pagination.page} di {pagination.totalPages}
+              Pagina {page} di {totalPages}
             </span>
             <Button
               variant="outline"
               size="sm"
-              disabled={pagination.page >= pagination.totalPages}
-              onClick={() => setPagination(p => ({ ...p, page: p.page + 1 }))}
+              disabled={page >= totalPages}
+              onClick={() => setPage(p => p + 1)}
             >
               Successiva
             </Button>
@@ -442,14 +454,14 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
         }}
         onSaved={() => {
           setReclassifyEntry(null)
-          loadData()
+          refetch()
         }}
       />
 
       <CaricaMovimentiDialog
         open={importDialogOpen}
         onOpenChange={setImportDialogOpen}
-        onImportComplete={loadData}
+        onImportComplete={() => refetch()}
       />
 
       <DangerousDeleteDialog
@@ -517,7 +529,7 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
         }}
         onSaved={() => {
           setSplitEntry(null)
-          loadData()
+          refetch()
         }}
       />
     </div>

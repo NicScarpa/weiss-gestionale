@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { z } from 'zod'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -53,7 +53,6 @@ export function UserForm({ mode, initialData, onSubmit, onCancel }: UserFormProp
   const [venues, setVenues] = useState<Venue[]>([])
   const [_roles, setRoles] = useState<Role[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [previewUsername, setPreviewUsername] = useState('')
 
   const assignableRoles = getAssignableRoles(currentUserRole)
 
@@ -61,7 +60,7 @@ export function UserForm({ mode, initialData, onSubmit, onCancel }: UserFormProp
     register,
     handleSubmit,
     formState: { errors },
-    watch,
+    control,
     setValue,
     setError,
   } = useForm<UserFormData>({
@@ -78,10 +77,13 @@ export function UserForm({ mode, initialData, onSubmit, onCancel }: UserFormProp
     },
   })
 
-  const firstName = watch('firstName')
-  const lastName = watch('lastName')
-  const selectedRole = watch('role')
-  const isFixedStaff = watch('isFixedStaff')
+  const firstName = useWatch({ control, name: 'firstName' })
+  const lastName = useWatch({ control, name: 'lastName' })
+  const selectedRole = useWatch({ control, name: 'role' })
+  const isFixedStaff = useWatch({ control, name: 'isFixedStaff' })
+  const email = useWatch({ control, name: 'email' })
+  const venueId = useWatch({ control, name: 'venueId' })
+  const isActive = useWatch({ control, name: 'isActive' })
 
   // Carica venues e ruoli
   useEffect(() => {
@@ -106,18 +108,18 @@ export function UserForm({ mode, initialData, onSubmit, onCancel }: UserFormProp
     fetchData()
   }, [])
 
-  // Genera anteprima username per staff
-  useEffect(() => {
-    if (mode === 'create' && selectedRole === 'staff' && firstName && lastName) {
-      const username = generateUsername(firstName, lastName)
-      setPreviewUsername(username)
-    } else if (mode === 'create' && (selectedRole === 'admin' || selectedRole === 'manager')) {
-      const email = watch('email')
-      setPreviewUsername(email || '')
-    } else {
-      setPreviewUsername('')
+  // Anteprima dello username: dipende solo da ciò che c'è nel form, quindi si
+  // calcola qui invece di tenerla in uno stato riallineato da un effetto.
+  const previewUsername = (() => {
+    if (mode !== 'create') return ''
+    if (selectedRole === 'staff' && firstName && lastName) {
+      return generateUsername(firstName, lastName)
     }
-  }, [firstName, lastName, selectedRole, mode, watch])
+    if (selectedRole === 'admin' || selectedRole === 'manager') {
+      return email || ''
+    }
+    return ''
+  })()
 
   const handleFormSubmit = async (data: UserFormData) => {
     setIsSubmitting(true)
@@ -276,7 +278,7 @@ export function UserForm({ mode, initialData, onSubmit, onCancel }: UserFormProp
               <div className="space-y-2">
                 <Label>Sede</Label>
                 <Select
-                  value={watch('venueId') || '__none__'}
+                  value={venueId || '__none__'}
                   onValueChange={(value) => setValue('venueId', value === '__none__' ? '' : value)}
                   disabled={isSubmitting}
                 >
@@ -326,7 +328,7 @@ export function UserForm({ mode, initialData, onSubmit, onCancel }: UserFormProp
                 </div>
                 <Switch
                   id="isActive"
-                  checked={watch('isActive')}
+                  checked={isActive}
                   onCheckedChange={(checked) => setValue('isActive', checked)}
                   disabled={isSubmitting}
                 />

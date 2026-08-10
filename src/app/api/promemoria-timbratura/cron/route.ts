@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { sendBulkNotification } from '@/lib/notifications/send'
+import { notifyMancataUscitaSpezzato } from '@/lib/notifications/triggers'
 import {
   romeDayRange,
   timeColumnToMinutes,
@@ -172,12 +173,13 @@ async function avvisaFineTurno() {
       schedule: { status: 'PUBLISHED' },
       user: { isActive: true, portalEnabled: true },
     },
-    select: { userId: true, startTime: true, endTime: true },
+    select: { userId: true, venueId: true, startTime: true, endTime: true },
   })
 
-  // L'avviso parte nel quarto d'ora in cui cade fine turno + ritardo: il cron
-  // gira ogni 15 minuti, quindi ogni turno viene avvisato una volta sola.
-  const daAvvisare = new Set<string>()
+  const finestrePerUtente = new Map<
+    string,
+    { venueId: string; inizio: number; fine: number }[]
+  >()
   for (const turno of turni) {
     if (!turno.startTime || !turno.endTime) continue
 
@@ -185,9 +187,33 @@ async function avvisaFineTurno() {
     const fine = timeColumnToMinutes(turno.endTime)
     if (fine <= inizio) continue
 
-    const momento = fine + RITARDO_AVVISO_MINUTI
-    if (momento > minutesFromMidnight - 15 && momento <= minutesFromMidnight) {
-      daAvvisare.add(turno.userId)
+    const finestra = { venueId: turno.venueId, inizio, fine }
+    const lista = finestrePerUtente.get(turno.userId)
+    if (lista) {
+      lista.push(finestra)
+    } else {
+      finestrePerUtente.set(turno.userId, [finestra])
+    }
+  }
+
+  // L'avviso parte nel quarto d'ora in cui cade fine turno + ritardo: il cron
+  // gira ogni 15 minuti, quindi ogni turno viene avvisato una volta sola.
+  // Se la finestra mancata non è l'ultima della giornata è il turno spezzato:
+  // il buco non verrà contato, e va avvisato anche il responsabile.
+  const daAvvisare = new Set<string>()
+  const spezzatoNonFinale = new Map<string, { venueId: string; fine: number }>()
+  for (const [userId, finestre] of finestrePerUtente) {
+    for (const finestra of finestre) {
+      const momento = finestra.fine + RITARDO_AVVISO_MINUTI
+      if (momento > minutesFromMidnight - 15 && momento <= minutesFromMidnight) {
+        daAvvisare.add(userId)
+        if (finestre.some((altra) => altra.inizio > finestra.fine)) {
+          spezzatoNonFinale.set(userId, {
+            venueId: finestra.venueId,
+            fine: finestra.fine,
+          })
+        }
+      }
     }
   }
 
@@ -229,6 +255,22 @@ async function avvisaFineTurno() {
       referenceType: 'ShiftAssignment',
     },
   })
+
+  for (const userId of ancoraDentro) {
+    const spezzato = spezzatoNonFinale.get(userId)
+    if (!spezzato) continue
+
+    const fineOrario =
+      `${String(Math.floor(spezzato.fine / 60)).padStart(2, '0')}:` +
+      String(spezzato.fine % 60).padStart(2, '0')
+    await notifyMancataUscitaSpezzato({
+      userId,
+      venueId: spezzato.venueId,
+      fineFinestra: fineOrario,
+    }).catch((err) =>
+      logger.error('Errore notifica mancata uscita turno spezzato', err)
+    )
+  }
 
   return { avvisati: ancoraDentro.length }
 }

@@ -30,6 +30,29 @@ jobs:
       - name: Run ESLint
         run: npm run lint
 
+      # Censimento dell'autorizzazione sulle route API. Oggi è solo un rapporto
+      # (lo script esce sempre 0): la conversione a withAuth è appena
+      # cominciata e bloccare qui fermerebbe ogni commit. Quando sarà completa
+      # diventa `node scripts/check-route-auth.mjs --strict`, che fallisce se
+      # ricompaiono guard scritti a mano.
+      - name: Autorizzazione delle route API (rapporto)
+        run: node scripts/check-route-auth.mjs
+
+      # Codice morto. Il pacchetto e lo script c'erano da un pezzo, ma nessuno
+      # eseguiva knip in CI: la classe di problema che ha prodotto questa
+      # ondata — moduli scritti in una sessione e mai collegati a nulla —
+      # continuava a passare inosservata.
+      # Blocca perché oggi esce zero, che non è la stessa cosa che essere
+      # puliti: knip stampa **280 segnalazioni**, tutte `warn` — 159 export
+      # inutilizzati, 117 tipi esportati e mai usati, 4 export duplicati.
+      # Vederle nel log è normale e non è una regressione: le severità stanno
+      # in knip.json, dove sono `error` soltanto i file interamente orfani e le
+      # dipendenze inutilizzate. Se un giorno questo passo diventa rosso è per
+      # una di quelle due, non per le 280, che vanno verificate una a una e
+      # sono il lavoro di un'ondata dedicata.
+      - name: Codice morto (knip)
+        run: npm run knip
+
   typecheck:
     name: Type Check
     runs-on: ubuntu-latest
@@ -51,6 +74,29 @@ jobs:
       - name: Run TypeScript Check
         run: npx tsc --noEmit
 
+      # La suite end-to-end ha un config a sé perché gira sotto Playwright e
+      # non dentro Next. Senza questo passo nessuno la controllava: il
+      # tsconfig principale la esclude, e fuori di lì non la includeva niente.
+      # Bloccante come il controllo qui sopra: oggi è pulita.
+      - name: Type Check della suite e2e
+        run: npm run typecheck:e2e
+
+      # Stessa storia per i test unitari e di integrazione, che il tsconfig
+      # principale esclude con `**/*.test.ts` e `**/__tests__/**`. In un
+      # progetto con oltre mille test, nessuno era mai passato sotto `tsc`:
+      # dentro c'erano dati finti più poveri di quelli veri e un valore di enum
+      # inesistente che a runtime valeva `undefined`. I 39 errori che sono
+      # emersi accendendolo sono stati corretti prima di mettere questo passo,
+      # perché un controllo bloccante che nasce rosso lo si impara solo ad
+      # aggirare.
+      - name: Type Check dei test
+        run: npm run typecheck:test
+
+      # tsconfig.strict.json non passa ancora: il cricchetto impedisce che il
+      # numero di errori salga. La baseline vive in scripts/strict-ratchet.mjs.
+      - name: Strict mode ratchet
+        run: npm run strict:ratchet
+
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -69,12 +115,11 @@ jobs:
       - name: Generate Prisma Client
         run: npx prisma generate
 
-      - name: Run Tests
-        run: npm test -- --run --reporter=verbose
-
+      # Un'unica esecuzione: gira i test e insieme misura la copertura, le cui
+      # soglie stanno in vitest.config.ts e sono bloccanti. Non c'è più uno
+      # script separato per la CI: qui e in locale si misura la stessa cosa.
       - name: Run Tests with Coverage
-        run: npm run test:coverage
-        continue-on-error: true
+        run: npm run test:coverage -- --reporter=verbose
 
   build:
     name: Build
@@ -115,6 +160,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run npm audit
-        run: npm audit --audit-level=high
+      # Blocca davvero, su critical e high in produzione: la baseline del
+      # cricchetto è a zero su entrambe, quindi copre anche il controllo
+      # `--audit-level=critical` che stava qui prima ed è più severo di quello.
+      # Le dipendenze di sviluppo restano escluse: non girano sul server.
+      - name: Audit ratchet
+        run: npm run audit:ratchet
+
+      # Informativo: resta visibile nel log senza fermare la pipeline. Il
+      # cricchetto non conta le moderate, per le quali npm propone come unico
+      # rimedio un downgrade major all'indietro, che non è un fix.
+      - name: Vulnerabilità moderate (solo segnalazione)
+        run: npm audit --omit=dev --audit-level=moderate
         continue-on-error: true

@@ -7,10 +7,16 @@ vi.mock('@/lib/auth', () => ({ auth: vi.fn() }))
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    payment: { findUnique: vi.fn(), update: vi.fn() },
+    payment: {
+      findUnique: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+      updateMany: vi.fn(),
+      update: vi.fn(),
+    },
     journalEntry: { create: vi.fn() },
     account: { findMany: vi.fn() },
     costCenter: { findUnique: vi.fn(), findFirst: vi.fn() },
+    $transaction: vi.fn(),
   },
 }))
 
@@ -27,20 +33,30 @@ function postCon(body?: Record<string, unknown>) {
   return { request, context: { params: Promise.resolve({ id: 'pay-1' }) } }
 }
 
+const pagamento = {
+  id: 'pay-1',
+  venueId: 'venue-test-123',
+  stato: 'BOZZA',
+  dataEsecuzione: new Date('2026-08-07'),
+  beneficiarioNome: 'Fornitore Srl',
+  causale: 'Saldo fattura',
+  riferimentoInterno: null,
+  importo: 300,
+  note: null,
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(auth).mockResolvedValue(sessione as never)
-  vi.mocked(prisma.payment.findUnique).mockResolvedValue({
-    id: 'pay-1',
-    venueId: 'venue-test-123',
-    stato: 'DA_PAGARE',
-    dataEsecuzione: new Date('2026-08-07'),
-    beneficiarioNome: 'Fornitore Srl',
-    causale: 'Saldo fattura',
-    riferimentoInterno: null,
-    importo: 300,
-    note: null,
-  } as never)
+  // La route lavora dentro una transazione: il client passato al callback è
+  // lo stesso mock, così le asserzioni su journalEntry.create restano valide.
+  vi.mocked(prisma.$transaction).mockImplementation((async (
+    fn: (tx: unknown) => Promise<unknown>
+  ) => fn(prisma)) as typeof prisma.$transaction)
+  // Presa in carico riuscita: questa richiesta ha vinto la corsa.
+  vi.mocked(prisma.payment.updateMany).mockResolvedValue({ count: 1 } as never)
+  vi.mocked(prisma.payment.findUniqueOrThrow).mockResolvedValue(pagamento as never)
+  vi.mocked(prisma.payment.findUnique).mockResolvedValue(pagamento as never)
   vi.mocked(prisma.journalEntry.create).mockResolvedValue({ id: 'entry-1' } as never)
   vi.mocked(prisma.payment.update).mockResolvedValue({ id: 'pay-1' } as never)
   vi.mocked(prisma.costCenter.findFirst).mockResolvedValue({

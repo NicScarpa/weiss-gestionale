@@ -1,90 +1,89 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { handleApiError, notFound, badRequest, ok, withAuth } from '@/lib/api-utils'
 
-import { logger } from '@/lib/logger'
-interface RouteParams {
-  params: Promise<{ id: string }>
-}
+type Params = { id: string }
+
+/**
+ * Il dettaglio comprende email, coordinate GPS e modello del dispositivo della
+ * persona segnalata: è riservato a chi le anomalie le deve gestire, gli stessi
+ * ruoli che possono risolverle qui sotto. Fino ad agosto 2026 la sola GET non
+ * aveva alcun controllo di ruolo e la proteggeva soltanto il fatto che il cuid
+ * non si indovina.
+ */
+const RUOLI_GESTIONE = ['admin', 'manager'] as const
 
 // GET /api/attendance/anomalies/[id] - Dettaglio anomalia
-export async function GET(request: NextRequest, { params }: RouteParams) {
-  try {
-    const session = await auth()
-    const { id } = await params
-
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
-    const anomaly = await prisma.attendanceAnomaly.findUnique({
-      where: { id },
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
+export const GET = withAuth<Params>(
+  async (_request: NextRequest, { params }) => {
+    try {
+      const anomaly = await prisma.attendanceAnomaly.findUnique({
+        where: { id: params.id },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
           },
-        },
-        venue: {
-          select: {
-            id: true,
-            name: true,
-            code: true,
+          venue: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+            },
           },
-        },
-        record: {
-          select: {
-            id: true,
-            punchType: true,
-            punchMethod: true,
-            punchedAt: true,
-            latitude: true,
-            longitude: true,
-            distanceFromVenue: true,
-            isWithinRadius: true,
-            deviceInfo: true,
+          record: {
+            select: {
+              id: true,
+              punchType: true,
+              punchMethod: true,
+              punchedAt: true,
+              latitude: true,
+              longitude: true,
+              distanceFromVenue: true,
+              isWithinRadius: true,
+              deviceInfo: true,
+            },
           },
-        },
-        assignment: {
-          select: {
-            id: true,
-            date: true,
-            startTime: true,
-            endTime: true,
-            actualStart: true,
-            actualEnd: true,
-            shiftDefinition: {
-              select: {
-                name: true,
-                code: true,
-                color: true,
+          assignment: {
+            select: {
+              id: true,
+              date: true,
+              startTime: true,
+              endTime: true,
+              actualStart: true,
+              actualEnd: true,
+              shiftDefinition: {
+                select: {
+                  name: true,
+                  code: true,
+                  color: true,
+                },
               },
             },
           },
         },
-      },
-    })
+      })
 
-    if (!anomaly) {
-      return NextResponse.json(
-        { error: 'Anomalia non trovata' },
-        { status: 404 }
+      if (!anomaly) {
+        return notFound('Anomalia non trovata')
+      }
+
+      return ok({ data: anomaly })
+    } catch (error) {
+      return handleApiError(
+        error,
+        'GET /api/attendance/anomalies/[id]',
+        "Errore nel recupero dell'anomalia"
       )
     }
-
-    return NextResponse.json({ data: anomaly })
-  } catch (error) {
-    logger.error('Errore GET /api/attendance/anomalies/[id]', error)
-    return NextResponse.json(
-      { error: 'Errore nel recupero dell\'anomalia' },
-      { status: 500 }
-    )
-  }
-}
+  },
+  { roles: RUOLI_GESTIONE }
+)
 
 // Schema per risoluzione
 const resolveSchema = z.object({
@@ -93,89 +92,62 @@ const resolveSchema = z.object({
 })
 
 // PUT /api/attendance/anomalies/[id] - Risolvi anomalia
-export async function PUT(request: NextRequest, { params }: RouteParams) {
-  try {
-    const session = await auth()
-    const { id } = await params
+export const PUT = withAuth<Params>(
+  async (request: NextRequest, { params, user }) => {
+    try {
+      const body = await request.json()
+      const validatedData = resolveSchema.parse(body)
 
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
+      const anomaly = await prisma.attendanceAnomaly.findUnique({
+        where: { id: params.id },
+      })
 
-    // Verifica ruolo
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      include: { role: true },
-    })
+      if (!anomaly) {
+        return notFound('Anomalia non trovata')
+      }
 
-    if (!user || !['admin', 'manager'].includes(user.role.name)) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
+      if (anomaly.status !== 'PENDING') {
+        return badRequest('Anomalia già risolta')
+      }
 
-    const body = await request.json()
-    const validatedData = resolveSchema.parse(body)
-
-    const anomaly = await prisma.attendanceAnomaly.findUnique({
-      where: { id },
-    })
-
-    if (!anomaly) {
-      return NextResponse.json(
-        { error: 'Anomalia non trovata' },
-        { status: 404 }
-      )
-    }
-
-    if (anomaly.status !== 'PENDING') {
-      return NextResponse.json(
-        { error: 'Anomalia già risolta' },
-        { status: 400 }
-      )
-    }
-
-    // Aggiorna anomalia
-    const updated = await prisma.attendanceAnomaly.update({
-      where: { id },
-      data: {
-        status: validatedData.action,
-        resolvedBy: session.user.id,
-        resolvedAt: new Date(),
-        resolutionNotes: validatedData.notes ?? null,
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
+      // Aggiorna anomalia
+      const updated = await prisma.attendanceAnomaly.update({
+        where: { id: params.id },
+        data: {
+          status: validatedData.action,
+          resolvedBy: user.id,
+          resolvedAt: new Date(),
+          resolutionNotes: validatedData.notes ?? null,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+          venue: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+            },
           },
         },
-        venue: {
-          select: {
-            id: true,
-            name: true,
-            code: true,
-          },
-        },
-      },
-    })
+      })
 
-    return NextResponse.json({
-      success: true,
-      data: updated,
-    })
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Dati non validi', details: error.issues },
-        { status: 400 }
+      return ok({
+        success: true,
+        data: updated,
+      })
+    } catch (error) {
+      return handleApiError(
+        error,
+        'PUT /api/attendance/anomalies/[id]',
+        "Errore nella risoluzione dell'anomalia"
       )
     }
-
-    logger.error('Errore PUT /api/attendance/anomalies/[id]', error)
-    return NextResponse.json(
-      { error: 'Errore nella risoluzione dell\'anomalia' },
-      { status: 500 }
-    )
-  }
-}
+  },
+  { roles: RUOLI_GESTIONE }
+)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useSyncExternalStore } from 'react'
 import { signIn, useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -12,6 +12,14 @@ import { AlertCircle, Loader2 } from 'lucide-react'
 import Image from 'next/image'
 
 const STAFF_HOSTNAME = 'staff.weisscafe.com'
+
+const nienteIscrizione = () => () => {}
+
+// Sul server il nome host della richiesta non è conoscibile: si parte da false e
+// si legge il valore reale una volta idratato il client, così il markup non diverge.
+const leggiDominioStaff = () =>
+  typeof window !== 'undefined' && window.location.hostname === STAFF_HOSTNAME
+const dominioStaffSulServer = () => false
 
 // Mappa errori NextAuth a messaggi leggibili in italiano
 function getErrorMessage(errorCode: string): string {
@@ -44,14 +52,13 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [loginError, setLoginError] = useState<string | null>(null)
-  const [isStaffDomain, setIsStaffDomain] = useState(false)
 
   // Rileva se siamo sul dominio staff
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setIsStaffDomain(window.location.hostname === STAFF_HOSTNAME)
-    }
-  }, [])
+  const isStaffDomain = useSyncExternalStore(
+    nienteIscrizione,
+    leggiDominioStaff,
+    dominioStaffSulServer
+  )
 
   // Se già autenticato, redirect basato su ruolo
   useEffect(() => {

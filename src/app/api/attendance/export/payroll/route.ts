@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
 import { getVenueId } from '@/lib/venue'
 import { z } from 'zod'
 import { format } from 'date-fns'
@@ -50,12 +51,87 @@ export async function GET(request: NextRequest) {
     // Filtra per sede
     const venueId = filters.venueId || await getVenueId()
 
+    // Le ore di anticipo e straordinario in attesa di revisione bloccano
+    // l'export: il mese non si consegna al consulente finché un revisore non
+    // ha deciso, altrimenti si pagherebbero (o perderebbero) ore mai confermate.
+    const firstDay = new Date(Date.UTC(filters.year, filters.month - 1, 1))
+    const lastDay = new Date(Date.UTC(filters.year, filters.month, 0))
+    const anomalieInAttesa = await prisma.attendanceAnomaly.findMany({
+      where: {
+        date: { gte: firstDay, lte: lastDay },
+        status: 'PENDING',
+        anomalyType: { in: ['EARLY_CLOCK_IN', 'OVERTIME'] },
+        ...(venueId && { venueId }),
+      },
+      select: {
+        date: true,
+        anomalyType: true,
+        user: { select: { firstName: true, lastName: true } },
+      },
+      orderBy: { date: 'asc' },
+    })
+
+    if (anomalieInAttesa.length > 0) {
+      const dettagli = anomalieInAttesa.map(
+        (a) =>
+          `${a.user.lastName} ${a.user.firstName} — ` +
+          `${a.date.toISOString().slice(0, 10).split('-').reverse().join('/')} ` +
+          `(${a.anomalyType === 'OVERTIME' ? 'ore oltre il turno' : 'anticipo sul turno'})`
+      )
+      return NextResponse.json(
+        {
+          error:
+            `Export bloccato: ${anomalieInAttesa.length} segnalazioni di ore in ` +
+            `attesa di revisione. Approvale o rifiutale dalle anomalie, poi riprova.`,
+          details: dettagli,
+        },
+        { status: 409 }
+      )
+    }
+
     // Genera dati payroll
     const { records, summaries, warnings } = await generatePayrollData(
       filters.month,
       filters.year,
       venueId || undefined
     )
+
+    // Secondo blocco: le giornate che il motore sa incomplete.
+    //
+    // Una pausa iniziata e mai chiusa non cambia le ore — il titolare ha
+    // deciso che nessuno viene pagato di meno per una dimenticanza — ma
+    // quell'ora regalata non deve arrivare al consulente del lavoro senza
+    // che un umano l'abbia guardata. Si sblocca completando il dato: la
+    // timbratura mancante si inserisce da `POST /api/attendance/manual`,
+    // oppure la porta una richiesta di correzione approvata.
+    //
+    // Il controllo sta qui e non sulle anomalie salvate perché nessun
+    // percorso di scrittura se ne accorge: quando arriva il BREAK_START non
+    // si sa ancora che il BREAK_END non arriverà, e il cron della chiusura
+    // automatica guarda solo chi non ha timbrato l'uscita. Lo sa soltanto il
+    // calcolo — che è anche l'unico modo di coprire i mesi già archiviati.
+    const giornateIncomplete = records.filter((r) =>
+      r.dayWarnings.includes('PAUSA_NON_CHIUSA')
+    )
+
+    if (giornateIncomplete.length > 0) {
+      const dettagli = giornateIncomplete.map(
+        (r) =>
+          `${r.lastName} ${r.firstName} — ` +
+          `${r.date.toISOString().slice(0, 10).split('-').reverse().join('/')} ` +
+          '(pausa iniziata e mai chiusa)'
+      )
+      return NextResponse.json(
+        {
+          error:
+            `Export bloccato: ${giornateIncomplete.length} giornate con una pausa ` +
+            'iniziata e mai chiusa. Le ore restano quelle timbrate, ma il dato è ' +
+            "incompleto: inserisci la fine della pausa mancante, poi riprova.",
+          details: dettagli,
+        },
+        { status: 409 }
+      )
+    }
 
     // Nome mese
     const monthDate = new Date(filters.year, filters.month - 1)

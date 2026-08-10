@@ -80,6 +80,9 @@ const navigationItems = [
       {
         title: 'Configurazione',
         items: [
+          // Le spese ricorrenti alimentano la previsione di cassa: senza una
+          // voce di menu il loro CRUD è rimasto per mesi irraggiungibile.
+          { name: 'Spese Ricorrenti', href: '/spese-ricorrenti' },
           { name: 'Settings Budget', href: '/impostazioni/budget' },
         ]
       }
@@ -199,6 +202,8 @@ export function Sidebar() {
       {/* Rail Sidebar (Livello 1 - Icone) */}
       <aside className="w-16 h-full bg-slate-900 flex flex-col items-center py-4 z-50 border-r border-slate-800">
         <div className="mb-8 px-2 overflow-hidden text-center">
+          {/* Il quadrato del logo resta bianco in entrambi i temi: la sigla
+              sopra dev'essere scura sempre, non seguire il tema. */}
           <div className="w-8 h-8 mx-auto bg-white rounded flex items-center justify-center text-slate-900 font-bold text-sm">
             WS
           </div>
@@ -211,32 +216,66 @@ export function Sidebar() {
               const isHovered = hoveredItem === item.name
               const showBadge = item.name === 'Scadenzario' && scaduteCount > 0
 
+              // Il tooltip Radix descrive il controllo ma non lo nomina: senza
+              // aria-label la rail è una fila di link vuoti per screen reader
+              const label = showBadge
+                ? `${item.name}, ${scaduteCount} scadute`
+                : item.name
+
+              const railClass = cn(
+                "w-full aspect-square flex items-center justify-center rounded-lg transition-all relative group",
+                isActive || isHovered
+                  ? "bg-slate-800 text-white"
+                  : "text-slate-400 hover:bg-slate-800 hover:text-white"
+              )
+
+              const railContent = (
+                <>
+                  <item.icon aria-hidden="true" className="h-5 w-5" />
+                  {showBadge && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white"
+                    >
+                      {scaduteCount > 99 ? '99+' : scaduteCount}
+                    </span>
+                  )}
+                  {(isActive || isHovered) && (
+                    <motion.div
+                      layoutId="activeIndicator"
+                      className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-white rounded-r-full"
+                    />
+                  )}
+                </>
+              )
+
               return (
                 <Tooltip key={item.name}>
                   <TooltipTrigger asChild>
-                    <Link
-                      href={item.href || '#'}
-                      onMouseEnter={() => setHoveredItem(item.name)}
-                      className={cn(
-                        "w-full aspect-square flex items-center justify-center rounded-lg transition-all relative group",
-                        isActive || isHovered
-                          ? "bg-slate-800 text-white"
-                          : "text-slate-400 hover:bg-slate-800 hover:text-white"
-                      )}
-                    >
-                      <item.icon className="h-5 w-5" />
-                      {showBadge && (
-                        <span className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
-                          {scaduteCount > 99 ? '99+' : scaduteCount}
-                        </span>
-                      )}
-                      {(isActive || isHovered) && (
-                        <motion.div
-                          layoutId="activeIndicator"
-                          className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-white rounded-r-full"
-                        />
-                      )}
-                    </Link>
+                    {item.href ? (
+                      <Link
+                        href={item.href}
+                        aria-label={label}
+                        aria-current={isActive ? 'page' : undefined}
+                        onMouseEnter={() => setHoveredItem(item.name)}
+                        className={railClass}
+                      >
+                        {railContent}
+                      </Link>
+                    ) : (
+                      // Voci senza pagina propria (Personale): un link a "#" non
+                      // porta da nessuna parte, servono ad aprire il sottomenu
+                      <button
+                        type="button"
+                        aria-label={label}
+                        aria-expanded={isHovered}
+                        onMouseEnter={() => setHoveredItem(item.name)}
+                        onClick={() => setHoveredItem(item.name)}
+                        className={railClass}
+                      >
+                        {railContent}
+                      </button>
+                    )}
                   </TooltipTrigger>
                   <TooltipContent side="right" sideOffset={10} className="bg-slate-900 border-slate-800 text-white">
                     {item.name}
@@ -257,6 +296,8 @@ export function Sidebar() {
                   <TooltipTrigger asChild>
                     <Link
                       href={item.href || '#'}
+                      aria-label={item.name}
+                      aria-current={isActive ? 'page' : undefined}
                       onMouseEnter={() => setHoveredItem(item.name)}
                       className={cn(
                         "w-full aspect-square flex items-center justify-center rounded-lg transition-all relative group",
@@ -265,7 +306,7 @@ export function Sidebar() {
                           : "text-slate-400 hover:bg-slate-800 hover:text-white"
                       )}
                     >
-                      <item.icon className="h-5 w-5" />
+                      <item.icon aria-hidden="true" className="h-5 w-5" />
                       {(isActive || isHovered) && (
                         <motion.div
                           layoutId="activeIndicator"
@@ -292,17 +333,17 @@ export function Sidebar() {
             animate={{ width: 256, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ type: "spring", bounce: 0, duration: 0.3 }}
-            className="h-full bg-white border-r border-slate-200 z-40 overflow-hidden shadow-xl"
+            className="h-full bg-card border-r z-40 overflow-hidden shadow-xl"
           >
             <div className="w-64 py-6 px-4 whitespace-nowrap">
-              <h2 className="text-xl font-bold text-slate-900 mb-8 px-2">
+              <h2 className="text-xl font-bold text-foreground mb-8 px-2">
                 {activeNavigation.name}
               </h2>
 
               <div className="space-y-8">
                 {activeNavigation.sections?.map((section) => (
                   <div key={section.title}>
-                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-2">
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-2">
                       {section.title}
                     </h3>
                     <div className="space-y-1 text-sm">
@@ -312,11 +353,15 @@ export function Sidebar() {
                           <Link
                             key={subItem.name}
                             href={subItem.href}
+                            // Come per la rail: la voce attiva del sottomenu si
+                            // distingueva solo dal colore di sfondo, che per uno
+                            // screen reader non esiste.
+                            aria-current={isSubActive ? 'page' : undefined}
                             className={cn(
                               "flex items-center gap-3 px-3 py-2 rounded-md font-medium transition-colors",
                               isSubActive
-                                ? "bg-slate-100 text-slate-900"
-                                : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                                ? "bg-accent text-accent-foreground"
+                                : "text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground"
                             )}
                           >
                             <span>{subItem.name}</span>

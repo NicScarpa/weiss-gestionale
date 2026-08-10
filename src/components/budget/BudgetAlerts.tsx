@@ -14,7 +14,7 @@ import {
   ArrowDownCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { formatCurrency } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 
 interface BudgetAlert {
   id: string

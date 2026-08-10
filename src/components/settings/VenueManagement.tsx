@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,51 +24,71 @@ interface Venue {
   longitude: number | null
 }
 
+interface DatiSede {
+  name: string
+  code: string
+  address: string
+  defaultFloat: string
+  vatRate: string
+  latitude: string
+  longitude: string
+}
+
+const FORM_VUOTO: DatiSede = {
+  name: '',
+  code: '',
+  address: '',
+  defaultFloat: '114',
+  vatRate: '10',
+  latitude: '',
+  longitude: '',
+}
+
+function formDaSede(v: Venue): DatiSede {
+  return {
+    name: v.name,
+    code: v.code,
+    address: v.address || '',
+    defaultFloat: v.defaultFloat.toString(),
+    vatRate: v.vatRate.toString(),
+    latitude: v.latitude?.toString() || '',
+    longitude: v.longitude?.toString() || '',
+  }
+}
+
 export function VenueManagement() {
-  const [venue, setVenue] = useState<Venue | null>(null)
-  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [formData, setFormData] = useState({
-    name: '',
-    code: '',
-    address: '',
-    defaultFloat: '114',
-    vatRate: '10',
-    latitude: '',
-    longitude: '',
-  })
+  // Finché l'utente non tocca nulla il form mostra i valori della sede caricata
+  const [modifiche, setModifiche] = useState<DatiSede | null>(null)
 
   // Carica la sede
-  const fetchVenue = async () => {
-    try {
-      setLoading(true)
+  const {
+    data,
+    isFetching: loading,
+    error: erroreCaricamento,
+    refetch: ricaricaSede,
+  } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryKey: ['venues'],
+    queryFn: async (): Promise<{ venues?: Venue[] }> => {
       const res = await fetch('/api/venues')
       if (!res.ok) throw new Error('Errore nel caricamento')
-      const data = await res.json()
-      const v = data.venues?.[0]
-      if (v) {
-        setVenue(v)
-        setFormData({
-          name: v.name,
-          code: v.code,
-          address: v.address || '',
-          defaultFloat: v.defaultFloat.toString(),
-          vatRate: v.vatRate.toString(),
-          latitude: v.latitude?.toString() || '',
-          longitude: v.longitude?.toString() || '',
-        })
-      }
-    } catch (error) {
-      logger.error('Errore', error)
-      toast.error('Errore nel caricamento della sede')
-    } finally {
-      setLoading(false)
-    }
-  }
+      return res.json()
+    },
+  })
 
   useEffect(() => {
-    fetchVenue()
-  }, [])
+    if (erroreCaricamento) {
+      logger.error('Errore', erroreCaricamento)
+      toast.error('Errore nel caricamento della sede')
+    }
+  }, [erroreCaricamento])
+
+  const venue = data?.venues?.[0] ?? null
+  const formData = modifiche ?? (venue ? formDaSede(venue) : FORM_VUOTO)
+  const setFormData = setModifiche
 
   // Salva sede
   const handleSave = async () => {
@@ -104,7 +125,8 @@ export function VenueManagement() {
       }
 
       toast.success('Sede aggiornata')
-      fetchVenue()
+      await ricaricaSede()
+      setModifiche(null)
     } catch (error: unknown) {
       logger.error('Errore', error)
       toast.error(error instanceof Error ? error.message : 'Errore nel salvataggio')

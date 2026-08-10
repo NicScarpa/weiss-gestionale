@@ -4,11 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { budgetComparisonFiltersSchema } from '@/lib/validations/budget'
 import { getVenueId } from '@/lib/venue'
-import {
-  type MonthlyValues,
-  MONTH_KEYS,
-  MONTH_NUMBER_TO_KEY,
-} from '@/types/budget'
+import { type MonthlyValues, MONTH_KEYS } from '@/types/budget'
 import {
   emptyMonthlyValues,
   calculateVariance,
@@ -16,6 +12,7 @@ import {
   calculateAnnualTotal,
   budgetLineToMonthlyValues,
 } from '@/lib/budget-utils'
+import { actualPerConto, ricaviNonAttribuiti } from '@/lib/budget/category-aggregator'
 
 import { logger } from '@/lib/logger'
 // GET /api/budget/confronto - Confronto budget vs actual
@@ -77,79 +74,16 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Recupera gli actual (da JournalEntry per ricavi e spese registrate)
-    const yearStart = new Date(filters.year, 0, 1)
-    const yearEnd = new Date(filters.year, 11, 31, 23, 59, 59)
-
-    // Recupera ricavi (totalRevenue dalle chiusure validate)
-    const revenues = await prisma.dailyClosure.findMany({
-      where: {
-        venueId,
-        status: 'VALIDATED',
-        date: {
-          gte: yearStart,
-          lte: yearEnd,
-        },
-      },
-      select: {
-        date: true,
-        stations: {
-          select: {
-            receiptAmount: true,
-            invoiceAmount: true,
-          },
-        },
-      },
-    })
-
-    // Raggruppa ricavi per mese
-    const revenueByMonth = emptyMonthlyValues()
-    revenues.forEach((closure) => {
-      const month = new Date(closure.date).getMonth() + 1
-      const monthKey = MONTH_NUMBER_TO_KEY[month]
-      const total = closure.stations.reduce(
-        (sum, s) => sum + Number(s.receiptAmount) + Number(s.invoiceAmount),
-        0
-      )
-      revenueByMonth[monthKey] += total
-    })
-
-    // Recupera costi (da DailyExpense raggruppate per conto)
-    const expenses = await prisma.dailyExpense.findMany({
-      where: {
-        closure: {
-          venueId,
-          status: 'VALIDATED',
-          date: {
-            gte: yearStart,
-            lte: yearEnd,
-          },
-        },
-      },
-      select: {
-        amount: true,
-        accountId: true,
-        closure: {
-          select: {
-            date: true,
-          },
-        },
-      },
-    })
-
-    // Raggruppa spese per conto e mese
-    const expensesByAccountAndMonth: Record<string, MonthlyValues> = {}
-    expenses.forEach((expense) => {
-      if (!expense.accountId) return
-
-      if (!expensesByAccountAndMonth[expense.accountId]) {
-        expensesByAccountAndMonth[expense.accountId] = emptyMonthlyValues()
-      }
-
-      const month = new Date(expense.closure.date).getMonth() + 1
-      const monthKey = MONTH_NUMBER_TO_KEY[month]
-      expensesByAccountAndMonth[expense.accountId][monthKey] += Number(expense.amount)
-    })
+    // Gli actual vengono dalla prima nota, imputati per conto, con la stessa
+    // funzione che alimenta la vista per categoria: è ciò che impedisce alle
+    // due schermate del budget di raccontare numeri diversi sugli stessi dati.
+    // Prima questa route calcolava per conto suo — costi dalle sole uscite di
+    // chiusura, quindi senza le fatture pagate per banca, e per ogni conto di
+    // ricavo il fatturato complessivo assegnato invece che ripartito.
+    const [actualByAccount, unassignedRevenue] = await Promise.all([
+      actualPerConto(venueId, filters.year),
+      ricaviNonAttribuiti(venueId, filters.year),
+    ])
 
     // Costruisci la comparazione per ogni riga budget
     interface BudgetComparison {
@@ -187,16 +121,8 @@ export async function GET(request: NextRequest) {
         nov: line.nov === null ? null : Number(line.nov),
         dec: line.dec === null ? null : Number(line.dec),
       })
-      let actualValues: MonthlyValues
-
-      if (account.type === 'RICAVO') {
-        // Per i ricavi, usiamo i totali delle chiusure
-        // Nota: in produzione si dovrebbe mappare il conto specifico
-        actualValues = revenueByMonth
-      } else {
-        // Per i costi, usiamo le spese per conto
-        actualValues = expensesByAccountAndMonth[account.id] || emptyMonthlyValues()
-      }
+      const actualValues: MonthlyValues =
+        actualByAccount[account.id] || emptyMonthlyValues()
 
       // Calcola varianza per ogni mese
       const varianceValues: MonthlyValues = {} as MonthlyValues
@@ -262,6 +188,10 @@ export async function GET(request: NextRequest) {
           variancePercent: calculateVariancePercent(totalBudgetCosti, totalActualCosti),
         },
       },
+      // Il fatturato che nessun conto di ricavo rivendica. Va detto qui perché
+      // le righe qui sopra, da sole, non lo mostrano: le scritture generate
+      // dalla chiusura non portano un conto di ricavo.
+      unassignedRevenue,
       budgetId: budget.id,
       budgetStatus: budget.status,
     }

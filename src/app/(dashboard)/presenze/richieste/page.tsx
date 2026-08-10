@@ -61,7 +61,7 @@ const ETICHETTE_STATO: Record<Richiesta['status'], { label: string; className: s
   PENDING: { label: 'In attesa', className: 'bg-amber-100 text-amber-800' },
   APPROVED: { label: 'Approvata', className: 'bg-green-100 text-green-800' },
   REJECTED: { label: 'Rifiutata', className: 'bg-red-100 text-red-800' },
-  CANCELLED: { label: 'Annullata', className: 'bg-gray-100 text-gray-600' },
+  CANCELLED: { label: 'Annullata', className: 'bg-gray-100 text-muted-foreground' },
 }
 
 export default function RichiesteCorrezionePage() {

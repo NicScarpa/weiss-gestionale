@@ -42,6 +42,9 @@ import {
 import {
   ENTRY_TYPE_LABELS,
   ENTRY_TYPE_COLORS,
+  REGISTER_LABELS,
+  REGISTRI_IMPLICITI,
+  isTrasferimento,
   type EntryType,
   type RegisterType,
   type JournalEntryFormData,
@@ -68,21 +71,60 @@ export function accountTypesForEntryType(entryType: EntryType): AccountType[] {
   return ['RICAVO', 'COSTO']
 }
 
-const MOVIMENTO_SCHEMA = z.object({
-  date: z.date(),
-  registerType: z.enum(['CASH', 'BANK']),
-  entryType: z.enum(['INCASSO', 'USCITA', 'VERSAMENTO', 'PRELIEVO', 'GIROCONTO']),
-  amount: z.number().positive({ message: 'L\'importo deve essere positivo' }),
-  description: z.string().min(1, { message: 'La descrizione è obbligatoria' }),
-  documentRef: z.string().optional(),
-  documentType: z.string().optional(),
-  accountId: z.string().optional(),
-  costCenterId: z.string().optional(),
-  vatAmount: z.number().min(0).optional(),
-  notes: z.string().optional(),
-})
+const MOVIMENTO_SCHEMA = z
+  .object({
+    date: z.date(),
+    registerType: z.enum(['CASH', 'BANK']),
+    entryType: z.enum(['INCASSO', 'USCITA', 'VERSAMENTO', 'PRELIEVO', 'GIROCONTO']),
+    /** Registro di destinazione: serve al solo giroconto (vedi sotto). */
+    counterRegisterType: z.enum(['CASH', 'BANK']).optional(),
+    amount: z.number().positive({ message: 'L\'importo deve essere positivo' }),
+    description: z.string().min(1, { message: 'La descrizione è obbligatoria' }),
+    documentRef: z.string().optional(),
+    documentType: z.string().optional(),
+    accountId: z.string().optional(),
+    costCenterId: z.string().optional(),
+    vatAmount: z.number().min(0).optional(),
+    notes: z.string().optional(),
+  })
+  // Versamento e prelievo hanno la direzione nel nome; il giroconto no, e senza
+  // destinazione il server lo rifiuta. Chiederla qui evita di far scrivere tutto
+  // il movimento per poi vederselo respingere.
+  .superRefine((dati, ctx) => {
+    if (dati.entryType !== 'GIROCONTO') return
+
+    if (!dati.counterRegisterType) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['counterRegisterType'],
+        message: 'Indica il registro di destinazione',
+      })
+      return
+    }
+
+    if (dati.counterRegisterType === dati.registerType) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['counterRegisterType'],
+        message: 'Scegli un registro diverso da quello di partenza',
+      })
+    }
+  })
 
 type MovimentoFormData = z.infer<typeof MOVIMENTO_SCHEMA>
+
+/**
+ * Lettura di un campo numerico facoltativo: la casella vuota vale «assente».
+ *
+ * Va usata al posto di `valueAsNumber`, che sulla casella vuota non restituisce
+ * `undefined` ma `NaN`. Uno schema che accetta `number | undefined` rifiuta
+ * `NaN`, quindi un campo etichettato «opzionale» diventava obbligatorio e il
+ * modulo non si salvava più: per l'IVA significava bloccare versamenti,
+ * prelievi e giroconti, che l'IVA non ce l'hanno affatto.
+ */
+function numeroFacoltativo(valore: unknown): number | undefined {
+  return valore === '' || valore === null || valore === undefined ? undefined : Number(valore)
+}
 
 interface MovimentoFormDialogProps {
   entry?: JournalEntryFormData
@@ -103,7 +145,15 @@ export function MovimentoFormDialog({
     resolver: zodResolver(MOVIMENTO_SCHEMA),
     defaultValues: entry ? {
       date: entry.date,
-      registerType: entry.registerType,
+      // Per versamento e prelievo i registri sono quelli del tipo, non quelli
+      // salvati sulla singola riga: aperto su una delle due righe, il modulo
+      // deve mostrare l'operazione intera.
+      ...(entry.entryType === 'VERSAMENTO' || entry.entryType === 'PRELIEVO'
+        ? {
+            registerType: REGISTRI_IMPLICITI[entry.entryType].da,
+            counterRegisterType: REGISTRI_IMPLICITI[entry.entryType].a,
+          }
+        : { registerType: entry.registerType }),
       entryType: entry.entryType,
       amount: Math.abs(entry.amount),
       description: entry.description,
@@ -123,7 +173,51 @@ export function MovimentoFormDialog({
   })
 
   const entryType = form.watch('entryType')
-  const isEntrata = entryType === 'INCASSO' || entryType === 'VERSAMENTO' || entryType === 'PRELIEVO'
+  const registerType = form.watch('registerType')
+  const counterRegisterType = form.watch('counterRegisterType')
+
+  const trasferimento = isTrasferimento(entryType)
+  const isEntrata = entryType === 'INCASSO'
+
+  /** Direzione già decisa dal tipo: al versamento e al prelievo non si chiede. */
+  const direzioneImplicita =
+    entryType === 'VERSAMENTO' || entryType === 'PRELIEVO'
+      ? REGISTRI_IMPLICITI[entryType]
+      : null
+
+  /**
+   * Cambiare il tipo di movimento cambia quali registri hanno senso: il
+   * versamento va per forza dalla cassa alla banca, il prelievo il contrario, e
+   * i movimenti a riga singola non hanno una destinazione. Allineare i campi
+   * qui evita che resti nel modulo un valore scelto per un tipo precedente e
+   * spedito con un tipo che non lo prevede.
+   */
+  const cambiaTipo = (nuovo: EntryType) => {
+    form.setValue('entryType', nuovo)
+
+    if (nuovo === 'VERSAMENTO' || nuovo === 'PRELIEVO') {
+      form.setValue('registerType', REGISTRI_IMPLICITI[nuovo].da)
+      form.setValue('counterRegisterType', REGISTRI_IMPLICITI[nuovo].a)
+    } else if (nuovo !== 'GIROCONTO') {
+      form.setValue('counterRegisterType', undefined)
+    }
+
+    // Spostare denaro da un registro all'altro non è un'operazione imponibile:
+    // il server scarta l'IVA dei trasferimenti, e lasciarla nel modulo darebbe
+    // l'impressione di averla registrata.
+    if (isTrasferimento(nuovo)) {
+      form.setValue('vatAmount', undefined)
+    }
+  }
+
+  /** L'altro registro rispetto a quello scelto: un giroconto ne coinvolge due. */
+  const cambiaRegistroDiPartenza = (nuovo: RegisterType) => {
+    form.setValue('registerType', nuovo)
+    if (entryType === 'GIROCONTO' && form.getValues('counterRegisterType') === nuovo) {
+      form.setValue('counterRegisterType', nuovo === 'CASH' ? 'BANK' : 'CASH')
+    }
+  }
+
   const accountTypes = accountTypesForEntryType(entryType)
   const accountId = form.watch('accountId')
 
@@ -230,34 +324,11 @@ export function MovimentoFormDialog({
 
               <FormField
                 control={form.control}
-                name="registerType"
-                render={({ field }) => (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>Registro</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleziona registro" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="CASH">Cassa</SelectItem>
-                        <SelectItem value="BANK">Banca</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Tipo Movimento e Importo */}
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
                 name="entryType"
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
                     <FormLabel>Tipo</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+                    <Select onValueChange={(v) => cambiaTipo(v as EntryType)} value={field.value}>
                       <SelectTrigger>
                         <SelectValue placeholder="Seleziona tipo" />
                       </SelectTrigger>
@@ -275,6 +346,86 @@ export function MovimentoFormDialog({
                   </FormItem>
                 )}
               />
+            </div>
+
+            {/*
+              Registri e importo. Un trasferimento ne coinvolge due — da dove
+              esce il denaro e dove entra — perché è una scrittura in due righe:
+              chiederne uno solo era il modo in cui l'altra riga non veniva mai
+              scritta e il saldo totale si muoveva.
+            */}
+            <div className="grid grid-cols-2 gap-4">
+              {trasferimento ? (
+                <div className="col-span-2 grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="registerType"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-col">
+                        <FormLabel>Da</FormLabel>
+                        <Select
+                          onValueChange={(v) => cambiaRegistroDiPartenza(v as RegisterType)}
+                          value={field.value}
+                          disabled={direzioneImplicita !== null}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Registro di partenza" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="CASH">Cassa</SelectItem>
+                            <SelectItem value="BANK">Banca</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="counterRegisterType"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-col">
+                        <FormLabel>A</FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value ?? ''}
+                          disabled={direzioneImplicita !== null}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Registro di destinazione" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="CASH">Cassa</SelectItem>
+                            <SelectItem value="BANK">Banca</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              ) : (
+                <FormField
+                  control={form.control}
+                  name="registerType"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Registro</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleziona registro" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="CASH">Cassa</SelectItem>
+                          <SelectItem value="BANK">Banca</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <FormField
                 control={form.control}
@@ -394,29 +545,34 @@ export function MovimentoFormDialog({
               )}
             />
 
-            {/* IVA */}
-            <FormField
-              control={form.control}
-              name="vatAmount"
-              render={({ field }) => (
-                <FormItem className="flex flex-col">
-                  <FormLabel>IVA (opzionale)</FormLabel>
-                  <div className="relative">
-                    <Input
-                      type="number"
-                      step="0.01"
-                      placeholder="0.00"
-                      {...form.register('vatAmount', { valueAsNumber: true })}
-                      className="pl-8"
-                    />
-                    <span className="absolute left-2.5 top-2.5 text-sm text-muted-foreground">
-                      €
-                    </span>
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {/*
+              IVA: non compare sui trasferimenti. Spostare denaro fra la cassa e
+              la banca non è un'operazione imponibile, e il server la scarta.
+            */}
+            {!trasferimento && (
+              <FormField
+                control={form.control}
+                name="vatAmount"
+                render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel>IVA (opzionale)</FormLabel>
+                    <div className="relative">
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        {...form.register('vatAmount', { setValueAs: numeroFacoltativo })}
+                        className="pl-8"
+                      />
+                      <span className="absolute left-2.5 top-2.5 text-sm text-muted-foreground">
+                        €
+                      </span>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
 
             {/* Note */}
             <FormField
@@ -436,17 +592,37 @@ export function MovimentoFormDialog({
             />
           </div>
 
-          {/* Riepilogo Dare/Avere */}
+          {/*
+            Riepilogo. Un trasferimento non è né un'entrata né un'uscita: il
+            denaro cambia registro e la liquidità resta quella di prima. Finiva
+            fra le entrate, e chi lo registrava si aspettava di veder salire il
+            totale — cosa che, con la riga sola, succedeva davvero.
+          */}
           <div className="bg-muted/50 rounded-lg p-4 space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span>Operazione:</span>
-              <span className={cn(
-                "font-medium",
-                isEntrata ? "text-green-700" : "text-red-700"
-              )}>
-                {isEntrata ? 'Entrata (Dare)' : 'Uscita (Avere)'}
-              </span>
+              {trasferimento ? (
+                <span className="font-medium text-blue-700">
+                  Trasferimento
+                  {registerType && counterRegisterType
+                    ? `: ${REGISTER_LABELS[registerType]} → ${REGISTER_LABELS[counterRegisterType]}`
+                    : ''}
+                </span>
+              ) : (
+                <span className={cn(
+                  "font-medium",
+                  isEntrata ? "text-green-700" : "text-red-700"
+                )}>
+                  {isEntrata ? 'Entrata (Dare)' : 'Uscita (Avere)'}
+                </span>
+              )}
             </div>
+            {trasferimento && (
+              <p className="text-xs text-muted-foreground">
+                Vengono scritte due righe: l&apos;uscita dal registro di partenza e
+                l&apos;entrata in quello di destinazione. La liquidità totale non cambia.
+              </p>
+            )}
             <div className="flex items-center justify-between text-sm">
               <span>Importo:</span>
               <span className="font-medium">

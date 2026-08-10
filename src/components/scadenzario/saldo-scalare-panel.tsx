@@ -1,12 +1,13 @@
 "use client"
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SaldoScalareChart } from './saldo-scalare-chart'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency } from '@/lib/formatters'
 import { format, parseISO, addDays } from 'date-fns'
 import { it } from 'date-fns/locale'
 import { Info, Loader2, X } from 'lucide-react'
@@ -43,37 +44,29 @@ const RANGE_OPTIONS = [
 ]
 
 export function SaldoScalarePanel({ visible }: SaldoScalarePanelProps) {
-  const [data, setData] = useState<SaldoScalareData | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
   const [range, setRange] = useState('90')
   const [showZeroLine, setShowZeroLine] = useState(false)
   const [showOverdue, setShowOverdue] = useState(false)
 
-  const fetchData = useCallback(async () => {
-    setIsLoading(true)
-    try {
+  const { data, isPending, isFetching } = useQuery({
+    // Come prima: interroga l'API solo a pannello visibile e ricarica a ogni
+    // riapertura o cambio di filtro.
+    enabled: visible,
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryKey: ['saldo-scalare', range, showOverdue],
+    queryFn: async (): Promise<SaldoScalareData> => {
       const params = new URLSearchParams({
         range,
         includiScaduto: String(showOverdue),
       })
       const resp = await fetch(`/api/scadenzario/saldo-scalare?${params}`)
-      const result = await resp.json()
-      if (resp.ok) {
-        setData(result)
-      }
-    } catch (error) {
-      console.error('Errore fetch saldo scalare:', error)
-    }
-    setIsLoading(false)
-  }, [range, showOverdue])
+      if (!resp.ok) throw new Error('Errore nel caricamento del saldo scalare')
+      return resp.json()
+    },
+  })
 
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (visible) {
-      fetchData()
-    }
-  }, [visible, fetchData])
-  /* eslint-enable react-hooks/set-state-in-effect */
+  const isLoading = isPending || isFetching
 
   if (!visible) return null
 
@@ -146,7 +139,7 @@ export function SaldoScalarePanel({ visible }: SaldoScalarePanelProps) {
                 </div>
                 <p className={cn(
                   "text-xl font-bold",
-                  data.saldoOggi >= 0 ? 'text-slate-900' : 'text-rose-600'
+                  data.saldoOggi >= 0 ? 'text-foreground' : 'text-rose-600'
                 )}>
                   {formatCurrency(data.saldoOggi)}
                 </p>
@@ -199,7 +192,7 @@ export function SaldoScalarePanel({ visible }: SaldoScalarePanelProps) {
                 </div>
                 <p className={cn(
                   "text-xl font-bold",
-                  data.saldoFinale >= 0 ? 'text-slate-900' : 'text-rose-600'
+                  data.saldoFinale >= 0 ? 'text-foreground' : 'text-rose-600'
                 )}>
                   {formatCurrency(data.saldoFinale)}
                 </p>

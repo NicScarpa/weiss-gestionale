@@ -1,10 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
-import { getVenueId } from '@/lib/venue'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { notifyNewLeaveRequest } from '@/lib/notifications'
-
+import {
+  badRequest,
+  created,
+  forbidden,
+  handleApiError,
+  notFound,
+  ok,
+  withAuth,
+} from '@/lib/api-utils'
 import { logger } from '@/lib/logger'
 // Schema per creazione richiesta ferie
 const createLeaveRequestSchema = z.object({
@@ -35,15 +41,9 @@ function calculateWorkDays(startDate: Date, endDate: Date): number {
 }
 
 // GET /api/leave-requests - Lista richieste
-export async function GET(request: NextRequest) {
+export const GET = withAuth(async (request: NextRequest, { user, venueId }) => {
   try {
-    const session = await auth()
-
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
-    const { searchParams } = new URL(request.url)
+    const { searchParams } = request.nextUrl
     const status = searchParams.get('status')
     const userId = searchParams.get('userId')
     const pendingApproval = searchParams.get('pendingApproval') === 'true'
@@ -51,17 +51,15 @@ export async function GET(request: NextRequest) {
     const whereClause: Record<string, unknown> = {}
 
     // Staff può vedere solo le proprie richieste
-    if (session.user.role === 'staff') {
-      whereClause.userId = session.user.id
+    if (user.role === 'staff') {
+      whereClause.userId = user.id
     } else if (userId) {
       whereClause.userId = userId
     }
 
     // Filtra per sede
-    if (session.user.role === 'manager') {
-      whereClause.user = {
-        venueId: await getVenueId(),
-      }
+    if (user.role === 'manager') {
+      whereClause.user = { venueId }
     }
 
     if (status) {
@@ -111,41 +109,32 @@ export async function GET(request: NextRequest) {
       ],
     })
 
-    return NextResponse.json({ data: leaveRequests })
+    return ok({ data: leaveRequests })
   } catch (error) {
-    logger.error('Errore GET /api/leave-requests', error)
-    return NextResponse.json(
-      { error: 'Errore nel recupero delle richieste' },
-      { status: 500 }
+    return handleApiError(
+      error,
+      'GET /api/leave-requests',
+      'Errore nel recupero delle richieste'
     )
   }
-}
+}, { venueScoped: true })
 
 // POST /api/leave-requests - Crea nuova richiesta
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async (request: NextRequest, { user }) => {
   try {
-    const session = await auth()
-
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
     const body = await request.json()
     const validatedData = createLeaveRequestSchema.parse(body)
 
     // Solo admin può creare ferie per altri utenti
-    if (validatedData.userId && session.user.role !== 'admin') {
-      return NextResponse.json(
-        { error: 'Solo gli admin possono creare ferie per altri utenti' },
-        { status: 403 }
-      )
+    if (validatedData.userId && user.role !== 'admin') {
+      return forbidden('Solo gli admin possono creare ferie per altri utenti')
     }
 
     // Determina l'utente target
-    const isAdminCreatingForOther = session.user.role === 'admin' && !!validatedData.userId
-    const targetUserId = (validatedData.userId && session.user.role === 'admin')
+    const isAdminCreatingForOther = user.role === 'admin' && !!validatedData.userId
+    const targetUserId = validatedData.userId && user.role === 'admin'
       ? validatedData.userId
-      : session.user.id
+      : user.id
 
     // Se admin sta creando per un altro utente, verifica che esista
     if (isAdminCreatingForOther) {
@@ -153,7 +142,7 @@ export async function POST(request: NextRequest) {
         where: { id: targetUserId },
       })
       if (!targetUser) {
-        return NextResponse.json({ error: 'Utente non trovato' }, { status: 404 })
+        return notFound('Utente non trovato')
       }
     }
 
@@ -163,17 +152,14 @@ export async function POST(request: NextRequest) {
     })
 
     if (!leaveType) {
-      return NextResponse.json({ error: 'Tipo assenza non trovato' }, { status: 404 })
+      return notFound('Tipo assenza non trovato')
     }
 
     const startDate = new Date(validatedData.startDate)
     const endDate = new Date(validatedData.endDate)
 
     if (endDate < startDate) {
-      return NextResponse.json(
-        { error: 'La data fine deve essere successiva alla data inizio' },
-        { status: 400 }
-      )
+      return badRequest('La data fine deve essere successiva alla data inizio')
     }
 
     // Verifica sovrapposizioni con altre richieste
@@ -191,10 +177,7 @@ export async function POST(request: NextRequest) {
     })
 
     if (overlapping) {
-      return NextResponse.json(
-        { error: 'Esiste già una richiesta per questo periodo' },
-        { status: 400 }
-      )
+      return badRequest('Esiste già una richiesta per questo periodo')
     }
 
     // Calcola giorni/ore richieste
@@ -237,7 +220,7 @@ export async function POST(request: NextRequest) {
         notes: validatedData.notes || null,
         // Se approvato (admin crea per altri o non richiede approvazione)
         ...(initialStatus === 'APPROVED' && {
-          approvedById: session.user.id,
+          approvedById: user.id,
           approvedAt: new Date(),
         }),
       },
@@ -276,22 +259,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    return NextResponse.json(leaveRequest, { status: 201 })
+    return created(leaveRequest)
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Dati non validi', details: error.issues },
-        { status: 400 }
-      )
-    }
-
-    logger.error('Errore POST /api/leave-requests', error)
-    return NextResponse.json(
-      { error: 'Errore nella creazione della richiesta' },
-      { status: 500 }
+    return handleApiError(
+      error,
+      'POST /api/leave-requests',
+      'Errore nella creazione della richiesta'
     )
   }
-}
+})
 
 // Helper per aggiornare il saldo ferie
 async function updateLeaveBalance(

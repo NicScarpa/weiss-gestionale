@@ -3,7 +3,7 @@
 import { Wallet, Building2, ArrowRightLeft } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-import { formatCurrency } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 
 interface RegisterData {
   openingBalance: number
@@ -139,86 +139,3 @@ function RegisterCard({ title, icon, iconColor, bgColor, data }: RegisterCardPro
   )
 }
 
-// Componente per singolo registro (es. nella pagina dedicata)
-interface SingleRegisterCardProps {
-  registerType: 'CASH' | 'BANK'
-  data?: RegisterData
-  isLoading?: boolean
-  className?: string
-}
-
-export function SingleRegisterCard({
-  registerType,
-  data,
-  isLoading = false,
-  className,
-}: SingleRegisterCardProps) {
-  const config = {
-    CASH: {
-      title: 'CASSA',
-      icon: <Wallet className="h-6 w-6" />,
-      iconColor: 'text-green-600',
-      bgColor: 'bg-green-50',
-      gradientFrom: 'from-green-500/10',
-      gradientTo: 'to-green-600/5',
-    },
-    BANK: {
-      title: 'BANCA',
-      icon: <Building2 className="h-6 w-6" />,
-      iconColor: 'text-blue-600',
-      bgColor: 'bg-blue-50',
-      gradientFrom: 'from-blue-500/10',
-      gradientTo: 'to-blue-600/5',
-    },
-  }[registerType]
-
-  if (isLoading) {
-    return (
-      <Card className={cn('animate-pulse', className)}>
-        <CardContent className="py-6">
-          <div className="flex items-center gap-4">
-            <div className="h-12 w-12 bg-muted rounded-lg" />
-            <div className="flex-1">
-              <div className="h-4 bg-muted rounded w-20 mb-2" />
-              <div className="h-8 bg-muted rounded w-40" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  const balance = data?.closingBalance || 0
-
-  return (
-    <Card
-      className={cn(
-        'bg-gradient-to-br',
-        config.gradientFrom,
-        config.gradientTo,
-        className
-      )}
-    >
-      <CardContent className="py-6">
-        <div className="flex items-center gap-4">
-          <div className={cn('p-3 rounded-xl', config.bgColor)}>
-            <span className={config.iconColor}>{config.icon}</span>
-          </div>
-          <div className="flex-1">
-            <p className="text-sm font-medium text-muted-foreground">
-              {config.title}
-            </p>
-            <p
-              className={cn(
-                'text-3xl font-bold font-mono tracking-tight',
-                balance >= 0 ? 'text-foreground' : 'text-destructive'
-              )}
-            >
-              {formatCurrency(balance)}
-            </p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}

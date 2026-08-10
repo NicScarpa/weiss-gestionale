@@ -2,9 +2,18 @@
 
 import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ClosureFormData } from '@/components/chiusura/ClosureForm'
-import { buildClosurePayload } from '@/lib/closure-form-utils'
+import { buildClosurePayload, type ClosureApiPayload } from '@/lib/closure-form-utils'
+import {
+  savePendingClosure,
+  requestBackgroundSync,
+  ErroreSenzaRete,
+  type EsitoSalvataggio,
+} from '@/lib/offline'
+import { CHIAVE_STATO_CODA } from '@/hooks/useOffline'
+import { logger } from '@/lib/logger'
 
 type ZodIssueLike = { path?: Array<string | number>; message?: string }
 
@@ -94,8 +103,8 @@ interface UseClosureMutationOptions {
 }
 
 interface UseClosureMutationReturn {
-  saveDraft: (data: ClosureFormData) => Promise<string | null>
-  submitForValidation: (data: ClosureFormData) => Promise<void>
+  saveDraft: (data: ClosureFormData) => Promise<EsitoSalvataggio>
+  submitForValidation: (data: ClosureFormData) => Promise<EsitoSalvataggio>
   updateClosure: (data: ClosureFormData) => Promise<void>
   isLoading: boolean
   isSaving: boolean
@@ -116,27 +125,61 @@ export function useClosureMutation({
   onError,
 }: UseClosureMutationOptions): UseClosureMutationReturn {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const [isSaving, setIsSaving] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<Error | null>(null)
 
   /**
+   * Mette la chiusura nella coda su questo dispositivo, da dove partirà da sola
+   * al ritorno della rete (`syncPendingData`, e il tag `sync-closures` perché
+   * riparta anche a scheda chiusa).
+   *
+   * Se non riesce nemmeno questo — IndexedDB negato, spazio esaurito, finestra
+   * anonima — l'errore deve arrivare a chi ha in mano il conteggio: è l'unico
+   * caso in cui chiudere la pagina perde davvero il lavoro.
+   */
+  const mettiInCoda = useCallback(
+    async (payload: ClosureApiPayload): Promise<EsitoSalvataggio> => {
+      try {
+        const codaId = await savePendingClosure(payload)
+        await queryClient.invalidateQueries({ queryKey: CHIAVE_STATO_CODA })
+        void requestBackgroundSync()
+        return { esito: 'in-coda', codaId }
+      } catch (err) {
+        logger.error('[Offline] Chiusura non messa in coda', err)
+        throw new ErroreSenzaRete(
+          'Sei offline e non è stato possibile salvare la chiusura su questo dispositivo. Non chiudere la pagina: riprova appena torna la rete.'
+        )
+      }
+    },
+    [queryClient]
+  )
+
+  /**
    * Creates a new closure draft
-   * Returns the created closure ID or null on error
    */
   const saveDraft = useCallback(
-    async (data: ClosureFormData): Promise<string | null> => {
+    async (data: ClosureFormData): Promise<EsitoSalvataggio> => {
       setIsSaving(true)
       setError(null)
 
       try {
         const payload = buildClosurePayload(data, venueId)
 
-        const res = await fetch('/api/chiusure', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
+        let res: Response
+        try {
+          res = await fetch('/api/chiusure', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+        } catch {
+          // La richiesta non è partita: non c'è rete, o è caduta a metà. È
+          // l'unico caso che si mette in coda — un rifiuto del server (sotto)
+          // resterebbe un rifiuto anche fra un'ora.
+          return await mettiInCoda(payload)
+        }
 
         if (!res.ok) {
           const errorData = await safeReadJson(res)
@@ -148,7 +191,7 @@ export function useClosureMutation({
               description: 'Esiste già una chiusura per questa data. Apri la bozza esistente.',
             })
             router.push(`/chiusura-cassa/${conflict.existingId}/modifica`)
-            return null
+            return { esito: 'conflitto', closureId: conflict.existingId }
           }
 
           throw buildApiError(res.status, errorData)
@@ -156,7 +199,7 @@ export function useClosureMutation({
 
         const result = await res.json()
         onSuccess?.(result.id)
-        return result.id
+        return { esito: 'salvata', closureId: result.id }
       } catch (err) {
         const error = err instanceof Error ? err : new Error('Errore sconosciuto')
         setError(error)
@@ -166,25 +209,29 @@ export function useClosureMutation({
         setIsSaving(false)
       }
     },
-    [venueId, router, onSuccess, onError]
+    [venueId, router, onSuccess, onError, mettiInCoda]
   )
 
   /**
    * Creates a closure and immediately submits it for validation
    */
   const submitForValidation = useCallback(
-    async (data: ClosureFormData): Promise<void> => {
+    async (data: ClosureFormData): Promise<EsitoSalvataggio> => {
       setIsSubmitting(true)
       setError(null)
 
       try {
         // First save the draft
-        const newClosureId = await saveDraft(data)
+        const esito = await saveDraft(data)
 
-        if (!newClosureId) {
-          // saveDraft handled the redirect (e.g., conflict case)
-          return
+        if (esito.esito !== 'salvata') {
+          // Il conflitto ha già rediretto; la coda ha già preso in carico il
+          // lavoro. In coda resta una bozza: l'invio per validazione è un
+          // secondo passo che richiede il server, e chi salva deve saperlo.
+          return esito
         }
+
+        const newClosureId = esito.closureId
 
         // Then submit for validation
         const submitRes = await fetch(`/api/chiusure/${newClosureId}/submit`, {
@@ -198,6 +245,7 @@ export function useClosureMutation({
 
         window.open(`/api/chiusure/${newClosureId}/pdf?view=inline`, '_blank')
         router.push('/chiusura-cassa')
+        return esito
       } catch (err) {
         const error = err instanceof Error ? err : new Error('Errore sconosciuto')
         setError(error)
@@ -225,11 +273,21 @@ export function useClosureMutation({
       try {
         const payload = buildClosurePayload(data, venueId)
 
-        const res = await fetch(`/api/chiusure/${closureId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
+        let res: Response
+        try {
+          res = await fetch(`/api/chiusure/${closureId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+        } catch {
+          // La coda sa creare chiusure, non modificarne di esistenti: accodare
+          // questa come nuova creerebbe un doppione (e un 409 al ritorno della
+          // rete). Meglio un limite detto che una promessa non mantenuta.
+          throw new ErroreSenzaRete(
+            'Sei offline: le modifiche a una chiusura già salvata non vengono messe in coda. Restano in questa pagina, riprova appena torna la rete.'
+          )
+        }
 
         if (!res.ok) {
           const errorData = await safeReadJson(res)

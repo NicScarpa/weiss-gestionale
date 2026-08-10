@@ -66,7 +66,7 @@ const STATI: Record<
     className: 'bg-green-100 text-green-800',
   },
   REJECTED: { label: 'Rifiutata', icon: XCircle, className: 'bg-red-100 text-red-800' },
-  CANCELLED: { label: 'Annullata', icon: Ban, className: 'bg-gray-100 text-gray-600' },
+  CANCELLED: { label: 'Annullata', icon: Ban, className: 'bg-muted text-muted-foreground' },
 }
 
 function orarioToMinuti(orario: string): number | null {
@@ -169,8 +169,8 @@ export default function CorrezioniPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Correzioni</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <h1 className="text-2xl font-bold text-foreground">Correzioni</h1>
+          <p className="text-sm text-muted-foreground mt-1">
             Hai dimenticato di timbrare? Chiedi qui la correzione
           </p>
         </div>
@@ -192,7 +192,7 @@ export default function CorrezioniPage() {
 
       {richieste && richieste.length === 0 && (
         <Card className="rounded-2xl">
-          <CardContent className="py-10 text-center text-sm text-gray-500">
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
             Nessuna richiesta finora. Quando dimentichi una timbratura, chiedi
             qui la correzione invece di passare dall&apos;ufficio.
           </CardContent>
@@ -207,7 +207,7 @@ export default function CorrezioniPage() {
           <Card key={richiesta.id} className="rounded-2xl">
             <CardContent className="py-4 space-y-2">
               <div className="flex items-center justify-between">
-                <div className="font-medium text-gray-900">
+                <div className="font-medium text-foreground">
                   {format(parseISO(richiesta.date), 'EEEE d MMMM', { locale: it })}
                 </div>
                 <Badge className={stato.className}>
@@ -215,7 +215,7 @@ export default function CorrezioniPage() {
                   {stato.label}
                 </Badge>
               </div>
-              <div className="text-sm text-gray-600">
+              <div className="text-sm text-muted-foreground">
                 {richiesta.requestedClockIn && (
                   <span className="mr-3">
                     Entrata {format(parseISO(richiesta.requestedClockIn), 'HH:mm')}
@@ -228,9 +228,9 @@ export default function CorrezioniPage() {
                 )}
                 {richiesta.workLocation && <span>· {richiesta.workLocation.name}</span>}
               </div>
-              <div className="text-sm text-gray-500">{richiesta.reason}</div>
+              <div className="text-sm text-muted-foreground">{richiesta.reason}</div>
               {richiesta.reviewNotes && (
-                <div className="text-sm text-gray-500">
+                <div className="text-sm text-muted-foreground">
                   Risposta: {richiesta.reviewNotes}
                 </div>
               )}
@@ -239,7 +239,7 @@ export default function CorrezioniPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-gray-500"
+                    className="text-muted-foreground"
                     onClick={() => annulla.mutate(richiesta.id)}
                     disabled={annulla.isPending}
                   >
@@ -293,7 +293,7 @@ export default function CorrezioniPage() {
                 />
               </div>
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               Puoi indicare solo l&apos;orario che manca. Un&apos;uscita prima
               dell&apos;entrata si intende del giorno dopo (turno serale).
             </p>

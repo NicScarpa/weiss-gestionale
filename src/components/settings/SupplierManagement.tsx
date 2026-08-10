@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -60,8 +61,6 @@ const initialFormData = {
 }
 
 export function SupplierManagement() {
-  const [suppliers, setSuppliers] = useState<Supplier[]>([])
-  const [loading, setLoading] = useState(true)
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
@@ -74,25 +73,34 @@ export function SupplierManagement() {
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false)
 
   // Carica lista fornitori
-  const fetchSuppliers = async () => {
-    try {
-      setLoading(true)
+  const {
+    data: datiFornitori,
+    isFetching: loading,
+    error: erroreFornitori,
+    refetch: fetchSuppliers,
+  } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryKey: ['suppliers', 'full', showInactive],
+    queryFn: async (): Promise<{ suppliers?: Supplier[] }> => {
       const res = await fetch(`/api/suppliers?full=true&showOnlyInactive=${showInactive}`)
       if (!res.ok) throw new Error('Errore nel caricamento')
-      const data = await res.json()
-      setSuppliers(data.suppliers || [])
-    } catch (error) {
-      logger.error('Errore', error)
-      toast.error('Errore nel caricamento dei fornitori')
-    } finally {
-      setLoading(false)
-    }
-  }
+      return res.json()
+    },
+  })
+
+  // I conti non si caricano più qui: il campo «conto predefinito» usa
+  // AccountCombobox, che li carica e li filtra per conto suo. La query che
+  // stava in questo punto alimentava il vecchio Select e non ha più consumatori.
+  const suppliers = datiFornitori?.suppliers || []
 
   useEffect(() => {
-    fetchSuppliers()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showInactive])
+    if (erroreFornitori) {
+      logger.error('Errore', erroreFornitori)
+      toast.error('Errore nel caricamento dei fornitori')
+    }
+  }, [erroreFornitori])
 
   // Filtra fornitori per ricerca
   const filteredSuppliers = suppliers.filter((s) =>
@@ -243,9 +251,9 @@ export function SupplierManagement() {
   return (
     <div className="space-y-6">
       {/* Controlli */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4 flex-1">
-          <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-4">
+          <div className="relative min-w-0 flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Cerca fornitore..."

@@ -1,11 +1,67 @@
-import Decimal from 'decimal.js'
-import type { RegisterType, EntryType, JournalEntry } from '@/types/prima-nota'
-
-// Configura Decimal.js per precisione finanziaria
-Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP })
+import { money, sumMoney, toApi } from '@/lib/money'
+import { REGISTRI_IMPLICITI } from '@/types/prima-nota'
+import type {
+  RegisterType,
+  EntryType,
+  JournalEntry,
+  RegistriDelTrasferimento,
+  TipoTrasferimento,
+} from '@/types/prima-nota'
 
 /**
- * Determina se un movimento è DARE o AVERE in base al registro e tipo
+ * Un trasferimento male indicato: manca la destinazione, o coincide con
+ * l'origine. È un dato che chi registra può correggere, non un guasto.
+ */
+export class TrasferimentoNonValidoError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'TrasferimentoNonValidoError'
+  }
+}
+
+/**
+ * Da quale registro a quale registro si muove il denaro.
+ *
+ * Per versamento e prelievo il `registerType` ricevuto viene ignorato: la
+ * direzione è quella canonica anche se il client ne dichiara un'altra, perché
+ * un «versamento dalla banca» non è un'operazione diversa, è un dato sbagliato,
+ * e ciò che l'utente ha scelto è il tipo di operazione. Il giroconto invece non
+ * ha direzione implicita: chi lo registra deve dire da dove a dove, e senza
+ * quell'indicazione la richiesta va rifiutata invece che indovinata.
+ */
+export function registriDelTrasferimento(
+  entryType: TipoTrasferimento,
+  registerType: RegisterType,
+  counterRegisterType?: RegisterType | null
+): RegistriDelTrasferimento {
+  if (entryType !== 'GIROCONTO') {
+    return REGISTRI_IMPLICITI[entryType]
+  }
+
+  if (!counterRegisterType) {
+    throw new TrasferimentoNonValidoError(
+      'Un giroconto richiede il registro di destinazione: indica da dove a dove si sposta il denaro.'
+    )
+  }
+
+  if (counterRegisterType === registerType) {
+    throw new TrasferimentoNonValidoError(
+      'Un giroconto deve spostare il denaro fra due registri diversi.'
+    )
+  }
+
+  return { da: registerType, a: counterRegisterType }
+}
+
+/**
+ * Determina se un movimento è DARE o AVERE in base al registro e tipo.
+ *
+ * Vale per un movimento a riga singola e per **ciascuno dei due lati** di un
+ * trasferimento, presi uno alla volta. Il giroconto è l'eccezione: non avendo
+ * una direzione implicita, la coppia registro+tipo non basta a dire da che
+ * parte va l'importo, e la funzione si ferma invece di rispondere a caso.
+ * Rispondeva DARE per entrambi i registri, ed era il modo in cui un giroconto
+ * registrato a mano faceva comparire denaro dal nulla.
  */
 export function getMovementDirection(
   registerType: RegisterType,
@@ -20,8 +76,6 @@ export function getMovementDirection(
       case 'USCITA':
       case 'VERSAMENTO': // Verso banca → esce da cassa
         return 'CREDIT' // Avere (-)
-      case 'GIROCONTO':
-        return 'DEBIT' // Default, dipende dal contesto
     }
   }
 
@@ -34,22 +88,28 @@ export function getMovementDirection(
       case 'USCITA':
       case 'PRELIEVO': // Verso cassa → esce da banca
         return 'CREDIT' // Avere (-)
-      case 'GIROCONTO':
-        return 'DEBIT' // Default, dipende dal contesto
     }
   }
 
-  return 'DEBIT'
+  throw new TrasferimentoNonValidoError(
+    'Il giroconto non ha una direzione implicita: usa registriDelTrasferimento() ' +
+      'per sapere da quale registro esce e in quale entra.'
+  )
 }
 
 /**
- * Converte tipo movimento e importo in dare/avere
+ * Converte tipo movimento e importo in dare/avere.
+ *
+ * L'importo è generico perché la stessa decisione serve sia sui `number` della
+ * UI sia sui `Money` che vanno in colonna: costringerli a passare da `number`
+ * per attraversare questa funzione vanificherebbe la precisione (vedi
+ * `@/lib/money`). Il valore non viene toccato, solo messo dalla parte giusta.
  */
-export function toDebitCredit(
+export function toDebitCredit<T = number>(
   registerType: RegisterType,
   entryType: EntryType,
-  amount: number
-): { debitAmount: number | null; creditAmount: number | null } {
+  amount: T
+): { debitAmount: T | null; creditAmount: T | null } {
   const direction = getMovementDirection(registerType, entryType)
 
   if (direction === 'DEBIT') {
@@ -66,18 +126,15 @@ export function calculateRunningBalances(
   entries: JournalEntry[],
   openingBalance: number = 0
 ): JournalEntry[] {
-  let balance = new Decimal(openingBalance)
+  let balance = money(openingBalance)
 
   return entries.map((entry) => {
-    const debit = new Decimal(entry.debitAmount || 0)
-    const credit = new Decimal(entry.creditAmount || 0)
-
     // Saldo = precedente + dare - avere
-    balance = balance.plus(debit).minus(credit)
+    balance = balance.plus(money(entry.debitAmount)).minus(money(entry.creditAmount))
 
     return {
       ...entry,
-      runningBalance: balance.toNumber(),
+      runningBalance: toApi(balance),
     }
   })
 }
@@ -90,18 +147,13 @@ export function calculateTotals(entries: JournalEntry[]): {
   totalCredits: number
   netMovement: number
 } {
-  let totalDebits = new Decimal(0)
-  let totalCredits = new Decimal(0)
-
-  for (const entry of entries) {
-    totalDebits = totalDebits.plus(entry.debitAmount || 0)
-    totalCredits = totalCredits.plus(entry.creditAmount || 0)
-  }
+  const totalDebits = sumMoney(entries.map((entry) => entry.debitAmount))
+  const totalCredits = sumMoney(entries.map((entry) => entry.creditAmount))
 
   return {
-    totalDebits: totalDebits.toNumber(),
-    totalCredits: totalCredits.toNumber(),
-    netMovement: totalDebits.minus(totalCredits).toNumber(),
+    totalDebits: toApi(totalDebits),
+    totalCredits: toApi(totalCredits),
+    netMovement: toApi(totalDebits.minus(totalCredits)),
   }
 }
 

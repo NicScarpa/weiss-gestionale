@@ -1,42 +1,44 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { z } from 'zod'
-import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
-import { getVenueId } from '@/lib/venue'
+import {
+  conflict,
+  errorResponse,
+  handleApiError,
+  notFound,
+  ok,
+  withAuth,
+} from '@/lib/api-utils'
 import { politicaOrarioSchema } from '@/lib/validations/politiche-orario'
-import { politicaSelect } from '../route'
+import { toDateOnlyUtc } from '@/lib/timezone'
+import { politicaSelect, RUOLI_REGOLE } from '../condiviso'
 
-async function guard() {
-  const session = await auth()
-  if (!session?.user) {
-    return {
-      error: NextResponse.json({ error: 'Non autorizzato' }, { status: 401 }),
-    }
-  }
-  if (!['admin', 'manager'].includes(session.user.role || '')) {
-    return { error: NextResponse.json({ error: 'Accesso negato' }, { status: 403 }) }
-  }
+type Params = { id: string }
+const OPZIONI = { roles: RUOLI_REGOLE, venueScoped: true } as const
 
-  return { session }
-}
+/**
+ * La decorrenza di una modifica: i giorni precedenti restano calcolati con
+ * la regola com'era (i valori si congelano in una versione), così i mesi già
+ * consegnati al consulente non cambiano. Senza decorrenza la modifica vale
+ * anche per il passato — utile per correggere un errore di battitura.
+ */
+const decorrenzaSchema = z.object({
+  decorrenza: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Decorrenza non valida (attesa yyyy-MM-dd)')
+    .nullable()
+    .optional(),
+})
 
 // La lettura della singola regola non esiste: la lista di
 // GET /api/politiche-orario porta già tutti i campi, e il form di modifica
 // parte da quelli. Una route senza consumatore invecchierebbe in silenzio.
 
 // PUT /api/politiche-orario/[id]
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const PUT = withAuth<Params>(async (request: NextRequest, { params, user, venueId }) => {
   try {
-    const { session, error } = await guard()
-    if (error) return error
-
-    const { id } = await params
-    const venueId = await getVenueId()
+    const { id } = params
 
     const esistente = await prisma.timekeepingPolicy.findFirst({
       where: { id, venueId },
@@ -44,18 +46,69 @@ export async function PUT(
     })
 
     if (!esistente) {
-      return NextResponse.json({ error: 'Regola non trovata' }, { status: 404 })
+      return notFound('Regola non trovata')
     }
 
     const body = await request.json()
     const dati = politicaOrarioSchema.parse(body)
+    const { decorrenza } = decorrenzaSchema.parse(body)
     const { extraBreaks, ...campi } = dati
+
+    if (decorrenza) {
+      // Le versioni devono restare in ordine: una decorrenza precedente a
+      // una già registrata renderebbe ambiguo quale valga per quei giorni.
+      const ultimaVersione = await prisma.timekeepingPolicyVersion.findFirst({
+        where: { policyId: id },
+        orderBy: { effectiveUntil: 'desc' },
+        select: { effectiveUntil: true },
+      })
+      const ultimaKey = ultimaVersione?.effectiveUntil.toISOString().slice(0, 10)
+      if (ultimaKey && decorrenza <= ultimaKey) {
+        return errorResponse(
+          'La decorrenza deve essere successiva all\'ultima modifica già ' +
+            `registrata (${ultimaKey.split('-').reverse().join('/')})`,
+          422
+        )
+      }
+    }
 
     const politica = await prisma.$transaction(async (tx) => {
       if (campi.isDefault) {
         await tx.timekeepingPolicy.updateMany({
           where: { venueId, isDefault: true, id: { not: id } },
           data: { isDefault: false },
+        })
+      }
+
+      // Con la decorrenza, i valori correnti si congelano in una versione
+      // valida per i giorni precedenti, prima di essere sovrascritti.
+      if (decorrenza) {
+        await tx.timekeepingPolicyVersion.create({
+          data: {
+            policyId: id,
+            effectiveUntil: toDateOnlyUtc(decorrenza),
+            name: esistente.name,
+            dayStartMinutes: esistente.dayStartMinutes,
+            dayEndMinutes: esistente.dayEndMinutes,
+            lunchStartMinutes: esistente.lunchStartMinutes,
+            lunchEndMinutes: esistente.lunchEndMinutes,
+            useShiftAsWindow: esistente.useShiftAsWindow,
+            flexMinutes: esistente.flexMinutes,
+            roundingMinutes: esistente.roundingMinutes,
+            roundingToleranceMinutes: esistente.roundingToleranceMinutes,
+            roundingOutMinutes: esistente.roundingOutMinutes,
+            roundingOutToleranceMinutes: esistente.roundingOutToleranceMinutes,
+            maxDailyMinutes: esistente.maxDailyMinutes,
+            contractWeeklyHours: esistente.contractWeeklyHours,
+            saturdayAsOvertime: esistente.saturdayAsOvertime,
+            blockSunday: esistente.blockSunday,
+            singlePunchMode: esistente.singlePunchMode,
+            extraBreaks: esistente.extraBreaks.map((pausa) => ({
+              name: pausa.name,
+              startMinutes: pausa.startMinutes,
+              endMinutes: pausa.endMinutes,
+            })),
+          },
         })
       }
 
@@ -74,43 +127,29 @@ export async function PUT(
     })
 
     await createAuditLog({
-      userId: session!.user.id,
+      userId: user.id,
       action: 'UPDATE',
       entityType: 'TimekeepingPolicy',
       entityId: id,
       venueId,
       oldValues: esistente,
-      newValues: politica,
+      newValues: { ...politica, decorrenza: decorrenza ?? null },
     })
 
-    return NextResponse.json({ data: politica })
+    return ok({ data: politica })
   } catch (err) {
-    if (err instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Dati non validi', details: err.issues },
-        { status: 400 }
-      )
-    }
-
-    logger.error('Errore PUT /api/politiche-orario/[id]', err)
-    return NextResponse.json(
-      { error: "Errore nell'aggiornamento della regola orario" },
-      { status: 500 }
+    return handleApiError(
+      err,
+      'PUT /api/politiche-orario/[id]',
+      "Errore nell'aggiornamento della regola orario"
     )
   }
-}
+}, OPZIONI)
 
 // DELETE /api/politiche-orario/[id]
-export async function DELETE(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const DELETE = withAuth<Params>(async (_request: NextRequest, { params, user, venueId }) => {
   try {
-    const { session, error } = await guard()
-    if (error) return error
-
-    const { id } = await params
-    const venueId = await getVenueId()
+    const { id } = params
 
     const politica = await prisma.timekeepingPolicy.findFirst({
       where: { id, venueId },
@@ -123,35 +162,28 @@ export async function DELETE(
     })
 
     if (!politica) {
-      return NextResponse.json({ error: 'Regola non trovata' }, { status: 404 })
+      return notFound('Regola non trovata')
     }
 
     // Cancellare una regola in uso cambierebbe in silenzio le ore già calcolate
     // di chi la sta usando: meglio costringere a riassegnare prima.
     const assegnazioni = politica._count.users + politica._count.workLocations
     if (assegnazioni > 0) {
-      return NextResponse.json(
-        {
-          error: `La regola è assegnata a ${assegnazioni} fra dipendenti e luoghi di lavoro: riassegnali prima di eliminarla`,
-        },
-        { status: 409 }
+      return conflict(
+        `La regola è assegnata a ${assegnazioni} fra dipendenti e luoghi di lavoro: riassegnali prima di eliminarla`
       )
     }
 
     if (politica.isDefault) {
-      return NextResponse.json(
-        {
-          error:
-            'Questa è la regola predefinita: impostane un altra come predefinita prima di eliminarla',
-        },
-        { status: 409 }
+      return conflict(
+        'Questa è la regola predefinita: impostane un altra come predefinita prima di eliminarla'
       )
     }
 
     await prisma.timekeepingPolicy.delete({ where: { id } })
 
     await createAuditLog({
-      userId: session!.user.id,
+      userId: user.id,
       action: 'DELETE',
       entityType: 'TimekeepingPolicy',
       entityId: id,
@@ -159,12 +191,12 @@ export async function DELETE(
       oldValues: politica,
     })
 
-    return NextResponse.json({ success: true })
+    return ok({ success: true })
   } catch (err) {
-    logger.error('Errore DELETE /api/politiche-orario/[id]', err)
-    return NextResponse.json(
-      { error: "Errore nell'eliminazione della regola orario" },
-      { status: 500 }
+    return handleApiError(
+      err,
+      'DELETE /api/politiche-orario/[id]',
+      "Errore nell'eliminazione della regola orario"
     )
   }
-}
+}, OPZIONI)

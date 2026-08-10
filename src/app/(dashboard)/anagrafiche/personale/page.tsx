@@ -77,6 +77,7 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { ottieniLinkInvito, rigeneraLinkInvito } from '@/lib/inviti-staff'
 
 interface StaffMember {
   id: string
@@ -366,7 +367,7 @@ export default function StaffPage() {
             Gestisci dipendenti, vincoli e pianificazione turni
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Link href="/staff/vincoli-relazionali">
             <Button variant="outline">
               <Settings className="h-4 w-4 mr-2" />
@@ -729,10 +730,8 @@ export default function StaffPage() {
                     setInviteStep('invite-link')
                     setInviteLinkLoading(true)
                     try {
-                      const res = await fetch('/api/staff/invite')
-                      const data = await res.json()
-                      if (!res.ok) throw new Error(data.error)
-                      setInviteLink(data.url)
+                      const invito = await ottieniLinkInvito()
+                      setInviteLink(invito.url)
                     } catch (err) {
                       toast.error(err instanceof Error ? err.message : 'Errore nel generare il link')
                     } finally {
@@ -798,14 +797,8 @@ export default function StaffPage() {
                       onClick={async () => {
                         setInviteLinkLoading(true)
                         try {
-                          const res = await fetch('/api/staff/invite', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ action: 'regenerate' }),
-                          })
-                          const data = await res.json()
-                          if (!res.ok) throw new Error(data.error)
-                          setInviteLink(data.url)
+                          const invito = await rigeneraLinkInvito()
+                          setInviteLink(invito.url)
                           setInviteLinkCopied(false)
                           toast.success('Link rigenerato!')
                         } catch (err) {
@@ -843,19 +836,10 @@ export default function StaffPage() {
                       onClick={async () => {
                         setInviteEmailSending(true)
                         try {
-                          const res = await fetch('/api/staff/invite', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              action: 'regenerate',
-                              email: inviteEmail.trim(),
-                            }),
-                          })
-                          const data = await res.json()
-                          if (!res.ok) throw new Error(data.error)
-                          setInviteLink(data.url)
+                          const invito = await rigeneraLinkInvito({ email: inviteEmail.trim() })
+                          setInviteLink(invito.url)
                           setInviteLinkCopied(false)
-                          if (data.emailSent) {
+                          if (invito.emailSent) {
                             toast.success(`Invito inviato a ${inviteEmail.trim()}`)
                             setInviteEmail('')
                           } else {

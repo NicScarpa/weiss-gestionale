@@ -55,6 +55,12 @@ export interface PoliticaOrario {
   singlePunchMode: boolean
   useShiftAsWindow: boolean
   extraBreaks: PausaAggiuntiva[]
+  /**
+   * Solo in modifica: la data da cui valgono i nuovi valori. I giorni
+   * precedenti restano calcolati con la regola com'era. Vuota = la
+   * modifica vale anche per il passato.
+   */
+  decorrenza?: string | null
 }
 
 interface RisultatoProva {
@@ -65,6 +71,7 @@ interface RisultatoProva {
   holidayMinutes: number
   breakMinutes: number
   cappedMinutes: number
+  pendingReviewMinutes: number
   clockIn: number | null
   clockOut: number | null
   steps: string[]
@@ -138,9 +145,13 @@ const ETICHETTE_AVVISI: Record<string, string> = {
   ENTRATA_MANCANTE: 'Entrata mancante',
   USCITA_MANCANTE: 'Uscita mancante',
   PAUSA_PRANZO_NON_TIMBRATA: 'Pausa pranzo dedotta dalla regola',
+  PAUSA_NON_CHIUSA: 'Pausa iniziata e mai chiusa: ore invariate, export bloccato',
   FUORI_FINESTRA: 'Orario fuori dalla finestra della giornata',
   OLTRE_TETTO_GIORNALIERO: 'Ore oltre il tetto giornaliero',
-  OLTRE_TURNO: 'Ore oltre il turno pianificato, da rivedere',
+  OLTRE_TURNO: 'Ore oltre il turno, sospese in attesa di revisione',
+  ANTICIPO_TURNO: 'Anticipo sul turno contato, in attesa di conferma',
+  BUCO_TURNO: 'Buco del turno spezzato non contato',
+  USCITA_ANTICIPATA: 'Uscita prima della fine del turno',
 }
 
 interface Props {
@@ -250,6 +261,23 @@ export function TimekeepingPolicyForm({
                 onCheckedChange={(v) => aggiorna('isActive', v)}
               />
             </div>
+
+            {valore.id && (
+              <div className="space-y-2">
+                <Label htmlFor="decorrenza">Decorrenza della modifica</Label>
+                <Input
+                  id="decorrenza"
+                  type="date"
+                  value={valore.decorrenza ?? ''}
+                  onChange={(e) => aggiorna('decorrenza', e.target.value || null)}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Con una data, i giorni precedenti restano calcolati con la
+                  regola com&apos;era: i mesi già consegnati al consulente non
+                  cambiano. Senza data, la modifica vale anche per il passato.
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -768,6 +796,12 @@ export function TimekeepingPolicyForm({
                     <span className="text-muted-foreground">Pause</span>
                     <span>{formatDurata(risultato.breakMinutes)}</span>
                   </div>
+                  {risultato.pendingReviewMinutes > 0 && (
+                    <div className="flex justify-between text-amber-600">
+                      <span>In attesa di revisione</span>
+                      <span>{formatDurata(risultato.pendingReviewMinutes)}</span>
+                    </div>
+                  )}
                 </div>
 
                 {risultato.warnings.length > 0 && (

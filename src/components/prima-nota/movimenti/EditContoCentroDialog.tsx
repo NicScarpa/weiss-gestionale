@@ -87,15 +87,44 @@ export function buildReclassifyPayload(
  * sbagliata proprio nel dialog che deve ispirare fiducia su cosa cambia.
  */
 export function EditContoCentroDialog({ entry, open, onOpenChange, onSaved }: EditContoCentroDialogProps) {
-  const [accountId, setAccountId] = React.useState<string | undefined>(undefined)
-  const [costCenterId, setCostCenterId] = React.useState<string | undefined>(undefined)
-  const [isSubmitting, setIsSubmitting] = React.useState(false)
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-[480px]">
+        <DialogHeader>
+          <DialogTitle>Riclassifica movimento da chiusura</DialogTitle>
+          <DialogDescription>
+            Puoi correggere solo conto e centro di costo. Importo, data, registro e descrizione
+            sono dato contabile della chiusura e non si possono modificare da qui.
+          </DialogDescription>
+        </DialogHeader>
 
-  React.useEffect(() => {
-    if (!open || !entry) return
-    setAccountId(entry.accountId)
-    setCostCenterId(entry.costCenterId)
-  }, [open, entry])
+        {/* Radix smonta il contenuto alla chiusura, e la `key` lo rifà da capo
+            quando si passa da un movimento all'altro senza chiudere: i campi
+            nascono già dal movimento, senza un effetto che li riallinei — che
+            costava un secondo render a ogni apertura. */}
+        <ModuloRiclassifica
+          key={entry?.id ?? 'nessuno'}
+          entry={entry}
+          onChiudi={() => onOpenChange(false)}
+          onSaved={onSaved}
+        />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ModuloRiclassifica({
+  entry,
+  onChiudi,
+  onSaved,
+}: {
+  entry: JournalEntry | null
+  onChiudi: () => void
+  onSaved: () => void
+}) {
+  const [accountId, setAccountId] = React.useState<string | undefined>(entry?.accountId)
+  const [costCenterId, setCostCenterId] = React.useState<string | undefined>(entry?.costCenterId)
+  const [isSubmitting, setIsSubmitting] = React.useState(false)
 
   // Nessun filtro types (vedi sopra): stessa chiave di query di un
   // AccountCombobox "aperto", copre l'intero piano dei conti senza fetch
@@ -113,14 +142,6 @@ export function EditContoCentroDialog({ entry, open, onOpenChange, onSaved }: Ed
   const importo = entry ? Math.abs(entry.debitAmount || entry.creditAmount || 0) : 0
   const payload = entry ? buildReclassifyPayload(entry, { accountId, costCenterId }) : {}
   const hasChanges = Object.keys(payload).length > 0
-
-  const handleOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen) {
-      setAccountId(undefined)
-      setCostCenterId(undefined)
-    }
-    onOpenChange(nextOpen)
-  }
 
   const handleSubmit = async () => {
     if (!entry || !hasChanges || centroMancante) return
@@ -144,16 +165,7 @@ export function EditContoCentroDialog({ entry, open, onOpenChange, onSaved }: Ed
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-[480px]">
-        <DialogHeader>
-          <DialogTitle>Riclassifica movimento da chiusura</DialogTitle>
-          <DialogDescription>
-            Puoi correggere solo conto e centro di costo. Importo, data, registro e descrizione
-            sono dato contabile della chiusura e non si possono modificare da qui.
-          </DialogDescription>
-        </DialogHeader>
-
+    <>
         {entry && (
           <div className="rounded-lg border bg-muted/50 p-3 space-y-1.5 text-sm">
             <div className="flex items-center justify-between">
@@ -198,7 +210,7 @@ export function EditContoCentroDialog({ entry, open, onOpenChange, onSaved }: Ed
           <Button
             type="button"
             variant="outline"
-            onClick={() => handleOpenChange(false)}
+            onClick={onChiudi}
             disabled={isSubmitting}
           >
             Annulla
@@ -211,7 +223,6 @@ export function EditContoCentroDialog({ entry, open, onOpenChange, onSaved }: Ed
             {isSubmitting ? 'Salvataggio...' : 'Riclassifica'}
           </Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </>
   )
 }

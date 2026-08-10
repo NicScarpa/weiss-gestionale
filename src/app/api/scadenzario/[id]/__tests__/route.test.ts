@@ -5,10 +5,17 @@ import { PATCH } from '../route'
 
 vi.mock('@/lib/auth', () => ({ auth: vi.fn() }))
 
+// `$queryRaw` copre il SELECT ... FOR UPDATE con cui la route blocca la
+// scadenza prima di aggiornarla; `$transaction` esegue la callback passandole
+// il mock stesso.
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    schedule: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+    schedule: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn(), count: vi.fn() },
+    schedulePayment: { aggregate: vi.fn() },
+    electronicInvoice: { findFirst: vi.fn(), update: vi.fn() },
     supplier: { findFirst: vi.fn() },
+    $queryRaw: vi.fn(),
+    $transaction: vi.fn(),
   },
 }))
 
@@ -53,6 +60,14 @@ function patchCon(body: Record<string, unknown>) {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(auth).mockResolvedValue(sessione as never)
+  vi.mocked(prisma.$transaction).mockImplementation(
+    (async (cb: unknown) => (cb as (tx: typeof prisma) => Promise<unknown>)(prisma)) as never
+  )
+  vi.mocked(prisma.$queryRaw).mockResolvedValue([{ id: 'sched-1' }] as never)
+  vi.mocked(prisma.schedulePayment.aggregate).mockResolvedValue({
+    _sum: { importo: null },
+    _max: { dataPagamento: null },
+  } as never)
 })
 
 describe('PATCH /api/scadenzario/[id] - data attesa manuale', () => {
@@ -174,37 +189,43 @@ describe('PATCH /api/scadenzario/[id] - data attesa manuale', () => {
   })
 })
 
-describe('PATCH /api/scadenzario/[id] - il saldo e il cambio fornitore aggiornano le stime', () => {
-  it('la PATCH che rende pagata una passiva con fornitore ricalcola le stime del fornitore', async () => {
+describe('PATCH /api/scadenzario/[id] - i campi derivati non si scrivono da qui', () => {
+  it('dichiarare lo stato è rifiutato: lo stato discende dai pagamenti', async () => {
     vi.mocked(prisma.schedule.findFirst).mockResolvedValue(esistente() as never)
-    vi.mocked(prisma.schedule.update).mockResolvedValue({
-      id: 'sched-1',
-      stato: 'pagata',
-      tipo: 'passiva',
-      supplierId: 'sup-1',
-    } as never)
 
     const { request, context } = patchCon({ stato: 'pagata' })
-    await PATCH(request, context)
+    const response = await PATCH(request, context)
 
-    expect(ricalcolaStimeFornitore).toHaveBeenCalledWith('sup-1', 'venue-1')
+    expect(response.status).toBe(400)
+    expect(prisma.schedule.update).not.toHaveBeenCalled()
+    expect(ricalcolaStimeFornitore).not.toHaveBeenCalled()
   })
 
-  it('anche la PATCH con dataPagamento (che salda in automatico) ricalcola le stime', async () => {
+  it('scrivere la data di pagamento è rifiutato: la porta il pagamento registrato', async () => {
     vi.mocked(prisma.schedule.findFirst).mockResolvedValue(esistente() as never)
-    vi.mocked(prisma.schedule.update).mockResolvedValue({
-      id: 'sched-1',
-      stato: 'pagata',
-      tipo: 'passiva',
-      supplierId: 'sup-1',
-    } as never)
 
     const { request, context } = patchCon({ dataPagamento: '2026-08-01' })
-    await PATCH(request, context)
+    const response = await PATCH(request, context)
 
-    expect(ricalcolaStimeFornitore).toHaveBeenCalledWith('sup-1', 'venue-1')
+    expect(response.status).toBe(400)
+    expect(prisma.schedule.update).not.toHaveBeenCalled()
   })
 
+  it('la risposta indica su quale route va fatta la modifica', async () => {
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(esistente() as never)
+
+    const { request, context } = patchCon({ importoPagato: 100 })
+    const response = await PATCH(request, context)
+    const body = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(body.campi).toEqual([
+      { campo: 'importoPagato', usare: 'POST /api/scadenzario/[id]/pagamenti' },
+    ])
+  })
+})
+
+describe('PATCH /api/scadenzario/[id] - il cambio fornitore aggiorna le stime', () => {
   it('una scadenza già pagata che resta pagata non ricalcola nulla', async () => {
     vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
       esistente({ stato: 'pagata' }) as never

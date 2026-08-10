@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -46,9 +47,9 @@ export function CategorizationRulesManager({
   const { venueId: contextVenueId } = usePrimaNota()
   const venueId = contextVenueId || venueIdProp
 
+  const queryClient = useQueryClient()
+
   // State
-  const [rules, setRules] = useState<CategorizationRule[]>([])
-  const [isLoading, setIsLoading] = useState(true)
   const [activeDirection, setActiveDirection] = useState<RuleDirection>('OUTFLOW')
   const [searchQuery, setSearchQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<string>('')
@@ -59,29 +60,38 @@ export function CategorizationRulesManager({
   const [deleteConfirm, setDeleteConfirm] = useState<CategorizationRule | null>(null)
 
   // Fetch rules
-  const loadRules = useCallback(async () => {
-    if (!venueId) return
-    setIsLoading(true)
-    try {
+  const chiaveRegole = ['categorization-rules', venueId, activeDirection]
+
+  const {
+    data: datiRegole,
+    isPending,
+    isFetching,
+    error: erroreRegole,
+    refetch: loadRules,
+  } = useQuery({
+    queryKey: chiaveRegole,
+    queryFn: async (): Promise<{ data?: CategorizationRule[] }> => {
       const params = new URLSearchParams({
         venueId,
         direction: activeDirection,
       })
       const res = await fetch(`/api/categorization-rules?${params.toString()}`)
       if (!res.ok) throw new Error('Errore nel caricamento regole')
-      const json = await res.json()
-      setRules(json.data || [])
-    } catch (error) {
-      console.error('Errore caricamento regole:', error)
-      toast.error('Impossibile caricare le regole')
-    } finally {
-      setIsLoading(false)
-    }
-  }, [venueId, activeDirection])
+      return res.json()
+    },
+    enabled: !!venueId,
+    staleTime: 0,
+  })
 
   useEffect(() => {
-    loadRules()
-  }, [loadRules])
+    if (erroreRegole) {
+      console.error('Errore caricamento regole:', erroreRegole)
+      toast.error('Impossibile caricare le regole')
+    }
+  }, [erroreRegole])
+
+  const rules = useMemo(() => datiRegole?.data || [], [datiRegole])
+  const isLoading = isPending || isFetching
 
   // Client-side filtering
   const filteredRules = useMemo(() => {
@@ -167,7 +177,10 @@ export function CategorizationRulesManager({
 
   const handleReorder = async (reorderedRules: CategorizationRule[]) => {
     // Aggiorna ottimisticamente l'ordine locale
-    setRules(reorderedRules)
+    queryClient.setQueryData<{ data?: CategorizationRule[] }>(chiaveRegole, (precedente) => ({
+      ...precedente,
+      data: reorderedRules,
+    }))
 
     // Aggiorna le priority in base al nuovo ordine (priority decrescente: primo = piu alta)
     try {
@@ -234,9 +247,12 @@ export function CategorizationRulesManager({
 
   return (
     <div className="p-6 space-y-4">
-      {/* Header con sub-tabs e azioni */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1">
+      {/* Header con sub-tabs e azioni.
+          I due gruppi occupano insieme 830 px: senza `flex-wrap` restano su
+          una riga sola e a 390 px escono dallo schermo portandosi dietro
+          l'elenco delle regole */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-1">
           <button
             onClick={() => setActiveDirection('INFLOW')}
             className={`
@@ -265,7 +281,7 @@ export function CategorizationRulesManager({
           </button>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             size="sm"
@@ -282,8 +298,8 @@ export function CategorizationRulesManager({
       </div>
 
       {/* Filtri */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-xs">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative min-w-0 flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Ricerca keywords..."
@@ -392,7 +408,7 @@ export function CategorizationRulesManager({
         onOpenChange={setProposalsDialogOpen}
         venueId={venueId}
         budgetCategories={budgetCategories}
-        onProposalApplied={loadRules}
+        onProposalApplied={() => { loadRules() }}
       />
     </div>
   )

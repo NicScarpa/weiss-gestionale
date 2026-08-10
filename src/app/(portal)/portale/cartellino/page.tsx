@@ -15,8 +15,8 @@ export default function CartellinoPortalePage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Il mio cartellino</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <h1 className="text-2xl font-bold text-foreground">Il mio cartellino</h1>
+          <p className="text-sm text-muted-foreground mt-1">
             Le ore riconosciute del mese, giorno per giorno
           </p>
         </div>

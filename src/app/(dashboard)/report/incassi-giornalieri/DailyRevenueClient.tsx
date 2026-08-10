@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback, Fragment } from 'react'
+import { useState, useEffect, Fragment } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
 import {
@@ -30,7 +31,8 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { formatCurrency, getWeatherEmoji } from '@/lib/constants'
+import { getWeatherEmoji } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 import { toast } from 'sonner'
 
 import { logger } from '@/lib/logger'
@@ -194,8 +196,6 @@ function TimeSlotBreakdownView({ slots }: { slots: TimeSlotBreakdown[] }) {
 }
 
 export function DailyRevenueClient() {
-  const [data, setData] = useState<ReportData | null>(null)
-  const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [filters, setFilters] = useState({
     dateFrom: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
@@ -205,9 +205,18 @@ export function DailyRevenueClient() {
   const toggleExpand = (key: string) =>
     setExpandedId((prev) => (prev === key ? null : key))
 
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    try {
+  const {
+    data: report,
+    isFetching: loading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryKey: ['report', 'incassi-giornalieri', filters.dateFrom, filters.dateTo],
+    queryFn: async (): Promise<ReportData> => {
       const params = new URLSearchParams()
       if (filters.dateFrom) params.set('dateFrom', filters.dateFrom)
       if (filters.dateTo) params.set('dateTo', filters.dateTo)
@@ -215,19 +224,18 @@ export function DailyRevenueClient() {
       const res = await fetch(`/api/report/incassi-giornalieri?${params.toString()}`)
       if (!res.ok) throw new Error('Errore nel caricamento')
 
-      const result = await res.json()
-      setData(result)
-    } catch (error) {
-      logger.error('Errore fetch report', error)
-      toast.error('Errore nel caricamento del report')
-    } finally {
-      setLoading(false)
-    }
-  }, [filters])
+      return res.json()
+    },
+  })
 
   useEffect(() => {
-    fetchData()
-  }, [fetchData])
+    if (isError) {
+      logger.error('Errore fetch report', error)
+      toast.error('Errore nel caricamento del report')
+    }
+  }, [isError, error])
+
+  const data = report ?? null
 
   const setQuickFilter = (period: 'thisMonth' | 'lastMonth' | 'last30' | 'last90') => {
     const now = new Date()
@@ -303,7 +311,7 @@ export function DailyRevenueClient() {
             <Download className="h-4 w-4 mr-2" />
             Esporta CSV
           </Button>
-          <Button variant="outline" onClick={fetchData}>
+          <Button variant="outline" onClick={() => refetch()}>
             <RefreshCw className="h-4 w-4 mr-2" />
             Aggiorna
           </Button>

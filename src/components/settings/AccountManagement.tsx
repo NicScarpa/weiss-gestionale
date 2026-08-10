@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -136,8 +137,6 @@ export function getGruppoOptions(accounts: Account[], mastroCode: string): Opzio
 }
 
 export function AccountManagement() {
-  const [accounts, setAccounts] = useState<Account[]>([])
-  const [loading, setLoading] = useState(true)
   const [editingAccount, setEditingAccount] = useState<Account | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
@@ -149,25 +148,33 @@ export function AccountManagement() {
   const [formData, setFormData] = useState(initialFormData)
 
   // Carica lista conti
-  const fetchAccounts = async () => {
-    try {
-      setLoading(true)
+  const {
+    data: datiConti,
+    isFetching: loading,
+    error: erroreConti,
+    refetch: fetchAccounts,
+  } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    // staleTime: 0 serve al cambio di `showInactive`, dove il refetch passa
+    // dalla staleness e con i 60s globali si tornerebbe su dati vecchi.
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryKey: ['accounts', 'full', showInactive],
+    queryFn: async (): Promise<{ accounts?: Account[] }> => {
       const res = await fetch(`/api/accounts?full=true&includeInactive=${showInactive}`)
       if (!res.ok) throw new Error('Errore nel caricamento')
-      const data = await res.json()
-      setAccounts(data.accounts || [])
-    } catch (error) {
-      logger.error('Errore', error)
-      toast.error('Errore nel caricamento dei conti')
-    } finally {
-      setLoading(false)
-    }
-  }
+      return res.json()
+    },
+  })
+
+  const accounts = datiConti?.accounts || []
 
   useEffect(() => {
-    queueMicrotask(() => fetchAccounts())
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showInactive])
+    if (erroreConti) {
+      logger.error('Errore', erroreConti)
+      toast.error('Errore nel caricamento dei conti')
+    }
+  }, [erroreConti])
 
   const isTipoEconomico = formData.type === 'RICAVO' || formData.type === 'COSTO'
   const mastroOptions = useMemo(() => getMastroOptions(accounts, formData.type), [accounts, formData.type])
@@ -330,9 +337,9 @@ export function AccountManagement() {
   return (
     <div className="space-y-6">
       {/* Controlli */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4 flex-1">
-          <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-4">
+          <div className="relative min-w-0 flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Cerca conto..."
@@ -360,7 +367,9 @@ export function AccountManagement() {
 
       {/* Tabs per tipo */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AccountType)}>
-        <TabsList className="grid w-full grid-cols-4">
+        {/* Quattro colonne uguali in un telefono danno 70 px a testa e le
+            etichette si sovrappongono: sotto sm la striscia scorre */}
+        <TabsList className="flex w-full sm:grid sm:grid-cols-4">
           {ACCOUNT_TYPES.map((type) => {
             const Icon = type.icon
             return (

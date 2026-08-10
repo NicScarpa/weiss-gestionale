@@ -3,6 +3,14 @@ import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { applicaStimaSuScadenza, ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
 import {
+  bloccaMovimento,
+  bloccaScadenza,
+  capienzaResiduaMovimento,
+  ricalcolaStatoSchedule,
+  sommaPagamenti,
+  TOLLERANZA_IMPORTI,
+} from '@/lib/scadenzario/stato-schedule'
+import {
   aggiornaContoDominante,
   calcolaPesiDaRighe,
   ripartisciProQuota,
@@ -35,6 +43,8 @@ export type ReconcileOutcome =
   | { outcome: 'already_reconciled' }
   | { outcome: 'schedule_closed'; stato: string }
   | { outcome: 'invalid_amount'; motivo: string }
+  /** La quota sfora il residuo della scadenza o la capienza del movimento. */
+  | { outcome: 'amount_exceeds_capacity'; motivo: string }
 
 interface ReconcileInput {
   scheduleId: string
@@ -47,14 +57,30 @@ interface ReconcileInput {
   confidence?: number
 }
 
-/** Importo del movimento nel verso che salda la scadenza. */
-function importoUtile(
-  entry: { debitAmount: Prisma.Decimal | null; creditAmount: Prisma.Decimal | null },
-  tipo: string
-): number {
-  const entrata = entry.debitAmount ? Number(entry.debitAmount) : 0
-  const uscita = entry.creditAmount ? Number(entry.creditAmount) : 0
-  return tipo === 'attiva' ? entrata : uscita
+/**
+ * Aliquota IVA di ciascuna riga dello snapshot, per numero di linea.
+ *
+ * Lo snapshot è JSON e arriva dal parser FatturaPA, quindi va trattato come
+ * dato esterno: si accettano solo numeri finiti e non negativi, e una riga
+ * senza aliquota leggibile semplicemente non entra nella mappa. Le fatture
+ * importate da un fornitore che non compila `AliquotaIVA` ricadono così nel
+ * comportamento precedente, che è approssimato ma non arbitrario.
+ */
+function aliquoteDelloSnapshot(lineItems: unknown[]): Map<number, number> {
+  const mappa = new Map<number, number>()
+  for (const riga of lineItems) {
+    if (typeof riga !== 'object' || riga === null) continue
+    const { numeroLinea, aliquotaIVA } = riga as Record<string, unknown>
+    if (typeof numeroLinea !== 'number' || !Number.isFinite(numeroLinea)) continue
+    if (typeof aliquotaIVA !== 'number' || !Number.isFinite(aliquotaIVA) || aliquotaIVA < 0) continue
+    mappa.set(numeroLinea, aliquotaIVA)
+  }
+  return mappa
+}
+
+/** Imponibile riportato al lordo. Senza aliquota nota, l'imponibile stesso. */
+function alLordo(imponibile: number, aliquota: number | undefined): number {
+  return aliquota === undefined ? imponibile : imponibile * (1 + aliquota / 100)
 }
 
 /**
@@ -109,19 +135,46 @@ async function ereditaFetteDaFattura(
     return
   }
 
+  // SOLO le imputazioni che un essere umano ha confermato.
+  //
+  // Senza questo filtro esisteva un percorso interamente automatico
+  // dall'ipotesi del modello fino al conto su cui il budget conta i soldi:
+  // le righe 'proposta' — quelle gialle che nessuno ha ancora guardato —
+  // pesavano quanto le confermate, `aggiornaContoDominante` riscriveva
+  // `JournalEntry.accountId` con il conto della fetta più grossa, e il budget
+  // imputava lì l'INTERO importo del movimento. Fattura mista da 1.200 €
+  // ipotizzata 700 «Pulizie» / 500 «Alimentari» → 1.200 € su Pulizie.
+  //
+  // Il conto scelto dal titolare o da una regola dello scadenzario veniva
+  // sovrascritto senza avviso, e l'audit registra la riconciliazione ma non la
+  // riscrittura del conto: il valore precedente non è salvato da nessuna
+  // parte. Un difetto che cancellava le proprie tracce.
   const imputazioni = await tx.invoiceLineAccount.findMany({
-    where: { invoiceId },
-    select: { accountId: true, importo: true },
+    where: { invoiceId, stato: 'confermata' },
+    select: { accountId: true, importo: true, numeroLinea: true },
   })
 
+  // La guardia contava le righe senza guardarne lo stato, quindi una fattura
+  // interamente gialla la superava. Col filtro sopra, una fattura mezza
+  // confermata non arriva al conteggio pieno e l'astensione scatta da sé.
   if (imputazioni.length < invoice.lineItems.length) {
-    logger.info('Righe fattura non tutte categorizzate: nessuna ereditarietà pro-quota', {
+    logger.info('Righe fattura non tutte confermate: nessuna ereditarietà pro-quota', {
       invoiceId,
       righe: invoice.lineItems.length,
-      imputazioni: imputazioni.length,
+      confermate: imputazioni.length,
     })
     return
   }
+
+  // I pesi sono i `PrezzoTotale` delle righe, cioè IMPONIBILI; la quota da
+  // ripartire è un pagamento, cioè LORDO. Applicare proporzioni al netto su un
+  // importo lordo sbaglia ogni volta che le aliquote non sono uniformi:
+  // alimentari 1.000 € + 4% e detersivi 200 € + 22% fanno 1.284 € pagati, ma
+  // sui soli imponibili la ripartizione dà 1.070 € e 214 € invece di 1.040 € e
+  // 244 €. Trenta euro sul conto sbagliato, il 2,3% della fattura, e su una
+  // fattura di sole bevande e detersivi lo scarto è più marcato ancora. Con
+  // aliquote uguali fra le righe il fattore si semplifica e non cambia nulla.
+  const aliquotePerLinea = aliquoteDelloSnapshot(invoice.lineItems)
 
   const manuali = await tx.journalEntryAllocation.findMany({
     where: { journalEntryId, origine: 'manuale' },
@@ -154,7 +207,10 @@ async function ereditaFetteDaFattura(
   }
 
   const pesi = calcolaPesiDaRighe(
-    imputazioni.map((r) => ({ accountId: r.accountId, importo: Number(r.importo) }))
+    imputazioni.map((r) => ({
+      accountId: r.accountId,
+      importo: alLordo(Number(r.importo), aliquotePerLinea.get(r.numeroLinea)),
+    }))
   )
   const fette = ripartisciProQuota(pesi, quota)
   if (fette.length === 0) return
@@ -174,8 +230,16 @@ async function ereditaFetteDaFattura(
 
 /**
  * Collega un movimento a una scadenza e aggiorna lo stato di quest'ultima.
- * Tutto in transazione: non deve esistere una riconciliazione senza il
- * pagamento corrispondente, né viceversa.
+ *
+ * Tutto in transazione, letture comprese: prima si bloccano movimento e
+ * scadenza (in quest'ordine, sempre: l'ordine inverso in un altro percorso
+ * produrrebbe deadlock), poi si decide. Leggere fuori dalla transazione e
+ * decidere dentro — come faceva la versione precedente — significa prendere le
+ * decisioni su numeri che nel frattempo possono essere cambiati.
+ *
+ * Due tetti, non uno: la quota non può superare il residuo della *scadenza*,
+ * né la capienza ancora libera del *movimento*. Senza il secondo, un bonifico
+ * da 100 € poteva figurare come saldo di 500 € di scadenze diverse.
  */
 export async function reconcileScheduleWithEntry({
   scheduleId,
@@ -186,154 +250,143 @@ export async function reconcileScheduleWithEntry({
   source = 'MANUAL',
   confidence,
 }: ReconcileInput): Promise<ReconcileOutcome> {
-  const schedule = await prisma.schedule.findFirst({
-    where: { id: scheduleId, venueId },
-    select: {
-      id: true,
-      tipo: true,
-      stato: true,
-      importoTotale: true,
-      importoPagato: true,
-      dataPagamento: true,
-      invoiceId: true,
-      supplierId: true,
-    },
-  })
+  const esegui = () =>
+    prisma.$transaction(async (tx) => {
+      const entry = await bloccaMovimento(tx, journalEntryId, venueId)
+      if (!entry) return { outcome: 'entry_not_found' } as const
 
-  if (!schedule) return { outcome: 'schedule_not_found' }
+      const schedule = await bloccaScadenza(tx, scheduleId, venueId)
+      if (!schedule) return { outcome: 'schedule_not_found' } as const
 
-  if (schedule.stato === 'pagata' || schedule.stato === 'annullata') {
-    return { outcome: 'schedule_closed', stato: schedule.stato }
-  }
+      if (schedule.stato === 'pagata' || schedule.stato === 'annullata') {
+        return { outcome: 'schedule_closed', stato: schedule.stato } as const
+      }
 
-  const entry = await prisma.journalEntry.findFirst({
-    where: { id: journalEntryId, venueId },
-    select: { id: true, date: true, debitAmount: true, creditAmount: true, description: true },
-  })
-
-  if (!entry) return { outcome: 'entry_not_found' }
-
-  const esistente = await prisma.scheduleReconciliation.findFirst({
-    where: { scheduleId, journalEntryId, status: 'VERIFIED' },
-    select: { id: true },
-  })
-
-  if (esistente) return { outcome: 'already_reconciled' }
-
-  const residuo = Number(schedule.importoTotale) - Number(schedule.importoPagato)
-  const disponibile = importoUtile(entry, schedule.tipo)
-
-  if (disponibile <= 0) {
-    return {
-      outcome: 'invalid_amount',
-      motivo:
-        schedule.tipo === 'attiva'
-          ? 'Il movimento non è un incasso: non può saldare una scadenza attiva'
-          : 'Il movimento non è un\'uscita: non può saldare una scadenza passiva',
-    }
-  }
-
-  // Senza indicazione esplicita si imputa il minore fra residuo e movimento:
-  // un bonifico cumulativo copre la scadenza fino a concorrenza
-  const quota = amount ?? Math.min(residuo, disponibile)
-
-  if (quota <= 0) {
-    return { outcome: 'invalid_amount', motivo: 'La quota da imputare deve essere positiva' }
-  }
-  if (quota > residuo + 0.01) {
-    return {
-      outcome: 'invalid_amount',
-      motivo: `La quota supera il residuo della scadenza (${residuo.toFixed(2)} €)`,
-    }
-  }
-
-  const risultato = await prisma.$transaction(async (tx) => {
-    const payment = await tx.schedulePayment.create({
-      data: {
-        scheduleId,
-        importo: new Prisma.Decimal(quota.toFixed(2)),
-        dataPagamento: entry.date,
-        note: `Riconciliato con il movimento: ${entry.description}`,
-      },
-    })
-
-    const reconciliation = await tx.scheduleReconciliation.create({
-      data: {
-        scheduleId,
-        journalEntryId,
-        status: 'VERIFIED',
-        source,
-        amount: new Prisma.Decimal(quota.toFixed(2)),
-        confidence: confidence !== undefined ? new Prisma.Decimal(confidence.toFixed(2)) : null,
-        paymentId: payment.id,
-        createdById: userId,
-      },
-    })
-
-    // Aggancio pro-quota (Fase 3): dentro la transazione, non best-effort.
-    if (schedule.invoiceId) {
-      await ereditaFetteDaFattura(tx, {
-        journalEntryId,
-        invoiceId: schedule.invoiceId,
-        reconciliationId: reconciliation.id,
-        quota,
-        importoUtileMovimento: disponibile,
+      const esistente = await tx.scheduleReconciliation.findFirst({
+        where: { scheduleId, journalEntryId, status: 'VERIFIED' },
+        select: { id: true },
       })
-    }
+      if (esistente) return { outcome: 'already_reconciled' } as const
 
-    const nuovoPagato = Number(schedule.importoPagato) + quota
-    const saldata = nuovoPagato >= Number(schedule.importoTotale) - 0.01
-    const nuovoStato = saldata ? 'pagata' : 'parzialmente_pagata'
+      const { utile, disponibile } = await capienzaResiduaMovimento(tx, entry, schedule.tipo)
 
-    await tx.schedule.update({
-      where: { id: scheduleId },
-      data: {
-        importoPagato: new Prisma.Decimal(nuovoPagato.toFixed(2)),
-        stato: nuovoStato,
-        // La data di pagamento è quella del movimento reale, non di oggi
-        ...(saldata && !schedule.dataPagamento ? { dataPagamento: entry.date } : {}),
-        // La data attesa si riallinea al movimento reale, con la provenienza
-        // che vince su tutto (riconciliazione > manuale > stima)
-        ...(saldata ? { dataAttesa: entry.date, dataAttesaSource: 'riconciliazione' } : {}),
-      },
-    })
+      if (utile <= 0) {
+        return {
+          outcome: 'invalid_amount',
+          motivo:
+            schedule.tipo === 'attiva'
+              ? 'Il movimento non è un incasso: non può saldare una scadenza attiva'
+              : 'Il movimento non è un\'uscita: non può saldare una scadenza passiva',
+        } as const
+      }
 
-    return { reconciliation, nuovoStato, nuovoPagato, saldata }
-  })
+      if (disponibile <= TOLLERANZA_IMPORTI) {
+        return {
+          outcome: 'amount_exceeds_capacity',
+          motivo: `Il movimento è già interamente imputato ad altre scadenze (${utile.toFixed(2)} € impegnati)`,
+        } as const
+      }
 
-  // La fattura risulta pagata solo quando tutte le sue rate lo sono
-  if (schedule.invoiceId && risultato.saldata) {
-    const rateAperte = await prisma.schedule.count({
-      where: { invoiceId: schedule.invoiceId, stato: { not: 'pagata' } },
-    })
+      // Il residuo si ricava dai pagamenti registrati, non dal contatore sulla
+      // scadenza: se quel contatore è andato in deriva, la somma lo risana.
+      const { pagato } = await sommaPagamenti(tx, scheduleId)
+      const residuo = Number(schedule.importoTotale) - pagato
 
-    if (rateAperte === 0) {
-      await prisma.electronicInvoice.update({
-        where: { id: schedule.invoiceId },
-        data: { status: 'PAID' },
+      // Senza indicazione esplicita si imputa il minore fra residuo e capienza
+      // del movimento: un bonifico cumulativo copre la scadenza fino a concorrenza
+      const quota = amount ?? Math.min(residuo, disponibile)
+
+      if (quota <= 0) {
+        return { outcome: 'invalid_amount', motivo: 'La quota da imputare deve essere positiva' } as const
+      }
+      if (quota > residuo + TOLLERANZA_IMPORTI) {
+        return {
+          outcome: 'amount_exceeds_capacity',
+          motivo: `La quota supera il residuo della scadenza (${residuo.toFixed(2)} €)`,
+        } as const
+      }
+      if (quota > disponibile + TOLLERANZA_IMPORTI) {
+        return {
+          outcome: 'amount_exceeds_capacity',
+          motivo: `La quota supera la capienza residua del movimento (${disponibile.toFixed(2)} € ancora liberi su ${utile.toFixed(2)} €)`,
+        } as const
+      }
+
+      const payment = await tx.schedulePayment.create({
+        data: {
+          scheduleId,
+          importo: new Prisma.Decimal(quota.toFixed(2)),
+          dataPagamento: entry.date,
+          note: `Riconciliato con il movimento: ${entry.description}`,
+        },
       })
+
+      const reconciliation = await tx.scheduleReconciliation.create({
+        data: {
+          scheduleId,
+          journalEntryId,
+          status: 'VERIFIED',
+          source,
+          amount: new Prisma.Decimal(quota.toFixed(2)),
+          confidence: confidence !== undefined ? new Prisma.Decimal(confidence.toFixed(2)) : null,
+          paymentId: payment.id,
+          createdById: userId,
+        },
+      })
+
+      // Aggancio pro-quota (Fase 3): dentro la transazione, non best-effort.
+      if (schedule.invoiceId) {
+        await ereditaFetteDaFattura(tx, {
+          journalEntryId,
+          invoiceId: schedule.invoiceId,
+          reconciliationId: reconciliation.id,
+          quota,
+          importoUtileMovimento: utile,
+        })
+      }
+
+      const stato = await ricalcolaStatoSchedule(tx, scheduleId)
+      if (!stato) return { outcome: 'schedule_not_found' } as const
+
+      return { outcome: 'ok', reconciliationId: reconciliation.id, quota, stato } as const
+    })
+
+  let risultato: Awaited<ReturnType<typeof esegui>>
+  try {
+    risultato = await esegui()
+  } catch (error) {
+    // Rete di sicurezza del vincolo `ux_schedule_reconciliations_coppia_verificata`:
+    // se due richieste arrivassero comunque in fondo insieme, la perdente
+    // esce da qui come "già riconciliata" invece che come errore interno.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return { outcome: 'already_reconciled' }
     }
+    throw error
+  }
+
+  if (risultato.outcome !== 'ok') {
+    return risultato
   }
 
   // La storia del fornitore è cambiata: le stime delle sue scadenze aperte
   // si aggiornano. Best-effort: non blocca mai la riconciliazione
-  if (risultato.saldata && schedule.tipo === 'passiva' && schedule.supplierId) {
-    await ricalcolaStimeFornitore(schedule.supplierId, venueId)
+  if (risultato.stato.saldata && risultato.stato.tipo === 'passiva' && risultato.stato.supplierId) {
+    await ricalcolaStimeFornitore(risultato.stato.supplierId, venueId)
   }
 
   logger.info('Scadenza riconciliata con movimento', {
     scheduleId,
     journalEntryId,
-    quota,
-    stato: risultato.nuovoStato,
+    quota: risultato.quota,
+    stato: risultato.stato.stato,
     source,
   })
 
   return {
     outcome: 'ok',
-    reconciliationId: risultato.reconciliation.id,
-    scheduleStato: risultato.nuovoStato,
-    importoPagato: risultato.nuovoPagato,
+    reconciliationId: risultato.reconciliationId,
+    scheduleStato: risultato.stato.stato,
+    importoPagato: risultato.stato.importoPagato,
   }
 }
 
@@ -378,7 +431,13 @@ export async function rejectScheduleMatch({
 
 /**
  * Annulla una riconciliazione: rimuove il pagamento generato e riporta la
- * scadenza allo stato precedente. Serve quando il match si rivela sbagliato.
+ * scadenza allo stato che i pagamenti rimasti descrivono. Serve quando il match
+ * si rivela sbagliato.
+ *
+ * Il ritorno indietro riguarda anche la fattura: prima l'undo cancellava
+ * riconciliazione e pagamento ma lasciava `ElectronicInvoice` su PAID, e la
+ * fattura restava pagata per sempre. Se ne occupa `ricalcolaStatoSchedule`,
+ * che allinea la fattura in entrambe le direzioni.
  */
 export async function undoScheduleReconciliation({
   reconciliationId,
@@ -387,27 +446,26 @@ export async function undoScheduleReconciliation({
   reconciliationId: string
   venueId: string
 }): Promise<{ outcome: 'ok'; scheduleStato: string } | { outcome: 'not_found' }> {
-  const reconciliation = await prisma.scheduleReconciliation.findFirst({
+  const riferimento = await prisma.scheduleReconciliation.findFirst({
     where: { id: reconciliationId, status: 'VERIFIED', schedule: { venueId } },
-    select: {
-      id: true,
-      scheduleId: true,
-      journalEntryId: true,
-      paymentId: true,
-      amount: true,
-      schedule: { select: { importoTotale: true, importoPagato: true, tipo: true, supplierId: true } },
-    },
+    select: { id: true, scheduleId: true, journalEntryId: true },
   })
 
-  if (!reconciliation) return { outcome: 'not_found' }
+  if (!riferimento) return { outcome: 'not_found' }
 
-  const nuovoPagato = Math.max(
-    0,
-    Number(reconciliation.schedule.importoPagato) - Number(reconciliation.amount)
-  )
-  const nuovoStato = nuovoPagato <= 0.01 ? 'aperta' : 'parzialmente_pagata'
+  const esito = await prisma.$transaction(async (tx) => {
+    // Stesso ordine di acquisizione dei lock della riconciliazione
+    // (movimento, poi scadenza): invertirlo qui basterebbe a produrre deadlock
+    // fra un annullo e una riconciliazione concorrenti.
+    const movimento = await bloccaMovimento(tx, riferimento.journalEntryId)
+    await bloccaScadenza(tx, riferimento.scheduleId)
 
-  await prisma.$transaction(async (tx) => {
+    const reconciliation = await tx.scheduleReconciliation.findFirst({
+      where: { id: reconciliationId, status: 'VERIFIED' },
+      select: { id: true, scheduleId: true, journalEntryId: true, paymentId: true },
+    })
+    if (!reconciliation) return null
+
     // Le fette ereditate (Fase 3) vanno ritirate PRIMA di cancellare la
     // riconciliazione: la FK JournalEntryAllocation.reconciliationId è
     // onDelete: SetNull, quindi cancellando prima la riconciliazione il DB
@@ -422,50 +480,50 @@ export async function undoScheduleReconciliation({
       await tx.schedulePayment.delete({ where: { id: reconciliation.paymentId } })
     }
 
-    await tx.schedule.update({
-      where: { id: reconciliation.scheduleId },
-      data: {
-        importoPagato: new Prisma.Decimal(nuovoPagato.toFixed(2)),
-        stato: nuovoStato,
-        // La scadenza non è più saldata: la data di pagamento non ha più senso
-        // e la data attesa torna a seguire quella contrattuale (null = coincide)
-        dataPagamento: null,
-        dataAttesa: null,
-        dataAttesaSource: null,
-      },
-    })
+    const stato = await ricalcolaStatoSchedule(tx, reconciliation.scheduleId)
 
     // Nessuna fetta ritirata: niente è cambiato sul movimento, non si tocca
     // (stesso principio del no-op di setEntryAllocations).
-    if (fetteRitirate.count === 0) return
-
-    // Contesto interattivo, asimmetrico rispetto all'ereditarietà, e di
-    // proposito: l'undo è un gesto umano deliberato, e il centro precedente
-    // non è ripristinabile perché non se ne tiene lo storico. Il movimento
-    // conserva quindi il centro che l'ereditarietà gli aveva dato, ma con la
-    // sua provenienza: se era 'supposto' resta 'supposto', quindi nessuna
-    // automazione lo promuoverà a verificato e la prossima riconciliazione lo
-    // rivaluterà da capo.
-    const numeroFette = await aggiornaContoDominante(tx, reconciliation.journalEntryId)
-    if (numeroFette === 0) {
-      // Fette ereditate ritirate e nessuna residua: il movimento torna alla
-      // categorizzazione semplice, accountId resta l'ultimo valorizzato.
-      await tx.journalEntry.update({
-        where: { id: reconciliation.journalEntryId },
-        data: { categorizationSource: 'manual' },
-      })
+    //
+    // Il movimento può anche non esserci più: eliminare una chiusura di cassa
+    // cancella le scritture che ha generato, riconciliate comprese. L'annullo
+    // deve comunque liberare la scadenza — altrimenti resterebbe pagata per
+    // sempre a fronte di un movimento inesistente — ma su una riga cancellata
+    // non si scrive.
+    //
+    // Il centro di costo non viene toccato: contesto interattivo, asimmetrico
+    // rispetto all'ereditarietà e di proposito. L'undo è un gesto umano
+    // deliberato, e il centro precedente non è ripristinabile perché non se ne
+    // tiene lo storico. Il movimento conserva quindi il centro che
+    // l'ereditarietà gli aveva dato, ma con la sua provenienza: se era
+    // 'supposto' resta 'supposto', quindi nessuna automazione lo promuoverà a
+    // verificato e la prossima riconciliazione lo rivaluterà da capo.
+    if (movimento && fetteRitirate.count > 0) {
+      const numeroFette = await aggiornaContoDominante(tx, reconciliation.journalEntryId)
+      if (numeroFette === 0) {
+        // Fette ereditate ritirate e nessuna residua: il movimento torna alla
+        // categorizzazione semplice, accountId resta l'ultimo valorizzato.
+        await tx.journalEntry.update({
+          where: { id: reconciliation.journalEntryId },
+          data: { categorizationSource: 'manual' },
+        })
+      }
     }
+
+    return stato
   })
+
+  if (!esito) return { outcome: 'not_found' }
 
   // La scadenza è di nuovo aperta: se il fornitore ha una storia, la data
   // attesa torna a essere stimata invece di restare secca sulla contrattuale
-  await applicaStimaSuScadenza(reconciliation.scheduleId, venueId)
+  await applicaStimaSuScadenza(esito.scheduleId, venueId)
 
   // L'undo toglie anche un'osservazione dalla storia del fornitore: le stime
   // delle sue altre scadenze aperte non devono più incorporare il dato revocato
-  if (reconciliation.schedule.tipo === 'passiva' && reconciliation.schedule.supplierId) {
-    await ricalcolaStimeFornitore(reconciliation.schedule.supplierId, venueId)
+  if (esito.tipo === 'passiva' && esito.supplierId) {
+    await ricalcolaStimeFornitore(esito.supplierId, venueId)
   }
 
-  return { outcome: 'ok', scheduleStato: nuovoStato }
+  return { outcome: 'ok', scheduleStato: esito.stato }
 }

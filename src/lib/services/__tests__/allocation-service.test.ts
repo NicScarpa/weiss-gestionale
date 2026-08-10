@@ -3,6 +3,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // setEntryAllocations è tutto accesso al database: si mocca prisma e si
 // osserva cosa scrive. $transaction esegue la callback passando il mock
 // stesso come tx (pattern di schedule-reconciliation-service.test.ts).
+//
+// `$queryRaw` c'è perché il movimento viene bloccato con `SELECT … FOR UPDATE`
+// prima di qualunque decisione: qui la riga risulta sempre trovata, e ciò che
+// il lock protegge davvero — due richieste simultanee — sta in
+// `allocation-service.itest.ts`, perché su un Prisma finto non esiste nulla da
+// contendere.
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     journalEntry: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
@@ -14,6 +20,7 @@ vi.mock('@/lib/prisma', () => ({
     },
     account: { findMany: vi.fn() },
     costCenter: { findUnique: vi.fn(), findFirst: vi.fn() },
+    $queryRaw: vi.fn(),
     $transaction: vi.fn(),
   },
 }))
@@ -68,6 +75,74 @@ describe('ripartisciProQuota', () => {
     expect(out.every((f) => f.importo > 0)).toBe(true)
     expect(Math.round(out.reduce((s, f) => s + f.importo, 0) * 100) / 100).toBe(0.5)
   })
+
+  // La funzione dichiara «la somma restituita è SEMPRE esattamente la quota».
+  // Non era vero: l'ultima fetta prendeva il resto, ma se il resto era
+  // negativo — perché gli arrotondamenti delle fette precedenti avevano già
+  // consumato più della quota — veniva buttato via invece che sottratto, e la
+  // somma superava la quota. Il codice non poteva perdere denaro, solo
+  // crearne, fino a circa mezzo centesimo per conto.
+  describe('la somma è esattamente la quota, sempre', () => {
+    const sommaCentesimi = (fette: ReturnType<typeof ripartisciProQuota>) =>
+      fette.reduce((s, f) => s + Math.round(f.importo * 100), 0)
+
+    const pesi = (importi: number[]) =>
+      importi.map((importo, k) => ({ accountId: `conto-${k}`, importo }))
+
+    it('nove conti di peso identico su cinque centesimi', () => {
+      // Ogni fetta esatta varrebbe 5/9 = 0,55… cent, che Math.round porta a 1:
+      // le prime otto ne prendevano 8 su una quota che ne valeva 5, e il resto
+      // di −3 spariva. 0,08 € contro 0,05 €.
+      expect(sommaCentesimi(ripartisciProQuota(pesi([1, 1, 1, 1, 1, 1, 1, 1, 1]), 0.05))).toBe(5)
+    })
+
+    it('undici conti con una riga di coda da un centesimo (il caso della relazione)', () => {
+      const out = ripartisciProQuota(
+        pesi([835.9, 830.73, 806.77, 719.39, 694.6, 547.51, 401.33, 219.16, 214.38, 105.97, 0.01]),
+        731.34
+      )
+      expect(sommaCentesimi(out)).toBe(73134)
+    })
+
+    it('gli stessi conti senza la riga di coda: era già a posto e resta a posto', () => {
+      const out = ripartisciProQuota(
+        pesi([835.9, 830.73, 806.77, 719.39, 694.6, 547.51, 401.33, 219.16, 214.38, 105.97]),
+        731.34
+      )
+      expect(sommaCentesimi(out)).toBe(73134)
+    })
+
+    // Il difetto non si trova generando pesi tutti dello stesso ordine di
+    // grandezza: serve una coda minuscola accanto a molti conti, ed è il
+    // motivo per cui una ricerca su 200.000 combinazioni può dare zero. Il
+    // generatore qui sotto la produce di proposito, con un seme fisso perché
+    // un fallimento resti riproducibile.
+    it('50.000 ripartizioni con una riga di coda: nessuno sbilancio, nessuna fetta negativa', () => {
+      let seme = 20260808
+      const casuale = () => {
+        seme = (seme * 1103515245 + 12345) % 2147483648
+        return seme / 2147483648
+      }
+
+      const sbilanci: string[] = []
+      for (let i = 0; i < 50_000; i++) {
+        const conti = 3 + Math.floor(casuale() * 12)
+        const importi = Array.from({ length: conti }, () =>
+          Math.round((5 + casuale() * 895) * 100) / 100
+        )
+        importi.push(Math.max(0.01, Math.round(casuale() * 100) / 100))
+        const quota = Math.round((50 + casuale() * 2950) * 100) / 100
+
+        const out = ripartisciProQuota(pesi(importi), quota)
+        const scarto = sommaCentesimi(out) - Math.round(quota * 100)
+        if (scarto !== 0 || out.some((f) => f.importo <= 0)) {
+          sbilanci.push(`quota ${quota} su [${importi.join(', ')}] → scarto ${scarto} cent`)
+        }
+      }
+
+      expect(sbilanci.slice(0, 3)).toEqual([])
+    })
+  })
 })
 
 describe('calcolaPesiDaRighe', () => {
@@ -93,6 +168,9 @@ describe('setEntryAllocations', () => {
     vi.mocked(prisma.$transaction).mockImplementation(
       async (cb: unknown) => (cb as (tx: typeof prisma) => Promise<unknown>)(prisma)
     )
+    // Il `SELECT … FOR UPDATE` di bloccaMovimento trova la riga: senza questo
+    // il movimento risulterebbe inesistente in ogni test.
+    vi.mocked(prisma.$queryRaw).mockResolvedValue([{ id: 'entry-1' }] as never)
     // Di default il movimento non ha fette ereditate: la guardia di
     // quadratura (manuali + ereditate ≤ importo utile) è un no-op silenzioso.
     vi.mocked(prisma.journalEntryAllocation.aggregate).mockResolvedValue({

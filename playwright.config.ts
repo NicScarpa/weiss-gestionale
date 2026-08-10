@@ -1,16 +1,48 @@
 import { defineConfig, devices } from '@playwright/test'
+import { config as caricaEnv } from 'dotenv'
+import { PERCORSO_SESSIONE } from './e2e/helpers/sessione'
 
+// Le spec leggono il database direttamente (vedi e2e/helpers/db.ts) e il
+// processo di Playwright non è il server Next: `.env.local` va caricato qui.
+caricaEnv({ path: '.env.local' })
+
+const PORTA = process.env.E2E_PORT ?? '3010'
+const BASE_URL = process.env.E2E_BASE_URL ?? `http://localhost:${PORTA}`
+
+/**
+ * Configurazione della suite end-to-end che gira contro il server di sviluppo.
+ *
+ * La prova offline NON sta qui: il service worker esiste solo nella build di
+ * produzione (`ServiceWorkerRegistration` non lo registra affatto quando
+ * `NODE_ENV !== 'production'`), quindi eseguirla contro `next dev` verificherebbe
+ * l'assenza del service worker invece del comportamento offline. Vive in
+ * `playwright.offline.config.ts`; vedi `e2e/README.md`.
+ */
 export default defineConfig({
   testDir: './e2e',
-  fullyParallel: true,
+  testIgnore: ['**/offline.spec.ts'],
+  globalSetup: './e2e/global-setup.ts',
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
-  reporter: 'html',
+  retries: process.env.CI ? 1 : 0,
+  // I test creano e cancellano le stesse righe (la chiusura di un giorno
+  // preciso, una scadenza con una descrizione precisa): in parallelo si
+  // pesterebbero i piedi e il rosso non direbbe nulla sul prodotto.
+  workers: 1,
+  reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : [['list']],
+  timeout: 60_000,
+  expect: { timeout: 10_000 },
   use: {
-    baseURL: 'http://localhost:3000',
-    trace: 'on-first-retry',
+    baseURL: BASE_URL,
+    trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
+    locale: 'it-IT',
+    timezoneId: 'Europe/Rome',
+    // Sessione aperta una volta sola dal global setup: il login è limitato a
+    // cinque tentativi al minuto per utente e una suite che entra a ogni test
+    // lo esaurisce. `login.spec.ts` la scarta, perché il login è il suo oggetto.
+    storageState: PERCORSO_SESSIONE,
   },
   projects: [
     {
@@ -19,9 +51,11 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:3000',
+    command: `npm run dev -- -p ${PORTA}`,
+    url: BASE_URL,
     reuseExistingServer: !process.env.CI,
-    timeout: 120 * 1000,
+    timeout: 180_000,
+    stdout: 'ignore',
+    stderr: 'pipe',
   },
 })

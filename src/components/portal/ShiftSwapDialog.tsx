@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
 import { it } from 'date-fns/locale'
@@ -101,25 +101,53 @@ export function ShiftSwapDialog({
   shift,
   currentUserId,
 }: ShiftSwapDialogProps) {
+  if (!shift) return null
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ArrowLeftRight className="w-5 h-5 text-foreground" />
+            Richiedi scambio turno
+          </DialogTitle>
+          <DialogDescription>
+            Seleziona un collega con cui scambiare il turno
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Radix smonta il contenuto alla chiusura, e la `key` lo rifà da capo
+            quando si passa da un turno all'altro senza chiudere: il form nasce
+            vuoto invece di essere svuotato da un effetto all'apertura. */}
+        <ModuloScambio
+          key={shift.id}
+          shift={shift}
+          currentUserId={currentUserId}
+          onChiudi={() => onOpenChange(false)}
+        />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ModuloScambio({
+  shift,
+  currentUserId,
+  onChiudi,
+}: {
+  shift: ShiftAssignment
+  currentUserId: string
+  onChiudi: () => void
+}) {
   const [selectedColleague, setSelectedColleague] = useState<string>('')
   const [message, setMessage] = useState('')
 
   const queryClient = useQueryClient()
 
-  // Reset form when dialog opens
-  useEffect(() => {
-    if (open) {
-      queueMicrotask(() => {
-        setSelectedColleague('')
-        setMessage('')
-      })
-    }
-  }, [open])
-
   const { data: colleagues, isLoading: loadingColleagues } = useQuery({
-    queryKey: ['portal-colleagues', shift?.venue?.id],
-    queryFn: () => fetchColleagues(shift?.venue?.id || ''),
-    enabled: open && !!shift?.venue?.id,
+    queryKey: ['portal-colleagues', shift.venue?.id],
+    queryFn: () => fetchColleagues(shift.venue?.id || ''),
+    enabled: !!shift.venue?.id,
   })
 
   const filteredColleagues = colleagues?.filter((c) => c.id !== currentUserId) || []
@@ -130,7 +158,7 @@ export function ShiftSwapDialog({
       queryClient.invalidateQueries({ queryKey: ['shift-swaps'] })
       queryClient.invalidateQueries({ queryKey: ['portal-shifts'] })
       toast.success('Richiesta di scambio inviata!')
-      onOpenChange(false)
+      onChiudi()
     },
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : 'Errore nella richiesta')
@@ -138,7 +166,7 @@ export function ShiftSwapDialog({
   })
 
   const handleSubmit = () => {
-    if (!shift || !selectedColleague) return
+    if (!selectedColleague) return
 
     swapMutation.mutate({
       assignmentId: shift.id,
@@ -147,33 +175,20 @@ export function ShiftSwapDialog({
     })
   }
 
-  if (!shift) return null
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <ArrowLeftRight className="w-5 h-5 text-gray-700" />
-            Richiedi scambio turno
-          </DialogTitle>
-          <DialogDescription>
-            Seleziona un collega con cui scambiare il turno
-          </DialogDescription>
-        </DialogHeader>
-
+    <>
         <div className="space-y-4">
           {/* Dettagli turno */}
-          <div className="p-3 bg-gray-50 rounded-lg space-y-2">
+          <div className="p-3 bg-muted rounded-lg space-y-2">
             <div className="flex items-center gap-2 text-sm">
-              <Calendar className="w-4 h-4 text-gray-400" />
+              <Calendar className="w-4 h-4 text-muted-foreground" />
               <span className="font-medium">
                 {format(parseISO(shift.date), 'EEEE d MMMM yyyy', { locale: it })}
               </span>
             </div>
             <div className="flex items-center gap-3 text-sm">
               <div className="flex items-center gap-1.5">
-                <Clock className="w-4 h-4 text-gray-400" />
+                <Clock className="w-4 h-4 text-muted-foreground" />
                 <span>
                   {formatTime(shift.startTime)} - {formatTime(shift.endTime)}
                 </span>
@@ -210,32 +225,32 @@ export function ShiftSwapDialog({
                 {filteredColleagues.map((colleague) => (
                   <label
                     key={colleague.id}
-                    className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors hover:bg-gray-50 ${
+                    className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors hover:bg-muted ${
                       selectedColleague === colleague.id
-                        ? 'border-gray-900 bg-gray-50'
+                        ? 'border-border bg-muted'
                         : ''
                     }`}
                   >
                     <RadioGroupItem value={colleague.id} className="sr-only" />
                     <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
-                      <User className="w-4 h-4 text-gray-500" />
+                      <User className="w-4 h-4 text-muted-foreground" />
                     </div>
                     <div className="flex-1">
                       <p className="font-medium text-sm">
                         {colleague.firstName} {colleague.lastName}
                       </p>
-                      <p className="text-xs text-gray-500">{colleague.email}</p>
+                      <p className="text-xs text-muted-foreground">{colleague.email}</p>
                     </div>
                     {selectedColleague === colleague.id && (
-                      <Check className="w-5 h-5 text-gray-900" />
+                      <Check className="w-5 h-5 text-foreground" />
                     )}
                   </label>
                 ))}
               </RadioGroup>
             ) : (
-              <div className="p-4 text-center border rounded-lg bg-gray-50">
-                <AlertCircle className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-                <p className="text-sm text-gray-500">
+              <div className="p-4 text-center border rounded-lg bg-muted">
+                <AlertCircle className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
                   Nessun collega disponibile per lo scambio
                 </p>
               </div>
@@ -258,7 +273,7 @@ export function ShiftSwapDialog({
         <DialogFooter>
           <Button
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={onChiudi}
             disabled={swapMutation.isPending}
           >
             Annulla
@@ -275,7 +290,6 @@ export function ShiftSwapDialog({
             Invia richiesta
           </Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </>
   )
 }

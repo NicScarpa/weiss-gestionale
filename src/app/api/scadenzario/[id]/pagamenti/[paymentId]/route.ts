@@ -3,7 +3,8 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
-import { ScheduleStatus } from '@/types/schedule'
+import { ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
+import { bloccaScadenza, ricalcolaStatoSchedule } from '@/lib/scadenzario/stato-schedule'
 
 // DELETE /api/scadenzario/[id]/pagamenti/[paymentId] - Elimina pagamento
 export async function DELETE(
@@ -22,65 +23,56 @@ export async function DELETE(
       return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
-    // Verifica esistenza scadenza
-    const schedule = await prisma.schedule.findFirst({
-      where: { id },
-      select: {
-        id: true,
-        venueId: true,
-        importoTotale: true,
-        stato: true,
-      },
+    // Cancellazione e ricalcolo nella stessa transazione, con la scadenza
+    // bloccata: la terza variante della macchina a stati viveva qui, e un
+    // pagamento cancellato mentre ne entrava un altro lasciava l'importo
+    // pagato disallineato dai pagamenti realmente registrati.
+    const esito = await prisma.$transaction(async (tx) => {
+      const schedule = await bloccaScadenza(tx, id)
+      if (!schedule) return { errore: 'scadenza' } as const
+
+      const payment = await tx.schedulePayment.findFirst({
+        where: { id: paymentId, scheduleId: id },
+        select: { id: true, reconciliation: { select: { id: true } } },
+      })
+      if (!payment) return { errore: 'pagamento' } as const
+
+      // Un pagamento nato da una riconciliazione non si cancella da qui: si
+      // annulla la riconciliazione, che ritira anche le fette ereditate sul
+      // movimento. Cancellarlo qui lascerebbe la riconciliazione a puntare
+      // nel vuoto.
+      if (payment.reconciliation) {
+        return { errore: 'riconciliato', reconciliationId: payment.reconciliation.id } as const
+      }
+
+      await tx.schedulePayment.delete({ where: { id: paymentId } })
+
+      return { stato: (await ricalcolaStatoSchedule(tx, id))! } as const
     })
 
-    if (!schedule) {
-      return NextResponse.json({ error: 'Scadenza non trovata' }, { status: 404 })
+    if ('errore' in esito) {
+      if (esito.errore === 'scadenza') {
+        return NextResponse.json({ error: 'Scadenza non trovata' }, { status: 404 })
+      }
+      if (esito.errore === 'pagamento') {
+        return NextResponse.json({ error: 'Pagamento non trovato' }, { status: 404 })
+      }
+      return NextResponse.json(
+        {
+          error:
+            'Questo pagamento proviene da una riconciliazione: annulla la riconciliazione ' +
+            'per rimuoverlo',
+          reconciliationId: esito.reconciliationId,
+        },
+        { status: 409 }
+      )
     }
 
-    // Verifica esistenza pagamento
-    const payment = await prisma.schedulePayment.findFirst({
-      where: { id: paymentId, scheduleId: id },
-    })
-
-    if (!payment) {
-      return NextResponse.json({ error: 'Pagamento non trovato' }, { status: 404 })
+    // Il fornitore ha una scadenza in meno fra quelle pagate: le stime delle
+    // sue scadenze aperte non devono più incorporare quell'osservazione
+    if (esito.stato.riaperta && esito.stato.tipo === 'passiva' && esito.stato.supplierId) {
+      await ricalcolaStimeFornitore(esito.stato.supplierId, esito.stato.venueId)
     }
-
-    // Elimina pagamento
-    await prisma.schedulePayment.delete({
-      where: { id: paymentId },
-    })
-
-    // Ricalcola totale pagato
-    const aggregatedPayments = await prisma.schedulePayment.aggregate({
-      where: { scheduleId: id },
-      _sum: { importo: true },
-    })
-
-    const nuovoImportoPagato = Number(aggregatedPayments._sum.importo || 0)
-    const importoTotale = Number(schedule.importoTotale)
-
-    // Determina nuovo stato
-    let nuovoStato: string
-    if (nuovoImportoPagato >= importoTotale) {
-      nuovoStato = ScheduleStatus.PAGATA
-    } else if (nuovoImportoPagato > 0) {
-      nuovoStato = ScheduleStatus.PARZIALMENTE_PAGATA
-    } else {
-      nuovoStato = ScheduleStatus.APERTA
-    }
-
-    // Aggiorna schedule
-    await prisma.schedule.update({
-      where: { id },
-      data: {
-        importoPagato: nuovoImportoPagato,
-        stato: nuovoStato,
-        ...(nuovoStato !== ScheduleStatus.PAGATA && {
-          dataPagamento: null,
-        }),
-      },
-    })
 
     await createAuditLog({
       userId: session.user.id,
@@ -90,7 +82,7 @@ export async function DELETE(
       newValues: { scheduleId: id },
     })
 
-    return NextResponse.json({ message: 'Pagamento eliminato' })
+    return NextResponse.json({ message: 'Pagamento eliminato', stato: esito.stato.stato })
   } catch (error) {
     logger.error('Errore DELETE /api/scadenzario/[id]/pagamenti/[paymentId]', error)
     return NextResponse.json(

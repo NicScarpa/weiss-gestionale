@@ -1,19 +1,19 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { withAuth } from '@/lib/api-utils'
 
-// GET /api/payee-suggestions?q=xxx&venueId=xxx
-export async function GET(request: NextRequest) {
+/**
+ * GET /api/payee-suggestions?q=xxx
+ *
+ * Alimenta il campo "Pagato a" delle uscite di cassa, che lo staff compila
+ * durante la chiusura di fine turno: per questo il ruolo resta aperto anche a
+ * loro. La sede però non si prende più dalla query string.
+ */
+export const GET = withAuth(
+  async (request, { venueId }) => {
   try {
-    const session = await auth()
-
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
     const { searchParams } = new URL(request.url)
     const query = searchParams.get('q')?.trim()
-    const venueId = searchParams.get('venueId')
 
     if (!query || query.length < 2) {
       return NextResponse.json({ suggestions: [] })
@@ -44,10 +44,7 @@ export async function GET(request: NextRequest) {
             { payee: { startsWith: '[EXTRA]' } },
             { payee: { startsWith: '[PAGATO]' } },
           ],
-          // Filtra per venue se specificato
-          ...(venueId && {
-            closure: { venueId },
-          }),
+          closure: { venueId },
         },
         select: {
           payee: true,
@@ -96,4 +93,6 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+  },
+  { roles: ['admin', 'manager', 'staff'], venueScoped: true }
+)

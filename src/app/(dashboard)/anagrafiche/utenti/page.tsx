@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -17,9 +18,6 @@ export default function UtentiPage() {
   const { data: session, status } = useSession()
   const currentUserRole = (session?.user?.role as UserRole) || 'staff'
 
-  const [users, setUsers] = useState<UserData[]>([])
-  const [filteredUsers, setFilteredUsers] = useState<UserData[]>([])
-  const [isLoading, setIsLoading] = useState(true)
   const [filters, setFilters] = useState<UserFiltersValue>({
     search: '',
     role: 'all',
@@ -36,29 +34,37 @@ export default function UtentiPage() {
   }, [session, status, currentUserRole, router])
 
   // Carica utenti
-  const fetchUsers = useCallback(async () => {
-    try {
-      setIsLoading(true)
+  const {
+    data: risposta,
+    isPending,
+    isFetching,
+    isError,
+    refetch: fetchUsers,
+  } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryKey: ['users', 'con-inattivi'],
+    enabled: !!session?.user && canAccessUserManagement(currentUserRole),
+    queryFn: async (): Promise<{ data?: UserData[] }> => {
       const response = await fetch('/api/users?includeInactive=true')
       if (!response.ok) throw new Error('Errore caricamento utenti')
-      const data = await response.json()
-      setUsers(data.data || [])
-    } catch {
-      toast.error('Errore nel caricamento degli utenti')
-    } finally {
-      setIsLoading(false)
-    }
-  }, [])
+      return response.json()
+    },
+  })
 
   useEffect(() => {
-    if (session?.user && canAccessUserManagement(currentUserRole)) {
-      fetchUsers()
+    if (isError) {
+      toast.error('Errore nel caricamento degli utenti')
     }
-  }, [session, currentUserRole, fetchUsers])
+  }, [isError])
+
+  const users = useMemo(() => risposta?.data || [], [risposta])
+  const isLoading = isPending || isFetching
 
   // Applica filtri
-  useEffect(() => {
-    let result = [...users]
+  const filteredUsers = useMemo(() => {
+    let result = users
 
     // Filtro ricerca
     if (filters.search) {
@@ -83,7 +89,7 @@ export default function UtentiPage() {
       )
     }
 
-    setFilteredUsers(result)
+    return result
   }, [users, filters])
 
   const handleResetPassword = async (userId: string) => {

@@ -45,13 +45,16 @@ function deleteCon() {
   return { request, context: { params: Promise.resolve({ id: 'entry-1' }) } }
 }
 
-/** Il movimento esistente: conto libero, centro di produzione */
+/** Il movimento esistente: conto libero, centro di produzione, non suddiviso */
 function movimentoEsistente(overrides: Record<string, unknown> = {}) {
   return {
     id: 'entry-1',
     closureId: null,
     accountId: 'conto-vecchio',
     costCenterId: 'cc-produzione',
+    // Nessuna fetta: il cambio di conto è consentito. Con fette presenti la
+    // route risponde 409, perché il conto lo governa la suddivisione.
+    _count: { allocations: 0 },
     ...overrides,
   }
 }

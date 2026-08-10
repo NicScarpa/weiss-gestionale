@@ -163,16 +163,60 @@ async function updateRigheConti(id: string, data: RigheContiPayload): Promise<un
 
 export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const queryClient = useQueryClient()
-  const [selectedAccountId, setSelectedAccountId] = useState<string | undefined>(undefined)
-  // Nessun costCenterId salvato sulla fattura: la scelta è effimera, fatta
+  // Finché l'utente non sceglie, vale il conto della fattura: è un valore
+  // derivato dal dato caricato, non uno stato da riallineare con un effetto.
+  // `null` significa «non ha ancora scelto»; `undefined` è una scelta vera —
+  // «nessun conto» — perché è così che AccountCombobox esprime il vuoto.
+  //
+  // Le scelte viaggiano insieme all'id della fattura su cui sono state fatte.
+  // Oggi il componente si rimonta a ogni cambio di `invoiceId` (unico punto
+  // d'ingresso: /fatture/[id]) e la distinzione non è osservabile, ma la
+  // garanzia «non sovrascrivere mai una scelta manuale, e non ereditarla dalla
+  // fattura precedente» deve valere per il campo, non dipendere da come si
+  // naviga oggi: se comparisse un link «fattura successiva» fra due pagine
+  // /fatture/[id], il centro scelto per una resterebbe appiccicato all'altra.
+  // Portare l'id dentro lo stato lo risolve durante il render, dove prima
+  // serviva un effetto che azzerava tutto — e un render in più a ogni cambio.
+  //
+  // `conto: null` significa «non ha ancora scelto»; `undefined` è una scelta
+  // vera — «nessun conto» — perché è così che AccountCombobox esprime il vuoto.
+  // Il centro invece non è salvato sulla fattura: la scelta è effimera, fatta
   // qui subito prima della registrazione (non c'è un PUT che la persiste).
-  const [costCenterId, setCostCenterId] = useState<string | undefined>(undefined)
-  const [costCenterTouched, setCostCenterTouched] = useState(false)
+  const nessunaScelta = {
+    invoiceId,
+    conto: null as string | null | undefined,
+    centro: undefined as string | undefined,
+    centroToccato: false,
+  }
+  const [scelte, setScelte] = useState(nessunaScelta)
+  const correnti = scelte.invoiceId === invoiceId ? scelte : nessunaScelta
 
   const { data: invoice, isLoading, error } = useQuery({
     queryKey: ['invoice', invoiceId],
     queryFn: () => fetchInvoice(invoiceId),
+    // La categorizzazione delle righe non è più attesa dall'import: la
+    // fattura si salva subito e le imputazioni arrivano poco dopo. Finché non
+    // ce n'è nemmeno una, si ricontrolla ogni pochi secondi così compaiono da
+    // sole, senza che nessuno debba ricaricare la pagina.
+    //
+    // Il controllo si ferma da solo: se dopo un minuto non è arrivato niente,
+    // vuol dire che non arriverà (nessun conto di costo configurato, chiave
+    // assente, servizio giù) e continuare a interrogare il server non serve.
+    refetchInterval: (query) => {
+      const dati = query.state.data as Invoice | undefined
+      const righe = dati?.parsedData?.dettaglioLinee
+      if (!righe?.length) return false
+      if (righe.some((r) => r.imputazione)) return false
+      if (query.state.dataUpdateCount > 20) return false
+      return 3000
+    },
   })
+
+  // Conto della fattura finché l'utente non ne sceglie un altro. Il confronto
+  // è con `null` e non con `??`: `undefined` è una scelta («nessun conto») e
+  // non deve far ricadere il campo sul conto salvato.
+  const selectedAccountId =
+    correnti.conto !== null ? correnti.conto : invoice?.account?.id
 
   // Stessa chiave di query usata internamente da AccountCombobox
   // (types=['COSTO']): nessuna fetch duplicata, i dati servono qui sia per
@@ -191,38 +235,15 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const { data: costCenters = [] } = useCostCenters()
   const costCenterFieldState = resolveCostCenterField({
     rule: costCenterRule,
-    currentValue: costCenterId,
-    hasManualSelection: costCenterTouched,
+    currentValue: correnti.centro,
+    hasManualSelection: correnti.centroToccato,
     costCenters,
   })
 
-  useEffect(() => {
-    if (costCenterFieldState.value !== costCenterId) {
-      setCostCenterId(costCenterFieldState.value)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [costCenterFieldState.value])
-
-  // Il componente oggi viene sempre rimontato quando cambia invoiceId (unico
-  // punto d'ingresso: /fatture/[id]), quindi questo reset non è ancora
-  // osservabile. Lo aggiungiamo comunque perché la garanzia "non sovrascrivere
-  // mai una scelta manuale" deve valere per il campo, non dipendere dalla
-  // navigazione attuale: se in futuro comparisse un link "fattura successiva"
-  // tra due pagine /fatture/[id], senza questo reset il centro scelto per una
-  // fattura resterebbe preselezionato/bloccato su quella successiva.
-  useEffect(() => {
-    setCostCenterId(undefined)
-    setCostCenterTouched(false)
-  }, [invoiceId])
-
-  // Set initial account when invoice loads
-  useEffect(() => {
-    if (invoice?.account) {
-      queueMicrotask(() => setSelectedAccountId(invoice.account!.id))
-    } else if (invoice) {
-      queueMicrotask(() => setSelectedAccountId(undefined))
-    }
-  }, [invoice])
+  // Il valore risolto *è* il valore del campo: prima veniva ricopiato nello
+  // stato da un effetto, che a ogni cambio di conto faceva ridisegnare il
+  // componente una seconda volta per arrivare allo stesso numero.
+  const costCenterId = costCenterFieldState.value
 
   const updateMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => updateInvoice(invoiceId, data),
@@ -257,7 +278,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   })
 
   const handleAccountChange = (accountId: string | undefined) => {
-    setSelectedAccountId(accountId)
+    setScelte({ ...correnti, invoiceId, conto: accountId })
     updateMutation.mutate({ accountId: accountId ?? null })
   }
 
@@ -459,8 +480,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               <CostCenterSelect
                 value={costCenterId}
                 onChange={(value) => {
-                  setCostCenterTouched(true)
-                  setCostCenterId(value)
+                  setScelte({ ...correnti, invoiceId, centro: value, centroToccato: true })
                 }}
                 required={isCostCenterRequired}
                 disabled={!canEdit}

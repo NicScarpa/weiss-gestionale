@@ -19,6 +19,12 @@ const PUBLIC_PREFIXES = [
   // con il segreto CRON_SECRET nell'header Authorization.
   '/api/attendance/auto-clockout',
   '/api/promemoria-timbratura/cron',
+  // La pagina «Sei offline» non guarda nessun dato e viene scaricata dal
+  // service worker mentre si installa — cioè al primo caricamento, che per
+  // tutti avviene su /login, senza sessione. Protetta, in cache finirebbe la
+  // pagina di login al posto suo, e senza rete l'applicazione mostrerebbe un
+  // form da compilare invece di dire che manca la connessione.
+  '/offline',
 ]
 
 function isPathAllowed(pathname: string, prefixes: string[]) {

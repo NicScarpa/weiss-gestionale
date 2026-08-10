@@ -2,15 +2,22 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Il service è tutto accesso al database: si mocka prisma e si osserva cosa
 // scrive. $transaction esegue la callback passando il mock stesso come tx.
+// `$queryRaw` copre i lock di riga (SELECT ... FOR UPDATE) che il service
+// prende su movimento e scadenza prima di decidere.
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     schedule: { findFirst: vi.fn(), update: vi.fn(), count: vi.fn() },
     journalEntry: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     costCenter: { findUnique: vi.fn(), findFirst: vi.fn() },
     account: { findMany: vi.fn() },
-    scheduleReconciliation: { findFirst: vi.fn(), create: vi.fn(), delete: vi.fn() },
-    schedulePayment: { create: vi.fn(), delete: vi.fn() },
-    electronicInvoice: { update: vi.fn(), findUnique: vi.fn() },
+    scheduleReconciliation: {
+      findFirst: vi.fn(),
+      create: vi.fn(),
+      delete: vi.fn(),
+      aggregate: vi.fn(),
+    },
+    schedulePayment: { create: vi.fn(), delete: vi.fn(), aggregate: vi.fn() },
+    electronicInvoice: { update: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
     invoiceLineAccount: { findMany: vi.fn(), createMany: vi.fn() },
     journalEntryAllocation: {
       findMany: vi.fn(),
@@ -18,6 +25,7 @@ vi.mock('@/lib/prisma', () => ({
       deleteMany: vi.fn(),
       aggregate: vi.fn(),
     },
+    $queryRaw: vi.fn(),
     $transaction: vi.fn(),
   },
 }))
@@ -52,16 +60,63 @@ const CENTRO_WEISS = { id: 'cc-weiss', code: 'WEISS', isDefault: false, isActive
 function scadenza(overrides: Record<string, unknown> = {}) {
   return {
     id: 'sched-1',
+    venueId: VENUE,
     tipo: 'passiva',
     stato: 'aperta',
     importoTotale: new Prisma.Decimal(100),
     importoPagato: new Prisma.Decimal(0),
     dataPagamento: null,
+    dataAttesaSource: null,
     invoiceId: null,
     supplierId: 'sup-1',
     dataScadenza: new Date('2026-07-20'),
     ...overrides,
   }
+}
+
+/**
+ * Pagamenti finti in memoria: `ricalcolaStatoSchedule` ricava l'importo pagato
+ * dalla somma dei pagamenti registrati, quindi un mock statico dell'aggregate
+ * risponderebbe lo stesso valore prima e dopo la creazione e lo stato uscirebbe
+ * sempre sbagliato. Questa manciata di righe fa da tabella `schedule_payments`.
+ */
+const pagamentiFinti: { id: string; importo: number; dataPagamento: Date }[] = []
+
+function collegaPagamentiFinti() {
+  pagamentiFinti.length = 0
+
+  vi.mocked(prisma.schedulePayment.create).mockImplementation((async (args: {
+    data: { importo: Prisma.Decimal; dataPagamento: Date }
+  }) => {
+    const creato = {
+      id: `pay-${pagamentiFinti.length + 1}`,
+      importo: Number(args.data.importo),
+      dataPagamento: args.data.dataPagamento,
+    }
+    pagamentiFinti.push(creato)
+    return { id: 'pay-1' }
+  }) as never)
+
+  vi.mocked(prisma.schedulePayment.delete).mockImplementation((async () => {
+    pagamentiFinti.length = 0
+    return { id: 'pay-1' }
+  }) as never)
+
+  vi.mocked(prisma.schedulePayment.aggregate).mockImplementation((async () => ({
+    _sum: {
+      importo:
+        pagamentiFinti.length === 0
+          ? null
+          : new Prisma.Decimal(pagamentiFinti.reduce((t, p) => t + p.importo, 0)),
+    },
+    _max: {
+      dataPagamento:
+        pagamentiFinti.length === 0
+          ? null
+          : pagamentiFinti.reduce((max, p) => (p.dataPagamento > max ? p.dataPagamento : max),
+              pagamentiFinti[0].dataPagamento),
+    },
+  })) as never)
 }
 
 function movimento(overrides: Record<string, unknown> = {}) {
@@ -80,13 +135,31 @@ beforeEach(() => {
   vi.mocked(prisma.$transaction).mockImplementation(
     async (cb: unknown) => (cb as (tx: typeof prisma) => Promise<unknown>)(prisma)
   )
-  vi.mocked(prisma.schedulePayment.create).mockResolvedValue(
-    { id: 'pay-1' } as never
-  )
+  // I lock di riga trovano sempre la riga: i casi "non esiste" si esercitano
+  // dalla findFirst, che è dove il service legge davvero i campi.
+  vi.mocked(prisma.$queryRaw).mockResolvedValue([{ id: 'riga' }] as never)
+  collegaPagamentiFinti()
   vi.mocked(prisma.scheduleReconciliation.create).mockResolvedValue(
     { id: 'rec-1' } as never
   )
   vi.mocked(prisma.scheduleReconciliation.findFirst).mockResolvedValue(null)
+  // Default: nessuna quota già impegnata sul movimento, quindi la sua
+  // capienza coincide con l'importo.
+  vi.mocked(prisma.scheduleReconciliation.aggregate).mockResolvedValue({
+    _sum: { amount: null },
+  } as never)
+  vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(null)
+  vi.mocked(prisma.schedule.count).mockResolvedValue(0 as never)
+  // Default pensato per l'annullo, che parte sempre da una scadenza saldata
+  // con la data attesa riallineata al movimento. I test di riconciliazione
+  // sovrascrivono questo mock con la scadenza che serve a loro.
+  vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+    scadenza({
+      stato: 'pagata',
+      importoPagato: new Prisma.Decimal(100),
+      dataAttesaSource: 'riconciliazione',
+    }) as never
+  )
   // Default: nessuna fetta ereditata da ritirare, così i test che non
   // riguardano l'ereditarietà non devono preoccuparsene.
   vi.mocked(prisma.journalEntryAllocation.deleteMany).mockResolvedValue({ count: 0 } as never)
@@ -265,17 +338,19 @@ describe('reconcileScheduleWithEntry - provenienza e ricalcolo', () => {
   })
 
   it("l'undo su una scadenza senza fornitore non ricalcola nulla", async () => {
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      scadenza({
+        stato: 'pagata',
+        importoPagato: new Prisma.Decimal(100),
+        dataAttesaSource: 'riconciliazione',
+        supplierId: null,
+      }) as never
+    )
     vi.mocked(prisma.scheduleReconciliation.findFirst).mockResolvedValue({
       id: 'rec-1',
       scheduleId: 'sched-1',
       paymentId: 'pay-1',
       amount: new Prisma.Decimal(100),
-      schedule: {
-        importoTotale: new Prisma.Decimal(100),
-        importoPagato: new Prisma.Decimal(100),
-        tipo: 'passiva',
-        supplierId: null,
-      },
     } as never)
 
     await undoScheduleReconciliation({ reconciliationId: 'rec-1', venueId: VENUE })
@@ -319,8 +394,11 @@ describe('reconcileScheduleWithEntry - ereditarietà pro-quota dalla fattura (Fa
     })
 
     expect(esito.outcome).toBe('ok')
+    // Il where include ora lo stato: eredita solo ciò che un umano ha
+    // confermato (F2-ALL-001). Questa asserzione documentava il contratto
+    // precedente, in cui una proposta dell'AI pesava quanto una conferma.
     expect(prisma.invoiceLineAccount.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { invoiceId: 'inv-1' } })
+      expect.objectContaining({ where: { invoiceId: 'inv-1', stato: 'confermata' } })
     )
     expect(prisma.journalEntryAllocation.createMany).toHaveBeenCalledWith({
       data: [
@@ -740,5 +818,87 @@ describe('undoScheduleReconciliation - ritiro delle fette ereditate (Fase 3)', (
     expect(esito.outcome).toBe('ok')
     expect(prisma.journalEntryAllocation.findMany).not.toHaveBeenCalled()
     expect(prisma.journalEntry.update).not.toHaveBeenCalled()
+  })
+})
+
+describe("reconcileScheduleWithEntry - solo le imputazioni confermate ereditano", () => {
+  it("un'ipotesi dell'AI mai confermata non riscrive il conto del movimento", async () => {
+    // Difetto F2-ALL-001 dell'audit W5-F2, il più grave dell'area: esisteva un
+    // percorso interamente automatico dall'ipotesi del modello fino al conto su
+    // cui il budget conta i soldi, senza un essere umano in mezzo.
+    //
+    // Fattura mista da 1.200 €, l'AI ipotizza 700 «Pulizie» e 500 «Alimentari»,
+    // nessuno apre la fattura. Due settimane dopo si riconcilia il bonifico: da
+    // quel momento il movimento risulta imputato a Pulizie, e il budget ci
+    // manda sopra TUTTI e 1.200 €. L'audit registrava la riconciliazione ma non
+    // la riscrittura del conto, e il valore precedente non era salvato da
+    // nessuna parte: un difetto che cancellava le proprie tracce.
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      scadenza({ invoiceId: 'inv-1', importoTotale: new Prisma.Decimal(1200) }) as never
+    )
+    vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue(
+      movimento({ creditAmount: new Prisma.Decimal(1200) }) as never
+    )
+    vi.mocked(prisma.electronicInvoice.findUnique).mockResolvedValue({
+      lineItems: [{ numeroLinea: 1 }, { numeroLinea: 2 }],
+    } as never)
+    // Il database restituisce solo le confermate, perché il filtro è nel where:
+    // se il codice sotto test non lo passa, questo mock non se ne accorge — per
+    // questo il where viene verificato esplicitamente più sotto.
+    vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([] as never)
+    vi.mocked(prisma.journalEntryAllocation.findMany).mockResolvedValue([] as never)
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: 'sched-1',
+      journalEntryId: 'entry-1',
+      venueId: VENUE,
+      userId: 'user-1',
+    })
+
+    // La riconciliazione va a buon fine: è l'ereditarietà che si astiene.
+    expect(esito.outcome).toBe('ok')
+
+    // La query deve chiedere SOLO le confermate.
+    expect(prisma.invoiceLineAccount.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ invoiceId: 'inv-1', stato: 'confermata' }),
+      })
+    )
+
+    // E soprattutto: il conto del movimento non è stato riscritto.
+    const riscritture = vi
+      .mocked(prisma.journalEntry.update)
+      .mock.calls.filter((c) => 'accountId' in ((c[0] as { data?: object })?.data ?? {}))
+    expect(riscritture).toHaveLength(0)
+  })
+
+  it('se solo una parte delle righe è confermata, l ereditarietà si astiene', async () => {
+    // La guardia esistente conta le imputazioni contro le righe della fattura.
+    // Contava le righe senza guardarne lo stato, quindi una fattura interamente
+    // «gialla» la superava. Col filtro, una fattura mezza confermata non arriva
+    // al conteggio pieno e l'astensione scatta da sé.
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      scadenza({ invoiceId: 'inv-1', importoTotale: new Prisma.Decimal(1000) }) as never
+    )
+    vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue(
+      movimento({ creditAmount: new Prisma.Decimal(1000) }) as never
+    )
+    vi.mocked(prisma.electronicInvoice.findUnique).mockResolvedValue({
+      lineItems: [{ numeroLinea: 1 }, { numeroLinea: 2 }],
+    } as never)
+    vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([
+      { accountId: 'conto-a', importo: new Prisma.Decimal(700) },
+    ] as never)
+    vi.mocked(prisma.journalEntryAllocation.findMany).mockResolvedValue([] as never)
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: 'sched-1',
+      journalEntryId: 'entry-1',
+      venueId: VENUE,
+      userId: 'user-1',
+    })
+
+    expect(esito.outcome).toBe('ok')
+    expect(prisma.journalEntryAllocation.createMany).not.toHaveBeenCalled()
   })
 })

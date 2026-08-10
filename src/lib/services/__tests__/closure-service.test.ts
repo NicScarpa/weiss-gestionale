@@ -14,9 +14,21 @@ vi.mock('@/lib/prisma', () => ({
   },
 }))
 
+// La classe è mockata come classe vera, non come funzione: closure-service la
+// usa in un `instanceof` per distinguere «la chiusura ha già le sue scritture»
+// da un guasto del server, e con un mock qualunque quel ramo non compilerebbe
+// a runtime.
 vi.mock('@/lib/closure-journal-entries', () => ({
   generateJournalEntriesFromClosure: vi.fn(),
   deleteJournalEntriesForClosure: vi.fn(),
+  JournalEntriesAlreadyExistError: class JournalEntriesAlreadyExistError extends Error {
+    constructor(
+      readonly closureId: string,
+      readonly existingEntries: number
+    ) {
+      super('già registrata')
+    }
+  },
 }))
 
 vi.mock('@/lib/budget/alert-generator', () => ({
@@ -154,12 +166,20 @@ describe('validateClosure — centro di costo obbligatorio in approvazione', () 
       costCenterId: 'weiss-id',
     } as unknown as Awaited<ReturnType<typeof prisma.dailyClosure.findUnique>>)
 
+    // La presa in carico è un aggiornamento condizionato allo stato INVIATA:
+    // `count: 1` dice che questa richiesta ha vinto la corsa e può procedere.
     const txUpdate = vi
       .fn()
       .mockResolvedValue({ id: 'closure-1', status: 'VALIDATED', validatedAt: new Date() })
     vi.mocked(prisma.$transaction).mockImplementation((async (
       fn: (tx: unknown) => Promise<unknown>
-    ) => fn({ dailyClosure: { update: txUpdate } })) as typeof prisma.$transaction)
+    ) =>
+      fn({
+        dailyClosure: {
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+          findUniqueOrThrow: txUpdate,
+        },
+      })) as typeof prisma.$transaction)
     vi.mocked(generateJournalEntriesFromClosure).mockResolvedValue({
       entriesCreated: 5,
       totalDebits: 100,
@@ -193,7 +213,13 @@ describe('validateClosure — centro di costo obbligatorio in approvazione', () 
     })
     vi.mocked(prisma.$transaction).mockImplementation((async (
       fn: (tx: unknown) => Promise<unknown>
-    ) => fn({ dailyClosure: { update: txUpdate } })) as typeof prisma.$transaction)
+    ) =>
+      fn({
+        dailyClosure: {
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+          findUniqueOrThrow: txUpdate,
+        },
+      })) as typeof prisma.$transaction)
     vi.mocked(deleteJournalEntriesForClosure).mockResolvedValue(0)
 
     const result = await validateClosure({

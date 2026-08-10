@@ -1,8 +1,10 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select,
@@ -11,10 +13,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Users, UserPlus, Plus, Trash2, Calendar, RefreshCw, Banknote } from 'lucide-react'
+import {
+  Users,
+  UserPlus,
+  Plus,
+  Trash2,
+  Calendar,
+  RefreshCw,
+  Banknote,
+  AlertTriangle,
+  LogOut,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { formatCurrency } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 import { Badge } from '@/components/ui/badge'
 import {
   Tooltip,
@@ -107,6 +119,25 @@ interface AttendanceSectionProps {
   className?: string
   closureDate?: string // Data della chiusura per caricare turni schedulati
   venueId?: string
+  /** Avvisa il form di quante timbrature risultano ancora aperte. */
+  onSessioniAperteChange?: (count: number) => void
+}
+
+// Timbratura ancora aperta: la chiusura termina il servizio, quindi prima
+// dell'invio l'operatore conferma l'orario di uscita di chi risulta dentro.
+interface TimbraturaAperta {
+  userId: string
+  firstName: string
+  lastName: string
+  dentroDalle: string
+  finePrevista: string | null
+}
+
+async function fetchTimbratureAperte(date: string): Promise<TimbraturaAperta[]> {
+  const res = await fetch(`/api/attendance/timbrature-aperte?date=${date}`)
+  if (!res.ok) return []
+  const data = await res.json()
+  return data.data || []
 }
 
 // Fetch turni schedulati per data
@@ -120,13 +151,21 @@ async function fetchScheduledShifts(date: string, venueId?: string): Promise<Sch
   return data.data || []
 }
 
-// Fetch presenze effettive per data
+// Fetch presenze effettive per data.
+//
+// Un errore qui non si può ingoiare: senza queste ore il caricamento dai
+// turni ripiega su quelle pianificate, e nella chiusura finirebbero ore
+// diverse da quelle timbrate senza che nessuno se ne accorga.
 async function fetchActualAttendance(date: string, venueId?: string): Promise<ActualAttendance[]> {
   const params = new URLSearchParams({ date })
   if (venueId) params.append('venueId', venueId)
 
   const res = await fetch(`/api/attendance/daily-summary?${params}`)
-  if (!res.ok) return []
+  if (!res.ok) {
+    throw new Error(
+      'Non è stato possibile leggere le ore timbrate: le ore proposte sono quelle pianificate.'
+    )
+  }
   const data = await res.json()
 
   // Trasforma il formato API nel nostro tipo
@@ -152,8 +191,75 @@ export function AttendanceSection({
   className,
   closureDate,
   venueId,
+  onSessioniAperteChange,
 }: AttendanceSectionProps) {
   const [hasLoadedFromSchedule, setHasLoadedFromSchedule] = useState(false)
+  const queryClient = useQueryClient()
+
+  // Timbrature ancora aperte: la chiusura non si invia finché ci sono.
+  const { data: timbratureAperte } = useQuery({
+    queryKey: ['timbrature-aperte', closureDate],
+    queryFn: () => fetchTimbratureAperte(closureDate!),
+    enabled: !!closureDate && !disabled,
+    refetchInterval: 60_000,
+  })
+  // Memoizzato: senza, `?? []` produce un array nuovo a ogni render e tutto
+  // ciò che dipende da `aperte` riparte ogni volta. Grazie alla condivisione
+  // strutturale di TanStack Query l'identità cambia solo quando cambia davvero
+  // l'elenco delle sessioni aperte.
+  const aperte = useMemo(() => timbratureAperte ?? [], [timbratureAperte])
+
+  // Solo le correzioni dell'operatore: la proposta non si tiene in stato.
+  const [orariUscita, setOrariUscita] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    onSessioniAperteChange?.(aperte.length)
+  }, [aperte.length, onSessioniAperteChange])
+
+  // L'orario proposto è "adesso": inviare la chiusura è la fine del servizio.
+  // Per chi è andato via prima senza timbrare, l'operatore lo corregge.
+  // Si ricalcola quando cambia l'elenco delle sessioni aperte, non a ogni
+  // render: le caselle non devono muoversi sotto le mani dell'operatore.
+  const proposteUscita = useMemo(() => {
+    const adesso = new Date().toTimeString().slice(0, 5)
+    return Object.fromEntries(aperte.map((sessione) => [sessione.userId, adesso]))
+  }, [aperte])
+
+  // Ciò che si vede è anche ciò che si invia: prima la casella poteva mostrare
+  // un orario e la richiesta partire con un altro, calcolato al momento.
+  const orarioUscitaDi = (userId: string) => orariUscita[userId] ?? proposteUscita[userId] ?? ''
+
+  const confermaUscite = useMutation({
+    mutationFn: async () => {
+      const fallback = new Date().toTimeString().slice(0, 5)
+      const res = await fetch('/api/attendance/timbrature-aperte', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: closureDate,
+          uscite: aperte.map((sessione) => ({
+            userId: sessione.userId,
+            orario: orarioUscitaDi(sessione.userId) || fallback,
+          })),
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || 'Errore nella registrazione delle uscite')
+      }
+      return data
+    },
+    onSuccess: (data) => {
+      toast.success(data.message || 'Uscite registrate')
+      queryClient.invalidateQueries({ queryKey: ['timbrature-aperte', closureDate] })
+      queryClient.invalidateQueries({
+        queryKey: ['actual-attendance', closureDate, venueId],
+      })
+    },
+    onError: (err: Error) => {
+      toast.error('Uscite non registrate', { description: err.message })
+    },
+  })
 
   // Query per turni schedulati
   const { data: scheduledShifts } = useQuery({
@@ -163,10 +269,15 @@ export function AttendanceSection({
   })
 
   // Query per presenze effettive (timbrature)
-  const { data: actualAttendance } = useQuery({
+  const {
+    data: actualAttendance,
+    isError: erroreOreTimbrate,
+    error: erroreOreTimbrateDettaglio,
+  } = useQuery({
     queryKey: ['actual-attendance', closureDate, venueId],
     queryFn: () => fetchActualAttendance(closureDate!, venueId),
     enabled: !!closureDate && !hasLoadedFromSchedule,
+    retry: 1,
   })
 
   // Carica presenze da turni schedulati e timbrature effettive
@@ -181,7 +292,10 @@ export function AttendanceSection({
       // Cerca dati timbratura effettiva per questo utente
       const actual = actualAttendance?.find((a) => a.userId === shift.userId)
 
-      // Determina ore effettive: usa timbrature se disponibili, altrimenti schedulate
+      // Determina ore effettive: usa timbrature se disponibili, altrimenti
+      // schedulate. Chi è ancora dentro (o in pausa) non ha ore definitive:
+      // si tengono le pianificate, ma l'operatore deve saperlo — è lo stesso
+      // caso che il riquadro delle timbrature aperte gli chiede di chiudere.
       let effectiveHours = shift.scheduledHours
       let statusCode = 'P'
 
@@ -195,6 +309,8 @@ export function AttendanceSection({
           effectiveHours = 0
         }
       }
+      const oreProvvisorie =
+        actual?.status === 'CLOCKED_IN' || actual?.status === 'ON_BREAK'
 
       return {
         userId: shift.userId,
@@ -208,14 +324,41 @@ export function AttendanceSection({
         shiftCode: shift.shiftCode,
         shiftName: shift.shiftName,
         shiftColor: shift.shiftColor,
+        notes: oreProvvisorie
+          ? 'Ore pianificate: al caricamento non aveva ancora timbrato l\'uscita'
+          : undefined,
       }
     })
+
+    const provvisori = newAttendance.filter((r) => r.notes).length
+    if (provvisori > 0) {
+      toast.warning(
+        provvisori === 1
+          ? 'Per una persona valgono le ore pianificate: non aveva ancora timbrato l\'uscita'
+          : `Per ${provvisori} persone valgono le ore pianificate: non avevano ancora timbrato l'uscita`,
+        { description: 'Conferma le uscite qui sopra e ricarica per avere le ore vere.' }
+      )
+    }
 
     onChange(newAttendance)
     setHasLoadedFromSchedule(true)
   }, [scheduledShifts, actualAttendance, onChange])
 
-  // Pre-popola da turni schedulati se non ci sono presenze e ci sono turni
+  // Pre-popola da turni schedulati se non ci sono presenze e ci sono turni.
+  //
+  // Deroga dichiarata, al posto del `queueMicrotask` che stava qui e che
+  // nascondeva questa stessa violazione senza lasciare traccia cercabile.
+  // Nessuno dei tre rimedi usati altrove si applica: non è un caricamento dati
+  // (turni e timbrature arrivano già da due useQuery), non è uno stato derivato
+  // da una prop (l'elenco presenze vive nel genitore, qui si può solo
+  // notificarlo con onChange), e non è un form da rimontare con una `key`.
+  // `loadFromSchedule` fa due cose insieme: avvisa il genitore e registra
+  // localmente che il caricamento è avvenuto — ed è quel secondo `setState` che
+  // la regola vede. La cascata di render resta comunque, perché `onChange`
+  // aggiorna lo stato del genitore: toglierla richiede spostare
+  // `hasLoadedFromSchedule` accanto ad `attendance` nel form della chiusura,
+  // che è una modifica di disegno da concordare, non un rifacimento locale.
+  // Vedi audit/DEBITO-set-state-in-effect.md.
   useEffect(() => {
     if (
       scheduledShifts &&
@@ -223,7 +366,8 @@ export function AttendanceSection({
       attendance.length === 0 &&
       !hasLoadedFromSchedule
     ) {
-      queueMicrotask(() => loadFromSchedule())
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      loadFromSchedule()
     }
   }, [scheduledShifts, attendance.length, hasLoadedFromSchedule, loadFromSchedule])
 
@@ -386,6 +530,77 @@ export function AttendanceSection({
   return (
     <TooltipProvider>
     <div className={`space-y-4 ${className || ''}`}>
+      {/* Timbrature ancora aperte: la chiusura termina il servizio */}
+      {closureDate && !disabled && aperte.length > 0 && (
+        <div className="space-y-3 p-3 bg-amber-50 border border-amber-300 rounded-lg">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="text-sm text-amber-800">
+              <p className="font-medium">
+                {aperte.length === 1
+                  ? 'Una persona risulta ancora dentro'
+                  : `${aperte.length} persone risultano ancora dentro`}
+              </p>
+              <p>
+                Inviare la chiusura termina il servizio: conferma l&apos;orario di
+                uscita di ciascuno. Se qualcuno è andato via prima senza timbrare,
+                correggi l&apos;orario proposto.
+              </p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {aperte.map((sessione) => (
+              <div key={sessione.userId} className="flex items-center gap-3">
+                <span className="flex-1 text-sm">
+                  {sessione.firstName} {sessione.lastName}
+                  <span className="text-muted-foreground">
+                    {' '}— dentro dalle {sessione.dentroDalle}
+                    {sessione.finePrevista
+                      ? `, fine turno ${sessione.finePrevista}`
+                      : ''}
+                  </span>
+                </span>
+                <Input
+                  type="time"
+                  className="w-28"
+                  value={orarioUscitaDi(sessione.userId)}
+                  onChange={(e) =>
+                    setOrariUscita((prev) => ({
+                      ...prev,
+                      [sessione.userId]: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+            ))}
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => confermaUscite.mutate()}
+            disabled={confermaUscite.isPending}
+            className="gap-1 bg-amber-600 text-white hover:bg-amber-700"
+          >
+            <LogOut className="h-4 w-4" />
+            {confermaUscite.isPending ? 'Registrazione…' : 'Conferma le uscite'}
+          </Button>
+        </div>
+      )}
+
+      {/* Ore timbrate non leggibili: le ore proposte non sono quelle vere */}
+      {closureDate && !disabled && erroreOreTimbrate && (
+        <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+          <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+          <p>
+            <span className="font-medium">Ore timbrate non disponibili.</span>{' '}
+            {erroreOreTimbrateDettaglio instanceof Error
+              ? erroreOreTimbrateDettaglio.message
+              : 'Le ore proposte sono quelle pianificate.'}{' '}
+            Controllale prima di inviare.
+          </p>
+        </div>
+      )}
+
       {/* Banner turni schedulati */}
       {closureDate && scheduledShifts && scheduledShifts.length > 0 && !hasLoadedFromSchedule && (
         <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -416,7 +631,7 @@ export function AttendanceSection({
 
       {/* SEZIONE DIPENDENTI */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-2">
           <CardTitle className="text-lg flex items-center gap-2">
             <Users className="h-5 w-5" />
             Dipendenti
@@ -446,8 +661,9 @@ export function AttendanceSection({
             </p>
           ) : (
             <>
-              {/* Header */}
-              <div className="grid grid-cols-[1fr_100px_70px_60px_50px_40px] gap-2 text-xs font-medium text-muted-foreground border-b pb-2">
+              {/* Header: sotto sm le colonne non esistono più, ogni campo si
+                  porta dietro la propria etichetta */}
+              <div className="hidden sm:grid grid-cols-[1fr_100px_70px_60px_50px_40px] gap-2 text-xs font-medium text-muted-foreground border-b pb-2">
                 <span>Dipendente</span>
                 <span>Turno</span>
                 <span className="text-center">Codice</span>
@@ -460,125 +676,157 @@ export function AttendanceSection({
                 const realIndex = getRealIndex(att)
                 return (
                   <div key={realIndex} className="space-y-1">
-                    <div
-                      className="grid grid-cols-[1fr_100px_70px_60px_50px_40px] gap-2 items-center"
-                    >
+                    {/* Sotto sm le sei colonne fisse (~340px) non ci stanno nei
+                        ~215px della card: la riga diventa una scheda a due
+                        colonne, da sm in poi torna la riga tabellare. I `min-w-0`
+                        servono perché il trigger dei Select è `w-fit` con
+                        `whitespace-nowrap` e altrimenti allarga la propria cella */}
+                    <div className="grid grid-cols-2 gap-2 items-end rounded-lg border p-3 sm:grid-cols-[1fr_100px_70px_60px_50px_40px] sm:items-center sm:rounded-none sm:border-0 sm:p-0">
                       {/* Dipendente */}
-                      <Select
-                        value={att.userId}
-                        onValueChange={(value) =>
-                          handleFieldChange(realIndex, 'userId', value)
-                        }
-                        disabled={disabled}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Seleziona..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {fixedStaff.map((staff) => (
-                            <SelectItem key={staff.id} value={staff.id}>
-                              {staff.firstName} {staff.lastName}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="col-span-2 min-w-0 space-y-1 sm:col-span-1 sm:space-y-0">
+                        <Label className="text-xs font-normal text-muted-foreground sm:hidden">
+                          Dipendente
+                        </Label>
+                        <Select
+                          value={att.userId}
+                          onValueChange={(value) =>
+                            handleFieldChange(realIndex, 'userId', value)
+                          }
+                          disabled={disabled}
+                        >
+                          <SelectTrigger className="w-full data-[size=default]:h-11 sm:data-[size=default]:h-9">
+                            <SelectValue placeholder="Seleziona..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {fixedStaff.map((staff) => (
+                              <SelectItem key={staff.id} value={staff.id}>
+                                {staff.firstName} {staff.lastName}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
 
                       {/* Turno */}
-                      <Select
-                        value={att.shift}
-                        onValueChange={(value) =>
-                          handleFieldChange(realIndex, 'shift', value)
-                        }
-                        disabled={disabled}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {SHIFT_OPTIONS.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="min-w-0 space-y-1 sm:space-y-0">
+                        <Label className="text-xs font-normal text-muted-foreground sm:hidden">
+                          Turno
+                        </Label>
+                        <Select
+                          value={att.shift}
+                          onValueChange={(value) =>
+                            handleFieldChange(realIndex, 'shift', value)
+                          }
+                          disabled={disabled}
+                        >
+                          <SelectTrigger className="w-full data-[size=default]:h-11 sm:data-[size=default]:h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {SHIFT_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
 
                       {/* Codice Presenza */}
-                      <Select
-                        value={att.statusCode || 'P'}
-                        onValueChange={(value) =>
-                          handleFieldChange(realIndex, 'statusCode', value)
-                        }
-                        disabled={disabled}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {STATUS_CODE_OPTIONS.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="min-w-0 space-y-1 sm:space-y-0">
+                        <Label className="text-xs font-normal text-muted-foreground sm:hidden">
+                          Codice
+                        </Label>
+                        <Select
+                          value={att.statusCode || 'P'}
+                          onValueChange={(value) =>
+                            handleFieldChange(realIndex, 'statusCode', value)
+                          }
+                          disabled={disabled}
+                        >
+                          <SelectTrigger className="w-full data-[size=default]:h-11 sm:data-[size=default]:h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {STATUS_CODE_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
 
                       {/* Ore Effettive */}
-                      <Input
-                        type="number"
-                        min="0"
-                        max="24"
-                        step="0.5"
-                        value={att.statusCode === 'P' ? (att.hours ?? '') : ''}
-                        onChange={(e) =>
-                          handleFieldChange(realIndex, 'hours', e.target.value)
-                        }
-                        disabled={disabled || att.statusCode !== 'P'}
-                        className="font-mono text-center"
-                        placeholder={att.statusCode === 'P' ? '0' : '-'}
-                      />
+                      <div className="min-w-0 space-y-1 sm:space-y-0">
+                        <Label className="text-xs font-normal text-muted-foreground sm:hidden">
+                          Ore Eff.
+                        </Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="24"
+                          step="0.5"
+                          value={att.statusCode === 'P' ? (att.hours ?? '') : ''}
+                          onChange={(e) =>
+                            handleFieldChange(realIndex, 'hours', e.target.value)
+                          }
+                          disabled={disabled || att.statusCode !== 'P'}
+                          className="font-mono text-center h-11 sm:h-9"
+                          placeholder={att.statusCode === 'P' ? '0' : '-'}
+                        />
+                      </div>
 
                       {/* Toggle Pagato */}
-                      <div className="flex justify-center">
-                        {att.statusCode === 'P' ? (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div>
-                                <Switch
-                                  checked={att.isPaid || false}
-                                  onCheckedChange={(checked) =>
-                                    handleFieldChange(realIndex, 'isPaid', checked)
-                                  }
-                                  disabled={disabled}
-                                  className="data-[state=checked]:bg-green-600"
-                                />
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              Pagato a fine servizio
-                            </TooltipContent>
-                          </Tooltip>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">-</span>
-                        )}
+                      <div className="min-w-0 space-y-1 sm:space-y-0">
+                        <Label className="text-xs font-normal text-muted-foreground sm:hidden">
+                          Pagato
+                        </Label>
+                        <div className="flex h-11 items-center justify-center sm:h-auto">
+                          {att.statusCode === 'P' ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div>
+                                  <Switch
+                                    checked={att.isPaid || false}
+                                    onCheckedChange={(checked) =>
+                                      handleFieldChange(realIndex, 'isPaid', checked)
+                                    }
+                                    disabled={disabled}
+                                    aria-label="Pagato a fine servizio"
+                                    className="data-[state=checked]:bg-green-600"
+                                  />
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                Pagato a fine servizio
+                              </TooltipContent>
+                            </Tooltip>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          )}
+                        </div>
                       </div>
 
                       {/* Rimuovi */}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleRemove(realIndex)}
-                        disabled={disabled}
-                        className="text-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="col-span-2 flex justify-end sm:col-span-1 sm:justify-center">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleRemove(realIndex)}
+                          disabled={disabled}
+                          aria-label="Rimuovi il dipendente dalla chiusura"
+                          className="h-11 w-11 text-destructive hover:text-destructive sm:h-9 sm:w-9"
+                        >
+                          <Trash2 aria-hidden="true" className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
 
                     {/* Riga espandibile: Tariffa e Totale (solo se pagato) */}
                     {att.isPaid && att.statusCode === 'P' && (
-                      <div className="ml-4 flex items-center gap-3 py-1 px-3 bg-green-50 border border-green-200 rounded text-sm">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1 px-3 bg-green-50 border border-green-200 rounded text-sm sm:ml-4 sm:flex-nowrap">
                         <Banknote className="h-4 w-4 text-green-600 shrink-0" />
                         <div className="flex items-center gap-2">
                           <label className="text-xs text-muted-foreground whitespace-nowrap">Tariffa:</label>
@@ -622,7 +870,7 @@ export function AttendanceSection({
 
       {/* SEZIONE EXTRA */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-2">
           <CardTitle className="text-lg flex items-center gap-2">
             <UserPlus className="h-5 w-5" />
             Extra
@@ -646,8 +894,8 @@ export function AttendanceSection({
             </p>
           ) : (
             <>
-              {/* Header */}
-              <div className="grid grid-cols-[1fr_100px_60px_50px_40px] gap-3 text-xs font-medium text-muted-foreground border-b pb-2">
+              {/* Header: come sopra, sotto sm le etichette stanno sui campi */}
+              <div className="hidden sm:grid grid-cols-[1fr_100px_60px_50px_40px] gap-3 text-xs font-medium text-muted-foreground border-b pb-2">
                 <span>Nome</span>
                 <span>Turno</span>
                 <span className="text-center">Ore</span>
@@ -659,112 +907,135 @@ export function AttendanceSection({
                 const realIndex = getRealIndex(att)
                 return (
                   <div key={realIndex} className="space-y-1">
-                    <div
-                      className="grid grid-cols-[1fr_100px_60px_50px_40px] gap-3 items-center"
-                    >
+                    <div className="grid grid-cols-2 gap-2 items-end rounded-lg border p-3 sm:grid-cols-[1fr_100px_60px_50px_40px] sm:gap-3 sm:items-center sm:rounded-none sm:border-0 sm:p-0">
                       {/* Nome (da lista extra o testo libero) */}
-                      {extraStaff.length > 0 ? (
+                      <div className="col-span-2 min-w-0 space-y-1 sm:col-span-1 sm:space-y-0">
+                        <Label className="text-xs font-normal text-muted-foreground sm:hidden">
+                          Nome
+                        </Label>
+                        {extraStaff.length > 0 ? (
+                          <Select
+                            value={att.userId}
+                            onValueChange={(value) =>
+                              handleFieldChange(realIndex, 'userId', value)
+                            }
+                            disabled={disabled}
+                          >
+                            <SelectTrigger className="w-full data-[size=default]:h-11 sm:data-[size=default]:h-9">
+                              <SelectValue placeholder="Seleziona..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {extraStaff.map((staff) => (
+                                <SelectItem key={staff.id} value={staff.id}>
+                                  {staff.firstName} {staff.lastName}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Input
+                            value={att.userName || ''}
+                            onChange={(e) =>
+                              handleFieldChange(realIndex, 'userName', e.target.value)
+                            }
+                            disabled={disabled}
+                            placeholder="Nome collaboratore"
+                            className="h-11 sm:h-9"
+                          />
+                        )}
+                      </div>
+
+                      {/* Turno */}
+                      <div className="min-w-0 space-y-1 sm:space-y-0">
+                        <Label className="text-xs font-normal text-muted-foreground sm:hidden">
+                          Turno
+                        </Label>
                         <Select
-                          value={att.userId}
+                          value={att.shift}
                           onValueChange={(value) =>
-                            handleFieldChange(realIndex, 'userId', value)
+                            handleFieldChange(realIndex, 'shift', value)
                           }
                           disabled={disabled}
                         >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Seleziona..." />
+                          <SelectTrigger className="w-full data-[size=default]:h-11 sm:data-[size=default]:h-9">
+                            <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {extraStaff.map((staff) => (
-                              <SelectItem key={staff.id} value={staff.id}>
-                                {staff.firstName} {staff.lastName}
+                            {SHIFT_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>
+                                {opt.label}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
-                      ) : (
-                        <Input
-                          value={att.userName || ''}
-                          onChange={(e) =>
-                            handleFieldChange(realIndex, 'userName', e.target.value)
-                          }
-                          disabled={disabled}
-                          placeholder="Nome collaboratore"
-                        />
-                      )}
-
-                      {/* Turno */}
-                      <Select
-                        value={att.shift}
-                        onValueChange={(value) =>
-                          handleFieldChange(realIndex, 'shift', value)
-                        }
-                        disabled={disabled}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {SHIFT_OPTIONS.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      </div>
 
                       {/* Ore */}
-                      <Input
-                        type="number"
-                        min="0"
-                        max="24"
-                        step="0.5"
-                        value={att.hours ?? ''}
-                        onChange={(e) =>
-                          handleFieldChange(realIndex, 'hours', e.target.value)
-                        }
-                        disabled={disabled}
-                        className="font-mono"
-                        placeholder="0"
-                      />
+                      <div className="min-w-0 space-y-1 sm:space-y-0">
+                        <Label className="text-xs font-normal text-muted-foreground sm:hidden">
+                          Ore
+                        </Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="24"
+                          step="0.5"
+                          value={att.hours ?? ''}
+                          onChange={(e) =>
+                            handleFieldChange(realIndex, 'hours', e.target.value)
+                          }
+                          disabled={disabled}
+                          className="font-mono h-11 sm:h-9"
+                          placeholder="0"
+                        />
+                      </div>
 
                       {/* Toggle Pagato */}
-                      <div className="flex justify-center">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div>
-                              <Switch
-                                checked={att.isPaid || false}
-                                onCheckedChange={(checked) =>
-                                  handleFieldChange(realIndex, 'isPaid', checked)
-                                }
-                                disabled={disabled}
-                                className="data-[state=checked]:bg-green-600"
-                              />
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            Pagato a fine servizio
-                          </TooltipContent>
-                        </Tooltip>
+                      <div className="min-w-0 space-y-1 sm:space-y-0">
+                        <Label className="text-xs font-normal text-muted-foreground sm:hidden">
+                          Pagato
+                        </Label>
+                        <div className="flex h-11 items-center justify-center sm:h-auto">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div>
+                                <Switch
+                                  checked={att.isPaid || false}
+                                  onCheckedChange={(checked) =>
+                                    handleFieldChange(realIndex, 'isPaid', checked)
+                                  }
+                                  disabled={disabled}
+                                  aria-label="Pagato a fine servizio"
+                                  className="data-[state=checked]:bg-green-600"
+                                />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              Pagato a fine servizio
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
                       </div>
 
                       {/* Rimuovi */}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleRemove(realIndex)}
-                        disabled={disabled}
-                        className="text-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="col-span-2 flex justify-end sm:col-span-1 sm:justify-center">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleRemove(realIndex)}
+                          disabled={disabled}
+                          aria-label="Rimuovi il collaboratore extra dalla chiusura"
+                          className="h-11 w-11 text-destructive hover:text-destructive sm:h-9 sm:w-9"
+                        >
+                          <Trash2 aria-hidden="true" className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
 
                     {/* Riga espandibile: Tariffa e Totale (solo se pagato) */}
                     {att.isPaid && (
-                      <div className="ml-4 flex items-center gap-3 py-1 px-3 bg-green-50 border border-green-200 rounded text-sm">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1 px-3 bg-green-50 border border-green-200 rounded text-sm sm:ml-4 sm:flex-nowrap">
                         <Banknote className="h-4 w-4 text-green-600 shrink-0" />
                         <div className="flex items-center gap-2">
                           <label className="text-xs text-muted-foreground whitespace-nowrap">Tariffa:</label>

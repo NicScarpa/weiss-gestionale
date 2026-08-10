@@ -32,8 +32,8 @@ const statusConfig: Record<
   NOT_CLOCKED_IN: {
     label: 'Non timbrato',
     icon: LogIn,
-    bgColor: 'bg-gray-50 border border-gray-200',
-    textColor: 'text-gray-500',
+    bgColor: 'bg-muted border border-border',
+    textColor: 'text-muted-foreground',
   },
   CLOCKED_IN: {
     label: 'In servizio',
@@ -100,17 +100,17 @@ export function PunchStatus({
 
       {/* Time details */}
       <div className="grid grid-cols-3 gap-2 text-center">
-        <div className="p-2 rounded-xl bg-gray-50">
+        <div className="p-2 rounded-xl bg-muted">
           <div className="text-xs text-muted-foreground mb-1">Entrata</div>
           <div className="font-mono font-medium">{formatTime(clockInTime)}</div>
         </div>
-        <div className="p-2 rounded-xl bg-gray-50">
+        <div className="p-2 rounded-xl bg-muted">
           <div className="text-xs text-muted-foreground mb-1">Pausa</div>
           <div className="font-mono font-medium">
             {formatTime(breakStartTime)}
           </div>
         </div>
-        <div className="p-2 rounded-xl bg-gray-50">
+        <div className="p-2 rounded-xl bg-muted">
           <div className="text-xs text-muted-foreground mb-1">Uscita</div>
           <div className="font-mono font-medium">{formatTime(clockOutTime)}</div>
         </div>

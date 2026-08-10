@@ -1,38 +1,28 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
+import { conflict, handleApiError, notFound, ok, withAuth } from '@/lib/api-utils'
+
+type Params = { id: string }
 
 // DELETE /api/richieste-correzione/[id] - Il proprietario annulla la propria
 // richiesta, finché è in attesa. Non si cancella: diventa CANCELLED, così in
 // coda resta visibile che c'era stata.
-export async function DELETE(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const DELETE = withAuth<Params>(async (_request: NextRequest, { params, user }) => {
   try {
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
-    const { id } = await params
+    const { id } = params
 
     const richiesta = await prisma.attendanceCorrectionRequest.findFirst({
-      where: { id, userId: session.user.id },
+      where: { id, userId: user.id },
       select: { id: true, status: true, venueId: true },
     })
 
     if (!richiesta) {
-      return NextResponse.json({ error: 'Richiesta non trovata' }, { status: 404 })
+      return notFound('Richiesta non trovata')
     }
 
     if (richiesta.status !== 'PENDING') {
-      return NextResponse.json(
-        { error: 'Si può annullare solo una richiesta ancora in attesa' },
-        { status: 409 }
-      )
+      return conflict('Si può annullare solo una richiesta ancora in attesa')
     }
 
     await prisma.attendanceCorrectionRequest.update({
@@ -41,7 +31,7 @@ export async function DELETE(
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      userId: user.id,
       action: 'UPDATE',
       entityType: 'AttendanceCorrectionRequest',
       entityId: id,
@@ -50,12 +40,12 @@ export async function DELETE(
       newValues: { status: 'CANCELLED' },
     })
 
-    return NextResponse.json({ success: true })
+    return ok({ success: true })
   } catch (error) {
-    logger.error('Errore DELETE /api/richieste-correzione/[id]', error)
-    return NextResponse.json(
-      { error: "Errore nell'annullamento della richiesta" },
-      { status: 500 }
+    return handleApiError(
+      error,
+      'DELETE /api/richieste-correzione/[id]',
+      "Errore nell'annullamento della richiesta"
     )
   }
-}
+})

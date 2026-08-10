@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useSyncExternalStore } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   getOnlineStatus,
   addSyncListener,
@@ -11,14 +12,21 @@ import {
   savePendingClosure,
   getCachedData,
   getCachedItem,
+  type EsitoSincronizzazione,
 } from '@/lib/offline'
+
+/** Chiave della query che tiene il conteggio della coda: la invalidano anche
+ *  i punti che mettono in coda una chiusura, per non lasciare il contatore
+ *  indietro rispetto a quello che l'utente ha appena fatto. */
+export const CHIAVE_STATO_CODA = ['offline-pending-status'] as const
 
 interface UseOfflineReturn {
   isOnline: boolean
   isSyncing: boolean
   pendingCount: number
   hasPending: boolean
-  syncNow: () => Promise<void>
+  /** `null` se non c'era niente da fare (offline, o una sincronizzazione già in corso). */
+  syncNow: () => Promise<EsitoSincronizzazione | null>
   prefetchData: () => Promise<void>
   savePendingClosure: (data: unknown) => Promise<string>
   getCachedClosures: <T>() => Promise<T[]>
@@ -29,37 +37,67 @@ interface UseOfflineReturn {
   getCachedClosureById: <T>(id: string) => Promise<T | undefined>
 }
 
+// Lo stato online vive fuori da React (navigator + eventi del browser): lo si
+// legge tramite useSyncExternalStore, così il primo render ha già il valore
+// giusto senza doverlo sincronizzare con un setState dentro l'effetto.
+function subscribeOnlineStatus(onStoreChange: () => void) {
+  // Gli eventi 'online'/'offline' arrivano già dal modulo offline; i listener
+  // nativi restano come backup, come prima.
+  const unsubscribe = addSyncListener((event) => {
+    if (event.type === 'online' || event.type === 'offline') {
+      onStoreChange()
+    }
+  })
+
+  window.addEventListener('online', onStoreChange)
+  window.addEventListener('offline', onStoreChange)
+
+  return () => {
+    unsubscribe()
+    window.removeEventListener('online', onStoreChange)
+    window.removeEventListener('offline', onStoreChange)
+  }
+}
+
+// Lato server non esiste navigator: si assume online, come faceva lo stato iniziale.
+function getServerOnlineStatus() {
+  return true
+}
+
 export function useOffline(): UseOfflineReturn {
-  const [isOnline, setIsOnline] = useState(true)
+  const isOnline = useSyncExternalStore(
+    subscribeOnlineStatus,
+    getOnlineStatus,
+    getServerOnlineStatus
+  )
   const [isSyncing, setIsSyncing] = useState(false)
-  const [pendingCount, setPendingCount] = useState(0)
-  const [hasPending, setHasPending] = useState(false)
 
-  // Update pending count
+  // Conteggio delle chiusure in attesa: sta su IndexedDB, quindi si legge
+  // al montaggio e si ricarica dopo ogni sincronizzazione o salvataggio.
+  const { data: pendingStatus, refetch: refetchPendingStatus } = useQuery({
+    queryKey: CHIAVE_STATO_CODA,
+    // Come prima: ogni montaggio rilegge il conteggio.
+    staleTime: 0,
+    refetchOnMount: 'always',
+    queryFn: async () => {
+      const count = await getPendingCount()
+      const pending = await hasPendingSync()
+      return { count, pending }
+    },
+  })
+
+  const pendingCount = pendingStatus?.count ?? 0
+  const hasPending = pendingStatus?.pending ?? false
+
   const updatePendingStatus = useCallback(async () => {
-    const count = await getPendingCount()
-    const pending = await hasPendingSync()
-    setPendingCount(count)
-    setHasPending(pending)
-  }, [])
+    await refetchPendingStatus()
+  }, [refetchPendingStatus])
 
-  // Initialize and set up listeners
+  // Set up listeners
   useEffect(() => {
-    // Set initial online status
-    setIsOnline(getOnlineStatus())
-
-    // Update pending status on mount
-    updatePendingStatus()
-
     // Listen for sync events
     const unsubscribe = addSyncListener((event) => {
       switch (event.type) {
-        case 'online':
-          setIsOnline(true)
-          break
-        case 'offline':
-          setIsOnline(false)
-          break
         case 'sync-start':
           setIsSyncing(true)
           break
@@ -71,26 +109,17 @@ export function useOffline(): UseOfflineReturn {
       }
     })
 
-    // Also listen for native online/offline events as backup
-    const handleOnline = () => setIsOnline(true)
-    const handleOffline = () => setIsOnline(false)
-
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
-
     return () => {
       unsubscribe()
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
     }
   }, [updatePendingStatus])
 
   // Sync now function
-  const syncNow = useCallback(async () => {
-    if (!isOnline || isSyncing) return
+  const syncNow = useCallback(async (): Promise<EsitoSincronizzazione | null> => {
+    if (!isOnline || isSyncing) return null
     setIsSyncing(true)
     try {
-      await syncPendingData()
+      return await syncPendingData()
     } finally {
       setIsSyncing(false)
       await updatePendingStatus()

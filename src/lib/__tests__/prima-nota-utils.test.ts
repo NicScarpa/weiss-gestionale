@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import type { JournalEntry } from '@/types/prima-nota'
+import { isTrasferimento } from '@/types/prima-nota'
 import {
   getMovementDirection,
+  registriDelTrasferimento,
+  TrasferimentoNonValidoError,
   toDebitCredit,
   calculateRunningBalances,
   calculateTotals,
@@ -32,10 +35,6 @@ describe('getMovementDirection', () => {
     it('should return CREDIT for VERSAMENTO (deposit to bank)', () => {
       expect(getMovementDirection('CASH', 'VERSAMENTO')).toBe('CREDIT')
     })
-
-    it('should return DEBIT for GIROCONTO (default)', () => {
-      expect(getMovementDirection('CASH', 'GIROCONTO')).toBe('DEBIT')
-    })
   })
 
   describe('BANK register', () => {
@@ -54,10 +53,68 @@ describe('getMovementDirection', () => {
     it('should return CREDIT for PRELIEVO (withdrawal to cash)', () => {
       expect(getMovementDirection('BANK', 'PRELIEVO')).toBe('CREDIT')
     })
+  })
 
-    it('should return DEBIT for GIROCONTO (default)', () => {
-      expect(getMovementDirection('BANK', 'GIROCONTO')).toBe('DEBIT')
+  // Rispondeva DARE su entrambi i registri, con la motivazione «default,
+  // dipende dal contesto»: quel default scriveva una riga sola in entrata e
+  // faceva comparire denaro che nessuno aveva incassato.
+  describe('giroconto', () => {
+    it.each(['CASH', 'BANK'] as const)(
+      'non ha una direzione implicita su %s e si ferma invece di sceglierne una',
+      (registro) => {
+        expect(() => getMovementDirection(registro, 'GIROCONTO')).toThrow(
+          TrasferimentoNonValidoError
+        )
+      }
+    )
+  })
+})
+
+describe('isTrasferimento', () => {
+  it.each(['VERSAMENTO', 'PRELIEVO', 'GIROCONTO'] as const)(
+    '%s sposta denaro fra i registri',
+    (tipo) => {
+      expect(isTrasferimento(tipo)).toBe(true)
+    }
+  )
+
+  it.each(['INCASSO', 'USCITA'] as const)('%s non è un trasferimento', (tipo) => {
+    expect(isTrasferimento(tipo)).toBe(false)
+  })
+})
+
+describe('registriDelTrasferimento', () => {
+  it('il versamento va dalla cassa alla banca', () => {
+    expect(registriDelTrasferimento('VERSAMENTO', 'CASH')).toEqual({ da: 'CASH', a: 'BANK' })
+  })
+
+  it('il prelievo va dalla banca alla cassa', () => {
+    expect(registriDelTrasferimento('PRELIEVO', 'BANK')).toEqual({ da: 'BANK', a: 'CASH' })
+  })
+
+  // Il registro dichiarato dal client non cambia la natura dell'operazione: un
+  // «versamento dalla banca» non esiste, esiste un dato sbagliato.
+  it('il versamento resta cassa→banca anche se il client dichiara il registro opposto', () => {
+    expect(registriDelTrasferimento('VERSAMENTO', 'BANK')).toEqual({ da: 'CASH', a: 'BANK' })
+  })
+
+  it('il giroconto usa i due registri indicati', () => {
+    expect(registriDelTrasferimento('GIROCONTO', 'BANK', 'CASH')).toEqual({
+      da: 'BANK',
+      a: 'CASH',
     })
+  })
+
+  it('il giroconto senza destinazione viene rifiutato', () => {
+    expect(() => registriDelTrasferimento('GIROCONTO', 'CASH')).toThrow(
+      TrasferimentoNonValidoError
+    )
+  })
+
+  it('il giroconto verso il registro di partenza viene rifiutato', () => {
+    expect(() => registriDelTrasferimento('GIROCONTO', 'CASH', 'CASH')).toThrow(
+      TrasferimentoNonValidoError
+    )
   })
 })
 

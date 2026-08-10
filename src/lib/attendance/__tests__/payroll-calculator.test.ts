@@ -203,6 +203,98 @@ describe('generatePayrollData', () => {
     expect(giorno?.clockIn?.toISOString()).toBe('2026-08-20T07:00:00.000Z')
   })
 
+  // Il turno che segue la pianificazione: le ore oltre la fine restano
+  // sospese finché l'anomalia OVERTIME non viene decisa, e la decisione
+  // cambia il calcolo da sola, senza correzioni manuali delle timbrature.
+  function preparaRegolaTurno() {
+    vi.mocked(prisma.timekeepingPolicy.findFirst).mockResolvedValue({
+      id: 'pol-turno',
+      name: 'Segue il turno',
+      dayStartMinutes: 0,
+      dayEndMinutes: 0,
+      lunchStartMinutes: null,
+      lunchEndMinutes: null,
+      flexMinutes: 0,
+      roundingMinutes: 30,
+      roundingToleranceMinutes: 10,
+      roundingOutMinutes: null,
+      roundingOutToleranceMinutes: null,
+      maxDailyMinutes: null,
+      contractWeeklyHours: null,
+      saturdayAsOvertime: false,
+      blockSunday: false,
+      singlePunchMode: false,
+      useShiftAsWindow: true,
+      extraBreaks: [],
+    } as never)
+    vi.mocked(prisma.workLocation.findMany).mockResolvedValue([] as never)
+    vi.mocked(prisma.user.findMany).mockReset()
+    vi.mocked(prisma.user.findMany)
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce([dipendente] as never)
+    vi.mocked(prisma.shiftAssignment.findMany).mockResolvedValue([
+      {
+        userId: 'user-1',
+        date: new Date('2026-08-20T00:00:00Z'),
+        startTime: new Date('1970-01-01T09:00:00Z'),
+        endTime: new Date('1970-01-01T17:00:00Z'),
+      },
+    ] as never)
+    // Turno 9:00-17:00; timbra 9:00-18:30 italiane (estate: 7:00Z-16:30Z).
+    vi.mocked(prisma.attendanceRecord.findMany).mockResolvedValue([
+      punch('IN', '2026-08-20T07:00:00Z'),
+      punch('OUT', '2026-08-20T16:30:00Z'),
+    ] as never)
+  }
+
+  it('le ore oltre il turno senza decisione restano sospese nel record', async () => {
+    preparaRegolaTurno()
+
+    const { records } = await generatePayrollData(8, 2026, 'venue-1')
+    const giorno = giornoDi(records, '2026-08-20')
+
+    expect(giorno?.hours.total).toBe(8)
+    expect(giorno?.pendingReviewMinutes).toBe(90)
+  })
+
+  it("l'anomalia di straordinario approvata fa contare le ore oltre il turno", async () => {
+    preparaRegolaTurno()
+    vi.mocked(prisma.attendanceAnomaly.findMany).mockResolvedValue([
+      {
+        userId: 'user-1',
+        date: new Date('2026-08-20T00:00:00Z'),
+        anomalyType: 'OVERTIME',
+        status: 'APPROVED',
+      },
+    ] as never)
+
+    const { records } = await generatePayrollData(8, 2026, 'venue-1')
+    const giorno = giornoDi(records, '2026-08-20')
+
+    expect(giorno?.hours.total).toBe(9.5)
+    // 40 ore su 6 giorni lavorativi = 400 minuti: i 170 oltre sono straordinario.
+    expect(giorno?.hours.overtime).toBeCloseTo(170 / 60, 5)
+    expect(giorno?.pendingReviewMinutes).toBe(0)
+  })
+
+  it("l'anomalia di straordinario rifiutata taglia la giornata alla fine del turno", async () => {
+    preparaRegolaTurno()
+    vi.mocked(prisma.attendanceAnomaly.findMany).mockResolvedValue([
+      {
+        userId: 'user-1',
+        date: new Date('2026-08-20T00:00:00Z'),
+        anomalyType: 'OVERTIME',
+        status: 'REJECTED',
+      },
+    ] as never)
+
+    const { records } = await generatePayrollData(8, 2026, 'venue-1')
+    const giorno = giornoDi(records, '2026-08-20')
+
+    expect(giorno?.hours.total).toBe(8)
+    expect(giorno?.pendingReviewMinutes).toBe(0)
+  })
+
   it('con userIds calcola solo le persone richieste', async () => {
     vi.mocked(prisma.attendanceRecord.findMany).mockResolvedValue([] as never)
 
@@ -226,5 +318,132 @@ describe('generatePayrollData', () => {
 
     expect(giornoDi(records, '2026-03-28')?.hours.total).toBe(4)
     expect(giornoDi(records, '2026-03-28')?.hours.night).toBe(4)
+  })
+
+  it('chi lavora in un giorno di ferie approvate non lavora gratis', async () => {
+    // Difetto 4 dell'audit W5-F3. Luca è in permesso, il collega dà forfait,
+    // Luca viene chiamato e copre sei ore timbrando regolarmente. Prima il
+    // ramo delle ferie azzerava tutto senza guardare le timbrature, e il
+    // cartellino stampava «entrata 17:00, uscita 23:00, ore 0».
+    vi.mocked(prisma.leaveRequest.findMany).mockResolvedValue([
+      {
+        userId: 'user-1',
+        startDate: new Date('2026-08-20T00:00:00Z'),
+        endDate: new Date('2026-08-20T00:00:00Z'),
+        leaveType: { code: 'FE', name: 'Ferie' },
+      },
+    ] as never)
+    vi.mocked(prisma.attendanceRecord.findMany).mockResolvedValue([
+      punch('IN', '2026-08-20T15:00:00Z'),
+      punch('OUT', '2026-08-20T21:00:00Z'),
+    ] as never)
+
+    const { records, warnings } = await generatePayrollData(8, 2026)
+    const giorno = giornoDi(records, '2026-08-20')
+
+    expect(giorno?.hours.total).toBe(6)
+    // Il permesso resta registrato: la contraddizione va mostrata, non decisa
+    // dal sistema al posto del titolare e del consulente.
+    expect(giorno?.leaveCode).toBe('FE')
+    expect(warnings.join(' ')).toMatch(/permesso e timbrature/i)
+  })
+
+  it('il giorno di ferie senza timbrature resta a zero ore', async () => {
+    // Il comportamento da NON rompere: senza timbrature l'assenza vale zero.
+    vi.mocked(prisma.leaveRequest.findMany).mockResolvedValue([
+      {
+        userId: 'user-1',
+        startDate: new Date('2026-08-20T00:00:00Z'),
+        endDate: new Date('2026-08-20T00:00:00Z'),
+        leaveType: { code: 'FE', name: 'Ferie' },
+      },
+    ] as never)
+    vi.mocked(prisma.attendanceRecord.findMany).mockResolvedValue([] as never)
+
+    const { records, summaries, warnings } = await generatePayrollData(8, 2026)
+
+    expect(giornoDi(records, '2026-08-20')?.hours.total).toBe(0)
+    expect(giornoDi(records, '2026-08-20')?.leaveCode).toBe('FE')
+    expect(summaries[0]?.totalLeaveDays).toBe(1)
+    expect(warnings.join(' ')).not.toMatch(/permesso e timbrature/i)
+  })
+
+  it('il dipendente cessato a metà mese non sparisce con le sue ore', async () => {
+    // Difetto 5 dell'audit W5-F3: l'export considerava solo isActive e
+    // portalEnabled, senza criterio di data. Chi veniva disattivato il 15
+    // spariva dall'export insieme alle due settimane già lavorate — circa
+    // 80 ore, 960 € lordi — e non compariva nemmeno con una riga a zero,
+    // quindi la sua assenza dall'elenco non saltava all'occhio.
+    vi.mocked(prisma.attendanceRecord.findMany).mockResolvedValue([
+      { userId: 'user-2', punchType: 'IN', punchedAt: new Date('2026-08-10T07:00:00Z'), workLocationId: null },
+      { userId: 'user-2', punchType: 'OUT', punchedAt: new Date('2026-08-10T13:00:00Z'), workLocationId: null },
+    ] as never)
+    vi.mocked(prisma.user.findMany).mockResolvedValue([
+      { ...dipendente, id: 'user-2', firstName: 'Marta', lastName: 'Rossi' },
+    ] as never)
+
+    const { records } = await generatePayrollData(8, 2026)
+
+    // La query deve cercarlo: senza questo, il database non lo restituisce
+    // affatto e il resto del calcolo non lo vede mai.
+    const query = vi.mocked(prisma.user.findMany).mock.calls[0][0] as {
+      where: { OR?: unknown[] }
+    }
+    expect(query.where.OR).toEqual(
+      expect.arrayContaining([{ id: { in: ['user-2'] } }])
+    )
+
+    // E le sue ore devono arrivare al consulente.
+    const giorno = records.find(
+      (r) => r.userId === 'user-2' && r.date.toISOString().slice(0, 10) === '2026-08-10'
+    )
+    expect(giorno?.hours.total).toBe(6)
+  })
+
+  it('l export rispetta la correzione approvata invece dell orario di sistema', async () => {
+    // Difetto 6: il cablaggio, non il motore. Il motore sa distinguere una
+    // supposizione del sistema da una correzione approvata solo se qualcuno
+    // gliene passa l'origine — e quei due campi vanno chiesti nella query,
+    // altrimenti il fix resta teorico e il cartellino continua a stampare
+    // l'orario inventato.
+    vi.mocked(prisma.attendanceRecord.findMany).mockResolvedValue([
+      { userId: 'user-1', punchType: 'IN', punchedAt: new Date('2026-08-20T05:00:00Z'), workLocationId: null, manualEntryBy: null, correctionRequestId: null },
+      { userId: 'user-1', punchType: 'OUT', punchedAt: new Date('2026-08-20T11:00:00Z'), workLocationId: null, manualEntryBy: 'admin-1', correctionRequestId: 'corr-1' },
+      { userId: 'user-1', punchType: 'OUT', punchedAt: new Date('2026-08-20T17:00:00Z'), workLocationId: null, manualEntryBy: 'SYSTEM', correctionRequestId: null },
+    ] as never)
+
+    const { records } = await generatePayrollData(8, 2026)
+
+    // 07:00 -> 13:00 italiane: sei ore, non le dodici scritte dal sistema.
+    expect(giornoDi(records, '2026-08-20')?.hours.total).toBe(6)
+
+    const query = vi.mocked(prisma.attendanceRecord.findMany).mock.calls[0][0] as {
+      select: Record<string, boolean>
+    }
+    expect(query.select.manualEntryBy).toBe(true)
+    expect(query.select.correctionRequestId).toBe(true)
+  })
+
+  it('chi ha solo un permesso approvato entra comunque nell export', async () => {
+    // Stessa famiglia: un cessato che nel mese ha solo assenze, nessuna
+    // timbratura. Deve comparire, altrimenti le ferie maturate spariscono.
+    vi.mocked(prisma.attendanceRecord.findMany).mockResolvedValue([] as never)
+    vi.mocked(prisma.leaveRequest.findMany).mockResolvedValue([
+      {
+        userId: 'user-3',
+        startDate: new Date('2026-08-05T00:00:00Z'),
+        endDate: new Date('2026-08-05T00:00:00Z'),
+        leaveType: { code: 'FE', name: 'Ferie' },
+      },
+    ] as never)
+
+    await generatePayrollData(8, 2026)
+
+    const query = vi.mocked(prisma.user.findMany).mock.calls[0][0] as {
+      where: { OR?: unknown[] }
+    }
+    expect(query.where.OR).toEqual(
+      expect.arrayContaining([{ id: { in: ['user-3'] } }])
+    )
   })
 })

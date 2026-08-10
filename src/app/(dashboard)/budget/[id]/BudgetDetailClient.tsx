@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import {
   ArrowLeft,
@@ -41,7 +42,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { formatCurrency } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 import { toast } from 'sonner'
 import {
   type BudgetLine,
@@ -75,8 +76,8 @@ export function BudgetDetailClient({
   isEditing: initialEditing,
   canEdit,
 }: BudgetDetailClientProps) {
-  const [lines, setLines] = useState<BudgetLine[]>([])
-  const [loading, setLoading] = useState(true)
+  // Le righe modificate in editor restano qui finché non si salva o si ricarica
+  const [modifiche, setModifiche] = useState<BudgetLine[] | null>(null)
   const [saving, setSaving] = useState(false)
   const [isEditing, setIsEditing] = useState(initialEditing)
   const [activeTab, setActiveTab] = useState<string>('dashboard')
@@ -87,24 +88,34 @@ export function BudgetDetailClient({
   const [deleteLineAccountId, setDeleteLineAccountId] = useState<string | null>(null)
 
   // Fetch lines
-  const fetchLines = useCallback(async () => {
-    setLoading(true)
-    try {
+  const { data: risposta, isPending, isFetching, isError, error, refetch } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryKey: ['budget-lines', budgetId],
+    queryFn: async (): Promise<{ data: BudgetLine[] }> => {
       const res = await fetch(`/api/budget/${budgetId}/lines`)
       if (!res.ok) throw new Error('Errore nel caricamento')
-      const data = await res.json()
-      setLines(data.data)
-    } catch (error) {
-      logger.error('Errore fetch lines', error)
-      toast.error('Errore nel caricamento delle righe')
-    } finally {
-      setLoading(false)
-    }
-  }, [budgetId])
+      return res.json()
+    },
+  })
 
   useEffect(() => {
-    fetchLines()
-  }, [fetchLines])
+    if (isError) {
+      logger.error('Errore fetch lines', error)
+      toast.error('Errore nel caricamento delle righe')
+    }
+  }, [isError, error])
+
+  const righeSalvate = risposta?.data ?? []
+  const lines = modifiche ?? righeSalvate
+  const loading = isPending || isFetching
+
+  // Ricarica dal server e butta via le modifiche non salvate
+  const fetchLines = () => {
+    setModifiche(null)
+    refetch()
+  }
 
   // Conti attivi di tipo RICAVO/COSTO (v4 e legacy, come la fetch server-side
   // che sostituisce), con la stessa fetch/chiave di cache di AccountCombobox
@@ -127,8 +138,8 @@ export function BudgetDetailClient({
 
   // Update line value
   const handleValueChange = (lineId: string, month: MonthKey, value: number) => {
-    setLines((prev) =>
-      prev.map((line) => {
+    setModifiche((prev) =>
+      (prev ?? righeSalvate).map((line) => {
         if (line.id === lineId) {
           const updated = { ...line, [month]: value }
           updated.annualTotal = calculateAnnualTotal(updated)

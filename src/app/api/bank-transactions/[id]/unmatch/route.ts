@@ -20,7 +20,11 @@ export async function POST(
 
     const { id } = await params
 
-    await unmatch(id)
+    const annullato = await unmatch(id)
+
+    if (!annullato) {
+      return NextResponse.json({ error: 'Transazione non trovata' }, { status: 404 })
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {

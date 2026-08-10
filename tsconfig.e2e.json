@@ -1,0 +1,23 @@
+{
+  // La suite end-to-end sta fuori dal tsconfig principale, che la esclude
+  // insieme a tutti i `.spec.ts`. La separazione ha una ragione: `e2e/` gira
+  // sotto Playwright in Node, non dentro Next, e il plugin `next` del config
+  // principale non le serve. Quello che non aveva ragione era che, esclusa di
+  // lì, non fosse inclusa da nessun'altra parte: nessuno la controllava.
+  //
+  // Si vedeva: `e2e/mobile.spec.ts` leggeva `pagina.difettoNoto` su elementi
+  // che quella proprietà non l'avevano più, e il ramo `if (pagina.difettoNoto)
+  // test.fail()` era diventato irraggiungibile senza che nulla lo dicesse.
+  "extends": "./tsconfig.json",
+
+  "compilerOptions": {
+    // Il config principale tiene `incremental`, che scriverebbe un
+    // .tsbuildinfo per ciascuno dei due: qui non serve, la cartella è piccola.
+    "incremental": false
+  },
+
+  // `exclude` va azzerato: quello ereditato scarta `**/*.spec.ts`, cioè
+  // esattamente i file che questo config esiste per controllare.
+  "include": ["e2e/**/*.ts", "playwright.config.ts"],
+  "exclude": ["node_modules"]
+}

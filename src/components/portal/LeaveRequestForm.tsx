@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { format } from 'date-fns'
@@ -121,6 +121,9 @@ export function LeaveRequestForm() {
     },
   })
 
+  const dataInizio = useWatch({ control: form.control, name: 'startDate' })
+  const dataFine = useWatch({ control: form.control, name: 'endDate' })
+
   const onSubmit = (data: LeaveRequestFormData) => {
     mutation.mutate({
       leaveTypeId: data.leaveTypeId,
@@ -181,19 +184,19 @@ export function LeaveRequestForm() {
                     variant="outline"
                     className={cn(
                       'w-full justify-start text-left font-normal',
-                      !form.watch('startDate') && 'text-muted-foreground'
+                      !dataInizio && 'text-muted-foreground'
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {form.watch('startDate')
-                      ? format(form.watch('startDate'), 'dd/MM/yyyy')
+                    {dataInizio
+                      ? format(dataInizio, 'dd/MM/yyyy')
                       : 'Seleziona...'}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
                   <Calendar
                     mode="single"
-                    selected={form.watch('startDate')}
+                    selected={dataInizio}
                     onSelect={(date) => date && form.setValue('startDate', date)}
                     locale={it}
                     disabled={(date) => date < new Date()}
@@ -215,24 +218,24 @@ export function LeaveRequestForm() {
                     variant="outline"
                     className={cn(
                       'w-full justify-start text-left font-normal',
-                      !form.watch('endDate') && 'text-muted-foreground'
+                      !dataFine && 'text-muted-foreground'
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {form.watch('endDate')
-                      ? format(form.watch('endDate'), 'dd/MM/yyyy')
+                    {dataFine
+                      ? format(dataFine, 'dd/MM/yyyy')
                       : 'Seleziona...'}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
                   <Calendar
                     mode="single"
-                    selected={form.watch('endDate')}
+                    selected={dataFine}
                     onSelect={(date) => date && form.setValue('endDate', date)}
                     locale={it}
                     disabled={(date) =>
                       date < new Date() ||
-                      (form.watch('startDate') && date < form.watch('startDate'))
+                      (dataInizio && date < dataInizio)
                     }
                   />
                 </PopoverContent>
@@ -249,7 +252,7 @@ export function LeaveRequestForm() {
           <div className="flex items-center justify-between rounded-lg border p-4">
             <div className="space-y-0.5">
               <Label>Giornata parziale</Label>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted-foreground">
                 Richiedi solo alcune ore del giorno
               </p>
             </div>
@@ -303,7 +306,7 @@ export function LeaveRequestForm() {
             <Button
               type="button"
               variant="outline"
-              className="flex-1 border-gray-200 text-gray-600 rounded-xl"
+              className="flex-1 border-border text-muted-foreground rounded-xl"
               onClick={() => router.back()}
             >
               Annulla

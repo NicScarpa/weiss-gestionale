@@ -35,10 +35,13 @@ export function NuovaChiusuraClient({
 
   // Wrapper for save that navigates on success
   const handleSave = async (data: ClosureFormData) => {
-    const closureId = await saveDraft(data)
-    if (closureId) {
-      router.push(`/chiusura-cassa/${closureId}`)
+    const esito = await saveDraft(data)
+    // Solo una chiusura che il server ha davvero accettato ha una pagina da
+    // aprire: quella finita in coda vive solo su questo dispositivo.
+    if (esito.esito === 'salvata') {
+      router.push(`/chiusura-cassa/${esito.closureId}`)
     }
+    return esito
   }
 
   return (

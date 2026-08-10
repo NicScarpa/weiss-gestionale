@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import {
   Plus,
@@ -53,7 +54,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { formatCurrency } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 import { toast } from 'sonner'
 import {
   BUDGET_STATUS_LABELS,
@@ -89,8 +90,6 @@ interface BudgetListProps {
 }
 
 export function BudgetList({ venueId, isAdmin }: BudgetListProps) {
-  const [budgets, setBudgets] = useState<Budget[]>([])
-  const [loading, setLoading] = useState(true)
   const [yearFilter, setYearFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -98,9 +97,19 @@ export function BudgetList({ venueId, isAdmin }: BudgetListProps) {
   const availableYears = getAvailableYears()
 
   // Fetch budgets
-  const fetchBudgets = useCallback(async () => {
-    setLoading(true)
-    try {
+  const {
+    data: risposta,
+    isPending,
+    isFetching,
+    isError,
+    error,
+    refetch: fetchBudgets,
+  } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryKey: ['budgets', venueId ?? null, yearFilter, statusFilter],
+    queryFn: async (): Promise<{ data: Budget[] }> => {
       const params = new URLSearchParams()
       if (venueId) params.set('venueId', venueId)
       if (yearFilter !== 'all') params.set('year', yearFilter)
@@ -109,19 +118,19 @@ export function BudgetList({ venueId, isAdmin }: BudgetListProps) {
       const res = await fetch(`/api/budget?${params.toString()}`)
       if (!res.ok) throw new Error('Errore nel caricamento')
 
-      const data = await res.json()
-      setBudgets(data.data)
-    } catch (error) {
-      logger.error('Errore fetch budgets', error)
-      toast.error('Errore nel caricamento dei budget')
-    } finally {
-      setLoading(false)
-    }
-  }, [venueId, yearFilter, statusFilter])
+      return res.json()
+    },
+  })
+
+  const budgets = risposta?.data ?? []
+  const loading = isPending || isFetching
 
   useEffect(() => {
-    fetchBudgets()
-  }, [fetchBudgets])
+    if (isError) {
+      logger.error('Errore fetch budgets', error)
+      toast.error('Errore nel caricamento dei budget')
+    }
+  }, [isError, error])
 
   // Delete budget
   const handleDelete = async () => {

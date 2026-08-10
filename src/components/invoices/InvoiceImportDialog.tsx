@@ -5,7 +5,7 @@
  * Supports Batch Upload
  */
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import {
@@ -52,6 +52,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { toast } from 'sonner'
 
 import { logger } from '@/lib/logger'
+import { formatCurrency } from '@/lib/formatters'
 interface InvoiceImportDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -196,13 +197,6 @@ async function fetchVenues(): Promise<Venue[]> {
   return data.venues || []
 }
 
-// Helper outside component
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat('it-IT', {
-    style: 'currency',
-    currency: 'EUR',
-  }).format(value)
-}
 
 export function InvoiceImportDialog({
   open,
@@ -220,7 +214,11 @@ export function InvoiceImportDialog({
   const [, setZipExtraction] = useState<ZipExtractionState | null>(null)
   
   // Review Item State
-  const [selectedVenueId, setSelectedVenueId] = useState<string>('')
+  // Finché l'utente non sceglie vale la prima sede caricata: è un valore
+  // derivato dalla risposta, non uno stato da riallineare con un effetto.
+  const [sedeScelta, setSedeScelta] = useState<string | null>(null)
+  // AccountCombobox lavora con undefined per «nessun conto», non con un
+  // valore sentinella: il Select che aveva bisogno di '_none' non c'è più.
   const [selectedAccountId, setSelectedAccountId] = useState<string | undefined>(undefined)
   const [createNewSupplier, setCreateNewSupplier] = useState(false)
   const [, setSupplierFormOpen] = useState(true)
@@ -238,13 +236,8 @@ export function InvoiceImportDialog({
     enabled: open,
   })
 
-  // Set default venue (single-venue: use first venue from API)
-  useEffect(() => {
-    if (venues?.length && !selectedVenueId) {
-      const venueId = venues[0].id
-      queueMicrotask(() => setSelectedVenueId(venueId))
-    }
-  }, [venues, selectedVenueId])
+  // Sede predefinita (installazione a sede unica: la prima che l'API restituisce)
+  const selectedVenueId = sedeScelta ?? venues?.[0]?.id ?? ''
 
   const resetDialog = useCallback(() => {
     setStep('upload')
@@ -707,7 +700,7 @@ export function InvoiceImportDialog({
             <div className="grid grid-cols-2 gap-4">
                <div className="space-y-2">
                 <Label>Sede *</Label>
-                <Select value={selectedVenueId} onValueChange={setSelectedVenueId}>
+                <Select value={selectedVenueId} onValueChange={setSedeScelta}>
                   <SelectTrigger>
                     <SelectValue placeholder="Seleziona sede" />
                   </SelectTrigger>
@@ -749,7 +742,7 @@ export function InvoiceImportDialog({
              
              <div className="grid grid-cols-3 gap-4 text-center">
                 <div className="p-3 bg-slate-50 rounded-lg">
-                   <p className="text-2xl font-bold text-slate-700">{stats.total}</p>
+                   <p className="text-2xl font-bold text-foreground">{stats.total}</p>
                    <p className="text-xs text-slate-500 uppercase">Totali</p>
                 </div>
                 <div className="p-3 bg-green-50 rounded-lg">

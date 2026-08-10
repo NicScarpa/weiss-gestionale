@@ -4,6 +4,7 @@ import type {
   DayWarning,
   PolicyRules,
   RecognizedDay,
+  ShiftReview,
   TimeRounding,
 } from './timekeeping-types'
 
@@ -110,7 +111,11 @@ function formatMinutes(minutes: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
-function emptyDay(warnings: DayWarning[], steps: string[]): RecognizedDay {
+function emptyDay(
+  warnings: DayWarning[],
+  steps: string[],
+  pendingReviewMinutes = 0
+): RecognizedDay {
   return {
     clockIn: null,
     clockOut: null,
@@ -121,6 +126,7 @@ function emptyDay(warnings: DayWarning[], steps: string[]): RecognizedDay {
     holidayMinutes: 0,
     breakMinutes: 0,
     cappedMinutes: 0,
+    pendingReviewMinutes,
     steps,
     warnings,
   }
@@ -132,22 +138,83 @@ interface Interval {
 }
 
 /**
+ * Toglie di mezzo gli orari che il sistema aveva supposto e che una correzione
+ * approvata ha nel frattempo sostituito.
+ *
+ * Serve perché lo storico delle timbrature è a sola aggiunta — nessuna route
+ * modifica o cancella una timbratura, ed è giusto così. Il rimedio previsto è
+ * la rettifica: si aggiunge l'orario corretto e la richiesta approvata lo
+ * collega. Ma finché il motore non distingueva le due, teneva comunque la più
+ * tarda, e le ore sbagliate scritte dalla chiusura automatica si potevano
+ * togliere **solo entrando nel database**. Nessuno in azienda poteva
+ * correggerle dall'applicazione.
+ *
+ * La sostituzione vale per tipo di timbratura e solo contro ciò che ha scritto
+ * il **sistema**: una supposizione cede a una decisione umana. Le timbrature
+ * vere del dipendente non si toccano — quelle sono fatti.
+ */
+function scartaSupposizioniCorrette(ordered: DayPunch[]): {
+  effettive: DayPunch[]
+  sostituite: DayPunch[]
+} {
+  const tipiCorretti = new Set(
+    ordered.filter((p) => p.origine === 'correzione').map((p) => p.type)
+  )
+
+  if (tipiCorretti.size === 0) {
+    return { effettive: ordered, sostituite: [] }
+  }
+
+  const sostituite = ordered.filter(
+    (p) => p.origine === 'sistema' && tipiCorretti.has(p.type)
+  )
+
+  return {
+    effettive: ordered.filter((p) => !sostituite.includes(p)),
+    sostituite,
+  }
+}
+
+/**
+ * Distanza entro cui una seconda uscita è ancora il doppio tocco sul telefono
+ * e non una timbratura nuova.
+ *
+ * Senza questo limite l'estensione valeva a qualunque distanza, e nove ore
+ * dopo faceva pagare tutto il buco: `IN 09:00, OUT 13:00, OUT 22:00` dava 780
+ * minuti invece di 240 — 123 € lordi in più in un giorno — con la lista degli
+ * avvisi vuota. È il difetto 1 dell'audit W5-F3, e succedeva nel caso più
+ * ordinario che ci sia: chi rientra dalla pausa e non timbra l'entrata, perché
+ * quel giorno una timbratura l'ha già fatta.
+ */
+const DOPPIA_USCITA_TOLLERANZA_MINUTI = 15
+
+/**
  * Accoppia le timbrature in turni [entrata, uscita]. Una giornata può averne
  * più d'uno — il turno spezzato del bar, 07:00-13:00 e 17:00-22:00 — e il
  * buco fra i turni non è lavoro.
  *
  * Regole di tolleranza sui dati sporchi: un'entrata doppia dentro un turno
- * aperto si ignora (vale la prima); un'uscita doppia dopo un turno chiuso lo
- * estende (vale l'ultima); un'uscita senza nessuna entrata prima si ignora.
+ * aperto si ignora (vale la prima); un'uscita doppia entro pochi minuti dalla
+ * fine del turno lo estende (vale l'ultima); **oltre quel margine l'uscita è
+ * orfana**, cioè le manca l'entrata, e viene scartata invece di allungare il
+ * turno precedente; un'uscita senza nessuna entrata prima si ignora; un
+ * inizio pausa che ne sostituisce un altro ancora aperto vale come quello
+ * buono, ma la pausa sostituita viene segnalata: non è mai stata chiusa.
  */
 function pairPunches(ordered: DayPunch[]): {
   segments: Interval[]
   punchedBreaks: Interval[]
   hasIn: boolean
   danglingIn: number | null
+  /** Uscite troppo lontane per essere un doppio tocco: manca la loro entrata. */
+  orphanExits: number[]
+  /** Inizi di pausa rimasti senza BREAK_END: segnalati, non dedotti. */
+  danglingBreaks: number[]
 } {
   const segments: Interval[] = []
   const punchedBreaks: Interval[] = []
+  const orphanExits: number[] = []
+  const danglingBreaks: number[] = []
   let openIn: number | null = null
   let openBreak: number | null = null
   let hasIn = false
@@ -164,9 +231,22 @@ function pairPunches(ordered: DayPunch[]): {
         openIn = null
       } else if (segments.length > 0) {
         const lastSegment = segments[segments.length - 1]
-        lastSegment.end = Math.max(lastSegment.end, punch.minutes)
+        // La distanza si misura dalla fine del turno già chiuso. Un'uscita
+        // anteriore a quella fine dà differenza negativa e resta dentro la
+        // tolleranza: il Math.max la assorbe come prima.
+        if (punch.minutes - lastSegment.end <= DOPPIA_USCITA_TOLLERANZA_MINUTI) {
+          lastSegment.end = Math.max(lastSegment.end, punch.minutes)
+        } else {
+          orphanExits.push(punch.minutes)
+        }
       }
     } else if (punch.type === 'BREAK_START') {
+      // Un inizio pausa che ne sostituisce un altro ancora aperto lascia
+      // indietro una pausa mai chiusa: il calcolo resta quello di sempre
+      // (vale l'ultimo inizio), ma quella sostituita va segnalata.
+      if (openBreak !== null) {
+        danglingBreaks.push(openBreak)
+      }
       openBreak = punch.minutes
     } else if (punch.type === 'BREAK_END' && openBreak !== null) {
       if (punch.minutes > openBreak) {
@@ -176,7 +256,18 @@ function pairPunches(ordered: DayPunch[]): {
     }
   }
 
-  return { segments, punchedBreaks, hasIn, danglingIn: openIn }
+  if (openBreak !== null) {
+    danglingBreaks.push(openBreak)
+  }
+
+  return {
+    segments,
+    punchedBreaks,
+    hasIn,
+    danglingIn: openIn,
+    orphanExits,
+    danglingBreaks: danglingBreaks.sort((a, b) => a - b),
+  }
 }
 
 /** Minuti dell'intervallo [start, end] che cadono dentro i segmenti. */
@@ -226,22 +317,27 @@ function placeBreakWindow(
 /**
  * Applica il turno pianificato come finestra della giornata.
  *
- * Le decisioni di prodotto che incarna: l'anticipo sul turno non conta; il
- * ritardo entro la tolleranza resta quello timbrato, oltre salta a blocchi
- * interi dall'orario del turno (8:30 + ritardo di 21 con blocchi da 30 →
- * 9:00); le ore oltre la fine del turno — o del tutto fuori dal pianificato —
- * si CONTANO ma la giornata viene segnalata per una revisione umana.
+ * Le decisioni di prodotto che incarna: l'anticipo entro la tolleranza non
+ * conta, oltre conta subito — l'ha chiesto il datore — ma resta in revisione
+ * finché un umano non conferma, e il rifiuto lo taglia da solo; il ritardo
+ * entro la tolleranza resta quello timbrato, oltre salta a blocchi interi
+ * dall'orario del turno (8:30 + ritardo di 21 con blocchi da 30 → 9:00); le
+ * ore oltre la fine — o del tutto fuori dal pianificato — restano SOSPESE
+ * finché il revisore non decide: approvate contano, rifiutate si tagliano
+ * alla fine del turno; il buco del turno spezzato coperto dalle timbrature
+ * non è lavoro e non si conta.
  */
 function applyShiftWindows(
   segments: Interval[],
   windows: { startMinutes: number; endMinutes: number }[],
   policy: PolicyRules,
+  review: ShiftReview,
   steps: string[],
   warnings: DayWarning[]
-): Interval[] {
+): { segments: Interval[]; pendingReviewMinutes: number } {
   if (windows.length === 0) {
     steps.push('Nessun turno pianificato: le ore sono quelle timbrate.')
-    return segments
+    return { segments, pendingReviewMinutes: 0 }
   }
 
   const ordinate = [...windows].sort((a, b) => a.startMinutes - b.startMinutes)
@@ -253,65 +349,127 @@ function applyShiftWindows(
       '.'
   )
 
-  let minutiOltreTurno = 0
-  let lavoroFuoriTurno = false
+  let pendingReviewMinutes = 0
+  const flags = {
+    anticipoInAttesa: false,
+    oltreInAttesa: false,
+    bucoTagliato: false,
+    uscitaAnticipata: false,
+  }
+  // Il ritardo si arrotonda solo alla prima entrata in ciascuna finestra: chi
+  // esce e rientra nello stesso turno ha già pagato il tempo fuori.
+  const finestreGiaEntrate = new Set<number>()
+  const result: Interval[] = []
 
-  const result = segments
-    .map((s) => {
-      // Il turno di riferimento è quello con la sovrapposizione maggiore.
-      let migliore: { startMinutes: number; endMinutes: number } | null = null
-      let sovrapposizione = 0
-      for (const w of ordinate) {
-        const o = overlap(s.start, s.end, w.startMinutes, w.endMinutes)
-        if (o > sovrapposizione) {
-          sovrapposizione = o
-          migliore = w
+  for (const s of segments) {
+    const toccate = ordinate
+      .map((w, i) => ({ w, i }))
+      .filter(({ w }) => overlap(s.start, s.end, w.startMinutes, w.endMinutes) > 0)
+
+    if (toccate.length === 0) {
+      // Lavoro del tutto fuori dal pianificato: stessa sorte delle ore oltre
+      // la fine del turno, decide l'anomalia di straordinario.
+      const minuti = s.end - s.start
+      if (review.overtime === 'APPROVED') {
+        result.push(s)
+        steps.push(`Lavoro fuori dal turno approvato: ${minuti} min contati.`)
+      } else if (review.overtime === 'REJECTED') {
+        steps.push(`Lavoro fuori dal turno rifiutato: ${minuti} min non contati.`)
+      } else {
+        pendingReviewMinutes += minuti
+        flags.oltreInAttesa = true
+        steps.push(
+          `Lavoro fuori dal turno pianificato: ${minuti} min sospesi in attesa di revisione.`
+        )
+      }
+      continue
+    }
+
+    for (let k = 0; k < toccate.length; k++) {
+      const { w, i } = toccate[k]
+      let start = Math.max(s.start, w.startMinutes)
+      let end = Math.min(s.end, w.endMinutes)
+
+      if (k === 0 && s.start < w.startMinutes) {
+        const anticipo = w.startMinutes - s.start
+        if (anticipo <= policy.entryRounding.toleranceMinutes) {
+          steps.push(`Anticipo sul turno: si conta dalle ${formatMinutes(w.startMinutes)}.`)
+        } else if (review.earlyIn === 'REJECTED') {
+          steps.push(
+            `Anticipo di ${anticipo} min rifiutato: si conta dalle ${formatMinutes(w.startMinutes)}.`
+          )
+        } else if (review.earlyIn === 'APPROVED') {
+          start = s.start
+          steps.push(`Anticipo di ${anticipo} min approvato: contato.`)
+        } else {
+          start = s.start
+          flags.anticipoInAttesa = true
+          steps.push(`Anticipo di ${anticipo} min sul turno: contato, in attesa di revisione.`)
+        }
+      } else if (k === 0 && s.start > w.startMinutes && !finestreGiaEntrate.has(i)) {
+        const ritardo = s.start - w.startMinutes
+        const { intervalMinutes, toleranceMinutes } = policy.entryRounding
+        if (intervalMinutes > 1 && ritardo > toleranceMinutes) {
+          const arrotondato =
+            w.startMinutes + Math.ceil(ritardo / intervalMinutes) * intervalMinutes
+          steps.push(
+            `Ritardo di ${ritardo} min oltre la tolleranza di ${toleranceMinutes}: ` +
+              `si conta dalle ${formatMinutes(arrotondato)}.`
+          )
+          start = arrotondato
+        }
+      }
+      finestreGiaEntrate.add(i)
+
+      if (k === toccate.length - 1) {
+        if (s.end > w.endMinutes) {
+          const oltre = s.end - w.endMinutes
+          if (oltre <= policy.exitRounding.toleranceMinutes) {
+            end = s.end
+          } else if (review.overtime === 'APPROVED') {
+            end = s.end
+            steps.push(`${oltre} min oltre la fine del turno approvati: contano.`)
+          } else if (review.overtime === 'REJECTED') {
+            steps.push(
+              `${oltre} min oltre la fine del turno rifiutati: ` +
+                `si conta fino alle ${formatMinutes(w.endMinutes)}.`
+            )
+          } else {
+            pendingReviewMinutes += oltre
+            flags.oltreInAttesa = true
+            steps.push(`${oltre} min oltre la fine del turno: sospesi in attesa di revisione.`)
+          }
+        } else if (w.endMinutes - s.end > policy.exitRounding.toleranceMinutes) {
+          flags.uscitaAnticipata = true
+          steps.push(
+            `Uscita anticipata: ${w.endMinutes - s.end} min prima della fine del turno.`
+          )
+        }
+      } else {
+        // La timbratura copre il buco fra questa finestra e la prossima.
+        const next = toccate[k + 1].w
+        const buco = overlap(s.start, s.end, w.endMinutes, next.startMinutes)
+        if (buco > 0) {
+          flags.bucoTagliato = true
+          steps.push(
+            `Buco del turno spezzato (${formatMinutes(w.endMinutes)}-` +
+              `${formatMinutes(next.startMinutes)}): ${buco} min non contati.`
+          )
         }
       }
 
-      if (!migliore) {
-        lavoroFuoriTurno = true
-        return s
+      if (end > start) {
+        result.push({ start, end })
       }
-
-      let start = Math.max(s.start, migliore.startMinutes)
-      if (start !== s.start) {
-        steps.push(
-          `Anticipo sul turno: si conta dalle ${formatMinutes(migliore.startMinutes)}.`
-        )
-      }
-
-      const ritardo = start - migliore.startMinutes
-      const { intervalMinutes, toleranceMinutes } = policy.entryRounding
-      if (ritardo > 0 && intervalMinutes > 1 && ritardo > toleranceMinutes) {
-        const arrotondato =
-          migliore.startMinutes + Math.ceil(ritardo / intervalMinutes) * intervalMinutes
-        steps.push(
-          `Ritardo di ${ritardo} min oltre la tolleranza di ${toleranceMinutes}: ` +
-            `si conta dalle ${formatMinutes(arrotondato)}.`
-        )
-        start = arrotondato
-      }
-
-      const oltre = s.end - migliore.endMinutes
-      if (oltre > policy.exitRounding.toleranceMinutes) {
-        minutiOltreTurno += oltre
-      }
-
-      return { start, end: s.end }
-    })
-    .filter((s) => s.end > s.start)
-
-  if (minutiOltreTurno > 0 || lavoroFuoriTurno) {
-    warnings.push('OLTRE_TURNO')
-    steps.push(
-      minutiOltreTurno > 0
-        ? `${minutiOltreTurno} min oltre la fine del turno: contati, ma da rivedere.`
-        : 'Lavoro fuori dal turno pianificato: contato, ma da rivedere.'
-    )
+    }
   }
 
-  return result
+  if (flags.anticipoInAttesa) warnings.push('ANTICIPO_TURNO')
+  if (flags.oltreInAttesa) warnings.push('OLTRE_TURNO')
+  if (flags.bucoTagliato) warnings.push('BUCO_TURNO')
+  if (flags.uscitaAnticipata) warnings.push('USCITA_ANTICIPATA')
+
+  return { segments: result, pendingReviewMinutes }
 }
 
 /**
@@ -331,11 +489,34 @@ export function computeRecognizedDay(
   const warnings: DayWarning[] = []
 
   const ordered = [...punches].sort((a, b) => a.minutes - b.minutes)
-  const paired = pairPunches(ordered)
+  const { effettive, sostituite } = scartaSupposizioniCorrette(ordered)
+
+  if (sostituite.length > 0) {
+    const orari = sostituite.map((p) => formatMinutes(p.minutes)).join(', ')
+    steps.push(
+      `Correzione approvata: l'orario scritto dal sistema (${orari}) è stato sostituito.`
+    )
+  }
+
+  const paired = pairPunches(effettive)
 
   if (!paired.hasIn) {
     warnings.push('ENTRATA_MANCANTE')
     return emptyDay(warnings, ['Nessuna entrata registrata.'])
+  }
+
+  // Un'uscita troppo lontana dal turno chiuso non lo estende: le manca
+  // l'entrata. Il turno vale quello che è stato timbrato davvero, e la
+  // giornata va segnalata — altrimenti l'errore arriva muto al cedolino.
+  // I passaggi nominano l'orario scartato: prima la riga diceva «entrata
+  // 09:00, uscita 22:00» e nascondeva proprio ciò che doveva far scoprire.
+  if (paired.orphanExits.length > 0) {
+    warnings.push('ENTRATA_MANCANTE')
+    const orari = paired.orphanExits.map(formatMinutes).join(', ')
+    steps.push(
+      `Uscita senza entrata alle ${orari}: non estende il turno precedente ` +
+        'e non viene contata. Serve una correzione.'
+    )
   }
 
   const dayStart = policy.dayStartMinutes
@@ -381,25 +562,52 @@ export function computeRecognizedDay(
     )
   }
 
+  // La pausa iniziata e mai chiusa NON viene dedotta: le ore restano quelle
+  // di prima. È una decisione di prodotto presa da chi paga gli stipendi —
+  // nessuno viene pagato di meno per una dimenticanza — e per questo il
+  // motore non tocca il calcolo. Cambia che il dato incompleto si dichiara:
+  // la giornata alza un avviso, e su quell'avviso l'export delle paghe si
+  // rifiuta di partire finché un umano non ha guardato. Prima l'ora regalata
+  // passava muta fino al consulente del lavoro.
+  if (paired.danglingBreaks.length > 0) {
+    warnings.push('PAUSA_NON_CHIUSA')
+    const orari = paired.danglingBreaks.map(formatMinutes).join(', ')
+    steps.push(
+      `Pausa iniziata alle ${orari} e mai chiusa: le ore restano quelle ` +
+        "timbrate, ma la giornata va verificata prima dell'export."
+    )
+  }
+
   if (policy.useShiftAsWindow) {
-    // La giornata segue il turno pianificato: l'anticipo non conta, il
-    // ritardo si arrotonda a blocchi dall'orario del turno, le ore oltre la
-    // fine si contano ma la giornata va in revisione. Senza turno pianificato
-    // le ore sono quelle timbrate: l'extra chiamato all'ultimo non deve
-    // perdere nulla per un difetto di pianificazione.
-    segments = applyShiftWindows(
+    // La giornata segue il turno pianificato. Senza turno pianificato le ore
+    // sono quelle timbrate: l'extra chiamato all'ultimo non deve perdere
+    // nulla per un difetto di pianificazione.
+    const applied = applyShiftWindows(
       segments,
       context.shiftWindows ?? [],
       policy,
+      context.shiftReview ?? {},
       steps,
       warnings
     )
 
-    if (segments.length === 0) {
-      return emptyDay(warnings, [...steps, 'Nessuna ora riconosciuta.'])
+    if (applied.segments.length === 0) {
+      return emptyDay(
+        warnings,
+        [...steps, 'Nessuna ora riconosciuta.'],
+        applied.pendingReviewMinutes
+      )
     }
 
-    return finishDay(segments, paired.punchedBreaks, policy, context, steps, warnings)
+    return finishDay(
+      applied.segments,
+      paired.punchedBreaks,
+      policy,
+      context,
+      steps,
+      warnings,
+      applied.pendingReviewMinutes
+    )
   }
 
   // Finestra della giornata, allargata dalla flessibilità. Se la regola non ne
@@ -470,7 +678,8 @@ function finishDay(
   policy: PolicyRules,
   context: DayContext,
   steps: string[],
-  warnings: DayWarning[]
+  warnings: DayWarning[],
+  pendingReviewMinutes = 0
 ): RecognizedDay {
   const grossMinutes = segments.reduce((sum, s) => sum + (s.end - s.start), 0)
 
@@ -607,6 +816,7 @@ function finishDay(
     holidayMinutes,
     breakMinutes,
     cappedMinutes,
+    pendingReviewMinutes,
     steps,
     warnings,
   }

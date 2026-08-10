@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
-import { formatCurrency, formatDate, DEFAULT_VAT_RATE, DEFAULT_PARTIAL_HOURS } from '@/lib/constants'
+import { formatDate, DEFAULT_VAT_RATE, DEFAULT_PARTIAL_HOURS } from '@/lib/constants'
+import { formatCurrency } from '@/lib/formatters'
 import { CashStationCard, CashStationData, emptyCashStation } from './CashStationCard'
 import { HourlyPartialsSection, HourlyPartialData } from './HourlyPartialsSection'
 import { ExpensesSection, ExpenseData } from './ExpensesSection'
@@ -17,6 +18,12 @@ import { useClosureCalculations } from './hooks/useClosureCalculations'
 import { toast } from 'sonner'
 import type { CostCenterOption } from '@/components/prima-nota/shared/CostCenterSelect'
 import { resolveDefaultClosureCostCenterId } from '@/lib/closure-cost-center'
+import {
+  AVVISO_OFFLINE,
+  ErroreSenzaRete,
+  esitoOppureNiente,
+  type EsitoSalvataggio,
+} from '@/lib/offline'
 
 import { logger } from '@/lib/logger'
 
@@ -105,8 +112,8 @@ interface ClosureFormProps {
   costCenters: CostCenterOption[]
   closureId?: string
   status?: 'DRAFT' | 'SUBMITTED' | 'VALIDATED'
-  onSave?: (data: ClosureFormData) => Promise<void>
-  onSubmit?: (data: ClosureFormData) => Promise<void>
+  onSave?: (data: ClosureFormData) => Promise<EsitoSalvataggio | void>
+  onSubmit?: (data: ClosureFormData) => Promise<EsitoSalvataggio | void>
 }
 
 export function ClosureForm({
@@ -125,11 +132,16 @@ export function ClosureForm({
 }: ClosureFormProps) {
   const router = useRouter()
   const [isSaving, setIsSaving] = useState(false)
+  // Timbrature ancora aperte, riferite dalla sezione Presenze: bloccano l'invio.
+  const [sessioniAperte, setSessioniAperte] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [previousCoffeeCount, setPreviousCoffeeCount] = useState<number | null>(null)
 
-  // Inizializza stazioni da template (include tutte, verranno filtrate in visualizzazione)
-  const initializeStations = useCallback((): (CashStationData & { isEventOnly?: boolean })[] => {
+  // Inizializza stazioni da template (include tutte, verranno filtrate in visualizzazione).
+  // Serve una volta sola, all'inizializzazione dello stato: memoizzarla non dava
+  // alcun vantaggio e le dipendenze dichiarate a mano non coincidevano con quelle
+  // che il compiler deduce, il che gli impediva di ottimizzare tutto il componente.
+  const initializeStations = (): (CashStationData & { isEventOnly?: boolean })[] => {
     if (initialData?.stations?.length) {
       // Per chiusure esistenti, aggiungi isEventOnly dal template
       return initialData.stations.map((station) => {
@@ -147,10 +159,10 @@ export function ClosureForm({
       ...emptyCashStation,
       cashCount: { ...emptyCashCount },
     }))
-  }, [initialData?.stations, cashStationTemplates])
+  }
 
   // State form
-  const [formData, setFormData] = useState<ClosureFormData>({
+  const [formData, setFormData] = useState<ClosureFormData>(() => ({
     date: initialData?.date || new Date(),
     venueId,
     isEvent: initialData?.isEvent || false,
@@ -168,7 +180,7 @@ export function ClosureForm({
     })),
     expenses: initialData?.expenses || [],
     attendance: initialData?.attendance || [],
-  })
+  }))
 
   // Calcoli totali (extracted to hook)
   const totals = useClosureCalculations({
@@ -298,11 +310,38 @@ export function ClosureForm({
 
     setIsSaving(true)
     try {
-      await onSave(formData)
+      const esito = esitoOppureNiente(await onSave(formData))
+
+      // Conflitto: il messaggio e il cambio di pagina sono già partiti da chi
+      // ha parlato col server. Un «Bozza salvata» qui sopra sarebbe il secondo
+      // messaggio, e direbbe il contrario del primo.
+      if (esito?.esito === 'conflitto') return
+
+      if (esito?.esito === 'in-coda') {
+        toast.success('Chiusura salvata su questo dispositivo', {
+          id: AVVISO_OFFLINE,
+          description:
+            'Sei offline: partirà da sola appena torna la rete. Puoi chiudere la pagina.',
+          duration: 8000,
+        })
+        return
+      }
+
       toast.success('Bozza salvata', {
         description: 'La chiusura è stata salvata correttamente.',
       })
     } catch (error) {
+      // Senza rete e senza coda: quello che si può dire è solo questo, e va
+      // detto sul canale degli avvisi offline, che così ne mostra uno solo.
+      if (error instanceof ErroreSenzaRete) {
+        toast.warning('Chiusura non salvata', {
+          id: AVVISO_OFFLINE,
+          description: error.message,
+          duration: 10000,
+        })
+        return
+      }
+
       logger.error('Errore salvataggio', error)
       const err = error instanceof Error ? error : new Error('Errore nel salvataggio')
       const details = Array.isArray((err as unknown as { details?: unknown }).details)
@@ -328,6 +367,18 @@ export function ClosureForm({
     if (blockingIssues.length > 0) {
       toast.error('Invio non possibile', {
         description: blockingIssues.join('\n'),
+      })
+      return
+    }
+
+    // La chiusura termina il servizio: prima dell'invio vanno confermate le
+    // uscite di chi risulta ancora dentro. Il server rifiuta comunque.
+    if (sessioniAperte > 0) {
+      toast.error('Timbrature ancora aperte', {
+        description:
+          sessioniAperte === 1
+            ? 'Una persona risulta ancora dentro: conferma il suo orario di uscita nella sezione Presenze.'
+            : `${sessioniAperte} persone risultano ancora dentro: conferma i loro orari di uscita nella sezione Presenze.`,
       })
       return
     }
@@ -425,12 +476,37 @@ export function ClosureForm({
 
     setIsSubmitting(true)
     try {
-      await onSubmit(formData)
+      const esito = esitoOppureNiente(await onSubmit(formData))
+
+      if (esito?.esito === 'conflitto') return
+
+      if (esito?.esito === 'in-coda') {
+        // La coda porta al server una bozza: l'invio per validazione è un
+        // secondo passo che il server deve accettare, e non si può fingere che
+        // sia già avvenuto.
+        toast.success('Chiusura salvata su questo dispositivo', {
+          id: AVVISO_OFFLINE,
+          description:
+            "Sei offline: partirà come bozza appena torna la rete. L'invio per validazione va rifatto da lì.",
+          duration: 10000,
+        })
+        return
+      }
+
       toast.success('Inviata per validazione', {
         description: 'La chiusura è stata inviata correttamente.',
       })
       router.push('/chiusura-cassa')
     } catch (error) {
+      if (error instanceof ErroreSenzaRete) {
+        toast.warning('Chiusura non inviata', {
+          id: AVVISO_OFFLINE,
+          description: error.message,
+          duration: 10000,
+        })
+        return
+      }
+
       logger.error('Errore invio', error)
       const err = error instanceof Error ? error : new Error("Errore nell'invio")
       const details = Array.isArray((err as unknown as { details?: unknown }).details)
@@ -557,6 +633,7 @@ export function ClosureForm({
         disabled={isReadOnly}
         closureDate={format(formData.date, 'yyyy-MM-dd')}
         venueId={venueId}
+        onSessioniAperteChange={setSessioniAperte}
       />
 
       {/* Riepilogo */}

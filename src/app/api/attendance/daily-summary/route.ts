@@ -20,13 +20,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
-    // Verifica ruolo
+    // Verifica ruolo. Lo staff è ammesso perché è lo staff a compilare la
+    // chiusura di cassa a fine turno, e la chiusura dichiara le ore dei
+    // colleghi: senza questi dati riscriverebbe a mano ore che il sistema
+    // ha già registrato. Qui non compaiono paghe né tariffe — quelle sono
+    // in /api/schedules/daily, che la stessa schermata già interroga.
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
       include: { role: true },
     })
 
-    if (!user || !['admin', 'manager'].includes(user.role.name)) {
+    if (!user || !['admin', 'manager', 'staff'].includes(user.role.name)) {
       return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 

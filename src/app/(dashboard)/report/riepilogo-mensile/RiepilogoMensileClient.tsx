@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { formatCurrency, formatPercentage } from '@/lib/formatters'
 
 interface ExpenseByAccount {
   id: string
@@ -127,17 +128,6 @@ export function RiepilogoMensileClient() {
     fetchData()
   }, [selectedYear])
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('it-IT', {
-      style: 'currency',
-      currency: 'EUR',
-    }).format(value)
-  }
-
-  const formatPercentage = (value: number) => {
-    return `${value.toFixed(1)}%`
-  }
-
   const exportCSV = () => {
     if (!data) return
 
@@ -195,14 +185,16 @@ export function RiepilogoMensileClient() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/report">
+      {/* Senza `flex-wrap` il bottone tiene la sua larghezza e al titolo
+          resta una colonna di poche lettere, che va a capo quattro volte */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-4">
+          <Link href="/report" className="shrink-0">
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
-          <div>
+          <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight">Riepilogo Mensile</h1>
             <p className="text-muted-foreground">
               Entrate, uscite e margini per mese
@@ -453,12 +445,15 @@ export function RiepilogoMensileClient() {
 
                   return (
                     <div key={month.monthNumber} className="space-y-1">
-                      <div className="flex items-center justify-between text-sm">
+                      {/* Mese e quattro colonne fisse non stanno in un
+                          telefono: sotto sm il mese sta sopra e i valori si
+                          distribuiscono sulla riga che segue */}
+                      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm">
                         <span className="font-medium capitalize w-24">{month.monthShort}</span>
-                        <div className="flex items-center gap-4 text-xs">
-                          <span className="text-green-600 w-20 text-right">+{formatCurrency(month.income.gross)}</span>
-                          <span className="text-red-600 w-20 text-right">-{formatCurrency(month.expenses.total)}</span>
-                          <span className={`w-20 text-right font-medium ${month.net.total >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
+                        <div className="flex w-full items-center justify-between gap-2 text-xs sm:w-auto sm:justify-end sm:gap-4">
+                          <span className="min-w-0 truncate text-right tabular-nums text-green-600 sm:w-20">+{formatCurrency(month.income.gross)}</span>
+                          <span className="min-w-0 truncate text-right tabular-nums text-red-600 sm:w-20">-{formatCurrency(month.expenses.total)}</span>
+                          <span className={`min-w-0 truncate text-right font-medium tabular-nums sm:w-20 ${month.net.total >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
                             ={formatCurrency(month.net.total)}
                           </span>
                           <Badge variant={month.margin >= data.totals.margin ? 'default' : 'secondary'} className="w-16 justify-center">

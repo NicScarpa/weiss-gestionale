@@ -33,6 +33,12 @@ const eslintConfig = defineConfig([
     // vietati qui) e blocca il pre-commit hook di chiunque stia lavorando
     // nella working directory principale per una violazione che non è sua.
     ".claude/worktrees/**",
+    // Service worker compilato da `npm run build:sw`: codice generato.
+    "public/sw.js",
+    // Rapporto HTML di `npm run test:coverage`: è generato, non è nel
+    // repository, e chi lo produce in locale si trova centinaia di avvisi su
+    // file che non ha scritto.
+    "coverage/**",
   ]),
 ]);
 

@@ -1,0 +1,36 @@
+{
+  // I test sotto il compilatore.
+  //
+  // `tsconfig.json` esclude `**/*.test.ts`, `**/*.spec.ts` e `**/__tests__/**`,
+  // e nessun altro config li includeva: in un progetto con oltre mille test,
+  // nessuno era mai passato sotto `tsc`. Non è un dettaglio di igiene — quello
+  // che si nascondeva lì dentro erano dati finti più poveri di quelli veri
+  // (record Prisma senza `createdAt`, sessioni senza metà dei campi, conteggi
+  // cassa senza i tagli da 500 e 200) e un valore di enum inesistente,
+  // `ScheduleDocumentType.FATTURA`, che a runtime valeva `undefined`.
+  //
+  // Resta separato dal config principale invece di allargare quello: è
+  // `tsconfig.json` che Next legge durante `next build`, e includervi i test
+  // significherebbe compilarli a ogni build di produzione, con i tipi di
+  // vitest e di jsdom fra i piedi. Il prezzo è che il codice sotto `src/`
+  // viene attraversato due volte, una per config; sono una quarantina di
+  // secondi di CI, che è poco per la classe di errori che intercetta.
+  //
+  // La suite end-to-end ha il suo: `tsconfig.e2e.json`, perché gira sotto
+  // Playwright e non ha nulla a che vedere con vitest.
+  "extends": "./tsconfig.json",
+
+  "compilerOptions": {
+    // Il config principale tiene `incremental`, che scriverebbe un
+    // .tsbuildinfo per ciascuno dei due.
+    "incremental": false,
+    // `globals: true` in vitest.config.ts: describe, it ed expect esistono
+    // senza import, e senza questa riga il compilatore non li conosce.
+    "types": ["vitest/globals", "node"]
+  },
+
+  // `exclude` va azzerato: quello ereditato scarta esattamente i file che
+  // questo config esiste per controllare.
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vitest.setup.ts"],
+  "exclude": ["node_modules"]
+}

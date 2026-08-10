@@ -1,32 +1,19 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { notifyLeaveApproved } from '@/lib/notifications'
-
+import { badRequest, handleApiError, notFound, ok, withAuth } from '@/lib/api-utils'
 import { logger } from '@/lib/logger'
+
+type Params = { id: string }
 const approveSchema = z.object({
   managerNotes: z.string().optional(),
 })
 
 // POST /api/leave-requests/[id]/approve - Approva richiesta
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const POST = withAuth<Params>(async (request: NextRequest, { params, user }) => {
   try {
-    const session = await auth()
-
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
-    // Solo admin e manager possono approvare
-    if (session.user.role !== 'admin' && session.user.role !== 'manager') {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
-    const { id } = await params
+    const { id } = params
     const body = await request.json()
     const { managerNotes } = approveSchema.parse(body)
 
@@ -43,15 +30,12 @@ export async function POST(
     })
 
     if (!leaveRequest) {
-      return NextResponse.json({ error: 'Richiesta non trovata' }, { status: 404 })
+      return notFound('Richiesta non trovata')
     }
 
     // Solo richieste PENDING possono essere approvate
     if (leaveRequest.status !== 'PENDING') {
-      return NextResponse.json(
-        { error: 'Solo le richieste in attesa possono essere approvate' },
-        { status: 400 }
-      )
+      return badRequest('Solo le richieste in attesa possono essere approvate')
     }
 
     // Aggiorna richiesta
@@ -59,7 +43,7 @@ export async function POST(
       where: { id },
       data: {
         status: 'APPROVED',
-        approvedById: session.user.id,
+        approvedById: user.id,
         approvedAt: new Date(),
         managerNotes: managerNotes || null,
       },
@@ -99,22 +83,15 @@ export async function POST(
       logger.error('Errore invio notifica ferie approvate', err)
     )
 
-    return NextResponse.json({
+    return ok({
       ...updated,
       message: 'Richiesta approvata',
     })
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Dati non validi', details: error.issues },
-        { status: 400 }
-      )
-    }
-
-    logger.error('Errore POST /api/leave-requests/[id]/approve', error)
-    return NextResponse.json(
-      { error: 'Errore nell\'approvazione della richiesta' },
-      { status: 500 }
+    return handleApiError(
+      error,
+      'POST /api/leave-requests/[id]/approve',
+      "Errore nell'approvazione della richiesta"
     )
   }
-}
+}, { roles: ['admin', 'manager'] })

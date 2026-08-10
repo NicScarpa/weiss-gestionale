@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -35,6 +36,7 @@ import { Wallet, Plus, Pencil, Trash2, Loader2, Building2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { logger } from '@/lib/logger'
+import { formatCurrency } from '@/lib/formatters'
 interface Venue {
   id: string
   name: string
@@ -64,9 +66,6 @@ const initialFormData = {
 }
 
 export function PrimaNotaSettings() {
-  const [balances, setBalances] = useState<InitialBalance[]>([])
-  const [venues, setVenues] = useState<Venue[]>([])
-  const [loading, setLoading] = useState(true)
   const [editingBalance, setEditingBalance] = useState<InitialBalance | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
@@ -75,40 +74,51 @@ export function PrimaNotaSettings() {
   const [formData, setFormData] = useState(initialFormData)
 
   // Carica venues
-  const fetchVenues = async () => {
-    try {
+  const { data: datiSedi, error: erroreSedi } = useQuery({
+    // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryKey: ['venues'],
+    queryFn: async (): Promise<{ venues?: Venue[] }> => {
       const res = await fetch('/api/venues')
       if (!res.ok) throw new Error('Errore nel caricamento')
-      const data = await res.json()
-      setVenues(data.venues || [])
-    } catch (error) {
-      logger.error('Errore', error)
-      toast.error('Errore nel caricamento delle sedi')
-    }
-  }
+      return res.json()
+    },
+  })
 
   // Carica saldi iniziali
-  const fetchBalances = async () => {
-    try {
-      setLoading(true)
+  const {
+    data: datiSaldi,
+    isFetching: loading,
+    error: erroreSaldi,
+    refetch: fetchBalances,
+  } = useQuery({
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryKey: ['settings', 'initial-balances'],
+    queryFn: async (): Promise<{ data?: InitialBalance[] }> => {
       const res = await fetch('/api/settings/initial-balances')
       if (!res.ok) throw new Error('Errore nel caricamento')
-      const data = await res.json()
-      setBalances(data.data || [])
-    } catch (error) {
-      logger.error('Errore', error)
-      toast.error('Errore nel caricamento dei saldi iniziali')
-    } finally {
-      setLoading(false)
-    }
-  }
+      return res.json()
+    },
+  })
+
+  const venues = datiSedi?.venues || []
+  const balances = datiSaldi?.data || []
 
   useEffect(() => {
-    queueMicrotask(() => {
-      fetchVenues()
-      fetchBalances()
-    })
-  }, [])
+    if (erroreSedi) {
+      logger.error('Errore', erroreSedi)
+      toast.error('Errore nel caricamento delle sedi')
+    }
+  }, [erroreSedi])
+
+  useEffect(() => {
+    if (erroreSaldi) {
+      logger.error('Errore', erroreSaldi)
+      toast.error('Errore nel caricamento dei saldi iniziali')
+    }
+  }, [erroreSaldi])
 
   // Apri dialog per nuovo saldo
   const handleNew = () => {
@@ -205,13 +215,6 @@ export function PrimaNotaSettings() {
   }
 
   // Formatta valuta
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('it-IT', {
-      style: 'currency',
-      currency: 'EUR',
-    }).format(value)
-  }
-
   // Genera anni disponibili (5 anni indietro, anno corrente, anno successivo)
   const availableYears = Array.from({ length: 7 }, (_, i) => currentYear - 5 + i)
 

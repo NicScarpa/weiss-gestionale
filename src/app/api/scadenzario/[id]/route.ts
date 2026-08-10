@@ -5,16 +5,35 @@ import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
-import { ScheduleStatus, SchedulePriority, ScheduleDocumentType } from '@/types/schedule'
+import { SchedulePriority, ScheduleDocumentType } from '@/types/schedule'
 import { applicaStimaSuScadenza, ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
+import {
+  bloccaScadenza,
+  ricalcolaStatoSchedule,
+  sommaPagamenti,
+  TOLLERANZA_IMPORTI,
+} from '@/lib/scadenzario/stato-schedule'
+
+/**
+ * Campi che descrivono lo stato di pagamento: si derivano dai pagamenti
+ * registrati e non si scrivono da qui. Questa PATCH poteva dichiarare una
+ * scadenza pagata senza toccare l'importo pagato — da cui scadenze "pagate"
+ * con residuo positivo — e scriveva una data di pagamento a piacere, che poi
+ * inquinava la stima del ritardo del fornitore.
+ */
+const CAMPI_DERIVATI = ['stato', 'dataPagamento', 'importoPagato'] as const
+
+const ROUTE_PER_CAMPO: Record<(typeof CAMPI_DERIVATI)[number], string> = {
+  stato: 'PATCH /api/scadenzario/[id]/stato',
+  dataPagamento: 'POST /api/scadenzario/[id]/pagamenti',
+  importoPagato: 'POST /api/scadenzario/[id]/pagamenti',
+}
 
 const updateScheduleSchema = z.object({
   descrizione: z.string().min(1).optional(),
-  stato: z.nativeEnum(ScheduleStatus).optional(),
   importoTotale: z.number().positive().optional(),
   dataScadenza: z.coerce.date().or(z.string()).optional(),
   dataEmissione: z.coerce.date().or(z.string()).optional(),
-  dataPagamento: z.coerce.date().or(z.string()).optional(),
   dataAttesa: z.coerce.date().or(z.string()).nullable().optional(),
   tipoDocumento: z.nativeEnum(ScheduleDocumentType).optional(),
   numeroDocumento: z.string().optional(),
@@ -125,6 +144,20 @@ export async function PATCH(
     }
 
     const body = await request.json()
+
+    const derivatiRichiesti = CAMPI_DERIVATI.filter((campo) => campo in body)
+    if (derivatiRichiesti.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            'Stato e importo pagato si derivano dai pagamenti registrati e non si ' +
+            'modificano da qui',
+          campi: derivatiRichiesti.map((campo) => ({ campo, usare: ROUTE_PER_CAMPO[campo] })),
+        },
+        { status: 400 }
+      )
+    }
+
     const validatedData = updateScheduleSchema.parse(body)
 
     // Se fornitore specificato, verififica esistenza
@@ -137,12 +170,8 @@ export async function PATCH(
       }
     }
 
-    // Aggiorna automaticamente stato se pagato interamente
     const { dataAttesa: dataAttesaInput, ...datiScadenza } = validatedData
     const updateData: Prisma.ScheduleUpdateInput = { ...datiScadenza }
-    if (validatedData.dataPagamento && !validatedData.stato) {
-      updateData.stato = ScheduleStatus.PAGATA
-    }
 
     if (dataAttesaInput !== undefined) {
       if (existing.tipo !== 'passiva') {
@@ -173,35 +202,64 @@ export async function PATCH(
       }
     }
 
-    const schedule = await prisma.schedule.update({
-      where: { id: id },
-      data: updateData,
-      include: {
-        supplier: {
-          select: {
-            id: true,
-            name: true,
-          },
+    // L'aggiornamento e il ricalcolo che ne consegue stanno nella stessa
+    // transazione, con la scadenza bloccata: abbassare l'importo totale può
+    // saldarla, e fra la verifica del residuo e la scrittura non deve poter
+    // entrare un pagamento.
+    const esito = await prisma.$transaction(async (tx) => {
+      const bloccata = await bloccaScadenza(tx, id)
+      if (!bloccata) return { errore: 'not_found' } as const
+
+      if (validatedData.importoTotale !== undefined) {
+        const { pagato } = await sommaPagamenti(tx, id)
+        if (validatedData.importoTotale < pagato - TOLLERANZA_IMPORTI) {
+          return {
+            errore: 'importo_sotto_pagato',
+            motivo:
+              `Sulla scadenza risultano ${pagato.toFixed(2)} € già pagati: l'importo totale ` +
+              'non può scendere sotto quella cifra',
+          } as const
+        }
+      }
+
+      const schedule = await tx.schedule.update({
+        where: { id: id },
+        data: updateData,
+        include: {
+          supplier: { select: { id: true, name: true } },
+          createdBy: { select: { id: true, firstName: true, lastName: true } },
+          payments: { orderBy: { dataPagamento: 'desc' }, take: 5 },
         },
-        createdBy: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-        payments: {
-          orderBy: { dataPagamento: 'desc' },
-          take: 5,
-        },
-      },
+      })
+
+      // Cambiare l'importo totale sposta la soglia del saldo: la scadenza può
+      // essere diventata pagata (o non esserlo più) senza che sia entrato o
+      // uscito un centesimo.
+      const stato =
+        validatedData.importoTotale !== undefined
+          ? await ricalcolaStatoSchedule(tx, id)
+          : null
+
+      return { schedule, stato } as const
     })
+
+    if ('errore' in esito) {
+      if (esito.errore === 'not_found') {
+        return NextResponse.json({ error: 'Scadenza non trovata' }, { status: 404 })
+      }
+      return NextResponse.json({ error: esito.motivo }, { status: 422 })
+    }
+
+    const schedule = esito.schedule
 
     // Se la PATCH ha saldato la scadenza, la storia del fornitore è cambiata:
     // le stime delle sue altre scadenze aperte si aggiornano (stesso principio
     // della route pagamenti). Best-effort: non blocca mai l'aggiornamento
-    const diventataPagata = schedule.stato === 'pagata' && existing.stato !== 'pagata'
-    if (diventataPagata && schedule.tipo === 'passiva' && schedule.supplierId) {
+    if (
+      (esito.stato?.saldata || esito.stato?.riaperta) &&
+      schedule.tipo === 'passiva' &&
+      schedule.supplierId
+    ) {
       await ricalcolaStimeFornitore(schedule.supplierId, existing.venueId)
     }
 
@@ -276,21 +334,22 @@ export async function DELETE(
       return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
-    // Verifica esistenza e permessi
-    const existing = await prisma.schedule.findFirst({
-      where: { id: id },
-      select: { id: true, venueId: true },
-    })
+    // Cancellazione logica: lo stato passa ad ANNULLATA. Anche questo percorso
+    // passa dal ricalcolo, perché annullare una rata cambia il conto delle rate
+    // aperte della fattura: senza, la fattura resterebbe indietro rispetto alle
+    // sue scadenze.
+    const esito = await prisma.$transaction(async (tx) =>
+      ricalcolaStatoSchedule(tx, id, { statoDichiarato: 'annullata' })
+    )
 
-    if (!existing) {
+    if (!esito) {
       return NextResponse.json({ error: 'Scadenza non trovata' }, { status: 404 })
     }
 
-    // Soft delete - aggiorna stato ad ANNULLATA
-    const schedule = await prisma.schedule.update({
-      where: { id: id },
-      data: { stato: 'annullata' },
-    })
+    // Una rata annullata esce dalla storia dei pagamenti del fornitore
+    if (esito.riaperta && esito.tipo === 'passiva' && esito.supplierId) {
+      await ricalcolaStimeFornitore(esito.supplierId, esito.venueId)
+    }
 
     await createAuditLog({
       userId: session.user.id,
@@ -301,7 +360,13 @@ export async function DELETE(
 
     return NextResponse.json({
       message: 'Scadenza annullata con successo',
-      schedule,
+      schedule: {
+        id,
+        stato: esito.stato,
+        importoTotale: esito.importoTotale,
+        importoPagato: esito.importoPagato,
+        importoResiduo: esito.importoResiduo,
+      },
     })
   } catch (error) {
     logger.error('Errore DELETE /api/scadenzario/[id]', error)
