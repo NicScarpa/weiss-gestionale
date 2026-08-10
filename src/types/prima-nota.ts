@@ -156,18 +156,6 @@ export interface JournalEntryAllocation {
   note?: string
 }
 
-// Saldo registro
-export interface RegisterBalance {
-  id: string
-  venueId: string
-  registerType: RegisterType
-  date: Date
-  openingBalance: number
-  totalDebits: number
-  totalCredits: number
-  closingBalance: number
-}
-
 // Riepilogo saldi
 export interface BalanceSummary {
   cash: {

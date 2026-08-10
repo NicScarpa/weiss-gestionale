@@ -169,7 +169,6 @@ model Venue {
   payments                Payment[]
   products                Product[]
   recurringExpenses       RecurringExpense[]
-  registerBalances        RegisterBalance[]
   relationshipConstraints RelationshipConstraint[]
   shiftAssignments        ShiftAssignment[]
   shiftDefinitions        ShiftDefinition[]
@@ -499,21 +498,6 @@ model JournalEntryAllocation {
   @@index([reconciliationId])
   @@index([accountId])
   @@map("journal_entry_allocations")
-}
-
-model RegisterBalance {
-  id             String       @id @default(cuid())
-  venueId        String       @map("venue_id")
-  registerType   RegisterType @map("register_type")
-  date           DateTime     @db.Date
-  openingBalance Decimal      @map("opening_balance") @db.Decimal(12, 2)
-  totalDebits    Decimal      @map("total_debits") @db.Decimal(12, 2)
-  totalCredits   Decimal      @map("total_credits") @db.Decimal(12, 2)
-  closingBalance Decimal      @map("closing_balance") @db.Decimal(12, 2)
-  venue          Venue        @relation(fields: [venueId], references: [id])
-
-  @@unique([venueId, registerType, date])
-  @@map("register_balances")
 }
 
 model Supplier {
