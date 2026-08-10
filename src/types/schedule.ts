@@ -76,7 +76,13 @@ export interface Schedule {
   importoTotale: number
   importoPagato: number
   importoResiduo: number  // calcolato = totale - pagato
-  valuta: string
+  // NON esiste un campo `valuta`: `schedules` non ha quella colonna e non l'ha
+  // mai avuta. Il tipo la dichiarava obbligatoria, il modulo di creazione la
+  // spediva sempre a 'EUR' e il server la scartava in silenzio — una funzione
+  // dichiarata e mai avuta, che il primo a fidarsene avrebbe pagato vedendo un
+  // importo in valuta estera trattato come euro. Se un giorno servirà davvero,
+  // sarà un lavoro a sé: colonna, conversione e ogni schermata che mostra
+  // importi.
   dataScadenza: Date
   /** Data attesa di cassa: null = coincide con dataScadenza. Si valorizza al
    *  riallineamento sulla data del movimento quando la riconciliazione salda */
@@ -182,7 +188,6 @@ export interface CreateScheduleInput {
   tipo: ScheduleType
   descrizione: string
   importoTotale: number
-  valuta?: string
   dataScadenza: Date
   dataEmissione?: Date
   tipoDocumento?: ScheduleDocumentType

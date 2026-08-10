@@ -217,7 +217,29 @@ export async function PUT(
   }
 }
 
-// DELETE /api/budget/[id] - Elimina budget (solo DRAFT)
+/**
+ * DELETE /api/budget/[id] — sempre rifiutato.
+ *
+ * Decisione del committente: un budget è un documento contabile annuale, e non
+ * esiste il caso in cui cancellarlo sia meglio che archiviarlo. La domanda
+ * «come si cancella senza lasciare macerie» è stata eliminata invece che
+ * risposta.
+ *
+ * Cosa faceva prima, verificato per esecuzione: un budget in bozza **vuoto**
+ * spariva davvero — `prisma.budget.delete` è una cancellazione definitiva su un
+ * modello che ha `deletedAt`, quindi il soft delete esisteva e veniva
+ * scavalcato. Un budget **con righe** invece non si cancellava affatto:
+ * `BudgetLine.budget` e `BudgetAlert.budget` sono `onDelete: Restrict`, la
+ * violazione della chiave esterna non era intercettata e usciva come 500. Il
+ * commento accanto alla `delete` prometteva che righe e alert sparissero «in
+ * cascade», e nello schema quella cascade non c'è mai stata: due comportamenti
+ * diversi a seconda del contenuto, nessuno dei due voluto.
+ *
+ * Il rifiuto nomina l'alternativa perché un divieto che non dice cosa fare
+ * invece è solo un ostacolo. L'archiviazione è un percorso già vivo:
+ * `PUT /api/budget/[id]` con `status: 'ARCHIVED'`, e le righe di un budget
+ * archiviato sono già protette dalla modifica (`lines/route.ts`).
+ */
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -230,48 +252,43 @@ export async function DELETE(
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
-    // Solo admin può eliminare budget
+    // Il controllo dei permessi resta PRIMA del resto: senza, la route
+    // direbbe a chiunque se un budget esiste o no.
     if (session.user.role !== 'admin') {
       return NextResponse.json(
-        { error: 'Solo gli amministratori possono eliminare budget' },
+        { error: 'Non hai i permessi per operare sui budget' },
         { status: 403 }
       )
     }
 
-    // Verifica esistenza
+    // Chi sbaglia identificativo deve continuare a saperlo: il divieto non
+    // deve mangiarsi la diagnostica.
     const existing = await prisma.budget.findUnique({
       where: { id },
+      select: { id: true, year: true, status: true },
     })
 
     if (!existing) {
       return NextResponse.json({ error: 'Budget non trovato' }, { status: 404 })
     }
 
-    // Solo budget in DRAFT possono essere eliminati
-    if (existing.status !== 'DRAFT') {
-      return NextResponse.json(
-        { error: 'Solo i budget in bozza possono essere eliminati' },
-        { status: 400 }
-      )
-    }
-
-    // Elimina il budget (le righe e gli alert vengono eliminati in cascade)
-    await prisma.budget.delete({
-      where: { id },
-    })
-
-    await createAuditLog({
-      userId: session.user.id,
-      action: 'DELETE',
-      entityType: 'Budget',
-      entityId: id,
-    })
-
-    return NextResponse.json({ success: true })
+    return NextResponse.json(
+      {
+        error:
+          `Il budget ${existing.year} non può essere eliminato: è un documento contabile ` +
+          'annuale. Archivialo per toglierlo di mezzo conservandone lo storico, oppure ' +
+          'correggi le sue righe se i numeri sono sbagliati.',
+        alternativa:
+          existing.status === 'ARCHIVED'
+            ? 'Il budget è già archiviato.'
+            : "Archivia il budget: PUT /api/budget/[id] con status 'ARCHIVED'.",
+      },
+      { status: 409 }
+    )
   } catch (error) {
     logger.error('Errore DELETE /api/budget/[id]', error)
     return NextResponse.json(
-      { error: 'Errore nell\'eliminazione del budget' },
+      { error: 'Errore nella richiesta sul budget' },
       { status: 500 }
     )
   }
