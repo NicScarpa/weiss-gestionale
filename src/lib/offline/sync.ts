@@ -12,6 +12,7 @@ import {
 } from './db'
 
 import { logger } from '@/lib/logger'
+import { INTESTAZIONE_RISCALDAMENTO } from './cache-pagine'
 // Event types for sync updates
 type SyncEventType = 'sync-start' | 'sync-progress' | 'sync-complete' | 'sync-error' | 'online' | 'offline'
 
@@ -82,7 +83,23 @@ if (typeof window !== 'undefined') {
 
 async function scaldaLaPaginaCorrente() {
   try {
-    const risposta = await fetch(window.location.href, { credentials: 'same-origin' })
+    // L'intestazione non è decorativa: è ciò che fa instradare QUESTA
+    // richiesta come una pagina.
+    //
+    // Il riscaldamento è una `fetch()` programmatica, quindi il suo
+    // `request.mode` non è `'navigate'`. La regola del service worker che serve
+    // le pagine senza rete seleziona le navigazioni — è ciò che il reload
+    // offline è — e senza questo marcatore non vedrebbe mai il riscaldamento:
+    // la pagina verrebbe scritta in un secchio e cercata in un altro.
+    // Misurato: otto fallimenti su otto.
+    //
+    // Il nome dell'intestazione sta accanto al nome della cache, in
+    // cache-pagine.ts, perché i due lati devono restare d'accordo.
+    const risposta = await fetch(window.location.href, {
+      credentials: 'same-origin',
+      headers: { [INTESTAZIONE_RISCALDAMENTO]: '1' },
+    })
+
     // Il corpo va letto fino in fondo, anche se non ce ne facciamo niente:
     // una risposta lasciata a metà tiene la connessione aperta per sempre.
     // Misurato — la pagina non raggiungeva più `networkidle`, e i test offline
