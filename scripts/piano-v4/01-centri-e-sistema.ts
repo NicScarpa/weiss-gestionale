@@ -4,13 +4,14 @@
  *
  * Questa è solo la fase preliminare: in PRODUZIONE inserisce i 4 centri di
  * costo, valorizza systemKey sui conti patrimoniali già esistenti (Cassa,
- * Banca, Debiti v/fornitori) e crea il permesso `journal.edit-closure`
+ * Banca, Debiti v/fornitori), **crea** i tre transitori POS (120/121/122, che
+ * in produzione non esistono) e crea il permesso `journal.edit-closure`
  * assegnato al ruolo admin. Le 155 voci del piano dei conti v4 NON vengono
  * inserite qui: arrivano con la migrazione della FASE 3, dopo l'approvazione
  * del committente.
  *
  * Idempotente: rieseguibile senza errori (upsert su centri e permesso,
- * update guardato da findUnique sui conti di sistema).
+ * update guardato da findUnique sui conti di sistema e sui transitori).
  *
  * Uso: npx tsx scripts/piano-v4/01-centri-e-sistema.ts
  */
@@ -32,6 +33,22 @@ const CONTI_SISTEMA: { code: string; systemKey: string }[] = [
   { code: '100', systemKey: 'CASSA' },
   { code: '110', systemKey: 'BANCA' },
   { code: '200', systemKey: 'DEBITI_FORNITORI' },
+]
+
+/**
+ * Transitori POS: a differenza dei tre qui sopra **non esistono** in
+ * produzione e vanno creati. Reggono l'incasso dalla sera della chiusura fino
+ * all'accredito in banca, che arriva uno o due giorni dopo e — con Axerve e
+ * SumUp — al netto delle commissioni. Uno per provider, perché la
+ * riconciliazione lavora per provider e il saldo di ciascuno deve essere
+ * leggibile da solo.
+ *
+ * Vedi docs/superpowers/specs/2026-08-10-ricavi-sospesi-pos-design.md
+ */
+const TRANSITORI_POS: { code: string; name: string; systemKey: string }[] = [
+  { code: '120', name: 'POS Worldline da accreditare', systemKey: 'POS_WORLDLINE' },
+  { code: '121', name: 'POS Axerve da accreditare', systemKey: 'POS_AXERVE' },
+  { code: '122', name: 'POS SumUp da accreditare', systemKey: 'POS_SUMUP' },
 ]
 
 const PERMESSO_RICLASSIFICA = {
@@ -82,6 +99,31 @@ async function main() {
       data: { systemKey },
     })
     console.log(`  ✓ ${code} → systemKey ${systemKey}`)
+  }
+
+  // ==================== TRANSITORI POS ====================
+  console.log('Transitori POS...')
+
+  for (const { code, name, systemKey } of TRANSITORI_POS) {
+    // `upsert` sul codice: l'update tocca solo `systemKey` e `name`, così una
+    // riesecuzione non riporta indietro modifiche fatte a mano sul conto (per
+    // esempio una disattivazione), e non duplica nulla se il conto c'è già.
+    const esistente = await prisma.account.findUnique({ where: { code } })
+
+    if (esistente) {
+      if (esistente.systemKey === systemKey) {
+        console.log(`  ✓ ${code} — ${name} (già presente)`)
+        continue
+      }
+      await prisma.account.update({ where: { code }, data: { systemKey } })
+      console.log(`  ✓ ${code} → systemKey ${systemKey} (conto già esistente)`)
+      continue
+    }
+
+    await prisma.account.create({
+      data: { code, name, type: 'ATTIVO', systemKey },
+    })
+    console.log(`  ✓ ${code} — ${name} (creato)`)
   }
 
   // ==================== PERMESSO RICLASSIFICA ====================

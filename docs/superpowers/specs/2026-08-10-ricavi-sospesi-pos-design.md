@@ -118,15 +118,23 @@ Non serve nulla di nuovo. `JournalEntryAllocation` (`prisma/schema.prisma`) ripa
 
 Serve un solo valore nuovo per `origine`: **`'chiusura'`**, che distingue le fette generate dalla chiusura da quelle disegnate a mano in prima nota. Senza, rigenerare le scritture di una chiusura non saprebbe quali fette può sostituire.
 
-### 3.5 Conti nuovi nel piano v4
+### 3.5 Conti nuovi nel piano v4 — **fatti il 10 agosto 2026**
 
-Da aggiungere ai patrimoniali di sistema del seed (`prisma/seed.ts:213-217`), che oggi sono tre:
-
-| systemKey | Nome | Tipo | A cosa serve |
+| Codice | Nome | Tipo | systemKey |
 |---|---|---|---|
-| `POS_WORLDLINE` | POS Worldline da accreditare | ATTIVO | transitorio (fase B) |
-| `POS_AXERVE` | POS Axerve da accreditare | ATTIVO | transitorio (fase B) |
-| `POS_SUMUP` | POS SumUp da accreditare | ATTIVO | transitorio (fase B) |
+| `120` | POS Worldline da accreditare | ATTIVO | `POS_WORLDLINE` |
+| `121` | POS Axerve da accreditare | ATTIVO | `POS_AXERVE` |
+| `122` | POS SumUp da accreditare | ATTIVO | `POS_SUMUP` |
+
+Codici `12x` liberi in entrambi i mondi: i patrimoniali di sistema non hanno il punto (`100`, `110`, `200`), le voci `12.xx` del piano ce l'hanno. Verificato anche in produzione: esistono solo `100` e `110`.
+
+Aggiunti ai **due** percorsi, che sono diversi:
+- `prisma/seed.ts` — ambienti nuovi, dove i conti nascono da zero;
+- `scripts/piano-v4/01-centri-e-sistema.ts` — la produzione, dove i tre patrimoniali esistono già e lo script si limitava a valorizzarne `systemKey`. I transitori invece **non esistono** e vanno creati: il ramo nuovo li crea, e su un conto già presente tocca solo `systemKey`, così una riesecuzione non riporta indietro modifiche fatte a mano.
+
+`scripts/piano-v4/verifica.ts` li controlla: `SYSTEM_KEYS_ATTESE` passa da tre a sei.
+
+Provato sull'ambiente isolato: `migrate deploy` + seed li crea; la verifica riconosce tutte e sei le chiavi; cancellandoli e rieseguendo lo script 01 vengono ricreati, e alla seconda esecuzione risponde «già presente».
 
 Le commissioni hanno già il loro posto: `32.3` del piano v4 (`Commissioni Pagobancomat`, `Commissioni su bonifici`).
 

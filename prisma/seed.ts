@@ -210,9 +210,17 @@ async function main() {
   // Conti patrimoniali "di sistema": non fanno parte delle 155 voci del
   // piano v4 (che sono tutte RICAVO/COSTO), ma servono da controparte per i
   // movimenti di cassa/banca/debiti e sono referenziati via systemKey.
+  // I tre transitori POS (12x) reggono l'incasso dalla sera della chiusura fino
+  // all'accredito in banca, che arriva uno o due giorni dopo e — con Axerve e
+  // SumUp — al netto delle commissioni. Uno per provider, perché la
+  // riconciliazione lavora per provider e il saldo di ciascuno deve essere
+  // leggibile da solo. Vedi docs/superpowers/specs/2026-08-10-ricavi-sospesi-pos-design.md
   const patrimoniali = [
     { code: '100', name: 'Cassa', type: AccountType.ATTIVO, systemKey: 'CASSA' },
     { code: '110', name: 'Banca', type: AccountType.ATTIVO, systemKey: 'BANCA' },
+    { code: '120', name: 'POS Worldline da accreditare', type: AccountType.ATTIVO, systemKey: 'POS_WORLDLINE' },
+    { code: '121', name: 'POS Axerve da accreditare', type: AccountType.ATTIVO, systemKey: 'POS_AXERVE' },
+    { code: '122', name: 'POS SumUp da accreditare', type: AccountType.ATTIVO, systemKey: 'POS_SUMUP' },
     { code: '200', name: 'Debiti v/fornitori', type: AccountType.PASSIVO, systemKey: 'DEBITI_FORNITORI' },
   ]
 

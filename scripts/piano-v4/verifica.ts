@@ -38,7 +38,16 @@ const prisma = new PrismaClient({ adapter })
 
 const VOCI_ATTESE = 155
 const CENTRI_ATTESI = 4
-const SYSTEM_KEYS_ATTESE = ['CASSA', 'BANCA', 'DEBITI_FORNITORI']
+// I tre POS_* sono i transitori creati dallo script 01: senza di loro le
+// scritture di incasso POS non avrebbero dove sostare fino all'accredito.
+const SYSTEM_KEYS_ATTESE = [
+  'CASSA',
+  'BANCA',
+  'DEBITI_FORNITORI',
+  'POS_WORLDLINE',
+  'POS_AXERVE',
+  'POS_SUMUP',
+]
 const PERMESSO_ATTESO = 'journal.edit-closure'
 const VOCE_CORRISPETTIVI = '10.01'
 
