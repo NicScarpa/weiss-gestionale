@@ -176,4 +176,38 @@ describe('CreateScheduleDialog', () => {
     expect(Object.keys(payload)).not.toContain('importoPagato')
     expect(payload.dataScadenza).toBe('2026-09-30')
   })
+
+  describe('la direzione in modifica', () => {
+    /** Il primo combobox del modulo è la Direzione: è il campo di apertura. */
+    function selettoreDirezione() {
+      return document.body.querySelectorAll<HTMLButtonElement>('button[role="combobox"]')[0]
+    }
+
+    it('non è cambiabile quando si modifica una scadenza esistente', async () => {
+      // Il server rifiuta il cambio di verso con un 400. Lasciare il menu
+      // attivo sarebbe una trappola cortese: l'utente sceglie, salva, e solo
+      // allora scopre che non si poteva.
+      await montare(
+        <CreateScheduleDialog
+          mode="edit"
+          open
+          onOpenChange={vi.fn()}
+          onSubmit={vi.fn()}
+          initialData={{ tipo: ScheduleType.PASSIVA, descrizione: 'Fornitore' }}
+        />
+      )
+      await attendere()
+
+      expect(selettoreDirezione().disabled).toBe(true)
+    })
+
+    it('resta cambiabile quando si crea una scadenza nuova', async () => {
+      // Alla creazione la direzione è la prima scelta da fare: bloccarla qui
+      // renderebbe impossibile registrare un incasso.
+      await montare(<CreateScheduleDialog open onOpenChange={vi.fn()} onSubmit={vi.fn()} />)
+      await attendere()
+
+      expect(selettoreDirezione().disabled).toBe(false)
+    })
+  })
 })
