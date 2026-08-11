@@ -995,3 +995,40 @@ Dichiarato per non farlo scoprire a metà strada:
 - **Il budget su base fiscalizzata o incassata**, e il campo «ricavi non attribuiti» che continuerà a dire il falso sul proprio nome finché non si decide.
 - **I ricavi non fiscalizzati.**
 - **`nonReceiptAmount`**, che dopo il Task 7 si può finalmente correggere: dichiarati i saldi sospesi e le fatture, la formula giusta è `(cash + pos) − receipt − invoice − saldiSospesi + spesePagateInContanti`.
+
+---
+
+## Come ripartire da una sessione nuova
+
+Il prompt qui sotto è autosufficiente: non serve il contesto della sessione in cui il piano è
+nato.
+
+```
+Esegui il piano docs/superpowers/plans/2026-08-11-ricavi-sospesi-pos-fase-a.md, un task
+alla volta, fermandoti dopo ciascuno per mostrarmi cosa hai fatto prima di passare al
+successivo.
+
+Contesto che non è nel piano:
+- Branch `conti/piano-v4`, allineato a `main` e pushato. NON mergiare in main senza
+  chiedermelo: il push su main fa partire il deploy Railway.
+- Il piano dei conti v4 è GIÀ IN PRODUZIONE dall'11 agosto 2026: 155 voci, 4 centri di
+  costo, i conti di sistema con le loro systemKey (CASSA, BANCA, DEBITI_FORNITORI,
+  CORRISPETTIVI su 10.01, e i tre transitori POS_WORLDLINE/AXERVE/SUMUP su 120/121/122).
+  Il task 4 può contare sul conto CORRISPETTIVI, che esiste davvero.
+- La spec che il piano implementa è docs/superpowers/specs/2026-08-10-ricavi-sospesi-pos-design.md:
+  leggila prima del task 1, contiene le sette scritture caso per caso e il perché delle
+  decisioni.
+
+Regole non negoziabili (le trovi anche in testa al piano):
+- `source ~/.nvm/nvm.sh && nvm use 22 &&` davanti a ogni comando npm/npx/node.
+- Il `.env` punta alla PRODUZIONE: mai eseguire niente contro quel DATABASE_URL.
+  L'ambiente isolato è 127.0.0.1:5433, psql in /opt/homebrew/opt/postgresql@16/bin.
+- Ogni route nuova usa `withAuth`: `node scripts/check-route-auth.mjs --ratchet` gira in
+  CI e fallisce se il conto sale.
+- Test di integrazione sempre con TEST_DB_SUFFIX=<nome>.
+- Prima di ogni commit: npx tsc --noEmit, npm run lint, npm test -- --run.
+
+Metodo: il test si scrive PRIMA, si esegue e si guarda fallire, poi si implementa. Quando
+un test passa al primo colpo, rompilo di proposito per verificare che stesse guardando la
+cosa giusta.
+```
