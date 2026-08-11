@@ -194,7 +194,7 @@ export function BudgetCategoryManagement() {
       const data = await res.json()
 
       if (res.ok) {
-        toast.success(`${data.created?.length || 0} categorie create con successo`)
+        toast.success(data.message || 'Categorie aggiornate')
         ricaricaCategorie()
       } else {
         throw new Error(data.error)

@@ -27,12 +27,32 @@ export async function POST() {
     const venueId = await getVenueId()
     const esito = await seedCategorieCashFlow(venueId, session.user.id)
 
-    return NextResponse.json({
-      message:
-        `Installate ${esito.famiglieCreate} famiglie e ${esito.sottogruppiCreati} ` +
-        `sottogruppi, ${esito.mappingCreati} conti mappati.`,
-      ...esito,
-    })
+    // Un rerun che non cambia nulla non deve annunciare installazioni: il
+    // messaggio riporta solo ciò che è successo davvero in questa chiamata.
+    const parti: string[] = []
+    if (esito.famiglieCreate > 0 || esito.sottogruppiCreati > 0) {
+      parti.push(
+        `create ${esito.famiglieCreate} famiglie e ${esito.sottogruppiCreati} sottogruppi`
+      )
+    }
+    if (esito.famiglieAggiornate > 0 || esito.sottogruppiAggiornati > 0) {
+      parti.push(
+        `aggiornate ${esito.famiglieAggiornate} famiglie e ${esito.sottogruppiAggiornati} sottogruppi`
+      )
+    }
+    if (esito.mappingCreati > 0) {
+      parti.push(`${esito.mappingCreati} conti mappati`)
+    }
+    if (esito.mappingRiassegnati > 0) {
+      parti.push(`${esito.mappingRiassegnati} mappature riportate sulla categoria prevista`)
+    }
+
+    const message =
+      parti.length > 0
+        ? parti.join('; ') + '.'
+        : 'Nessuna modifica: la struttura era già installata e aggiornata.'
+
+    return NextResponse.json({ message, ...esito })
   } catch (error) {
     logger.error('Errore POST /api/budget-categories/seed', error)
     return NextResponse.json(
