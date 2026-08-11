@@ -1077,6 +1077,17 @@ Atteso: PASS.
   chiamata a `serieProiettata`, mantenendo **identica** la forma della risposta
   (`PuntoProiezione[]` con `data`, `saldo`, `entrata`, `uscita`) per non rompere
   `CashFlowChart`.
+
+  ⚠️ **I nomi dei campi non coincidono, e la differenza è muta.** `proietta()`
+  restituisce `{ giorno, saldo, entrate, uscite, perFonte }`; la rotta deve
+  continuare a rispondere `{ data, saldo, entrata, uscita }`, che è ciò che
+  `ChartDataPoint` in `src/components/cashflow/CashFlowChart.tsx:17-22` si
+  aspetta. Serve una mappatura esplicita in uscita.
+
+  Se dimentichi la mappatura **non fallisce niente**: nessun test copre questa
+  rotta, il grafico riceve punti con chiavi sconosciute e disegna un'area vuota.
+  Verificalo aprendo la pagina, oppure aggiungi un test sulla rotta che fissi i
+  nomi dei campi della risposta — la seconda è preferibile.
 - `src/app/api/scadenzario/saldo-scalare/route.ts` — `chartData` viene da
   `serieProiettata`; i totali (`pagamenti`, `incassi`, `scaduto`) restano come
   sono, perché rispondono a un'altra domanda.
