@@ -72,9 +72,13 @@ export function ProspettoTable({ righe, cassaIniziale, cassaFinale }: Props) {
               <tr
                 key={riga.codice}
                 className={cn(
-                  'border-b border-muted',
-                  riga.livello === 'famiglia' && 'bg-muted/50 font-semibold',
-                  riga.livello === 'totale' && 'bg-amber-50 font-semibold dark:bg-amber-950/30',
+                  // Sfondo sempre opaco: la cella sticky della prima colonna lo eredita
+                  // (bg-inherit) per restare leggibile mentre le colonne dei mesi le
+                  // scorrono sotto. Un fondo trasparente o semi-trasparente qui lascia
+                  // passare il contenuto — vale anche per le varianti dark:.
+                  'border-b border-muted bg-background',
+                  riga.livello === 'famiglia' && 'bg-muted font-semibold',
+                  riga.livello === 'totale' && 'bg-amber-50 font-semibold dark:bg-amber-950',
                   riga.livello === 'voce' && 'text-muted-foreground'
                 )}
               >
@@ -83,6 +87,7 @@ export function ProspettoTable({ righe, cassaIniziale, cassaFinale }: Props) {
                     type="button"
                     onClick={() => espandibile && inverti(riga.codice)}
                     disabled={!espandibile}
+                    aria-expanded={espandibile ? aperta : undefined}
                     className={cn(
                       'flex items-center gap-1 text-left',
                       riga.livello === 'sottogruppo' && 'pl-4',
@@ -128,7 +133,7 @@ export function ProspettoTable({ righe, cassaIniziale, cassaFinale }: Props) {
             <td colSpan={12} />
             <td className="px-2 py-1.5 text-right tabular-nums">{euro(cassaIniziale)}</td>
           </tr>
-          <tr className="border-b-2 bg-amber-50 font-semibold dark:bg-amber-950/30">
+          <tr className="border-b-2 bg-amber-50 font-semibold dark:bg-amber-950">
             <td className="sticky left-0 bg-inherit py-1.5 pr-4">
               Cassa e banca a fine anno
             </td>
