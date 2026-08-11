@@ -19,6 +19,7 @@ interface ScheduleFiltersProps {
     dataFine?: Date
     isRicorrente?: boolean
     verificata?: boolean
+    pagateSenzaMovimento?: boolean
   }
   onFiltriChange: (filtri: ScheduleFiltersProps['filtri']) => void
   onReset: () => void
@@ -36,7 +37,8 @@ export function ScheduleFilters({
   const haFiltriAttivi = () => {
     return !!filtri.stato || !!filtri.tipo || !!filtri.priorita || !!filtri.source ||
            !!filtri.search || !!filtri.dataInizio || !!filtri.dataFine ||
-           filtri.isRicorrente !== undefined || filtri.verificata !== undefined
+           filtri.isRicorrente !== undefined || filtri.verificata !== undefined ||
+           !!filtri.pagateSenzaMovimento
   }
 
   const handleReset = () => {

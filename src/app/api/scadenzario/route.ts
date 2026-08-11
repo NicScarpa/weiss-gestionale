@@ -9,6 +9,7 @@ import { applicaStimaSuScadenza } from '@/lib/scadenzario/stima-data-attesa'
 import { createAuditLog } from '@/lib/audit'
 import { ScheduleStatus, ScheduleType, SchedulePriority, ScheduleDocumentType, ScheduleSource } from '@/types/schedule'
 import { getVenueId } from '@/lib/venue'
+import { whereScadenzePagateSenzaMovimento } from '@/lib/scadenzario/pagate-senza-movimento'
 
 /**
  * Colonne su cui la lista si lascia ordinare.
@@ -180,10 +181,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Scadenze con un pagamento registrato ma nessun movimento di prima nota
-    // verificato collegato: stesso criterio della card riepilogativa
+    // verificato collegato: stesso criterio della card riepilogativa, incluso
+    // escludere le annullate (una scadenza pagata a mano e poi annullata non
+    // deve comparire qui se non compare nel contatore)
     if (searchParams.get('pagateSenzaMovimento') === 'true') {
-      where.importoPagato = { gt: 0 }
-      where.reconciliations = { none: { status: 'VERIFIED' } }
+      Object.assign(where, whereScadenzePagateSenzaMovimento())
     }
 
     // Ricerca testuale

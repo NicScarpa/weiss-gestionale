@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { ScheduleStatus, ScheduleType } from '@/types/schedule'
 import { getVenueId } from '@/lib/venue'
+import { whereScadenzePagateSenzaMovimento } from '@/lib/scadenzario/pagate-senza-movimento'
 
 // GET /api/scadenzario/summary - Statistiche per badge e dashboard
 export async function GET(request: NextRequest) {
@@ -125,8 +126,7 @@ export async function GET(request: NextRequest) {
     const senzaMovimento = await prisma.schedule.aggregate({
       where: {
         ...where,
-        importoPagato: { gt: 0 },
-        reconciliations: { none: { status: 'VERIFIED' } },
+        ...whereScadenzePagateSenzaMovimento(),
       },
       _count: true,
       _sum: { importoPagato: true },
