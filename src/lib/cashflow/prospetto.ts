@@ -235,7 +235,29 @@ async function codiciDeiConti(): Promise<Map<string, string>> {
   return new Map(conti.map((conto) => [conto.id, conto.code]))
 }
 
-export async function prospettoCashFlow(venueId: string, anno: number): Promise<Prospetto> {
+/**
+ * Il prospetto insieme alla materia prima con cui è stato costruito.
+ *
+ * I controlli di quadratura hanno bisogno degli stessi movimenti e della stessa
+ * mappa dei conti che il prospetto ha già letto. Restituirli qui, invece di
+ * lasciare che il chiamante li rilegga, è ciò che garantisce che prospetto e
+ * controlli parlino dello stesso insieme di dati: quando erano due letture
+ * separate, erano anche due copie del commento che spiega perché la mappa non
+ * si filtra per `isActive` — e quel filtro è già stato un difetto una volta.
+ */
+export interface ProspettoConFonti {
+  prospetto: Prospetto
+  movimenti: MovimentoAggregato[]
+  /** Id del conto → codice della voce, su tutti i conti, attivi e non. */
+  codicePerConto: Map<string, string>
+  /** Liquidità all'ultimo giorno dell'anno precedente, cioè la cassa iniziale. */
+  cassaIniziale: Money
+}
+
+export async function prospettoCashFlow(
+  venueId: string,
+  anno: number
+): Promise<ProspettoConFonti> {
   const [movimenti, codicePerConto, liquidita] = await Promise.all([
     movimentiCashFlow(venueId, anno),
     codiciDeiConti(),
@@ -243,5 +265,12 @@ export async function prospettoCashFlow(venueId: string, anno: number): Promise<
     liquiditaAlGiorno(venueId, `${anno - 1}-12-31`),
   ])
 
-  return costruisciProspetto(movimenti, codicePerConto, money(liquidita), anno)
+  const cassaIniziale = money(liquidita)
+
+  return {
+    prospetto: costruisciProspetto(movimenti, codicePerConto, cassaIniziale, anno),
+    movimenti,
+    codicePerConto,
+    cassaIniziale,
+  }
 }

@@ -4,9 +4,7 @@ import { auth } from '@/lib/auth'
 import { getVenueId } from '@/lib/venue'
 import { money } from '@/lib/money'
 import { liquiditaAlGiorno } from '@/lib/saldi'
-import { prisma } from '@/lib/prisma'
 import { prospettoCashFlow } from '@/lib/cashflow/prospetto'
-import { movimentiCashFlow } from '@/lib/cashflow/movimenti'
 import { eseguiControlli } from '@/lib/cashflow/controlli'
 import { logger } from '@/lib/logger'
 
@@ -40,25 +38,23 @@ export async function GET(request: Request) {
 
     const venueId = await getVenueId()
 
-    const [prospetto, movimenti, saldoIniziale, saldoFinale, conti] = await Promise.all([
-      prospettoCashFlow(venueId, anno),
-      movimentiCashFlow(venueId, anno),
-      liquiditaAlGiorno(venueId, `${anno - 1}-12-31`),
-      liquiditaAlGiorno(venueId, `${anno}-12-31`),
-      // Tutti i conti, attivi e non. In questo progetto `isActive: false` è il
-      // soft-delete dei conti **che hanno movimenti** (vedi il DELETE in
-      // src/app/api/accounts/route.ts): filtrarli farebbe sparire dai controlli
-      // proprio lo storico che devono sorvegliare, e C4 segnalerebbe come
-      // ignoti dei conti perfettamente legittimi. Stessa scelta, e stesso
-      // motivo, di `codiciDeiConti()` in prospetto.ts.
-      prisma.account.findMany({ select: { id: true, code: true } }),
-    ])
+    // Il prospetto restituisce anche la materia prima con cui è stato
+    // costruito — movimenti, mappa dei conti, cassa iniziale — e i controlli
+    // girano su quella. Rileggerla qui significherebbe due query e, cosa
+    // peggiore, due copie del commento che spiega perché la mappa dei conti
+    // non si filtra per `isActive`: se le due copie divergessero, prospetto e
+    // controlli lavorerebbero su insiemi di conti diversi.
+    const [{ prospetto, movimenti, codicePerConto, cassaIniziale }, saldoFinale] =
+      await Promise.all([
+        prospettoCashFlow(venueId, anno),
+        liquiditaAlGiorno(venueId, `${anno}-12-31`),
+      ])
 
     const controlli = eseguiControlli({
       prospetto,
       movimenti,
-      codicePerConto: new Map(conti.map((c) => [c.id, c.code])),
-      variazioneReale: money(saldoFinale).minus(money(saldoIniziale)),
+      codicePerConto,
+      variazioneReale: money(saldoFinale).minus(cassaIniziale),
     })
 
     return NextResponse.json({ prospetto, controlli })
