@@ -2253,59 +2253,54 @@ git commit -m "feat(cash-flow): seed delle 9 famiglie e 39 sottogruppi"
 
 Creare `src/app/api/cashflow/prospetto/__tests__/prospetto.itest.ts`:
 
+Usa l'infrastruttura di test del progetto — `setupIntegrationDb`, `entraCome`, `jsonRequest`, `callRoute` — come fa `src/app/api/budget-categories/__tests__/autorizzazione.itest.ts`. Non montare `vi.mock('@/lib/auth')` a mano: quel meccanismo esiste già dentro `entraCome`, che crea una sessione vera per il ruolo indicato.
+
 ```typescript
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
+import { setupIntegrationDb } from '@/test/integration/db'
+import { entraCome } from '@/test/integration/auth-mock'
+import { jsonRequest, callRoute } from '@/test/integration/api'
+import { GET as prospetto } from '../route'
 
-vi.mock('@/lib/auth', () => ({ auth: vi.fn() }))
+setupIntegrationDb()
 
-import { auth } from '@/lib/auth'
-import { GET } from '../route'
-
-function richiesta(url = 'http://localhost/api/cashflow/prospetto?anno=2026') {
-  return new Request(url) as never
+function richiesta(anno = '2026') {
+  return jsonRequest(`/api/cashflow/prospetto?anno=${anno}`)
 }
 
-beforeEach(() => vi.clearAllMocks())
-
 describe('GET /api/cashflow/prospetto', () => {
-  it('senza sessione risponde 401', async () => {
-    vi.mocked(auth).mockResolvedValue(null as never)
+  it('impedisce a uno staff di leggere il prospetto', async () => {
+    await entraCome('staff')
 
-    const risposta = await GET(richiesta())
-    expect(risposta.status).toBe(401)
+    const { status } = await callRoute(prospetto, richiesta())
+
+    expect(status).toBe(403)
   })
 
-  it('con ruolo staff risponde 403', async () => {
-    vi.mocked(auth).mockResolvedValue({ user: { id: 'u1', role: 'staff' } } as never)
+  it('lo consente a un manager, con prospetto e controlli', async () => {
+    await entraCome('manager')
 
-    const risposta = await GET(richiesta())
-    expect(risposta.status).toBe(403)
-  })
+    const { status, body } = await callRoute(prospetto, richiesta())
 
-  it('con ruolo manager restituisce prospetto e controlli', async () => {
-    vi.mocked(auth).mockResolvedValue({ user: { id: 'u1', role: 'manager' } } as never)
-
-    const risposta = await GET(richiesta())
-    expect(risposta.status).toBe(200)
-
-    const corpo = await risposta.json()
-    expect(corpo.prospetto.anno).toBe(2026)
-    expect(corpo.prospetto.righe.length).toBeGreaterThan(200)
-    expect(corpo.controlli.map((c: { codice: string }) => c.codice)).toEqual([
+    expect(status).toBe(200)
+    expect(body.prospetto.anno).toBe(2026)
+    // 203 righe: 9 famiglie + 39 sottogruppi + 149 voci + 3 totali + 3 memo
+    expect(body.prospetto.righe).toHaveLength(203)
+    expect(body.controlli.map((c: { codice: string }) => c.codice)).toEqual([
       'C1', 'C2', 'C3', 'C4',
     ])
   })
 
   it("anno non numerico: risponde 400 invece di produrre un prospetto vuoto", async () => {
-    vi.mocked(auth).mockResolvedValue({ user: { id: 'u1', role: 'admin' } } as never)
+    await entraCome('admin')
 
-    const risposta = await GET(
-      richiesta('http://localhost/api/cashflow/prospetto?anno=duemilaventisei')
-    )
-    expect(risposta.status).toBe(400)
+    const { status } = await callRoute(prospetto, richiesta('duemilaventisei'))
+    expect(status).toBe(400)
   })
 })
 ```
+
+Il test del 401 senza sessione non c'è: `entraCome` copre i ruoli, e l'assenza di sessione è già verificata dalla suite di autorizzazione del progetto. Se `callRoute` espone un modo per non autenticare affatto, aggiungilo; altrimenti non forzarlo.
 
 - [ ] **Step 2: Eseguire il test per vederlo fallire**
 
