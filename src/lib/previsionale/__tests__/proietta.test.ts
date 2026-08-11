@@ -59,6 +59,37 @@ describe('proietta', () => {
     expect(serie[0].perFonte.movimento).toBe(-800)
   })
 
+  it('la fonte più affidabile vince indipendentemente dall\'ordine in cui compare nell\'array', () => {
+    const movimentoPrimo: FlussoPrevisto[] = [
+      { giorno: '2026-09-01', importo: -800, fonte: 'movimento', descrizione: 'Bonifico affitto', chiave: 'affitto' },
+      { giorno: '2026-09-01', importo: -800, fonte: 'scadenza', descrizione: 'Affitto', chiave: 'affitto' },
+    ]
+    const movimentoSecondo: FlussoPrevisto[] = [
+      { giorno: '2026-09-01', importo: -800, fonte: 'scadenza', descrizione: 'Affitto', chiave: 'affitto' },
+      { giorno: '2026-09-01', importo: -800, fonte: 'movimento', descrizione: 'Bonifico affitto', chiave: 'affitto' },
+    ]
+
+    const serieA = proietta({ ...base, flussi: movimentoPrimo })
+    const serieB = proietta({ ...base, flussi: movimentoSecondo })
+
+    expect(serieA[0].perFonte.movimento).toBe(-800)
+    expect(serieA[0].perFonte.scadenza).toBe(0)
+    expect(serieB[0].perFonte.movimento).toBe(-800)
+    expect(serieB[0].perFonte.scadenza).toBe(0)
+  })
+
+  it('la stessa chiave in giorni diversi sono due flussi distinti: sopravvivono entrambi', () => {
+    const flussi: FlussoPrevisto[] = [
+      { giorno: '2026-09-01', importo: -800, fonte: 'scadenza', descrizione: 'Affitto settembre', chiave: 'affitto' },
+      { giorno: '2026-09-02', importo: -800, fonte: 'scadenza', descrizione: 'Affitto ottobre', chiave: 'affitto' },
+    ]
+
+    const serie = proietta({ ...base, flussi })
+
+    expect(serie[0].saldo).toBe(200)
+    expect(serie[1].saldo).toBe(-600)
+  })
+
   it('tiene entrambi i flussi quando le chiavi sono diverse', () => {
     const flussi: FlussoPrevisto[] = [
       { giorno: '2026-09-01', importo: -800, fonte: 'ricorrente', descrizione: 'Affitto', chiave: 'affitto' },

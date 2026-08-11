@@ -3,18 +3,22 @@ import { money, toApi, type Money } from '@/lib/money'
 /**
  * La proiezione del saldo nel tempo, in un posto solo.
  *
- * Prima di questo modulo la stessa domanda — quanti soldi avrò — aveva due
- * risposte con due basi diverse: `/api/dashboard/forecast` proiettava le
- * spese ricorrenti (`RecurringExpense`), `/api/scadenzario/saldo-scalare` le
- * scadenze generate dalle ricorrenze dello scadenzario (`Recurrence` →
- * `Schedule`). Nessuna delle due vedeva l'altra fonte e nessuna dichiarava di
- * non vederla.
+ * Ci sono due difetti distinti a monte, e vale la pena tenerli separati
+ * perché questo modulo li chiude entrambi.
  *
- * A monte c'è una duplicazione di modello: `RecurringExpense` e `Recurrence`
- * descrivono entrambi un'uscita che si ripete, sono disgiunti, e nessun
- * percorso converte l'uno nell'altro. L'affitto inserito in una sola pagina
- * spariva dall'altra proiezione; inserito in entrambe veniva contato due
- * volte.
+ * Il primo è una duplicazione di **modello dati**: `RecurringExpense` e
+ * `Recurrence` descrivono entrambi la stessa cosa, un'uscita che si ripete, e
+ * sono disgiunti — nessun percorso converte l'uno nell'altro. L'affitto
+ * inserito in una sola pagina spariva dall'altra proiezione; inserito in
+ * entrambe veniva contato due volte.
+ *
+ * Il secondo è una duplicazione di **rotta**: la stessa domanda — quanti
+ * soldi avrò — aveva tre risposte con tre basi diverse. `/api/dashboard/forecast`
+ * proiettava le spese ricorrenti (`RecurringExpense`), `/api/scadenzario/saldo-scalare`
+ * le scadenze generate dalle ricorrenze dello scadenzario (`Recurrence` →
+ * `Schedule`), `/api/cashflow/projection` i movimenti già registrati in prima
+ * nota. Nessuna delle tre vedeva le altre fonti e nessuna dichiarava di non
+ * vederle.
  *
  * ## La gerarchia
  *
