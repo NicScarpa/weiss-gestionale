@@ -86,6 +86,13 @@ function giorniDellaFinestra(dal: string, al: string): string[] {
 /**
  * Toglie i flussi che una fonte più affidabile già copre. Il confronto è per
  * (giorno, chiave): flussi senza chiave passano sempre.
+ *
+ * Il filtro finale confronta la **fonte** vincitrice, non l'identità del
+ * singolo flusso: si scarta chi ha una fonte meno affidabile di un'altra
+ * presente sulla stessa chiave e sullo stesso giorno. Ne segue che due flussi
+ * con la stessa chiave, lo stesso giorno E la stessa fonte non si escludono
+ * mai a vicenda — sopravvivono entrambi, perché due scadenze della stessa
+ * ricorrenza nello stesso giorno sono due impegni distinti, non un duplicato.
  */
 function risolviSovrapposizioni(flussi: FlussoPrevisto[]): FlussoPrevisto[] {
   const vincitore = new Map<string, FontePrevisione>()

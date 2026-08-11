@@ -79,15 +79,20 @@ describe('proietta', () => {
   })
 
   it('la stessa chiave in giorni diversi sono due flussi distinti: sopravvivono entrambi', () => {
+    // Fonti diverse sui due giorni apposta: con una chiave globale (senza il
+    // giorno) `movimento` vincerebbe ovunque e la `scadenza` del secondo
+    // giorno verrebbe scartata a torto. Con due `scadenza` identiche il test
+    // passerebbe anche sotto quello schema sbagliato, perché il confronto
+    // finale è per fonte, non per identità del flusso.
     const flussi: FlussoPrevisto[] = [
-      { giorno: '2026-09-01', importo: -800, fonte: 'scadenza', descrizione: 'Affitto settembre', chiave: 'affitto' },
+      { giorno: '2026-09-01', importo: -800, fonte: 'movimento', descrizione: 'Bonifico affitto', chiave: 'affitto' },
       { giorno: '2026-09-02', importo: -800, fonte: 'scadenza', descrizione: 'Affitto ottobre', chiave: 'affitto' },
     ]
 
     const serie = proietta({ ...base, flussi })
 
-    expect(serie[0].saldo).toBe(200)
-    expect(serie[1].saldo).toBe(-600)
+    expect(serie[0].perFonte.movimento).toBe(-800)
+    expect(serie[1].perFonte.scadenza).toBe(-800)
   })
 
   it('tiene entrambi i flussi quando le chiavi sono diverse', () => {
