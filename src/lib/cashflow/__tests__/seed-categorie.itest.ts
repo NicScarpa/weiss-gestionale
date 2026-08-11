@@ -1,21 +1,23 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { prisma } from '@/lib/prisma'
+import { setupIntegrationDb } from '@/test/integration/db'
 import { getVenueId } from '@/lib/venue'
 import { seedCategorieCashFlow } from '../seed-categorie'
 
+// Era l'unico `.itest.ts` del progetto senza questa riga, e quindi l'unico che
+// saltava `assertTestDb()` — «l'ultima rete di protezione prima dei TRUNCATE» —
+// proprio sul ramo in cui DATABASE_URL punta alla produzione. Porta con sé
+// anche il `resetDb()` fra un test e l'altro, che rende l'esito indipendente
+// dall'ordine: prima il primo test funzionava solo perché era il primo.
+setupIntegrationDb()
+
 let venueId: string
 
-beforeAll(async () => {
+beforeEach(async () => {
   // getVenueId() e non venue.findFirst(): è la regola del progetto, e vale
   // anche nei test — è la stessa sede che vedrà il codice di produzione.
+  // Dopo il reset la sede è quella del seed, quindi l'id va riletto.
   venueId = await getVenueId()
-})
-
-afterAll(async () => {
-  await prisma.accountBudgetMapping.deleteMany({
-    where: { budgetCategory: { code: { startsWith: 'CF_' } } },
-  })
-  await prisma.budgetCategory.deleteMany({ where: { code: { startsWith: 'CF_' } } })
 })
 
 describe('seedCategorieCashFlow', () => {
