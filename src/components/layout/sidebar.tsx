@@ -17,7 +17,6 @@ import {
   ListChecks,
   Megaphone,
 } from 'lucide-react'
-import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { useState, useEffect, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 
@@ -216,8 +215,8 @@ export function Sidebar() {
               const isHovered = hoveredItem === item.name
               const showBadge = item.name === 'Scadenzario' && scaduteCount > 0
 
-              // Il tooltip Radix descrive il controllo ma non lo nomina: senza
-              // aria-label la rail è una fila di link vuoti per screen reader
+              // L'icona è l'unico contenuto del controllo: senza aria-label la
+              // rail è una fila di link vuoti per screen reader
               const label = showBadge
                 ? `${item.name}, ${scaduteCount} scadute`
                 : item.name
@@ -249,38 +248,31 @@ export function Sidebar() {
                 </>
               )
 
-              return (
-                <Tooltip key={item.name}>
-                  <TooltipTrigger asChild>
-                    {item.href ? (
-                      <Link
-                        href={item.href}
-                        aria-label={label}
-                        aria-current={isActive ? 'page' : undefined}
-                        onMouseEnter={() => setHoveredItem(item.name)}
-                        className={railClass}
-                      >
-                        {railContent}
-                      </Link>
-                    ) : (
-                      // Voci senza pagina propria (Personale): un link a "#" non
-                      // porta da nessuna parte, servono ad aprire il sottomenu
-                      <button
-                        type="button"
-                        aria-label={label}
-                        aria-expanded={isHovered}
-                        onMouseEnter={() => setHoveredItem(item.name)}
-                        onClick={() => setHoveredItem(item.name)}
-                        className={railClass}
-                      >
-                        {railContent}
-                      </button>
-                    )}
-                  </TooltipTrigger>
-                  <TooltipContent side="right" sideOffset={10} className="bg-slate-900 border-slate-800 text-white">
-                    {item.name}
-                  </TooltipContent>
-                </Tooltip>
+              return item.href ? (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  aria-label={label}
+                  aria-current={isActive ? 'page' : undefined}
+                  onMouseEnter={() => setHoveredItem(item.name)}
+                  className={railClass}
+                >
+                  {railContent}
+                </Link>
+              ) : (
+                // Voci senza pagina propria (Personale): un link a "#" non
+                // porta da nessuna parte, servono ad aprire il sottomenu
+                <button
+                  key={item.name}
+                  type="button"
+                  aria-label={label}
+                  aria-expanded={isHovered}
+                  onMouseEnter={() => setHoveredItem(item.name)}
+                  onClick={() => setHoveredItem(item.name)}
+                  className={railClass}
+                >
+                  {railContent}
+                </button>
               )
             })}
           </div>
@@ -292,33 +284,27 @@ export function Sidebar() {
               const isHovered = hoveredItem === item.name
 
               return (
-                <Tooltip key={item.name}>
-                  <TooltipTrigger asChild>
-                    <Link
-                      href={item.href || '#'}
-                      aria-label={item.name}
-                      aria-current={isActive ? 'page' : undefined}
-                      onMouseEnter={() => setHoveredItem(item.name)}
-                      className={cn(
-                        "w-full aspect-square flex items-center justify-center rounded-lg transition-all relative group",
-                        isActive || isHovered
-                          ? "bg-slate-800 text-white"
-                          : "text-slate-400 hover:bg-slate-800 hover:text-white"
-                      )}
-                    >
-                      <item.icon aria-hidden="true" className="h-5 w-5" />
-                      {(isActive || isHovered) && (
-                        <motion.div
-                          layoutId="activeIndicator"
-                          className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-white rounded-r-full"
-                        />
-                      )}
-                    </Link>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" sideOffset={10} className="bg-slate-900 border-slate-800 text-white">
-                    {item.name}
-                  </TooltipContent>
-                </Tooltip>
+                <Link
+                  key={item.name}
+                  href={item.href || '#'}
+                  aria-label={item.name}
+                  aria-current={isActive ? 'page' : undefined}
+                  onMouseEnter={() => setHoveredItem(item.name)}
+                  className={cn(
+                    "w-full aspect-square flex items-center justify-center rounded-lg transition-all relative group",
+                    isActive || isHovered
+                      ? "bg-slate-800 text-white"
+                      : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                  )}
+                >
+                  <item.icon aria-hidden="true" className="h-5 w-5" />
+                  {(isActive || isHovered) && (
+                    <motion.div
+                      layoutId="activeIndicator"
+                      className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-white rounded-r-full"
+                    />
+                  )}
+                </Link>
               )
             })}
           </div>
