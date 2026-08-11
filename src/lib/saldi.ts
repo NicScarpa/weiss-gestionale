@@ -74,13 +74,8 @@ export interface Saldi {
   registers: Record<RegisterType, SaldoRegistro>
 }
 
-/**
- * Condizione comune a ogni lettura dei movimenti che concorre a un saldo.
- * Averla in un posto solo è ciò che rende vera la promessa di questo modulo:
- * se domani un'altra colonna dovesse escludere un movimento dai conti, si
- * aggiunge qui e vale per tutti i consumatori insieme.
- */
-function movimentiChePesano(venueId: string): Prisma.JournalEntryWhereInput {
+/** I movimenti che contano per i saldi: quelli non nascosti della sede. */
+export function movimentiChePesano(venueId: string): Prisma.JournalEntryWhereInput {
   return { venueId, hiddenAt: null }
 }
 
