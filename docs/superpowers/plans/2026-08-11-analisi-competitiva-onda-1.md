@@ -108,8 +108,12 @@ import { formatNumeroCsv } from '../formatters'
 
 describe('formatNumeroCsv', () => {
   it('usa la virgola decimale, che è ciò che Excel italiano si aspetta', () => {
-    expect(formatNumeroCsv(1234.5)).toBe('1.234,50')
+    expect(formatNumeroCsv(1234.5)).toBe('1234,50')
     expect(formatNumeroCsv(0.05)).toBe('0,05')
+  })
+
+  it('NON raggruppa le migliaia: in una cella il punto è ambiguo fra locali diversi', () => {
+    expect(formatNumeroCsv(1234567.89)).toBe('1234567,89')
   })
 
   it('tiene sempre due decimali', () => {
@@ -117,7 +121,7 @@ describe('formatNumeroCsv', () => {
   })
 
   it('accetta le stringhe, che è la forma in cui gli importi arrivano da Prisma', () => {
-    expect(formatNumeroCsv('1234.5')).toBe('1.234,50')
+    expect(formatNumeroCsv('1234.5')).toBe('1234,50')
   })
 
   it('rende la cella vuota, non uno zero, quando il valore manca', () => {
@@ -127,10 +131,20 @@ describe('formatNumeroCsv', () => {
   })
 
   it('mantiene il segno negativo', () => {
-    expect(formatNumeroCsv(-1234.5)).toBe('-1.234,50')
+    expect(formatNumeroCsv(-1234.5)).toBe('-1234,50')
   })
 })
 ```
+
+**Perché senza raggruppamento**, ed è una correzione alla prima stesura di questo
+piano: `formatCurrency` raggruppa (e deve, perché si legge a schermo), ma in una
+cella di CSV il punto delle migliaia è ambiguo — è il separatore decimale in
+locale anglosassone, e basta che il file passi da uno strumento configurato
+diversamente perché «1.234,50» diventi spazzatura. La virgola decimale da sola
+è ciò che serve a Excel italiano, e non introduce ambiguità. Questo rende
+l'export della prima nota **leggermente diverso** da prima (`toLocaleString`
+raggruppava dalle cinque cifre in su): la differenza è voluta e i test la
+fissano.
 
 - [ ] **Step 2: Esegui il test e verifica che fallisca**
 
@@ -161,8 +175,19 @@ export function formatNumeroCsv(value: number | string | null | undefined): stri
   if (value === null || value === undefined || value === '') return ''
   const numero = typeof value === 'string' ? parseFloat(value) : value
   if (Number.isNaN(numero)) return ''
-  return DECIMALE.format(numero)
+  return DECIMALE_CSV.format(numero)
 }
+```
+
+e sopra, accanto agli altri formattatori del file:
+
+```ts
+// Come DECIMALE, ma senza raggruppamento: vedi il commento di formatNumeroCsv.
+const DECIMALE_CSV = new Intl.NumberFormat('it-IT', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+  useGrouping: false,
+})
 ```
 
 - [ ] **Step 4: Esegui il test e verifica che passi**
@@ -495,6 +520,12 @@ ricorrenza stimata*):
 | 1 | `movimento` | il denaro si è mosso: vince sempre |
 | 2 | `scadenza` | vince sulla ricorrente che la descrive |
 | 3 | `ricorrente` | proietta **solo** dove nessuna scadenza copre già quel flusso |
+| 4 | `stima` | proiezione statistica (gli incassi da banco dedotti dallo storico chiusure): l'ultima a vincere, perché è l'unica che non descrive un impegno ma una media |
+
+La quarta fonte serve al Task 4: il cruscotto proietta gli incassi da banco dalla
+storia delle chiusure, e quella stima deve entrare nella stessa serie invece di
+vivere in un calcolo parallelo — altrimenti si ricrea, in piccolo, proprio il
+problema che questo modulo esiste per chiudere.
 
 **Files:**
 - Create: `src/lib/previsionale/proietta.ts`
@@ -504,7 +535,7 @@ ricorrenza stimata*):
 - Produces:
 
 ```ts
-export type FontePrevisione = 'movimento' | 'scadenza' | 'ricorrente'
+export type FontePrevisione = 'movimento' | 'scadenza' | 'ricorrente' | 'stima'
 
 export interface FlussoPrevisto {
   giorno: string          // 'yyyy-MM-dd'
@@ -691,10 +722,10 @@ import { money, toApi, type Money } from '@/lib/money'
  * La funzione è pura: le letture stanno in `./leggi.ts`.
  */
 
-export type FontePrevisione = 'movimento' | 'scadenza' | 'ricorrente'
+export type FontePrevisione = 'movimento' | 'scadenza' | 'ricorrente' | 'stima'
 
 /** Affidabilità decrescente. L'indice più basso vince. */
-const PRECEDENZA: FontePrevisione[] = ['movimento', 'scadenza', 'ricorrente']
+const PRECEDENZA: FontePrevisione[] = ['movimento', 'scadenza', 'ricorrente', 'stima']
 
 export interface FlussoPrevisto {
   /** Giorno civile italiano, 'yyyy-MM-dd'. */
@@ -790,6 +821,7 @@ export function proietta(input: {
       movimento: money(0),
       scadenza: money(0),
       ricorrente: money(0),
+      stima: money(0),
     }
 
     for (const flusso of delGiorno) {
@@ -810,6 +842,7 @@ export function proietta(input: {
         movimento: toApi(perFonte.movimento),
         scadenza: toApi(perFonte.scadenza),
         ricorrente: toApi(perFonte.ricorrente),
+        stima: toApi(perFonte.stima),
       },
     })
   }
@@ -1031,10 +1064,23 @@ Atteso: PASS.
 - `src/app/api/scadenzario/saldo-scalare/route.ts` — `chartData` viene da
   `serieProiettata`; i totali (`pagamenti`, `incassi`, `scaduto`) restano come
   sono, perché rispondono a un'altra domanda.
-- `src/app/api/dashboard/forecast/route.ts` — sostituisci
-  `calculateExpectedExpenses` con `serieProiettata` per la parte uscite,
-  **mantenendo** `calculateExpectedIncome` (lo storico delle chiusure resta la
-  fonte giusta per gli incassi da banco) e la struttura di `alerts` e `summary`.
+- `src/app/api/dashboard/forecast/route.ts` — la parte più delicata delle tre.
+  `calculateExpectedIncome` **resta** (lo storico delle chiusure è la fonte
+  giusta per gli incassi da banco, e nessun'altra fonte li descrive), ma smette
+  di vivere in un calcolo parallelo: i suoi valori diventano flussi con
+  `fonte: 'stima'` e **nessuna chiave**, passati a `serieProiettata` insieme agli
+  altri. `calculateExpectedExpenses` sparisce, assorbita da `leggiFlussi`.
+  La struttura di `alerts` e `summary` non cambia: `minBalance`,
+  `minBalanceDate` e `daysUntilLowBalance` si ricavano dalla serie restituita.
+
+  **Perché nessuna chiave sulla stima**: una previsione di incasso da banco non
+  descrive lo stesso denaro di una scadenza attiva né di un movimento, quindi
+  non deve mai essere scartata per sovrapposizione. Darle una chiave la
+  esporrebbe a sparire per un falso appaiamento.
+
+  ⚠️ Il giorno **corrente e i passati** non devono ricevere flussi `stima`: lì i
+  movimenti reali esistono già, e sommarci sopra una media raddoppierebbe
+  l'incasso. La stima parte da domani.
 
 - [ ] **Step 6: Verifica che nulla sia regredito**
 
