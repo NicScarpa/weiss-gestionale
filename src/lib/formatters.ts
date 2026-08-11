@@ -27,6 +27,13 @@ const DECIMALE = new Intl.NumberFormat('it-IT', {
   useGrouping: true,
 })
 
+// Come DECIMALE, ma senza raggruppamento: vedi il commento di formatNumeroCsv.
+const DECIMALE_CSV = new Intl.NumberFormat('it-IT', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+  useGrouping: false,
+})
+
 /** Importo in euro all'italiana: `1.234,56 €`. */
 export function formatCurrency(amount: number): string {
   return EURO.format(amount)
@@ -64,6 +71,25 @@ export function formatCurrencyOrZero(
 export function formatCurrencyPdf(value: number | null | undefined): string {
   if (value === null || value === undefined || value === 0) return ''
   return `${DECIMALE.format(value)} €`
+}
+
+/**
+ * Importo per una cella CSV: `1.234,50`, senza simbolo di valuta.
+ *
+ * Esiste separata da `formatCurrency` perché un CSV non vuole il simbolo, e
+ * separata da `.toFixed(2)` perché quello scrive il punto decimale: su Excel
+ * con impostazioni italiane un «1234.50» in un file separato da punto e virgola
+ * arriva come testo e non si somma. È il difetto che l'export dello scadenzario
+ * aveva e quello della prima nota no.
+ *
+ * Il valore assente diventa cella vuota, non zero: in un foglio di calcolo uno
+ * zero si somma e un vuoto no, e sono due affermazioni diverse.
+ */
+export function formatNumeroCsv(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === '') return ''
+  const numero = typeof value === 'string' ? parseFloat(value) : value
+  if (Number.isNaN(numero)) return ''
+  return DECIMALE_CSV.format(numero)
 }
 
 /**

@@ -69,3 +69,34 @@ describe('le varianti si comportano come la principale sui numeri', () => {
     expect(formatCurrencyPdf(1234.56)).not.toContain(' ')
   })
 })
+
+import { formatNumeroCsv } from '../formatters'
+
+describe('formatNumeroCsv', () => {
+  it('usa la virgola decimale, che è ciò che Excel italiano si aspetta', () => {
+    expect(formatNumeroCsv(1234.5)).toBe('1234,50')
+    expect(formatNumeroCsv(0.05)).toBe('0,05')
+  })
+
+  it('NON raggruppa le migliaia: in una cella il punto è ambiguo fra locali diversi', () => {
+    expect(formatNumeroCsv(1234567.89)).toBe('1234567,89')
+  })
+
+  it('tiene sempre due decimali', () => {
+    expect(formatNumeroCsv(100)).toBe('100,00')
+  })
+
+  it('accetta le stringhe, che è la forma in cui gli importi arrivano da Prisma', () => {
+    expect(formatNumeroCsv('1234.5')).toBe('1234,50')
+  })
+
+  it('rende la cella vuota, non uno zero, quando il valore manca', () => {
+    expect(formatNumeroCsv(null)).toBe('')
+    expect(formatNumeroCsv(undefined)).toBe('')
+    expect(formatNumeroCsv('')).toBe('')
+  })
+
+  it('mantiene il segno negativo', () => {
+    expect(formatNumeroCsv(-1234.5)).toBe('-1234,50')
+  })
+})

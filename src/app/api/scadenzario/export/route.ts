@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { ScheduleStatus, ScheduleType, SchedulePriority, ScheduleSource, SCHEDULE_SOURCE_LABELS } from '@/types/schedule'
 import { getVenueId } from '@/lib/venue'
+import { formatNumeroCsv } from '@/lib/formatters'
 
 // GET /api/scadenzario/export - Export CSV scadenze
 export async function GET(request: NextRequest) {
@@ -65,9 +66,9 @@ export async function GET(request: NextRequest) {
       s.tipo === 'attiva' ? 'Da incassare' : 'Da pagare',
       escapeCsv(s.descrizione),
       escapeCsv(s.controparteNome || s.supplier?.name || ''),
-      Number(s.importoTotale).toFixed(2),
-      Number(s.importoPagato).toFixed(2),
-      (Number(s.importoTotale) - Number(s.importoPagato)).toFixed(2),
+      formatNumeroCsv(Number(s.importoTotale)),
+      formatNumeroCsv(Number(s.importoPagato)),
+      formatNumeroCsv(Number(s.importoTotale) - Number(s.importoPagato)),
       s.stato,
       s.priorita,
       s.dataScadenza ? new Date(s.dataScadenza).toLocaleDateString('it-IT') : '',
@@ -78,9 +79,34 @@ export async function GET(request: NextRequest) {
       SCHEDULE_SOURCE_LABELS[s.source as ScheduleSource] || s.source || '',
     ])
 
+    // L'export vale quanto la schermata, non meno: chi lo apre deve trovarci
+    // anche gli aggregati che la pagina mostra in testata.
+    const totali = schedules.reduce(
+      (acc, s) => {
+        const totale = Number(s.importoTotale)
+        const pagato = Number(s.importoPagato)
+        return {
+          totale: acc.totale + totale,
+          pagato: acc.pagato + pagato,
+          residuo: acc.residuo + (totale - pagato),
+        }
+      },
+      { totale: 0, pagato: 0, residuo: 0 }
+    )
+
+    const rigaTotali = [
+      `TOTALE (${schedules.length} scadenze)`,
+      '', '',
+      formatNumeroCsv(totali.totale),
+      formatNumeroCsv(totali.pagato),
+      formatNumeroCsv(totali.residuo),
+      '', '', '', '', '', '', '', '',
+    ]
+
     const csv = [
       headers.join(';'),
       ...rows.map(r => r.join(';')),
+      rigaTotali.join(';'),
     ].join('\n')
 
     // BOM for Excel compatibility
