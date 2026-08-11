@@ -211,7 +211,7 @@ Serve:
 1. **Popolare `BudgetCategory`** con le 9 famiglie (livello 1) e i 39 sottogruppi (livello 2, `parentId` alla famiglia). Le categorie attualmente seedate (`FOOD_COST`, `BEVERAGE_COST`, `COSTI_FISSI`, `RICAVI_BAR`…) sono un template generico non allineato né al v4 né a questo design: vanno sostituite.
 2. **Aggiungere `PATRIMONIALE` ad `AccountType`** per il mastro 40. Il piano ha tre sezioni — RICAVI, COSTI, PATRIMONIALE — e il valore nuovo le rispecchia. L'alternativa, distribuire il mastro 40 su `ATTIVO`/`PASSIVO`, costringerebbe a stabilire arbitrariamente da che parte sta un F24 IVA. `ATTIVO` e `PASSIVO` restano per i conti di sistema (banca, cassa).
 3. **Nessun flag `isCashFlow` sul conto.** L'informazione è nella struttura statica `src/lib/cashflow/riclassificazione.ts`: una voce o sta in un sottogruppo, o sta in `VOCI_FUORI_CASSA`. Una colonna che ripete un dato già presente è una seconda fonte destinata a divergere. Il rischio — un conto nuovo che sparisce in silenzio dal prospetto — lo copre il controllo C4.
-4. **Mapping completo**: ogni conto imputabile deve avere una `AccountBudgetMapping`, oppure `isCashFlow = false`. Nessun conto orfano.
+4. **Mapping completo**: ogni conto imputabile o è mappato a un sottogruppo tramite `AccountBudgetMapping`, o è dichiarato fuori cassa in `VOCI_FUORI_CASSA`. Nessun conto orfano: chi sfugge a entrambe le vie non sparisce in silenzio dal prospetto, lo segnala il controllo C4.
 
 ### Vincoli di integrità
 
