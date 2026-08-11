@@ -216,10 +216,19 @@ export function costruisciProspetto(
   }
 }
 
-/** Mappa id del conto → codice della voce, per i soli conti attivi. */
+/**
+ * Mappa id del conto → codice della voce, **su tutti i conti**, attivi o no.
+ *
+ * Non filtrare per `isActive`: in questo gestionale la disattivazione non
+ * segna un conto in disuso, è il soft-delete di un conto *con* movimenti (vedi
+ * `src/app/api/accounts/route.ts`, handler DELETE — un conto senza movimenti
+ * viene cancellato davvero, uno con movimenti viene disattivato). Filtrando
+ * per `isActive: true` si escluderebbe dal prospetto esattamente lo storico
+ * che deve classificare: la sua IVA finirebbe comunque in G1/G2, ma il netto
+ * sparirebbe da voce, sottogruppo, famiglia e totali, senza errore visibile.
+ */
 async function codiciDeiConti(): Promise<Map<string, string>> {
   const conti = await prisma.account.findMany({
-    where: { isActive: true },
     select: { id: true, code: true },
   })
 
