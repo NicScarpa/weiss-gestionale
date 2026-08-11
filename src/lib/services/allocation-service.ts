@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
+import { formatCurrency } from '@/lib/formatters'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
 import {
   centroDaRiproporre,
@@ -257,7 +258,7 @@ export async function setEntryAllocations({
     if (somma + sommaEreditate > importoUtile + 0.01) {
       return {
         outcome: 'invalid',
-        motivo: `La somma delle fette (${(somma + sommaEreditate).toFixed(2)} €) supera l'importo del movimento (${importoUtile.toFixed(2)} €)`,
+        motivo: `La somma delle fette (${formatCurrency(somma + sommaEreditate)}) supera l'importo del movimento (${formatCurrency(importoUtile)})`,
       }
     }
     if (fette.length > 0) {

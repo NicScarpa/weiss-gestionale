@@ -18,16 +18,13 @@ import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
 import { CostCenterSelect } from '@/components/prima-nota/shared/CostCenterSelect'
 import { useAccountsForCombobox, buildCostCenterRuleMap } from '@/hooks/useImputableAccounts'
 import type { JournalEntry } from '@/types/prima-nota'
+import { formatCurrency } from '@/lib/formatters'
 
 interface EditContoCentroDialogProps {
   entry: JournalEntry | null
   open: boolean
   onOpenChange: (open: boolean) => void
   onSaved: () => void
-}
-
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(amount)
 }
 
 /**

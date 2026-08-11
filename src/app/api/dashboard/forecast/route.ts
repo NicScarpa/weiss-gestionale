@@ -8,12 +8,14 @@ import {
   subYears,
   startOfDay,
   format,
+  parseISO,
   getDay,
   getDate,
   getMonth,
   differenceInDays,
 } from 'date-fns'
 import { it } from 'date-fns/locale'
+import { formatCurrency } from '@/lib/formatters'
 
 import { logger } from '@/lib/logger'
 interface ForecastDay {
@@ -27,6 +29,16 @@ interface ForecastDay {
   isWeekend: boolean
   incomeSource: 'historical' | 'average' | 'hybrid'
   expenses: Array<{ name: string; amount: number }>
+}
+
+/**
+ * Data per esteso («mercoledì 12 agosto») per i messaggi di avviso. Nella
+ * tabella e nel grafico la forma corta di `dateFormatted` («mer 12 ago») serve
+ * a stare nello spazio della colonna, ma dentro una frase si legge come una
+ * sigla: l'avviso è l'unico posto dove la data va detta tutta.
+ */
+function dataEstesa(isoDate: string): string {
+  return format(parseISO(isoDate), 'EEEE d MMMM', { locale: it })
 }
 
 interface ForecastResult {
@@ -171,10 +183,9 @@ export const GET = withAuth(async (request, { venueId }) => {
       alerts.push({
         type: 'LOW_BALANCE',
         date: firstLowDay.date,
-        message: `Saldo previsto sotto soglia (${lowBalanceThreshold.toLocaleString(
-          'it-IT',
-          { style: 'currency', currency: 'EUR' }
-        )}) dal ${firstLowDay.dateFormatted}`,
+        message: `Saldo previsto sotto soglia (${formatCurrency(
+          lowBalanceThreshold
+        )}) dal ${dataEstesa(firstLowDay.date)}`,
         severity: 'warning',
       })
     }
@@ -186,7 +197,7 @@ export const GET = withAuth(async (request, { venueId }) => {
       alerts.push({
         type: 'NEGATIVE_BALANCE',
         date: firstNegativeDay.date,
-        message: `Saldo previsto negativo dal ${firstNegativeDay.dateFormatted}`,
+        message: `Saldo previsto negativo dal ${dataEstesa(firstNegativeDay.date)}`,
         severity: 'critical',
       })
     }
@@ -197,9 +208,8 @@ export const GET = withAuth(async (request, { venueId }) => {
       alerts.push({
         type: 'HIGH_EXPENSE_DAY',
         date: day.date,
-        message: `Spese elevate previste il ${day.dateFormatted}: ${day.expectedExpenses.toLocaleString(
-          'it-IT',
-          { style: 'currency', currency: 'EUR' }
+        message: `Spese elevate previste il ${dataEstesa(day.date)}: ${formatCurrency(
+          day.expectedExpenses
         )}`,
         severity: 'warning',
       })

@@ -396,7 +396,7 @@ export function LineItemsTable({
                     <TableCell className="text-right">
                       {linea.quantita !== undefined ? (
                         <>
-                          {linea.quantita.toLocaleString('it-IT')}
+                          {linea.quantita.toLocaleString('it-IT', { useGrouping: true })}
                           {linea.unitaMisura && (
                             <span className="text-xs text-slate-500 ml-1">
                               {linea.unitaMisura}

@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
+import { formatCurrency } from '@/lib/formatters'
 import { applicaStimaSuScadenza, ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
 import {
   bloccaMovimento,
@@ -283,7 +284,7 @@ export async function reconcileScheduleWithEntry({
       if (disponibile <= TOLLERANZA_IMPORTI) {
         return {
           outcome: 'amount_exceeds_capacity',
-          motivo: `Il movimento è già interamente imputato ad altre scadenze (${utile.toFixed(2)} € impegnati)`,
+          motivo: `Il movimento è già interamente imputato ad altre scadenze (${formatCurrency(utile)} impegnati)`,
         } as const
       }
 
@@ -302,13 +303,13 @@ export async function reconcileScheduleWithEntry({
       if (quota > residuo + TOLLERANZA_IMPORTI) {
         return {
           outcome: 'amount_exceeds_capacity',
-          motivo: `La quota supera il residuo della scadenza (${residuo.toFixed(2)} €)`,
+          motivo: `La quota supera il residuo della scadenza (${formatCurrency(residuo)})`,
         } as const
       }
       if (quota > disponibile + TOLLERANZA_IMPORTI) {
         return {
           outcome: 'amount_exceeds_capacity',
-          motivo: `La quota supera la capienza residua del movimento (${disponibile.toFixed(2)} € ancora liberi su ${utile.toFixed(2)} €)`,
+          motivo: `La quota supera la capienza residua del movimento (${formatCurrency(disponibile)} ancora liberi su ${formatCurrency(utile)})`,
         } as const
       }
 

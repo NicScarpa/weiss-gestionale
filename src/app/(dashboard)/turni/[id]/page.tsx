@@ -22,6 +22,7 @@ import {
   FileSpreadsheet,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatCurrency } from '@/lib/formatters'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 
@@ -428,7 +429,7 @@ export default function ScheduleDetailPage({ params }: PageProps) {
             <div className="flex items-center gap-2">
               <Euro className="h-4 w-4 text-muted-foreground" />
               <span className="text-2xl font-bold">
-                {totalCost.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })}
+                {formatCurrency(totalCost)}
               </span>
             </div>
             <p className="text-sm text-muted-foreground">Costo stimato</p>

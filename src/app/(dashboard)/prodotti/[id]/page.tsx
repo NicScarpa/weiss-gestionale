@@ -140,6 +140,7 @@ export default function ProductDetailPage({ params }: PageProps) {
       currency: 'EUR',
       minimumFractionDigits: 2,
       maximumFractionDigits: 4,
+      useGrouping: true,
     }).format(numPrice)
   }
 

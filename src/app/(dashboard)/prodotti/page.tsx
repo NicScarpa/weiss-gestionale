@@ -120,6 +120,7 @@ export default function ProdottiPage() {
       currency: 'EUR',
       minimumFractionDigits: 2,
       maximumFractionDigits: 4,
+      useGrouping: true,
     }).format(numPrice)
   }
 

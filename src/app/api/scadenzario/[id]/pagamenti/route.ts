@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
+import { formatCurrency } from '@/lib/formatters'
 import { ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
 import {
   bloccaScadenza,
@@ -106,8 +107,8 @@ export async function POST(
         return {
           errore: 'sfora',
           messaggio:
-            `Il pagamento di ${validatedData.importo.toFixed(2)} € supera il residuo ` +
-            `della scadenza (${Math.max(0, residuo).toFixed(2)} €)`,
+            `Il pagamento di ${formatCurrency(validatedData.importo)} supera il residuo ` +
+            `della scadenza (${formatCurrency(Math.max(0, residuo))})`,
         } as const
       }
 

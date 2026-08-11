@@ -37,6 +37,7 @@ import {
   type PaymentFormData,
   type PaymentType,
 } from '@/types/prima-nota'
+import { formatCurrency } from '@/lib/formatters'
 
 const ITALIAN_IBAN_PATTERN = /^IT\d{2}[A-Za-z0-9]{5}\d{5}$/
 
@@ -278,7 +279,7 @@ export function PagamentoFormDialog({
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Totale Pagamento:</span>
               <span className="font-semibold text-lg">
-                €{importoTotale?.toFixed(2) || '0.00'}
+                {formatCurrency(importoTotale ?? 0)}
               </span>
             </div>
           </div>

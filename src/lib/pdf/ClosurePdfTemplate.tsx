@@ -381,6 +381,7 @@ function fmt(value: number | null | undefined): string {
   return new Intl.NumberFormat('it-IT', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
+    useGrouping: true,
   }).format(value)
 }
 

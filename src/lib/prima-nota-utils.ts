@@ -1,4 +1,5 @@
 import { money, sumMoney, toApi } from '@/lib/money'
+import { formatCurrency } from '@/lib/formatters'
 import { REGISTRI_IMPLICITI } from '@/types/prima-nota'
 import type {
   RegisterType,
@@ -271,10 +272,7 @@ export function formatSignedAmount(
     return {
       value: debitAmount,
       sign: '+',
-      formatted: `+${debitAmount.toLocaleString('it-IT', {
-        style: 'currency',
-        currency: 'EUR',
-      })}`,
+      formatted: `+${formatCurrency(debitAmount)}`,
     }
   }
 
@@ -282,10 +280,7 @@ export function formatSignedAmount(
     return {
       value: creditAmount,
       sign: '-',
-      formatted: `-${creditAmount.toLocaleString('it-IT', {
-        style: 'currency',
-        currency: 'EUR',
-      })}`,
+      formatted: `-${formatCurrency(creditAmount)}`,
     }
   }
 

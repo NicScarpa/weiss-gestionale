@@ -23,6 +23,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { buildAccountTree } from '@/lib/accounts/build-account-tree'
+import { formatCurrency } from '@/lib/formatters'
 import type { RigaContoEconomico, TotaliContoEconomico } from '@/lib/report/conto-economico'
 import {
   determinaColonne,
@@ -86,9 +87,6 @@ function formatDateIt(iso: string): string {
   const [y, m, d] = iso.split('-')
   return `${d}/${m}/${y}`
 }
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(value)
 
 /** Cella della tabella: uno zero si legge come assenza di movimento, non come "zero euro esatti". */
 function Cella({ value, className = '' }: { value: number; className?: string }) {

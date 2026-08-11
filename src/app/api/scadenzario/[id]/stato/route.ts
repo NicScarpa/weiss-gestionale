@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
+import { formatCurrency } from '@/lib/formatters'
 import { ScheduleStatus } from '@/types/schedule'
 import { getVenueId } from '@/lib/venue'
 import { ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
@@ -45,7 +46,7 @@ function motivoIncompatibilita(
     case ScheduleStatus.PAGATA:
       return saldata
         ? null
-        : `La scadenza ha ancora ${residuo.toFixed(2)} € da pagare: registra il pagamento ` +
+        : `La scadenza ha ancora ${formatCurrency(residuo)} da pagare: registra il pagamento ` +
             'invece di dichiararla pagata'
 
     case ScheduleStatus.PARZIALMENTE_PAGATA:
@@ -56,7 +57,7 @@ function motivoIncompatibilita(
 
     case ScheduleStatus.APERTA:
       return pagato > TOLLERANZA_IMPORTI
-        ? `Sulla scadenza risultano ${pagato.toFixed(2)} € già pagati: non può tornare aperta`
+        ? `Sulla scadenza risultano ${formatCurrency(pagato)} già pagati: non può tornare aperta`
         : null
   }
 }

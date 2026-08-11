@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
+import { formatCurrency } from '@/lib/formatters'
 import { SchedulePriority, ScheduleDocumentType } from '@/types/schedule'
 import { applicaStimaSuScadenza, ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
 import {
@@ -259,7 +260,7 @@ export async function PATCH(
           return {
             errore: 'importo_sotto_pagato',
             motivo:
-              `Sulla scadenza risultano ${pagato.toFixed(2)} € già pagati: l'importo totale ` +
+              `Sulla scadenza risultano ${formatCurrency(pagato)} già pagati: l'importo totale ` +
               'non può scendere sotto quella cifra',
           } as const
         }

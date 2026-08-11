@@ -315,7 +315,7 @@ export function BancheEContiClient() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Saldo iniziale</span>
                   <span className="font-medium">
-                    {new Intl.NumberFormat('it-IT', { style: 'currency', currency: account.currency }).format(account.initialBalance)}
+                    {new Intl.NumberFormat('it-IT', { style: 'currency', currency: account.currency, useGrouping: true }).format(account.initialBalance)}
                   </span>
                 </div>
                 {account.notes && (

@@ -50,6 +50,7 @@ import {
   type JournalEntryFormData,
 } from '@/types/prima-nota'
 import { cn } from '@/lib/utils'
+import { formatCurrency } from '@/lib/formatters'
 import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
 import {
   CostCenterSelect,
@@ -626,7 +627,7 @@ export function MovimentoFormDialog({
             <div className="flex items-center justify-between text-sm">
               <span>Importo:</span>
               <span className="font-medium">
-                €{form.watch('amount')?.toFixed(2) || '0.00'}
+                {formatCurrency(form.watch('amount') ?? 0)}
               </span>
             </div>
           </div>

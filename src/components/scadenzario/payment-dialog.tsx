@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { SchedulePaymentMethod, SCHEDULE_PAYMENT_METHOD_LABELS } from '@/types/schedule'
+import { formatCurrency } from '@/lib/formatters'
 import { CalendarIcon } from 'lucide-react'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
@@ -54,7 +55,7 @@ export function PaymentDialog({
           <DialogTitle>Registra Pagamento</DialogTitle>
           <DialogDescription>
             Importo residuo: <span className="font-semibold text-foreground">
-              {new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(importoResiduo)}
+              {formatCurrency(importoResiduo)}
             </span>
           </DialogDescription>
         </DialogHeader>
