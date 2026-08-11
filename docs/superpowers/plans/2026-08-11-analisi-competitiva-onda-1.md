@@ -1451,9 +1451,37 @@ git commit -m "feat(riconciliazione): pesi e soglie del punteggio dichiarati all
 
 ---
 
-## Task 7 — Il mese corrente si spezza in scaduto e da saldare
+## Task 7 — RIMOSSO DALL'ONDA · non è un quick win, e collide con l'ordinamento
 
-`SCD-02` · impatto 4
+`SCD-02` · impatto 4 · **effort rivisto da S a M**
+
+**Non implementare questo task.** Passa direttamente al Task 8.
+
+### Perché
+
+La prima stesura diceva: «dove oggi si raggruppa per mese, sostituisci la chiave
+con `{anno-mese, scaduto}`». **Non c'è alcun raggruppamento da sostituire**: la
+lista dello scadenzario (`src/app/(dashboard)/scadenzario/page.tsx`) è una
+`<Table>` piatta con ordinamento per colonna cliccabile — Stato, Scadenza, Tipo,
+Descrizione, Controparte. Il raggruppamento mensile di Cash King presuppone una
+lista raggruppata, che noi non abbiamo.
+
+Introdurlo non è fatica in più: è una **decisione di prodotto**. Raggruppamento
+e ordinamento per colonna si contendono lo stesso spazio — se l'utente ordina
+per importo decrescente, o l'ordinamento opera solo dentro il gruppo (e allora
+«ordina per importo» smette di fare ciò che dice), oppure i gruppi saltano.
+Va scelto, non improvvisato dentro un quick win.
+
+### Cosa copre il bisogno nel frattempo
+
+Il **Task 8** lo risolve in buona parte a costo zero: l'anzianità dentro il badge
+(`Scaduta +6g`) rende la distinzione fra «era da pagare» e «scade fra due
+settimane» visibile su ogni riga, senza toccare l'impianto della lista.
+
+`SCD-02` torna nel backlog con effort M e questa nota.
+
+<details>
+<summary>Testo originale, conservato per la ripresa futura</summary>
 
 **Contesto per chi implementa.** Le scadenze si raggruppano per mese: ad agosto,
 «doveva essere pagata il 3» e «scade il 28» finiscono insieme, e sono due urgenze
@@ -1528,6 +1556,10 @@ nulla.
 git add "src/app/(dashboard)/scadenzario/page.tsx"
 git commit -m "feat(scadenzario): il mese corrente separa scaduto e da saldare [SCD-02]"
 ```
+
+---
+
+</details>
 
 ---
 
@@ -2009,27 +2041,70 @@ Aggiorna il tipo della `Map` di conseguenza.
 
 Sotto «N risultati», le tre righe con `TestoEvidenziato` e `truncate`.
 
-- [ ] **Step 4: Aggiungi l'anteprima al costruttore di regole**
+- [ ] **Step 4: Crea la rotta di anteprima**
 
-In `RegolaFormDialog.tsx`, chiama `POST /api/categorization-rules/test` in
-`debounce` di 400ms quando cambiano `keywords` o `direction`, e mostra conteggio
-più le prime 5 descrizioni evidenziate.
+⚠️ **Correzione alla prima stesura di questo piano.** Dicevo di chiamare
+`POST /api/categorization-rules/test`: **quella rotta risponde alla domanda
+inversa**. Riceve *una descrizione* e restituisce *quali regole esistenti la
+catturano* (`matched`, `matches`, `suggestedCategory`). Serve a provare una
+causale contro il regolamento, non a stimare quanti movimenti una keyword nuova
+aggancerebbe. Chiamarla qui produrrebbe un numero che non significa nulla.
+
+Serve una rotta nuova, `POST /api/categorization-rules/anteprima`, che riceve
+`{ keywords: string[], direction: 'INFLOW' | 'OUTFLOW' }` e restituisce
+`{ totale: number, esempi: string[] }`:
+
+```ts
+// Quanti movimenti NON categorizzati aggancerebbe una regola con queste
+// parole chiave. È la domanda inversa di `/test`, che invece prova una
+// causale contro le regole già scritte.
+const dove = {
+  venueId,
+  hiddenAt: null,
+  accountId: null,
+  ...(direction === 'INFLOW'
+    ? { debitAmount: { gt: 0 } }
+    : { creditAmount: { gt: 0 } }),
+  OR: keywords.map((k) => ({
+    description: { contains: k, mode: 'insensitive' as const },
+  })),
+}
+
+const [totale, esempi] = await Promise.all([
+  prisma.journalEntry.count({ where: dove }),
+  prisma.journalEntry.findMany({
+    where: dove,
+    select: { description: true },
+    take: 5,
+    orderBy: { date: 'desc' },
+  }),
+])
+```
+
+Con `keywords` vuoto la rotta restituisce `{ totale: 0, esempi: [] }` senza
+interrogare il database: un `OR` vuoto in Prisma cattura **tutto**, ed è il modo
+più diretto per mostrare all'utente «3.000 movimenti corrispondono» mentre non
+ha ancora scritto niente.
+
+- [ ] **Step 5: Aggiungi l'anteprima al costruttore di regole**
+
+In `RegolaFormDialog.tsx`, chiama la rotta nuova in `debounce` di 400ms quando
+cambiano `keywords` o `direction`, e mostra il conteggio più le descrizioni
+evidenziate con `TestoEvidenziato`.
 
 Con zero corrispondenze mostra il testo esplicito — **è un'informazione, non un
 errore**:
 
 > Nessun movimento corrisponde. La regola varrà solo per i movimenti futuri.
 
-Se `/api/categorization-rules/test` restituisce solo un conteggio, estendine la
-risposta con le prime 5 descrizioni: la query legge già i movimenti.
-
-- [ ] **Step 5: Verifica manuale**
+- [ ] **Step 6: Verifica manuale**
 
 Digitando una keyword il conteggio si aggiorna senza salvare; le descrizioni
 mostrano la keyword evidenziata; il `debounce` non produce una chiamata per
-carattere (controllare la scheda Network).
+carattere (controllare la scheda Network); con il campo keyword vuoto il
+conteggio è zero e non compare un numero enorme.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add src/components/prima-nota/regole/ src/app/api/categorization-rules/
