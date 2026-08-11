@@ -7,11 +7,7 @@
  */
 import { money, toApi, type Money } from '@/lib/money'
 import { lordo, type MovimentoAggregato } from './movimenti'
-import {
-  CONTI_VERSAMENTO_DI_SISTEMA,
-  VOCI_TESORERIA_INTERNA,
-  vociRiconosciute,
-} from './riclassificazione'
+import { VOCI_TESORERIA_INTERNA, vociRiconosciute } from './riclassificazione'
 import type { Prospetto } from './prospetto'
 
 export interface EsitoControllo {
@@ -29,37 +25,36 @@ export interface InputControlli {
   codicePerConto: Map<string, string>
   /** Variazione dei saldi di cassa e banca nel periodo, dal loro estratto. */
   variazioneReale: Money
+  /**
+   * Codici — già risolti dalla `system_key` al `code` corrente, vedi
+   * `risolviContiSistema` in `riclassificazione.ts` — dei conti su cui il
+   * versamento serale scrive davvero. Il perché, e perché è provvisorio, sta
+   * su `CONTI_VERSAMENTO_DI_SISTEMA`.
+   */
+  codiciVersamentoDiSistema: readonly string[]
+  /**
+   * Codici — stesso meccanismo — dei conti di sistema dichiarati fuori dal
+   * prospetto. Vedi `CONTI_SISTEMA_FUORI_PROSPETTO`.
+   */
+  codiciSistemaFuoriProspetto: ReadonlySet<string>
 }
 
 /** Sotto il centesimo è arrotondamento, non un errore. */
 const TOLLERANZA = 0.005
-
-/**
- * I conti le cui gambe C2 sorveglia: le voci di giroconto del piano v4 e —
- * finché il generatore delle chiusure scrive lì — i conti di sistema cassa e
- * banca. Entrambi gli elenchi arrivano da `riclassificazione.ts`, che è la
- * loro unica dichiarazione: il memo M3 somma le prime, e se le due liste
- * divergessero memo e controllo parlerebbero di movimenti diversi.
- *
- * Il perché dei conti di sistema, e perché è una situazione provvisoria, sta
- * su `CONTI_VERSAMENTO_DI_SISTEMA`.
- */
-const CODICI_TESORERIA: readonly string[] = [
-  ...VOCI_TESORERIA_INTERNA,
-  ...CONTI_VERSAMENTO_DI_SISTEMA,
-]
 
 export function eseguiControlli({
   prospetto,
   movimenti,
   codicePerConto,
   variazioneReale,
+  codiciVersamentoDiSistema,
+  codiciSistemaFuoriProspetto,
 }: InputControlli): EsitoControllo[] {
   return [
     quadraturaColSaldo(prospetto, variazioneReale),
-    versamentiADueGambe(movimenti, codicePerConto),
+    versamentiADueGambe(movimenti, codicePerConto, codiciVersamentoDiSistema),
     movimentiSenzaConto(movimenti),
-    contiNonRiconosciuti(movimenti, codicePerConto),
+    contiNonRiconosciuti(movimenti, codicePerConto, codiciSistemaFuoriProspetto),
   ]
 }
 
@@ -90,15 +85,24 @@ function quadraturaColSaldo(prospetto: Prospetto, variazioneReale: Money): Esito
  * C2 — un versamento di contanti in banca è la stessa somma che esce dalla
  * cassa: le due gambe devono elidersi. Quando non lo fanno, una delle due non
  * è stata registrata.
+ *
+ * I conti sorvegliati sono le voci di giroconto del piano v4 più — finché il
+ * generatore delle chiusure scrive lì — i conti di sistema cassa e banca, già
+ * risolti nel loro `code` corrente dal chiamante. Le voci di giroconto sono
+ * le stesse che il memo M3 somma: se le due liste divergessero, memo e
+ * controllo parlerebbero di movimenti diversi.
  */
 function versamentiADueGambe(
   movimenti: MovimentoAggregato[],
-  codicePerConto: Map<string, string>
+  codicePerConto: Map<string, string>,
+  codiciVersamentoDiSistema: readonly string[]
 ): EsitoControllo {
+  const codiciTesoreria = new Set([...VOCI_TESORERIA_INTERNA, ...codiciVersamentoDiSistema])
+
   const saldo = movimenti.reduce((acc, movimento) => {
     if (!movimento.accountId) return acc
     const codice = codicePerConto.get(movimento.accountId)
-    if (!codice || !CODICI_TESORERIA.includes(codice)) return acc
+    if (!codice || !codiciTesoreria.has(codice)) return acc
     return acc.plus(lordo(movimento))
   }, money(0))
 
@@ -141,12 +145,16 @@ function movimentiSenzaConto(movimenti: MovimentoAggregato[]): EsitoControllo {
  * contano: `vociRiconosciute()` le include già, per costruzione (sono nel
  * piano dei conti, solo escluse dal prospetto perché non toccano mai cassa).
  * Lo stesso vale per i conti di sistema — cassa, banca, transitori POS,
- * debiti v/fornitori: dichiarati fuori prospetto con il loro motivo, o questo
- * controllo li segnalerebbe a ogni esecuzione senza che ci sia nulla da fare.
+ * debiti v/fornitori: dichiarati fuori prospetto con il loro motivo, e
+ * risolti dal chiamante nel loro `code` corrente. Sono due insiemi distinti
+ * perché nascono da due fonti diverse — uno statico, l'altro dal database —
+ * e qui si consultano entrambi, o questo controllo li segnalerebbe a ogni
+ * esecuzione senza che ci sia nulla da fare.
  */
 function contiNonRiconosciuti(
   movimenti: MovimentoAggregato[],
-  codicePerConto: Map<string, string>
+  codicePerConto: Map<string, string>,
+  codiciSistemaFuoriProspetto: ReadonlySet<string>
 ): EsitoControllo {
   const riconosciute = vociRiconosciute()
   const ignoti = new Set<string>()
@@ -158,7 +166,7 @@ function contiNonRiconosciuti(
       ignoti.add(movimento.accountId)
       continue
     }
-    if (!riconosciute.has(codice)) {
+    if (!riconosciute.has(codice) && !codiciSistemaFuoriProspetto.has(codice)) {
       ignoti.add(codice)
     }
   }

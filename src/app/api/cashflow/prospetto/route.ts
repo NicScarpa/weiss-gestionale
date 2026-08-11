@@ -44,7 +44,7 @@ export async function GET(request: Request) {
     // peggiore, due copie del commento che spiega perché la mappa dei conti
     // non si filtra per `isActive`: se le due copie divergessero, prospetto e
     // controlli lavorerebbero su insiemi di conti diversi.
-    const [{ prospetto, movimenti, codicePerConto, cassaIniziale }, saldoFinale] =
+    const [{ prospetto, movimenti, codicePerConto, cassaIniziale, contiSistema }, saldoFinale] =
       await Promise.all([
         prospettoCashFlow(venueId, anno),
         liquiditaAlGiorno(venueId, `${anno}-12-31`),
@@ -55,6 +55,8 @@ export async function GET(request: Request) {
       movimenti,
       codicePerConto,
       variazioneReale: money(saldoFinale).minus(cassaIniziale),
+      codiciVersamentoDiSistema: contiSistema.versamento,
+      codiciSistemaFuoriProspetto: contiSistema.fuoriProspetto,
     })
 
     return NextResponse.json({ prospetto, controlli })

@@ -17,6 +17,8 @@
  * sottogruppo nomina un locale.
  */
 import type { BudgetCategoryType } from '@prisma/client'
+import type { SystemAccountKey } from '@/lib/accounts/system'
+import { logger } from '@/lib/logger'
 
 export type CodiceFamiglia = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I'
 
@@ -312,25 +314,33 @@ export const VOCI_TESORERIA_INTERNA: readonly string[] = ['40.4.01', '40.4.02']
  * patrimoniali su cui poggia il gestionale. Stanno qui, con il loro motivo,
  * per la stessa ragione di `VOCI_FUORI_CASSA`: perché C4 non li segnali come
  * ignoti, e perché chi legge sappia che l'assenza è voluta.
+ *
+ * La chiave è `system_key` (vedi `src/lib/accounts/system.ts`), non il
+ * `code`. Il `code` lo può cambiare un admin da `PUT /api/accounts`; se questa
+ * tabella lo dichiarasse per codice, un rename silenzioso farebbe ricomparire
+ * l'allarme permanente che C2 e C4 esistono per evitare — senza che nessun
+ * test se ne accorga, perché il codice cambiato resterebbe comunque una
+ * stringa valida. `risolviContiSistema`, qui sotto, traduce queste chiavi nei
+ * codici correnti al momento in cui i controlli girano.
  */
-export const CONTI_SISTEMA_FUORI_PROSPETTO: ReadonlyMap<string, string> = new Map([
-  ['100', 'Cassa: è la liquidità di cui il prospetto misura la variazione, non una voce'],
-  ['110', 'Banca: come la cassa, è il saldo misurato e non una riga'],
-  ['120', "Transitorio POS Worldline: regge l'incasso fino all'accredito in banca"],
-  ['121', 'Transitorio POS Axerve: come sopra'],
-  ['122', 'Transitorio POS SumUp: come sopra'],
-  ['200', "Debiti v/fornitori: la partita si apre e si chiude, l'esborso è sulla voce di costo"],
+export const CONTI_SISTEMA_FUORI_PROSPETTO: ReadonlyMap<SystemAccountKey, string> = new Map([
+  ['CASSA', 'Cassa: è la liquidità di cui il prospetto misura la variazione, non una voce'],
+  ['BANCA', 'Banca: come la cassa, è il saldo misurato e non una riga'],
+  ['POS_WORLDLINE', "Transitorio POS Worldline: regge l'incasso fino all'accredito in banca"],
+  ['POS_AXERVE', 'Transitorio POS Axerve: come sopra'],
+  ['POS_SUMUP', 'Transitorio POS SumUp: come sopra'],
+  ['DEBITI_FORNITORI', "Debiti v/fornitori: la partita si apre e si chiude, l'esborso è sulla voce di costo"],
 ])
 
 /**
  * I conti su cui il versamento serale finisce **davvero**, oggi.
  *
  * ⚠️ Tappabuchi, e va detto per intero. Il versamento generato da ogni
- * chiusura scrive `accountId` sui conti di sistema 110 e 100 (vedi
+ * chiusura scrive `accountId` sui conti di sistema banca e cassa (vedi
  * `closure-journal-entries.ts`, righe 354 e 373), non su 40.4.01 e 40.4.02
  * come il piano v4 prevede. Finché è così:
  *
- * - C2 deve guardare anche 100 e 110, o non vede le uniche gambe che il
+ * - C2 deve guardare anche cassa e banca, o non vede le uniche gambe che il
  *   sistema scrive ogni sera, e su dati reali non può fallire: un controllo
  *   che non può fallire non è un controllo;
  * - C4 deve conoscerli, o li segnala come non mappati a ogni esecuzione, per
@@ -341,11 +351,70 @@ export const CONTI_SISTEMA_FUORI_PROSPETTO: ReadonlyMap<string, string> = new Ma
  * il versamento su 40.4.01/40.4.02, che è il posto che il piano gli assegna.
  * Non si fa qui perché tocca il generatore delle chiusure, che è fuori dal
  * perimetro di questo lavoro ed è in produzione. Quando si farà, questa
- * costante sparisce e C2 torna alle sole `VOCI_TESORERIA_INTERNA`; 100 e 110
- * restano invece fra i conti fuori prospetto, che è il loro posto a
+ * costante sparisce e C2 torna alle sole `VOCI_TESORERIA_INTERNA`; cassa e
+ * banca restano invece fra i conti fuori prospetto, che è il loro posto a
  * prescindere.
  */
-export const CONTI_VERSAMENTO_DI_SISTEMA: readonly string[] = ['100', '110']
+export const CONTI_VERSAMENTO_DI_SISTEMA: readonly SystemAccountKey[] = ['CASSA', 'BANCA']
+
+/**
+ * Risultato della risoluzione delle chiavi di sistema nei codici correnti.
+ */
+export interface ContiSistemaRisolti {
+  /** Codici dei conti fuori prospetto, per il controllo C4. */
+  fuoriProspetto: ReadonlySet<string>
+  /** Codici dei conti su cui il versamento serale scrive, per il controllo C2. */
+  versamento: readonly string[]
+}
+
+/**
+ * Traduce `CONTI_SISTEMA_FUORI_PROSPETTO` e `CONTI_VERSAMENTO_DI_SISTEMA` —
+ * dichiarate per `system_key` — nei `code` correnti, usando la mappa
+ * `system_key → code` che il chiamante ha già letto dal database (vedi
+ * `prospettoCashFlow` in `prospetto.ts`, l'unico punto che tocca Prisma su
+ * questa strada).
+ *
+ * Una chiave che non risolve a nessun conto — piano dei conti non ancora
+ * seminato, o `system_key` non ancora assegnata a nessuna riga — non deve
+ * bloccare il prospetto: in un database appena creato è normale, e un
+ * `throw` qui trasformerebbe un prospetto vuoto in un errore 500. Ma non deve
+ * nemmeno sparire in silenzio, o si torna al problema di prima con un
+ * sintomo diverso: si segnala nei log, cosa che una stringa mai aggiornata
+ * non può fare.
+ */
+export function risolviContiSistema(
+  codicePerSystemKey: ReadonlyMap<string, string>
+): ContiSistemaRisolti {
+  const chiavi = new Set<SystemAccountKey>([
+    ...CONTI_SISTEMA_FUORI_PROSPETTO.keys(),
+    ...CONTI_VERSAMENTO_DI_SISTEMA,
+  ])
+
+  const codiceDellaChiave = new Map<SystemAccountKey, string>()
+  for (const chiave of chiavi) {
+    const codice = codicePerSystemKey.get(chiave)
+    if (codice) {
+      codiceDellaChiave.set(chiave, codice)
+    } else {
+      logger.warn(
+        `Conto di sistema "${chiave}" non risolto: nessun conto ha questa system_key. ` +
+          'I controlli C2/C4 non lo riconosceranno finché non è configurato.'
+      )
+    }
+  }
+
+  const fuoriProspetto = new Set<string>()
+  for (const chiave of CONTI_SISTEMA_FUORI_PROSPETTO.keys()) {
+    const codice = codiceDellaChiave.get(chiave)
+    if (codice) fuoriProspetto.add(codice)
+  }
+
+  const versamento = CONTI_VERSAMENTO_DI_SISTEMA.map((chiave) => codiceDellaChiave.get(chiave)).filter(
+    (codice): codice is string => codice !== undefined
+  )
+
+  return { fuoriProspetto, versamento }
+}
 
 export const RIGHE_MEMO: readonly RigaMemo[] = [
   {
@@ -382,18 +451,23 @@ const SOTTOGRUPPO_PER_VOCE: ReadonlyMap<string, string> = new Map(
 )
 
 /**
- * Tutte le voci che il prospetto conosce: mappate, fuori cassa, nel memo o
- * dichiarate conti di sistema.
+ * Tutte le voci del piano dei conti che il prospetto conosce: mappate, fuori
+ * cassa o nel memo.
  *
- * È il complemento del controllo C4: quello che non è qui dentro, e viene
- * movimentato, non compare in nessuna riga — e va detto invece di lasciarlo
- * sparire.
+ * Non comprende i conti di sistema: quelli sono dichiarati per `system_key`
+ * in `CONTI_SISTEMA_FUORI_PROSPETTO`, e diventano codici solo a runtime,
+ * tramite `risolviContiSistema`. Il controllo C4 consulta entrambi gli
+ * insiemi separatamente — le due idee restano distinte perché nascono da due
+ * fonti diverse: questa è statica, l'altra dipende dal database.
+ *
+ * È il complemento (parziale) del controllo C4: quello che non è né qui
+ * dentro né fra i conti di sistema risolti, e viene movimentato, non compare
+ * in nessuna riga — e va detto invece di lasciarlo sparire.
  */
 export function vociRiconosciute(): ReadonlySet<string> {
   return new Set([
     ...SOTTOGRUPPO_PER_VOCE.keys(),
     ...VOCI_FUORI_CASSA.keys(),
-    ...CONTI_SISTEMA_FUORI_PROSPETTO.keys(),
     ...RIGHE_MEMO.flatMap((memo) => memo.voci ?? []),
   ])
 }

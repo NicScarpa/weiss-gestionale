@@ -21,7 +21,12 @@ import {
   MONTH_NUMBER_TO_KEY,
 } from '@/types/budget'
 import { PIANO_CONTI_WEISS_V4 } from '@/lib/accounts/piano-conti-weiss-v4'
-import { RICLASSIFICAZIONE_CASH_FLOW, RIGHE_MEMO } from './riclassificazione'
+import {
+  RICLASSIFICAZIONE_CASH_FLOW,
+  RIGHE_MEMO,
+  risolviContiSistema,
+  type ContiSistemaRisolti,
+} from './riclassificazione'
 import { movimentiCashFlow, nettoDiIva, type MovimentoAggregato } from './movimenti'
 
 const NOME_VOCE = new Map(PIANO_CONTI_WEISS_V4.map((voce) => [voce.code, voce.nome]))
@@ -216,8 +221,16 @@ export function costruisciProspetto(
   }
 }
 
+interface MappeDeiConti {
+  /** Id del conto → codice della voce. */
+  codicePerConto: Map<string, string>
+  /** `system_key` del conto → codice della voce, per i soli conti che ne hanno una. */
+  codicePerSystemKey: Map<string, string>
+}
+
 /**
- * Mappa id del conto → codice della voce, **su tutti i conti**, attivi o no.
+ * Le due mappe id/system_key → codice, lette con **un'unica query su tutti i
+ * conti**, attivi o no.
  *
  * Non filtrare per `isActive`: in questo gestionale la disattivazione non
  * segna un conto in disuso, è il soft-delete di un conto *con* movimenti (vedi
@@ -226,13 +239,31 @@ export function costruisciProspetto(
  * per `isActive: true` si escluderebbe dal prospetto esattamente lo storico
  * che deve classificare: la sua IVA finirebbe comunque in G1/G2, ma il netto
  * sparirebbe da voce, sottogruppo, famiglia e totali, senza errore visibile.
+ *
+ * Vale anche per `codicePerSystemKey`: se cassa o banca venissero disattivate
+ * pur avendo storico, un conto di sistema letto con un filtro `isActive`
+ * diverso da quello con cui si legge `codicePerConto` sparirebbe da un lato e
+ * resterebbe dall'altro — la stessa incoerenza che questo commento esiste già
+ * per evitare, con una causa diversa. Per questo `codicePerSystemKey` nasce
+ * dalla stessa query, non da `getSystemAccountOptional` (che filtra
+ * `isActive` per un motivo legittimo altrove, ma non per questo).
  */
-async function codiciDeiConti(): Promise<Map<string, string>> {
+async function codiciDeiConti(): Promise<MappeDeiConti> {
   const conti = await prisma.account.findMany({
-    select: { id: true, code: true },
+    select: { id: true, code: true, systemKey: true },
   })
 
-  return new Map(conti.map((conto) => [conto.id, conto.code]))
+  const codicePerSystemKey = new Map<string, string>()
+  for (const conto of conti) {
+    if (conto.systemKey) {
+      codicePerSystemKey.set(conto.systemKey, conto.code)
+    }
+  }
+
+  return {
+    codicePerConto: new Map(conti.map((conto) => [conto.id, conto.code])),
+    codicePerSystemKey,
+  }
 }
 
 /**
@@ -252,13 +283,21 @@ export interface ProspettoConFonti {
   codicePerConto: Map<string, string>
   /** Liquidità all'ultimo giorno dell'anno precedente, cioè la cassa iniziale. */
   cassaIniziale: Money
+  /**
+   * I conti di sistema dichiarati in `riclassificazione.ts`, tradotti dalla
+   * loro `system_key` nel `code` corrente di questo database. È la stessa
+   * traduzione che i controlli C2 e C4 usano: passarla già risolta, invece di
+   * lasciare che ciascun controllo interroghi di nuovo il database, è ciò che
+   * garantisce che prospetto e controlli vedano gli stessi codici.
+   */
+  contiSistema: ContiSistemaRisolti
 }
 
 export async function prospettoCashFlow(
   venueId: string,
   anno: number
 ): Promise<ProspettoConFonti> {
-  const [movimenti, codicePerConto, liquidita] = await Promise.all([
+  const [movimenti, { codicePerConto, codicePerSystemKey }, liquidita] = await Promise.all([
     movimentiCashFlow(venueId, anno),
     codiciDeiConti(),
     // La cassa a inizio anno è la liquidità all'ultimo giorno di quello prima.
@@ -272,5 +311,6 @@ export async function prospettoCashFlow(
     movimenti,
     codicePerConto,
     cassaIniziale,
+    contiSistema: risolviContiSistema(codicePerSystemKey),
   }
 }

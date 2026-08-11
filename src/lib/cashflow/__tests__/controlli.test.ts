@@ -27,9 +27,21 @@ function mov(parziale: Partial<MovimentoAggregato>): MovimentoAggregato {
   }
 }
 
+// Codici — già risolti dalla system_key, come farebbe risolviContiSistema —
+// dei conti di sistema che i test in questo file usano di default.
+const codiciSistemaFuoriProspetto = new Set(['100', '110', '120', '121', '122', '200'])
+const codiciVersamentoDiSistema = ['100', '110']
+
 function controlli(movimenti: MovimentoAggregato[], variazioneReale = money(0)) {
   const prospetto = costruisciProspetto(movimenti, codicePerConto, money(0), 2026)
-  return eseguiControlli({ prospetto, movimenti, codicePerConto, variazioneReale })
+  return eseguiControlli({
+    prospetto,
+    movimenti,
+    codicePerConto,
+    variazioneReale,
+    codiciSistemaFuoriProspetto,
+    codiciVersamentoDiSistema,
+  })
 }
 
 function esito(risultati: ReturnType<typeof controlli>, codice: string) {
@@ -112,6 +124,8 @@ describe('C4 — conti non riconosciuti', () => {
       movimenti: [mov({ accountId: 'c-ammortamento', avere: money(700) })],
       codicePerConto: conMappaAmpia,
       variazioneReale: money(0),
+      codiciSistemaFuoriProspetto,
+      codiciVersamentoDiSistema,
     })
 
     expect(risultati.find((r) => r.codice === 'C4')!.esito).toBe('ok')
@@ -133,8 +147,38 @@ describe('C4 — conti non riconosciuti', () => {
       movimenti,
       codicePerConto: conPos,
       variazioneReale: money(0),
+      codiciSistemaFuoriProspetto,
+      codiciVersamentoDiSistema,
     })
 
     expect(risultati.find((r) => r.codice === 'C4')!.esito).toBe('ok')
+  })
+
+  it('un conto di sistema con codice diverso da "100"/"110" resta riconosciuto: la risoluzione è per chiave', () => {
+    // Stesso scenario del test sopra, ma con codici che un admin potrebbe
+    // aver assegnato dopo un rename da /api/accounts: '100' e '110' non
+    // compaiono da nessuna parte. Se C4 dipendesse da quelle stringhe
+    // scritte nel codice, questo conto — riconosciuto solo tramite
+    // codiciSistemaFuoriProspetto, cioè via system_key — verrebbe segnalato
+    // per errore.
+    const conCodiciRinominati = new Map(codicePerConto)
+      .set('c-banca', 'AAA-banca-rinominata')
+      .set('c-cassa', 'BBB-cassa-rinominata')
+    const movimenti = [
+      mov({ accountId: 'c-banca', avere: money(900) }),
+      mov({ accountId: 'c-cassa', dare: money(900) }),
+    ]
+    const prospetto = costruisciProspetto(movimenti, conCodiciRinominati, money(0), 2026)
+    const risultati = eseguiControlli({
+      prospetto,
+      movimenti,
+      codicePerConto: conCodiciRinominati,
+      variazioneReale: money(0),
+      codiciSistemaFuoriProspetto: new Set(['AAA-banca-rinominata', 'BBB-cassa-rinominata']),
+      codiciVersamentoDiSistema: ['BBB-cassa-rinominata', 'AAA-banca-rinominata'],
+    })
+
+    expect(esito(risultati, 'C2').esito).toBe('ok')
+    expect(esito(risultati, 'C4').esito).toBe('ok')
   })
 })

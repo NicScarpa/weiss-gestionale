@@ -1,12 +1,15 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PIANO_CONTI_WEISS_V4 } from '@/lib/accounts/piano-conti-weiss-v4'
+import { logger } from '@/lib/logger'
 import {
   CONTI_SISTEMA_FUORI_PROSPETTO,
+  CONTI_VERSAMENTO_DI_SISTEMA,
   RICLASSIFICAZIONE_CASH_FLOW,
   VOCI_FUORI_CASSA,
   RIGHE_MEMO,
+  risolviContiSistema,
   vociRiconosciute,
 } from '../riclassificazione'
 
@@ -82,35 +85,98 @@ describe('copertura del piano dei conti', () => {
 })
 
 describe('vociRiconosciute', () => {
-  it('comprende mappate, fuori cassa, memo e conti di sistema: 175 in tutto', () => {
+  it('comprende mappate, fuori cassa e memo: 169 in tutto', () => {
     const riconosciute = vociRiconosciute()
 
-    // 149 mappate + 18 fuori cassa + 2 di tesoreria nel memo + 6 di sistema.
-    expect(riconosciute.size).toBe(175)
+    // 149 mappate + 18 fuori cassa + 2 di tesoreria nel memo.
+    expect(riconosciute.size).toBe(169)
     expect(riconosciute.has('20.1.01')).toBe(true)
     expect(riconosciute.has('31.01')).toBe(true)
     expect(riconosciute.has('40.4.01')).toBe(true)
   })
 
-  it('comprende i conti di sistema, o C4 li segnalerebbe a ogni esecuzione', () => {
+  it('non comprende i conti di sistema: sono dichiarati per chiave, non per codice', () => {
+    // I conti di sistema non hanno un codice fisso qui dentro: C4 li
+    // riconosce consultando anche `risolviContiSistema`, non solo
+    // `vociRiconosciute()`. Se questa funzione tornasse a includerli per
+    // codice, ricadrebbe nello stesso problema che l'ha fatta cambiare.
     const riconosciute = vociRiconosciute()
-
-    for (const codice of CONTI_SISTEMA_FUORI_PROSPETTO.keys()) {
-      expect(riconosciute.has(codice), `${codice} non è fra le voci riconosciute`).toBe(true)
-    }
-    // Cassa e banca in particolare: è lì che il versamento serale scrive.
-    expect(riconosciute.has('100')).toBe(true)
-    expect(riconosciute.has('110')).toBe(true)
-  })
-
-  it('ogni conto di sistema porta con sé il motivo per cui sta fuori', () => {
-    for (const [codice, motivo] of CONTI_SISTEMA_FUORI_PROSPETTO) {
-      expect(motivo.length, `${codice} è senza motivo`).toBeGreaterThan(10)
-    }
+    expect(riconosciute.has('100')).toBe(false)
+    expect(riconosciute.has('110')).toBe(false)
   })
 
   it('non riconosce un codice inventato: è così che il controllo C4 se ne accorge', () => {
     expect(vociRiconosciute().has('999.99')).toBe(false)
+  })
+})
+
+describe('CONTI_SISTEMA_FUORI_PROSPETTO e CONTI_VERSAMENTO_DI_SISTEMA', () => {
+  it('dichiarano sei conti di sistema, ognuno con un motivo', () => {
+    expect(CONTI_SISTEMA_FUORI_PROSPETTO.size).toBe(6)
+    for (const [chiave, motivo] of CONTI_SISTEMA_FUORI_PROSPETTO) {
+      expect(motivo.length, `${chiave} è senza motivo`).toBeGreaterThan(10)
+    }
+  })
+
+  it('le chiavi del versamento serale sono un sottoinsieme dei conti fuori prospetto', () => {
+    for (const chiave of CONTI_VERSAMENTO_DI_SISTEMA) {
+      expect(CONTI_SISTEMA_FUORI_PROSPETTO.has(chiave), chiave).toBe(true)
+    }
+  })
+})
+
+describe('risolviContiSistema', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('traduce le chiavi nei codici correnti, qualunque essi siano', () => {
+    // I codici qui sotto non sono '100'/'110': è proprio il punto — la
+    // risoluzione passa dalla system_key, non da una stringa fissata nel
+    // codice, quindi funziona anche se in questo database i codici sono
+    // altri.
+    const mappa = new Map([
+      ['CASSA', '999-cassa'],
+      ['BANCA', '998-banca'],
+      ['DEBITI_FORNITORI', '997-debiti'],
+      ['POS_WORLDLINE', '996-worldline'],
+      ['POS_AXERVE', '995-axerve'],
+      ['POS_SUMUP', '994-sumup'],
+    ])
+
+    const { fuoriProspetto, versamento } = risolviContiSistema(mappa)
+
+    expect(fuoriProspetto.has('999-cassa')).toBe(true)
+    expect(fuoriProspetto.has('998-banca')).toBe(true)
+    expect(fuoriProspetto.has('997-debiti')).toBe(true)
+    expect(versamento).toEqual(['999-cassa', '998-banca'])
+  })
+
+  it('una chiave non risolta non entra nei due insiemi, ma lo segnala nei log invece di sparire in silenzio', () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {})
+
+    const { fuoriProspetto, versamento } = risolviContiSistema(new Map())
+
+    expect(fuoriProspetto.size).toBe(0)
+    expect(versamento).toEqual([])
+    // Sei chiavi dichiarate, nessuna risolta: sei avvisi, non un'eccezione.
+    expect(warn).toHaveBeenCalledTimes(6)
+    expect(warn.mock.calls.some(([messaggio]) => messaggio.includes('CASSA'))).toBe(true)
+  })
+
+  it('non lancia quando manca una sola chiave: in un database appena creato è normale', () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {})
+    const mappa = new Map([
+      ['CASSA', '100'],
+      ['BANCA', '110'],
+      ['DEBITI_FORNITORI', '200'],
+      // I tre transitori POS mancano: non ancora configurati.
+    ])
+
+    expect(() => risolviContiSistema(mappa)).not.toThrow()
+    const { fuoriProspetto, versamento } = risolviContiSistema(mappa)
+
+    expect(fuoriProspetto).toEqual(new Set(['100', '110', '200']))
+    expect(versamento).toEqual(['100', '110'])
+    expect(warn).toHaveBeenCalled()
   })
 })
 

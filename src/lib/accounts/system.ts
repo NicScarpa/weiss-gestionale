@@ -1,11 +1,19 @@
 import { prisma } from '@/lib/prisma'
 
 /**
- * Conti "di sistema": ruoli fissi nel piano dei conti (es. banca, cassa)
- * individuati tramite accounts.system_key, non tramite euristiche su code/name.
- * CORRISPETTIVI è valorizzato solo dopo la migrazione della FASE 3.
+ * Conti "di sistema": ruoli fissi nel piano dei conti (es. banca, cassa,
+ * transitori POS) individuati tramite accounts.system_key, non tramite
+ * euristiche su code/name. CORRISPETTIVI è valorizzato solo dopo la
+ * migrazione della FASE 3.
  */
-export type SystemAccountKey = 'CASSA' | 'BANCA' | 'DEBITI_FORNITORI' | 'CORRISPETTIVI'
+export type SystemAccountKey =
+  | 'CASSA'
+  | 'BANCA'
+  | 'POS_WORLDLINE'
+  | 'POS_AXERVE'
+  | 'POS_SUMUP'
+  | 'DEBITI_FORNITORI'
+  | 'CORRISPETTIVI'
 
 async function trovaContoSistemaAttivo(key: SystemAccountKey) {
   const account = await prisma.account.findUnique({ where: { systemKey: key } })
