@@ -6,6 +6,7 @@ import { logger } from '@/lib/logger'
 import { ScheduleStatus, ScheduleType, SchedulePriority, ScheduleSource, SCHEDULE_SOURCE_LABELS } from '@/types/schedule'
 import { getVenueId } from '@/lib/venue'
 import { formatNumeroCsv } from '@/lib/formatters'
+import { sumMoney, toApi } from '@/lib/money'
 
 // GET /api/scadenzario/export - Export CSV scadenze
 export async function GET(request: NextRequest) {
@@ -80,26 +81,20 @@ export async function GET(request: NextRequest) {
     ])
 
     // L'export vale quanto la schermata, non meno: chi lo apre deve trovarci
-    // anche gli aggregati che la pagina mostra in testata.
-    const totali = schedules.reduce(
-      (acc, s) => {
-        const totale = Number(s.importoTotale)
-        const pagato = Number(s.importoPagato)
-        return {
-          totale: acc.totale + totale,
-          pagato: acc.pagato + pagato,
-          residuo: acc.residuo + (totale - pagato),
-        }
-      },
-      { totale: 0, pagato: 0, residuo: 0 }
-    )
+    // anche gli aggregati che la pagina mostra in testata. È un'aggregazione
+    // su più righe, quindi aritmetica intermedia: si somma in `Money`
+    // (`sumMoney`) e si converte a `number` una sola volta, con `toApi`,
+    // solo dove il valore entra in `formatNumeroCsv`.
+    const totaleImporto = sumMoney(schedules.map(s => s.importoTotale))
+    const totalePagato = sumMoney(schedules.map(s => s.importoPagato))
+    const totaleResiduo = totaleImporto.minus(totalePagato)
 
     const rigaTotali = [
       `TOTALE (${schedules.length} scadenze)`,
       '', '',
-      formatNumeroCsv(totali.totale),
-      formatNumeroCsv(totali.pagato),
-      formatNumeroCsv(totali.residuo),
+      formatNumeroCsv(toApi(totaleImporto)),
+      formatNumeroCsv(toApi(totalePagato)),
+      formatNumeroCsv(toApi(totaleResiduo)),
       '', '', '', '', '', '', '', '',
     ]
 

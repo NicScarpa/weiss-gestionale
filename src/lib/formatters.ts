@@ -74,7 +74,7 @@ export function formatCurrencyPdf(value: number | null | undefined): string {
 }
 
 /**
- * Importo per una cella CSV: `1.234,50`, senza simbolo di valuta.
+ * Importo per una cella CSV: `1234,50`, senza simbolo di valuta.
  *
  * Esiste separata da `formatCurrency` perché un CSV non vuole il simbolo, e
  * separata da `.toFixed(2)` perché quello scrive il punto decimale: su Excel
