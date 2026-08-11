@@ -1030,6 +1030,22 @@ Crea `src/lib/previsionale/leggi.ts`. Deve:
 4. generare le occorrenze delle `Recurrence` attive oltre l'ultima `Schedule`
    generata, con `chiave = 'ricorrenza:' + id`.
 
+**Utilità già esistenti da riusare, non da riscrivere** (verificate nel repo):
+
+| Serve | Usa |
+|---|---|
+| movimenti aggregati per giorno | `movimentiPerGiorno(venueId, { dal, al })` in `src/lib/saldi.ts:262` — restituisce `{ giorno, dare, avere }` |
+| saldo di apertura della finestra | `saldiAlGiorno(venueId, giorno)` + `giornoIndietro(giorno, 1)`, entrambi in `src/lib/saldi.ts` |
+| prossima data di una ricorrenza | `calcolaDataDallaRicorrenza` e `calcolaProssimaGenerazione` in `src/lib/recurrence-utils.ts` |
+| giorno civile italiano di oggi | `giornoCorrente()` in `src/lib/saldi.ts` |
+
+⚠️ `movimentiPerGiorno` aggrega per giorno e registro: **non porta il dettaglio
+del singolo movimento**, quindi da lì non si ricava la chiave di sovrapposizione.
+Per i movimenti nati da una riconciliazione serve una lettura propria di
+`JournalEntry` con `scheduleReconciliations` inclusa. Non forzare
+`movimentiPerGiorno` a fare una cosa che non fa: leggi i movimenti dove ti serve
+la chiave, e usa l'aggregato dove ti basta il totale.
+
 Esporre anche:
 
 ```ts
