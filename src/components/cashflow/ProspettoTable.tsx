@@ -20,9 +20,29 @@ interface Props {
   righe: RigaProspetto[]
   cassaIniziale: number
   cassaFinale: number
+  /**
+   * Se valorizzato, la cassa a fine anno non si mostra: al suo posto va questo
+   * motivo.
+   *
+   * `cassaFinale` è `cassaIniziale + VAR`, e VAR vale solo quanto vale il
+   * prospetto. Quando C1 dice che il prospetto non spiega tutta la variazione
+   * dei saldi — oggi in produzione, dove il piano dei conti v4 non è ancora
+   * migrato e VAR è la sola IVA — quella somma è un numero inventato, in
+   * grassetto in fondo alla tabella, dove l'occhio va per primo.
+   *
+   * Si sopprime invece di marcarlo: un numero sbagliato con accanto un'avvertenza
+   * resta un numero che qualcuno copierà. Il motivo al suo posto dice anche
+   * cosa fare perché torni.
+   */
+  motivoCassaFinaleInattendibile?: string
 }
 
-export function ProspettoTable({ righe, cassaIniziale, cassaFinale }: Props) {
+export function ProspettoTable({
+  righe,
+  cassaIniziale,
+  cassaFinale,
+  motivoCassaFinaleInattendibile,
+}: Props) {
   // Chiuse di default: il prospetto si legge per famiglie, il dettaglio si apre
   // quando un numero sorprende.
   const [aperte, setAperte] = useState<Set<string>>(new Set())
@@ -133,12 +153,26 @@ export function ProspettoTable({ righe, cassaIniziale, cassaFinale }: Props) {
             <td colSpan={12} />
             <td className="px-2 py-1.5 text-right tabular-nums">{euro(cassaIniziale)}</td>
           </tr>
-          <tr className="border-b-2 bg-amber-50 font-semibold dark:bg-amber-950">
+          <tr
+            className={cn(
+              'border-b-2 font-semibold',
+              motivoCassaFinaleInattendibile
+                ? 'bg-muted text-muted-foreground'
+                : 'bg-amber-50 dark:bg-amber-950'
+            )}
+          >
             <td className="sticky left-0 bg-inherit py-1.5 pr-4">
               Cassa e banca a fine anno
+              {motivoCassaFinaleInattendibile && (
+                <span className="block max-w-xl text-xs font-normal">
+                  {motivoCassaFinaleInattendibile}
+                </span>
+              )}
             </td>
             <td colSpan={12} />
-            <td className="px-2 py-1.5 text-right tabular-nums">{euro(cassaFinale)}</td>
+            <td className="px-2 py-1.5 text-right tabular-nums">
+              {motivoCassaFinaleInattendibile ? 'non calcolabile' : euro(cassaFinale)}
+            </td>
           </tr>
         </tbody>
       </table>

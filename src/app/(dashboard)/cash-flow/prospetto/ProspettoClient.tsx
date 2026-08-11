@@ -40,6 +40,14 @@ export function ProspettoClient({ annoIniziale }: { annoIniziale: number }) {
 
   const anni = Array.from({ length: 5 }, (_, i) => annoIniziale - i)
 
+  // La cassa a fine anno è la cassa iniziale più la variazione che il prospetto
+  // calcola: se C1 dice che quella variazione non spiega i saldi reali, il
+  // totale in fondo alla tabella non è un dato, è una somma di numeri
+  // incompleti. In quel caso non si mostra, e si dice perché.
+  const c1 = dati?.controlli.find((controllo) => controllo.codice === 'C1')
+  const motivoCassaFinaleInattendibile =
+    c1?.esito === 'attenzione' ? c1.spiegazione : undefined
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -79,6 +87,7 @@ export function ProspettoClient({ annoIniziale }: { annoIniziale: number }) {
               righe={dati.prospetto.righe}
               cassaIniziale={dati.prospetto.cassaIniziale}
               cassaFinale={dati.prospetto.cassaFinale}
+              motivoCassaFinaleInattendibile={motivoCassaFinaleInattendibile}
             />
           )}
         </CardContent>
