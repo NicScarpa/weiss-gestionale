@@ -2364,7 +2364,13 @@ export async function GET(request: Request) {
       movimentiCashFlow(venueId, anno),
       liquiditaAlGiorno(venueId, `${anno - 1}-12-31`),
       liquiditaAlGiorno(venueId, `${anno}-12-31`),
-      prisma.account.findMany({ where: { isActive: true }, select: { id: true, code: true } }),
+      // Tutti i conti, attivi e non. In questo progetto `isActive: false` è il
+      // soft-delete dei conti **che hanno movimenti** (vedi il DELETE in
+      // src/app/api/accounts/route.ts): filtrarli farebbe sparire dai controlli
+      // proprio lo storico che devono sorvegliare, e C4 segnalerebbe come
+      // ignoti dei conti perfettamente legittimi. Stessa scelta, e stesso
+      // motivo, di `codiciDeiConti()` in prospetto.ts.
+      prisma.account.findMany({ select: { id: true, code: true } }),
     ])
 
     const controlli = eseguiControlli({
