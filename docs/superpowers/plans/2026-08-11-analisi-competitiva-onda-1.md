@@ -1807,7 +1807,7 @@ esiste già (`CategorizationProposalsDialog`).
 
 **Files:**
 - Create: `src/app/api/prima-nota/categorizzazione/route.ts`
-- Modify: `src/components/prima-nota/movimenti/MovimentiClient.tsx`
+- Modify: `src/app/(dashboard)/prima-nota/movimenti/MovimentiClient.tsx`
 
 **Interfaces:**
 - Produces: `GET /api/prima-nota/categorizzazione` →
@@ -1902,16 +1902,22 @@ const { data: cat } = useQuery({
       </div>
       <Progress value={cat.percentuale} />
     </div>
-    <Button variant="outline" size="sm" onClick={apriProposte}>
-      Rivedi le regole suggerite
+    <Button variant="outline" size="sm" asChild>
+      <Link href="/prima-nota/regole">Rivedi le regole suggerite</Link>
     </Button>
   </div>
 )}
 ```
 
-`apriProposte` apre `CategorizationProposalsDialog`, che **esiste già**.
-Alla chiusura del dialog invalida la chiave `['prima-nota', 'categorizzazione']`,
-così la barra si aggiorna dopo aver applicato una regola.
+**Il pulsante naviga, non apre un dialog** — ed è una correzione alla prima
+stesura di questo piano. `CategorizationProposalsDialog` esiste, ma è montato da
+`CategorizationRulesManager` nella pagina `/prima-nota/regole`: montarne una
+seconda copia qui duplicherebbe lo stato del dialog in due pagine e
+disallineerebbe l'architettura informativa. La pagina delle regole è il posto
+dove le regole si gestiscono; da qui ci si va.
+
+Al ritorno sulla lista movimenti la barra si ricalcola da sola, perché la query
+`['prima-nota', 'categorizzazione']` viene rimontata.
 
 - [ ] **Step 3: Verifica manuale**
 
@@ -2211,7 +2217,7 @@ valorizzare il campo attiva il bonus **senza toccare l'algoritmo**.
 
 **Files:**
 - Modify: `src/components/prima-nota/movimenti/MovimentoFormDialog.tsx`
-- Modify: `src/components/prima-nota/movimenti/MovimentiClient.tsx`
+- Modify: `src/app/(dashboard)/prima-nota/movimenti/MovimentiClient.tsx`
 - Test: `src/lib/reconciliation/__tests__/schedule-matcher.test.ts` (nuovo caso)
 
 - [ ] **Step 1: Scrivi il test del bonus**
@@ -2278,9 +2284,24 @@ semantica più difficile del sistema — nel momento in cui la persona non ha an
 nulla da perdere.
 
 **Files:**
-- Modify: `src/components/prima-nota/regole/RulesTable.tsx`
-- Modify: `src/components/scadenzario/rule-table.tsx`
-- Modify: `src/components/scadenzario/recurrence-table.tsx`
+- Modify: `src/components/prima-nota/regole/RulesTable.tsx:252`
+- Modify: `src/components/scadenzario/rule-table.tsx:82`
+- Modify: `src/components/scadenzario/recurrence-table.tsx:78`
+
+⚠️ **Gli stati vuoti esistono già** — questa è una correzione alla prima stesura
+del piano, che parlava di aggiungerli. Il lavoro è **sostituire una constatazione
+con una spiegazione**, non creare il blocco da zero:
+
+| File | Testo attuale |
+|---|---|
+| `RulesTable.tsx:252` | «Nessuna regola configurata per questa direzione.» |
+| `rule-table.tsx:82` | «Nessuna regola configurata» |
+| `recurrence-table.tsx:78` | «Nessun risultato» |
+
+E una distinzione da non perdere: **«nessun risultato dopo un filtro» e «non ne
+hai mai create» sono due stati diversi**. Il primo non deve insegnare nulla —
+chi ha appena filtrato sa cosa ha fatto e vuole solo togliere il filtro. Se il
+componente non li distingue, distinguili: la spiegazione va solo sul secondo.
 
 - [ ] **Step 1: Regole di categorizzazione**
 
