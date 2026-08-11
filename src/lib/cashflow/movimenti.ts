@@ -117,6 +117,15 @@ function negato(c: Contributo): Contributo {
  * voluto dire riscrivere la query degli actual di budget, che è in produzione.
  * Se si tocca la semantica qui, va guardato anche lì.
  *
+ * C'è una terza copia, in report/conto-economico.ts (righe ~272-296), e lì la
+ * regola NON è la stessa: quando un movimento ha fette, quella funzione
+ * ignora del tutto il conto di testata invece di lasciargli il resto —
+ * un'uscita da 1.000 € suddivisa 700/200 mostra 900 € "persi" invece di
+ * restare sul conto di testata. Su una suddivisione parziale questo prospetto
+ * e il conto economico raccontano quindi due numeri diversi per lo stesso
+ * movimento. Quale dei due comportamenti sia quello giusto è una domanda per
+ * chi possiede quel report, non qualcosa da uniformare qui di riflesso.
+ *
  * **L'IVA di una riga suddivisa si ripartisce pro-quota** sull'importo lordo
  * delle fette. L'alternativa — lasciarla tutta in testata — farebbe comparire
  * la famiglia del conto di testata con un secco −IVA e le famiglie delle fette
@@ -124,13 +133,25 @@ function negato(c: Contributo): Contributo {
  * mostrare giusti. Il pro-quota è anche la regola che la riconciliazione già
  * usa per le fette ereditate (`allocation-service.ts`).
  *
- * Il limite del pro-quota, che nessun dato oggi permette di superare: se le
- * fette stanno su aliquote diverse (food al 10, pulizie al 22) la ripartizione
- * non riproduce l'IVA vera di ciascuna, perché la riga porta un solo
- * `vatAmount` e le fette non hanno un'aliquota propria. Quel che resta esatto
- * è il totale: la quota di IVA tolta dalla testata è la somma di quelle date
- * alle fette, calcolata per differenza e non ricalcolata, quindi
- * l'arrotondamento non ne fa sparire un centesimo.
+ * **Dove il pro-quota è esatto, e dove no.** È esatto per il caso che il
+ * prodotto genera: le fette sono quote del lordo di un pagamento unico, e su
+ * un'aliquota uniforme la ripartizione è quella vera. L'errore compare con
+ * aliquote miste, e le aliquote miste non sono un caso raro: la fattura che
+ * mette insieme alimentari al 10% e detersivi al 22% è la normalità per un
+ * fornitore di ristorazione (vedi il commento su `aliquoteDelloSnapshot` in
+ * schedule-reconciliation-service.ts:170-177). Esempio: 1.000 € di alimentari
+ * e 100 € di detersivi danno fette lorde di 1.100 e 122, con 122 € di IVA in
+ * tutto; il pro-quota assegna 109,82 € e 12,18 € invece dei veri 100 e 22 —
+ * quasi 10 € spostati dalla famiglia piccola a quella grande. Il totale resta
+ * esatto (è tolto alla testata per differenza, non ricalcolato), la singola
+ * famiglia no.
+ *
+ * L'aliquota non è un dato ignoto: sta nello snapshot `invoice.lineItems` di
+ * ogni riga fattura, e `schedule-reconciliation-service.ts:178` la legge già
+ * per l'ereditarietà pro-quota delle fette. Quello che manca è che la fetta,
+ * una volta creata su `JournalEntryAllocation`, non la porta con sé — il
+ * modello non ha un campo aliquota. Il limite sta nel dato persistito, non in
+ * un dato che non esiste.
  */
 export function aggregaMovimenti(
   righe: readonly MovimentoPrimaNota[]
