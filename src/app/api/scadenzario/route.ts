@@ -183,9 +183,15 @@ export async function GET(request: NextRequest) {
     // Scadenze con un pagamento registrato ma nessun movimento di prima nota
     // verificato collegato: stesso criterio della card riepilogativa, incluso
     // escludere le annullate (una scadenza pagata a mano e poi annullata non
-    // deve comparire qui se non compare nel contatore)
+    // deve comparire qui se non compare nel contatore). In AND e non con
+    // Object.assign: il criterio condiviso contiene `stato`, e sovrascrivere
+    // where.stato a livello superiore cancellerebbe in silenzio un filtro
+    // ?stato= esplicito arrivato nella stessa richiesta.
     if (searchParams.get('pagateSenzaMovimento') === 'true') {
-      Object.assign(where, whereScadenzePagateSenzaMovimento())
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : []),
+        whereScadenzePagateSenzaMovimento(),
+      ]
     }
 
     // Ricerca testuale

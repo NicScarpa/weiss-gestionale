@@ -39,6 +39,16 @@ async function leggiListaPagateSenzaMovimento() {
   return risposta.body.data
 }
 
+/** Lista con entrambi i filtri combinati, come potrebbe chiamarla chi non passa dalla card. */
+async function leggiListaPagateSenzaMovimentoConStato(stato: string) {
+  const risposta = await callRoute<{ data: Array<{ id: string }> }>(
+    GET_lista,
+    jsonRequest('/api/scadenzario', { searchParams: { pagateSenzaMovimento: 'true', stato } }),
+    {}
+  )
+  return risposta.body.data
+}
+
 describe('scadenze pagate senza movimento', () => {
   it('conta la scadenza saldata con un pagamento manuale', async () => {
     const scadenza = await creaScadenza({ importoTotale: 100, tipo: 'passiva' })
@@ -119,5 +129,38 @@ describe('scadenze pagate senza movimento', () => {
 
     expect((await leggiSummary()).pagateSenzaMovimento).toBe(0)
     expect(await leggiListaPagateSenzaMovimento()).toHaveLength(0)
+  })
+
+  it('un filtro ?stato= esplicito resta in vigore insieme a pagateSenzaMovimento', async () => {
+    // Pagata per intero: stato 'pagata', nessun movimento collegato
+    const pagataIntera = await creaScadenza({ importoTotale: 100, tipo: 'passiva' })
+    await callRoute(
+      POST_pagamento,
+      jsonRequest(`/api/scadenzario/${pagataIntera.id}/pagamenti`, {
+        method: 'POST',
+        body: { importo: 100, dataPagamento: '2026-08-11' },
+      }),
+      { id: pagataIntera.id }
+    )
+
+    // Pagata in parte: stato 'parzialmente_pagata', anche questa senza movimento
+    const pagataParziale = await creaScadenza({ importoTotale: 100, tipo: 'passiva' })
+    await callRoute(
+      POST_pagamento,
+      jsonRequest(`/api/scadenzario/${pagataParziale.id}/pagamenti`, {
+        method: 'POST',
+        body: { importo: 40, dataPagamento: '2026-08-11' },
+      }),
+      { id: pagataParziale.id }
+    )
+
+    // Entrambe soddisfano pagateSenzaMovimento da sole
+    expect(await leggiListaPagateSenzaMovimento()).toHaveLength(2)
+
+    // Con ?stato=pagata in AND, solo quella pagata per intero deve restare:
+    // se il criterio condiviso sovrascrivesse where.stato invece di comporsi
+    // in AND, questa asserzione fallirebbe restituendo anche la parziale
+    const filtrata = await leggiListaPagateSenzaMovimentoConStato('pagata')
+    expect(filtrata.map((s) => s.id)).toEqual([pagataIntera.id])
   })
 })
