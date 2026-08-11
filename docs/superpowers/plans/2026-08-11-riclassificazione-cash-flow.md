@@ -2635,7 +2635,8 @@ Creare `src/app/(dashboard)/cash-flow/prospetto/ProspettoClient.tsx`:
 ```tsx
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select,
@@ -2656,37 +2657,21 @@ interface Risposta {
 
 export function ProspettoClient({ annoIniziale }: { annoIniziale: number }) {
   const [anno, setAnno] = useState(annoIniziale)
-  const [dati, setDati] = useState<Risposta | null>(null)
-  const [errore, setErrore] = useState<string | null>(null)
-  const [caricamento, setCaricamento] = useState(true)
 
-  useEffect(() => {
-    let annullato = false
-    setCaricamento(true)
-    setErrore(null)
-
-    fetch(`/api/cashflow/prospetto?anno=${anno}`)
-      .then(async (risposta) => {
-        if (!risposta.ok) {
-          const corpo = await risposta.json().catch(() => ({}))
-          throw new Error(corpo.error ?? 'Errore nel caricamento del prospetto')
-        }
-        return risposta.json() as Promise<Risposta>
-      })
-      .then((corpo) => {
-        if (!annullato) setDati(corpo)
-      })
-      .catch((e: Error) => {
-        if (!annullato) setErrore(e.message)
-      })
-      .finally(() => {
-        if (!annullato) setCaricamento(false)
-      })
-
-    return () => {
-      annullato = true
-    }
-  }, [anno])
+  // React Query come nel resto del progetto (vedi src/app/(dashboard)/cash-flow/page.tsx):
+  // l'anno sta nella chiave, quindi cambiarlo rifà la richiesta e i risultati già
+  // visti restano in cache invece di essere richiesti da capo.
+  const { data: dati, error: errore, isLoading: caricamento } = useQuery({
+    queryKey: ['cashflow', 'prospetto', anno],
+    queryFn: async (): Promise<Risposta> => {
+      const risposta = await fetch(`/api/cashflow/prospetto?anno=${anno}`)
+      if (!risposta.ok) {
+        const corpo = await risposta.json().catch(() => ({}))
+        throw new Error(corpo.error ?? 'Impossibile caricare il prospetto di cash flow')
+      }
+      return risposta.json()
+    },
+  })
 
   const anni = Array.from({ length: 5 }, (_, i) => annoIniziale - i)
 
@@ -2710,7 +2695,7 @@ export function ProspettoClient({ annoIniziale }: { annoIniziale: number }) {
 
       {errore && (
         <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
-          {errore}
+          {errore instanceof Error ? errore.message : 'Errore nel caricamento del prospetto'}
         </div>
       )}
 
