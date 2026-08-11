@@ -1760,10 +1760,22 @@ nvm use 22 && npm test -- --run src/lib/previsionale/__tests__/giudizio.test.ts
 
 - [ ] **Step 5: Mostra la frase in dashboard**
 
-In `src/components/dashboard/CashFlowForecast.tsx`, sopra le card. Lo scaduto
-passivo si legge da `/api/scadenzario/summary`
-(`totaleScaduteImporto`), che la sidebar già chiama: usa la stessa query
-`useQuery` con la stessa chiave, così non nasce una seconda richiesta.
+In `src/components/dashboard/CashFlowForecast.tsx`, sopra le card. Il componente
+usa già `useQuery` con chiave `['cashflow-forecast', forecastDays]`: i dati della
+previsione sono lì.
+
+Lo scaduto passivo si legge da `/api/scadenzario/summary`, campo
+`totaleScaduteImporto`.
+
+⚠️ **Correzione alla prima stesura del piano**, che diceva «la sidebar già la
+chiama, usa la stessa chiave `useQuery`». Non è vero: `src/components/layout/sidebar.tsx:161-174`
+la interroga con un `fetch` nudo dentro un `useEffect`, senza react-query.
+**Non esiste una chiave da condividere.** Aggiungi quindi una `useQuery` propria
+con chiave `['scadenzario-summary']` — e non toccare la sidebar per unificarle:
+sarebbe un refactor fuori dal perimetro di un quick win, e la sidebar ricarica
+di proposito a ogni cambio di pagina.
+
+Il costo è una seconda richiesta a una rotta di soli aggregati. Accettabile.
 
 Durante il caricamento **non** mostrare nulla: una frase rassicurante su dati
 assenti è peggio del silenzio.
