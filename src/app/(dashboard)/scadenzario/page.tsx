@@ -92,6 +92,7 @@ export default function ScadenzarioPage() {
         if (filtri.dataFine) params.append('dataFine', format(filtri.dataFine, 'yyyy-MM-dd'))
         if (filtri.isRicorrente !== undefined) params.append('isRicorrente', String(filtri.isRicorrente))
         if (filtri.verificata !== undefined) params.append('verificata', String(filtri.verificata))
+        if (filtri.pagateSenzaMovimento) params.append('pagateSenzaMovimento', 'true')
         params.append('page', String(page))
         params.append('sortBy', sortBy)
         params.append('sortOrder', sortOrder)
@@ -290,7 +291,16 @@ export default function ScadenzarioPage() {
       </div>
 
       {/* Summary Cards */}
-      {summary && !showSaldoScalare && <ScheduleSummaryCards summary={summary} isLoading={isLoading} />}
+      {summary && !showSaldoScalare && (
+        <ScheduleSummaryCards
+          summary={summary}
+          isLoading={isLoading}
+          onPagateSenzaMovimentoClick={() => {
+            setFiltri({ pagateSenzaMovimento: true })
+            setPage(1)
+          }}
+        />
+      )}
 
       {/* Saldo Scalare Panel */}
       <SaldoScalarePanel visible={showSaldoScalare} />

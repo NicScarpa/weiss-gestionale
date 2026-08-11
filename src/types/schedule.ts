@@ -170,6 +170,9 @@ export interface ScheduleSummary {
   totaleInScadenza7GiorniImporto: number
   totaleAperte: number
   totalePagate: number
+  /** Scadenze con pagamenti registrati e nessun movimento di prima nota collegato. */
+  pagateSenzaMovimento: number
+  pagateSenzaMovimentoImporto: number
 }
 
 export interface ScheduleFilters {
@@ -182,6 +185,8 @@ export interface ScheduleFilters {
   dataFine?: Date
   isRicorrente?: boolean
   verificata?: boolean
+  /** Pagamento registrato ma nessun movimento di prima nota collegato. */
+  pagateSenzaMovimento?: boolean
 }
 
 export interface CreateScheduleInput {

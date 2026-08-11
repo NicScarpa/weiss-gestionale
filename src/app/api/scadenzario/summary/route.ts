@@ -117,6 +117,21 @@ export async function GET(request: NextRequest) {
 
     const pagateCount = pagateAggregate.length > 0 ? (pagateAggregate[0]._count.stato as number) : 0
 
+    // Scadenze su cui è stato registrato un pagamento senza che alcun movimento
+    // di prima nota esista: il denaro risulta uscito dallo scadenzario e non è
+    // mai entrato nel consuntivo. Sono spesso legittime (contanti, addebiti
+    // registrati altrove), ma vanno viste — altrimenti il previsionale e il
+    // saldo raccontano due storie diverse in silenzio.
+    const senzaMovimento = await prisma.schedule.aggregate({
+      where: {
+        ...where,
+        importoPagato: { gt: 0 },
+        reconciliations: { none: { status: 'VERIFIED' } },
+      },
+      _count: true,
+      _sum: { importoPagato: true },
+    })
+
     return NextResponse.json({
       totaleAttive: Number(attiveAggregate._sum.importoTotale || 0),
       totalePassive: Number(passiveAggregate._sum.importoTotale || 0),
@@ -126,6 +141,8 @@ export async function GET(request: NextRequest) {
       totaleInScadenza7GiorniImporto: Number(inScadenzaAggregate._sum.importoTotale || 0),
       totaleAperte: aperteCount,
       totalePagate: pagateCount,
+      pagateSenzaMovimento: senzaMovimento._count || 0,
+      pagateSenzaMovimentoImporto: Number(senzaMovimento._sum.importoPagato || 0),
     })
   } catch (error) {
     logger.error('Errore GET /api/scadenzario/summary', error)

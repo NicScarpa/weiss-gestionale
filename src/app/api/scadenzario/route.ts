@@ -179,6 +179,13 @@ export async function GET(request: NextRequest) {
       where.verificata = false
     }
 
+    // Scadenze con un pagamento registrato ma nessun movimento di prima nota
+    // verificato collegato: stesso criterio della card riepilogativa
+    if (searchParams.get('pagateSenzaMovimento') === 'true') {
+      where.importoPagato = { gt: 0 }
+      where.reconciliations = { none: { status: 'VERIFIED' } }
+    }
+
     // Ricerca testuale
     if (search) {
       where.OR = [

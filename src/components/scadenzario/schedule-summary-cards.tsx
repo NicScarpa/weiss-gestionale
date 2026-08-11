@@ -1,14 +1,16 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ScheduleSummary } from '@/types/schedule'
-import { ArrowDownLeft, ArrowUpRight, CalendarClock, AlertTriangle } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, CalendarClock, AlertTriangle, HelpCircle } from 'lucide-react'
 import { formatCurrency } from '@/lib/formatters'
 
 interface ScheduleSummaryCardsProps {
   summary: ScheduleSummary
   isLoading?: boolean
+  /** Filtra la lista sulle scadenze pagate senza movimento di prima nota. */
+  onPagateSenzaMovimentoClick?: () => void
 }
 
-export function ScheduleSummaryCards({ summary, isLoading = false }: ScheduleSummaryCardsProps) {
+export function ScheduleSummaryCards({ summary, isLoading = false, onPagateSenzaMovimentoClick }: ScheduleSummaryCardsProps) {
   const cards = [
     {
       title: 'Scadute',
@@ -46,6 +48,22 @@ export function ScheduleSummaryCards({ summary, isLoading = false }: ScheduleSum
       bgColor: 'bg-rose-50',
       description: `${summary.totalePagate} scadenze passive`,
     },
+    // Solo quando c'è qualcosa da vedere: una card a zero è rumore quotidiano
+    ...(summary.pagateSenzaMovimento > 0
+      ? [{
+          title: 'Pagate senza movimento',
+          value: summary.pagateSenzaMovimento,
+          amount: summary.pagateSenzaMovimentoImporto,
+          icon: HelpCircle,
+          color: 'text-slate-600',
+          bgColor: 'bg-slate-50',
+          description:
+            'Pagamento registrato ma nessun movimento in prima nota: ' +
+            'spesso è corretto (contanti, addebiti registrati altrove), ' +
+            'ma queste uscite non compaiono nel saldo.',
+          onClick: onPagateSenzaMovimentoClick,
+        }]
+      : []),
   ]
 
   if (isLoading) {
@@ -74,7 +92,11 @@ export function ScheduleSummaryCards({ summary, isLoading = false }: ScheduleSum
       {cards.map((card, index) => {
         const Icon = card.icon
         return (
-          <Card key={index} className={`${card.bgColor} border-none`}>
+          <Card
+            key={index}
+            className={`${card.bgColor} border-none ${card.onClick ? 'cursor-pointer hover:brightness-95 transition-[filter]' : ''}`}
+            onClick={card.onClick}
+          >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 {card.title}
