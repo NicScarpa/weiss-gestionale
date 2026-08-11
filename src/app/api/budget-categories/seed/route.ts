@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { getVenueId } from '@/lib/venue'
-import { seedCategorieCashFlow } from '@/lib/cashflow/seed-categorie'
+import {
+  MigrazioneNonApplicataError,
+  seedCategorieCashFlow,
+} from '@/lib/cashflow/seed-categorie'
 import { logger } from '@/lib/logger'
 
 /**
@@ -54,6 +57,13 @@ export async function POST() {
 
     return NextResponse.json({ message, ...esito })
   } catch (error) {
+    // Non è un guasto: manca un passo di installazione, e il messaggio dice
+    // quale. Va restituito com'è, o l'operatore legge "errore" e non sa cosa
+    // fare — mentre la cosa da fare è una sola, ed è scritta lì dentro.
+    if (error instanceof MigrazioneNonApplicataError) {
+      return NextResponse.json({ error: error.message }, { status: 409 })
+    }
+
     logger.error('Errore POST /api/budget-categories/seed', error)
     return NextResponse.json(
       { error: "Errore nell'installazione delle categorie" },

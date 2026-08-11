@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { prisma } from '@/lib/prisma'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { getVenueId } from '@/lib/venue'
-import { seedCategorieCashFlow } from '../seed-categorie'
+import { MigrazioneNonApplicataError, seedCategorieCashFlow } from '../seed-categorie'
 
 // Era l'unico `.itest.ts` del progetto senza questa riga, e quindi l'unico che
 // saltava `assertTestDb()` — «l'ultima rete di protezione prima dei TRUNCATE» —
@@ -137,5 +137,96 @@ describe('seedCategorieCashFlow', () => {
       where: { accountId: conto.id },
     })
     expect(mappingDopo?.budgetCategoryId).toBe(categoriaCorretta.id)
+  })
+})
+
+/** Riattiva la categoria generica che il seed deve spegnere per prima. */
+async function accendiCategoriaGenerica(): Promise<void> {
+  await prisma.budgetCategory.upsert({
+    where: { venueId_code: { venueId, code: 'FOOD_COST' } },
+    update: { isActive: true },
+    create: {
+      venueId,
+      code: 'FOOD_COST',
+      name: 'Food Cost (Materie Prime)',
+      categoryType: 'COST',
+      isSystem: true,
+    },
+  })
+}
+
+describe('il seed non lascia il budget a metà', () => {
+  it('un guasto durante le scritture annulla anche la disattivazione delle generiche', async () => {
+    await accendiCategoriaGenerica()
+
+    // Il guasto vero era `FINANCING` assente dall'enum in produzione: la
+    // famiglia I è l'ultima, quindi l'errore arrivava dopo ~200 scritture, con
+    // le 13 generiche già spente. Quel caso ora si ferma prima
+    // (MigrazioneNonApplicataError), ma la classe di guasto resta — qualunque
+    // errore a metà —, e la si riproduce qui rifiutando l'inserimento di CF_I.
+    await prisma.$executeRawUnsafe(`
+      CREATE OR REPLACE FUNCTION test_blocca_ultima_famiglia() RETURNS trigger AS $fn$
+      BEGIN
+        IF NEW.code = 'CF_I' THEN
+          RAISE EXCEPTION 'guasto simulato sull''ultima famiglia';
+        END IF;
+        RETURN NEW;
+      END;
+      $fn$ LANGUAGE plpgsql;
+    `)
+    await prisma.$executeRawUnsafe(`
+      CREATE TRIGGER test_blocca_ultima_famiglia
+      BEFORE INSERT ON budget_categories
+      FOR EACH ROW EXECUTE FUNCTION test_blocca_ultima_famiglia()
+    `)
+
+    try {
+      await expect(seedCategorieCashFlow(venueId)).rejects.toThrow()
+    } finally {
+      await prisma.$executeRawUnsafe(
+        'DROP TRIGGER IF EXISTS test_blocca_ultima_famiglia ON budget_categories'
+      )
+      await prisma.$executeRawUnsafe('DROP FUNCTION IF EXISTS test_blocca_ultima_famiglia()')
+    }
+
+    // Nessuna categoria nuova installata a metà…
+    const nuove = await prisma.budgetCategory.count({
+      where: { venueId, code: { startsWith: 'CF_' } },
+    })
+    expect(nuove).toBe(0)
+
+    // …e le generiche ancora accese: il budget è esattamente com'era prima.
+    const generica = await prisma.budgetCategory.findUniqueOrThrow({
+      where: { venueId_code: { venueId, code: 'FOOD_COST' } },
+    })
+    expect(generica.isActive).toBe(true)
+  })
+
+  it('si rifiuta di partire se il database non conosce i tipi che userà', async () => {
+    await accendiCategoriaGenerica()
+
+    // Un valore di enum in PostgreSQL non si può togliere: per simulare la
+    // migrazione non applicata si rinomina il tipo, così la ricerca su
+    // pg_enum non trova più nessuna etichetta. Il rename torna indietro
+    // subito, qualunque cosa succeda.
+    await prisma.$executeRawUnsafe(
+      'ALTER TYPE "BudgetCategoryType" RENAME TO "BudgetCategoryType_test"'
+    )
+
+    try {
+      await expect(seedCategorieCashFlow(venueId)).rejects.toBeInstanceOf(
+        MigrazioneNonApplicataError
+      )
+    } finally {
+      await prisma.$executeRawUnsafe(
+        'ALTER TYPE "BudgetCategoryType_test" RENAME TO "BudgetCategoryType"'
+      )
+    }
+
+    // Si è fermato prima di scrivere: nemmeno la disattivazione è avvenuta.
+    const generica = await prisma.budgetCategory.findUniqueOrThrow({
+      where: { venueId_code: { venueId, code: 'FOOD_COST' } },
+    })
+    expect(generica.isActive).toBe(true)
   })
 })
