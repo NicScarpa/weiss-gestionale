@@ -20,7 +20,7 @@ export async function POST() {
     if (!session?.user) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
-    if (session.user.role !== 'admin') {
+    if (!['admin', 'manager'].includes(session.user.role || '')) {
       return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
     }
 
