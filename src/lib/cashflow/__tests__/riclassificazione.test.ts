@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PIANO_CONTI_WEISS_V4 } from '@/lib/accounts/piano-conti-weiss-v4'
 import {
+  CONTI_SISTEMA_FUORI_PROSPETTO,
   RICLASSIFICAZIONE_CASH_FLOW,
   VOCI_FUORI_CASSA,
   RIGHE_MEMO,
@@ -81,13 +82,31 @@ describe('copertura del piano dei conti', () => {
 })
 
 describe('vociRiconosciute', () => {
-  it('comprende le mappate, le fuori cassa e quelle del memo: 169 in tutto', () => {
+  it('comprende mappate, fuori cassa, memo e conti di sistema: 175 in tutto', () => {
     const riconosciute = vociRiconosciute()
 
-    expect(riconosciute.size).toBe(169)
+    // 149 mappate + 18 fuori cassa + 2 di tesoreria nel memo + 6 di sistema.
+    expect(riconosciute.size).toBe(175)
     expect(riconosciute.has('20.1.01')).toBe(true)
     expect(riconosciute.has('31.01')).toBe(true)
     expect(riconosciute.has('40.4.01')).toBe(true)
+  })
+
+  it('comprende i conti di sistema, o C4 li segnalerebbe a ogni esecuzione', () => {
+    const riconosciute = vociRiconosciute()
+
+    for (const codice of CONTI_SISTEMA_FUORI_PROSPETTO.keys()) {
+      expect(riconosciute.has(codice), `${codice} non è fra le voci riconosciute`).toBe(true)
+    }
+    // Cassa e banca in particolare: è lì che il versamento serale scrive.
+    expect(riconosciute.has('100')).toBe(true)
+    expect(riconosciute.has('110')).toBe(true)
+  })
+
+  it('ogni conto di sistema porta con sé il motivo per cui sta fuori', () => {
+    for (const [codice, motivo] of CONTI_SISTEMA_FUORI_PROSPETTO) {
+      expect(motivo.length, `${codice} è senza motivo`).toBeGreaterThan(10)
+    }
   })
 
   it('non riconosce un codice inventato: è così che il controllo C4 se ne accorge', () => {

@@ -7,7 +7,11 @@
  */
 import { money, toApi, type Money } from '@/lib/money'
 import { lordo, type MovimentoAggregato } from './movimenti'
-import { vociRiconosciute } from './riclassificazione'
+import {
+  CONTI_VERSAMENTO_DI_SISTEMA,
+  VOCI_TESORERIA_INTERNA,
+  vociRiconosciute,
+} from './riclassificazione'
 import type { Prospetto } from './prospetto'
 
 export interface EsitoControllo {
@@ -29,6 +33,21 @@ export interface InputControlli {
 
 /** Sotto il centesimo è arrotondamento, non un errore. */
 const TOLLERANZA = 0.005
+
+/**
+ * I conti le cui gambe C2 sorveglia: le voci di giroconto del piano v4 e —
+ * finché il generatore delle chiusure scrive lì — i conti di sistema cassa e
+ * banca. Entrambi gli elenchi arrivano da `riclassificazione.ts`, che è la
+ * loro unica dichiarazione: il memo M3 somma le prime, e se le due liste
+ * divergessero memo e controllo parlerebbero di movimenti diversi.
+ *
+ * Il perché dei conti di sistema, e perché è una situazione provvisoria, sta
+ * su `CONTI_VERSAMENTO_DI_SISTEMA`.
+ */
+const CODICI_TESORERIA: readonly string[] = [
+  ...VOCI_TESORERIA_INTERNA,
+  ...CONTI_VERSAMENTO_DI_SISTEMA,
+]
 
 export function eseguiControlli({
   prospetto,
@@ -76,8 +95,6 @@ function versamentiADueGambe(
   movimenti: MovimentoAggregato[],
   codicePerConto: Map<string, string>
 ): EsitoControllo {
-  const CODICI_TESORERIA = ['40.4.01', '40.4.02']
-
   const saldo = movimenti.reduce((acc, movimento) => {
     if (!movimento.accountId) return acc
     const codice = codicePerConto.get(movimento.accountId)
@@ -123,6 +140,9 @@ function movimentiSenzaConto(movimenti: MovimentoAggregato[]): EsitoControllo {
  * di sparire in silenzio dal prospetto. Le voci esplicitamente fuori cassa non
  * contano: `vociRiconosciute()` le include già, per costruzione (sono nel
  * piano dei conti, solo escluse dal prospetto perché non toccano mai cassa).
+ * Lo stesso vale per i conti di sistema — cassa, banca, transitori POS,
+ * debiti v/fornitori: dichiarati fuori prospetto con il loro motivo, o questo
+ * controllo li segnalerebbe a ogni esecuzione senza che ci sia nulla da fare.
  */
 function contiNonRiconosciuti(
   movimenti: MovimentoAggregato[],

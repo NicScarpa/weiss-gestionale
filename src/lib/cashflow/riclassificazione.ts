@@ -295,6 +295,58 @@ export const VOCI_FUORI_CASSA: ReadonlyMap<string, string> = new Map([
   ['33.03', 'Competenza; il versamento è 40.3.02'],
 ])
 
+/**
+ * Le voci di giroconto interno del piano v4: versamenti fra cassa e banca.
+ *
+ * Una sola dichiarazione perché due consumatori le usano per la stessa cosa —
+ * la riga memo M3 le somma, il controllo C2 verifica che si elidano — e due
+ * elenchi che scivolano l'uno rispetto all'altro darebbero un memo e un
+ * controllo che parlano di insiemi diversi di movimenti.
+ */
+export const VOCI_TESORERIA_INTERNA: readonly string[] = ['40.4.01', '40.4.02']
+
+/**
+ * Conti di sistema che il prospetto conosce e tiene fuori di proposito.
+ *
+ * Non sono voci del piano v4 (che sono tutte ricavo o costo): sono i conti
+ * patrimoniali su cui poggia il gestionale. Stanno qui, con il loro motivo,
+ * per la stessa ragione di `VOCI_FUORI_CASSA`: perché C4 non li segnali come
+ * ignoti, e perché chi legge sappia che l'assenza è voluta.
+ */
+export const CONTI_SISTEMA_FUORI_PROSPETTO: ReadonlyMap<string, string> = new Map([
+  ['100', 'Cassa: è la liquidità di cui il prospetto misura la variazione, non una voce'],
+  ['110', 'Banca: come la cassa, è il saldo misurato e non una riga'],
+  ['120', "Transitorio POS Worldline: regge l'incasso fino all'accredito in banca"],
+  ['121', 'Transitorio POS Axerve: come sopra'],
+  ['122', 'Transitorio POS SumUp: come sopra'],
+  ['200', "Debiti v/fornitori: la partita si apre e si chiude, l'esborso è sulla voce di costo"],
+])
+
+/**
+ * I conti su cui il versamento serale finisce **davvero**, oggi.
+ *
+ * ⚠️ Tappabuchi, e va detto per intero. Il versamento generato da ogni
+ * chiusura scrive `accountId` sui conti di sistema 110 e 100 (vedi
+ * `closure-journal-entries.ts`, righe 354 e 373), non su 40.4.01 e 40.4.02
+ * come il piano v4 prevede. Finché è così:
+ *
+ * - C2 deve guardare anche 100 e 110, o non vede le uniche gambe che il
+ *   sistema scrive ogni sera, e su dati reali non può fallire: un controllo
+ *   che non può fallire non è un controllo;
+ * - C4 deve conoscerli, o li segnala come non mappati a ogni esecuzione, per
+ *   sempre. Un allarme che suona sempre insegna a non leggerlo, e quando avrà
+ *   qualcosa di vero da dire nessuno lo leggerà.
+ *
+ * **La correzione vera è un'altra**: far scrivere al generatore delle chiusure
+ * il versamento su 40.4.01/40.4.02, che è il posto che il piano gli assegna.
+ * Non si fa qui perché tocca il generatore delle chiusure, che è fuori dal
+ * perimetro di questo lavoro ed è in produzione. Quando si farà, questa
+ * costante sparisce e C2 torna alle sole `VOCI_TESORERIA_INTERNA`; 100 e 110
+ * restano invece fra i conti fuori prospetto, che è il loro posto a
+ * prescindere.
+ */
+export const CONTI_VERSAMENTO_DI_SISTEMA: readonly string[] = ['100', '110']
+
 export const RIGHE_MEMO: readonly RigaMemo[] = [
   {
     codice: 'M1',
@@ -317,7 +369,7 @@ export const RIGHE_MEMO: readonly RigaMemo[] = [
     scopo:
       'Versamenti e giroconti. Si elidono nel consolidato — se non lo fanno, ' +
       'una gamba è stata registrata e l\'altra no.',
-    voci: ['40.4.01', '40.4.02'],
+    voci: VOCI_TESORERIA_INTERNA,
   },
 ]
 
@@ -330,7 +382,8 @@ const SOTTOGRUPPO_PER_VOCE: ReadonlyMap<string, string> = new Map(
 )
 
 /**
- * Tutte le voci che il prospetto conosce: mappate, fuori cassa o nel memo.
+ * Tutte le voci che il prospetto conosce: mappate, fuori cassa, nel memo o
+ * dichiarate conti di sistema.
  *
  * È il complemento del controllo C4: quello che non è qui dentro, e viene
  * movimentato, non compare in nessuna riga — e va detto invece di lasciarlo
@@ -340,6 +393,7 @@ export function vociRiconosciute(): ReadonlySet<string> {
   return new Set([
     ...SOTTOGRUPPO_PER_VOCE.keys(),
     ...VOCI_FUORI_CASSA.keys(),
+    ...CONTI_SISTEMA_FUORI_PROSPETTO.keys(),
     ...RIGHE_MEMO.flatMap((memo) => memo.voci ?? []),
   ])
 }

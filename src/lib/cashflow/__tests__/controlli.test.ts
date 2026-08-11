@@ -7,6 +7,11 @@ import { eseguiControlli } from '../controlli'
 const codicePerConto = new Map<string, string>([
   ['c-corrispettivi', '10.01'],
   ['c-versamento', '40.4.01'],
+  // I due conti di sistema su cui il versamento serale finisce davvero: la
+  // gamba in uscita dalla cassa porta `accountId` = banca, quella in entrata
+  // in banca porta `accountId` = cassa (closure-journal-entries.ts:354,373).
+  ['c-banca', '110'],
+  ['c-cassa', '100'],
   ['c-ignoto', '999.99'],
 ])
 
@@ -47,15 +52,25 @@ describe('C1 — quadratura col saldo reale', () => {
 })
 
 describe('C2 — versamenti contanti a due gambe', () => {
-  it('ok quando le due gambe si elidono', () => {
+  it('ok sulla coppia che il versamento serale scrive davvero', () => {
+    // La coppia vera, non due movimenti sullo stesso conto: l'uscita dalla
+    // cassa e l'entrata in banca, come le genera ogni chiusura.
     const movimenti = [
-      mov({ accountId: 'c-versamento', dare: money(900) }),
-      mov({ accountId: 'c-versamento', avere: money(900) }),
+      mov({ accountId: 'c-banca', avere: money(900) }),
+      mov({ accountId: 'c-cassa', dare: money(900) }),
     ]
     expect(esito(controlli(movimenti), 'C2').esito).toBe('ok')
   })
 
-  it('segnala la gamba mancante', () => {
+  it('segnala la gamba mancante del versamento serale', () => {
+    const movimenti = [mov({ accountId: 'c-cassa', dare: money(900) })]
+    const c2 = esito(controlli(movimenti), 'C2')
+
+    expect(c2.esito).toBe('attenzione')
+    expect(c2.valore).toBe(900)
+  })
+
+  it('guarda anche i giroconti registrati sulle voci 40.4.x del piano v4', () => {
     const movimenti = [mov({ accountId: 'c-versamento', dare: money(900) })]
     const c2 = esito(controlli(movimenti), 'C2')
 
@@ -96,6 +111,27 @@ describe('C4 — conti non riconosciuti', () => {
       prospetto,
       movimenti: [mov({ accountId: 'c-ammortamento', avere: money(700) })],
       codicePerConto: conMappaAmpia,
+      variazioneReale: money(0),
+    })
+
+    expect(risultati.find((r) => r.codice === 'C4')!.esito).toBe('ok')
+  })
+
+  it('non segnala i conti di sistema: cassa, banca e transitori sono dichiarati', () => {
+    // Senza questa dichiarazione C4 segnalerebbe 100 e 110 a ogni esecuzione,
+    // perché è lì che il versamento serale scrive: un allarme permanente, che
+    // insegna a non leggere il controllo.
+    const conPos = new Map(codicePerConto).set('c-pos', '121')
+    const movimenti = [
+      mov({ accountId: 'c-banca', avere: money(900) }),
+      mov({ accountId: 'c-cassa', dare: money(900) }),
+      mov({ accountId: 'c-pos', dare: money(300) }),
+    ]
+    const prospetto = costruisciProspetto(movimenti, conPos, money(0), 2026)
+    const risultati = eseguiControlli({
+      prospetto,
+      movimenti,
+      codicePerConto: conPos,
       variazioneReale: money(0),
     })
 
