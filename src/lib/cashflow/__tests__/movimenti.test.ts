@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { money } from '@/lib/money'
-import { nettoDiIva, ripartisciIva, type MovimentoAggregato } from '../movimenti'
+import {
+  aggregaMovimenti,
+  nettoDiIva,
+  ripartisciIva,
+  type MovimentoAggregato,
+  type MovimentoPrimaNota,
+} from '../movimenti'
 
 function movimento(parziale: Partial<MovimentoAggregato>): MovimentoAggregato {
   return {
@@ -12,6 +18,25 @@ function movimento(parziale: Partial<MovimentoAggregato>): MovimentoAggregato {
     ivaAvere: money(0),
     ...parziale,
   }
+}
+
+function riga(parziale: Partial<MovimentoPrimaNota>): MovimentoPrimaNota {
+  return {
+    accountId: 'testata',
+    // `date` è `@db.Date`: mezzanotte UTC, come arriva da Prisma.
+    date: new Date(Date.UTC(2026, 0, 15)),
+    debitAmount: null,
+    creditAmount: null,
+    vatAmount: null,
+    allocations: [],
+    ...parziale,
+  }
+}
+
+function suConto(aggregati: MovimentoAggregato[], accountId: string): MovimentoAggregato {
+  const trovato = aggregati.find((m) => m.accountId === accountId)
+  if (!trovato) throw new Error(`nessun aggregato sul conto ${accountId}`)
+  return trovato
 }
 
 describe('nettoDiIva', () => {
@@ -77,5 +102,130 @@ describe('ripartisciIva', () => {
     const { ivaDare, ivaAvere } = ripartisciIva(money(100), money(50), money(22))
     expect(ivaDare.toNumber()).toBe(22)
     expect(ivaAvere.toNumber()).toBe(0)
+  })
+})
+
+describe('aggregaMovimenti', () => {
+  it('somma per conto e mese le righe senza fette', () => {
+    const aggregati = aggregaMovimenti([
+      riga({ creditAmount: 100 }),
+      riga({ creditAmount: 50 }),
+      riga({ creditAmount: 30, date: new Date(Date.UTC(2026, 6, 1)) }),
+    ])
+
+    expect(aggregati).toHaveLength(2)
+    expect(aggregati.find((m) => m.mese === 1)!.avere.toNumber()).toBe(150)
+    expect(aggregati.find((m) => m.mese === 7)!.avere.toNumber()).toBe(30)
+  })
+
+  it('una suddivisione su due conti porta gli importi sulle fette e svuota la testata', () => {
+    // È il caso del commento in saldi.ts: 1.000 € divisi 700 e 300. Prima di
+    // questo cambiamento il prospetto mostrava 1.000 sulla famiglia del conto
+    // di testata e zero sull'altra.
+    const aggregati = aggregaMovimenti([
+      riga({
+        creditAmount: 1000,
+        allocations: [
+          { accountId: 'alimentari', importo: 700 },
+          { accountId: 'pulizie', importo: 300 },
+        ],
+      }),
+    ])
+
+    expect(nettoDiIva(suConto(aggregati, 'alimentari')).toNumber()).toBe(-700)
+    expect(nettoDiIva(suConto(aggregati, 'pulizie')).toNumber()).toBe(-300)
+    expect(nettoDiIva(suConto(aggregati, 'testata')).toNumber()).toBe(0)
+  })
+
+  it('le fette restano nel mese della riga che le contiene', () => {
+    const aggregati = aggregaMovimenti([
+      riga({
+        date: new Date(Date.UTC(2026, 6, 1)),
+        creditAmount: 1000,
+        allocations: [{ accountId: 'alimentari', importo: 1000 }],
+      }),
+    ])
+
+    expect(suConto(aggregati, 'alimentari').mese).toBe(7)
+  })
+
+  it('una suddivisione parziale lascia il resto sulla testata', () => {
+    const aggregati = aggregaMovimenti([
+      riga({
+        creditAmount: 1000,
+        allocations: [{ accountId: 'alimentari', importo: 700 }],
+      }),
+    ])
+
+    expect(nettoDiIva(suConto(aggregati, 'alimentari')).toNumber()).toBe(-700)
+    expect(nettoDiIva(suConto(aggregati, 'testata')).toNumber()).toBe(-300)
+  })
+
+  it("l'IVA di una riga suddivisa segue le fette pro-quota sul lordo", () => {
+    // 1.220 lordi con 220 di IVA, divisi 854 (70%) e 366 (30%): a ciascuna
+    // fetta la sua quota di IVA, e sulla testata non resta né importo né IVA.
+    const aggregati = aggregaMovimenti([
+      riga({
+        creditAmount: 1220,
+        vatAmount: 220,
+        allocations: [
+          { accountId: 'alimentari', importo: 854 },
+          { accountId: 'pulizie', importo: 366 },
+        ],
+      }),
+    ])
+
+    expect(suConto(aggregati, 'alimentari').ivaAvere.toNumber()).toBe(154)
+    expect(suConto(aggregati, 'pulizie').ivaAvere.toNumber()).toBe(66)
+    expect(suConto(aggregati, 'testata').ivaAvere.toNumber()).toBe(0)
+
+    expect(nettoDiIva(suConto(aggregati, 'alimentari')).toNumber()).toBe(-700)
+    expect(nettoDiIva(suConto(aggregati, 'pulizie')).toNumber()).toBe(-300)
+    expect(nettoDiIva(suConto(aggregati, 'testata')).toNumber()).toBe(0)
+  })
+
+  it("su una suddivisione parziale con IVA la testata tiene la quota di IVA che le resta", () => {
+    const aggregati = aggregaMovimenti([
+      riga({
+        creditAmount: 1220,
+        vatAmount: 220,
+        allocations: [{ accountId: 'alimentari', importo: 610 }],
+      }),
+    ])
+
+    expect(suConto(aggregati, 'alimentari').ivaAvere.toNumber()).toBe(110)
+    expect(suConto(aggregati, 'testata').ivaAvere.toNumber()).toBe(110)
+  })
+
+  it("un'entrata suddivisa manda le fette in dare, non in avere", () => {
+    const aggregati = aggregaMovimenti([
+      riga({
+        debitAmount: 1000,
+        allocations: [{ accountId: 'eventi', importo: 400 }],
+      }),
+    ])
+
+    expect(suConto(aggregati, 'eventi').dare.toNumber()).toBe(400)
+    expect(suConto(aggregati, 'eventi').avere.toNumber()).toBe(0)
+    expect(nettoDiIva(suConto(aggregati, 'eventi')).toNumber()).toBe(400)
+  })
+
+  it("l'IVA totale si conserva anche quando la ripartizione non è esatta", () => {
+    // Tre fette da un terzo: il pro-quota non dà centesimi tondi, ma la quota
+    // tolta alla testata è per costruzione la somma di quelle date alle fette.
+    const aggregati = aggregaMovimenti([
+      riga({
+        creditAmount: 1000,
+        vatAmount: 220,
+        allocations: [
+          { accountId: 'a', importo: '333.33' },
+          { accountId: 'b', importo: '333.33' },
+          { accountId: 'c', importo: '333.34' },
+        ],
+      }),
+    ])
+
+    const ivaTotale = aggregati.reduce((tot, m) => tot.plus(m.ivaAvere), money(0))
+    expect(ivaTotale.toFixed(2)).toBe('220.00')
   })
 })

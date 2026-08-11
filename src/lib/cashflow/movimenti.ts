@@ -11,7 +11,7 @@
  * distinzione va fatta nella query, non dopo.
  */
 import { prisma } from '@/lib/prisma'
-import { money, type Money } from '@/lib/money'
+import { money, type Money, type MoneyInput } from '@/lib/money'
 import { movimentiChePesano } from '@/lib/saldi'
 import { toDateOnlyUtc } from '@/lib/timezone'
 
@@ -25,6 +25,23 @@ export interface MovimentoAggregato {
   ivaDare: Money
   /** IVA dei movimenti in avere, cioè quella pagata. */
   ivaAvere: Money
+}
+
+/**
+ * La riga di prima nota come la legge questo modulo, con le sue fette.
+ *
+ * I nomi sono quelli di Prisma e non l'italiano del resto del file: così le
+ * righe lette dal database soddisfano il tipo senza una conversione di mezzo,
+ * che su qualche migliaio di movimenti sarebbe solo lavoro sprecato. Stessa
+ * scelta, e stesso motivo, di `MovimentoContoEconomico` in report/conto-economico.ts.
+ */
+export interface MovimentoPrimaNota {
+  accountId: string | null
+  date: Date
+  debitAmount: MoneyInput
+  creditAmount: MoneyInput
+  vatAmount: MoneyInput
+  allocations: readonly { accountId: string; importo: MoneyInput }[]
 }
 
 /**
@@ -64,6 +81,124 @@ export function ripartisciIva(
     : { ivaDare: iva, ivaAvere: money(0) }
 }
 
+/** Quanto una riga aggiunge a un conto in un mese. Può essere negativo. */
+interface Contributo {
+  dare: Money
+  avere: Money
+  ivaDare: Money
+  ivaAvere: Money
+}
+
+function negato(c: Contributo): Contributo {
+  return {
+    dare: c.dare.negated(),
+    avere: c.avere.negated(),
+    ivaDare: c.ivaDare.negated(),
+    ivaAvere: c.ivaAvere.negated(),
+  }
+}
+
+/**
+ * Aggrega le righe di prima nota per conto e mese, rispettando le suddivisioni.
+ *
+ * Pura: nessun database, così le suddivisioni si testano senza scriverle.
+ *
+ * **Le suddivisioni spostano l'importo sui conti delle fette.** La regola è
+ * quella già stabilita da `movimentiPerContoEMese` in saldi.ts (righe 385-448,
+ * dove il commento racconta il guasto che l'ha resa necessaria: un pagamento
+ * da 1.000 € diviso 700 «Alimentari» e 300 «Pulizie» compariva nel budget come
+ * 1.000 e 0). Dal conto di testata si toglie **solo la somma delle fette**, non
+ * l'importo intero: una suddivisione parziale lascia il resto dov'era. Il
+ * totale non cambia mai — l'importo si sposta, non si crea e non si perde.
+ *
+ * La regola è duplicata invece che riusata perché saldi.ts aggrega con una
+ * `groupBy` più una seconda query sulle fette, e non conosce affatto la
+ * dimensione IVA che qui è metà del lavoro: estrarre un tronco comune avrebbe
+ * voluto dire riscrivere la query degli actual di budget, che è in produzione.
+ * Se si tocca la semantica qui, va guardato anche lì.
+ *
+ * **L'IVA di una riga suddivisa si ripartisce pro-quota** sull'importo lordo
+ * delle fette. L'alternativa — lasciarla tutta in testata — farebbe comparire
+ * la famiglia del conto di testata con un secco −IVA e le famiglie delle fette
+ * al lordo: cioè proprio i margini sbagliati che questo prospetto esiste per
+ * mostrare giusti. Il pro-quota è anche la regola che la riconciliazione già
+ * usa per le fette ereditate (`allocation-service.ts`).
+ *
+ * Il limite del pro-quota, che nessun dato oggi permette di superare: se le
+ * fette stanno su aliquote diverse (food al 10, pulizie al 22) la ripartizione
+ * non riproduce l'IVA vera di ciascuna, perché la riga porta un solo
+ * `vatAmount` e le fette non hanno un'aliquota propria. Quel che resta esatto
+ * è il totale: la quota di IVA tolta dalla testata è la somma di quelle date
+ * alle fette, calcolata per differenza e non ricalcolata, quindi
+ * l'arrotondamento non ne fa sparire un centesimo.
+ */
+export function aggregaMovimenti(
+  righe: readonly MovimentoPrimaNota[]
+): MovimentoAggregato[] {
+  const perContoEMese = new Map<string, MovimentoAggregato>()
+
+  const aggiungi = (accountId: string | null, mese: number, c: Contributo) => {
+    const chiave = `${accountId ?? ''}|${mese}`
+
+    const corrente =
+      perContoEMese.get(chiave) ??
+      {
+        accountId,
+        mese,
+        dare: money(0),
+        avere: money(0),
+        ivaDare: money(0),
+        ivaAvere: money(0),
+      }
+
+    perContoEMese.set(chiave, {
+      ...corrente,
+      dare: corrente.dare.plus(c.dare),
+      avere: corrente.avere.plus(c.avere),
+      ivaDare: corrente.ivaDare.plus(c.ivaDare),
+      ivaAvere: corrente.ivaAvere.plus(c.ivaAvere),
+    })
+  }
+
+  for (const riga of righe) {
+    const mese = riga.date.getUTCMonth() + 1
+
+    const dare = money(riga.debitAmount)
+    const avere = money(riga.creditAmount)
+    const { ivaDare, ivaAvere } = ripartisciIva(dare, avere, money(riga.vatAmount))
+
+    aggiungi(riga.accountId, mese, { dare, avere, ivaDare, ivaAvere })
+
+    if (riga.allocations.length === 0) continue
+
+    // Il verso della fetta è quello della riga che la contiene: una
+    // suddivisione non cambia il segno di ciò che è stato pagato o incassato.
+    // Stessa condizione di `ripartisciIva`, così il verso dell'importo e
+    // quello della sua IVA non possono divergere.
+    const inDare = !dare.isZero()
+    const lordoRiga = dare.plus(avere)
+
+    for (const fetta of riga.allocations) {
+      const quota = money(fetta.importo)
+      const frazione = lordoRiga.isZero() ? money(0) : quota.div(lordoRiga)
+
+      const spostamento: Contributo = {
+        dare: inDare ? quota : money(0),
+        avere: inDare ? money(0) : quota,
+        ivaDare: ivaDare.times(frazione),
+        ivaAvere: ivaAvere.times(frazione),
+      }
+
+      // Via dal conto di testata…
+      aggiungi(riga.accountId, mese, negato(spostamento))
+      // …e sul conto della fetta.
+      aggiungi(fetta.accountId, mese, spostamento)
+    }
+  }
+
+  return [...perContoEMese.values()]
+}
+
 export async function movimentiCashFlow(
   venueId: string,
   anno: number
@@ -82,39 +217,12 @@ export async function movimentiCashFlow(
       debitAmount: true,
       creditAmount: true,
       vatAmount: true,
+      // Le fette in join e non in una seconda query: sono già ristrette ai
+      // movimenti che pesano dal filtro qui sopra, e il commento sul perché
+      // di quel filtro resta uno solo.
+      allocations: { select: { accountId: true, importo: true } },
     },
   })
 
-  const perContoEMese = new Map<string, MovimentoAggregato>()
-
-  for (const riga of righe) {
-    const mese = riga.date.getUTCMonth() + 1
-    const chiave = `${riga.accountId ?? ''}|${mese}`
-
-    const corrente =
-      perContoEMese.get(chiave) ??
-      {
-        accountId: riga.accountId,
-        mese,
-        dare: money(0),
-        avere: money(0),
-        ivaDare: money(0),
-        ivaAvere: money(0),
-      }
-
-    const dare = money(riga.debitAmount ?? 0)
-    const avere = money(riga.creditAmount ?? 0)
-    const iva = money(riga.vatAmount ?? 0)
-    const { ivaDare, ivaAvere } = ripartisciIva(dare, avere, iva)
-
-    perContoEMese.set(chiave, {
-      ...corrente,
-      dare: corrente.dare.plus(dare),
-      avere: corrente.avere.plus(avere),
-      ivaDare: corrente.ivaDare.plus(ivaDare),
-      ivaAvere: corrente.ivaAvere.plus(ivaAvere),
-    })
-  }
-
-  return [...perContoEMese.values()]
+  return aggregaMovimenti(righe)
 }
