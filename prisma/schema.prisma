@@ -2181,6 +2181,7 @@ enum AccountType {
   COSTO
   ATTIVO
   PASSIVO
+  PATRIMONIALE
 }
 
 enum RegisterType {
@@ -2212,6 +2213,7 @@ enum BudgetCategoryType {
   TAX
   INVESTMENT
   VAT
+  FINANCING
 }
 
 enum BenchmarkComparison {

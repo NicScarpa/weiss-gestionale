@@ -16,7 +16,7 @@ function voce(overrides: Partial<VoceTest> & { code: string }): VoceTest {
   }
 }
 
-// Le 155 voci reali del piano, nella forma con gerarchia normalizzata a null
+// Le 169 voci reali del piano, nella forma con gerarchia normalizzata a null
 // (undefined → null) come arriva da Prisma, invece che optional come nella
 // sorgente TypeScript del piano.
 const VOCI_PIANO_V4: VoceTest[] = PIANO_CONTI_WEISS_V4.map((v) => ({
@@ -131,25 +131,25 @@ describe('buildAccountTree', () => {
     expect(albero[0].gruppi[0].voci[0].total).toBe(1234.56)
   })
 
-  describe('sulle 155 voci reali del piano WEISS v4', () => {
+  describe('sulle 169 voci reali del piano WEISS v4', () => {
     it('non perde nessuna voce', () => {
       const albero = buildAccountTree(VOCI_PIANO_V4)
       const totaleVoci = albero.reduce(
         (somma, mastro) => somma + mastro.gruppi.reduce((s, g) => s + g.voci.length, 0),
         0
       )
-      expect(totaleVoci).toBe(155)
+      expect(totaleVoci).toBe(169)
     })
 
-    it('produce i 17 mastri attesi (10-13 ricavi, 20-33 costi), tutti con mastroCode reale', () => {
+    it('produce i 19 mastri attesi (10-13 ricavi, 20-33 costi, 40 patrimoniale), tutti con mastroCode reale', () => {
       const albero = buildAccountTree(VOCI_PIANO_V4)
-      const mastriAttesi = ['10', '11', '12', '13', ...Array.from({ length: 14 }, (_, i) => String(20 + i))]
+      const mastriAttesi = ['10', '11', '12', '13', ...Array.from({ length: 14 }, (_, i) => String(20 + i)), '40']
       expect(albero.map((m) => m.mastroCode)).toEqual(mastriAttesi)
     })
 
-    it('solo i mastri 20, 28 e 32 hanno gruppi reali; gli altri hanno un unico gruppo sintetico', () => {
+    it('solo i mastri 20, 28, 32 e 40 hanno gruppi reali; gli altri hanno un unico gruppo sintetico', () => {
       const albero = buildAccountTree(VOCI_PIANO_V4)
-      const mastriConGruppo = new Set(['20', '28', '32'])
+      const mastriConGruppo = new Set(['20', '28', '32', '40'])
 
       for (const mastro of albero) {
         if (mastriConGruppo.has(mastro.mastroCode!)) {

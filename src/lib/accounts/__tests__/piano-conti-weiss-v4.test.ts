@@ -2,22 +2,20 @@ import { describe, it, expect } from 'vitest'
 import { PIANO_CONTI_WEISS_V4, CENTRI_DI_COSTO } from '../piano-conti-weiss-v4'
 
 const CODE_PATTERN = /^\d{2}\.(\d\.)?\d{2}$/
-const MASTRI_CON_GRUPPO = new Set(['20', '28', '32'])
-const MASTRI_RICAVO = new Set(['10', '11', '12', '13'])
-const MASTRI_COSTO = new Set(
-  Array.from({ length: 33 - 20 + 1 }, (_, i) => String(20 + i)),
-)
 
 describe('PIANO_CONTI_WEISS_V4', () => {
-  it('contiene esattamente 155 voci', () => {
-    expect(PIANO_CONTI_WEISS_V4).toHaveLength(155)
+  it('contiene esattamente 169 voci', () => {
+    expect(PIANO_CONTI_WEISS_V4).toHaveLength(169)
   })
 
-  it('ha 12 voci di tipo RICAVO e 143 di tipo COSTO', () => {
+  it('ha 12 voci RICAVO, 143 COSTO e 14 PATRIMONIALE', () => {
     const ricavi = PIANO_CONTI_WEISS_V4.filter((v) => v.tipo === 'RICAVO')
     const costi = PIANO_CONTI_WEISS_V4.filter((v) => v.tipo === 'COSTO')
+    const patrimoniali = PIANO_CONTI_WEISS_V4.filter((v) => v.tipo === 'PATRIMONIALE')
+
     expect(ricavi).toHaveLength(12)
     expect(costi).toHaveLength(143)
+    expect(patrimoniali).toHaveLength(14)
   })
 
   it('ha codici tutti univoci', () => {
@@ -31,13 +29,10 @@ describe('PIANO_CONTI_WEISS_V4', () => {
     }
   })
 
-  it('gruppoCode è presente solo per i mastri 20, 28, 32', () => {
+  it('gruppoCode è presente solo per i mastri 20, 28, 32 e 40', () => {
     for (const voce of PIANO_CONTI_WEISS_V4) {
-      if (MASTRI_CON_GRUPPO.has(voce.mastroCode)) {
-        expect(voce.gruppoCode).toBeDefined()
-      } else {
-        expect(voce.gruppoCode).toBeUndefined()
-      }
+      const articolato = ['20', '28', '32', '40'].includes(voce.mastroCode)
+      expect(Boolean(voce.gruppoCode)).toBe(articolato)
     }
   })
 
@@ -61,14 +56,24 @@ describe('PIANO_CONTI_WEISS_V4', () => {
     }
   })
 
-  it('i mastri RICAVO sono compresi tra 10 e 13, i mastri COSTO tra 20 e 33', () => {
+  it('i mastri RICAVO stanno tra 10 e 13, i COSTO tra 20 e 33, i PATRIMONIALE valgono 40', () => {
     for (const voce of PIANO_CONTI_WEISS_V4) {
-      if (voce.tipo === 'RICAVO') {
-        expect(MASTRI_RICAVO.has(voce.mastroCode)).toBe(true)
-      } else {
-        expect(MASTRI_COSTO.has(voce.mastroCode)).toBe(true)
-      }
+      const mastro = Number(voce.mastroCode)
+
+      if (voce.tipo === 'RICAVO') expect(mastro).toBeGreaterThanOrEqual(10)
+      if (voce.tipo === 'RICAVO') expect(mastro).toBeLessThanOrEqual(13)
+      if (voce.tipo === 'COSTO') expect(mastro).toBeGreaterThanOrEqual(20)
+      if (voce.tipo === 'COSTO') expect(mastro).toBeLessThanOrEqual(33)
+      if (voce.tipo === 'PATRIMONIALE') expect(mastro).toBe(40)
     }
+  })
+
+  it('le voci patrimoniali coprono i quattro gruppi del mastro 40', () => {
+    const gruppi = new Set(
+      PIANO_CONTI_WEISS_V4.filter((v) => v.tipo === 'PATRIMONIALE').map((v) => v.gruppoCode),
+    )
+
+    expect([...gruppi].sort()).toEqual(['40.1', '40.2', '40.3', '40.4'])
   })
 
   it("l'array è già ordinato per code (ordinamento lessicografico)", () => {
