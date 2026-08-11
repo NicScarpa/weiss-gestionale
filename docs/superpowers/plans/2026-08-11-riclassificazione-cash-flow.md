@@ -21,6 +21,8 @@
 - **Niente codice irraggiungibile:** una route senza consumer non si scrive. Il vincolo si valuta **sul piano intero, non sul singolo task**: i moduli dei Task 2-6 non sono raggiungibili dalla UI finché non arrivano la route (Task 7) e la pagina (Task 8), ed è previsto che sia così. Un modulo che resta senza consumer alla fine del Task 8 è invece un difetto.
 - **Convenzione di segno del prospetto:** entrate positive, uscite negative. Il valore di ogni voce è `dare − avere`, senza eccezioni per natura del conto.
 - **Le voci non si duplicano per locale:** la natura la dà la voce, il luogo il centro di costo.
+- **⚠️ Il `.env` di questo progetto punta al database di PRODUZIONE** (Supabase, `aws-1-eu-west-2.pooler.supabase.com`). Nessun task esegue comandi che scrivono sul database: niente `prisma migrate dev`, `prisma db push`, `prisma migrate deploy`, `prisma db seed`. I soli comandi Prisma ammessi sono `npx prisma generate` e `npx prisma validate`, che non aprono connessioni. Le migrazioni si **scrivono** e basta: le applica il committente, a mano, seguendo `docs/migrazione-piano-conti-v4.md`. I test di integrazione fanno eccezione perché non leggono `DATABASE_URL`: se la calcolano da soli su PostgreSQL locale (`src/test/integration/env-guard.ts`).
+- **Test di integrazione:** eseguirli con `TEST_DB_SUFFIX=cashflow` davanti al comando. Più copie di lavoro del repository condividono lo stesso PostgreSQL locale, e senza suffisso distinto due suite in parallelo si distruggono il database a vicenda.
 
 ## Scostamento dalla spec, deciso qui
 
@@ -349,13 +351,18 @@ ALTER TYPE "AccountType" ADD VALUE IF NOT EXISTS 'PATRIMONIALE';
 ALTER TYPE "BudgetCategoryType" ADD VALUE IF NOT EXISTS 'FINANCING';
 ```
 
-- [ ] **Step 7: Applicare la migrazione in locale e rigenerare il client**
+- [ ] **Step 7: Rigenerare il client, senza toccare il database**
 
-Run: `nvm use 22 && npx prisma migrate dev --name cash_flow_enums --skip-seed`
-Expected: la migrazione risulta applicata e il client Prisma viene rigenerato. Se Prisma segnala di aver già creato una cartella con nome diverso, rinominarla in `20260811000000_cash_flow_enums` e riallineare `_prisma_migrations`.
+**Non eseguire `prisma migrate dev`.** `DATABASE_URL` punta alla produzione: quel comando applicherebbe una `ALTER TYPE` al database reale, e togliere un valore da un enum PostgreSQL dopo è tutt'altro che banale. La migrazione appena scritta si applica in produzione a mano, insieme alle altre del piano v4.
+
+Run: `nvm use 22 && npx prisma generate`
+Expected: `Generated Prisma Client`. Il comando legge solo `schema.prisma`, non apre connessioni.
 
 Run: `nvm use 22 && npx tsc --noEmit`
-Expected: nessun errore.
+Expected: nessun errore. Se il compilatore non riconosce `'PATRIMONIALE'` come valore di `AccountType`, il client non è stato rigenerato: ripetere `npx prisma generate`.
+
+Run: `nvm use 22 && npx prisma validate`
+Expected: `The schema at prisma/schema.prisma is valid`.
 
 - [ ] **Step 8: Aggiornare la spec sullo scostamento**
 
@@ -2012,7 +2019,7 @@ describe('seedCategorieCashFlow', () => {
 
 - [ ] **Step 2: Eseguire il test per vederlo fallire**
 
-Run: `nvm use 22 && npm run test:integration -- src/lib/cashflow/__tests__/seed-categorie.itest.ts`
+Run: `nvm use 22 && TEST_DB_SUFFIX=cashflow npm run test:integration -- src/lib/cashflow/__tests__/seed-categorie.itest.ts`
 Expected: FAIL — `Cannot find module '../seed-categorie'`.
 
 Se il comando lamenta l'assenza del database di test, avviarlo come indicato in `docs/` e verificare `TEST_DB_SUFFIX`.
@@ -2213,7 +2220,7 @@ export async function POST() {
 
 - [ ] **Step 5: Eseguire i test di integrazione**
 
-Run: `nvm use 22 && npm run test:integration -- src/lib/cashflow/__tests__/seed-categorie.itest.ts`
+Run: `nvm use 22 && TEST_DB_SUFFIX=cashflow npm run test:integration -- src/lib/cashflow/__tests__/seed-categorie.itest.ts`
 Expected: PASS, quattro test.
 
 - [ ] **Step 6: Verificare che nulla si sia rotto altrove**
@@ -2302,7 +2309,7 @@ describe('GET /api/cashflow/prospetto', () => {
 
 - [ ] **Step 2: Eseguire il test per vederlo fallire**
 
-Run: `nvm use 22 && npm run test:integration -- src/app/api/cashflow/prospetto`
+Run: `nvm use 22 && TEST_DB_SUFFIX=cashflow npm run test:integration -- src/app/api/cashflow/prospetto`
 Expected: FAIL — `Cannot find module '../route'`.
 
 - [ ] **Step 3: Scrivere la route**
@@ -2384,7 +2391,7 @@ export async function GET(request: Request) {
 
 - [ ] **Step 4: Eseguire i test**
 
-Run: `nvm use 22 && npm run test:integration -- src/app/api/cashflow/prospetto`
+Run: `nvm use 22 && TEST_DB_SUFFIX=cashflow npm run test:integration -- src/app/api/cashflow/prospetto`
 Expected: PASS, quattro test.
 
 - [ ] **Step 5: Commit**
