@@ -40,6 +40,30 @@ export function lordo(m: MovimentoAggregato): Money {
   return m.dare.minus(m.avere)
 }
 
+/**
+ * Come si ripartisce l'IVA di una riga fra dare e avere: segue il verso del
+ * movimento che la porta, cioè quello con l'importo diverso da zero.
+ *
+ * Il caso con entrambe le colonne valorizzate non si presenta in questa
+ * prima nota; se comparisse, questa funzione manderebbe comunque l'IVA in
+ * dare — una scelta arbitraria, non una regola contabile — e **nessuno dei
+ * controlli di quadratura se ne accorgerebbe**: la somma dare − avere resta
+ * la stessa qualunque verso riceva l'IVA, e nessuno dei quattro controlli
+ * guarda questa classificazione. Lo stesso vale per il caso, altrettanto
+ * estraneo alla prima nota, di entrambe le colonne a zero con un'IVA diversa
+ * da zero: finisce in avere, perché la condizione guarda solo se `dare` è
+ * zero.
+ */
+export function ripartisciIva(
+  dare: Money,
+  avere: Money,
+  iva: Money
+): { ivaDare: Money; ivaAvere: Money } {
+  return dare.isZero()
+    ? { ivaDare: money(0), ivaAvere: iva }
+    : { ivaDare: iva, ivaAvere: money(0) }
+}
+
 export async function movimentiCashFlow(
   venueId: string,
   anno: number
@@ -81,16 +105,14 @@ export async function movimentiCashFlow(
     const dare = money(riga.debitAmount ?? 0)
     const avere = money(riga.creditAmount ?? 0)
     const iva = money(riga.vatAmount ?? 0)
+    const { ivaDare, ivaAvere } = ripartisciIva(dare, avere, iva)
 
-    // L'IVA segue il verso del movimento che la porta. Un movimento con
-    // entrambe le colonne valorizzate non esiste in prima nota; se comparisse,
-    // l'IVA finirebbe con il dare, e il controllo C1 lo farebbe notare.
     perContoEMese.set(chiave, {
       ...corrente,
       dare: corrente.dare.plus(dare),
       avere: corrente.avere.plus(avere),
-      ivaDare: dare.isZero() ? corrente.ivaDare : corrente.ivaDare.plus(iva),
-      ivaAvere: dare.isZero() ? corrente.ivaAvere.plus(iva) : corrente.ivaAvere,
+      ivaDare: corrente.ivaDare.plus(ivaDare),
+      ivaAvere: corrente.ivaAvere.plus(ivaAvere),
     })
   }
 
