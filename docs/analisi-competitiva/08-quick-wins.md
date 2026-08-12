@@ -1,5 +1,13 @@
 # Quick win — impatto ≥3, effort S
 
+**Aggiornamento — Onda 1 (11-12 agosto 2026).** Undici di queste sedici voci
+sono state chiuse per intero, e sono marcate ✅ sotto il proprio titolo. Tre
+(`SCD-08`, `CLS-06`, `RET-07`) sono state implementate ma non chiudono la
+lacuna originaria: la nota sotto il titolo dice cosa resta. `SCD-02` è stata
+rimossa dall'onda in corsa e non è più un quick win (v. `07-backlog-prioritizzato.md`,
+P2). `DOC-11` non è stata toccata. Stato pieno e priorità aggiornata in
+`07-backlog-prioritizzato.md`; stato riga per riga in `02-matrice-5vie.md`.
+
 Sedici interventi da **meno di mezza giornata ciascuno**, con i file del repo da
 toccare. Nessuno richiede una migrazione di dati; tre richiedono una colonna
 nuova, segnalata dove serve.
@@ -12,6 +20,12 @@ I ticket pronti per `gh issue create` stanno in `09-issues/`.
 ---
 
 ## 1 · `SCD-08` — Contatore «pagate senza movimento» · impatto **5**
+
+🟠 **Parziale nell'Onda 1** (commits `56b2e3b..122e7cf`): il contatore e il
+filtro descritti sotto sono fatti. **Non chiuso**: `POST
+/api/scadenzario/[id]/pagamenti` continua a non generare alcun `JournalEntry`
+— resta la parte che decide dove scrivere il movimento. Dettaglio in
+`07-backlog-prioritizzato.md` (P0) e `02-matrice-5vie.md` riga `SCD-08`.
 
 ### Cosa manca
 
@@ -59,6 +73,8 @@ correzione). Se aggiungiamo un'azione, va nell'audit log.
 ---
 
 ## 2 · `RIC-03` — Motivazioni accanto al punteggio di match · impatto 4
+
+✅ **Chiuso nell'Onda 1** (commits `9164c83..7021583`).
 
 ### Cosa manca
 
@@ -111,6 +127,10 @@ L'ultima riga della tabella («unico match possibile») si calcola in
 
 ## 3 · `CLS-16` — Tasso di categorizzazione come KPI con obiettivo · impatto 4
 
+✅ **Chiuso nell'Onda 1** (commit `57108d7`). Due difetti minori non corretti
+(percentuale non transazionale, errore silenzioso sulla query): v.
+`07-backlog-prioritizzato.md`, «Trovati durante l'esecuzione».
+
 ### Cosa manca
 
 Non sappiamo quanti movimenti sono senza conto, e nessuno ce lo dice.
@@ -147,6 +167,13 @@ L'obiettivo del 95% è una costante, non una configurazione.
 
 ## 4 · `SCD-02` — Mese corrente spezzato in scaduto e da saldare · impatto 4
 
+⛔ **Rimossa dall'Onda 1 in corsa, non è un quick win.** Non è un
+raggruppamento da sostituire: la lista è una tabella piatta con ordinamento
+per colonna, e i due si contendono lo stesso spazio — va decisa come
+funzionalità, non improvvisata qui. Riclassificata a P2 (effort M) in
+`07-backlog-prioritizzato.md`. `SCD-04` (anzianità nel badge, chiusa
+nell'Onda 1) copre buona parte del bisogno nel frattempo.
+
 ### Cosa manca
 
 Le scadenze si raggruppano per mese. Ad agosto, «pagato in ritardo dal 3» e
@@ -171,6 +198,9 @@ Nessuna modifica al backend: il dato c'è già.
 ---
 
 ## 5 · `SCD-04` — Anzianità del ritardo dentro il badge di stato · impatto 4
+
+✅ **Chiuso nell'Onda 1** (commits `a44a69f..f15a48e`). Ha richiesto un giro di
+correzione su un bug di fuso orario, verificato su quattro fusi.
 
 ### Cosa manca
 
@@ -197,6 +227,8 @@ nostro aging ha già la fascia `>120 gg` invece di un contenitore aperto.
 ---
 
 ## 6 · `KPI-02` — Giudizio sintetico in linguaggio naturale · impatto 4
+
+✅ **Chiuso nell'Onda 1** (commits `f15a48e..23018d7`).
 
 ### Cosa manca
 
@@ -234,6 +266,8 @@ Tre stati bastano: *nessuna tensione prevista* · *attenzione dal <data>* ·
 
 ## 7 · `CLS-09` — Anteprima dell'impatto prima di applicare una regola · impatto 4
 
+✅ **Chiuso nell'Onda 1** (commit `b229e48`, insieme a `CLS-06`).
+
 ### Cosa manca
 
 `POST /api/categorization-rules/test` esiste, ma il form di creazione della
@@ -260,6 +294,9 @@ movimenti.»*
 ---
 
 ## 8 · `RPT-04` — Separatore decimale italiano nell'export scadenzario · impatto 3
+
+✅ **Chiuso nell'Onda 1** (commits `770aff2..46590fb`), insieme a `RPT-10`
+(riga dei totali, non in questo elenco perché originariamente P6).
 
 ### Cosa manca
 
@@ -294,6 +331,8 @@ stesso file e nello stesso spirito.
 
 ## 9 · `RIC-04` — Fattori del punteggio dichiarati prima dell'esecuzione · impatto 3
 
+✅ **Chiuso nell'Onda 1** (commits `7021583..a44a69f`).
+
 ### Cosa manca
 
 `SCHEDULE_MATCH_WEIGHTS` (importo 55%, data 25%, descrizione 20%) e
@@ -325,6 +364,10 @@ commento sorgente.
 
 ## 10 · `KPI-03` — Banda «zona negativa» sul grafico · impatto 3
 
+✅ **Chiuso nell'Onda 1** (commits `b1056d9..8dcdd52`). La soglia mostrata
+resta duplicata fra due schermate (difetto adiacente, non di questo task): v.
+`02-matrice-5vie.md` riga `KPI-03`.
+
 ### Cosa manca
 
 `CashFlowChart` ha già una `ReferenceLine` orizzontale sulla soglia minima e una
@@ -347,6 +390,8 @@ Una riga di JSX. Il componente importa già `ReferenceLine` dallo stesso pacchet
 ---
 
 ## 11 · `SCD-14` — Ritardo effettivo confrontato con i termini pattuiti · impatto 3
+
+✅ **Chiuso nell'Onda 1** (commits `aafa40c` + `7d7687b`).
 
 ### Cosa manca
 
@@ -378,6 +423,8 @@ Nessun calcolo nuovo: si mostra ciò che già si calcola.
 
 ## 12 · `PRV-15` — Selettore di periodo per ancora + durata · impatto 3
 
+✅ **Chiuso nell'Onda 1** (commit `bfb715d`).
+
 ### Cosa manca
 
 Il saldo scalare accetta un `range` numerico e parte sempre da oggi.
@@ -407,6 +454,13 @@ senza reimpostare nulla il giorno dopo.»*
 
 ## 13 · `RET-07` — Numero di distinta sul versamento contanti · impatto 3
 
+🟠 **Implementato nell'Onda 1** (commit `9c02f20`): il campo si inserisce, è
+mostrato in lista, il bonus di riconciliazione scatta anche con punteggiatura
+diversa (fix successivo `295abee`). **Non chiude del tutto**: sullo scenario
+ambiguo misurato il bonus porta il punteggio a 0,86 contro una soglia di
+abbinamento automatico di 0,90 — aiuta a decidere, non decide da solo.
+Dettaglio in `07-backlog-prioritizzato.md` (P0).
+
 ### Cosa manca
 
 Il versamento in banca è un trasferimento fra registri legato da `transferId`.
@@ -432,6 +486,10 @@ Nessuna colonna nuova.
 ---
 
 ## 14 · `DOC-11` — Controllo di plausibilità sul documento in ingresso · impatto 3
+
+⬜ **Non incluso nell'Onda 1.** Il piano lo prevedeva; è rimasto fuori
+dall'esecuzione (v. `07-backlog-prioritizzato.md`, P0). Resta un vero quick
+win, semplicemente non fatto.
 
 ### Cosa manca
 
@@ -464,6 +522,15 @@ una fattura costa più dell'avviso che si ignora.
 
 ## 15 · `CLS-06` — Anteprima delle righe colpite dalla proposta di regola · impatto 3
 
+🟠 **Implementato nell'Onda 1** (commit `b229e48`, insieme a `CLS-09`):
+l'anteprima descritta sotto è fatta. **Non chiude un difetto più profondo**,
+emerso durante l'esecuzione: il suggeritore raggruppa per
+`counterpartName?.trim() || description` (`proposals/route.ts:35`), mentre il
+motore che applica le regole aggancia solo su `entry.description`
+(`recategorize/route.ts:82`). Le regole nate da una proposta funzionano
+spesso una volta sola e poi non intercettano più nulla. Dettaglio in
+`07-backlog-prioritizzato.md` (P0).
+
 ### Cosa manca
 
 `CategorizationProposalsDialog` mostra già la keyword e **«N risultati»** — il
@@ -488,6 +555,8 @@ conviene farle nella stessa sessione.
 ---
 
 ## 16 · `PLT-07` — Stati vuoti che insegnano · impatto 3
+
+✅ **Chiuso nell'Onda 1** (commits `1e5fd5d` + `619d2d7`).
 
 ### Cosa manca
 
@@ -529,24 +598,27 @@ Tre stati vuoti, tre frasi:
 
 ## Riepilogo operativo
 
-| # | ID | File principale | Nuova colonna? |
-|---|---|---|---|
-| 1 | `SCD-08` | `src/app/api/scadenzario/summary/route.ts` | no |
-| 2 | `RIC-03` | `src/lib/reconciliation/schedule-matcher.ts` | no |
-| 3 | `CLS-16` | `src/components/prima-nota/movimenti/MovimentiClient.tsx` | no |
-| 4 | `SCD-02` | `src/app/(dashboard)/scadenzario/page.tsx` | no |
-| 5 | `SCD-04` | `src/components/scadenzario/schedule-status-badge.tsx` | no |
-| 6 | `KPI-02` | `src/components/dashboard/CashFlowForecast.tsx` | no |
-| 7 | `CLS-09` | `src/components/prima-nota/regole/RegolaFormDialog.tsx` | no |
-| 8 | `RPT-04` | `src/app/api/scadenzario/export/route.ts` | no |
-| 9 | `RIC-04` | `src/components/scadenzario/schedule-reconciliation-panel.tsx` | no |
-| 10 | `KPI-03` | `src/components/cashflow/CashFlowChart.tsx` | no |
-| 11 | `SCD-14` | `src/lib/scadenzario/stima-data-attesa.ts` | no |
-| 12 | `PRV-15` | `src/components/scadenzario/saldo-scalare-panel.tsx` | no |
-| 13 | `RET-07` | `src/components/prima-nota/movimenti/MovimentoFormDialog.tsx` | no |
-| 14 | `DOC-11` | `src/lib/sdi/parser.ts` | no |
-| 15 | `CLS-06` | `src/app/api/categorization-rules/proposals/route.ts` | no |
-| 16 | `PLT-07` | tre `*-table.tsx` | no |
+Stato dopo l'Onda 1: ✅ chiuso · 🟠 implementato ma non chiude la lacuna · ⛔
+rimosso dall'onda · ⬜ non toccato.
+
+| # | ID | File principale | Nuova colonna? | Stato |
+|---|---|---|---|---|
+| 1 | `SCD-08` | `src/app/api/scadenzario/summary/route.ts` | no | 🟠 |
+| 2 | `RIC-03` | `src/lib/reconciliation/schedule-matcher.ts` | no | ✅ |
+| 3 | `CLS-16` | `src/components/prima-nota/movimenti/MovimentiClient.tsx` | no | ✅ |
+| 4 | `SCD-02` | `src/app/(dashboard)/scadenzario/page.tsx` | no | ⛔ |
+| 5 | `SCD-04` | `src/components/scadenzario/schedule-status-badge.tsx` | no | ✅ |
+| 6 | `KPI-02` | `src/components/dashboard/CashFlowForecast.tsx` | no | ✅ |
+| 7 | `CLS-09` | `src/components/prima-nota/regole/RegolaFormDialog.tsx` | no | ✅ |
+| 8 | `RPT-04` | `src/app/api/scadenzario/export/route.ts` | no | ✅ |
+| 9 | `RIC-04` | `src/components/scadenzario/schedule-reconciliation-panel.tsx` | no | ✅ |
+| 10 | `KPI-03` | `src/components/cashflow/CashFlowChart.tsx` | no | ✅ |
+| 11 | `SCD-14` | `src/lib/scadenzario/stima-data-attesa.ts` | no | ✅ |
+| 12 | `PRV-15` | `src/components/scadenzario/saldo-scalare-panel.tsx` | no | ✅ |
+| 13 | `RET-07` | `src/components/prima-nota/movimenti/MovimentoFormDialog.tsx` | no | 🟠 |
+| 14 | `DOC-11` | `src/lib/sdi/parser.ts` | no | ⬜ |
+| 15 | `CLS-06` | `src/app/api/categorization-rules/proposals/route.ts` | no | 🟠 |
+| 16 | `PLT-07` | tre `*-table.tsx` | no | ✅ |
 
 **Nessuno dei sedici richiede una migrazione né una colonna nuova.** È il motivo
 per cui sono quick win: il dato c'è già, manca il modo di leggerlo.

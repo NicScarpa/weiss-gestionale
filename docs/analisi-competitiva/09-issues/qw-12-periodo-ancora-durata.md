@@ -2,6 +2,8 @@
 
 `PRV-15` · impatto 3 · effort **S** · quick win #12
 
+✅ **Chiuso nell'Onda 1** (commit `bfb715d`, 11-12 agosto 2026).
+
 ## Contesto
 
 `GET /api/scadenzario/saldo-scalare` accetta un parametro `range` in giorni e

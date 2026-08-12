@@ -2,6 +2,9 @@
 
 `CLS-09` · impatto 4 · effort **S** · quick win #7
 
+✅ **Chiuso nell'Onda 1** (commit `b229e48`, 11-12 agosto 2026, insieme a
+`CLS-06`).
+
 ## Contesto
 
 `POST /api/categorization-rules/test` esiste già, ma il form di creazione della

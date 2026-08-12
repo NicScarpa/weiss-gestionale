@@ -2,6 +2,9 @@
 
 `RPT-04` · impatto 3 · effort **S** · quick win #8
 
+✅ **Chiuso nell'Onda 1** (commits `770aff2..46590fb`, 11-12 agosto 2026),
+insieme a `RPT-10` (riga dei totali).
+
 ## Contesto
 
 `src/app/api/scadenzario/export/route.ts:68-71` scrive gli importi con

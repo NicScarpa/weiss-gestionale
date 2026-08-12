@@ -2,6 +2,8 @@
 
 `RIC-03` · impatto 4 · effort **S** · quick win #2
 
+✅ **Chiuso nell'Onda 1** (commits `9164c83..7021583`, 11-12 agosto 2026).
+
 ## Contesto
 
 `calculateScheduleMatchScore` restituisce un `number`

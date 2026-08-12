@@ -2,6 +2,10 @@
 
 `KPI-03` · impatto 3 · effort **S** · quick win #10
 
+✅ **Chiuso nell'Onda 1** (commits `b1056d9..8dcdd52`, 11-12 agosto 2026). La
+soglia mostrata resta duplicata fra due schermate (difetto adiacente, non di
+questo ticket): `../02-matrice-5vie.md` riga `KPI-03`.
+
 ## Contesto
 
 `CashFlowChart` ha già una `ReferenceLine` orizzontale sulla soglia minima e una

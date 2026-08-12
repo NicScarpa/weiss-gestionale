@@ -2,6 +2,8 @@
 
 `PLT-07` · impatto 3 · effort **S** · quick win #16
 
+✅ **Chiuso nell'Onda 1** (commits `1e5fd5d` + `619d2d7`, 11-12 agosto 2026).
+
 ## Contesto
 
 `CashFlowSourcePanel` spiega come nasce la previsione, ed è l'unico stato vuoto

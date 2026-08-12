@@ -2,6 +2,8 @@
 
 `KPI-02` · impatto 4 · effort **S** · quick win #6
 
+✅ **Chiuso nell'Onda 1** (commits `f15a48e..23018d7`, 11-12 agosto 2026).
+
 ## Contesto
 
 La dashboard mostra numeri e alert tecnici («Saldo previsto sotto soglia dal

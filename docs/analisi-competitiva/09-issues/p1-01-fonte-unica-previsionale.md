@@ -2,6 +2,15 @@
 
 `PRV-03` + `PRV-01` + `PRV-04` · impatto **5** · effort M
 
+✅ **Chiuso nell'Onda 1** (commits `122e7cf..9164c83`, 11-12 agosto 2026). Le
+tre rotte previsionali proiettano ora dalla stessa funzione pura, con
+gerarchia `movimento > scadenza > ricorrente > stima`, verificato che
+`/cash-flow` e `/scadenzario` mostrano lo stesso saldo finale sulla stessa
+finestra. `RecurringExpense` e `Recurrence` restano due modelli disgiunti —
+l'unificazione resta una decisione di prodotto aperta, non un rischio di
+doppio conteggio oggi. Dettaglio: `../02-matrice-5vie.md` righe `PRV-01`,
+`PRV-03`, `PRV-04`; `../07-backlog-prioritizzato.md`.
+
 ## Contesto
 
 Tre rotte rispondono alla domanda «quanti soldi avrò», con basi diverse e nessun

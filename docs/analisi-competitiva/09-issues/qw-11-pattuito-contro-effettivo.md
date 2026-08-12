@@ -2,6 +2,8 @@
 
 `SCD-14` · impatto 3 · effort **S** · quick win #11
 
+✅ **Chiuso nell'Onda 1** (commits `aafa40c` + `7d7687b`, 11-12 agosto 2026).
+
 ## Contesto
 
 Abbiamo già i due ingredienti e non li mettiamo mai insieme:

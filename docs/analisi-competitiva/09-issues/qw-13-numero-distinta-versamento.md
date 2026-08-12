@@ -2,6 +2,13 @@
 
 `RET-07` · impatto 3 · effort **S** · quick win #13
 
+🟠 **Implementato nell'Onda 1** (commit `9c02f20`, 11-12 agosto 2026): il campo
+si inserisce, è mostrato in lista, il bonus di riconciliazione scatta anche
+con punteggiatura diversa (fix successivo `295abee`). **Non chiude del
+tutto**: sullo scenario ambiguo misurato il bonus porta il punteggio a 0,86
+contro una soglia di abbinamento automatico di 0,90 — aiuta a decidere, non
+decide da solo. Dettaglio: `../07-backlog-prioritizzato.md` (P0).
+
 ## Contesto
 
 Il versamento dei contanti in banca è modellato come trasferimento fra registri:

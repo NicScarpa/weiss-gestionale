@@ -2,6 +2,8 @@
 
 `RIC-04` · impatto 3 · effort **S** · quick win #9
 
+✅ **Chiuso nell'Onda 1** (commits `7021583..a44a69f`, 11-12 agosto 2026).
+
 ## Contesto
 
 `SCHEDULE_MATCH_WEIGHTS` (importo 55%, data 25%, descrizione 20%) e

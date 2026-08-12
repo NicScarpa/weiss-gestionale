@@ -9,10 +9,9 @@ previene un numero sbagliato.
 
 Ogni voce è implementabile senza riaprire i software concorrenti: la matrice
 (`02-matrice-5vie.md`) contiene già cosa fanno loro, e i ticket in `09-issues/`
-contengono i file del repo da toccare (`09-issues/` e `08-quick-wins.md` non
-sono stati riallineati in questo passaggio: descrivono ancora tutti e sedici i
-quick win originari come aperti — verificare contro questo file e contro la
-matrice prima di usarli).
+contengono i file del repo da toccare. `08-quick-wins.md` e `09-issues/` sono
+allineati allo stato dell'Onda 1 (marcatori di stato in testa a ciascuna voce
+chiusa o parziale).
 
 **Escluse per costruzione**: le 17 voci ⚪, ciascuna motivata nella propria cella
 di matrice, e le 10 famiglie escluse per scala in `01-tassonomia.md` §4. Non
@@ -347,13 +346,24 @@ voci sopra. Dettaglio completo in
   `AccountBudgetMapping`. Barra e filtro possono dare numeri diversi sugli
   stessi movimenti. Impatto 4, effort S: allineare il filtro all'asse
   `accountId`, o togliere `budgetCategoryId` dal filtro esplicitamente.
-- **Il pannello «Come nasce la previsione» può contare una spesa ricorrente più
-  volte di quanto dovrebbe.** `CashFlowSourcePanel` costruisce l'elenco «Spese
-  ricorrenti nel periodo» sommando le occorrenze **prima** della deduplica che
-  `proietta()` applica al saldo mostrato accanto: può elencare un totale
-  superiore a «Spese ricorrenti in scadenza» della card. Mina proprio la
-  promessa appena chiusa di `PRV-01`/`PRV-03` — il pannello esiste per
-  mostrare *come nasce il numero*. Impatto 3, effort S.
+- **Il pannello «Come nasce la previsione» può elencare una voce che il totale
+  non ha contata.** I numeri sono giusti: `forecast/route.ts` calcola
+  `totalExpectedExpenses` da `punto.uscite`, cioè dalla serie già deduplicata
+  da `proietta()`. Ma l'elenco «Spese ricorrenti nel periodo»
+  (`speseRicorrentiPerGiorno`, riga 158) si costruisce ciclando su
+  `flussiBase` — l'uscita grezza di `leggiFlussi`, **prima** che `proietta()`
+  risolva le sovrapposizioni. Un flusso di fonte `ricorrente` scartato perché
+  una `scadenza` con la stessa chiave lo copre sparisce dal totale ma resta
+  nell'elenco: la spiegazione non torna col numero che dovrebbe spiegare,
+  anche se il numero stesso è corretto. **Esposizione stretta**:
+  `generaFlussiRicorrenze` parte da `prossimaGenerazione`, quindi una
+  ricorrenza già scadenzata normalmente non riemette un flusso, e
+  `generaFlussiSpeseRicorrenti` sopprime già le spese agganciate per
+  euristica a monte. Il caso residuo è quando `prossimaGenerazione` è rimasta
+  indietro — un caso di confine, non un difetto sistematico: chi lo riproduce
+  deve cercare proprio quello, non una ricorrenza qualsiasi. Impatto 3, effort
+  S (filtrare l'elenco sugli stessi superstiti che `proietta()` tiene, non sui
+  flussi grezzi).
 
 **Equivalenti P6 — impatto 2**
 

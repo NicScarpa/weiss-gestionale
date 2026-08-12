@@ -2,6 +2,15 @@
 
 `CLS-06` · impatto 3 · effort **S** · quick win #15
 
+🟠 **Implementato nell'Onda 1** (commit `b229e48`, 11-12 agosto 2026, insieme
+a `CLS-09`): l'anteprima descritta sotto è fatta. **Non chiude un difetto più
+profondo**, emerso durante l'esecuzione: il suggeritore raggruppa per
+`counterpartName?.trim() || description` (`proposals/route.ts:35`), mentre
+il motore che applica le regole aggancia solo su `entry.description`
+(`recategorize/route.ts:82`). Le regole nate da una proposta funzionano
+spesso una volta sola e poi non intercettano più nulla. Dettaglio:
+`../07-backlog-prioritizzato.md` (P0).
+
 ## Contesto
 
 `CategorizationProposalsDialog` mostra già la keyword e **«N risultati»**

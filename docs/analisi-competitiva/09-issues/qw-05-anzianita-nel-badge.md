@@ -2,6 +2,8 @@
 
 `SCD-04` · impatto 4 · effort **S** · quick win #5
 
+✅ **Chiuso nell'Onda 1** (commits `a44a69f..f15a48e`, 11-12 agosto 2026).
+
 ## Contesto
 
 `ScheduleStatusBadge` mostra «Scaduta». **Quanto** scaduta si scopre solo aprendo

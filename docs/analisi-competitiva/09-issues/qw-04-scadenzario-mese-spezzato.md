@@ -2,6 +2,12 @@
 
 `SCD-02` · impatto 4 · effort **S** · quick win #4
 
+⛔ **Rimossa dall'Onda 1 in corsa, non è un quick win.** Il raggruppamento e
+l'ordinamento per colonna si contendono lo stesso spazio nella lista: va
+decisa come funzionalità, non improvvisata a effort S. Riclassificata a P2
+(effort M) in `../07-backlog-prioritizzato.md`. `SCD-04` (chiusa nell'Onda 1)
+copre parte del bisogno nel frattempo.
+
 ## Contesto
 
 Le scadenze si raggruppano per mese. Ad agosto, una fattura che doveva essere

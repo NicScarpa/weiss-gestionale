@@ -2,6 +2,10 @@
 
 `CLS-16` · impatto 4 · effort **S** · quick win #3
 
+✅ **Chiuso nell'Onda 1** (commit `57108d7`, 11-12 agosto 2026). Due difetti
+minori non corretti (percentuale non transazionale, query senza gestione
+errore): `../07-backlog-prioritizzato.md`, «Trovati durante l'esecuzione».
+
 ## Contesto
 
 Non esiste alcun indicatore di quanti movimenti siano privi di imputazione

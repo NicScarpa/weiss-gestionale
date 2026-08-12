@@ -2,6 +2,13 @@
 
 `SCD-08` · impatto **5** · effort **S** · quick win #1
 
+🟠 **Parziale nell'Onda 1** (commits `56b2e3b..122e7cf`, 11-12 agosto 2026):
+i punti 1-5 di «Cosa fare» sono fatti — contatore, filtro, card cliccabile.
+**Resta aperto**: `POST /api/scadenzario/[id]/pagamenti` continua a non
+generare alcun `JournalEntry`, che è la causa a monte descritta sotto. Il
+ticket utile ora è «generare il movimento dal pagamento manuale», non questo.
+Dettaglio: `../07-backlog-prioritizzato.md` (P0).
+
 ## Contesto
 
 `POST /api/scadenzario/[id]/pagamenti` crea un `SchedulePayment`, aggiorna
