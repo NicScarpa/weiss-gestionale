@@ -29,12 +29,14 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Search, TrendingDown, TrendingUp } from 'lucide-react'
+import { TestoEvidenziato } from '@/components/prima-nota/regole/TestoEvidenziato'
 
 interface Proposal {
   keyword: string
   direction: 'INFLOW' | 'OUTFLOW'
   count: number
   matchingEntryIds: string[]
+  sampleDescriptions: string[]
 }
 
 interface CategorizationProposalsDialogProps {
@@ -195,6 +197,19 @@ export function CategorizationProposalsDialog({
                       <Search className="h-3 w-3 mr-1" />
                       {proposal.count} risultati
                     </Badge>
+                    {proposal.sampleDescriptions.length > 0 && (
+                      <div className="mt-1.5 space-y-0.5">
+                        {proposal.sampleDescriptions.map((descrizione, i) => (
+                          <div
+                            key={i}
+                            className="max-w-[220px] truncate text-xs text-muted-foreground"
+                            title={descrizione}
+                          >
+                            <TestoEvidenziato testo={descrizione} chiave={proposal.keyword} />
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Select

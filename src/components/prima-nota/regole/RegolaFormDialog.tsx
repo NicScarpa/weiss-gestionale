@@ -4,7 +4,8 @@ import * as React from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, X } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { Plus, Search, X } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -32,11 +33,26 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
+import { Skeleton } from '@/components/ui/skeleton'
 import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
+import { TestoEvidenziato } from '@/components/prima-nota/regole/TestoEvidenziato'
+import { useDebounce } from '@/hooks/useDebounce'
 import {
   type RuleDirection,
   type CategorizationRuleFormData,
 } from '@/types/prima-nota'
+
+/**
+ * Fra le keyword di una regola, quale evidenziare in una data descrizione:
+ * la prima dell'array che vi compare, stesso ordine di valutazione di
+ * `.some()` nel motore (recategorize/route.ts:83-85). Se nessuna compare
+ * (possibile fra un aggiornamento e l'altro dell'anteprima) non c'è nulla da
+ * evidenziare: TestoEvidenziato con chiave vuota mostra il testo semplice.
+ */
+function trovaChiaveCheCompare(descrizione: string, chiavi: string[]): string {
+  const testo = descrizione.toLowerCase()
+  return chiavi.find((chiave) => testo.includes(chiave.toLowerCase())) ?? ''
+}
 
 const REGOLA_SCHEMA = z.object({
   name: z.string().min(1, { message: 'Il nome è obbligatorio' }),
@@ -96,7 +112,35 @@ export function RegolaFormDialog({
 
   const keywords = useWatch({ control: form.control, name: 'keywords' })
   const [keywordInput, setKeywordInput] = React.useState('')
-  const _direction = useWatch({ control: form.control, name: 'direction' })
+  const direction = useWatch({ control: form.control, name: 'direction' })
+
+  // Anteprima: quante righe aggancerebbe la regola con keyword/direzione
+  // correnti. In debounce di 400ms perché ogni aggiunta/rimozione di keyword
+  // (o cambio direzione) altrimenti scatenerebbe una chiamata a sé.
+  const keywordsDifferite = useDebounce(keywords, 400)
+  const direzioneDifferita = useDebounce(direction, 400)
+  const chiaviAnteprima = React.useMemo(
+    () => (keywordsDifferite || []).filter((k) => k.trim().length > 0),
+    [keywordsDifferite]
+  )
+
+  const {
+    data: anteprima,
+    isFetching: anteprimaInCorso,
+  } = useQuery({
+    queryKey: ['categorization-rule-anteprima', direzioneDifferita, chiaviAnteprima],
+    queryFn: async (): Promise<{ totale: number; esempi: string[] }> => {
+      const res = await fetch('/api/categorization-rules/anteprima', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keywords: chiaviAnteprima, direction: direzioneDifferita }),
+      })
+      if (!res.ok) throw new Error('Errore nel calcolo anteprima')
+      return res.json()
+    },
+    enabled: chiaviAnteprima.length > 0,
+    staleTime: 0,
+  })
 
   const addKeyword = () => {
     if (keywordInput.trim()) {
@@ -249,6 +293,46 @@ export function RegolaFormDialog({
                 </FormItem>
               )}
             />
+
+            {/* Anteprima: quante righe esistenti aggancerebbe questa regola.
+                Dice "corrispondono", mai "verranno categorizzate": il motore
+                lavora a lotti da 100 e vince la regola a priorità più alta,
+                quindi alcune di queste righe potrebbero già essere prese da
+                un'altra regola. */}
+            {chiaviAnteprima.length > 0 && (
+              <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+                {anteprimaInCorso ? (
+                  <Skeleton className="h-4 w-40" />
+                ) : anteprima ? (
+                  anteprima.totale === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      Nessun movimento corrisponde. La regola varrà solo per i movimenti futuri.
+                    </p>
+                  ) : (
+                    <>
+                      <p className="flex items-center gap-1.5 text-sm font-medium">
+                        <Search className="h-3.5 w-3.5 text-muted-foreground" />
+                        {anteprima.totale} movimenti corrispondono
+                      </p>
+                      <div className="space-y-1">
+                        {anteprima.esempi.map((descrizione, i) => (
+                          <div
+                            key={i}
+                            className="truncate text-xs text-muted-foreground"
+                            title={descrizione}
+                          >
+                            <TestoEvidenziato
+                              testo={descrizione}
+                              chiave={trovaChiaveCheCompare(descrizione, chiaviAnteprima)}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )
+                ) : null}
+              </div>
+            )}
 
             {/* Priorità */}
             <FormField
