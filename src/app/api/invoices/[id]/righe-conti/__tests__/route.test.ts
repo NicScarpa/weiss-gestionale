@@ -12,7 +12,7 @@ vi.mock('@/lib/venue', () => ({
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     electronicInvoice: { findFirst: vi.fn() },
-    invoiceLineAccount: { findMany: vi.fn(), upsert: vi.fn(), updateMany: vi.fn() },
+    invoiceLineAccount: { findMany: vi.fn(), upsert: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn() },
     account: { findMany: vi.fn() },
     supplierProductAccount: { findUnique: vi.fn(), upsert: vi.fn() },
   },
@@ -79,6 +79,7 @@ beforeEach(() => {
   } as never)
   vi.mocked(prisma.account.findMany).mockResolvedValue([{ id: 'conto-1', type: 'COSTO' }] as never)
   vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([] as never)
+  vi.mocked(prisma.invoiceLineAccount.deleteMany).mockResolvedValue({ count: 0 } as never)
   vi.mocked(prisma.supplierProductAccount.findUnique).mockResolvedValue(null)
   vi.mocked(prisma.supplierProductAccount.upsert).mockResolvedValue({} as never)
 })
@@ -661,6 +662,140 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
 
     expect(response.status).toBe(200)
     expect(prisma.supplierProductAccount.upsert).not.toHaveBeenCalled()
+  })
+
+  it('la richiesta è autorevole sulla riga che nomina: la deleteMany scarta i progressivi non citati', async () => {
+    // Una richiesta che nomina solo il progressivo 1 su una riga già divisa
+    // (in database, non in questa richiesta) non deve affiancare l'altra
+    // quota: deve sostituire l'intera riga. La deleteMany con
+    // `notIn: [1]` è il meccanismo che lo garantisce — la prova end-to-end
+    // che la riga finisce con UNA sola quota sta nel test di integrazione.
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
+    vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
+    vi.mocked(prisma.invoiceLineAccount.upsert).mockResolvedValue({} as never)
+
+    const { request, context } = richiesta({
+      righe: [{ numeroLinea: 1, progressivo: 1, accountId: 'conto-1' }],
+    })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(200)
+    expect(prisma.invoiceLineAccount.deleteMany).toHaveBeenCalledWith({
+      where: { invoiceId: 'fatt-1', numeroLinea: 1, progressivo: { notIn: [1] } },
+    })
+  })
+
+  it('riga divisa 60/40: la deleteMany scarta i progressivi diversi da quelli appena scritti (0 e 1)', async () => {
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
+    vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
+    vi.mocked(parseFatturaPA).mockReturnValue({
+      dettaglioLinee: [
+        {
+          numeroLinea: 1,
+          descrizione: 'Detersivi e tovaglioli',
+          prezzoUnitario: 100,
+          prezzoTotale: 100,
+          aliquotaIVA: 22,
+        },
+      ],
+    } as never)
+    vi.mocked(prisma.account.findMany).mockResolvedValue([
+      { id: 'conto-detersivi' },
+      { id: 'conto-tovaglioli' },
+    ] as never)
+    vi.mocked(prisma.invoiceLineAccount.upsert).mockResolvedValue({} as never)
+
+    const { request, context } = richiesta({
+      righe: [
+        { numeroLinea: 1, progressivo: 0, accountId: 'conto-detersivi', importo: 60 },
+        { numeroLinea: 1, progressivo: 1, accountId: 'conto-tovaglioli', importo: 40 },
+      ],
+    })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(200)
+    expect(prisma.invoiceLineAccount.deleteMany).toHaveBeenCalledWith({
+      where: { invoiceId: 'fatt-1', numeroLinea: 1, progressivo: { notIn: [0, 1] } },
+    })
+  })
+
+  it('due righe diverse nella stessa richiesta: ciascuna riceve la propria deleteMany, con scoping separato', async () => {
+    // La cancellazione deve toccare SOLO la riga che nomina: due righe nella
+    // stessa richiesta non devono influenzarsi a vicenda.
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
+    vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
+    vi.mocked(prisma.invoiceLineAccount.upsert).mockResolvedValue({} as never)
+
+    const { request, context } = richiesta({
+      righe: [
+        { numeroLinea: 1, accountId: 'conto-1' },
+        { numeroLinea: 2, accountId: 'conto-1' },
+      ],
+    })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(200)
+    expect(prisma.invoiceLineAccount.deleteMany).toHaveBeenCalledTimes(2)
+    expect(prisma.invoiceLineAccount.deleteMany).toHaveBeenNthCalledWith(1, {
+      where: { invoiceId: 'fatt-1', numeroLinea: 1, progressivo: { notIn: [0] } },
+    })
+    expect(prisma.invoiceLineAccount.deleteMany).toHaveBeenNthCalledWith(2, {
+      where: { invoiceId: 'fatt-1', numeroLinea: 2, progressivo: { notIn: [0] } },
+    })
+  })
+
+  it('riga intera: un importo mandato dal client viene ignorato, resta quello del documento', async () => {
+    // Il ternario in route.ts sceglie l'importo del documento per una riga
+    // non divisa: se un domani sparisse, il client potrebbe dettare
+    // l'importo di una riga intera senza che niente se ne accorga.
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
+    vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
+    vi.mocked(prisma.invoiceLineAccount.upsert).mockResolvedValue({} as never)
+
+    const { request, context } = richiesta({
+      righe: [{ numeroLinea: 1, accountId: 'conto-1', importo: 999 }],
+    })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(200)
+    expect(prisma.invoiceLineAccount.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ importo: 25.5 }),
+        update: expect.objectContaining({ importo: 25.5 }),
+      })
+    )
+  })
+
+  it('quota a importo zero: 400, nessuna scrittura', async () => {
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
+    vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
+
+    const { request, context } = richiesta({
+      righe: [
+        { numeroLinea: 1, progressivo: 0, accountId: 'conto-1', importo: 0 },
+        { numeroLinea: 1, progressivo: 1, accountId: 'conto-1', importo: 25.5 },
+      ],
+    })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(400)
+    expect(prisma.invoiceLineAccount.upsert).not.toHaveBeenCalled()
+  })
+
+  it('quota a importo negativo: 400, nessuna scrittura', async () => {
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
+    vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
+
+    const { request, context } = richiesta({
+      righe: [
+        { numeroLinea: 1, progressivo: 0, accountId: 'conto-1', importo: -10 },
+        { numeroLinea: 1, progressivo: 1, accountId: 'conto-1', importo: 35.5 },
+      ],
+    })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(400)
+    expect(prisma.invoiceLineAccount.upsert).not.toHaveBeenCalled()
   })
 
   it('confermaTutte: aggiorna tutte le righe in stato proposta con updateMany', async () => {

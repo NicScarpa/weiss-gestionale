@@ -111,11 +111,25 @@ export async function GET(request: NextRequest, context: RouteContext) {
         const fattura = parseFatturaPA(invoice.xmlContent)
 
         // Imputazioni per conto già salvate sulle righe: merge per numeroLinea
-        // (chiave stabile, indipendente dal riparsing dell'XML)
+        // (chiave stabile, indipendente dal riparsing dell'XML).
+        //
+        // orderBy progressivo asc, e non un findMany senza ordine: dal Task 5
+        // una riga può avere più quote (un fornitore che accorpa voci
+        // diverse in una riga sola), e senza un ordine esplicito la quota
+        // "vincente" nella mappa sotto sarebbe l'ultima che Postgres
+        // restituisce in ordine fisico — non deterministico, e cambia dopo
+        // un update. Un dato sbagliato senza alcun segnale è peggio di un
+        // dato mancante.
         const lineAccounts = await prisma.invoiceLineAccount.findMany({
           where: { invoiceId: id },
+          orderBy: { progressivo: 'asc' },
         })
-        const imputazionePerLinea = new Map(lineAccounts.map((la) => [la.numeroLinea, la]))
+        const quotePerLinea = new Map<number, typeof lineAccounts>()
+        for (const la of lineAccounts) {
+          const quote = quotePerLinea.get(la.numeroLinea)
+          if (quote) quote.push(la)
+          else quotePerLinea.set(la.numeroLinea, [la])
+        }
 
         parsedData = {
           tipoDocumento: fattura.tipoDocumento,
@@ -124,7 +138,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
           cedentePrestatore: fattura.cedentePrestatore,
           cessionarioCommittente: fattura.cessionarioCommittente,
           dettaglioLinee: (fattura.dettaglioLinee || []).map((linea) => {
-            const imputazione = imputazionePerLinea.get(linea.numeroLinea)
+            const quote = quotePerLinea.get(linea.numeroLinea) ?? []
+            // La quota col progressivo più basso, grazie all'orderBy sopra:
+            // di norma è la 0, ma non è garantito che lo sia sempre (una
+            // riga può restare con la sola quota 1 se l'altra è stata
+            // rimossa). `imputazione` resta questo singolo oggetto per non
+            // rompere l'interfaccia esistente, che non sa ancora di righe
+            // divise: la task 8 deciderà come mostrare `imputazioni`.
+            const imputazione = quote[0]
             return {
               ...linea,
               imputazione: imputazione
@@ -136,6 +157,20 @@ export async function GET(request: NextRequest, context: RouteContext) {
                     motivazioneAi: imputazione.motivazioneAi,
                   }
                 : null,
+              // Tutte le quote della riga, non solo la prima: senza questo
+              // campo una riga divisa resterebbe invisibile a metà anche se
+              // in database è corretta. La task 8 userà questo elenco per
+              // mostrare più conti sulla stessa riga, o lo ignorerà finché
+              // non è pronta.
+              imputazioni: quote.map((q) => ({
+                progressivo: q.progressivo,
+                accountId: q.accountId,
+                importo: Number(q.importo),
+                stato: q.stato,
+                fonte: q.fonte,
+                confidence: q.confidence,
+                motivazioneAi: q.motivazioneAi,
+              })),
             }
           }),
           datiRiepilogo: fattura.datiRiepilogo || [],

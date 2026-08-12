@@ -35,7 +35,11 @@ const rigaSchema = z.object({
   // L'importo di una riga intera si legge sempre dal documento (XML o riga
   // di sistema): questo campo serve solo alle quote di una riga divisa, dove
   // nessun documento sa dire come si spartisce il totale fra i conti.
-  importo: z.number().optional(),
+  // `.positive()`: una riga di sconto/reso a importo negativo è cosa del
+  // documento (righeXml può portarla), non qualcosa che una quota scritta a
+  // mano debba poter fabbricare — e uno zero occuperebbe un progressivo
+  // senza portare nulla, sotto la soglia di ogni controllo a valle.
+  importo: z.number().positive().optional(),
 })
 
 type Riga = z.infer<typeof rigaSchema>
@@ -202,15 +206,27 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         const descrizione = dettaglio ? dettaglio.descrizione : sistema!.descrizione
         const codiceArticolo = dettaglio ? dettaglio.codiceArticolo ?? null : null
         const importoRiga = dettaglio ? dettaglio.prezzoTotale : sistema!.importo
-        // Divisa = più di una quota per questo numeroLinea. L'importo di una
-        // riga intera resta quello del documento (mai quello del client, che
-        // per una riga intera non serve nemmeno); l'importo di una quota è
-        // quello dichiarato, già validato contro il totale sopra.
+        // Divisa = più di una quota per QUESTA richiesta su questo
+        // numeroLinea. L'importo di una riga intera resta quello del
+        // documento (mai quello del client, che per una riga intera non
+        // serve nemmeno); l'importo di una quota è quello dichiarato, già
+        // validato contro il totale sopra.
+        //
+        // `quote.length` non è solo la forma della richiesta: grazie alla
+        // `deleteMany` più sotto, che rende la richiesta autorevole sulla
+        // riga che nomina, è ANCHE il numero di quote che restano su questa
+        // riga a scrittura conclusa — le altre vengono rimosse. Per questo
+        // `divisa` è la base giusta sia per decidere l'importo (sopra) sia
+        // per decidere se alimentare la memoria (sotto): una richiesta che
+        // nomina una sola quota di una riga già divisa non lascia la riga
+        // "ancora divisa nel frattempo", la riporta a una quota sola.
         const divisa = quote.length > 1
+        const progressiviScritti: number[] = []
 
         for (const [indice, riga] of quote.entries()) {
           const progressivo = riga.progressivo ?? indice
           const importo = divisa ? riga.importo! : importoRiga
+          progressiviScritti.push(progressivo)
 
           await prisma.invoiceLineAccount.upsert({
             where: {
@@ -263,6 +279,26 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
             })
           }
         }
+
+        // La richiesta è autorevole sulla riga che nomina: ogni quota di
+        // QUESTO numeroLinea non citata in QUESTA richiesta viene rimossa.
+        // Senza questo passo, una richiesta che nomina un solo progressivo
+        // su una riga già divisa non sostituisce l'altra quota, la
+        // affianca: due imputazioni per l'intero importo della riga, in
+        // silenzio, e i pesi dell'ereditarietà pro-quota
+        // (schedule-reconciliation-service.ts) si sballano di conseguenza.
+        // Non è distruttivo per sbaglio: `InvoiceLineAccount` non è fra i
+        // `SOFT_DELETE_MODELS` (src/lib/prisma.ts), quindi qui la
+        // cancellazione vera è il comportamento giusto, e lo `scoping` sia
+        // sull'invoiceId sia sul singolo numeroLinea impedisce che tocchi le
+        // altre righe della stessa fattura.
+        await prisma.invoiceLineAccount.deleteMany({
+          where: {
+            invoiceId: id,
+            numeroLinea,
+            progressivo: { notIn: progressiviScritti },
+          },
+        })
       }
     }
 
