@@ -137,11 +137,29 @@ export interface PesoConIva {
  * questa — ma non resta invisibile: chi chiama avvisa quando un conto sparisce
  * (vedi `ereditaFetteDaFattura`).
  */
-export function calcolaPesiConIva(
-  righe: Array<{ accountId: string; imponibile: number; aliquota: number | undefined }>
-): PesoConIva[] {
+export function calcolaPesiConIva(righe: RigaDaImputare[]): PesoConIva[] {
   const ivaNota = righe.every((r) => r.aliquota !== undefined)
 
+  return [...aggregaPerConto(righe).entries()]
+    .filter(([, v]) => v.importo > 0)
+    .sort((a, b) => b[1].importo - a[1].importo)
+    .map(([accountId, v]) => ({
+      accountId,
+      importo: Math.round(v.importo * 100) / 100,
+      iva: ivaNota ? Math.round(v.iva * 100) / 100 : null,
+    }))
+}
+
+/** Una riga fattura pronta per i pesi: imponibile e aliquota, per conto. */
+export interface RigaDaImputare {
+  accountId: string
+  imponibile: number
+  /** In punti percentuali. `undefined` = non leggibile dallo snapshot. */
+  aliquota: number | undefined
+}
+
+/** Il lordo e l'IVA di ciascun conto. La formula sta qui, e solo qui. */
+function aggregaPerConto(righe: RigaDaImputare[]): Map<string, { importo: number; iva: number }> {
   const totali = new Map<string, { importo: number; iva: number }>()
   for (const riga of righe) {
     const aliquota = riga.aliquota ?? 0
@@ -152,15 +170,26 @@ export function calcolaPesiConIva(
       iva: corrente.iva + iva,
     })
   }
+  return totali
+}
 
-  return [...totali.entries()]
-    .filter(([, v]) => v.importo > 0)
-    .sort((a, b) => b[1].importo - a[1].importo)
-    .map(([accountId, v]) => ({
-      accountId,
-      importo: Math.round(v.importo * 100) / 100,
-      iva: ivaNota ? Math.round(v.iva * 100) / 100 : null,
-    }))
+/**
+ * Quanti conti `calcolaPesiConIva` scarta **portandosi via qualcosa**.
+ *
+ * Serve a chi vuole avvisare che le fette non quadreranno più con il
+ * documento. Non basta contare i conti mancanti: il filtro scarta anche il
+ * totale esattamente zero — la riga in omaggio, o la riga e il suo storno
+ * sullo stesso conto — dove però non si perde né importo né IVA. Un avviso
+ * che grida quando non è successo niente insegna a ignorarlo, e il primo caso
+ * vero passerebbe inosservato.
+ *
+ * Mezzo centesimo di soglia perché il totale passa da moltiplicazioni in
+ * virgola mobile: uno zero può presentarsi come 1e-14.
+ */
+export function contiScartatiConPeso(righe: RigaDaImputare[]): number {
+  return [...aggregaPerConto(righe).values()].filter(
+    (v) => v.importo <= 0 && (Math.abs(v.importo) >= 0.005 || Math.abs(v.iva) >= 0.005)
+  ).length
 }
 
 /**

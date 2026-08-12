@@ -743,7 +743,7 @@ describe('reconcileScheduleWithEntry - ereditarietà pro-quota dalla fattura (Fa
     expect(esito.outcome).toBe('ok')
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('righe scartate dai pesi'),
-      expect.objectContaining({ invoiceId: 'inv-5', contiImputati: 2, contiNeiPesi: 1 })
+      expect.objectContaining({ invoiceId: 'inv-5', contiScartati: 1, contiNeiPesi: 1 })
     )
     // Una sola fetta, con la propria IVA ancora dichiarata: 100 riscalati
     // sulla quota effettivamente pagata.
@@ -862,7 +862,10 @@ describe('undoScheduleReconciliation - ritiro delle fette ereditate (Fase 3)', (
     const esito = await undoScheduleReconciliation({ reconciliationId: 'rec-1', venueId: VENUE })
 
     expect(esito.outcome).toBe('ok')
-    expect(prisma.journalEntryAllocation.findMany).not.toHaveBeenCalled()
+    // Una sola lettura delle fette, quella che fotografa lo stato PRIMA della
+    // cancellazione: se il dominante si fosse ricalcolato ce ne sarebbe una
+    // seconda, e sarebbe il segno che il movimento è stato toccato.
+    expect(prisma.journalEntryAllocation.findMany).toHaveBeenCalledTimes(1)
     expect(prisma.journalEntry.update).not.toHaveBeenCalled()
   })
 })

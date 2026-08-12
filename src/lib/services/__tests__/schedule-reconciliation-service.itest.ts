@@ -5,7 +5,10 @@ import { setupIntegrationDb } from '@/test/integration/db'
 import { creaMovimento, creaScadenza } from '@/test/integration/fixtures/scadenzario'
 import { venueDiTest } from '@/test/integration/fixtures/closures'
 import { prospettoCashFlow } from '@/lib/cashflow/prospetto'
-import { reconcileScheduleWithEntry } from '../schedule-reconciliation-service'
+import {
+  reconcileScheduleWithEntry,
+  undoScheduleReconciliation,
+} from '../schedule-reconciliation-service'
 
 /**
  * L'ereditarietà pro-quota dalla fattura al movimento, su database vero.
@@ -270,33 +273,39 @@ describe('ereditarietà pro-quota e aliquote IVA', () => {
  *
  * Per questo il prospetto qui si legge davvero, non si simula.
  */
+/** Il conto del piano v4 per codice: il prospetto ragiona sui codici. */
+async function contoPerCodice(code: string): Promise<string> {
+  const conto = await prisma.account.findFirst({ where: { code }, select: { id: true } })
+  if (!conto) throw new Error(`Conto ${code} assente dal seed del database di test`)
+  return conto.id
+}
+
+/** Il valore annuale di una riga del prospetto, per codice di riclassificazione. */
+function valoreAnnuo(righe: { codice: string; valori: { annual: number } }[], codice: string) {
+  const riga = righe.find((r) => r.codice === codice)
+  if (!riga) throw new Error(`Riga ${codice} assente dal prospetto`)
+  return riga.valori.annual
+}
+
+/** La fattura mista dell'esempio: 1.000 al 10% e 100 al 22%, 1.222 lordi. */
+async function fatturaMista() {
+  const food = await contoPerCodice('20.4.01')
+  const pulizia = await contoPerCodice('20.5.04')
+  const { fattura, lordo } = await creaFatturaConRighe([
+    { numeroLinea: 1, descrizione: 'Farina', prezzoTotale: 1000, aliquotaIVA: 10, accountId: food },
+    { numeroLinea: 2, descrizione: 'Detersivi', prezzoTotale: 100, aliquotaIVA: 22, accountId: pulizia },
+  ])
+  expect(lordo).toBe(1222)
+  return { fattura, lordo, food, pulizia }
+}
+
+/** L'IVA dichiarata dal movimento, `null` compreso. */
+async function ivaDiTestata(journalEntryId: string): Promise<number | null> {
+  const movimento = await prisma.journalEntry.findUniqueOrThrow({ where: { id: journalEntryId } })
+  return movimento.vatAmount === null ? null : Number(movimento.vatAmount)
+}
+
 describe('IVA di testata dopo la riconciliazione', () => {
-  /** Il conto del piano v4 per codice: il prospetto ragiona sui codici. */
-  async function contoPerCodice(code: string): Promise<string> {
-    const conto = await prisma.account.findFirst({ where: { code }, select: { id: true } })
-    if (!conto) throw new Error(`Conto ${code} assente dal seed del database di test`)
-    return conto.id
-  }
-
-  /** Il valore annuale di una riga del prospetto, per codice di riclassificazione. */
-  function valoreAnnuo(righe: { codice: string; valori: { annual: number } }[], codice: string) {
-    const riga = righe.find((r) => r.codice === codice)
-    if (!riga) throw new Error(`Riga ${codice} assente dal prospetto`)
-    return riga.valori.annual
-  }
-
-  /** La fattura mista dell'esempio: 1.000 al 10% e 100 al 22%, 1.222 lordi. */
-  async function fatturaMista() {
-    const food = await contoPerCodice('20.4.01')
-    const pulizia = await contoPerCodice('20.5.04')
-    const { fattura, lordo } = await creaFatturaConRighe([
-      { numeroLinea: 1, descrizione: 'Farina', prezzoTotale: 1000, aliquotaIVA: 10, accountId: food },
-      { numeroLinea: 2, descrizione: 'Detersivi', prezzoTotale: 100, aliquotaIVA: 22, accountId: pulizia },
-    ])
-    expect(lordo).toBe(1222)
-    return { fattura, lordo, food, pulizia }
-  }
-
   it('il movimento eredita l\'IVA delle sue fette, che prima non dichiarava', async () => {
     const { fattura, lordo } = await fatturaMista()
 
@@ -396,5 +405,110 @@ describe('IVA di testata dopo la riconciliazione', () => {
     expect(valoreAnnuo(prospetto.righe, 'B4')).toBe(-1000)
     expect(valoreAnnuo(prospetto.righe, 'B5')).toBe(-100)
     expect(valoreAnnuo(prospetto.righe, 'G2')).toBe(-122)
+  })
+})
+
+/**
+ * L'annullo, che è lo specchio.
+ *
+ * Difetto nato con l'ereditarietà dell'IVA e impossibile prima: fino a quando
+ * `vatAmount` restava sempre `null` non c'era niente da ritirare. Adesso un
+ * movimento annullato conserverebbe l'IVA della fattura che non salda più, e
+ * la regola di proprietà — che è quella giusta — se ne laverebbe le mani per
+ * sempre, perché quel numero non corrisponde più alle fette. Sul prospetto è
+ * C1 col segno rovesciato: la testata dichiara più di quanto le fette
+ * chiedano, il tetto non morde (interviene nel verso opposto) e il conto
+ * dominante si gonfia della differenza.
+ */
+describe("IVA di testata dopo l'annullo", () => {
+  /** Fattura a una riga sola, sul conto Food: serve a variare l'IVA. */
+  async function fatturaSemplice(imponibile: number, aliquota: number) {
+    const food = await contoPerCodice('20.4.01')
+    return creaFatturaConRighe([
+      { numeroLinea: 1, descrizione: 'Farina', prezzoTotale: imponibile, aliquotaIVA: aliquota, accountId: food },
+    ])
+  }
+
+  async function riconcilia(fattura: { id: string }, lordo: number, journalEntryId: string) {
+    const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId,
+      venueId,
+      userId: null,
+    })
+    if (esito.outcome !== 'ok') throw new Error(`Riconciliazione fallita: ${esito.outcome}`)
+    return esito.reconciliationId
+  }
+
+  it("annullato e riconciliato con un'altra fattura, il movimento porta l'IVA nuova", async () => {
+    const movimento = await creaMovimento({ uscita: 1100, venueId, date: new Date('2026-08-03') })
+
+    // Prima fattura: 1.000 al 10%, cioè 1.100 lordi e 100 di IVA.
+    const prima = await fatturaSemplice(1000, 10)
+    const reconciliationId = await riconcilia(prima.fattura, prima.lordo, movimento.id)
+    expect(await ivaDiTestata(movimento.id)).toBe(100)
+
+    expect(
+      (await undoScheduleReconciliation({ reconciliationId, venueId })).outcome
+    ).toBe('ok')
+    // Nessuna fetta rimasta: si torna a «non dichiarata», non a zero. Il
+    // movimento è di nuovo quello che era prima di essere riconciliato.
+    expect(await ivaDiTestata(movimento.id)).toBeNull()
+
+    // Seconda fattura, altra aliquota: 1.000 al 4%, cioè 1.040 lordi e 40 di IVA.
+    const seconda = await fatturaSemplice(1000, 4)
+    await riconcilia(seconda.fattura, seconda.lordo, movimento.id)
+    expect(await ivaDiTestata(movimento.id)).toBe(40)
+
+    // Sul prospetto: Food porta i 1.000 di imponibile della fattura nuova più
+    // i 60 del movimento che nessuna fetta copre, e il blocco IVA riceve 40.
+    // Senza il ritiro la testata dichiarerebbe ancora 100: la riconciliazione
+    // nuova si asterrebbe, 60 € di IVA senza importo resterebbero addosso al
+    // conto dominante e G2 riceverebbe l'IVA della fattura sbagliata.
+    const { prospetto } = await prospettoCashFlow(venueId, 2026)
+    expect(valoreAnnuo(prospetto.righe, 'B4')).toBe(-1060)
+    expect(valoreAnnuo(prospetto.righe, 'G2')).toBe(-40)
+  })
+
+  it("annullata una sola riconciliazione di un bonifico cumulativo, resta l'IVA della superstite", async () => {
+    const movimento = await creaMovimento({ uscita: 2444, venueId })
+    const prima = await fatturaMista()
+    const seconda = await fatturaMista()
+
+    await riconcilia(prima.fattura, prima.lordo, movimento.id)
+    const daAnnullare = await riconcilia(seconda.fattura, seconda.lordo, movimento.id)
+    expect(await ivaDiTestata(movimento.id)).toBe(244)
+
+    await undoScheduleReconciliation({ reconciliationId: daAnnullare, venueId })
+
+    // Le fette della prima riconciliazione ci sono ancora: la testata scende
+    // alla loro IVA, non a zero e non a `null`.
+    expect(await ivaDiTestata(movimento.id)).toBe(122)
+  })
+
+  it("non ritira l'IVA che un essere umano ha dichiarato e che le fette non spiegano", async () => {
+    const movimento = await creaMovimento({ uscita: 1222, iva: 30, venueId })
+    const { fattura, lordo } = await fatturaMista()
+
+    const reconciliationId = await riconcilia(fattura, lordo, movimento.id)
+    // L'ereditarietà si era già astenuta: quei 30 non sono suoi.
+    expect(await ivaDiTestata(movimento.id)).toBe(30)
+
+    await undoScheduleReconciliation({ reconciliationId, venueId })
+
+    expect(await ivaDiTestata(movimento.id)).toBe(30)
+  })
+
+  it('annullare e ri-riconciliare la stessa fattura riporta la stessa IVA, non `null`', async () => {
+    const movimento = await creaMovimento({ uscita: 1222, venueId })
+    const { fattura, lordo } = await fatturaMista()
+
+    const reconciliationId = await riconcilia(fattura, lordo, movimento.id)
+    await undoScheduleReconciliation({ reconciliationId, venueId })
+    expect(await ivaDiTestata(movimento.id)).toBeNull()
+
+    await riconcilia(fattura, lordo, movimento.id)
+    expect(await ivaDiTestata(movimento.id)).toBe(122)
   })
 })

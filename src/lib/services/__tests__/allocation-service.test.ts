@@ -41,6 +41,7 @@ import {
   aggiornaContoDominante,
   calcolaPesiConIva,
   calcolaPesiDaRighe,
+  contiScartatiConPeso,
   ripartisciProQuota,
   ripartisciProQuotaConIva,
   setEntryAllocations,
@@ -215,6 +216,28 @@ describe('calcolaPesiConIva', () => {
 
     expect(pesi.map((p) => p.accountId)).toEqual(['alimentari'])
     expect(pesi[0]).toEqual({ accountId: 'alimentari', importo: 1100, iva: 100 })
+  })
+
+  it('conta come scartato solo il conto che si portava via qualcosa', () => {
+    // La riga negativa toglie davvero qualcosa alla somma; la riga in omaggio
+    // e il conto che si annulla da sé no. Un avviso che grida quando non è
+    // successo niente insegna a ignorarlo, e il primo caso vero passerebbe
+    // inosservato.
+    expect(
+      contiScartatiConPeso([
+        { accountId: 'alimentari', imponibile: 1000, aliquota: 10 },
+        { accountId: 'sconti', imponibile: -100, aliquota: 22 },
+      ])
+    ).toBe(1)
+
+    expect(
+      contiScartatiConPeso([
+        { accountId: 'alimentari', imponibile: 1000, aliquota: 10 },
+        { accountId: 'omaggi', imponibile: 0, aliquota: 22 },
+        { accountId: 'resi', imponibile: 50, aliquota: 22 },
+        { accountId: 'resi', imponibile: -50, aliquota: 22 },
+      ])
+    ).toBe(0)
   })
 
   it('un conto che si annulla da sé sparisce senza portarsi via nulla', () => {
