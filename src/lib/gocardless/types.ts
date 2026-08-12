@@ -3,11 +3,13 @@
  *
  * Misurato sul campo il 12 agosto 2026 (referto in
  * `docs/gocardless-referto-2026-08-12.md`): dei campi previsti dallo standard
- * ne arrivano **nove**, e la controparte non è fra questi. `creditorName`,
- * `debtorName`, `creditorAccount` e `debtorAccount` sono dichiarati qui come
- * facoltativi perché un altro istituto potrebbe mandarli, ma nessun codice a
- * valle può darli per presenti: il nome della controparte, per questa banca,
- * vive dentro `remittanceInformationUnstructured`.
+ * ne arrivano **nove**, e la controparte non è fra questi. `creditorName` e
+ * `debtorName` sono dichiarati qui come facoltativi perché un altro istituto
+ * potrebbe mandarli, ma nessun codice a valle può darli per presenti: per
+ * Banca della Marca il nome della controparte vive dentro
+ * `remittanceInformationUnstructured`. `creditorAccount`/`debtorAccount` non
+ * sono nemmeno tipizzati — l'IBAN della controparte non entra nel sistema, e
+ * un tipo che lo prevede invita a persisterlo.
  */
 import { z } from 'zod'
 
