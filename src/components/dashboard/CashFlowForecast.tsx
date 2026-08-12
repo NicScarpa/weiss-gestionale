@@ -264,7 +264,7 @@ export function CashFlowForecast() {
                 </div>
                 <div
                   className={`text-lg font-semibold ${
-                    (data?.summary.minBalance || 0) < (data?.settings.lowBalanceThreshold || 5000)
+                    (data?.summary.minBalance || 0) < (data?.settings.lowBalanceThreshold ?? 5000)
                       ? 'text-red-600'
                       : ''
                   }`}
@@ -308,7 +308,7 @@ export function CashFlowForecast() {
                   )
                   const range = maxBalance - minBalance || 1
                   const height = ((day.projectedBalance - minBalance) / range) * 100
-                  const isLow = day.projectedBalance < (data.settings.lowBalanceThreshold || 5000)
+                  const isLow = day.projectedBalance < (data.settings.lowBalanceThreshold ?? 5000)
                   const isNegative = day.projectedBalance < 0
 
                   return (
