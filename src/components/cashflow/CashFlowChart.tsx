@@ -9,6 +9,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
+  ReferenceArea,
 } from 'recharts'
 import { format, parseISO } from 'date-fns'
 import { Card, CardContent } from '@/components/ui/card'
@@ -44,6 +45,7 @@ function importoBreve(valore: number): string {
 
 export function CashFlowChart({ data, sogliaMinima }: CashFlowChartProps) {
   const today = new Date().toISOString().split('T')[0]
+  const minimoSerie = Math.min(...data.map(d => d.saldo), 0)
 
   return (
     <Card>
@@ -69,6 +71,26 @@ export function CashFlowChart({ data, sogliaMinima }: CashFlowChartProps) {
                 return ''
               }}
             />
+            {/* Banda della zona negativa: rossa sotto lo zero */}
+            {minimoSerie < 0 && (
+              <ReferenceArea
+                y1={minimoSerie}
+                y2={0}
+                fill="#ef4444"
+                fillOpacity={0.08}
+                ifOverflow="extendDomain"
+              />
+            )}
+            {/* Banda della soglia minima: ambra dalla soglia allo zero */}
+            {sogliaMinima && minimoSerie < sogliaMinima && (
+              <ReferenceArea
+                y1={0}
+                y2={sogliaMinima}
+                fill="#f59e0b"
+                fillOpacity={0.06}
+                ifOverflow="extendDomain"
+              />
+            )}
             <Area
               type="monotone"
               dataKey="saldo"
