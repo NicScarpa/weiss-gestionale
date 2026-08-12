@@ -202,6 +202,83 @@ describe('PUT configurazione dei conti', () => {
     expect(aggiornato).toMatchObject({ syncEnabled: false, providerAccountId: null, connectionId: null })
   })
 
+  // Senza questo controllo, la seconda voce vince perché scritta per ultima
+  // nella stessa transazione: il conto resta acceso e sincronizza, ma
+  // `abbinaConti` lo classifica «ignorato» alla lettura successiva — e quella
+  // variante non porta `bankAccountId`, quindi diventa irraggiungibile dal
+  // pannello.
+  it('rifiuta un corpo con lo stesso conto due volte, con azioni in conflitto', async () => {
+    await entraCome('admin')
+    const { venue, connessione } = await connessioneCollegata(['gc-a'])
+    const conto = await contoDiTest(venue.id, 'Conto principale', IBAN_A)
+
+    const esito = await callRoute(
+      salvaConti,
+      jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
+        method: 'PUT',
+        body: {
+          conti: [
+            { providerAccountId: 'gc-a', azione: 'importa', bankAccountId: conto.id, dataTaglio: '2026-08-12' },
+            { providerAccountId: 'gc-a', azione: 'ignora' },
+          ],
+        },
+      }),
+      { id: connessione.id }
+    )
+
+    expect(esito.status).toBe(400)
+    const aggiornato = await prisma.bankAccount.findUniqueOrThrow({ where: { id: conto.id } })
+    expect(aggiornato).toMatchObject({ syncEnabled: false, providerAccountId: null, connectionId: null })
+    const riga = await prisma.bankConnection.findUniqueOrThrow({ where: { id: connessione.id } })
+    expect(riga.contiIgnorati).toEqual([])
+  })
+
+  // La lettura propone come candidati solo i conti BANK; senza filtrare
+  // `accountType` anche in scrittura, passare l'id di una cassa la
+  // trasforma in un conto bancario sincronizzato.
+  it('rifiuta di accendere una cassa come se fosse un conto bancario', async () => {
+    await entraCome('admin')
+    const { venue, connessione } = await connessioneCollegata(['gc-a'])
+    const cassa = await prisma.bankAccount.create({
+      data: { venueId: venue.id, name: 'Cassa contanti', accountType: 'CASH', currency: 'EUR' },
+    })
+
+    const esito = await callRoute(
+      salvaConti,
+      jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
+        method: 'PUT',
+        body: { conti: [{ providerAccountId: 'gc-a', azione: 'importa', bankAccountId: cassa.id, dataTaglio: '2026-08-12' }] },
+      }),
+      { id: connessione.id }
+    )
+
+    expect(esito.status).toBe(400)
+    const aggiornata = await prisma.bankAccount.findUniqueOrThrow({ where: { id: cassa.id } })
+    expect(aggiornata).toMatchObject({ syncEnabled: false, providerAccountId: null, connectionId: null })
+  })
+
+  // Il regex accetta `2026-02-30`: `new Date(...)` non lancia, normalizza in
+  // silenzio al primo marzo. Questa data è l'unica cosa che impedisce di
+  // reimportare quello che il CSV ha già portato dentro, quindi uno
+  // scivolamento silenzioso è il guasto che non deve accadere.
+  it('rifiuta una data di taglio che non esiste nel calendario', async () => {
+    await entraCome('admin')
+    const { venue, connessione } = await connessioneCollegata(['gc-a'])
+    const conto = await contoDiTest(venue.id, 'Conto principale', IBAN_A)
+
+    const esito = await callRoute(
+      salvaConti,
+      jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
+        method: 'PUT',
+        body: { conti: [{ providerAccountId: 'gc-a', azione: 'importa', bankAccountId: conto.id, dataTaglio: '2026-02-30' }] },
+      }),
+      { id: connessione.id }
+    )
+
+    expect(esito.status).toBe(400)
+    expect(await prisma.bankAccount.findUniqueOrThrow({ where: { id: conto.id } })).toMatchObject({ syncEnabled: false })
+  })
+
   it('respinge chi non è amministratore', async () => {
     await entraCome('staff')
     const { connessione } = await connessioneCollegata(['gc-a'])
