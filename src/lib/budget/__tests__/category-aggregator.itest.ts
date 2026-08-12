@@ -82,7 +82,7 @@ describe('actual del budget', () => {
     await loginAs('admin')
     const venue = await venueDiTest()
     const budget = await budgetDellAnno(venue.id)
-    const materiePrime = await conto('500.01')
+    const materiePrime = await conto('20.4.01')
     await categoria(venue.id, {
       code: 'C-MATERIE',
       categoryType: 'COST',
@@ -103,7 +103,7 @@ describe('actual del budget', () => {
     const sessione = await loginAs('admin')
     const venue = await venueDiTest()
     const budget = await budgetDellAnno(venue.id)
-    const materiePrime = await conto('500.01')
+    const materiePrime = await conto('20.4.01')
     await categoria(venue.id, {
       code: 'C-MATERIE',
       categoryType: 'COST',
@@ -149,8 +149,8 @@ describe('actual del budget', () => {
     await loginAs('admin')
     const venue = await venueDiTest()
     const budget = await budgetDellAnno(venue.id)
-    const bar = await conto('400.01')
-    const caffetteria = await conto('400.02')
+    const bar = await conto('10.01')
+    const caffetteria = await conto('11.01')
     await categoria(venue.id, { code: 'R-BAR', categoryType: 'REVENUE', contoId: bar.id })
     await categoria(venue.id, {
       code: 'R-CAFFE',
@@ -172,7 +172,7 @@ describe('actual del budget', () => {
     await loginAs('admin')
     const venue = await venueDiTest()
     const budget = await budgetDellAnno(venue.id)
-    const materiePrime = await conto('500.01')
+    const materiePrime = await conto('20.4.01')
     await categoria(venue.id, {
       code: 'C-MATERIE',
       categoryType: 'COST',
@@ -191,7 +191,7 @@ describe('actual del budget', () => {
     await loginAs('admin')
     const venue = await venueDiTest()
     const budget = await budgetDellAnno(venue.id)
-    const materiePrime = await conto('500.01')
+    const materiePrime = await conto('20.4.01')
     await categoria(venue.id, {
       code: 'C-MATERIE',
       categoryType: 'COST',

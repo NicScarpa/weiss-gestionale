@@ -61,8 +61,15 @@ async function movimento(
 /**
  * Budget con una riga per conto e la categoria che lo mappa: serve entrambe le
  * cose perché il confronto ragiona per conto e l'aggregatore per categoria.
+ *
+ * Il tipo di categoria segue il tipo vero del conto (RICAVO/COSTO), non più
+ * una convenzione sul codice: il piano v4 non riserva più i codici che
+ * cominciano per "4" ai ricavi.
  */
-async function budgetConConti(venueId: string, conti: Array<{ id: string; code: string }>) {
+async function budgetConConti(
+  venueId: string,
+  conti: Array<{ id: string; code: string; type: string }>
+) {
   const budget = await prisma.budget.create({
     data: { venueId, year: ANNO, name: `Budget ${ANNO}` },
   })
@@ -75,7 +82,7 @@ async function budgetConConti(venueId: string, conti: Array<{ id: string; code: 
         venueId,
         code: `CAT-${c.code}`,
         name: `Categoria ${c.code}`,
-        categoryType: c.code.startsWith('4') ? 'REVENUE' : 'COST',
+        categoryType: c.type === 'RICAVO' ? 'REVENUE' : 'COST',
       },
     })
 
@@ -107,18 +114,18 @@ describe('GET /api/budget/confronto', () => {
   it('conta i costi pagati per banca, che non passano da nessuna chiusura', async () => {
     await loginAs('admin')
     const venue = await venueDiTest()
-    const materiePrime = await conto('500.01')
+    const materiePrime = await conto('20.4.01')
     await budgetConConti(venue.id, [materiePrime])
     await movimento(venue.id, { accountId: materiePrime.id, uscita: 800 })
 
-    expect(actualDelConto(await confronto(), '500.01')).toBe(800)
+    expect(actualDelConto(await confronto(), '20.4.01')).toBe(800)
   })
 
   it('ogni conto di ricavo mostra i propri movimenti, non il fatturato totale', async () => {
     await loginAs('admin')
     const venue = await venueDiTest()
-    const bar = await conto('400.01')
-    const caffetteria = await conto('400.02')
+    const bar = await conto('10.01')
+    const caffetteria = await conto('11.01')
     await budgetConConti(venue.id, [bar, caffetteria])
 
     await movimento(venue.id, { accountId: bar.id, entrata: 300 })
@@ -126,30 +133,30 @@ describe('GET /api/budget/confronto', () => {
 
     const dati = await confronto()
 
-    expect(actualDelConto(dati, '400.01')).toBe(300)
-    expect(actualDelConto(dati, '400.02')).toBe(700)
+    expect(actualDelConto(dati, '10.01')).toBe(300)
+    expect(actualDelConto(dati, '11.01')).toBe(700)
     expect(dati.summary.byType.RICAVO.actual).toBe(1000)
   })
 
   it('uno storno riduce il consuntivo del conto invece di gonfiare i ricavi', async () => {
     await loginAs('admin')
     const venue = await venueDiTest()
-    const materiePrime = await conto('500.01')
+    const materiePrime = await conto('20.4.01')
     await budgetConConti(venue.id, [materiePrime])
 
     await movimento(venue.id, { accountId: materiePrime.id, uscita: 500 })
     await movimento(venue.id, { accountId: materiePrime.id, entrata: 120 })
 
-    expect(actualDelConto(await confronto(), '500.01')).toBe(380)
+    expect(actualDelConto(await confronto(), '20.4.01')).toBe(380)
   })
 
   // La prova che le due strade sono la stessa strada.
   it("dà gli stessi actual dell'aggregatore per categoria, sullo stesso dataset", async () => {
     await loginAs('admin')
     const venue = await venueDiTest()
-    const bar = await conto('400.01')
-    const caffetteria = await conto('400.02')
-    const materiePrime = await conto('500.01')
+    const bar = await conto('10.01')
+    const caffetteria = await conto('11.01')
+    const materiePrime = await conto('20.4.01')
     const budget = await budgetConConti(venue.id, [bar, caffetteria, materiePrime])
 
     await movimento(venue.id, { accountId: bar.id, entrata: 300 })
@@ -159,7 +166,7 @@ describe('GET /api/budget/confronto', () => {
     const dati = await confronto()
     const aggregato = await aggregateCategoriesForBudget(budget.id, venue.id, ANNO)
 
-    for (const code of ['400.01', '400.02', '500.01']) {
+    for (const code of ['10.01', '11.01', '20.4.01']) {
       const categoria = aggregato.categories.find((c) => c.code === `CAT-${code}`)!
       expect(actualDelConto(dati, code)).toBe(categoria.actual.annual)
     }
