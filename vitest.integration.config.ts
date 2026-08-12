@@ -39,6 +39,16 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // Stesso alias di `vitest.config.ts`, e serve a maggior ragione qui: i
+      // test d'integrazione importano le rotte, che importano `@/lib/prisma`,
+      // che porta `import 'server-only'`. Senza, Vite non risolve il
+      // pacchetto — non esiste in node_modules di primo livello, solo
+      // vendorizzato dentro next/dist/compiled con `exports` condizionali che
+      // Vite non conosce — e **tutti** i file falliscono al caricamento.
+      'server-only': path.resolve(
+        __dirname,
+        'node_modules/next/dist/compiled/server-only/empty.js'
+      ),
     },
   },
 })
