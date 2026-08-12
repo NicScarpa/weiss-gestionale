@@ -34,19 +34,30 @@ function dataEstesa(isoDate: string): string {
 }
 
 function fraseProiezione(
-  livello: LivelloGiudizio,
+  livelloProiezione: LivelloGiudizio,
   saldoMinimo: number,
   giornoFormattato: string,
   soglia: number,
-  orizzonteGiorni: number
+  orizzonteGiorni: number,
+  scadutoRilevante: boolean
 ): string {
-  switch (livello) {
+  switch (livelloProiezione) {
     case 'tensione':
       return `Il saldo previsto va in negativo intorno a ${giornoFormattato}: minimo stimato ${formatCurrency(saldoMinimo)} nei prossimi ${orizzonteGiorni} giorni.`
     case 'attenzione':
       return `Il saldo scende sotto la soglia di sicurezza (${formatCurrency(soglia)}) intorno a ${giornoFormattato}, quando il minimo previsto è ${formatCurrency(saldoMinimo)}.`
     case 'sereno':
-      return `Nessuna tensione prevista: il saldo minimo resta sopra la soglia di sicurezza nei prossimi ${orizzonteGiorni} giorni.`
+      // Quando lo scaduto è rilevante il giudizio complessivo NON è sereno
+      // (vedi `livello` più sotto): questo ramo descrive solo la proiezione,
+      // quindi quando lo scaduto la smentisce non può dire «nessuna tensione»
+      // — sarebbe la stessa frase che il brief attribuisce al concorrente, che
+      // resta serena anche con 54.000 € di fornitori scaduti perché guarda
+      // solo la proiezione del saldo. Il numero (`saldoMinimo`, sopra soglia)
+      // non entra in questa frase apposta: dirlo come se stesse per scendere
+      // sotto soglia sarebbe falso quanto il silenzio che corregge.
+      return scadutoRilevante
+        ? `La proiezione dei prossimi ${orizzonteGiorni} giorni non mostra tensioni sul saldo.`
+        : `Nessuna tensione prevista: il saldo minimo resta sopra la soglia di sicurezza nei prossimi ${orizzonteGiorni} giorni.`
   }
 }
 
@@ -83,7 +94,14 @@ export function giudicaLiquidita(input: {
     livelloProiezione === 'sereno' && scadutoRilevante ? 'attenzione' : livelloProiezione
 
   const giornoFormattato = dataEstesa(giornoSaldoMinimo)
-  let frase = fraseProiezione(livelloProiezione, saldoMinimo, giornoFormattato, soglia, orizzonteGiorni)
+  let frase = fraseProiezione(
+    livelloProiezione,
+    saldoMinimo,
+    giornoFormattato,
+    soglia,
+    orizzonteGiorni,
+    scadutoRilevante
+  )
 
   if (scadutoRilevante) {
     frase += ` Occhio anche a ${formatCurrency(scadutoPassivo)} di fatture fornitori già scadute.`

@@ -41,4 +41,27 @@ describe('giudicaLiquidita', () => {
     expect(g.livello).toBe('sereno')
     expect(g.frase).not.toContain('già scadute')
   })
+
+  // La frase non deve mai contraddire il livello che accompagna: un banner
+  // ambra («attenzione») non può aprire con «Nessuna tensione prevista». È
+  // testualmente l'errore che il brief attribuisce al concorrente.
+  it('proiezione serena + scaduto rilevante: la frase non promette nessuna tensione', () => {
+    const g = giudicaLiquidita({ ...base, scadutoPassivo: 12000 })
+    expect(g.livello).toBe('attenzione')
+    expect(g.frase).not.toContain('Nessuna tensione prevista')
+  })
+
+  it('proiezione in attenzione + scaduto rilevante: la frase nomina entrambi i motivi', () => {
+    const g = giudicaLiquidita({ ...base, saldoMinimo: 3000, scadutoPassivo: 12000 })
+    expect(g.livello).toBe('attenzione')
+    expect(g.frase).toContain('sotto la soglia')
+    expect(g.frase).toContain('già scadute')
+  })
+
+  it('proiezione in tensione + scaduto rilevante: la frase parla del saldo negativo, non solo dello scaduto', () => {
+    const g = giudicaLiquidita({ ...base, saldoMinimo: -1200, scadutoPassivo: 12000 })
+    expect(g.livello).toBe('tensione')
+    expect(g.frase).toContain('negativo')
+    expect(g.frase).toContain('già scadute')
+  })
 })
