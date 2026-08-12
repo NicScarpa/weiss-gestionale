@@ -1,31 +1,18 @@
 import { prisma } from '@/lib/prisma'
 import { stringSimilarity, daysDifference } from './matcher'
+import { SCHEDULE_MATCH_WEIGHTS, SCHEDULE_MATCH_THRESHOLDS } from './schedule-match-costanti'
 
 /**
  * Matching fra movimenti di prima nota e scadenze.
  *
  * È il ponte che mancava: la scadenza dice cosa va pagato, il movimento porta
  * l'imputazione contabile. Riconciliarli chiude il ciclo.
- *
- * I pesi differiscono da quelli del matching bancario (`matcher.ts`, dove la
- * descrizione conta il 30%): sui dati reali di Sibill l'importo coincide al
- * centesimo in tutti i match automatici osservati, mentre la controparte
- * diverge in un caso su cinque — un bonifico intestato a "ESTENERGY" può
- * saldare una fattura "HERA". Qui l'importo pesa di più e la descrizione meno.
  */
-export const SCHEDULE_MATCH_WEIGHTS = {
-  AMOUNT: 0.55,
-  DATE: 0.25,
-  DESCRIPTION: 0.2,
-  DOCUMENTO: 0.15,
-} as const
 
-export const SCHEDULE_MATCH_THRESHOLDS = {
-  /** Sopra questa soglia il match è proposto come attendibile */
-  SUGGESTED: 0.75,
-  /** Sotto questa soglia il candidato non viene nemmeno mostrato */
-  MINIMUM: 0.45,
-} as const
+// Ri-esportate per compatibilità: i consumatori esistenti le importano da qui
+// e non devono accorgersi che ora vivono in un modulo puro a parte. Vedi
+// schedule-match-costanti.ts per il perché della divisione.
+export { SCHEDULE_MATCH_WEIGHTS, SCHEDULE_MATCH_THRESHOLDS }
 
 /** Movimento di prima nota, lato "denaro che si è mosso". */
 export interface MatchableEntry {

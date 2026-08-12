@@ -15,7 +15,7 @@ import { formatCurrency } from '@/lib/formatters'
 import {
   SCHEDULE_MATCH_WEIGHTS,
   SCHEDULE_MATCH_THRESHOLDS,
-} from '@/lib/reconciliation/schedule-matcher'
+} from '@/lib/reconciliation/schedule-match-costanti'
 
 interface Props {
   scheduleId: string
