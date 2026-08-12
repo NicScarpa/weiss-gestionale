@@ -276,6 +276,9 @@ export function creaClient(opzioni: OpzioniClient) {
       reference: string
       user_language: string
     }) => chiama('/requisitions/', requisitionSchema, { metodo: 'POST', corpo, ritentabile: false }),
+
+    leggiRequisition: (id: string) =>
+      chiama(`/requisitions/${encodeURIComponent(id)}/`, requisitionSchema),
   }
 }
 
