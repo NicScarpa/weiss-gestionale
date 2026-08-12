@@ -106,4 +106,22 @@ describe('abbinaConti', () => {
   it('senza conti dalla banca restituisce una lista vuota', () => {
     expect(abbinaConti({ contiBanca: [], contiGestionale: [], ignorati: [], impronta })).toEqual([])
   })
+
+  // `@@unique([venueId, iban])` non impedisce questo caso: `encrypt` usa un
+  // IV casuale, quindi due cifrature dello stesso IBAN sono byte diversi e
+  // l'indice unico non le vede come uguali. Il caso è raggiungibile, e senza
+  // una regola la `findMany` (senza `orderBy`) lascerebbe decidere a
+  // PostgreSQL quale dei due duplicati vince.
+  it('due conti del gestionale con la stessa impronta: vince il primo', () => {
+    const esito = abbinaConti({
+      contiBanca: [dallaBanca('gc-9', 'IT00X001')],
+      contiGestionale: [
+        nelGestionale('ba-1', 'Primo', 'IT00X001'),
+        nelGestionale('ba-2', 'Secondo', 'IT00X001'),
+      ],
+      ignorati: [],
+      impronta,
+    })
+    expect(esito[0]).toMatchObject({ tipo: 'riconosciuto', bankAccountId: 'ba-1' })
+  })
 })

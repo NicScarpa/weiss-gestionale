@@ -109,6 +109,33 @@ describe('GET conti di un collegamento', () => {
     expect(esito.body.conti[0].tipo).toBe('ignorato')
   })
 
+  // `abbinaConti` decide `gia-collegato` guardando `connectionId` qualunque
+  // esso sia: senza normalizzare quello di questa stessa connessione, un
+  // conto appena configurato tornerebbe «già legato a un'altra connessione»
+  // — intoccabile dal pannello che dovrebbe poterne cambiare la data.
+  it('il conto appena configurato da questa connessione torna riconosciuto, non già collegato altrove', async () => {
+    await entraCome('admin')
+    const { venue, connessione } = await connessioneCollegata(['gc-a'])
+    const conto = await contoDiTest(venue.id, 'Conto principale', IBAN_A)
+
+    await callRoute(
+      salvaConti,
+      jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
+        method: 'PUT',
+        body: { conti: [{ providerAccountId: 'gc-a', azione: 'importa', bankAccountId: conto.id, dataTaglio: '2026-08-12' }] },
+      }),
+      { id: connessione.id }
+    )
+
+    const esito = await callRoute<{ conti: Array<{ tipo: string; bankAccountId?: string }> }>(
+      leggiConti,
+      jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`),
+      { id: connessione.id }
+    )
+
+    expect(esito.body.conti[0]).toMatchObject({ tipo: 'riconosciuto', bankAccountId: conto.id })
+  })
+
   it('non espone il collegamento di un altra sede', async () => {
     await entraCome('admin')
     const { connessione } = await connessioneCollegata(['gc-a'])
@@ -180,6 +207,41 @@ describe('PUT configurazione dei conti', () => {
       { id: connessione.id }
     )
 
+    const riga = await prisma.bankConnection.findUniqueOrThrow({ where: { id: connessione.id } })
+    expect(riga.contiIgnorati).toEqual(['gc-a'])
+  })
+
+  // Sequenza «prima lo importo, poi cambio idea e lo ignoro»: due richieste
+  // distinte, il percorso più naturale che esista. Senza lo spegnimento,
+  // `abbinaConti` classifica il conto come 'ignorato' alla lettura
+  // successiva — variante che non porta `bankAccountId` — e il conto
+  // continuerebbe a sincronizzare, irraggiungibile dal pannello per
+  // spegnerlo.
+  it('ignorare un conto già importato lo spegne davvero', async () => {
+    await entraCome('admin')
+    const { venue, connessione } = await connessioneCollegata(['gc-a'])
+    const conto = await contoDiTest(venue.id, 'Conto principale', IBAN_A)
+
+    await callRoute(
+      salvaConti,
+      jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
+        method: 'PUT',
+        body: { conti: [{ providerAccountId: 'gc-a', azione: 'importa', bankAccountId: conto.id, dataTaglio: '2026-08-12' }] },
+      }),
+      { id: connessione.id }
+    )
+
+    await callRoute(
+      salvaConti,
+      jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
+        method: 'PUT',
+        body: { conti: [{ providerAccountId: 'gc-a', azione: 'ignora' }] },
+      }),
+      { id: connessione.id }
+    )
+
+    const aggiornato = await prisma.bankAccount.findUniqueOrThrow({ where: { id: conto.id } })
+    expect(aggiornato).toMatchObject({ syncEnabled: false, connectionId: null, providerAccountId: null })
     const riga = await prisma.bankConnection.findUniqueOrThrow({ where: { id: connessione.id } })
     expect(riga.contiIgnorati).toEqual(['gc-a'])
   })

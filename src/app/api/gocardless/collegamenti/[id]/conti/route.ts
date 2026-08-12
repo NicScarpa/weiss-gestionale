@@ -85,7 +85,14 @@ export const GET = withAuth<{ id: string }>(
           where: { venueId, accountType: 'BANK' },
           select: { id: true, name: true, ibanHash: true, connectionId: true },
         })
-      ).map((c) => ({ id: c.id, nome: c.name, ibanHash: c.ibanHash, connectionId: c.connectionId }))
+      ).map((c) => ({
+        id: c.id,
+        nome: c.name,
+        ibanHash: c.ibanHash,
+        // Legato a QUESTA connessione non è «già collegato altrove»: è la
+        // configurazione che stiamo rileggendo.
+        connectionId: c.connectionId === connessione.id ? null : c.connectionId,
+      }))
 
       const abbinati = abbinaConti({
         contiBanca,
@@ -193,6 +200,13 @@ export const PUT = withAuth<{ id: string }>(
         for (const c of analisi.data.conti) {
           if (c.azione === 'ignora') {
             ignorati.add(c.providerAccountId)
+            // Ignorare deve anche disfare un'eventuale accensione precedente: la
+            // variante 'ignorato' non porta bankAccountId, quindi un conto acceso e
+            // ignorato non sarebbe più raggiungibile dal pannello per spegnerlo.
+            await tx.bankAccount.updateMany({
+              where: { connectionId: connessione.id, providerAccountId: c.providerAccountId },
+              data: { syncEnabled: false, connectionId: null, providerAccountId: null },
+            })
             salvati++
             continue
           }

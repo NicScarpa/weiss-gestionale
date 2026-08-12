@@ -45,7 +45,15 @@ export function abbinaConti(parametri: {
     // Un conto senza impronta (una cassa, o un conto senza IBAN) non è
     // abbinabile: tenerlo nella mappa sotto la chiave `null` lo renderebbe
     // il bersaglio di qualunque conto senza IBAN dall'altra parte.
-    if (c.ibanHash) perImpronta.set(c.ibanHash, c)
+    //
+    // Due conti del gestionale con lo stesso IBAN sono raggiungibili:
+    // `@@unique([venueId, iban])` non li impedisce, perché `encrypt` usa un
+    // vettore di inizializzazione casuale e due cifrature dello stesso IBAN
+    // sono byte diversi — l'indice unico non le vede come uguali. L'unica
+    // colonna deterministica è `ibanHash`, che è `@@index`, non `@@unique`.
+    // Vince il primo, per coerenza con la regola già decisa dall'altro lato
+    // (un conto del gestionale non si abbina a due conti della banca).
+    if (c.ibanHash && !perImpronta.has(c.ibanHash)) perImpronta.set(c.ibanHash, c)
   }
 
   // Un conto del gestionale può corrispondere a un solo conto della banca:

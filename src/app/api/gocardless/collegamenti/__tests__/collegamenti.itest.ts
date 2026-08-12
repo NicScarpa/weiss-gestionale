@@ -15,10 +15,13 @@ afterEach(() => impostaClientPerTest(null))
 function clientFinto(opzioni: { fallisceRequisition?: boolean; accessValidForDaysConcessi?: number } = {}) {
   const chiamate: string[] = []
   const client = {
-    istituzioni: async () => ({
-      dati: [{ id: 'BANCA_FINTA_XXXX', name: 'Banca Finta', transaction_total_days: '90', max_access_valid_for_days: '180' }],
-      limiti: { restanti: null, ripresaFraSecondi: null },
-    }),
+    istituzioni: async () => {
+      chiamate.push('istituzioni')
+      return {
+        dati: [{ id: 'BANCA_FINTA_XXXX', name: 'Banca Finta', transaction_total_days: '90', max_access_valid_for_days: '180' }],
+        limiti: { restanti: null, ripresaFraSecondi: null },
+      }
+    },
     creaAgreement: async () => {
       chiamate.push('agreement')
       return {
