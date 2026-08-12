@@ -24,6 +24,7 @@ import { it } from 'date-fns/locale'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/formatters'
+import { romeDateKey, toDateOnlyUtc } from '@/lib/timezone'
 
 /**
  * Il messaggio che il server ha dato, o un ripiego leggibile. Serve a farlo
@@ -47,9 +48,28 @@ function SortIcon({ column, sortBy, sortOrder }: { column: string; sortBy: strin
 }
 
 function giorniDiRitardo(scadenza: Schedule, oggi: Date): number | undefined {
-  const data = new Date(scadenza.dataAttesa ?? scadenza.dataScadenza)
-  if (data >= oggi) return undefined
-  return Math.floor((oggi.getTime() - data.getTime()) / 86_400_000)
+  // Escludi gli stati chiusi, come fa isScaduta
+  if (scadenza.stato === 'pagata' || scadenza.stato === 'annullata') {
+    return undefined
+  }
+
+  // Chiave data della scadenza (primi 10 caratteri dell'ISO). Una @db.Date
+  // è serializzata come mezzanotte UTC di quel giorno civile.
+  const scadenzaKey = new Date(scadenza.dataAttesa ?? scadenza.dataScadenza)
+    .toISOString()
+    .slice(0, 10)
+
+  // Chiave data di oggi in fuso italiano
+  const oggiKey = romeDateKey(oggi)
+
+  // Se la scadenza non è ancora arrivata, nessun ritardo
+  if (scadenzaKey >= oggiKey) return undefined
+
+  // Confronto fra date civili in UTC: mezzanotte UTC del giorno civile
+  const scadenzaMezzanotte = toDateOnlyUtc(scadenzaKey).getTime()
+  const oggiMezzanotte = toDateOnlyUtc(oggiKey).getTime()
+
+  return Math.floor((oggiMezzanotte - scadenzaMezzanotte) / 86_400_000)
 }
 
 export default function ScadenzarioPage() {
