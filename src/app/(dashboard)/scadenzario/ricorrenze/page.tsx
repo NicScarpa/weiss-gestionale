@@ -210,6 +210,7 @@ export default function RicorrenzePage() {
             onGenerate={handleGenerate}
             onToggleActive={handleToggleActive}
             onDelete={handleDelete}
+            filtroAttivo={Boolean(search)}
           />
         </CardContent>
       </Card>
