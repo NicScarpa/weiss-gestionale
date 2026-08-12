@@ -1844,6 +1844,23 @@ dove `minimoSerie` è `Math.min(...dati.map(d => d.saldo), 0)`.
 Le aree si rendono **solo quando servono**: una banda rossa su una serie sempre
 positiva è rumore che insegna a ignorare il colore.
 
+⚠️ **Sulla soglia, un limite noto da NON allargare in questo task.**
+`src/app/(dashboard)/cash-flow/page.tsx:131` passa `sogliaMinima={5000}`
+**cablata nel codice**, mentre il cruscotto legge la soglia configurata
+(`CashFlowSetting.lowBalanceThreshold`). Se qualcuno configura 8.000, le due
+schermate dissentono già oggi.
+
+Usa la prop `sogliaMinima` così com'è: **non** aggiungere qui la lettura delle
+impostazioni. È un intervento che tocca il caricamento dati della pagina, fuori
+dal perimetro di un quick win, ed è registrato a parte per la revisione finale.
+
+Ma vale la pena essere consapevoli di cosa si sta disegnando: una banda ambra su
+una soglia cablata, mentre l'utente ne ha configurata un'altra, **è peggio di
+nessuna banda** — dice una cosa falsa con autorevolezza grafica. Se durante
+l'implementazione risultasse che la prop può arrivare `undefined`, rendi la
+banda ambra solo quando la soglia è definita: la banda rossa sotto lo zero non
+dipende da alcuna configurazione e resta comunque corretta.
+
 - [ ] **Step 2: Verifica manuale**
 
 Con una proiezione tutta positiva nessuna banda deve comparire. Forzando
