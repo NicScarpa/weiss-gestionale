@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { prisma } from '@/lib/prisma'
+import { toDateOnlyUtc } from '@/lib/timezone'
+import { giornoCorrente, giornoIndietro, saldiAlGiorno } from '@/lib/saldi'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { loginAs } from '@/test/integration/auth-mock'
-import { creaScadenza, creaRicorrenza } from '@/test/integration/fixtures/scadenzario'
+import { creaScadenza, creaRicorrenza, creaMovimento } from '@/test/integration/fixtures/scadenzario'
 import { getVenueId } from '@/lib/venue'
-import { leggiFlussi } from '../leggi'
+import { leggiFlussi, serieProiettata } from '../leggi'
 
 /**
  * Il test che conta è l'ultimo: la scadenza generata da una ricorrenza e la
@@ -124,5 +126,157 @@ describe('leggiFlussi', () => {
     // `RecurringExpense` agganciata non ne produce uno proprio.
     expect(delGiorno12).toHaveLength(1)
     expect(delGiorno12[0].chiave).toBe(`ricorrenza:${ricorrenza.id}`)
+  })
+
+  // Il bug che la card «Saldo Attuale» segnalava: /cash-flow chiede di
+  // default una finestra che parte 90 giorni fa. Se scadenze, spese
+  // ricorrenti e ricorrenze si proiettassero anche nel passato, l'ultima
+  // uscita di una spesa già pagata comparirebbe due volte — una come
+  // movimento reale, una come occorrenza proiettata sullo stesso giorno — e
+  // una scadenza scaduta ma non pagata sottrarrebbe denaro mai uscito. Il
+  // passato deve raccontarlo solo `movimento`.
+  it('una finestra interamente nel passato riceve solo movimenti reali', async () => {
+    const venueId = await getVenueId()
+    const sessione = await loginAs('admin')
+    const oggi = giornoCorrente()
+    const dal = giornoIndietro(oggi, 60)
+    const al = giornoIndietro(oggi, 30)
+    const giornoMovimento = giornoIndietro(oggi, 45)
+
+    // Scaduta ma non pagata: senza il taglio comparirebbe come uscita mai
+    // avvenuta, proiettata su un giorno già passato.
+    await creaScadenza({
+      importoTotale: 300,
+      tipo: 'passiva',
+      dataScadenza: toDateOnlyUtc(giornoIndietro(oggi, 40)),
+    })
+
+    // Giornaliera: senza il taglio emetterebbe un'occorrenza per ognuno dei
+    // 31 giorni della finestra, sommandosi al movimento che l'ha già pagata.
+    await prisma.recurringExpense.create({
+      data: {
+        venueId,
+        name: 'Canone',
+        amount: 50,
+        frequency: 'DAILY',
+        createdBy: sessione.user.id,
+      },
+    })
+
+    await creaMovimento({ venueId, uscita: 80, date: toDateOnlyUtc(giornoMovimento) })
+
+    const flussi = await leggiFlussi(venueId, dal, al)
+
+    expect(flussi).toHaveLength(1)
+    expect(flussi[0].fonte).toBe('movimento')
+    expect(flussi[0].importo).toBe(-80)
+
+    // E la curva proiettata finisce esattamente sul saldo reale di fine
+    // finestra: è il sintomo con cui il bug si manifestava a schermo.
+    const serie = await serieProiettata(venueId, dal, al)
+    const saldoReale = await saldiAlGiorno(venueId, al)
+    expect(serie.at(-1)?.saldo).toBe(saldoReale.totalAvailable)
+  })
+
+  // Il pagamento parziale: movimento e residuo non sono lo stesso denaro,
+  // uno è già uscito e l'altro no. Ereditare la chiave della scadenza sul
+  // movimento farebbe vincere il movimento più affidabile e cancellerebbe il
+  // residuo ancora da pagare — per questo i movimenti non portano più
+  // nessuna chiave.
+  it('il pagamento parziale non fa sparire il residuo: movimento e scadenza restano entrambi', async () => {
+    const venueId = await getVenueId()
+    const sessione = await loginAs('admin')
+
+    const ricorrenza = await creaRicorrenza({ importo: 1000, tipo: 'passiva' })
+    const scadenza = await creaScadenza({
+      importoTotale: 1000,
+      importoPagato: 400,
+      tipo: 'passiva',
+      stato: 'parzialmente_pagata',
+      dataScadenza: new Date('2026-09-10'),
+      recurrenceId: ricorrenza.id,
+    })
+    const movimento = await creaMovimento({
+      venueId,
+      uscita: 400,
+      date: new Date('2026-09-10'),
+    })
+    await prisma.scheduleReconciliation.create({
+      data: {
+        scheduleId: scadenza.id,
+        journalEntryId: movimento.id,
+        amount: 400,
+        status: 'VERIFIED',
+        createdById: sessione.user.id,
+      },
+    })
+
+    const flussi = await leggiFlussi(venueId, '2026-09-01', '2026-09-30')
+    const del10 = flussi.filter((f) => f.giorno === '2026-09-10')
+
+    const flussoMovimento = del10.find((f) => f.fonte === 'movimento')
+    const flussoScadenza = del10.find((f) => f.fonte === 'scadenza')
+
+    expect(flussoMovimento?.importo).toBe(-400)
+    expect(flussoMovimento?.chiave).toBeUndefined()
+    expect(flussoScadenza?.importo).toBe(-600)
+  })
+
+  // L'euristica non basta più a "nome e importo uguali": la frequenza fa
+  // parte della corrispondenza. Una ricorrenza annuale non sopprime una
+  // spesa mensile solo perché si chiamano allo stesso modo e costano
+  // uguale.
+  it("l'euristica non aggancia contro una ricorrenza di frequenza diversa: la spesa mensile continua a emettere", async () => {
+    const venueId = await getVenueId()
+    const sessione = await loginAs('admin')
+
+    await creaRicorrenza({
+      descrizione: 'Assicurazione',
+      importo: 500,
+      tipo: 'passiva',
+      frequenza: 'annuale',
+      giornoDelMese: 10,
+      // Fuori dalla finestra: qui interessa solo l'euristica, non
+      // un'occorrenza propria della ricorrenza.
+      dataFine: new Date('2026-08-01'),
+    })
+    const spesa = await prisma.recurringExpense.create({
+      data: {
+        venueId,
+        name: 'Assicurazione',
+        amount: 500,
+        frequency: 'MONTHLY',
+        dayOfMonth: 10,
+        createdBy: sessione.user.id,
+      },
+    })
+
+    const flussi = await leggiFlussi(venueId, '2026-09-01', '2026-09-30')
+    const delGiorno10 = flussi.filter((f) => f.giorno === '2026-09-10' && f.fonte === 'ricorrente')
+
+    expect(delGiorno10).toHaveLength(1)
+    expect(delGiorno10[0].chiave).toBe(`spesa:${spesa.id}`)
+  })
+
+  // Il confine d'anno: se l'apertura si chiedesse a `giornoIndietro(dal, 1)`,
+  // una finestra che si apre il 1° gennaio la chiederebbe al 31 dicembre
+  // dell'anno prima — un anno per cui qui non esiste nessun `InitialBalance`,
+  // nemmeno per fallback (`aperturaPerAnno` scenderebbe a vuoto e conterebbe
+  // tutti i movimenti mai registrati come apertura). `al` resta invece
+  // sempre nell'anno per cui l'`InitialBalance` esiste.
+  it("la finestra che si apre il 1° gennaio non regredisce sul confine d'anno", async () => {
+    const venueId = await getVenueId()
+    await loginAs('admin')
+
+    await prisma.initialBalance.create({
+      data: { venueId, year: 2027, cashBalance: 1000, bankBalance: 4000 },
+    })
+    await creaMovimento({ venueId, entrata: 200, date: new Date('2027-01-05') })
+
+    const serie = await serieProiettata(venueId, '2027-01-01', '2027-01-10')
+
+    expect(serie[0].saldo).toBe(5000)
+    expect(serie.find((p) => p.giorno === '2027-01-05')?.saldo).toBe(5200)
+    expect(serie.at(-1)?.saldo).toBe(5200)
   })
 })

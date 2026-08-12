@@ -331,6 +331,14 @@ describe('GET /api/dashboard/forecast', () => {
 
     const dati = await previsione(30)
 
+    // L'identità è vera per costruzione qualunque sia il valore dei termini:
+    // resterebbe verde anche se né la scadenza né la spesa entrassero nella
+    // finestra, cioè proprio nel caso in cui non garantisce più nulla. Senza
+    // queste due righe il test non accorgerebbe una regressione che azzera
+    // silenziosamente uno dei due termini.
+    expect(dati.summary.totalExpectedExpenses).toBeGreaterThan(0)
+    expect(dati.summary.totalExpectedIncome).toBeGreaterThan(0)
+
     const atteso =
       dati.currentBalance.total + dati.summary.totalExpectedIncome - dati.summary.totalExpectedExpenses
 

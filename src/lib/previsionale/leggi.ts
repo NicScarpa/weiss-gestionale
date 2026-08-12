@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { money, toApi, type Money } from '@/lib/money'
 import { toDateOnlyUtc } from '@/lib/timezone'
-import { saldiAlGiorno, giornoIndietro } from '@/lib/saldi'
+import { saldiAlGiorno, giornoCorrente } from '@/lib/saldi'
 import { calcolaDataDallaRicorrenza, calcolaProssimaGenerazione } from '@/lib/recurrence-utils'
 import { proietta, type FlussoPrevisto, type PuntoSerie } from './proietta'
 
@@ -10,27 +10,47 @@ import { proietta, type FlussoPrevisto, type PuntoSerie } from './proietta'
  * database e li traduce in `FlussoPrevisto`. La funzione pura sta in
  * `proietta.ts`; qui vive tutto ciò che tocca Prisma.
  *
+ * ## Il passato lo racconta solo il movimento
+ *
+ * Scadenze, spese ricorrenti e ricorrenze descrivono un impegno **non ancora
+ * avvenuto**: proiettarle su un giorno già trascorso è un errore, non una
+ * prudenza in meno. Una scadenza scaduta e non pagata, proiettata nel
+ * passato, sottrae denaro che — nella realtà — non è mai uscito da quel
+ * conto in quel giorno; una spesa ricorrente proiettata su un giorno già
+ * passato si somma al movimento che quella spesa l'ha *davvero* pagata. È
+ * la stessa storia raccontata due volte, e la seconda è inventata. Per
+ * questo `leggiFlussi` fa partire scadenze, spese ricorrenti e ricorrenze da
+ * `max(dal, oggi)`, qualunque sia `dal`: il passato lo racconta solo il
+ * `movimento`, l'unica fonte che sa cos'è davvero successo.
+ *
  * ## La chiave di sovrapposizione, fonte per fonte
  *
  * 1. Una `Schedule` generata da una `Recurrence` porta `chiave =
  *    'ricorrenza:' + recurrenceId` — legame esplicito in colonna, affidabile.
  *    Una `Schedule` manuale non porta chiave: non c'è nulla con cui
  *    confrontarla.
- * 2. Un `JournalEntry` nato da una riconciliazione eredita la chiave della
- *    scadenza che ha saldato — quindi la stessa regola del punto 1, vista dal
- *    lato del movimento.
+ * 2. Un `JournalEntry` non porta mai chiave, nemmeno quando nasce da una
+ *    riconciliazione. Ereditare la chiave della scadenza saldata sembra
+ *    naturale ma fa danno sul pagamento parziale: il movimento (es. −400) e
+ *    il residuo della scadenza (es. −600) avrebbero la stessa chiave e lo
+ *    stesso giorno, `proietta` farebbe vincere il movimento più affidabile e
+ *    i 600 ancora da pagare sparirebbero — ma non sono lo stesso denaro, uno
+ *    è già uscito e l'altro no. Sul pagamento per intero non c'è nulla da
+ *    deduplicare comunque: la scadenza passa a `pagata` e `leggiScadenze` la
+ *    esclude già.
  * 3. Una `RecurringExpense` non ha un legame esplicito con una `Recurrence`:
  *    sono due modelli disgiunti (vedi il commento in testa a `proietta.ts`).
- *    Il confronto è un'euristica dichiarata — nome normalizzato e importo
- *    uguali — e va usata così com'è, senza estenderla ad altri campi: un
- *    falso positivo qui fa sparire un'uscita vera dalla proiezione. Quando
- *    l'euristica trova una `Recurrence` corrispondente, la `RecurringExpense`
- *    non emette proprio nessuna occorrenza: è la `Recurrence` a essere la
- *    fonte autorevole (genera `Schedule` vere, riconciliabili), e la spesa è
- *    la sua copia nell'altro modello. Emetterle entrambe con la stessa fonte
- *    `ricorrente` non verrebbe deduplicato — due flussi della stessa fonte
- *    non si escludono mai a vicenda, per costruzione — e l'uscita si
- *    conterebbe due volte.
+ *    Il confronto è un'euristica dichiarata — nome normalizzato, importo,
+ *    frequenza equivalente — ristretta alle `Recurrence` passive e attive:
+ *    sopprimere una spesa contro una ricorrenza attiva **passiva** ha senso
+ *    solo perché è l'unico caso in cui quella ricorrenza emette a sua volta
+ *    un'occorrenza di fonte `ricorrente` che `proietta` non deduplica da
+ *    sola (due flussi della stessa fonte non si escludono mai a vicenda). Una
+ *    ricorrenza inattiva non emette occorrenze proprie, e se ne ha già
+ *    generate ricadono in fonte `scadenza`, deduplicata regolarmente:
+ *    sopprimere anche in quei casi non evita nulla e cancella un'uscita vera.
+ *    Un falso positivo qui fa sparire un'uscita vera dalla proiezione, quindi
+ *    l'euristica non va estesa oltre questi campi.
  */
 
 /** Limite di sicurezza contro una `frequenza` che non fa avanzare la data. */
@@ -56,9 +76,28 @@ function normalizzaNome(testo: string): string {
 }
 
 /**
- * I movimenti registrati nella finestra, con la chiave ereditata dalla
- * scadenza che hanno saldato quando la riconciliazione esiste ed è ancora
- * valida (una riconciliazione `REJECTED` non lega più nulla).
+ * Traduce la `frequency` inglese di `RecurringExpense` nella `frequenza`
+ * italiana di `Recurrence`, per l'euristica di corrispondenza. `null` se non
+ * esiste un equivalente — `DAILY` non ha una `Recurrence` che possa
+ * generarlo, quindi una spesa giornaliera non deve mai agganciarsi a
+ * nessuna ricorrenza.
+ */
+function frequenzaEquivalente(frequency: string): string | null {
+  const mappa: Record<string, string> = {
+    WEEKLY: 'settimanale',
+    BIWEEKLY: 'bisettimanale',
+    MONTHLY: 'mensile',
+    QUARTERLY: 'trimestrale',
+    YEARLY: 'annuale',
+  }
+  return mappa[frequency] ?? null
+}
+
+/**
+ * I movimenti registrati nella finestra. Nessuna chiave, mai: un movimento è
+ * denaro già uscito, e sul pagamento parziale ereditare la chiave della
+ * scadenza saldata farebbe sparire il residuo ancora da pagare (vedi il
+ * punto 2 del commento in testa al file).
  */
 async function leggiMovimenti(venueId: string, dal: string, al: string): Promise<FlussoPrevisto[]> {
   const movimenti = await prisma.journalEntry.findMany({
@@ -72,18 +111,10 @@ async function leggiMovimenti(venueId: string, dal: string, al: string): Promise
       description: true,
       debitAmount: true,
       creditAmount: true,
-      scheduleReconciliations: {
-        where: { status: 'VERIFIED' },
-        select: { schedule: { select: { recurrenceId: true } } },
-      },
     },
   })
 
   return movimenti.map((movimento) => {
-    const recurrenceId = movimento.scheduleReconciliations
-      .map((riconciliazione) => riconciliazione.schedule.recurrenceId)
-      .find((id): id is string => Boolean(id))
-
     const importo = money(movimento.debitAmount).minus(money(movimento.creditAmount))
 
     return {
@@ -91,7 +122,6 @@ async function leggiMovimenti(venueId: string, dal: string, al: string): Promise
       importo: toApi(importo),
       fonte: 'movimento',
       descrizione: movimento.description,
-      chiave: recurrenceId ? `ricorrenza:${recurrenceId}` : undefined,
     }
   })
 }
@@ -209,11 +239,11 @@ function spesaRicorrenteAppare(data: Date, spesa: SpesaRicorrente): boolean {
 
 /**
  * Le occorrenze delle `RecurringExpense` attive nella finestra, **tranne**
- * quelle agganciate per euristica a una `Recurrence`: in quel caso la
- * `Recurrence` è la fonte autorevole (genera `Schedule` vere, riconciliabili,
- * con data attesa stimabile) e la spesa ricorrente è la sua copia sbiadita
- * nell'altro modello. Emetterle entrambe con la stessa chiave e la stessa
- * fonte `ricorrente` le farebbe sopravvivere entrambe a `proietta` — che non
+ * quelle agganciate per euristica a una `Recurrence` passiva e attiva: in
+ * quel caso la `Recurrence` è la fonte autorevole (genera `Schedule` vere,
+ * riconciliabili, con data attesa stimabile) e la spesa ricorrente è la sua
+ * copia sbiadita nell'altro modello. Emetterle entrambe con la stessa fonte
+ * `ricorrente` le farebbe sopravvivere entrambe a `proietta` — che non
  * deduplica due flussi della stessa fonte, per costruzione — e l'uscita
  * verrebbe contata due volte: esattamente il difetto che questo modulo esiste
  * per chiudere.
@@ -227,7 +257,7 @@ function generaFlussiSpeseRicorrenti(
 
   for (const spesa of spese) {
     const agganciata = indiceRicorrenze.has(
-      `${normalizzaNome(spesa.name)}::${spesa.amount.toFixed(2)}`
+      `${normalizzaNome(spesa.name)}::${spesa.amount.toFixed(2)}::${frequenzaEquivalente(spesa.frequency)}`
     )
     if (agganciata) continue
 
@@ -316,16 +346,23 @@ function generaFlussiRicorrenze(ricorrenze: RicorrenzaAttiva[], dal: string, al:
  * Tutti i flussi previsti nella finestra `[dal, al]`, dalle quattro fonti:
  * movimenti registrati, scadenze aperte, spese ricorrenti e ricorrenze non
  * ancora scadenzate. Non risolve le sovrapposizioni — è compito di `proietta`.
+ *
+ * Il passato lo racconta solo `movimento`: scadenze, spese ricorrenti e
+ * ricorrenze partono da `max(dal, oggi)`, mai da prima. `dal` resta quello
+ * ricevuto solo per `leggiMovimenti` — vedi il commento in testa al file.
  */
 export async function leggiFlussi(venueId: string, dal: string, al: string): Promise<FlussoPrevisto[]> {
+  const oggi = giornoCorrente()
+  const dalFuturo = dal > oggi ? dal : oggi
+
   const [movimenti, scadenze, speseRicorrenti, ricorrenze] = await Promise.all([
     leggiMovimenti(venueId, dal, al),
-    leggiScadenze(venueId, dal, al),
+    leggiScadenze(venueId, dalFuturo, al),
     prisma.recurringExpense.findMany({
       where: {
         venueId,
         isActive: true,
-        OR: [{ endDate: null }, { endDate: { gte: toDateOnlyUtc(dal) } }],
+        OR: [{ endDate: null }, { endDate: { gte: toDateOnlyUtc(dalFuturo) } }],
       },
       select: {
         id: true,
@@ -356,18 +393,22 @@ export async function leggiFlussi(venueId: string, dal: string, al: string): Pro
     }),
   ])
 
-  // L'euristica di corrispondenza gioca su tutte le ricorrenze della sede,
-  // non solo su quelle attive: una Recurrence disattivata ha comunque potuto
-  // generare Schedule che sono ancora nella finestra, e la spesa deve cedere
-  // il passo (cioè non emettere affatto la propria occorrenza) anche a
-  // quelle.
+  // Solo le ricorrenze passive e attive entrano nell'euristica: sono le
+  // uniche per cui sopprimere la spesa evita davvero un doppio conteggio
+  // (vedi il punto 3 del commento in testa al file). La frequenza equivalente
+  // fa parte della chiave di corrispondenza: nome e importo uguali non
+  // bastano più a dichiarare "stessa cosa" quando anche il ritmo con cui
+  // ricorrono conta come prova.
   const indiceRicorrenze = new Set(
-    ricorrenze.map(
-      (ricorrenza) => `${normalizzaNome(ricorrenza.descrizione)}::${money(ricorrenza.importo).toFixed(2)}`
-    )
+    ricorrenze
+      .filter((ricorrenza) => ricorrenza.tipo === 'passiva' && ricorrenza.isActive)
+      .map(
+        (ricorrenza) =>
+          `${normalizzaNome(ricorrenza.descrizione)}::${money(ricorrenza.importo).toFixed(2)}::${ricorrenza.frequenza}`
+      )
   )
 
-  const giorni = elencoGiorni(dal, al)
+  const giorni = elencoGiorni(dalFuturo, al)
 
   const flussiSpeseRicorrenti = generaFlussiSpeseRicorrenti(
     speseRicorrenti.map((spesa) => ({ ...spesa, amount: money(spesa.amount) })),
@@ -379,19 +420,36 @@ export async function leggiFlussi(venueId: string, dal: string, al: string): Pro
     ricorrenze
       .filter((ricorrenza) => ricorrenza.isActive)
       .map((ricorrenza) => ({ ...ricorrenza, importo: money(ricorrenza.importo) })),
-    dal,
+    dalFuturo,
     al
   )
 
   return [...movimenti, ...scadenze, ...flussiSpeseRicorrenti, ...flussiRicorrenze]
 }
 
-/** La serie del saldo proiettato fra `dal` e `al`, dalle fonti reali. */
+/**
+ * La serie del saldo proiettato fra `dal` e `al`, dalle fonti reali.
+ *
+ * L'apertura si ricava all'indietro dal saldo di **fine** finestra, non da
+ * `saldiAlGiorno(giornoIndietro(dal, 1))`: chiedere il saldo del giorno
+ * prima sbaglia quando la finestra si apre il 1° gennaio, perché quel giorno
+ * cade nell'anno precedente — se `InitialBalance` non lo copre,
+ * `aperturaPerAnno` scende a vuoto e conta come apertura tutti i movimenti
+ * mai registrati, anziché il saldo iniziale dell'anno giusto. `al` resta
+ * sempre dentro un anno raggiungibile, quindi non ha questo problema. Per
+ * ottenere l'apertura si proietta una prima volta da zero, solo per leggere
+ * quanto la finestra sposta il saldo al netto delle sovrapposizioni già
+ * risolte, e si sottrae quello spostamento dal saldo reale di fine finestra.
+ */
 export async function serieProiettata(venueId: string, dal: string, al: string): Promise<PuntoSerie[]> {
-  const [saldi, flussi] = await Promise.all([
-    saldiAlGiorno(venueId, giornoIndietro(dal, 1)),
+  const [saldiFinali, flussi] = await Promise.all([
+    saldiAlGiorno(venueId, al),
     leggiFlussi(venueId, dal, al),
   ])
 
-  return proietta({ saldoIniziale: saldi.totalAvailable, dal, al, flussi })
+  const serieDaZero = proietta({ saldoIniziale: 0, dal, al, flussi })
+  const variazioneNetta = money(serieDaZero.at(-1)?.saldo ?? 0)
+  const saldoIniziale = money(saldiFinali.totalAvailable).minus(variazioneNetta).toNumber()
+
+  return proietta({ saldoIniziale, dal, al, flussi })
 }
