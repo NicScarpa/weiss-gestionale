@@ -8,6 +8,7 @@
 import { NextResponse } from 'next/server'
 
 import { withAuth } from '@/lib/api-utils'
+import { rispostaErroreGoCardless } from '@/lib/gocardless/risposte'
 import { clientDaAmbiente } from '@/lib/gocardless/servizio'
 
 /** I giorni arrivano come stringa o come numero a seconda del campo. */
@@ -18,18 +19,22 @@ function giorni(valore: unknown): number | null {
 
 export const GET = withAuth(
   async (request) => {
-    const paese = new URL(request.url).searchParams.get('paese') ?? 'it'
-    const esito = await clientDaAmbiente().istituzioni(paese)
+    try {
+      const paese = new URL(request.url).searchParams.get('paese') ?? 'it'
+      const esito = await clientDaAmbiente().istituzioni(paese)
 
-    return NextResponse.json({
-      istituzioni: esito.dati.map((i) => ({
-        id: i.id,
-        nome: i.name,
-        bic: i.bic ?? null,
-        giorniStorico: giorni(i.transaction_total_days),
-        giorniAccesso: giorni(i.max_access_valid_for_days),
-      })),
-    })
+      return NextResponse.json({
+        istituzioni: esito.dati.map((i) => ({
+          id: i.id,
+          nome: i.name,
+          bic: i.bic ?? null,
+          giorniStorico: giorni(i.transaction_total_days),
+          giorniAccesso: giorni(i.max_access_valid_for_days),
+        })),
+      })
+    } catch (errore) {
+      return rispostaErroreGoCardless(errore, 'GET /api/gocardless/istituzioni')
+    }
   },
   { roles: ['admin'], venueScoped: true }
 )

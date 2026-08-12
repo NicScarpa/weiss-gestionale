@@ -10,6 +10,7 @@
  * chiamata sprecata costa un giorno.
  */
 import { creaClient, type ClientGoCardless } from './client'
+import { ConfigurazioneMancante } from './errori'
 
 let perTest: ClientGoCardless | null = null
 
@@ -24,7 +25,7 @@ export function clientDaAmbiente(): ClientGoCardless {
   const secretId = process.env.GOCARDLESS_SECRET_ID
   const secretKey = process.env.GOCARDLESS_SECRET_KEY
   if (!secretId || !secretKey) {
-    throw new Error(
+    throw new ConfigurazioneMancante(
       'GOCARDLESS_SECRET_ID e GOCARDLESS_SECRET_KEY non sono impostate: il collegamento alla banca non è configurato.'
     )
   }

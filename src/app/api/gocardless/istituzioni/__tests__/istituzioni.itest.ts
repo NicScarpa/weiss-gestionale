@@ -4,6 +4,7 @@ import { entraCome, logout } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
 import { impostaClientPerTest } from '@/lib/gocardless/servizio'
 import type { ClientGoCardless } from '@/lib/gocardless/client'
+import { ErroreGoCardless, LimiteRaggiunto } from '@/lib/gocardless/errori'
 import { GET as elencoIstituzioni } from '../route'
 
 setupIntegrationDb()
@@ -84,5 +85,43 @@ describe('GET /api/gocardless/istituzioni', () => {
     await callRoute(elencoIstituzioni, jsonRequest('http://localhost/api/gocardless/istituzioni'))
 
     expect(paeseChiesto).toBe('it')
+  })
+
+  // Il contingente della banca è di 4 chiamate al giorno per conto e per
+  // endpoint: sapere quando si riapre vale più che sapere che è chiuso.
+  it('risponde 429 con i secondi alla ripresa quando il contingente è esaurito', async () => {
+    await entraCome('admin')
+    const finto = {
+      istituzioni: async () => {
+        throw new LimiteRaggiunto('limite raggiunto', null, 3600)
+      },
+    } as unknown as ClientGoCardless
+    impostaClientPerTest(finto)
+
+    const esito = await callRoute<{ secondiAllaRipresa: number | null }>(
+      elencoIstituzioni,
+      jsonRequest('http://localhost/api/gocardless/istituzioni?paese=it')
+    )
+
+    expect(esito.status).toBe(429)
+    expect(esito.body.secondiAllaRipresa).toBe(3600)
+  })
+
+  it('risponde 502 quando la banca risponde con un errore, senza far trapelare il corpo grezzo', async () => {
+    await entraCome('admin')
+    const finto = {
+      istituzioni: async () => {
+        throw new ErroreGoCardless('errore banca', 400, { dettaglio: 'informazione interna della banca' })
+      },
+    } as unknown as ClientGoCardless
+    impostaClientPerTest(finto)
+
+    const esito = await callRoute(
+      elencoIstituzioni,
+      jsonRequest('http://localhost/api/gocardless/istituzioni?paese=it')
+    )
+
+    expect(esito.status).toBe(502)
+    expect(JSON.stringify(esito.body)).not.toContain('informazione interna della banca')
   })
 })
