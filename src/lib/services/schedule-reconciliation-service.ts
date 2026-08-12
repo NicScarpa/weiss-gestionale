@@ -18,6 +18,7 @@ import {
   calcolaPesiConIva,
   contiScartatiConPeso,
   ripartisciProQuotaConIva,
+  type RigaDaImputare,
   type TransactionClient,
 } from './allocation-service'
 
@@ -151,6 +152,28 @@ function sommaIvaDelleFette(fette: { iva: Prisma.Decimal | null }[]): number {
 }
 
 /**
+ * Righe di sistema (bollo, arrotondamento) di una fattura o di una nota di
+ * credito, tollerante a un XML mancante o non più parsabile: si assume
+ * nessuna riga di sistema invece di far fallire l'intera ereditarietà.
+ * Condivisa fra la fattura rettificata e le note di credito che la
+ * rettificano (Task 6): stesso comportamento, messaggio di log diverso per
+ * dire subito a chi documento appartiene l'XML che non si legge più.
+ */
+function righeSistemaTolleranti(
+  xmlContent: string | null,
+  messaggioErrore: string,
+  contesto: Record<string, unknown>
+): RigaDiSistema[] {
+  if (!xmlContent) return []
+  try {
+    return righeDiSistema(parseFatturaPA(xmlContent))
+  } catch (error) {
+    logger.warn(messaggioErrore, { ...contesto, error })
+    return []
+  }
+}
+
+/**
  * Porta sulla testata l'IVA che le fette appena scritte dichiarano.
  *
  * Perché serve. Il movimento che salda una fattura nasce senza IVA su tutti e
@@ -274,6 +297,107 @@ async function ritiraIvaDiTestata(
 }
 
 /**
+ * Le righe delle note di credito che rettificano `invoiceId`, pronte da
+ * sottrarre ai pesi della fattura — imponibile già col segno invertito, così
+ * chi chiama deve solo concatenarle a `righeDaImputare` e passare tutto a
+ * `calcolaPesiConIva`: la funzione fa già la sottrazione da sé (una riga
+ * pulizia +122 / −122 somma a zero e sparisce col filtro esistente).
+ *
+ * Ritorna `null` quando una delle due guardie del Task 6 consiglia di
+ * astenersi dall'INTERA ereditarietà (non solo dalla sottrazione), array
+ * vuoto se non c'è nessuna nota collegata.
+ *
+ * - **Guardia 1**: una nota non imputata per intero. Sottrarne solo una
+ *   parte darebbe un risultato peggiore di non sottrarre nulla, perché
+ *   sembrerebbe corretto. La copertura si giudica come quella della fattura:
+ *   numeri di linea DISTINTI imputati (righe vere + righe di sistema della
+ *   nota stessa), non un conteggio di righe.
+ * - **Guardia 2**: un peso che risulterebbe negativo (la nota è più grande
+ *   della riga che rettifica). Si confrontano i pesi calcolati
+ *   SEPARATAMENTE su fattura e nota, PRIMA di combinarli: dopo il filtro di
+ *   `calcolaPesiConIva` un totale esattamente zero (nota che azzera la riga,
+ *   il caso atteso) e uno negativo sono indistinguibili — il filtro li
+ *   scarta allo stesso modo — quindi il confronto va fatto prima, non dopo.
+ */
+async function righeDaSottrarreNote(
+  tx: TransactionClient,
+  invoiceId: string,
+  righeFattura: RigaDaImputare[]
+): Promise<RigaDaImputare[] | null> {
+  const note = await tx.electronicInvoice.findMany({
+    where: { rettificaInvoiceId: invoiceId },
+    select: { id: true, lineItems: true, xmlContent: true },
+  })
+  if (note.length === 0) return []
+
+  const righeNota: RigaDaImputare[] = []
+  for (const nota of note) {
+    const righeSistemaNota = righeSistemaTolleranti(
+      nota.xmlContent,
+      'XML della nota di credito non parsabile: si assume nessuna riga di sistema',
+      { invoiceId: nota.id }
+    )
+
+    const imputazioniNota = await tx.invoiceLineAccount.findMany({
+      where: { invoiceId: nota.id, stato: 'confermata' },
+      select: { accountId: true, importo: true, numeroLinea: true },
+    })
+
+    const numeroLineeImputate = new Set(imputazioniNota.map((r) => r.numeroLinea)).size
+    const righeAttese =
+      (Array.isArray(nota.lineItems) ? nota.lineItems.length : 0) + righeSistemaNota.length
+    if (numeroLineeImputate < righeAttese) {
+      logger.info("Nota di credito non imputata per intero: l'ereditarietà si astiene dall'intera fattura", {
+        invoiceId,
+        notaId: nota.id,
+        righe: righeAttese,
+        confermate: numeroLineeImputate,
+      })
+      return null
+    }
+
+    const aliquotePerLineaNota = Array.isArray(nota.lineItems)
+      ? aliquoteDelloSnapshot(nota.lineItems)
+      : new Map<number, number>()
+    for (const riga of righeSistemaNota) {
+      aliquotePerLineaNota.set(riga.numeroLinea, riga.aliquota)
+    }
+
+    for (const r of imputazioniNota) {
+      righeNota.push({
+        accountId: r.accountId,
+        imponibile: Number(r.importo),
+        aliquota: aliquotePerLineaNota.get(r.numeroLinea),
+      })
+    }
+  }
+
+  if (righeNota.length === 0) return []
+
+  const pesiFatturaSola = calcolaPesiConIva(righeFattura)
+  const pesiNotaSola = calcolaPesiConIva(righeNota)
+  const importoFatturaPerConto = new Map(pesiFatturaSola.map((p) => [p.accountId, p.importo]))
+
+  const pesoNegativo = pesiNotaSola.find(
+    (n) => n.importo > (importoFatturaPerConto.get(n.accountId) ?? 0) + TOLLERANZA_IMPORTI
+  )
+  if (pesoNegativo) {
+    logger.warn(
+      'Nota di credito più grande della riga che rettifica: il peso risultante sarebbe negativo, ereditarietà sospesa',
+      {
+        invoiceId,
+        accountId: pesoNegativo.accountId,
+        importoNota: pesoNegativo.importo,
+        importoFattura: importoFatturaPerConto.get(pesoNegativo.accountId) ?? 0,
+      }
+    )
+    return null
+  }
+
+  return righeNota.map((r) => ({ ...r, imponibile: -r.imponibile }))
+}
+
+/**
  * Eredità pro-quota: se la scadenza viene da una fattura le cui righe sono
  * TUTTE categorizzate per conto, il movimento che la salda eredita le stesse
  * fette (Fase 3). Chiamata dentro la transazione di `reconcileScheduleWithEntry`:
@@ -343,17 +467,11 @@ async function ereditaFetteDaFattura(
   // maggioranza — e non un rischio nuovo, perché lineItems viene dalla stessa
   // importazione che avrebbe scritto anche l'XML: se manca uno raramente c'è
   // l'altro.
-  let righeSistema: RigaDiSistema[] = []
-  if (invoice.xmlContent) {
-    try {
-      righeSistema = righeDiSistema(parseFatturaPA(invoice.xmlContent))
-    } catch (error) {
-      logger.warn('XML della fattura non parsabile: si assume nessuna riga di sistema', {
-        invoiceId,
-        error,
-      })
-    }
-  }
+  const righeSistema = righeSistemaTolleranti(
+    invoice.xmlContent,
+    'XML della fattura non parsabile: si assume nessuna riga di sistema',
+    { invoiceId }
+  )
 
   // SOLO le imputazioni che un essere umano ha confermato.
   //
@@ -452,19 +570,32 @@ async function ereditaFetteDaFattura(
     imponibile: Number(r.importo),
     aliquota: aliquotePerLinea.get(r.numeroLinea),
   }))
-  const pesi = calcolaPesiConIva(righeDaImputare)
+
+  // Task 6: le note di credito che rettificano questa fattura entrano nel
+  // calcolo dei pesi, righe imputate col segno invertito — nessuna scadenza
+  // negativa, nessuna modifica allo scadenzario, solo un'ereditarietà più
+  // esatta. `null` significa che una delle due guardie ha chiesto di
+  // astenersi dall'INTERA ereditarietà (già loggato da chi l'ha deciso).
+  const righeNotaDaSottrarre = await righeDaSottrarreNote(tx, invoiceId, righeDaImputare)
+  if (righeNotaDaSottrarre === null) return
+  const righeCombinate = righeDaImputare.concat(righeNotaDaSottrarre)
+
+  const pesi = calcolaPesiConIva(righeCombinate)
 
   // Un conto sparito dai pesi portandosi via qualcosa è quasi sempre una riga
-  // di sconto o di reso a `PrezzoTotale` negativo, che il parser non
-  // normalizza. La quota si ripartisce comunque fra i conti rimasti, che si
-  // prendono anche la sua parte, IVA compresa: ogni fetta resta fedele alla
-  // propria aliquota ma il totale non è più quello del documento. È
-  // l'approssimazione minore fra quelle disponibili — il perché, con i numeri,
-  // sta nel docblock di `calcolaPesiConIva` — e finché la fase B non farà
-  // entrare le righe negative nei pesi col proprio segno, l'unica cosa che si
-  // può fare in più è non lasciarla silenziosa. Il conteggio ignora i conti
-  // che si annullano da sé (la riga in omaggio, o la riga e il suo storno):
-  // spariscono anche loro, ma senza togliere niente a nessuno.
+  // di sconto o di reso a `PrezzoTotale` negativo DENTRO QUESTA STESSA
+  // fattura — che il parser non normalizza — non la nota di credito appena
+  // sottratta qui sopra (documento a parte, con le sue guardie dedicate). La
+  // quota si ripartisce comunque fra i conti rimasti, che si prendono anche
+  // la sua parte, IVA compresa: ogni fetta resta fedele alla propria aliquota
+  // ma il totale non è più quello del documento. È l'approssimazione minore
+  // fra quelle disponibili — il perché, con i numeri, sta nel docblock di
+  // `calcolaPesiConIva` — e finché anche questa riga non entrerà nei pesi col
+  // proprio segno, l'unica cosa che si può fare in più è non lasciarla
+  // silenziosa. Il conteggio ignora i conti che si annullano da sé (la riga
+  // in omaggio, o la riga e il suo storno): spariscono anche loro, ma senza
+  // togliere niente a nessuno. Si conta ancora sulle sole righe della
+  // fattura: la nota, con le sue guardie, non aggiunge un caso nuovo qui.
   const scartati = contiScartatiConPeso(righeDaImputare)
   if (scartati > 0) {
     logger.warn('Fattura con righe scartate dai pesi: le fette quadrano con la quota, non con il documento', {

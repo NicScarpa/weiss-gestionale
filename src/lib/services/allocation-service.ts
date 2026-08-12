@@ -132,10 +132,13 @@ export interface PesoConIva {
  * fetta a `null` su un movimento nato dall'import (che di suo non ha IVA)
  * significa che il ripiego pro-quota divide zero, e il blocco IVA del
  * prospetto perde tutti e 78. Sette volte l'errore che si voleva evitare, e
- * sulla stessa famiglia. Finché le righe negative non entreranno nei pesi con
- * il proprio segno (fase B, note di credito), l'approssimazione minore è
- * questa — ma non resta invisibile: chi chiama avvisa quando un conto sparisce
- * (vedi `ereditaFetteDaFattura`).
+ * sulla stessa famiglia. La fase B (Task 6) ha dato un segno proprio alle
+ * righe negative delle NOTE DI CREDITO — un documento a parte, sottratto ai
+ * pesi con le sue guardie dedicate — ma non a una riga di sconto dentro la
+ * STESSA fattura, che resta questo caso: finché anche quella non entrerà nei
+ * pesi col proprio segno, l'approssimazione minore è questa — ma non resta
+ * invisibile: chi chiama avvisa quando un conto sparisce (vedi
+ * `ereditaFetteDaFattura`).
  */
 export function calcolaPesiConIva(righe: RigaDaImputare[]): PesoConIva[] {
   const ivaNota = righe.every((r) => r.aliquota !== undefined)

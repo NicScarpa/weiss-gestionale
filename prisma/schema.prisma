@@ -1629,6 +1629,14 @@ model ElectronicInvoice {
   lineItems      Json?             @map("line_items")
   references     Json?             @map("references")
   vatSummary     Json?             @map("vat_summary")
+  /// Nota di credito → fattura che rettifica (Task 6, fase B). Risolto una
+  /// sola volta, all'import della nota, leggendo
+  /// `references.datiFattureCollegate` (src/app/api/invoices/route.ts):
+  /// persistito invece di ricalcolato a ogni lettura, perché il calcolo dei
+  /// pesi alla riconciliazione lo interroga una volta per fattura.
+  /// `null` finché non risolto, o se la fattura rettificata non è (ancora)
+  /// stata importata — non è un errore.
+  rettificaInvoiceId String?      @map("rettifica_invoice_id")
   deletedAt      DateTime?         @map("deleted_at")
   deletedById    String?           @map("deleted_by_id")
   account        Account?          @relation(fields: [accountId], references: [id])
@@ -1639,12 +1647,17 @@ model ElectronicInvoice {
   /// Scadenze generate nello scadenzario da questa fattura
   schedules      Schedule[]          @relation("ScheduleFromInvoice")
   lineAccounts   InvoiceLineAccount[]
+  /// La fattura rettificata da questa nota di credito (lato "molti" → "uno").
+  rettificaInvoice ElectronicInvoice?   @relation("RettificaFattura", fields: [rettificaInvoiceId], references: [id])
+  /// Le note di credito che rettificano QUESTA fattura (lato opposto).
+  rettifiche       ElectronicInvoice[] @relation("RettificaFattura")
 
   @@index([invoiceDate])
   @@index([supplierId])
   @@index([status])
   @@index([venueId])
   @@index([documentType])
+  @@index([rettificaInvoiceId])
   @@map("electronic_invoices")
 }
 

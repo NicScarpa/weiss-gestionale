@@ -17,7 +17,7 @@ vi.mock('@/lib/prisma', () => ({
       aggregate: vi.fn(),
     },
     schedulePayment: { create: vi.fn(), delete: vi.fn(), aggregate: vi.fn() },
-    electronicInvoice: { update: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
+    electronicInvoice: { update: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
     invoiceLineAccount: { findMany: vi.fn(), createMany: vi.fn() },
     journalEntryAllocation: {
       findMany: vi.fn(),
@@ -155,6 +155,9 @@ beforeEach(() => {
     _sum: { amount: null },
   } as never)
   vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(null)
+  // Default: nessuna nota di credito rettifica la fattura in lavorazione, così
+  // i test che non riguardano il Task 6 non devono preoccuparsene.
+  vi.mocked(prisma.electronicInvoice.findMany).mockResolvedValue([] as never)
   vi.mocked(prisma.schedule.count).mockResolvedValue(0 as never)
   // Default pensato per l'annullo, che parte sempre da una scadenza saldata
   // con la data attesa riallineata al movimento. I test di riconciliazione
@@ -961,6 +964,227 @@ describe('reconcileScheduleWithEntry - ereditarietà pro-quota dalla fattura (Fa
     expect(prisma.electronicInvoice.findUnique).not.toHaveBeenCalled()
     expect(prisma.invoiceLineAccount.findMany).not.toHaveBeenCalled()
     expect(prisma.journalEntryAllocation.createMany).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * Una nota di credito non genera una scadenza propria (è TD04/05/08/09): si
+ * compensa sul pagamento successivo. Il collegamento (`rettificaInvoiceId`) è
+ * già risolto all'import (route.ts) e qui si assume presente; questi test
+ * riguardano solo cosa fa `ereditaFetteDaFattura` con le note collegate.
+ */
+describe('reconcileScheduleWithEntry - nota di credito che rettifica (Task 6)', () => {
+  it('nota di credito imputata per intero: sottrae i pesi della riga che rettifica, che sparisce dai pesi', async () => {
+    // Fattura mista: alimentari 1.000 @10% (1.100 lordi), pulizia 100 @22%
+    // (122 lordi) — totale 1.222. Nota di credito: i detersivi resi, 100 @22%
+    // (122 lordi), interamente imputata sullo stesso conto pulizia. Pagamento
+    // di 1.100 (il residuo dopo la nota): atteso alimentari 1.100 / 0 pulizia,
+    // non la proporzione vecchia (990 / 110) che ignorava la nota.
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      scadenza({ invoiceId: 'inv-mista', importoTotale: new Prisma.Decimal(1222) }) as never
+    )
+    vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue(
+      movimento({ creditAmount: new Prisma.Decimal(1100) }) as never
+    )
+    vi.mocked(prisma.electronicInvoice.findUnique).mockResolvedValue({
+      lineItems: [
+        { numeroLinea: 1, aliquotaIVA: 10 },
+        { numeroLinea: 2, aliquotaIVA: 22 },
+      ],
+      xmlContent: null,
+    } as never)
+    // La nota di credito che rettifica 'inv-mista' (rettificaInvoiceId
+    // risolto all'import, non a questo livello).
+    vi.mocked(prisma.electronicInvoice.findMany).mockResolvedValue([
+      { id: 'nota-1', lineItems: [{ numeroLinea: 1, aliquotaIVA: 22 }], xmlContent: null },
+    ] as never)
+    vi.mocked(prisma.invoiceLineAccount.findMany)
+      .mockResolvedValueOnce([
+        { accountId: 'alimentari', importo: new Prisma.Decimal(1000), numeroLinea: 1 },
+        { accountId: 'pulizia', importo: new Prisma.Decimal(100), numeroLinea: 2 },
+      ] as never) // imputazioni della fattura
+      .mockResolvedValueOnce([
+        { accountId: 'pulizia', importo: new Prisma.Decimal(100), numeroLinea: 1 },
+      ] as never) // imputazioni della nota di credito (interamente confermata)
+    vi.mocked(prisma.journalEntryAllocation.findMany)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ accountId: 'alimentari', importo: new Prisma.Decimal(1100) }] as never)
+    vi.mocked(derivaBudgetCategoryDaConto).mockResolvedValue('cat-alimentari')
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: 'sched-1',
+      journalEntryId: 'entry-1',
+      venueId: VENUE,
+      userId: 'user-1',
+    })
+
+    expect(esito.outcome).toBe('ok')
+    // La nota è letta cercando le fatture che LA hanno come rettifica, cioè
+    // per rettificaInvoiceId uguale alla fattura in pagamento.
+    expect(prisma.electronicInvoice.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { rettificaInvoiceId: 'inv-mista' } })
+    )
+    // Pulizia sparisce: il suo peso (122 lordi) meno quello della nota (122
+    // lordi) fa esattamente zero, e `calcolaPesiConIva` lo scarta da sé —
+    // niente fetta a 0, non una fetta mancante per errore.
+    expect(prisma.journalEntryAllocation.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ accountId: 'alimentari' })],
+    })
+    const fetteScritte = vi.mocked(prisma.journalEntryAllocation.createMany).mock.calls[0][0]
+      .data as Array<{ accountId: string; importo: Prisma.Decimal; iva: Prisma.Decimal | null }>
+    expect(
+      fetteScritte.map((f) => ({
+        accountId: f.accountId,
+        importo: Number(f.importo),
+        iva: f.iva === null ? null : Number(f.iva),
+      }))
+    ).toEqual([{ accountId: 'alimentari', importo: 1100, iva: 100 }])
+  })
+
+  it('nota di credito non imputata per intero: l\'ereditarietà si astiene dall\'intera fattura', async () => {
+    // Sottrarne una parte darebbe un risultato peggiore di non sottrarre
+    // nulla, perché sembrerebbe corretto: l'astensione riguarda l'INTERA
+    // ereditarietà, non solo la sottrazione.
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      scadenza({ invoiceId: 'inv-mista', importoTotale: new Prisma.Decimal(1222) }) as never
+    )
+    vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue(
+      movimento({ creditAmount: new Prisma.Decimal(1100) }) as never
+    )
+    vi.mocked(prisma.electronicInvoice.findUnique).mockResolvedValue({
+      lineItems: [
+        { numeroLinea: 1, aliquotaIVA: 10 },
+        { numeroLinea: 2, aliquotaIVA: 22 },
+      ],
+      xmlContent: null,
+    } as never)
+    vi.mocked(prisma.electronicInvoice.findMany).mockResolvedValue([
+      { id: 'nota-1', lineItems: [{ numeroLinea: 1, aliquotaIVA: 22 }], xmlContent: null },
+    ] as never)
+    vi.mocked(prisma.invoiceLineAccount.findMany)
+      .mockResolvedValueOnce([
+        { accountId: 'alimentari', importo: new Prisma.Decimal(1000), numeroLinea: 1 },
+        { accountId: 'pulizia', importo: new Prisma.Decimal(100), numeroLinea: 2 },
+      ] as never) // fattura: interamente confermata
+      .mockResolvedValueOnce([] as never) // nota di credito: nessuna riga confermata
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: 'sched-1',
+      journalEntryId: 'entry-1',
+      venueId: VENUE,
+      userId: 'user-1',
+    })
+
+    // L'astensione riguarda solo l'ereditarietà: la riconciliazione della
+    // scadenza procede comunque (stesso principio delle altre guardie).
+    expect(esito.outcome).toBe('ok')
+    expect(prisma.journalEntryAllocation.createMany).not.toHaveBeenCalled()
+    expect(logger.info).toHaveBeenCalledWith(
+      "Nota di credito non imputata per intero: l'ereditarietà si astiene dall'intera fattura",
+      expect.objectContaining({ invoiceId: 'inv-mista', notaId: 'nota-1', righe: 1, confermate: 0 })
+    )
+  })
+
+  it('nota di credito più grande della riga che rettifica: peso negativo, ereditarietà sospesa', async () => {
+    // La nota (150 @22% = 183 lordi) supera il peso della riga pulizia che
+    // dovrebbe rettificare (100 @22% = 122 lordi): un caso da guardare, non
+    // da indovinare. Si segnala e ci si ferma, non si scrive nulla.
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      scadenza({ invoiceId: 'inv-mista', importoTotale: new Prisma.Decimal(1222) }) as never
+    )
+    vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue(
+      movimento({ creditAmount: new Prisma.Decimal(1100) }) as never
+    )
+    vi.mocked(prisma.electronicInvoice.findUnique).mockResolvedValue({
+      lineItems: [
+        { numeroLinea: 1, aliquotaIVA: 10 },
+        { numeroLinea: 2, aliquotaIVA: 22 },
+      ],
+      xmlContent: null,
+    } as never)
+    vi.mocked(prisma.electronicInvoice.findMany).mockResolvedValue([
+      { id: 'nota-1', lineItems: [{ numeroLinea: 1, aliquotaIVA: 22 }], xmlContent: null },
+    ] as never)
+    vi.mocked(prisma.invoiceLineAccount.findMany)
+      .mockResolvedValueOnce([
+        { accountId: 'alimentari', importo: new Prisma.Decimal(1000), numeroLinea: 1 },
+        { accountId: 'pulizia', importo: new Prisma.Decimal(100), numeroLinea: 2 },
+      ] as never)
+      .mockResolvedValueOnce([
+        { accountId: 'pulizia', importo: new Prisma.Decimal(150), numeroLinea: 1 },
+      ] as never)
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: 'sched-1',
+      journalEntryId: 'entry-1',
+      venueId: VENUE,
+      userId: 'user-1',
+    })
+
+    expect(esito.outcome).toBe('ok')
+    expect(prisma.journalEntryAllocation.createMany).not.toHaveBeenCalled()
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('peso'),
+      expect.objectContaining({ invoiceId: 'inv-mista', accountId: 'pulizia' })
+    )
+  })
+
+  it('interazione con il Task 5: la riga della nota divisa fra due conti si sottrae da entrambi, ciascuna con la propria quota', async () => {
+    // Fattura a tre conti: alimentari 1.000 @10% (1.100), pulizia 60 @22%
+    // (73,2) e imballo 40 @22% (48,8) — stessa riga fattura divisa in due
+    // (Task 5). Nota di credito: la STESSA riga resa, divisa nello stesso
+    // modo su entrambi i conti (60 + 40): entrambe le quote devono sottrarsi
+    // dal proprio conto, non solo la prima.
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      scadenza({ invoiceId: 'inv-divisa', importoTotale: new Prisma.Decimal(1222) }) as never
+    )
+    vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue(
+      movimento({ creditAmount: new Prisma.Decimal(1100) }) as never
+    )
+    vi.mocked(prisma.electronicInvoice.findUnique).mockResolvedValue({
+      lineItems: [
+        { numeroLinea: 1, aliquotaIVA: 10 },
+        { numeroLinea: 2, aliquotaIVA: 22 },
+      ],
+      xmlContent: null,
+    } as never)
+    vi.mocked(prisma.electronicInvoice.findMany).mockResolvedValue([
+      { id: 'nota-1', lineItems: [{ numeroLinea: 1, aliquotaIVA: 22 }], xmlContent: null },
+    ] as never)
+    vi.mocked(prisma.invoiceLineAccount.findMany)
+      .mockResolvedValueOnce([
+        { accountId: 'alimentari', importo: new Prisma.Decimal(1000), numeroLinea: 1 },
+        { accountId: 'pulizia', importo: new Prisma.Decimal(60), numeroLinea: 2 },
+        { accountId: 'imballo', importo: new Prisma.Decimal(40), numeroLinea: 2 },
+      ] as never) // imputazioni della fattura: riga 2 divisa (progressivo)
+      .mockResolvedValueOnce([
+        { accountId: 'pulizia', importo: new Prisma.Decimal(60), numeroLinea: 1 },
+        { accountId: 'imballo', importo: new Prisma.Decimal(40), numeroLinea: 1 },
+      ] as never) // imputazioni della nota: la sua unica riga, divisa allo stesso modo
+    vi.mocked(prisma.journalEntryAllocation.findMany)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ accountId: 'alimentari', importo: new Prisma.Decimal(1100) }] as never)
+    vi.mocked(derivaBudgetCategoryDaConto).mockResolvedValue('cat-alimentari')
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: 'sched-1',
+      journalEntryId: 'entry-1',
+      venueId: VENUE,
+      userId: 'user-1',
+    })
+
+    expect(esito.outcome).toBe('ok')
+    // Pulizia e imballo si azzerano entrambi ed escono dai pesi: se la nota
+    // sottraesse solo dalla prima quota letta, uno dei due resterebbe con un
+    // peso residuo diverso da zero.
+    expect(prisma.journalEntryAllocation.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ accountId: 'alimentari' })],
+    })
+    const fetteScritte = vi.mocked(prisma.journalEntryAllocation.createMany).mock.calls[0][0]
+      .data as Array<{ accountId: string; importo: Prisma.Decimal }>
+    expect(fetteScritte.map((f) => ({ accountId: f.accountId, importo: Number(f.importo) }))).toEqual([
+      { accountId: 'alimentari', importo: 1100 },
+    ])
   })
 })
 

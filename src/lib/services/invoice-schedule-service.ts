@@ -28,8 +28,13 @@ import { logger } from '@/lib/logger'
  * Tipi documento che rettificano una fattura precedente invece di generare un
  * nuovo debito: non producono una scadenza autonoma. Una nota di credito
  * riduce quanto dovuto al fornitore, non è qualcosa da pagare a una data.
+ *
+ * Esportata perché la route di import la riusa per decidere quando risolvere
+ * `rettificaInvoiceId` (Task 6): stessa domanda — "questo documento rettifica
+ * una fattura precedente?" — quindi stessa lista, non una copia che potrebbe
+ * divergere.
  */
-const TIPI_DOCUMENTO_SENZA_SCADENZA = new Set(['TD04', 'TD05', 'TD08', 'TD09'])
+export const TIPI_DOCUMENTO_SENZA_SCADENZA = new Set(['TD04', 'TD05', 'TD08', 'TD09'])
 
 /**
  * L'import legge sempre il cedente/prestatore come fornitore

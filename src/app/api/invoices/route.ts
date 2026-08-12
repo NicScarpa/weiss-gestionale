@@ -17,7 +17,10 @@ import { getVenueId } from '@/lib/venue'
 import { createAuditLog } from '@/lib/audit'
 
 import { logger } from '@/lib/logger'
-import { generateSchedulesFromInvoice } from '@/lib/services/invoice-schedule-service'
+import {
+  generateSchedulesFromInvoice,
+  TIPI_DOCUMENTO_SENZA_SCADENZA,
+} from '@/lib/services/invoice-schedule-service'
 import { ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
 import { categorizzaRigheFattura } from '@/lib/line-categorization'
 /**
@@ -587,6 +590,62 @@ export async function POST(request: NextRequest) {
       // documenti con molte rate, non per coprire lavoro lento.
       { timeout: 15_000 }
     )
+
+    // Nota di credito (o di debito): risolve quale fattura rettifica, dopo la
+    // creazione perché serve l'id già assegnato. Il collegamento vive
+    // nell'XML (`datiFattureCollegate`) ma si persiste qui una volta sola —
+    // il calcolo dei pesi alla riconciliazione (Task 6) lo interroga una
+    // volta per fattura, non una volta per riga a ogni lettura.
+    //
+    // Non trovata non è un errore: la fattura rettificata può semplicemente
+    // non essere ancora stata importata (la nota spesso arriva prima). La
+    // nota resta comunque salvata con `rettificaInvoiceId: null` — il
+    // collegamento si potrà rifare quando la fattura arriverà (Task 7).
+    //
+    // Più di un riferimento nell'XML: si usa il primo. Una nota che rettifica
+    // più fatture insieme non è rappresentabile da un `rettificaInvoiceId`
+    // singolo — un caso raro, fuori perimetro dichiarato nella spec.
+    //
+    // In un try/catch dedicato, come il tracking prezzi qui sotto: la fattura
+    // è già salvata, un errore qui non deve trasformare un import riuscito in
+    // una risposta di errore.
+    if (datiEstesi && TIPI_DOCUMENTO_SENZA_SCADENZA.has(invoice.documentType ?? '')) {
+      try {
+        const riferimento = datiEstesi.references.datiFattureCollegate[0]
+        if (riferimento) {
+          const fatturaRettificata = await prisma.electronicInvoice.findFirst({
+            where: {
+              invoiceNumber: riferimento.idDocumento,
+              // Stessa normalizzazione di trovaFatturaEsistente: le fatture
+              // importate prima della normalizzazione hanno perso gli zeri
+              // iniziali della P.IVA.
+              OR: [
+                { supplierVat: invoice.supplierVat },
+                { supplierVat: invoice.supplierVat.replace(/^0+/, '') },
+              ],
+            },
+            select: { id: true },
+          })
+
+          if (fatturaRettificata) {
+            await prisma.electronicInvoice.update({
+              where: { id: invoice.id },
+              data: { rettificaInvoiceId: fatturaRettificata.id },
+            })
+          } else {
+            logger.info('Nota di credito: fattura rettificata non trovata (forse non ancora importata)', {
+              invoiceId: invoice.id,
+              numeroCercato: riferimento.idDocumento,
+              supplierVat: invoice.supplierVat,
+            })
+          }
+        }
+      } catch (error) {
+        logger.error('Errore nella risoluzione della fattura rettificata dalla nota di credito', error, {
+          invoiceId: invoice.id,
+        })
+      }
+    }
 
     // Le nuove rate del fornitore ereditano la stima del suo ritardo storico
     if (schedulesResult.created > 0 && invoice.supplierId) {

@@ -34,7 +34,11 @@ interface RigaFixture {
 }
 
 /** Fattura con snapshot delle righe e imputazioni per conto, come dopo l'import. */
-async function creaFatturaConRighe(righe: RigaFixture[]) {
+async function creaFatturaConRighe(
+  righe: RigaFixture[],
+  /** Task 6: `documentType` e `rettificaInvoiceId`, per creare una nota di credito. */
+  overrides: { documentType?: string; rettificaInvoiceId?: string } = {}
+) {
   const venueId = (await venueDiTest()).id
   const netto = righe.reduce((s, r) => s + r.prezzoTotale, 0)
   const lordo = righe.reduce(
@@ -53,6 +57,7 @@ async function creaFatturaConRighe(righe: RigaFixture[]) {
       netAmount: new Prisma.Decimal(netto.toFixed(2)),
       vatAmount: new Prisma.Decimal((lordo - netto).toFixed(2)),
       status: 'RECORDED',
+      ...overrides,
       lineItems: righe.map((r) => ({
         numeroLinea: r.numeroLinea,
         descrizione: r.descrizione,
@@ -510,5 +515,82 @@ describe("IVA di testata dopo l'annullo", () => {
 
     await riconcilia(fattura, lordo, movimento.id)
     expect(await ivaDiTestata(movimento.id)).toBe(122)
+  })
+})
+
+/**
+ * Task 6: la nota di credito entra nel calcolo dei pesi, su database vero.
+ *
+ * Lo scenario è quello della spec (sezione 4): fattura mista 1.000 @10% +
+ * 100 @22% = 1.222 lordi, nota di credito che rettifica i detersivi resi
+ * (100 @22% = 122 lordi), pagamento netto di 1.100 — quanto resta dopo la
+ * nota. Atteso: alimentari 1.100, pulizia sparita (0), non la proporzione
+ * vecchia che ignora la nota (≈990 / ≈110).
+ */
+describe('nota di credito che rettifica (Task 6)', () => {
+  it('un pagamento netto della fattura eredita 1.100 su alimentari, e pulizia non compare più', async () => {
+    const { fattura, lordo, food, pulizia } = await fatturaMista()
+    expect(lordo).toBe(1222)
+
+    // Nota di credito TD04, collegata alla fattura come lo sarebbe all'import
+    // (route.ts risolve `rettificaInvoiceId` leggendo l'XML: qui si assume
+    // già risolto, non lo si testa in questo file), imputata per intero sullo
+    // stesso conto pulizia che rettifica.
+    await creaFatturaConRighe(
+      [{ numeroLinea: 1, descrizione: 'Detersivi resi', prezzoTotale: 100, aliquotaIVA: 22, accountId: pulizia }],
+      { documentType: 'TD04', rettificaInvoiceId: fattura.id }
+    )
+
+    const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+    // Pagamento netto: 1.222 (fattura) − 122 (nota) = 1.100. Lo scadenzario
+    // resta a 1.222 (fuori perimetro, spec sezione 4): qui si verifica solo
+    // che la parte pagata si divida bene.
+    const movimento = await creaMovimento({ uscita: 1100, venueId })
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+    })
+    expect(esito.outcome).toBe('ok')
+
+    // Numeri letterali dello scenario, non ricavati dalle mappe del codice
+    // sotto test: se la sottrazione si rompe questo confronto deve fallire
+    // con la proporzione vecchia, non con sé stesso.
+    expect(await fettePerConto(movimento.id)).toEqual({ [food]: 1100 })
+  })
+
+  it('nota di credito non imputata: l\'ereditarietà si astiene, il movimento resta senza fette (non la vecchia proporzione)', async () => {
+    const { fattura, lordo, pulizia } = await fatturaMista()
+
+    // La nota esiste ed è collegata, ma la sua riga non è stata confermata:
+    // sottrarne una parte darebbe un risultato peggiore di non sottrarre
+    // nulla, perché sembrerebbe corretto.
+    await creaFatturaConRighe(
+      [
+        {
+          numeroLinea: 1,
+          descrizione: 'Detersivi resi',
+          prezzoTotale: 100,
+          aliquotaIVA: 22,
+          accountId: pulizia,
+          stato: 'proposta',
+        },
+      ],
+      { documentType: 'TD04', rettificaInvoiceId: fattura.id }
+    )
+
+    const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+    const movimento = await creaMovimento({ uscita: 1100, venueId })
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+    })
+    expect(esito.outcome).toBe('ok')
+    expect(await fettePerConto(movimento.id)).toEqual({})
   })
 })
