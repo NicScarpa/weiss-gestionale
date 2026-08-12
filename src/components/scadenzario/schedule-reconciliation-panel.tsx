@@ -41,6 +41,7 @@ interface Candidato {
   description: string
   date: string
   amount: number
+  motivazioni: string[]
 }
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -197,6 +198,15 @@ export function ScheduleReconciliationPanel({ scheduleId, onChange }: Props) {
                     {format(new Date(c.date), 'd MMMM yyyy', { locale: it })} ·{' '}
                     {formatCurrency(c.amount)}
                   </p>
+                  {c.motivazioni?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {c.motivazioni.map((m) => (
+                        <Badge key={m} variant="secondary" className="text-[10px] font-normal">
+                          {m}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-1 shrink-0">
                   <Button
