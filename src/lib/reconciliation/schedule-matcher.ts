@@ -17,6 +17,7 @@ export const SCHEDULE_MATCH_WEIGHTS = {
   AMOUNT: 0.55,
   DATE: 0.25,
   DESCRIPTION: 0.2,
+  DOCUMENTO: 0.15,
 } as const
 
 export const SCHEDULE_MATCH_THRESHOLDS = {
@@ -149,7 +150,7 @@ export function calculateScheduleMatchScore(
     const numero = schedule.numeroDocumento.toLowerCase().replace(/[^a-z0-9]/gi, '')
     const causale = entry.description.toLowerCase().replace(/[^a-z0-9]/gi, '')
     if (numero.length >= 3 && causale.includes(numero)) {
-      score = Math.min(1, score + 0.15)
+      score = Math.min(1, score + SCHEDULE_MATCH_WEIGHTS.DOCUMENTO)
       motivazioni.push('Numero documento nella causale')
     }
   }

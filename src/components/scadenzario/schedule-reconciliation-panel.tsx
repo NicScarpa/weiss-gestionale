@@ -169,7 +169,7 @@ export function ScheduleReconciliationPanel({ scheduleId, onChange }: Props) {
                 somiglianza fra causale e controparte
               </li>
               <li>
-                <strong>+15%</strong> se il numero documento compare nella causale
+                <strong>+{pct(SCHEDULE_MATCH_WEIGHTS.DOCUMENTO)}</strong> se il numero documento compare nella causale
               </li>
             </ul>
             <p>
