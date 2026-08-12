@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
       return Math.min(max, Math.max(min, Math.trunc(n)))
     }
 
-    const rangeGiorni = intero(searchParams.get('range'), 90, 1, 90)
+    const rangeGiorni = intero(searchParams.get('range'), 90, 1, 365)
     const ancoraGiorni = intero(searchParams.get('da'), 0, -365, 0)
     const includiScaduto = searchParams.get('includiScaduto') === 'true'
 

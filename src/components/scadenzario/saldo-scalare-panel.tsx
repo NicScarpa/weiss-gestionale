@@ -42,8 +42,14 @@ const ANCORE = [
   { valore: -60, etichetta: '−60 giorni' },
 ]
 
-/** Quanto futuro proiettare oltre oggi. */
-const DURATE = [7, 14, 30, 60, 90]
+/**
+ * Quanto futuro proiettare oltre oggi. Il Task 14 l'aveva ridotta a
+ * [7, 14, 30, 60, 90]: una regressione, perché prima dell'onda l'interfaccia
+ * offriva fino a 180/365 giorni. Il tetto di `range` sulla rotta resta
+ * (senza, `?range=100000` sarebbe una scansione aperta), ma va tenuto
+ * allineato alla durata più lunga qui sotto.
+ */
+const DURATE = [7, 14, 30, 60, 90, 180, 365]
 
 /**
  * Legge un intero da un parametro URL, ricadendo sul predefinito se assente
