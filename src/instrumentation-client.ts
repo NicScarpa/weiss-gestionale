@@ -45,12 +45,24 @@ export function opzioniSentryClient(dsn: string): OpzioniClient {
       'Failed to fetch',
       'NetworkError',
       'Network request failed',
-      /^chrome-extension:\/\//,
-      /^moz-extension:\/\//,
       'ResizeObserver loop',
       'AbortError',
       // Next riprova da solo a caricare i chunk
       'Loading chunk',
+      // Estensioni del browser che chiamano una tab già chiusa. L'errore
+      // arriva senza frame con URL (così su Safari), quindi denyUrls da solo
+      // non basta: qui si intercetta per messaggio, un vocabolario che
+      // nessun codice di quest'app usa.
+      /runtime\.sendMessage/,
+    ],
+
+    // Errori sollevati da script di estensioni del browser installate sul
+    // dispositivo del visitatore, non dall'app: ignoreErrors guarda il
+    // messaggio dell'errore, denyUrls guarda l'origine dei frame dello stack.
+    denyUrls: [
+      /^chrome-extension:\/\//,
+      /^moz-extension:\/\//,
+      /^safari-web-extension:\/\//,
     ],
 
     sendDefaultPii: false,

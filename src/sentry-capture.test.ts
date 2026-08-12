@@ -97,3 +97,70 @@ describe('cattura degli errori con DSN configurato', () => {
     expect(briciola?.data?.pagina).toBe('/login')
   })
 })
+
+describe('filtro del rumore da estensioni del browser', () => {
+  /**
+   * ignoreErrors guarda il messaggio dell'errore, denyUrls guarda l'origine
+   * dei frame dello stack: sono opzioni diverse, verificate qui con eventi
+   * diversi. Per denyUrls lo stack va costruito a mano, perché in jsdom lo
+   * stack reale di un errore punta sempre al file di test, mai a un URL di
+   * estensione.
+   */
+  function eventoConFrame(messaggio: string, urlFrame: string): Event {
+    return {
+      exception: {
+        values: [
+          {
+            type: 'Error',
+            value: messaggio,
+            stacktrace: { frames: [{ filename: urlFrame, function: 'onMessage' }] },
+          },
+        ],
+      },
+    }
+  }
+
+  it.each([
+    ['Chrome', 'chrome-extension://abcdefghijklmnopqrstuvwxyz012345/content.js'],
+    ['Firefox', 'moz-extension://11111111-2222-3333-4444-555555555555/content.js'],
+    ['Safari', 'safari-web-extension://11111111-2222-3333-4444-555555555555/content.js'],
+  ])('uno script di estensione %s non arriva al transport (denyUrls)', async (_browser, urlFrame) => {
+    const messaggio = `errore-estensione-${urlFrame}`
+    Sentry.captureEvent(eventoConFrame(messaggio, urlFrame))
+    await Sentry.flush(2000)
+
+    const evento = eventiCatturati().find((e) => e.exception?.values?.some((v) => v.value === messaggio))
+    expect(evento).toBeUndefined()
+  })
+
+  it('un errore di estensione senza URL nello stack è scartato per messaggio (ignoreErrors)', async () => {
+    // Il caso reale che ha aperto questo fix: su Safari mobile l'errore
+    // arriva senza frame utilizzabili, quindi denyUrls da solo non basta.
+    Sentry.captureException(new Error('Invalid call to runtime.sendMessage(). Tab not found.'))
+    await Sentry.flush(2000)
+
+    const evento = eventiCatturati().find((e) =>
+      e.exception?.values?.some((v) => v.value?.includes('runtime.sendMessage'))
+    )
+    expect(evento).toBeUndefined()
+  })
+
+  it('i filtri di messaggio preesistenti continuano a funzionare', async () => {
+    Sentry.captureException(new Error('Failed to fetch'))
+    await Sentry.flush(2000)
+
+    const evento = eventiCatturati().find((e) => e.exception?.values?.some((v) => v.value === 'Failed to fetch'))
+    expect(evento).toBeUndefined()
+  })
+
+  it('un errore applicativo plausibile non viene filtrato per errore', async () => {
+    // La rete di sicurezza contro un pattern troppo largo: un vero errore
+    // dell'app deve continuare ad arrivare al transport.
+    const messaggio = 'Errore di validazione: importo non valido'
+    Sentry.captureException(new Error(messaggio))
+    await Sentry.flush(2000)
+
+    const evento = eventiCatturati().find((e) => e.exception?.values?.some((v) => v.value === messaggio))
+    expect(evento).toBeDefined()
+  })
+})
