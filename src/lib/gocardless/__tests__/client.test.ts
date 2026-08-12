@@ -145,4 +145,92 @@ describe('client GoCardless', () => {
     expect(chiamate[1].url).toContain('date_from=2026-05-01')
     expect(chiamate[1].url).toContain('date_to=2026-08-01')
   })
+
+  it('riprova su un errore di rete (fetch che rigetta), non solo su un 5xx', async () => {
+    const chiamate: string[] = []
+    let numero = 0
+    const impl = vi.fn(async (url: string | URL | Request) => {
+      chiamate.push(String(url))
+      numero++
+      if (numero === 1) return risposta(TOKEN)
+      if (numero === 2) throw new TypeError('fetch failed')
+      return risposta(saldi)
+    }) as unknown as typeof fetch
+    const c = creaClient({ ...CREDENZIALI, fetchImpl: impl, attesa: senzaAttesa })
+
+    const esito = await c.saldiConto('conto-1')
+
+    expect(esito.dati.balances).toHaveLength(2)
+    expect(chiamate).toHaveLength(3)
+  })
+
+  it('il backoff cresce a ogni tentativo (prima 500ms, poi 1000ms)', async () => {
+    const { impl } = fetchFinto(
+      risposta(TOKEN),
+      risposta({ detail: 'guasto' }, 503),
+      risposta({ detail: 'guasto' }, 503),
+      risposta(saldi)
+    )
+    const attese: number[] = []
+    const attesaSpia = async (ms: number) => {
+      attese.push(ms)
+    }
+    const c = creaClient({ ...CREDENZIALI, fetchImpl: impl, attesa: attesaSpia })
+
+    await c.saldiConto('conto-1')
+
+    expect(attese).toEqual([500, 1000])
+  })
+
+  it('un 429 sul rinnovo del token lancia LimiteRaggiunto, non un ErroreGoCardless generico', async () => {
+    const { impl, chiamate } = fetchFinto(
+      risposta({ detail: 'limite sul token' }, 429, {
+        'http_x_ratelimit_account_success_reset': '120',
+      })
+    )
+    const c = creaClient({ ...CREDENZIALI, fetchImpl: impl, attesa: senzaAttesa })
+
+    const errore = await c.saldiConto('conto-1').catch((e) => e)
+
+    expect(errore).toBeInstanceOf(LimiteRaggiunto)
+    // Nemmeno sul token il 429 va ritentato: una sola chiamata, subito l'errore.
+    expect(chiamate).toHaveLength(1)
+  })
+
+  it('riprova sul rinnovo del token quando risponde 5xx, poi procede con la chiamata dati', async () => {
+    const { impl, chiamate } = fetchFinto(
+      risposta({ detail: 'guasto' }, 503),
+      risposta({ detail: 'guasto' }, 503),
+      risposta(TOKEN),
+      risposta(saldi)
+    )
+    const c = creaClient({ ...CREDENZIALI, fetchImpl: impl, attesa: senzaAttesa })
+
+    const esito = await c.saldiConto('conto-1')
+
+    expect(esito.dati.balances).toHaveLength(2)
+    expect(chiamate).toHaveLength(4)
+    expect(chiamate[0].url).toContain('/token/new/')
+    expect(chiamate[1].url).toContain('/token/new/')
+    expect(chiamate[2].url).toContain('/token/new/')
+    expect(chiamate[3].url).toContain('/accounts/conto-1/balances/')
+  })
+
+  it('su un 401 sulla chiamata dati scarta il token in cache e riprova una sola volta con uno nuovo', async () => {
+    const TOKEN_NUOVO = { ...TOKEN, access: 'nuovo-access' }
+    const { impl, chiamate } = fetchFinto(
+      risposta(TOKEN),
+      risposta({ detail: 'token rifiutato dal server' }, 401),
+      risposta(TOKEN_NUOVO),
+      risposta(saldi)
+    )
+    const c = creaClient({ ...CREDENZIALI, fetchImpl: impl, attesa: senzaAttesa })
+
+    const esito = await c.saldiConto('conto-1')
+
+    expect(esito.dati.balances).toHaveLength(2)
+    expect(chiamate).toHaveLength(4)
+    const intestazioniSecondaChiamataDati = chiamate[3].init?.headers as Record<string, string>
+    expect(intestazioniSecondaChiamataDati.authorization).toBe('Bearer nuovo-access')
+  })
 })
