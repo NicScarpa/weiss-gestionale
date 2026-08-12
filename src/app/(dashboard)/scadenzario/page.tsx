@@ -46,6 +46,12 @@ function SortIcon({ column, sortBy, sortOrder }: { column: string; sortBy: strin
     : <ArrowDown className="h-3 w-3 ml-1" />
 }
 
+function giorniDiRitardo(scadenza: Schedule, oggi: Date): number | undefined {
+  const data = new Date(scadenza.dataAttesa ?? scadenza.dataScadenza)
+  if (data >= oggi) return undefined
+  return Math.floor((oggi.getTime() - data.getTime()) / 86_400_000)
+}
+
 export default function ScadenzarioPage() {
   const router = useRouter()
   const [schedules, setSchedules] = useState<Schedule[]>([])
@@ -420,7 +426,7 @@ export default function ScadenzarioPage() {
                           onClick={() => router.push(`/scadenzario/${schedule.id}`)}
                         >
                           <TableCell>
-                            <ScheduleStatusBadge stato={schedule.stato} />
+                            <ScheduleStatusBadge stato={schedule.stato} giorniRitardo={giorniDiRitardo(schedule, today)} />
                           </TableCell>
                           <TableCell>
                             <div className="flex flex-col">
