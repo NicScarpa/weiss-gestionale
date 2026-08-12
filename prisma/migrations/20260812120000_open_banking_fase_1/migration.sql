@@ -104,17 +104,25 @@ CREATE UNIQUE INDEX "ux_bank_transactions_conto_provider"
 
 -- Backfill prudente dei movimenti storici.
 --
--- Assegna il conto SOLO alle sedi che ne hanno esattamente uno attivo: lì
--- l'attribuzione è certa. Dove i conti sono più d'uno, `bank_account_id`
--- resta NULL, perché indovinare a quale conto appartenga un movimento
--- importato da CSV due mesi fa produrrebbe dati falsi che nessuno saprebbe
--- più distinguere da quelli veri.
+-- Assegna il conto SOLO alle sedi che hanno esattamente UN conto bancario
+-- in assoluto — attivo o disattivato — mai un registratore di cassa:
+-- `bank_accounts` non contiene solo conti bancari, `account_type` distingue
+-- CASH da BANK, e una sede con un conto e una cassa entrambi attivi non ha
+-- affatto "un conto solo". I registratori di cassa sono esclusi dal conteggio
+-- perché un movimento bancario non può appartenere a una cassa. Un conto
+-- disattivato conta comunque: una sede che ha chiuso il suo unico conto e
+-- basta resta a n=1 e l'attribuzione resta certa; solo aprirne un secondo
+-- (attivo o no) la rende ambigua. Dove i conti bancari sono più d'uno,
+-- `bank_account_id` resta NULL: indovinare a quale conto appartenga un
+-- movimento importato da CSV due mesi fa produrrebbe dati falsi che nessuno
+-- saprebbe più distinguere da quelli veri — un NULL si vede, un conto
+-- sbagliato no.
 UPDATE "bank_transactions" bt
 SET "bank_account_id" = unico."id"
 FROM (
     SELECT "venue_id", MIN("id") AS "id", COUNT(*) AS n
     FROM "bank_accounts"
-    WHERE "is_active" = true
+    WHERE "account_type" = 'BANK'
     GROUP BY "venue_id"
 ) unico
 WHERE bt."venue_id" = unico."venue_id"

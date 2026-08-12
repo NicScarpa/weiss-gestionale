@@ -96,7 +96,7 @@ describe('client GoCardless', () => {
   })
 
   it('si arrende dopo i tentativi previsti e lancia ErroreGoCardless', async () => {
-    const { impl } = fetchFinto(
+    const { impl, chiamate } = fetchFinto(
       risposta(TOKEN),
       risposta({ detail: 'guasto' }, 503),
       risposta({ detail: 'guasto' }, 503),
@@ -105,6 +105,13 @@ describe('client GoCardless', () => {
     const c = creaClient({ ...CREDENZIALI, fetchImpl: impl, attesa: senzaAttesa })
 
     await expect(c.saldiConto('conto-1')).rejects.toBeInstanceOf(ErroreGoCardless)
+    // Il tipo dell'errore da solo non basta: se RITENTATIVI salisse, il
+    // fetch finto esaurito verrebbe comunque incapsulato in un
+    // ErroreGoCardless (è il ramo dell'errore di rete) e il test resterebbe
+    // verde. Il budget dei tentativi si controlla contando le chiamate: 1 sul
+    // token più 3 sui dati (RITENTATIVI = 2, cioè il primo tentativo più 2
+    // extra).
+    expect(chiamate).toHaveLength(4)
   })
 
   // Il limite della banca è giornaliero: ritentare non lo sblocca e consuma
