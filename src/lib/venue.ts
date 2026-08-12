@@ -1,3 +1,7 @@
+// Rende ogni import di questo modulo da un componente client un errore di
+// build che nomina il file colpevole, invece di scoprirlo a bundle rotto.
+import 'server-only'
+
 import { prisma } from './prisma'
 import { cache } from 'react'
 
