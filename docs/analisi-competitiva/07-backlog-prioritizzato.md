@@ -1,7 +1,7 @@
 # Backlog prioritizzato
 
-Le **70 voci** della matrice con verdetto 🔴 (assente, da implementare — 50) o 🟠
-(presente ma risolto meglio da loro — 20), ordinate per priorità.
+Le **55 voci** della matrice con verdetto 🔴 (assente, da implementare — 39) o 🟠
+(presente ma risolto meglio da loro — 16), ordinate per priorità.
 
 Regola di ordinamento: **quick win in cima** (impatto ≥3 ed effort S), poi
 impatto decrescente, poi effort crescente. A parità di tutto, prima ciò che
@@ -9,11 +9,23 @@ previene un numero sbagliato.
 
 Ogni voce è implementabile senza riaprire i software concorrenti: la matrice
 (`02-matrice-5vie.md`) contiene già cosa fanno loro, e i ticket in `09-issues/`
-contengono i file del repo da toccare.
+contengono i file del repo da toccare (`09-issues/` e `08-quick-wins.md` non
+sono stati riallineati in questo passaggio: descrivono ancora tutti e sedici i
+quick win originari come aperti — verificare contro questo file e contro la
+matrice prima di usarli).
 
 **Escluse per costruzione**: le 17 voci ⚪, ciascuna motivata nella propria cella
 di matrice, e le 10 famiglie escluse per scala in `01-tassonomia.md` §4. Non
 tornano.
+
+**Aggiornamento — Onda 1 (11-12 agosto 2026).** Quindici voci sono state
+implementate e sono uscite dal backlog: l'elenco è in «Fatto nell'Onda 1» qui
+sotto. Tre voci restano aperte ma con lo scopo ristretto a ciò che
+effettivamente manca (`SCD-08`, `CLS-06`, `RET-07`); `SCD-02` è stata rimossa
+dall'onda in corsa e riclassificata da P0 a P2 (l'effort reale è M, non S — la
+sua voce spiega il perché). L'esecuzione ha anche fatto emergere sei difetti
+non mappati sulla matrice, mai corretti: sono in fondo, in «Trovati durante
+l'esecuzione».
 
 ---
 
@@ -21,80 +33,89 @@ tornano.
 
 | Priorità | Criterio | Voci | Effort complessivo indicativo |
 |---|---|---|---|
-| **P0** | Quick win: impatto ≥3, effort S | 16 | ~6-8 giornate |
-| **P1** | Impatto 5 | 5 (di cui 1 già in P0) | ~2 settimane |
-| **P2** | Impatto 4, effort M | 10 | ~3 settimane |
+| **P0** | Quick win: impatto ≥3, effort S | 7 | ~3 giornate |
+| **P1** | Impatto 5 | 4 (di cui 1 già in P0) | ~1,5 settimane |
+| **P2** | Impatto 4, effort M | 9 | ~3 settimane |
 | **P3** | Impatto 4, effort L | 7 | ~2 mesi |
-| **P4** | Impatto 3, effort M | 20 | ~5 settimane |
+| **P4** | Impatto 3, effort M | 19 [nota 1] | ~5 settimane |
 | **P5** | Impatto 3, effort L | 6 | ~1,5 mesi |
-| **P6** | Impatto 2 | 7 | — |
+| **P6** | Impatto 2 | 6 | — |
 
-Il totale è volutamente molto più grande di ciò che si farà: serve a decidere
-cosa **non** fare sapendo cosa si sta lasciando.
+[nota 1] Il testo introduttivo della sezione P4 dichiara «venti voci»; l'elenco
+ne contiene diciannove. Inconsistenza preesistente all'Onda 1, non toccata da
+questo aggiornamento — nessuna delle voci P4 fa parte delle diciotto verificate.
+
+Il totale è volutamente più grande di ciò che si farà: serve a decidere cosa
+**non** fare sapendo cosa si sta lasciando. Sono escluse le sei voci di
+«Trovati durante l'esecuzione», che non hanno un ID di matrice.
+
+---
+
+## Fatto nell'Onda 1
+
+Quindici voci passate a ✅ nella matrice, con l'effort indicativo che avevano in
+questo backlog prima di chiudersi. Dettaglio dello stato attuale nella cella
+`weiss-gestionale` di ciascuna riga in `02-matrice-5vie.md`.
+
+| ID | Cosa | Era | Effort che aveva |
+|---|---|---|---|
+| `RPT-04` | Separatore decimale italiano coerente sui due export CSV | P0 | S |
+| `RPT-10` | Riga dei totali nell'export dello scadenzario | P6 | S |
+| `SCD-04` | Anzianità del ritardo dentro il badge di stato | P0 | S |
+| `SCD-14` | Ritardo effettivo confrontato con i termini pattuiti | P0 | S |
+| `PRV-01` | Le tre rotte previsionali condividono un solo motore | P2 | M |
+| `PRV-03` | Nessun doppio conteggio fra fonti previsionali diverse | P1 | M |
+| `PRV-04` | Gerarchia di affidabilità delle fonti, ora arbitrata davvero | P2 | M |
+| `PRV-15` | Selettore di periodo per ancora + durata | P0 | S |
+| `RIC-03` | Motivazioni in chiaro accanto al punteggio di match | P0 | S |
+| `RIC-04` | Pesi e soglie del punteggio dichiarati all'utente | P0 | S |
+| `KPI-02` | Giudizio sintetico in linguaggio naturale | P0 | S |
+| `KPI-03` | Banda di rischio disegnata sul grafico | P0 | S |
+| `CLS-09` | Anteprima dell'impatto prima di applicare una regola | P0 | S |
+| `CLS-16` | Tasso di categorizzazione come KPI con obiettivo | P0 | S |
+| `PLT-07` | Stati vuoti che insegnano invece di constatare | P0 | S |
 
 ---
 
 ## P0 · Quick win — impatto ≥3, effort S
 
-Sedici voci, dettagliate una per una in `08-quick-wins.md` con i path dei file.
-Qui solo l'elenco ordinato, perché è la lista che si esegue.
+Tredici delle sedici voci originarie sono fatte (v. «Fatto nell'Onda 1») o
+riclassificate (`SCD-02`, spostata a P2). Restano quattro voci, più tre difetti
+trovati durante l'esecuzione che hanno la stessa taglia impatto/effort (v.
+«Trovati durante l'esecuzione» in fondo al documento — non hanno un ID di
+matrice, quindi non sono in questa tabella).
 
 | # | ID | Cosa | V | Imp |
 |---|---|---|---|---|
-| 1 | `SCD-08` | **Contatore «pagate senza movimento»** — intercetta l'errore che falsa il previsionale in silenzio | 🔴 | **5** |
-| 2 | `RIC-03` | **Motivazioni accanto al punteggio di match** — «importo identico», «unico match possibile» | 🔴 | 4 |
-| 3 | `CLS-16` | **Tasso di categorizzazione come KPI** con obiettivo dichiarato | 🔴 | 4 |
-| 4 | `SCD-02` | **Mese corrente spezzato** in «scaduto» e «da saldare» | 🔴 | 4 |
-| 5 | `SCD-04` | **Anzianità del ritardo dentro il badge** («Scaduta +117g») | 🔴 | 4 |
-| 6 | `KPI-02` | **Giudizio sintetico in linguaggio naturale** sopra i numeri | 🔴 | 4 |
-| 7 | `CLS-09` | **Anteprima dell'impatto** prima di applicare una regola | 🟠 | 4 |
-| 8 | `RPT-04` | **Separatore decimale italiano nell'export dello scadenzario** — oggi quegli importi arrivano a Excel come testo, mentre l'export della prima nota è già corretto | 🔴 | 3 |
-| 9 | `RIC-04` | **Fattori del punteggio dichiarati** prima dell'esecuzione | 🔴 | 3 |
-| 10 | `KPI-03` | **Banda «zona negativa»** sul grafico del saldo (la linea di soglia c'è già) | 🟠 | 3 |
-| 11 | `SCD-14` | **Ritardo effettivo confrontato con i termini pattuiti** | 🟠 | 3 |
-| 12 | `PRV-15` | **Selettore di periodo per ancora + durata**, con preset asimmetrico | 🔴 | 3 |
-| 13 | `RET-07` | **Numero di distinta sul versamento** contanti | 🟠 | 3 |
-| 14 | `DOC-11` | **Controllo di plausibilità** sul documento in ingresso | 🔴 | 3 |
-| 15 | `CLS-06` | **Anteprima delle righe colpite** dalla proposta di regola (il conteggio c'è già) | 🟠 | 3 |
-| 16 | `PLT-07` | **Stati vuoti che insegnano** invece di constatare | 🟠 | 3 |
+| 1 | `SCD-08` | **Il pagamento manuale non genera movimento** — il contatore che intercetta il buco c'è già (`schedule-summary-cards.tsx`); manca ancora generare il `JournalEntry` da `POST /api/scadenzario/[id]/pagamenti`, decidendo conto e registro di destinazione | 🟠 | **5** |
+| 2 | `RET-07` | **Il bonus del numero di distinta non arriva alla soglia di automatico** — 0,86 contro `AUTO_MATCH = 0.9` sullo scenario ambiguo misurato: aiuta a decidere, non decide da solo. Da rivedere come taratura del punteggio (peso del bonus o soglia), non come funzionalità mancante | 🟠 | 3 |
+| 3 | `DOC-11` | **Controllo di plausibilità** sul documento in ingresso | 🔴 | 3 |
+| 4 | `CLS-06` | **Il suggeritore raggruppa su un campo diverso da quello su cui il motore aggancia** — `proposals/route.ts:35` raggruppa per `counterpartName`, `recategorize/route.ts:82` aggancia solo su `description`: le regole nate da una proposta spesso funzionano una volta sola e poi non intercettano più nulla. L'anteprima delle righe colpite (impatto 3, la lacuna originaria) è già stata fatta | 🟠 | 3 |
 
 ---
 
-## P1 · Impatto 5 — le cinque cose che cambiano un numero
+## P1 · Impatto 5 — le cose che cambiano un numero
 
 Sono le voci in cui l'assenza produce un **numero sbagliato** o una **decisione
 mancata**, non un'inconvenienza.
 
-### `SCD-08` · Contatore «pagate senza movimento» · effort **S** → già in P0
+### `SCD-08` · Il pagamento manuale non genera movimento · effort **M** → già in P0
 
-Il più urgente di tutti, ed è anche il più economico. Vedi `08-quick-wins.md` §1.
+Non più un quick win: il contatore (il pezzo economico) è fatto, resta la
+generazione del `JournalEntry`, che è una decisione di prodotto su conto e
+registro, non una scrittura da mezza giornata. Vedi la voce in P0 sopra.
 
-### `PRV-03` · Una sola fonte per la previsione di cassa · effort M
+### `PRV-03` + `PRV-01` + `PRV-04` · Una sola fonte per la previsione di cassa · effort M → **fatto**
 
-**Il problema.** Tre motori con basi diverse rispondono alla stessa domanda:
-
-| Rotta | Base | Orizzonte |
-|---|---|---|
-| `/api/dashboard/forecast` | spese ricorrenti + storico chiusure | 30 gg |
-| `/api/scadenzario/saldo-scalare` | scadenze aperte | 90 gg |
-| `/api/cashflow/projection` | movimenti già registrati | libero |
-
-E a monte ci sono **due modelli disgiunti della stessa uscita ricorrente**:
-`RecurringExpense` (letto solo dal forecast) e `Recurrence` → `Schedule` (letta
-solo dal saldo scalare). Nessuno dei due sa dell'altro, e nessun percorso
-converte l'uno nell'altro. La stessa uscita fissa inserita in una sola pagina
-sparisce dall'altra proiezione; inserita in entrambe viene contata due volte.
-È la stessa famiglia di difetto che l'analisi rimprovera a Cash King, che ha tre
-valori per lo stesso saldo.
-
-**Cosa fanno loro.** Agicap spegne le ricorrenze nel breve termine, dove i
-pagamenti programmati sono una fonte migliore. Trezy tiene tre stime concorrenti
-e ne **sceglie** una (`pickedSource`) invece di sommarle.
-
-**Cosa facciamo.** Una funzione unica di proiezione in `src/lib/`, con la
-gerarchia `movimento registrato > scadenza aperta > spesa ricorrente non ancora
-scadenzata`. Le tre rotte restano come **viste** su finestre diverse, non come
-motori. Va insieme a `PRV-04`.
+Le tre rotte previsionali proiettano ora dalla stessa funzione pura
+(`src/lib/previsionale/proietta.ts`), con la gerarchia `movimento registrato >
+scadenza aperta > ricorrente non scadenzata > stima`. Verificato numericamente:
+`/cash-flow` e `/scadenzario` mostrano lo stesso saldo finale sulla stessa
+finestra. `RecurringExpense` e `Recurrence` restano due modelli disgiunti — la
+sovrapposizione è arbitrata alla lettura, non eliminata alla scrittura —
+un'unificazione resta una decisione di prodotto aperta, da prendere prima
+dell'Onda 5 (snapshot delle previsioni), non un rischio di doppio conteggio
+oggi. Dettaglio in `02-matrice-5vie.md` (righe `PRV-01`, `PRV-03`, `PRV-04`).
 
 ### `ALR-03` · Avviso su scadenza in avvicinamento · effort M
 
@@ -161,8 +182,7 @@ contratto dell'acquirer di WEISS.
 | `MOV-06` | **Raggruppamento dei movimenti simili** con contatore sulla riga | 🔴 | Hash della descrizione normalizzata (cifre rimosse), come Trezy. Categorizzare una riga con badge 173 dichiara la categoria di 173 movimenti — **e la riga deve dirlo**, che è il difetto di Trezy da non copiare |
 | `CLS-12` | **Dizionario di sinonimi delle controparti** | 🔴 | Tabella `CounterpartySynonym` con testo normalizzato e **origine**; il dizionario si accumula come effetto collaterale dell'approvazione di un abbinamento, non compilandolo. Cancellazione morbida con ripristino: un sinonimo sbagliato attribuisce movimenti alla controparte sbagliata in silenzio |
 | `RIC-14` | **Segnalare la corrispondenza in attesa** sulla riga scaduta | 🔴 | Trezy ha 6.431 € di scaduto apparente per non averlo fatto. Badge sulla scadenza quando esiste un candidato sopra `SUGGESTED` |
-| `PRV-01` | **Un solo motore previsionale** | 🟠 | Va insieme a `PRV-03` e `PRV-04`: è lo stesso intervento visto da tre angoli |
-| `PRV-04` | **Gerarchia di affidabilità delle fonti** dichiarata | 🔴 | `ConfidenceLevel` esiste già su `CashFlowForecastLine` ma non arbitra nulla: farlo arbitrare |
+| `SCD-02` | **Mese corrente spezzato** in «scaduto» e «da saldare» | 🔴 | Riclassificata da P0: non è un raggruppamento da sostituire, la lista è una tabella piatta con ordinamento per colonna, e i due si contendono lo stesso spazio — va decisa come funzionalità, non improvvisata dentro un quick win. Il Task 8 dell'Onda 1 (`SCD-04`, anzianità nel badge) copre buona parte del bisogno nel frattempo |
 | `PRV-08` | **Ricorrenza sul calendario lavorativo** | 🔴 | «ultimo giorno lavorativo del mese» + spostamento su giorno non lavorativo (precedente / successivo / non modificare). È il caso di stipendi e F24, che oggi cadono di sabato nel previsionale |
 | `SCS-01` | **Snapshot storico delle previsioni** | 🔴 | Congelamento settimanale come Agicap. Senza, `SCS-02` non ha un termine di paragone |
 | `RET-06` | **Sei motivi di eccezione** sull'accredito POS | 🔴 | Enum Prisma; dipende da `RET-05` |
@@ -188,7 +208,7 @@ contratto dell'acquirer di WEISS.
 
 ## P4 · Impatto 3, effort M
 
-Venti voci. Raggruppate per tema, perché conviene farle a lotti.
+Venti voci [nota 1]. Raggruppate per tema, perché conviene farle a lotti.
 
 **Riconciliazione** — `RIC-02` (punteggio a più fattori: aggiungere controparte,
 segno e unicità ai tre attuali) · `RIC-06` (approvazione in blocco dei match
@@ -243,12 +263,14 @@ non si condivide né sopravvive a un refresh).
 ## P6 · Impatto 2
 
 `DOC-13` (lordo e imponibile sulla stessa riga di lista, S) · `RPT-08` (report di
-posizione aperta stampabile, S) · `RPT-10` (riga dei totali e sigle espanse
-nell'export, S) · `FIS-04` (scheda dedicata per CBILL/pagoPA, S) · `BNK-08`
-(modelli di importazione riutilizzabili, M) · `SCD-13` (import di scadenzario
-misto, M) · `PRV-07` (costruttore di ricorrenze in linguaggio naturale, M).
+posizione aperta stampabile, S) · `FIS-04` (scheda dedicata per CBILL/pagoPA, S) ·
+`BNK-08` (modelli di importazione riutilizzabili, M) · `SCD-13` (import di
+scadenzario misto, M) · `PRV-07` (costruttore di ricorrenze in linguaggio
+naturale, M).
 
-Le prime quattro sono effort S e possono essere accodate a un'onda di quick win
+`RPT-10` (riga dei totali nell'export) è fatta nell'Onda 1 — v. sopra.
+
+Le prime tre sono effort S e possono essere accodate a un'onda di quick win
 se avanza tempo.
 
 ---
@@ -257,15 +279,23 @@ se avanza tempo.
 
 Non è un piano, è un ordine di dipendenze: chi esegue decide quanto ne fa.
 
-**Onda 1 — «i numeri devono essere giusti»** (~2 settimane)
-`SCD-08` · `RPT-04` · `PRV-03` + `PRV-01` + `PRV-04` (un intervento solo) ·
-`DOC-11`
-> Sono le quattro voci in cui oggi il gestionale può mostrare un numero
-> sbagliato senza che nessuno se ne accorga. Vanno prima di qualunque cosa
-> nuova.
+**Onda 1 — eseguita l'11-12 agosto 2026, ampliata rispetto al piano.** Invece di
+fermarsi alle quattro voci sui numeri sbagliati, ha coperto in un'unica
+esecuzione anche il resto dei quick win originariamente previsto per «Onda 2»:
+quindici voci chiuse (v. «Fatto nell'Onda 1»), più `SCD-08` nella sola parte di
+rilevamento. Restata fuori `SCD-02` (rimossa in corsa e riclassificata a P2 —
+non era un quick win) e `DOC-11` (mai stata nel perimetro dell'esecuzione).
+Dettaglio task per task: `.superpowers/sdd/2026-08-11-analisi-competitiva-onda-1/progress.md`.
 
-**Onda 2 — «il resto dei quick win»** (~1 settimana)
-Le altre 12 voci di P0, in qualunque ordine. Sono indipendenti fra loro.
+**Residuo dell'Onda 1 — da chiudere prima della prossima onda** (~3-5 giornate)
+`SCD-08` (generare il movimento) · `CLS-06` (allineare la chiave del
+suggeritore al motore) · `RET-07` (taratura del bonus) · `DOC-11` · i sei
+difetti in «Trovati durante l'esecuzione» più sotto.
+> Nessuna di queste è più un quick win puro nel senso originario: `SCD-08` e
+> `RET-07` richiedono una decisione di prodotto (dove scrivere il movimento; se
+> alzare il bonus o abbassare la soglia di automatico), `CLS-06` un cambio nel
+> motore delle regole condiviso con altre funzioni. `DOC-11` resta un vero
+> quick win, semplicemente non fatto.
 
 **Onda 3 — «il ciclo POS»** (~3 settimane)
 `RET-04` → `RET-05` → `RET-06` → `RET-07`
@@ -292,6 +322,64 @@ presupposto tecnico c'è già) · P4.
 
 ---
 
+## Trovati durante l'esecuzione dell'Onda 1 — non ancora corretti
+
+Non hanno un ID di matrice: sono difetti di coerenza interna scoperti
+verificando i brief dei task o nella revisione finale, non lacune rispetto ai
+concorrenti. Priorità assegnata con lo stesso criterio impatto/effort delle
+voci sopra. Dettaglio completo in
+`.superpowers/sdd/2026-08-11-analisi-competitiva-onda-1/progress.md`.
+
+**Equivalenti P0 — impatto ≥3, effort S**
+
+- **La soglia di liquidità bassa esiste in due versioni.**
+  `src/app/(dashboard)/cash-flow/page.tsx:131` passa `sogliaMinima={5000}`
+  cablata nel codice; il cruscotto (`CashFlowForecast.tsx`) legge invece
+  `settings.lowBalanceThreshold`. Chi configura una soglia diversa da 5.000 €
+  ottiene due schermate che dissentono — inclusa la banda ambra che `KPI-03`
+  (appena chiusa) disegna ora sul grafico: il disegno è corretto, il valore può
+  non esserlo. Impatto 4, effort S: far leggere la pagina dallo stesso
+  `CashFlowSetting`.
+- **«Non categorizzato» significa due cose diverse in due posti.** Il filtro
+  della lista movimenti (`src/app/api/prima-nota/route.ts:215`) seleziona
+  `budgetCategoryId = null`, colonna marcata `@deprecated` nello schema; il KPI
+  di `CLS-16` (appena chiuso) misura `accountId`, l'asse vivo via
+  `AccountBudgetMapping`. Barra e filtro possono dare numeri diversi sugli
+  stessi movimenti. Impatto 4, effort S: allineare il filtro all'asse
+  `accountId`, o togliere `budgetCategoryId` dal filtro esplicitamente.
+- **Il pannello «Come nasce la previsione» può contare una spesa ricorrente più
+  volte di quanto dovrebbe.** `CashFlowSourcePanel` costruisce l'elenco «Spese
+  ricorrenti nel periodo» sommando le occorrenze **prima** della deduplica che
+  `proietta()` applica al saldo mostrato accanto: può elencare un totale
+  superiore a «Spese ricorrenti in scadenza» della card. Mina proprio la
+  promessa appena chiusa di `PRV-01`/`PRV-03` — il pannello esiste per
+  mostrare *come nasce il numero*. Impatto 3, effort S.
+
+**Equivalenti P6 — impatto 2**
+
+- **Il tasso di categorizzazione (`CLS-16`) può uscire dal range o sparire in
+  silenzio.** I due `count` di `GET /api/prima-nota/categorizzazione` non
+  stanno in una `$transaction`: se fra le due query entra un movimento senza
+  conto, `senzaConto` può superare `totale` e la percentuale uscire dal range.
+  La query non gestisce l'errore come fa quella dei movimenti nello stesso
+  file (`toast.error` su `isError`): se la rotta fallisce, la barra sparisce
+  senza segnale. Effort S: clamp o query raggruppata unica, più un `toast` di
+  errore coerente col resto del file.
+- **Il banner di giudizio (`KPI-02`) sparisce in silenzio se
+  `/api/scadenzario/summary` fallisce in modo permanente.** Nessun log, nessun
+  fallback — compromesso accettabile (meglio muto che bugiardo) ma resta un
+  fallimento silenzioso. Effort S: un log lato client.
+- **Debito minore del refactor previsionale (Task 4), non regressivo.**
+  `perFonte.ricorrente` è una somma con segno che annulla incasso e uscita
+  ricorrenti dello stesso giorno nel tooltip; la quota da `schedulesInRange`
+  ignora la deduplica; `giorniDellaFinestra` esiste in due copie; «oggi» si
+  calcola in due modi diversi fra le rotte previsionali (`startOfDay` locale
+  contro `giornoCorrente()` su Roma) — la stessa classe di bug di fuso che
+  l'onda ha dovuto correggere altrove (`SCD-04`), ora più rilevante perché le
+  tre rotte condividono la stessa proiezione. Effort complessivo S/M.
+
+---
+
 ## Le tre voci che vale la pena **non** fare, pur essendo nel backlog
 
 Le segnalo perché il backlog da solo non lo dice, e perché una lista lunga
@@ -308,6 +396,8 @@ invita a eseguirla tutta.
    noi la fascia alta è vuota, l'azione è inutile.
 3. **`CLS-05` grammatica delle regole più ricca.** È il punto in cui Agicap
    dissente da Cash King e ha ragione: la potenza sta nel suggeritore, non nel
-   costruttore. Prima si fanno `CLS-06` e `CLS-09` (conteggio e anteprima, due
-   quick win), poi si guarda se qualcuno ha ancora bisogno delle espressioni
-   regolari.
+   costruttore. `CLS-06` e `CLS-09` (conteggio e anteprima) sono state fatte
+   nell'Onda 1; resta aperto in `CLS-06` un difetto di aggancio fra
+   suggeritore e motore (v. P0), non la ricchezza della grammatica. Prima di
+   investire in espressioni regolari, chiudere quel difetto e guardare se
+   qualcuno ne sente ancora il bisogno.
