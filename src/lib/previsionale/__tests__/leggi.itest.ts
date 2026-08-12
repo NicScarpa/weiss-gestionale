@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { prisma } from '@/lib/prisma'
 import { toDateOnlyUtc } from '@/lib/timezone'
-import { giornoCorrente, giornoIndietro, saldiAlGiorno } from '@/lib/saldi'
+import { giornoCorrente, giornoIndietro } from '@/lib/saldi'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { loginAs } from '@/test/integration/auth-mock'
 import { creaScadenza, creaRicorrenza, creaMovimento } from '@/test/integration/fixtures/scadenzario'
@@ -170,12 +170,43 @@ describe('leggiFlussi', () => {
     expect(flussi).toHaveLength(1)
     expect(flussi[0].fonte).toBe('movimento')
     expect(flussi[0].importo).toBe(-80)
+  })
 
-    // E la curva proiettata finisce esattamente sul saldo reale di fine
-    // finestra: è il sintomo con cui il bug si manifestava a schermo.
-    const serie = await serieProiettata(venueId, dal, al)
-    const saldoReale = await saldiAlGiorno(venueId, al)
-    expect(serie.at(-1)?.saldo).toBe(saldoReale.totalAvailable)
+  // L'apertura della serie sottrae dal saldo di fine finestra **solo** i
+  // movimenti reali, non la variazione netta di tutte le fonti insieme: una
+  // scadenza futura è un impegno non ancora avvenuto, non ha mai spostato un
+  // euro reale, e sottrarla dall'apertura farebbe partire la curva già
+  // gonfiata del suo importo — con l'ultimo punto che torna sempre al saldo
+  // di oggi qualunque cosa ci sia da pagare, cioè esattamente il difetto che
+  // il modulo esiste per chiudere, spostato all'inizio della curva.
+  //
+  // `serie.at(-1)?.saldo === saldiAlGiorno(al)` da solo non basterebbe: con
+  // la formula sbagliata vale comunque, per costruzione, qualunque sia il
+  // saldo iniziale scelto (apertura + variazione netta = saldo di fine
+  // finestra sempre). Il test vero fissa entrambi i capi della curva.
+  it("l'apertura sottrae solo i movimenti reali, non gli impegni futuri", async () => {
+    const venueId = await getVenueId()
+    await loginAs('admin')
+    const oggi = giornoCorrente()
+    const anno = Number(oggi.slice(0, 4))
+
+    await prisma.initialBalance.create({
+      data: { venueId, year: anno, cashBalance: 1000, bankBalance: 1500 },
+    })
+    // Fra dieci giorni, tipo passiva: un impegno preso ma non ancora onorato.
+    await creaScadenza({
+      importoTotale: 1000,
+      tipo: 'passiva',
+      dataScadenza: toDateOnlyUtc(giornoIndietro(oggi, -10)),
+    })
+
+    const al = giornoIndietro(oggi, -30)
+    const serie = await serieProiettata(venueId, oggi, al)
+
+    // Oggi: la scadenza non ha ancora spostato nulla, è il saldo reale.
+    expect(serie[0].saldo).toBe(2500)
+    // Fra dieci giorni la scadenza scade: il saldo previsto scende di 1.000.
+    expect(serie.at(-1)?.saldo).toBe(1500)
   })
 
   // Il pagamento parziale: movimento e residuo non sono lo stesso denaro,

@@ -41,14 +41,18 @@ import { proietta, type FlussoPrevisto, type PuntoSerie } from './proietta'
  * 3. Una `RecurringExpense` non ha un legame esplicito con una `Recurrence`:
  *    sono due modelli disgiunti (vedi il commento in testa a `proietta.ts`).
  *    Il confronto è un'euristica dichiarata — nome normalizzato, importo,
- *    frequenza equivalente — ristretta alle `Recurrence` passive e attive:
- *    sopprimere una spesa contro una ricorrenza attiva **passiva** ha senso
- *    solo perché è l'unico caso in cui quella ricorrenza emette a sua volta
- *    un'occorrenza di fonte `ricorrente` che `proietta` non deduplica da
- *    sola (due flussi della stessa fonte non si escludono mai a vicenda). Una
- *    ricorrenza inattiva non emette occorrenze proprie, e se ne ha già
- *    generate ricadono in fonte `scadenza`, deduplicata regolarmente:
- *    sopprimere anche in quei casi non evita nulla e cancella un'uscita vera.
+ *    frequenza equivalente — ristretta alle `Recurrence` passive e attive.
+ *    Passiva perché una `RecurringExpense` è sempre un'uscita: un incasso
+ *    non può sopprimerla. Attiva per una scelta deliberata, non per un
+ *    meccanismo che copre il caso opposto: se la ricorrenza è disattivata ma
+ *    ha già generato `Schedule` ancora aperte nella finestra, quella
+ *    `Schedule` porta chiave `ricorrenza:<id>` e la spesa non soppressa
+ *    porterebbe `spesa:<id>` — chiavi diverse, che `proietta` non confronta
+ *    mai fra loro, quindi nessuna deduplica le protegge dal doppio conteggio
+ *    in quel caso raro. Si accetta comunque, perché l'alternativa —
+ *    sopprimere anche contro le ricorrenze disattivate — cancellerebbe per
+ *    sempre una spesa vera ogni volta che la ricorrenza corrispondente viene
+ *    spenta, un difetto silenzioso e permanente contro uno visibile e raro.
  *    Un falso positivo qui fa sparire un'uscita vera dalla proiezione, quindi
  *    l'euristica non va estesa oltre questi campi.
  */
@@ -436,10 +440,22 @@ export async function leggiFlussi(venueId: string, dal: string, al: string): Pro
  * cade nell'anno precedente — se `InitialBalance` non lo copre,
  * `aperturaPerAnno` scende a vuoto e conta come apertura tutti i movimenti
  * mai registrati, anziché il saldo iniziale dell'anno giusto. `al` resta
- * sempre dentro un anno raggiungibile, quindi non ha questo problema. Per
- * ottenere l'apertura si proietta una prima volta da zero, solo per leggere
- * quanto la finestra sposta il saldo al netto delle sovrapposizioni già
- * risolte, e si sottrae quello spostamento dal saldo reale di fine finestra.
+ * sempre dentro un anno raggiungibile, quindi non ha questo problema.
+ *
+ * Ma dal saldo di fine finestra si sottrae **solo** la fonte `movimento`, non
+ * la variazione netta di tutte le fonti insieme. Il saldo reale a `al` è
+ * cambiato, rispetto al giorno prima dell'apertura, solo per i movimenti
+ * *davvero* registrati — scadenze e ricorrenze sono impegni non ancora
+ * avvenuti, quindi non hanno mai spostato un euro reale. Sottrarre anche
+ * loro farebbe partire la curva già gonfiata (o svuotata) del loro importo, e
+ * il punto finale tornerebbe sempre e comunque al saldo di oggi qualunque
+ * cosa ci sia da pagare — esattamente il difetto che questo modulo esiste
+ * per chiudere, spostato dalla fine della curva al suo inizio.
+ *
+ * La somma grezza dei flussi di fonte `movimento` (senza passare da
+ * `proietta`) è già quella giusta: un movimento non porta mai una chiave
+ * (vedi il punto 2 del commento in testa al file), quindi la deduplica non
+ * ne scarta mai nessuno.
  */
 export async function serieProiettata(venueId: string, dal: string, al: string): Promise<PuntoSerie[]> {
   const [saldiFinali, flussi] = await Promise.all([
@@ -447,9 +463,11 @@ export async function serieProiettata(venueId: string, dal: string, al: string):
     leggiFlussi(venueId, dal, al),
   ])
 
-  const serieDaZero = proietta({ saldoIniziale: 0, dal, al, flussi })
-  const variazioneNetta = money(serieDaZero.at(-1)?.saldo ?? 0)
-  const saldoIniziale = money(saldiFinali.totalAvailable).minus(variazioneNetta).toNumber()
+  const movimentoNetto = flussi
+    .filter((flusso) => flusso.fonte === 'movimento')
+    .reduce((somma, flusso) => somma.plus(money(flusso.importo)), money(0))
+
+  const saldoIniziale = money(saldiFinali.totalAvailable).minus(movimentoNetto).toNumber()
 
   return proietta({ saldoIniziale, dal, al, flussi })
 }
