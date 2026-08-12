@@ -13,10 +13,12 @@
 import { prisma } from '@/lib/prisma'
 import { addDays, differenceInCalendarDays, subDays } from 'date-fns'
 import { logger } from '@/lib/logger'
+import { STIMA_MIN_CAMPIONE, STIMA_SOGLIA_GIORNI, STIMA_FINESTRA_GIORNI } from './stima-costanti'
 
-export const STIMA_MIN_CAMPIONE = 3
-export const STIMA_SOGLIA_GIORNI = 2
-export const STIMA_FINESTRA_GIORNI = 365
+// Ri-esportate per compatibilità: i consumatori esistenti (previsionale,
+// test) le importano da qui e non devono accorgersi che ora vivono in un
+// modulo pure a parte. Vedi stima-costanti.ts per il perché della divisione.
+export { STIMA_MIN_CAMPIONE, STIMA_SOGLIA_GIORNI, STIMA_FINESTRA_GIORNI }
 
 /**
  * La mediana dei ritardi osservati, arrotondata. `null` solo quando il campione

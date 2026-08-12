@@ -24,6 +24,7 @@ import { Truck, Plus, Pencil, Trash2, Loader2, Search, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { logger } from '@/lib/logger'
+import { STIMA_MIN_CAMPIONE, STIMA_SOGLIA_GIORNI } from '@/lib/scadenzario/stima-costanti'
 interface Account {
   id: string
   code: string
@@ -48,15 +49,6 @@ interface Supplier {
   ritardo?: { mediana: number | null; campione: number }
 }
 
-/**
- * Soglie identiche a STIMA_MIN_CAMPIONE e STIMA_SOGLIA_GIORNI in
- * src/lib/scadenzario/stima-data-attesa.ts. Duplicate qui perché quel modulo
- * importa Prisma: caricarlo in un componente client trascinerebbe il client
- * Prisma nel bundle del browser.
- */
-const RITARDO_CAMPIONE_MINIMO = 3
-const RITARDO_SOGLIA_GIORNI = 2
-
 type GiudizioRitardo = 'anticipo' | 'in-linea' | 'ritardo'
 
 const GIUDIZIO_LABEL: Record<GiudizioRitardo, string> = {
@@ -72,8 +64,8 @@ const GIUDIZIO_VARIANT: Record<GiudizioRitardo, 'secondary' | 'destructive' | 'o
 }
 
 function giudizioRitardo(mediana: number): GiudizioRitardo {
-  if (mediana <= -RITARDO_SOGLIA_GIORNI) return 'anticipo'
-  if (mediana >= RITARDO_SOGLIA_GIORNI) return 'ritardo'
+  if (mediana <= -STIMA_SOGLIA_GIORNI) return 'anticipo'
+  if (mediana >= STIMA_SOGLIA_GIORNI) return 'ritardo'
   return 'in-linea'
 }
 
@@ -88,7 +80,7 @@ function formattaRitardoFornitore(
     parti.push(`Pattuito: ${paymentTermsDays} giorni`)
   }
 
-  if (ritardo.campione < RITARDO_CAMPIONE_MINIMO || ritardo.mediana === null) {
+  if (ritardo.campione < STIMA_MIN_CAMPIONE || ritardo.mediana === null) {
     parti.push('Pagamenti: dati insufficienti')
     return { testo: parti.join(' · '), giudizio: null }
   }
