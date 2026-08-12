@@ -174,6 +174,29 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_bank_transactions_sede_riferimento
   WHERE deleted_at IS NULL AND bank_reference IS NOT NULL;
 
 
+-- 5d. bank_transactions — un movimento per conto e per identificativo del
+--     provider, fra quelli vivi.
+--
+--     Perché il conto è nella chiave: l'identificativo che GoCardless
+--     restituisce è un contatore per giorno E per conto (`20260810-6`), non
+--     un identificativo globale. Misurato l'11 agosto 2026 su Banca della
+--     Marca: 244 valori su 653 movimenti comparivano su entrambi i conti,
+--     riferiti a operazioni diverse.
+--
+--     Bug che impedisce: con la sola chiave `(venue_id, bank_reference)` il
+--     secondo di due movimenti omonimi su conti diversi verrebbe scartato
+--     come duplicato — un movimento vero, perso in silenzio.
+--
+--     I filtri NOT NULL tengono fuori i movimenti importati da CSV, che non
+--     hanno né conto né identificativo del provider e in un unique
+--     collidevano su NULL.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_bank_transactions_conto_provider
+  ON bank_transactions (bank_account_id, provider_transaction_id)
+  WHERE deleted_at IS NULL
+    AND bank_account_id IS NOT NULL
+    AND provider_transaction_id IS NOT NULL;
+
+
 -- =============================================================================
 -- 6. Indici di performance
 -- =============================================================================

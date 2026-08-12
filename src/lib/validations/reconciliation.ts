@@ -8,6 +8,7 @@ export const importSourceSchema = z.enum([
   'CBI_TXT',
   'PSD2_FABRICK',
   'PSD2_TINK',
+  'PSD2_GOCARDLESS',
   'MANUAL',
 ])
 

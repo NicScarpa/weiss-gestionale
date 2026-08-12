@@ -51,6 +51,7 @@ const importSourceLabels: Record<ImportSource, string> = {
   CBI_XML: 'CBI XML',
   CBI_TXT: 'CBI TXT',
   PSD2_FABRICK: 'PSD2 Fabrick',
+  PSD2_GOCARDLESS: 'Open Banking',
   PSD2_TINK: 'PSD2 Tink',
   MANUAL: 'Inserimento Manuale',
 }
