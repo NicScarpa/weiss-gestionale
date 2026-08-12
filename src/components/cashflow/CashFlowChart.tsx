@@ -45,7 +45,8 @@ function importoBreve(valore: number): string {
 
 export function CashFlowChart({ data, sogliaMinima }: CashFlowChartProps) {
   const today = new Date().toISOString().split('T')[0]
-  const minimoSerie = Math.min(...data.map(d => d.saldo), 0)
+  // Calcola il minimo reale della serie, senza pavimento: serve per decidere se le bande vanno renderizzate
+  const minimoReale = data.length > 0 ? Math.min(...data.map(d => d.saldo)) : 0
 
   return (
     <Card>
@@ -72,9 +73,9 @@ export function CashFlowChart({ data, sogliaMinima }: CashFlowChartProps) {
               }}
             />
             {/* Banda della zona negativa: rossa sotto lo zero */}
-            {minimoSerie < 0 && (
+            {data.length > 0 && minimoReale < 0 && (
               <ReferenceArea
-                y1={minimoSerie}
+                y1={minimoReale}
                 y2={0}
                 fill="#ef4444"
                 fillOpacity={0.08}
@@ -82,7 +83,7 @@ export function CashFlowChart({ data, sogliaMinima }: CashFlowChartProps) {
               />
             )}
             {/* Banda della soglia minima: ambra dalla soglia allo zero */}
-            {sogliaMinima && minimoSerie < sogliaMinima && (
+            {sogliaMinima && data.length > 0 && minimoReale < sogliaMinima && (
               <ReferenceArea
                 y1={0}
                 y2={sogliaMinima}
