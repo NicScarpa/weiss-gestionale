@@ -51,6 +51,7 @@ describe('GET /api/scadenzario/summary - lo scaduto si giudica sulla data attesa
     // Terza aggregate = scadute. Il filtro sulla data va in AND per non
     // sovrascrivere l'OR di base sulle ricorrenze
     const scaduteCall = vi.mocked(prisma.schedule.aggregate).mock.calls[2][0]
+    if (!scaduteCall) throw new Error('aggregate delle scadute chiamata senza argomenti')
     expect(scaduteCall.where?.OR).toEqual([
       { isRicorrente: false },
       { isRicorrente: true, ricorrenzaAttiva: true },
@@ -76,6 +77,7 @@ describe('GET /api/scadenzario/summary - lo scaduto si giudica sulla data attesa
     const finestra = { gte: today, lte: nextWeek }
 
     const inScadenzaCall = vi.mocked(prisma.schedule.aggregate).mock.calls[3][0]
+    if (!inScadenzaCall) throw new Error('aggregate delle scadenze in arrivo chiamata senza argomenti')
     expect(inScadenzaCall.where?.AND).toEqual([
       {
         OR: [

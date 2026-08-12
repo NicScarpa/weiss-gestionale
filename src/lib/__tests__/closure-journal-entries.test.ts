@@ -452,14 +452,18 @@ describe('generateJournalEntriesFromClosure', () => {
   })
 
   describe('Edge Cases', () => {
-    it('should handle null/undefined amounts', async () => {
+    // `null` e non `undefined`: entrambi i chiamanti costruiscono le
+    // postazioni con `x ? Number(x) : null`, quindi l'assente arriva qui
+    // sempre come null. Il fixture con `undefined` descriveva una forma che
+    // il tipo non ammette e che nessuno produce.
+    it('should handle null amounts', async () => {
       const closure = {
         id: 'closure-1',
         date: baseDate,
         venueId: 'venue-1',
         bankDeposit: null,
         stations: [
-          { cashAmount: null, posAmount: undefined, floatAmount: 114 },
+          { cashAmount: null, posAmount: null, floatAmount: 114 },
         ],
         expenses: [],
       }
