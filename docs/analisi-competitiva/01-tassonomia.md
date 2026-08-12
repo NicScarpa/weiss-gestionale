@@ -16,10 +16,10 @@ vengono riusati come chiave in tutti i documenti successivi.
 
 ### 0.1 Correzione allo stack del gestionale
 
-`METODO.md` (e il prompt che lo istanzia) descrive il backend del gestionale come
-**FastAPI + SQLAlchemy + Alembic**, con chiavi primarie UUID. **È sbagliato**, e
-va corretto qui perché la traduzione di ogni accorgimento nel nostro stack
-dipende da questo:
+`METODO.md` (e il prompt che lo istanzia) descriveva il backend del gestionale
+come **FastAPI + SQLAlchemy + Alembic**, con chiavi primarie UUID. **Era
+sbagliato**, e andava corretto qui perché la traduzione di ogni accorgimento nel
+nostro stack dipende da questo:
 
 | Componente | Dichiarato | Reale (verificato nel repo) |
 |---|---|---|
@@ -33,6 +33,11 @@ dipende da questo:
 Nel repo non esiste alcun file Python applicativo né alcuna cartella `alembic`.
 Ogni riga "come lo faremmo" nei documenti successivi userà route handler, modelli
 Prisma e componenti shadcn/ui.
+
+**`METODO.md` è stato corretto** (agosto 2026): porta ora lo stack reale e
+un'avvertenza a verificarlo invece di fidarsi dell'elenco, così la prossima
+analisi non ripropaga l'errore. Chi legge questa tabella la trova quindi come
+documentazione di un errore chiuso, non di uno aperto.
 
 ### 0.2 Peso dell'evidenza per fonte
 

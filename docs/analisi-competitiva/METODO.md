@@ -51,12 +51,26 @@ Bistrot (Brugnera), stand stagionale "Casetta".
 Stiamo costruendo un gestionale interno:
 
 - Repo: `github.com/NicScarpa/weiss-gestionale`
-- Frontend: Next.js 14 (App Router) + React + Tailwind + shadcn/ui
-- Backend: FastAPI + SQLAlchemy + Alembic
-- Database: PostgreSQL, chiavi primarie UUID
-- Il modulo di tesoreria (13 moduli: cash flow, riconciliazione, scadenzario,
-  integrazioni, notifiche, ecc.) è stato progettato facendo reverse engineering
-  di Sibill
+- **Frontend**: Next.js App Router + React + Tailwind + shadcn/ui
+- **Backend**: **route handler di Next.js** (`src/app/api/**/route.ts`), non un
+  servizio separato
+- **ORM e migrazioni**: **Prisma** (`@prisma/client` + `@prisma/adapter-pg`),
+  migrazioni con `prisma migrate` in `prisma/migrations`
+- **Database**: PostgreSQL, chiavi primarie **`cuid()`**
+- **Altro**: PWA con Serwist e funzionamento offline, NextAuth con token JWE,
+  Sentry, RLS attiva su tutte le tabelle
+- Il modulo di tesoreria (cash flow, riconciliazione, scadenzario, allocazione,
+  notifiche, ecc.) è stato progettato facendo reverse engineering di Sibill
+
+> ⚠️ **Verifica lo stack invece di fidarti di questo elenco.** Fino ad agosto
+> 2026 questo blocco dichiarava «FastAPI + SQLAlchemy + Alembic» e «chiavi
+> primarie UUID»: nessuna delle quattro cose è mai esistita nel repository.
+> L'errore è sopravvissuto a più analisi ed è finito nel prompt di sintesi, dove
+> avrebbe reso sbagliata ogni riga «come lo faremmo» — il punto in cui questo
+> metodo produce il suo output più utile.
+>
+> Prima di scrivere qualunque traduzione nel nostro stack, apri `package.json`,
+> `prisma/schema.prisma` e `src/app/api/`. Costa un minuto.
 
 ### Cosa cerchiamo
 
@@ -347,7 +361,14 @@ Cerca sistematicamente:
 
 Per **ogni** accorgimento notato annota: cosa fa, perché funziona, e come si
 tradurrebbe concretamente nel nostro stack — quale componente shadcn/ui, quale
-rotta App Router, quale modifica di modello se necessaria.
+route handler, quale modello Prisma se serve una colonna nuova.
+
+⚠️ **Nomina solo componenti e file che hai verificato esistere.** La sintesi di
+agosto 2026 ha prodotto istruzioni che citavano un `ToggleGroup` mai installato,
+un componente nella cartella sbagliata, stati vuoti «da creare» che c'erano già
+e una rotta che rispondeva alla domanda inversa di quella che serviva. Ogni
+svista di questo tipo costa un giro di correzioni a chi implementa, e sono
+tutte evitabili con un `ls` e un `grep`.
 
 ---
 
