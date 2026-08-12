@@ -22,6 +22,7 @@ import {
   TrendingUp,
   TrendingDown,
   AlertTriangle,
+  CheckCircle2,
   Wallet,
   ArrowRight,
   Calendar,
@@ -30,6 +31,7 @@ import {
 import { useState } from 'react'
 import Link from 'next/link'
 import { formatCurrency } from '@/lib/formatters'
+import { giudicaLiquidita, type LivelloGiudizio } from '@/lib/previsionale/giudizio'
 
 interface ForecastDay {
   date: string
@@ -75,6 +77,18 @@ interface ForecastData {
 }
 
 
+interface ScadenzarioSummary {
+  totaleScaduteImporto: number
+}
+
+/** Stile per livello, sulla stessa scala amber/red già usata per gli alert
+ * qui sotto — 'sereno' aggiunge il verde per il caso non coperto da quelli. */
+const STILE_GIUDIZIO: Record<LivelloGiudizio, { classi: string; Icona: typeof CheckCircle2 }> = {
+  sereno: { classi: 'bg-emerald-50 text-emerald-700', Icona: CheckCircle2 },
+  attenzione: { classi: 'bg-amber-50 text-amber-700', Icona: AlertTriangle },
+  tensione: { classi: 'bg-red-50 text-red-700', Icona: AlertTriangle },
+}
+
 function formatCompactCurrency(value: number): string {
   if (Math.abs(value) >= 1000) {
     return new Intl.NumberFormat('it-IT', {
@@ -99,6 +113,34 @@ export function CashFlowForecast() {
     },
     refetchInterval: 300000, // Refresh ogni 5 minuti
   })
+
+  // Nessuna chiave da condividere con la sidebar: quella interroga la stessa
+  // rotta con un fetch nudo dentro un useEffect, di proposito ad ogni cambio
+  // pagina. Una seconda richiesta a una rotta di soli aggregati è il costo
+  // accettato per avere qui una query react-query propria.
+  const { data: scadenzario } = useQuery<ScadenzarioSummary>({
+    queryKey: ['scadenzario-summary'],
+    queryFn: async () => {
+      const res = await fetch('/api/scadenzario/summary')
+      if (!res.ok) throw new Error('Errore nel caricamento riepilogo scadenzario')
+      return res.json()
+    },
+    refetchInterval: 300000,
+  })
+
+  // Finché una delle due fonti non è arrivata il giudizio resta null: una
+  // frase rassicurante su dati assenti mentirebbe («nessuna tensione»
+  // significherebbe solo «non lo so ancora»).
+  const giudizio =
+    data && scadenzario
+      ? giudicaLiquidita({
+          saldoMinimo: data.summary.minBalance,
+          giornoSaldoMinimo: data.summary.minBalanceDate,
+          soglia: data.settings.lowBalanceThreshold,
+          orizzonteGiorni: data.settings.forecastDays,
+          scadutoPassivo: scadenzario.totaleScaduteImporto,
+        })
+      : null
 
   if (error) {
     return (
@@ -160,6 +202,17 @@ export function CashFlowForecast() {
           </div>
         ) : (
           <>
+            {/* Giudizio sintetico in linguaggio naturale */}
+            {giudizio && (() => {
+              const { classi, Icona } = STILE_GIUDIZIO[giudizio.livello]
+              return (
+                <div className={`flex items-start gap-2 rounded-lg p-3 text-sm font-medium ${classi}`}>
+                  <Icona className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                  <span>{giudizio.frase}</span>
+                </div>
+              )
+            })()}
+
             {/* Current Balance */}
             <div className="grid grid-cols-3 gap-3">
               <div className="bg-slate-50 rounded-lg p-3">
