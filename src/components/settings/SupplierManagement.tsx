@@ -44,6 +44,66 @@ interface Supplier {
   defaultAccount: Account | null
   paymentTermsDays: number | null
   isActive: boolean
+  /** Presente solo per admin/manager: la GET /api/suppliers lo omette per gli altri ruoli. */
+  ritardo?: { mediana: number | null; campione: number }
+}
+
+/**
+ * Soglie identiche a STIMA_MIN_CAMPIONE e STIMA_SOGLIA_GIORNI in
+ * src/lib/scadenzario/stima-data-attesa.ts. Duplicate qui perché quel modulo
+ * importa Prisma: caricarlo in un componente client trascinerebbe il client
+ * Prisma nel bundle del browser.
+ */
+const RITARDO_CAMPIONE_MINIMO = 3
+const RITARDO_SOGLIA_GIORNI = 2
+
+type GiudizioRitardo = 'anticipo' | 'in-linea' | 'ritardo'
+
+const GIUDIZIO_LABEL: Record<GiudizioRitardo, string> = {
+  anticipo: 'In anticipo',
+  'in-linea': 'In linea',
+  ritardo: 'In ritardo',
+}
+
+const GIUDIZIO_VARIANT: Record<GiudizioRitardo, 'secondary' | 'destructive' | 'outline'> = {
+  anticipo: 'outline',
+  'in-linea': 'secondary',
+  ritardo: 'destructive',
+}
+
+function giudizioRitardo(mediana: number): GiudizioRitardo {
+  if (mediana <= -RITARDO_SOGLIA_GIORNI) return 'anticipo'
+  if (mediana >= RITARDO_SOGLIA_GIORNI) return 'ritardo'
+  return 'in-linea'
+}
+
+/** Le parti testuali della riga «Pagamenti» e il giudizio da mostrare come Badge
+ *  (null quando il campione è insufficiente: niente giudizio da dare). */
+function formattaRitardoFornitore(
+  ritardo: { mediana: number | null; campione: number },
+  paymentTermsDays: number | null
+): { testo: string; giudizio: GiudizioRitardo | null } {
+  const parti: string[] = []
+  if (paymentTermsDays !== null && paymentTermsDays !== undefined) {
+    parti.push(`Pattuito: ${paymentTermsDays} giorni`)
+  }
+
+  if (ritardo.campione < RITARDO_CAMPIONE_MINIMO || ritardo.mediana === null) {
+    parti.push('Pagamenti: dati insufficienti')
+    return { testo: parti.join(' · '), giudizio: null }
+  }
+
+  const giudizio = giudizioRitardo(ritardo.mediana)
+  const effettivo =
+    giudizio === 'in-linea'
+      ? 'in linea con la scadenza'
+      : ritardo.mediana > 0
+        ? `+${ritardo.mediana} giorni dopo la scadenza`
+        : `${ritardo.mediana} giorni prima della scadenza`
+  const numerosita = `${ritardo.campione} pagament${ritardo.campione === 1 ? 'o' : 'i'}`
+  parti.push(`Effettivo: ${effettivo} (${numerosita})`)
+
+  return { testo: parti.join(' · '), giudizio }
 }
 
 const initialFormData = {
@@ -342,15 +402,19 @@ export function SupplierManagement() {
             </p>
           ) : (
             <div className="space-y-2">
-              {filteredSuppliers.map((supplier) => (
-                <div
-                  key={supplier.id}
-                  className={`flex items-center justify-between p-3 rounded-lg transition-colors ${
-                    selectedSuppliers.has(supplier.id)
-                      ? 'bg-primary/10 border border-primary/20'
-                      : 'bg-muted/50 hover:bg-muted'
-                  }`}
-                >
+              {filteredSuppliers.map((supplier) => {
+                const rigaRitardo = supplier.ritardo
+                  ? formattaRitardoFornitore(supplier.ritardo, supplier.paymentTermsDays)
+                  : null
+                return (
+                  <div
+                    key={supplier.id}
+                    className={`flex items-center justify-between p-3 rounded-lg transition-colors ${
+                      selectedSuppliers.has(supplier.id)
+                        ? 'bg-primary/10 border border-primary/20'
+                        : 'bg-muted/50 hover:bg-muted'
+                    }`}
+                  >
                   <div className="flex items-center gap-3">
                     <Checkbox
                       checked={selectedSuppliers.has(supplier.id)}
@@ -380,6 +444,16 @@ export function SupplierManagement() {
                             Conto: {supplier.defaultAccount.code} - {supplier.defaultAccount.name}
                           </span>
                         )}
+                        {rigaRitardo && (
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span>{rigaRitardo.testo}</span>
+                            {rigaRitardo.giudizio && (
+                              <Badge variant={GIUDIZIO_VARIANT[rigaRitardo.giudizio]}>
+                                {GIUDIZIO_LABEL[rigaRitardo.giudizio]}
+                              </Badge>
+                            )}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -401,7 +475,8 @@ export function SupplierManagement() {
                     </Button>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </CardContent>
