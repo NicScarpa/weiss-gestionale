@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+import { prisma } from '@/lib/prisma'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { loginAs } from '@/test/integration/auth-mock'
 import { creaScadenza, creaRicorrenza } from '@/test/integration/fixtures/scadenzario'
@@ -84,5 +85,44 @@ describe('leggiFlussi', () => {
     const chiavi = new Set(del10.map((f) => f.chiave))
     expect(chiavi.size).toBe(1)
     expect([...chiavi][0]).toBe(`ricorrenza:${ricorrenza.id}`)
+  })
+
+  // Questo è il test che dà senso all'intero task: una `RecurringExpense` e
+  // una `Recurrence` sono due modelli disgiunti dello stesso concetto, e
+  // l'euristica (nome normalizzato + importo) le aggancia. Se entrambe
+  // emettessero un'occorrenza sullo stesso giorno — stessa chiave, stessa
+  // fonte `ricorrente` — `proietta` non le deduplicherebbe (due flussi della
+  // stessa fonte non si escludono mai a vicenda, per costruzione): l'uscita
+  // verrebbe contata due volte, esattamente il difetto che il modulo esiste
+  // per chiudere.
+  it('la spesa ricorrente agganciata per euristica a una ricorrenza attiva non emette una propria occorrenza', async () => {
+    const venueId = await getVenueId()
+    const sessione = await loginAs('admin')
+
+    const ricorrenza = await creaRicorrenza({
+      descrizione: 'Canone software',
+      importo: 90,
+      tipo: 'passiva',
+      giornoDelMese: 12,
+    })
+
+    await prisma.recurringExpense.create({
+      data: {
+        venueId,
+        name: 'Canone software',
+        amount: 90,
+        frequency: 'MONTHLY',
+        dayOfMonth: 12,
+        createdBy: sessione.user.id,
+      },
+    })
+
+    const flussi = await leggiFlussi(venueId, '2026-09-01', '2026-09-30')
+    const delGiorno12 = flussi.filter((f) => f.giorno === '2026-09-12' && f.fonte === 'ricorrente')
+
+    // Un solo flusso: quello della `Recurrence`, la fonte autorevole. La
+    // `RecurringExpense` agganciata non ne produce uno proprio.
+    expect(delGiorno12).toHaveLength(1)
+    expect(delGiorno12[0].chiave).toBe(`ricorrenza:${ricorrenza.id}`)
   })
 })

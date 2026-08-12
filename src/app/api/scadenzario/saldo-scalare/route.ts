@@ -41,8 +41,14 @@ export async function GET(request: NextRequest) {
       dataScadenza: true,
       dataAttesa: true,
       isRicorrente: true,
+      recurrenceId: true,
       stato: true,
     } as const
+
+    /** Marcata come ricorrente esplicitamente, o generata da una `Recurrence`. */
+    function eRicorrente(s: { isRicorrente: boolean; recurrenceId: string | null }) {
+      return s.isRicorrente || Boolean(s.recurrenceId)
+    }
 
     // Il previsionale lavora sulla data attesa di cassa, non su quella
     // contrattuale (modello Sibill). dataAttesa null = coincide con
@@ -113,19 +119,48 @@ export async function GET(request: NextRequest) {
     const al = format(endDate, 'yyyy-MM-dd')
     const serie = await serieProiettata(venueId, dal, al)
 
-    const chartData = serie.map((punto) => ({
-      date: punto.giorno,
-      saldo: punto.saldo,
-      uscite: punto.uscite,
-      entrate: punto.entrate,
-      // Non esiste più un flag `isRicorrente` da sommare: la quota
-      // "ricorrente" del giorno è ciò che viene dalla fonte omonima di
-      // `proietta` — una spesa o un incasso proiettato che non ha ancora una
-      // scadenza reale a coprirlo. Una scadenza nata da una ricorrenza pesa
-      // già come `scadenza`, non compare qui: non è più solo una stima.
-      usciteRicorrenti: punto.perFonte.ricorrente < 0 ? Math.abs(punto.perFonte.ricorrente) : 0,
-      entrateRicorrenti: punto.perFonte.ricorrente > 0 ? punto.perFonte.ricorrente : 0,
-    }))
+    // Group schedules by date, per la quota "ricorrenti" del grafico
+    const schedulesByDate = new Map<string, typeof schedulesInRange>()
+    for (const s of schedulesInRange) {
+      const dateKey = format(new Date(s.dataAttesa ?? s.dataScadenza), 'yyyy-MM-dd')
+      if (!schedulesByDate.has(dateKey)) {
+        schedulesByDate.set(dateKey, [])
+      }
+      schedulesByDate.get(dateKey)!.push(s)
+    }
+
+    const chartData = serie.map((punto) => {
+      const daySchedules = schedulesByDate.get(punto.giorno) ?? []
+
+      // La quota "ricorrenti" del giorno risponde alla stessa domanda di
+      // sempre — quanto di questo previsto è un impegno che si ripete — non
+      // a quella di `perFonte` (da quale fonte viene il numero). Una
+      // scadenza nata da una ricorrenza *è* un impegno che si ripete anche
+      // se `proietta` la classifica come `scadenza`, quindi conta qui come
+      // prima: dalle scadenze marcate `isRicorrente` o con `recurrenceId`
+      // valorizzato. Ci si somma la quota di fonte `ricorrente` — spese
+      // ricorrenti e ricorrenze non ancora diventate una scadenza reale —
+      // perché anche quella è un impegno che si ripete, solo non ancora
+      // scadenzato.
+      const usciteRicorrentiDaScadenze = daySchedules
+        .filter((s) => s.tipo === 'passiva' && eRicorrente(s))
+        .reduce((sum, s) => sum + residuo(s), 0)
+      const entrateRicorrentiDaScadenze = daySchedules
+        .filter((s) => s.tipo === 'attiva' && eRicorrente(s))
+        .reduce((sum, s) => sum + residuo(s), 0)
+
+      const usciteRicorrentiDaFonte = punto.perFonte.ricorrente < 0 ? Math.abs(punto.perFonte.ricorrente) : 0
+      const entrateRicorrentiDaFonte = punto.perFonte.ricorrente > 0 ? punto.perFonte.ricorrente : 0
+
+      return {
+        date: punto.giorno,
+        saldo: punto.saldo,
+        uscite: punto.uscite,
+        entrate: punto.entrate,
+        usciteRicorrenti: Math.round((usciteRicorrentiDaScadenze + usciteRicorrentiDaFonte) * 100) / 100,
+        entrateRicorrenti: Math.round((entrateRicorrentiDaScadenze + entrateRicorrentiDaFonte) * 100) / 100,
+      }
+    })
 
     const saldoFinale = chartData.length > 0 ? chartData[chartData.length - 1].saldo : saldoOggi
 

@@ -23,7 +23,14 @@ import { proietta, type FlussoPrevisto, type PuntoSerie } from './proietta'
  *    sono due modelli disgiunti (vedi il commento in testa a `proietta.ts`).
  *    Il confronto è un'euristica dichiarata — nome normalizzato e importo
  *    uguali — e va usata così com'è, senza estenderla ad altri campi: un
- *    falso positivo qui fa sparire un'uscita vera dalla proiezione.
+ *    falso positivo qui fa sparire un'uscita vera dalla proiezione. Quando
+ *    l'euristica trova una `Recurrence` corrispondente, la `RecurringExpense`
+ *    non emette proprio nessuna occorrenza: è la `Recurrence` a essere la
+ *    fonte autorevole (genera `Schedule` vere, riconciliabili), e la spesa è
+ *    la sua copia nell'altro modello. Emetterle entrambe con la stessa fonte
+ *    `ricorrente` non verrebbe deduplicato — due flussi della stessa fonte
+ *    non si escludono mai a vicenda, per costruzione — e l'uscita si
+ *    conterebbe due volte.
  */
 
 /** Limite di sicurezza contro una `frequenza` che non fa avanzare la data. */
@@ -201,22 +208,30 @@ function spesaRicorrenteAppare(data: Date, spesa: SpesaRicorrente): boolean {
 }
 
 /**
- * Le occorrenze delle `RecurringExpense` attive nella finestra. La chiave usa
- * l'euristica nome+importo per agganciarsi a una `Recurrence` corrispondente,
- * quando esiste — altrimenti resta ancorata all'id della spesa stessa.
+ * Le occorrenze delle `RecurringExpense` attive nella finestra, **tranne**
+ * quelle agganciate per euristica a una `Recurrence`: in quel caso la
+ * `Recurrence` è la fonte autorevole (genera `Schedule` vere, riconciliabili,
+ * con data attesa stimabile) e la spesa ricorrente è la sua copia sbiadita
+ * nell'altro modello. Emetterle entrambe con la stessa chiave e la stessa
+ * fonte `ricorrente` le farebbe sopravvivere entrambe a `proietta` — che non
+ * deduplica due flussi della stessa fonte, per costruzione — e l'uscita
+ * verrebbe contata due volte: esattamente il difetto che questo modulo esiste
+ * per chiudere.
  */
 function generaFlussiSpeseRicorrenti(
   spese: SpesaRicorrente[],
-  indiceRicorrenze: Map<string, string>,
+  indiceRicorrenze: Set<string>,
   giorni: string[]
 ): FlussoPrevisto[] {
   const flussi: FlussoPrevisto[] = []
 
   for (const spesa of spese) {
-    const recurrenceId = indiceRicorrenze.get(
+    const agganciata = indiceRicorrenze.has(
       `${normalizzaNome(spesa.name)}::${spesa.amount.toFixed(2)}`
     )
-    const chiave = recurrenceId ? `ricorrenza:${recurrenceId}` : `spesa:${spesa.id}`
+    if (agganciata) continue
+
+    const chiave = `spesa:${spesa.id}`
 
     for (const giorno of giorni) {
       const data = toDateOnlyUtc(giorno)
@@ -344,14 +359,13 @@ export async function leggiFlussi(venueId: string, dal: string, al: string): Pro
   // L'euristica di corrispondenza gioca su tutte le ricorrenze della sede,
   // non solo su quelle attive: una Recurrence disattivata ha comunque potuto
   // generare Schedule che sono ancora nella finestra, e la spesa deve cedere
-  // il passo anche a quelle.
-  const indiceRicorrenze = new Map<string, string>()
-  for (const ricorrenza of ricorrenze) {
-    indiceRicorrenze.set(
-      `${normalizzaNome(ricorrenza.descrizione)}::${money(ricorrenza.importo).toFixed(2)}`,
-      ricorrenza.id
+  // il passo (cioè non emettere affatto la propria occorrenza) anche a
+  // quelle.
+  const indiceRicorrenze = new Set(
+    ricorrenze.map(
+      (ricorrenza) => `${normalizzaNome(ricorrenza.descrizione)}::${money(ricorrenza.importo).toFixed(2)}`
     )
-  }
+  )
 
   const giorni = elencoGiorni(dal, al)
 

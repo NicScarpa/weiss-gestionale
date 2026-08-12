@@ -48,6 +48,7 @@ function scadenza(overrides: Record<string, unknown> = {}) {
     dataScadenza: new Date('2026-08-10'),
     dataAttesa: null,
     isRicorrente: false,
+    recurrenceId: null,
     stato: 'aperta',
     ...overrides,
   }
