@@ -223,6 +223,15 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
 
     expect(response.status).toBe(200)
     expect(prisma.invoiceLineAccount.upsert).toHaveBeenCalledTimes(1)
+    // Senza questa asserzione il test prova solo che la route accetta quando
+    // la query trova un conto — vero anche con un mock che ignora il filtro.
+    // La prova che PATRIMONIALE è davvero nel `where` sta qui, non nel solo
+    // esito 200.
+    expect(prisma.account.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ type: { in: ['COSTO', 'PATRIMONIALE'] } }),
+      })
+    )
   })
 
   it('numeroLinea inesistente nell\'XML → 400 senza scritture', async () => {
@@ -263,6 +272,38 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
           importo: 2,
           accountId: 'conto-1',
         }),
+      })
+    )
+  })
+
+  it('riga -1 (bollo) confermata con fornitore: alimenta la memoria fornitore-prodotto anche per il bollo', async () => {
+    // Un fornitore che applica sempre il bollo insegna il conto anche per
+    // quello: stessa logica di una riga vera, senza codiceArticolo (il bollo
+    // non ne ha mai uno).
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
+    vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
+    vi.mocked(parseFatturaPA).mockReturnValue({
+      dettaglioLinee: dettaglioLineeFisse,
+      datiBollo: { importoBollo: 2 },
+    } as never)
+    vi.mocked(prisma.invoiceLineAccount.upsert).mockResolvedValue({} as never)
+
+    const { request, context } = richiesta({
+      righe: [{ numeroLinea: LINEA_BOLLO, accountId: 'conto-1' }],
+    })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(200)
+    expect(prisma.supplierProductAccount.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          venueId_supplierId_nomeNormalizzato: {
+            venueId: 'venue-test-123',
+            supplierId: 'fornitore-1',
+            nomeNormalizzato: 'imposta di bollo',
+          },
+        },
+        create: expect.objectContaining({ codiceArticolo: null, accountId: 'conto-1' }),
       })
     )
   })

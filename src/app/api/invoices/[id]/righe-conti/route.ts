@@ -122,10 +122,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         // prezzoTotale e un eventuale codiceArticolo, la seconda solo
         // descrizione e importo (il bollo non ha mai un codice articolo). La
         // validazione sopra garantisce che almeno una delle due esista.
+        // Ternario su `dettaglio` per tutti e tre i campi, non `?? sistema!`:
+        // `DettaglioLinea.descrizione` è `string`, mai opzionale, quindi un
+        // `??` qui suggerirebbe una possibilità che il tipo esclude. Il
+        // ternario dice la stessa cosa senza asserzioni di non-nullità.
         const dettaglio = righeXml.get(riga.numeroLinea)
         const sistema = righeSistema.get(riga.numeroLinea)
-        const descrizione = dettaglio?.descrizione ?? sistema!.descrizione
-        const codiceArticolo = dettaglio?.codiceArticolo ?? null
+        const descrizione = dettaglio ? dettaglio.descrizione : sistema!.descrizione
+        const codiceArticolo = dettaglio ? dettaglio.codiceArticolo ?? null : null
         const importo = dettaglio ? dettaglio.prezzoTotale : sistema!.importo
 
         await prisma.invoiceLineAccount.upsert({
@@ -159,6 +163,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
         // Un'imputazione manuale con fornitore noto alimenta la memoria
         // fornitore-prodotto, riproposta in futuro per lo stesso articolo.
+        // Vale anche per bollo e arrotondamento: un fornitore che applica
+        // sempre il bollo insegna il conto anche per quello, `codiceArticolo`
+        // resta `null` come per ogni riga senza codice.
         if (invoice.supplierId) {
           await alimentaMemoriaFornitore({
             venueId,

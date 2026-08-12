@@ -675,15 +675,19 @@ describe('reconcileScheduleWithEntry - ereditarietà pro-quota dalla fattura (Fa
     )
   })
 
-  it('fattura col bollo interamente coperta (riga vera + bollo confermati): eredita anche la fetta del bollo', async () => {
+  it('fattura col bollo interamente coperta (riga vera + bollo confermati): eredita anche la fetta del bollo, con l\'IVA di entrambe dichiarata', async () => {
+    // Riga vera 100 + 22% IVA = 122; bollo 2 senza IVA: lordo 124, che è
+    // anche la quota (pagamento pieno, nessuna scalatura). Numeri scelti
+    // apposta per cadere esatti sui centesimi e non lasciare dubbi
+    // sull'arrotondamento.
     vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
-      scadenza({ invoiceId: 'inv-bollo', importoTotale: new Prisma.Decimal(102) }) as never
+      scadenza({ invoiceId: 'inv-bollo', importoTotale: new Prisma.Decimal(124) }) as never
     )
     vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue(
-      movimento({ creditAmount: new Prisma.Decimal(102) }) as never
+      movimento({ creditAmount: new Prisma.Decimal(124) }) as never
     )
     vi.mocked(prisma.electronicInvoice.findUnique).mockResolvedValue({
-      lineItems: [{ numeroLinea: 1 }],
+      lineItems: [{ numeroLinea: 1, aliquotaIVA: 22 }],
       xmlContent: '<xml>fattura con bollo</xml>',
     } as never)
     vi.mocked(parseFatturaPA).mockReturnValue({ datiBollo: { importoBollo: 2 } } as never)
@@ -694,7 +698,7 @@ describe('reconcileScheduleWithEntry - ereditarietà pro-quota dalla fattura (Fa
     vi.mocked(prisma.journalEntryAllocation.findMany)
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
-        { accountId: 'conto-a', importo: new Prisma.Decimal(100) },
+        { accountId: 'conto-a', importo: new Prisma.Decimal(122) },
         { accountId: 'conto-bollo', importo: new Prisma.Decimal(2) },
       ] as never)
     vi.mocked(derivaBudgetCategoryDaConto).mockResolvedValue('cat-a')
@@ -713,6 +717,19 @@ describe('reconcileScheduleWithEntry - ereditarietà pro-quota dalla fattura (Fa
         expect.objectContaining({ accountId: 'conto-bollo' }),
       ],
     })
+    // La riga vera porta la sua IVA al 22% e il bollo la sua (zero): se
+    // `aliquotePerLinea` non desse un'aliquota al bollo, `ivaNota` cadrebbe
+    // per l'intero movimento e ANCHE la fetta di `conto-a` finirebbe con
+    // `iva: null` — non solo quella del bollo. Per questo si controllano
+    // entrambe le fette, non solo quella del bollo.
+    const fetteScritte = vi.mocked(prisma.journalEntryAllocation.createMany).mock.calls[0][0]
+      .data as Array<{ accountId: string; importo: Prisma.Decimal; iva: Prisma.Decimal | null }>
+    expect(
+      fetteScritte.map((f) => ({ accountId: f.accountId, importo: Number(f.importo), iva: f.iva === null ? null : Number(f.iva) }))
+    ).toEqual([
+      { accountId: 'conto-a', importo: 122, iva: 22 },
+      { accountId: 'conto-bollo', importo: 2, iva: 0 },
+    ])
   })
 
   it('fattura con XML non più parsabile: si assume nessuna riga di sistema e si logga', async () => {
@@ -724,7 +741,12 @@ describe('reconcileScheduleWithEntry - ereditarietà pro-quota dalla fattura (Fa
       lineItems: [{ numeroLinea: 1 }],
       xmlContent: '<xml>corrotto</xml>',
     } as never)
-    vi.mocked(parseFatturaPA).mockImplementation(() => {
+    // Once, non Implementation: `vi.clearAllMocks()` nel beforeEach azzera le
+    // chiamate registrate ma NON le implementazioni installate con
+    // `mockImplementation` — un `mockImplementation` qui lascerebbe il parser
+    // lanciante per tutti i test successivi del file, con un fallimento che
+    // sembrerebbe provenire da tutt'altro test.
+    vi.mocked(parseFatturaPA).mockImplementationOnce(() => {
       throw new Error('Formato XML non riconosciuto')
     })
     // L'unica riga è confermata: senza righe di sistema la copertura è piena

@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { formatCurrency } from '@/lib/formatters'
 import { parseFatturaPA } from '@/lib/sdi/parser'
-import { righeDiSistema } from '@/lib/sdi/righe-di-sistema'
+import { righeDiSistema, type RigaDiSistema } from '@/lib/sdi/righe-di-sistema'
 import { applicaStimaSuScadenza, ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
 import {
   bloccaMovimento,
@@ -328,18 +328,25 @@ async function ereditaFetteDaFattura(
   // Bollo e arrotondamento (Task 4) sono righe imputabili ma vivono fuori da
   // `lineItems`: la copertura piena deve contarli anche loro, o la guardia
   // sotto si convincerebbe che una fattura col bollo è coperta anche quando
-  // il bollo non è mai stato imputato a nessun conto. Serve l'XML, che qui
-  // può mancare (fatture importate prima che si iniziasse a conservarlo, o
-  // create nei test senza) oppure non essere più parsabile. In entrambi i
-  // casi si conta zero righe di sistema invece di astenersi dall'intera
-  // ereditarietà: è lo stesso comportamento di prima di questo task su ogni
-  // fattura che non ha mai avuto un bollo — cioè la maggioranza — e non un
-  // rischio nuovo, perché lineItems viene dalla stessa importazione che
-  // avrebbe scritto anche l'XML: se manca uno raramente c'è l'altro.
-  let numeroRigheSistema = 0
+  // il bollo non è mai stato imputato a nessun conto. Si tiene l'ARRAY, non
+  // solo la lunghezza: serve più sotto per dare un'aliquota (sempre 0, vedi
+  // `RigaDiSistema`) anche a queste righe quando si costruisce
+  // `aliquotePerLinea` — altrimenti `aliquotePerLinea.get(-1)` risulterebbe
+  // `undefined` e farebbe cadere `ivaNota` in `calcolaPesiConIva` per l'INTERO
+  // movimento (vedi commento più sotto, dove la mappa si costruisce).
+  //
+  // Serve l'XML, che qui può mancare (fatture importate prima che si
+  // iniziasse a conservarlo, o create nei test senza) oppure non essere più
+  // parsabile. In entrambi i casi si assume nessuna riga di sistema invece di
+  // astenersi dall'intera ereditarietà: è lo stesso comportamento di prima di
+  // questo task su ogni fattura che non ha mai avuto un bollo — cioè la
+  // maggioranza — e non un rischio nuovo, perché lineItems viene dalla stessa
+  // importazione che avrebbe scritto anche l'XML: se manca uno raramente c'è
+  // l'altro.
+  let righeSistema: RigaDiSistema[] = []
   if (invoice.xmlContent) {
     try {
-      numeroRigheSistema = righeDiSistema(parseFatturaPA(invoice.xmlContent)).length
+      righeSistema = righeDiSistema(parseFatturaPA(invoice.xmlContent))
     } catch (error) {
       logger.warn('XML della fattura non parsabile: si assume nessuna riga di sistema', {
         invoiceId,
@@ -380,7 +387,7 @@ async function ereditaFetteDaFattura(
   // misure coincidono, perché un vincolo unique ammette una sola imputazione
   // per numeroLinea, ma scriverla così non costa nulla e toglie un bug latente.
   const numeroLineeImputate = new Set(imputazioni.map((r) => r.numeroLinea)).size
-  const righeAttese = invoice.lineItems.length + numeroRigheSistema
+  const righeAttese = invoice.lineItems.length + righeSistema.length
   if (numeroLineeImputate < righeAttese) {
     logger.info('Righe fattura non tutte confermate: nessuna ereditarietà pro-quota', {
       invoiceId,
@@ -399,6 +406,16 @@ async function ereditaFetteDaFattura(
   // fattura di sole bevande e detersivi lo scarto è più marcato ancora. Con
   // aliquote uguali fra le righe il fattore si semplifica e non cambia nulla.
   const aliquotePerLinea = aliquoteDelloSnapshot(invoice.lineItems)
+  // Bollo e arrotondamento non hanno una riga in `lineItems`, quindi restano
+  // fuori dalla mappa sopra: senza questo, `aliquotePerLinea.get(numeroLinea)`
+  // sul bollo tornerebbe `undefined`, e in `calcolaPesiConIva` basta UNA riga
+  // con aliquota `undefined` perché `ivaNota` cada per l'intero movimento —
+  // ogni fetta, non solo quella del bollo, verrebbe scritta con `iva: null`.
+  // La loro aliquota è sempre 0 (`RigaDiSistema.aliquota`), quindi qui si
+  // dichiara esplicitamente zero invece di lasciarla assente.
+  for (const riga of righeSistema) {
+    aliquotePerLinea.set(riga.numeroLinea, riga.aliquota)
+  }
 
   // Le fette già sul movimento, lette una volta sola perché servono a tre
   // cose: sapere se ce n'è una manuale (vince sempre), sommarne gli importi
