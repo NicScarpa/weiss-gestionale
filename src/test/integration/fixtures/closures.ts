@@ -36,6 +36,21 @@ export async function centroDiCostoDiDefault(): Promise<string> {
   return centro.id
 }
 
+/**
+ * Un centro di costo del seed diverso da quello di default, cercato per codice
+ * (WEISS, VV, CAS). Serve ai test sull'imputazione: se la chiusura porta il
+ * centro strutturale, «il centro è stato conservato» e «il centro è stato
+ * riportato al default» danno lo stesso risultato, e il test non distingue il
+ * comportamento giusto da quello sbagliato.
+ */
+export async function centroDiCosto(code: string): Promise<string> {
+  const centro = await prisma.costCenter.findFirst({ where: { code, isActive: true } })
+  if (!centro) {
+    throw new Error(`Centro di costo "${code}" assente dal seed di test.`)
+  }
+  return centro.id
+}
+
 /** Pezzi contati nel cassetto: solo i tagli che servono al test. */
 export interface ConteggioFixture {
   bills50?: number
@@ -69,6 +84,12 @@ export interface UscitaFixture {
   amount: number
   description?: string
   accountId?: string
+  /**
+   * Centro di costo della singola riga, che sovrascrive quello di testata.
+   * `null` (o assente) significa «eredita dalla testata», ed è il valore che
+   * il form invia quando l'utente sceglie «Come la chiusura».
+   */
+  costCenterId?: string | null
 }
 
 export interface ChiusuraFixture {
@@ -133,6 +154,7 @@ export async function creaChiusura(fixture: ChiusuraFixture = {}) {
           description: u.description ?? null,
           amount: u.amount,
           accountId: u.accountId ?? null,
+          costCenterId: u.costCenterId ?? null,
           position: i,
         })),
       },

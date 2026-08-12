@@ -3,7 +3,11 @@ import { prisma } from '@/lib/prisma'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { loginAs } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
-import { creaChiusura, type ConteggioFixture } from '@/test/integration/fixtures/closures'
+import {
+  creaChiusura,
+  centroDiCosto,
+  type ConteggioFixture,
+} from '@/test/integration/fixtures/closures'
 import { validateClosure } from '@/lib/services/closure-service'
 import { PUT as aggiornaChiusura } from '../route'
 
@@ -111,6 +115,130 @@ describe('PUT /api/chiusure/[id] su chiusura validata', () => {
       .toHaveLength(1)
 
     expect(dopo).toHaveLength(5)
+  })
+
+  it('la rigenerazione conserva il centro di costo, di testata e di riga', async () => {
+    // La rigenerazione rimonta i movimenti da capo. Ometteva l'imputazione, e
+    // il generatore ricadeva sul centro di sistema: correggere una chiusura
+    // di Weiss — anche solo nelle note — spostava tutto il giorno su STR,
+    // senza che niente lo segnalasse. Il centro di testata qui NON è quello
+    // di default, altrimenti conservarlo e azzerarlo sarebbero indistinguibili.
+    const admin = await loginAs('admin')
+    const weiss = await centroDiCosto('WEISS')
+    const casetta = await centroDiCosto('CAS')
+
+    const closure = await creaChiusura({
+      status: 'SUBMITTED',
+      submittedById: admin.user.id,
+      costCenterId: weiss,
+      postazioni: [{ cashAmount: 500, posAmount: 300, floatAmount: 114 }],
+      uscite: [
+        { amount: 37.9, payee: 'Panificio' },
+        { amount: 12, payee: 'Ferramenta', costCenterId: casetta },
+      ],
+    })
+
+    const esito = await validateClosure({
+      closureId: closure.id,
+      userId: admin.user.id,
+      action: 'approve',
+    })
+    expect(esito.outcome).toBe('approved')
+
+    const centriPrima = new Set((await scrittureVive(closure.id)).map((e) => e.costCenterId))
+    expect(centriPrima).toEqual(new Set([weiss, casetta]))
+
+    const response = await callRoute(
+      aggiornaChiusura,
+      jsonRequest(`/api/chiusure/${closure.id}`, {
+        method: 'PUT',
+        body: {
+          stations: [postazione(600, 300)],
+          expenses: [
+            { payee: 'Panificio', amount: 37.9, documentType: 'NONE', isPaid: true },
+            {
+              payee: 'Ferramenta',
+              amount: 12,
+              documentType: 'NONE',
+              isPaid: true,
+              costCenterId: casetta,
+            },
+          ],
+        },
+      }),
+      { id: closure.id }
+    )
+
+    expect(response.status).toBe(200)
+
+    const dopo = await scrittureVive(closure.id)
+    // Nessun movimento è finito sul centro di sistema, e la riga con
+    // l'override si è tenuta il suo.
+    expect(new Set(dopo.map((e) => e.costCenterId))).toEqual(new Set([weiss, casetta]))
+    expect(
+      dopo.filter((e) => e.description.includes('Ferramenta')).map((e) => e.costCenterId)
+    ).toEqual([casetta])
+  })
+
+  it('conserva il centro anche sulla riga con un conto che ne pretende uno', async () => {
+    // La combinazione più a rischio del piano: 124 voci su 192 sono
+    // OBBLIGATORIO, e su quelle la risoluzione senza centro esplicito non
+    // ripiega — risponde 'invalid'. È la strada che prima produceva un
+    // `cost_center_id` nullo, cioè quella che il NOT NULL trasformerebbe in
+    // un errore 23502. Oggi due difese in fila la coprono: la testata
+    // ripassata dalla rigenerazione (che tiene il centro giusto) e il ripiego
+    // di `risolviCentroMovimento` (che comunque non scrive mai null). Questo
+    // test verifica la prima; della seconda risponde il test unitario
+    // «centro disattivato» in closure-journal-entries.test.ts.
+    const admin = await loginAs('admin')
+    const weiss = await centroDiCosto('WEISS')
+    const contoObbligatorio = await prisma.account.findFirstOrThrow({
+      where: { costCenterRule: 'OBBLIGATORIO', isActive: true },
+      select: { id: true },
+    })
+
+    const closure = await creaChiusura({
+      status: 'SUBMITTED',
+      submittedById: admin.user.id,
+      costCenterId: weiss,
+      postazioni: [{ cashAmount: 500, posAmount: 300, floatAmount: 114 }],
+      uscite: [{ amount: 37.9, payee: 'Birrificio', accountId: contoObbligatorio.id }],
+    })
+
+    const esito = await validateClosure({
+      closureId: closure.id,
+      userId: admin.user.id,
+      action: 'approve',
+    })
+    expect(esito.outcome).toBe('approved')
+
+    const response = await callRoute(
+      aggiornaChiusura,
+      jsonRequest(`/api/chiusure/${closure.id}`, {
+        method: 'PUT',
+        body: {
+          stations: [postazione(600, 300)],
+          expenses: [
+            {
+              payee: 'Birrificio',
+              amount: 37.9,
+              documentType: 'NONE',
+              isPaid: true,
+              accountId: contoObbligatorio.id,
+            },
+          ],
+        },
+      }),
+      { id: closure.id }
+    )
+
+    expect(response.status).toBe(200)
+
+    const dopo = await scrittureVive(closure.id)
+    expect(dopo).toHaveLength(5)
+    for (const movimento of dopo) {
+      expect(movimento.costCenterId).toBe(weiss)
+    }
   })
 
   it('annulla le vecchie scritture invece di cancellarle', async () => {

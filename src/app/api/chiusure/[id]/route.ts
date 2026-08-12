@@ -554,6 +554,13 @@ export async function PUT(
             date: fresh.date,
             venueId: fresh.venueId,
             bankDeposit: calculateBankDeposit(fresh.stations, fresh.expenses),
+            // L'imputazione va ripassata, testata e righe: senza, la
+            // rigenerazione riscriveva ogni movimento sul centro di sistema
+            // buttando via quello che il compilatore aveva scelto, e una
+            // correzione di sole note spostava il giorno da WEISS a STR. Lo
+            // stesso identico passaggio che fa closure-service quando le
+            // scritture nascono la prima volta.
+            costCenterId: fresh.costCenterId,
             stations: fresh.stations.map((s) => ({
               cashAmount: s.cashAmount ? Number(s.cashAmount) : null,
               posAmount: s.posAmount ? Number(s.posAmount) : null,
@@ -565,6 +572,7 @@ export async function PUT(
               description: e.description,
               documentRef: e.documentRef,
               accountId: e.accountId,
+              costCenterId: e.costCenterId,
             })),
           },
           session.user.id,
