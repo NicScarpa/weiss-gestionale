@@ -30,7 +30,7 @@ vi.mock('@/lib/sdi/parser', () => ({
   parseFatturaPA: vi.fn(),
 }))
 
-import { auth } from '@/lib/auth'
+import { authDiRoute } from '@/test/auth-unitari'
 import { prisma } from '@/lib/prisma'
 import { createAuditLog } from '@/lib/audit'
 import { parseFatturaPA } from '@/lib/sdi/parser'
@@ -84,7 +84,7 @@ beforeEach(() => {
 
 describe('PATCH /api/invoices/[id]/righe-conti', () => {
   it('rifiuta chi non è autenticato', async () => {
-    vi.mocked(auth).mockResolvedValue(null)
+    vi.mocked(authDiRoute).mockResolvedValue(null)
 
     const { request, context } = richiesta({ righe: [{ numeroLinea: 1, accountId: 'conto-1' }] })
     const response = await PATCH(request, context)
@@ -94,7 +94,7 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
   })
 
   it('rifiuta i ruoli senza accesso ai dati finanziari', async () => {
-    vi.mocked(auth).mockResolvedValue({ user: { id: 'user-2', role: 'staff' } } as never)
+    vi.mocked(authDiRoute).mockResolvedValue({ user: { id: 'user-2', role: 'staff' } } as never)
 
     const { request, context } = richiesta({ righe: [{ numeroLinea: 1, accountId: 'conto-1' }] })
     const response = await PATCH(request, context)
@@ -104,7 +104,7 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
   })
 
   it('404 se la fattura non esiste nella sede', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(null)
 
     const { request, context } = richiesta(
@@ -118,7 +118,7 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
   })
 
   it('conferma una riga: upsert con snapshot dall\'XML e stato confermata', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
     vi.mocked(prisma.invoiceLineAccount.upsert).mockResolvedValue({} as never)
 
@@ -163,7 +163,7 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
   })
 
   it('accountId inesistente o non attivo → 400 senza upsert', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
     vi.mocked(prisma.account.findMany).mockResolvedValue([])
 
@@ -180,7 +180,7 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
   })
 
   it('conto esistente e attivo ma non di tipo COSTO → 400 senza upsert (la validazione filtra per type)', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
     // Il conto esiste ed è attivo, ma è di tipo RICAVO: la query di
     // validazione filtra per type COSTO, quindi non lo trova.
@@ -204,7 +204,7 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
   })
 
   it('numeroLinea inesistente nell\'XML → 400 senza scritture', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
 
     const { request, context } = richiesta({ righe: [{ numeroLinea: 99, accountId: 'conto-1' }] })
@@ -217,7 +217,7 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
   })
 
   it('riga confermata manualmente con fornitore: upsert della memoria fornitore-prodotto', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
     vi.mocked(prisma.invoiceLineAccount.upsert).mockResolvedValue({} as never)
 
@@ -251,7 +251,7 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
   })
 
   it('riconfermando una riga senza codice articolo, il codice già memorizzato non viene azzerato', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
     vi.mocked(prisma.invoiceLineAccount.upsert).mockResolvedValue({} as never)
 
@@ -269,7 +269,7 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
   })
 
   it('riga confermata manualmente senza fornitore sulla fattura: non scrive memoria', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaSenzaFornitore as never)
     vi.mocked(prisma.invoiceLineAccount.upsert).mockResolvedValue({} as never)
 
@@ -281,7 +281,7 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
   })
 
   it('riga confermata manualmente con descrizione vuota/solo simboli: non scrive memoria (la riga è comunque confermata)', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
     vi.mocked(prisma.invoiceLineAccount.upsert).mockResolvedValue({} as never)
     vi.mocked(parseFatturaPA).mockReturnValue({
@@ -301,7 +301,7 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
   })
 
   it('memoria fornitore-prodotto: un errore nella scrittura non fa fallire la PATCH (best-effort)', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
     vi.mocked(prisma.invoiceLineAccount.upsert).mockResolvedValue({} as never)
     vi.mocked(prisma.supplierProductAccount.upsert).mockRejectedValue(new Error('db down'))
@@ -315,7 +315,7 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
   })
 
   it('confermaTutte: aggiorna tutte le righe in stato proposta con updateMany', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
     vi.mocked(prisma.invoiceLineAccount.updateMany).mockResolvedValue({ count: 3 } as never)
 
@@ -344,7 +344,7 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
   })
 
   it('confermaTutte alimenta la memoria fornitore-prodotto come la conferma riga per riga', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
     vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([
       { numeroLinea: 1, descrizione: 'Farina 00', codiceArticolo: 'ABC123', accountId: 'conto-1' },
@@ -378,7 +378,7 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
   })
 
   it('confermaTutte senza fornitore sulla fattura: conferma le righe e non scrive memoria', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaSenzaFornitore as never)
     vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([
       { numeroLinea: 1, descrizione: 'Farina 00', codiceArticolo: 'ABC123', accountId: 'conto-1' },
@@ -395,7 +395,7 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
   })
 
   it('confermaTutte: un errore sulla memoria non fa fallire la conferma già scritta', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
     vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([
       { numeroLinea: 1, descrizione: 'Farina 00', codiceArticolo: 'ABC123', accountId: 'conto-1' },
@@ -412,7 +412,7 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
   })
 
   it('no-op (nessuna riga, confermaTutte assente o senza righe in proposta): non scrive audit', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
 
     const { request, context } = richiesta({})
@@ -425,7 +425,7 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
   })
 
   it('no-op: confermaTutte:true ma updateMany non trova righe in proposta (count 0) → non scrive audit', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
     vi.mocked(prisma.invoiceLineAccount.updateMany).mockResolvedValue({ count: 0 } as never)
 
