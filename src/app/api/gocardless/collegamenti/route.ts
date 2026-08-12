@@ -40,6 +40,20 @@ export const POST = withAuth(
     }
 
     try {
+      // Decisione del proprietario: due collegamenti vivi per la stessa sede
+      // non sono ammessi, si rifiuta il secondo. Il controllo sta qui, prima
+      // di ogni chiamata alla banca, per non sprecarne: scollegare resta una
+      // scelta esplicita dell'amministratore.
+      const collegamentoVivo = await prisma.bankConnection.findFirst({ where: { venueId, deletedAt: null } })
+      if (collegamentoVivo) {
+        return NextResponse.json(
+          {
+            error: `Esiste già un collegamento a ${collegamentoVivo.institutionName}: scollegalo prima di crearne un altro`,
+          },
+          { status: 409 }
+        )
+      }
+
       const client = clientDaAmbiente()
 
       const elenco = await client.istituzioni('it')
@@ -77,7 +91,10 @@ export const POST = withAuth(
           agreementId: agreement.dati.id,
           status: 'CR',
           maxHistoricalDays: agreement.dati.max_historical_days ?? storico,
-          accessValidUntil: new Date(Date.now() + accesso * 86_400_000),
+          // Come sopra: ciò che la banca concede, non ciò che è stato
+          // chiesto. Questo valore finisce all'amministratore come data di
+          // scadenza del consenso.
+          accessValidUntil: new Date(Date.now() + (agreement.dati.access_valid_for_days ?? accesso) * 86_400_000),
         },
       })
 
@@ -97,11 +114,23 @@ export const POST = withAuth(
 
         return NextResponse.json({ connessioneId: connessione.id, link: requisition.dati.link }, { status: 201 })
       } catch (erroreRequisition) {
-        // Una connessione rimasta in `CR` senza requisition il pannello la
-        // mostrerebbe come «collegamento in corso» per sempre, e nessuno saprebbe
-        // che non esiste nulla dall'altra parte.
-        await prisma.bankConnection.delete({ where: { id: connessione.id } })
+        // Il motivo del rifiuto va registrato SUBITO: se la pulizia sotto
+        // fallisse a sua volta, non deve sparire nel nulla — è l'unica
+        // traccia di perché la banca ha detto di no.
         logger.error('Creazione della requisition GoCardless fallita', erroreRequisition)
+
+        try {
+          // Una connessione rimasta in `CR` senza requisition il pannello la
+          // mostrerebbe come «collegamento in corso» per sempre, e nessuno saprebbe
+          // che non esiste nulla dall'altra parte.
+          await prisma.bankConnection.delete({ where: { id: connessione.id } })
+        } catch (errorePulizia) {
+          // Anche se la cancellazione fallisce, la risposta resta quella
+          // sull'errore della banca — è la causa vera. La riga rimasta a
+          // metà si scopre dal log, non da un 500 che nasconde il motivo.
+          logger.error('Pulizia della connessione orfana fallita dopo un errore della banca', errorePulizia)
+        }
+
         return NextResponse.json({ error: 'La banca non ha accettato la richiesta di collegamento' }, { status: 502 })
       }
     } catch (errore) {

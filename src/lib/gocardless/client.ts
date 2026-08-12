@@ -134,24 +134,29 @@ async function eseguiClassificato(
 
 /**
  * Esegue `azione` con tentativi ripetuti secondo un'unica politica: sui 5xx
- * e sugli errori di rete riprova con attesa crescente fino a `RITENTATIVI`
- * volte extra; su un 429 o un 4xx qualsiasi si ferma subito, perché
- * ripetere la stessa richiesta darebbe lo stesso esito (il 429 addirittura
- * lo peggiorerebbe, consumando contingente che non si rigenera).
+ * e sugli errori di rete riprova con attesa crescente fino a `tentativiExtra`
+ * volte extra (di norma `RITENTATIVI`); su un 429 o un 4xx qualsiasi si ferma
+ * subito, perché ripetere la stessa richiesta darebbe lo stesso esito (il 429
+ * addirittura lo peggiorerebbe, consumando contingente che non si rigenera).
+ *
+ * `tentativiExtra` a 0 serve alle chiamate non idempotenti (le POST che
+ * creano una risorsa): un 5xx non dice se la risorsa è stata creata prima di
+ * fallire, e ritentare rischia di crearne una seconda.
  */
 async function conRitentativi<T>(
   azione: () => Promise<Esito<T>>,
-  attendi: (ms: number) => Promise<void>
+  attendi: (ms: number) => Promise<void>,
+  tentativiExtra: number = RITENTATIVI
 ): Promise<T> {
   let ultimo: ErroreGoCardless | null = null
 
-  for (let tentativo = 0; tentativo <= RITENTATIVI; tentativo++) {
+  for (let tentativo = 0; tentativo <= tentativiExtra; tentativo++) {
     const esito = await azione()
     if (esito.tipo === 'ok') return esito.valore
     if (esito.tipo !== 'ritenta') throw esito.errore
 
     ultimo = esito.errore
-    if (tentativo < RITENTATIVI) await attendi(ATTESA_BASE_MS * 2 ** tentativo)
+    if (tentativo < tentativiExtra) await attendi(ATTESA_BASE_MS * 2 ** tentativo)
   }
 
   throw ultimo ?? new ErroreGoCardless('Chiamata fallita', 0, null)
@@ -192,15 +197,18 @@ export function creaClient(opzioni: OpzioniClient) {
   async function chiama<T>(
     percorso: string,
     schema: z.ZodType<T>,
-    opzioni: { metodo?: 'GET' | 'POST'; corpo?: unknown } = {}
+    opzioni: { metodo?: 'GET' | 'POST'; corpo?: unknown; ritentabile?: boolean } = {}
   ): Promise<Risposta<T>> {
     // Un 401 sulla chiamata dati non è coperto dalla politica sui 5xx: non è
     // un guasto transitorio del server, è la cache locale del token che
     // mente (revoca lato GoCardless, o disallineamento rispetto alla
     // scadenza dichiarata). Va scartato e ritentato con uno nuovo — ma una
     // volta sola, non in un ciclo che potrebbe girare a vuoto se il server
-    // continuasse a rispondere 401.
+    // continuasse a rispondere 401. Questo vale anche per le chiamate non
+    // ritentabili sui 5xx: un 401 significa che la richiesta non è stata
+    // autenticata, quindi non può aver creato nulla dall'altra parte.
     let token401GiaRinnovato = false
+    const tentativiExtra = opzioni.ritentabile === false ? 0 : RITENTATIVI
 
     for (;;) {
       try {
@@ -220,7 +228,7 @@ export function creaClient(opzioni: OpzioniClient) {
           )
           if (esito.tipo !== 'ok') return esito
           return { tipo: 'ok', valore: { dati: schema.parse(esito.valore.corpo), limiti: esito.valore.limiti } }
-        }, attendi)
+        }, attendi, tentativiExtra)
       } catch (e) {
         if (e instanceof ErroreGoCardless && e.stato === 401 && !token401GiaRinnovato) {
           token401GiaRinnovato = true
@@ -250,12 +258,16 @@ export function creaClient(opzioni: OpzioniClient) {
       return chiama(`/accounts/${encodeURIComponent(conto)}/transactions/${coda}`, rispostaMovimentiSchema)
     },
 
+    // `ritentabile: false`: sono POST che creano una risorsa presso
+    // GoCardless. Un 5xx non dice se la risorsa è nata prima di fallire — la
+    // riprova rischierebbe di crearne una seconda, e su un contingente di 4
+    // chiamate al giorno ne spreca tre invece di una.
     creaAgreement: (corpo: {
       institution_id: string
       max_historical_days: number
       access_valid_for_days: number
       access_scope: string[]
-    }) => chiama('/agreements/enduser/', agreementSchema, { metodo: 'POST', corpo }),
+    }) => chiama('/agreements/enduser/', agreementSchema, { metodo: 'POST', corpo, ritentabile: false }),
 
     creaRequisition: (corpo: {
       institution_id: string
@@ -263,7 +275,7 @@ export function creaClient(opzioni: OpzioniClient) {
       redirect: string
       reference: string
       user_language: string
-    }) => chiama('/requisitions/', requisitionSchema, { metodo: 'POST', corpo }),
+    }) => chiama('/requisitions/', requisitionSchema, { metodo: 'POST', corpo, ritentabile: false }),
   }
 }
 

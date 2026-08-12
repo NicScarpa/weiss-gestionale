@@ -12,7 +12,7 @@ setupIntegrationDb()
 afterEach(() => impostaClientPerTest(null))
 
 /** Client finto che registra cosa gli viene chiesto. */
-function clientFinto(opzioni: { fallisceRequisition?: boolean } = {}) {
+function clientFinto(opzioni: { fallisceRequisition?: boolean; accessValidForDaysConcessi?: number } = {}) {
   const chiamate: string[] = []
   const client = {
     istituzioni: async () => ({
@@ -21,7 +21,10 @@ function clientFinto(opzioni: { fallisceRequisition?: boolean } = {}) {
     }),
     creaAgreement: async () => {
       chiamate.push('agreement')
-      return { dati: { id: 'agr-1', max_historical_days: 90, access_valid_for_days: 180 }, limiti: { restanti: null, ripresaFraSecondi: null } }
+      return {
+        dati: { id: 'agr-1', max_historical_days: 90, access_valid_for_days: opzioni.accessValidForDaysConcessi ?? 180 },
+        limiti: { restanti: null, ripresaFraSecondi: null },
+      }
     },
     creaRequisition: async () => {
       chiamate.push('requisition')
@@ -100,6 +103,81 @@ describe('POST /api/gocardless/collegamenti', () => {
 
     expect(esito.status).toBe(502)
     expect(await prisma.bankConnection.count({ where: { venueId: venue.id, deletedAt: null } })).toBe(0)
+  })
+
+  // Il campo gemello (`maxHistoricalDays`) usa già ciò che la banca concede;
+  // questo deve fare lo stesso, perché finisce all'amministratore come data
+  // di scadenza su cui si baserà il banner di rinnovo.
+  it('la scadenza del consenso segue ciò che la banca concede, non ciò che è stato chiesto', async () => {
+    await entraCome('admin')
+    const { client } = clientFinto({ accessValidForDaysConcessi: 90 })
+    impostaClientPerTest(client)
+
+    const esito = await callRoute<{ connessioneId: string }>(
+      creaCollegamento,
+      jsonRequest('http://localhost/api/gocardless/collegamenti', { method: 'POST', body: { istitutoId: 'BANCA_FINTA_XXXX' } })
+    )
+
+    const riga = await prisma.bankConnection.findUnique({ where: { id: esito.body.connessioneId } })
+    const giorniAllaScadenza = Math.round((riga!.accessValidUntil!.getTime() - Date.now()) / 86_400_000)
+    // L'istituto finto dichiara max_access_valid_for_days: '180' (ciò che è
+    // stato chiesto), ma la banca ne concede solo 90: deve vincere il valore
+    // concesso.
+    expect(giorniAllaScadenza).toBeGreaterThanOrEqual(89)
+    expect(giorniAllaScadenza).toBeLessThanOrEqual(90)
+  })
+
+  // Decisione del proprietario: un secondo collegamento vivo per la stessa
+  // sede non si crea, si rifiuta. Scollegare resta una scelta esplicita, e
+  // il controllo sta prima di ogni chiamata alla banca per non sprecarne.
+  it('rifiuta un secondo collegamento se ce n è già uno vivo per la sede', async () => {
+    await entraCome('admin')
+    const venue = await venueDiTest()
+    await prisma.bankConnection.create({
+      data: {
+        venueId: venue.id,
+        institutionId: 'GIA_COLLEGATA',
+        institutionName: 'Banca Già Collegata',
+        requisitionId: 'req-viva',
+        status: 'LN',
+      },
+    })
+    const { client, chiamate } = clientFinto()
+    impostaClientPerTest(client)
+
+    const esito = await callRoute(
+      creaCollegamento,
+      jsonRequest('http://localhost/api/gocardless/collegamenti', { method: 'POST', body: { istitutoId: 'BANCA_FINTA_XXXX' } })
+    )
+
+    expect(esito.status).toBe(409)
+    expect(JSON.stringify(esito.body)).toContain('Banca Già Collegata')
+    // Niente chiamate alla banca: il controllo viene prima di tutte.
+    expect(chiamate).toHaveLength(0)
+  })
+
+  it('permette un nuovo collegamento se il precedente è scollegato', async () => {
+    await entraCome('admin')
+    const venue = await venueDiTest()
+    await prisma.bankConnection.create({
+      data: {
+        venueId: venue.id,
+        institutionId: 'VECCHIA',
+        institutionName: 'Banca Vecchia',
+        requisitionId: 'req-vecchia-scollegata',
+        status: 'LN',
+        deletedAt: new Date(),
+      },
+    })
+    const { client } = clientFinto()
+    impostaClientPerTest(client)
+
+    const esito = await callRoute<{ connessioneId: string }>(
+      creaCollegamento,
+      jsonRequest('http://localhost/api/gocardless/collegamenti', { method: 'POST', body: { istitutoId: 'BANCA_FINTA_XXXX' } })
+    )
+
+    expect(esito.status).toBe(201)
   })
 })
 
