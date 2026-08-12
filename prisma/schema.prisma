@@ -1658,6 +1658,10 @@ model InvoiceLineAccount {
   id             String    @id @default(cuid())
   invoiceId      String    @map("invoice_id")
   numeroLinea    Int       @map("numero_linea")
+  /// Progressivo della quota dentro la stessa riga di fattura: 0 quando la
+  /// riga va tutta su un conto solo, 0..n quando il fornitore ha accorpato
+  /// voci diverse in una riga e vanno separate.
+  progressivo    Int       @default(0)
   descrizione    String
   codiceArticolo String?   @map("codice_articolo")
   importo        Decimal   @db.Decimal(10, 2)
@@ -1675,7 +1679,7 @@ model InvoiceLineAccount {
   account     Account           @relation(fields: [accountId], references: [id], onDelete: Restrict)
   confirmedBy User?             @relation("InvoiceLineAccountConfirmedBy", fields: [confirmedById], references: [id])
 
-  @@unique([invoiceId, numeroLinea])
+  @@unique([invoiceId, numeroLinea, progressivo])
   @@index([invoiceId])
   @@map("invoice_line_accounts")
 }

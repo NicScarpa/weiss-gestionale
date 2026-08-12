@@ -732,6 +732,62 @@ describe('reconcileScheduleWithEntry - ereditarietà pro-quota dalla fattura (Fa
     ])
   })
 
+  it('riga divisa fra due conti: entrambe le quote ricevono l\'aliquota della riga madre, non una a testa', async () => {
+    // Riga 1 unica nello snapshot, 22% IVA, divisa 60/40 fra due conti
+    // (Task 5): 60 di detersivi + 40 di tovaglioli, stesso numeroLinea,
+    // progressivo diverso. Lordo 60*1,22 + 40*1,22 = 122, che è anche la
+    // quota (pagamento pieno).
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      scadenza({ invoiceId: 'inv-divisa', importoTotale: new Prisma.Decimal(122) }) as never
+    )
+    vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue(
+      movimento({ creditAmount: new Prisma.Decimal(122) }) as never
+    )
+    vi.mocked(prisma.electronicInvoice.findUnique).mockResolvedValue({
+      lineItems: [{ numeroLinea: 1, aliquotaIVA: 22 }],
+      xmlContent: '<xml>fattura divisa</xml>',
+    } as never)
+    vi.mocked(parseFatturaPA).mockReturnValue({} as never)
+    vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([
+      { accountId: 'conto-detersivi', importo: new Prisma.Decimal(60), numeroLinea: 1 },
+      { accountId: 'conto-tovaglioli', importo: new Prisma.Decimal(40), numeroLinea: 1 },
+    ] as never)
+    vi.mocked(prisma.journalEntryAllocation.findMany)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { accountId: 'conto-detersivi', importo: new Prisma.Decimal(73.2) },
+        { accountId: 'conto-tovaglioli', importo: new Prisma.Decimal(48.8) },
+      ] as never)
+    vi.mocked(derivaBudgetCategoryDaConto).mockResolvedValue('cat-a')
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: 'sched-1',
+      journalEntryId: 'entry-1',
+      venueId: VENUE,
+      userId: 'user-1',
+    })
+
+    expect(esito.outcome).toBe('ok')
+    const fetteScritte = vi.mocked(prisma.journalEntryAllocation.createMany).mock.calls[0][0]
+      .data as Array<{ accountId: string; importo: Prisma.Decimal; iva: Prisma.Decimal | null }>
+    // L'aliquota attesa (22%) viene dichiarata qui, dalla riga 1 dello
+    // snapshot passato sopra a `electronicInvoice.findUnique` — non dalla
+    // stessa mappa che il codice sotto test costruisce. Un test che rilegge
+    // quella mappa passerebbe anche se il codice smettesse di condividere
+    // l'aliquota fra le due quote.
+    const aliquotaRigaMadre = 22
+    expect(
+      fetteScritte.map((f) => ({
+        accountId: f.accountId,
+        importo: Number(f.importo),
+        iva: f.iva === null ? null : Number(f.iva),
+      }))
+    ).toEqual([
+      { accountId: 'conto-detersivi', importo: 73.2, iva: 60 * (aliquotaRigaMadre / 100) },
+      { accountId: 'conto-tovaglioli', importo: 48.8, iva: 40 * (aliquotaRigaMadre / 100) },
+    ])
+  })
+
   it('fattura con XML non più parsabile: si assume nessuna riga di sistema e si logga', async () => {
     vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
       scadenza({ invoiceId: 'inv-1' }) as never

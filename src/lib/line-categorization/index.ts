@@ -284,8 +284,16 @@ export async function categorizzaRigheFattura({
       try {
         if (righeMatchate.has(rigaAi.numeroLinea)) {
           if (!rigaAi.dubbioSuMemoria) continue
+          // progressivo: 0 fisso, non un valore qualunque: questo ciclo tocca
+          // solo `righeDaProcessare`, cioè numeri di linea senza NESSUNA riga
+          // preesistente (il filtro è più sopra, su `numeriEsistenti`). La
+          // riga appena scritta da `abbinaMemoria` è quindi sempre la prima e
+          // unica quota di quel numeroLinea: una divisione manuale (Task 5)
+          // non può essere già lì.
           await prisma.invoiceLineAccount.update({
-            where: { invoiceId_numeroLinea: { invoiceId, numeroLinea: rigaAi.numeroLinea } },
+            where: {
+              invoiceId_numeroLinea_progressivo: { invoiceId, numeroLinea: rigaAi.numeroLinea, progressivo: 0 },
+            },
             data: { stato: 'proposta', motivazioneAi: rigaAi.motivo },
           })
         } else {
