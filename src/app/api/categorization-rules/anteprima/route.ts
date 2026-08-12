@@ -14,10 +14,11 @@ const DIREZIONI_VALIDE: RuleDirection[] = ['INFLOW', 'OUTFLOW']
 // I tre criteri riproducono il motore (recategorize/route.ts:56-100):
 // candidati non verificati / non nascosti / senza fette / non da chiusura,
 // corrispondenza sulla sola `description`, direzione per segno dell'importo.
-// `deletedAt: null` è in più, di proposito: il motore non lo filtra (omissione
-// sua, fuori perimetro di questo task), ma qui mostrare un conteggio che
-// include righe che l'utente non può vedere da nessuna parte sarebbe peggio
-// che divergere da quel comportamento.
+// `deletedAt: null` è esplicito qui solo per leggibilità: JournalEntry è fra
+// i SOFT_DELETE_MODELS (src/lib/prisma.ts), quindi l'estensione Prisma inietta
+// già questo filtro in ogni lettura che non lo specifica — anche nel motore.
+// Scriverlo a mano non cambia il risultato, ma rende visibile qui la stessa
+// garanzia che altrove è implicita.
 export const POST = withAuth(
   async (request, { venueId }) => {
     try {
