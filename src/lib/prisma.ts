@@ -18,6 +18,7 @@ export const SOFT_DELETE_MODELS = [
   'JournalEntry',
   'DailyClosure',
   'BankTransaction',
+  'BankConnection',
   'ElectronicInvoice',
   'Payment',
   'CashFlowForecast',

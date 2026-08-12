@@ -1,6 +1,6 @@
 // Tipi per la riconciliazione bancaria
 
-export type ImportSource = 'CSV' | 'XLSX' | 'CBI_XML' | 'CBI_TXT' | 'PSD2_FABRICK' | 'PSD2_TINK' | 'MANUAL'
+export type ImportSource = 'CSV' | 'XLSX' | 'CBI_XML' | 'CBI_TXT' | 'PSD2_FABRICK' | 'PSD2_TINK' | 'PSD2_GOCARDLESS' | 'MANUAL'
 
 export type ReconciliationStatus =
   | 'PENDING'

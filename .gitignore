@@ -99,6 +99,12 @@ Piano dei conti/
 # vanno conservati: sono la rete di sicurezza del rollback.
 /scripts/piano-v4/snapshots/
 
+# payload grezzi della sonda open banking: IBAN, nomi di controparti reali e
+# i token di accesso a GoCardless. Stessa ragione dello snapshot qui sopra —
+# fuori dal repository, ma conservati: il rate limit della banca e' di 4
+# chiamate al giorno per conto e per endpoint, riscaricarli costa un giorno.
+/scripts/gocardless/snapshots/
+
 # Service worker: artefatto di build, prodotto da `npm run build:sw`
 /public/sw.js
 /public/sw.js.map
