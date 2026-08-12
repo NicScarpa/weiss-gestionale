@@ -24,7 +24,7 @@ beforeEach(async () => {
 })
 
 async function registraPagamento(scheduleId: string, importo: number, dataPagamento = '2026-08-01') {
-  return callRoute<{ error?: string; payment?: { id: string } }>(
+  return callRoute<{ error?: string; payment?: { id: string } }, { id: string }>(
     POST_pagamento,
     jsonRequest(`/api/scadenzario/${scheduleId}/pagamenti`, {
       method: 'POST',
@@ -130,7 +130,7 @@ describe('PATCH stato', () => {
   it('non si può dichiarare pagata una scadenza con residuo aperto', async () => {
     const scadenza = await creaScadenza({ importoTotale: 100 })
 
-    const esito = await callRoute<{ error?: string }>(
+    const esito = await callRoute<{ error?: string }, { id: string }>(
       PATCH_stato,
       jsonRequest(`/api/scadenzario/${scadenza.id}/stato`, {
         method: 'PATCH',
@@ -192,7 +192,7 @@ describe('PATCH scadenza', () => {
     const scadenza = await creaScadenza({ importoTotale: 100 })
     await registraPagamento(scadenza.id, 80)
 
-    const esito = await callRoute<{ error?: string }>(
+    const esito = await callRoute<{ error?: string }, { id: string }>(
       PATCH_scadenza,
       jsonRequest(`/api/scadenzario/${scadenza.id}`, {
         method: 'PATCH',

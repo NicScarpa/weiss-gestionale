@@ -42,7 +42,7 @@ async function creaRiga(budgetId: string) {
 }
 
 function cancella(id: string) {
-  return callRoute<{ error?: string; alternativa?: string }>(
+  return callRoute<{ error?: string; alternativa?: string }, { id: string }>(
     DELETE_budget,
     jsonRequest(`/api/budget/${id}`, { method: 'DELETE' }),
     { id }

@@ -325,7 +325,7 @@ describe('PUT /api/chiusure/[id] su chiusura validata', () => {
       },
     })
 
-    const response = await callRoute<{ error: string }>(
+    const response = await callRoute<{ error: string }, { id: string }>(
       aggiornaChiusura,
       jsonRequest(`/api/chiusure/${closure.id}`, {
         method: 'PUT',

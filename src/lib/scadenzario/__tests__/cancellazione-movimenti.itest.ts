@@ -22,7 +22,7 @@ beforeEach(async () => {
 })
 
 function cancella(journalEntryId: string) {
-  return callRoute<{ error?: string }>(
+  return callRoute<{ error?: string }, { id: string }>(
     DELETE_movimento,
     jsonRequest(`/api/prima-nota/${journalEntryId}`, { method: 'DELETE' }),
     { id: journalEntryId }
@@ -86,7 +86,7 @@ describe('cancellazione dei movimenti agganciati', () => {
     const scadenza = await creaScadenza({ importoTotale: 100 })
     const movimento = await creaMovimento({ uscita: 100 })
 
-    const riconciliazione = await callRoute<{ id: string }>(
+    const riconciliazione = await callRoute<{ id: string }, { id: string }>(
       POST_riconciliazione,
       jsonRequest(`/api/scadenzario/${scadenza.id}/riconciliazioni`, {
         method: 'POST',

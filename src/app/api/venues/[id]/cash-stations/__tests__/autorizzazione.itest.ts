@@ -31,7 +31,7 @@ describe('GET /api/venues/[id]/cash-stations', () => {
     const venue = await venueDiTest()
     await entraCome('manager')
 
-    const { status, body } = await callRoute<{ cashStations: unknown[] }>(
+    const { status, body } = await callRoute<{ cashStations: unknown[] }, { id: string }>(
       postazioni,
       jsonRequest(`/api/venues/${venue.id}/cash-stations`),
       { id: venue.id }

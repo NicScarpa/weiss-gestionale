@@ -78,7 +78,7 @@ describe('CRUD spese ricorrenti', () => {
     await loginAs('admin')
     const spesa = await creaSpesa()
 
-    const risposta = await callRoute<Spesa>(
+    const risposta = await callRoute<Spesa, { id: string }>(
       updateExpense,
       jsonRequest(`/api/recurring-expenses/${spesa.id}`, {
         method: 'PUT',

@@ -155,7 +155,7 @@ describe('POST /api/chiusure/[id]/validate', () => {
     const closure = await creaChiusura({ status: 'DRAFT' })
     await loginAs('admin')
 
-    const response = await callRoute<{ error: string }>(
+    const response = await callRoute<{ error: string }, { id: string }>(
       validaChiusura,
       jsonRequest(`/api/chiusure/${closure.id}/validate`, {
         method: 'POST',
@@ -179,7 +179,7 @@ describe('POST /api/chiusure/[id]/validate', () => {
     })
     await loginAs('admin')
 
-    const response = await callRoute<{ error: string }>(
+    const response = await callRoute<{ error: string }, { id: string }>(
       validaChiusura,
       jsonRequest(`/api/chiusure/${closure.id}/validate`, {
         method: 'POST',

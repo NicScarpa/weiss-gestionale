@@ -238,7 +238,7 @@ describe('DELETE /api/prima-nota/[id], un lato di un trasferimento', () => {
   }
 
   async function cancella(id: string) {
-    return callRoute<{ error?: string }>(
+    return callRoute<{ error?: string }, { id: string }>(
       cancellaMovimento,
       jsonRequest(`/api/prima-nota/${id}`, { method: 'DELETE' }),
       { id }

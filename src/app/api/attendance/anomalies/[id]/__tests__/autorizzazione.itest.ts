@@ -61,7 +61,7 @@ describe('GET /api/attendance/anomalies/[id]', () => {
     const anomalia = await anomaliaConGps(segnalato.id)
     await entraCome('staff')
 
-    const { status, body } = await callRoute<{ data?: unknown }>(
+    const { status, body } = await callRoute<{ data?: unknown }, { id: string }>(
       dettaglioAnomalia,
       jsonRequest(`/api/attendance/anomalies/${anomalia.id}`),
       { id: anomalia.id }
@@ -94,7 +94,7 @@ describe('GET /api/attendance/anomalies/[id]', () => {
 
     const { status, body } = await callRoute<{
       data: { record: { latitude: string | number } }
-    }>(dettaglioAnomalia, jsonRequest(`/api/attendance/anomalies/${anomalia.id}`), {
+    }, { id: string }>(dettaglioAnomalia, jsonRequest(`/api/attendance/anomalies/${anomalia.id}`), {
       id: anomalia.id,
     })
 

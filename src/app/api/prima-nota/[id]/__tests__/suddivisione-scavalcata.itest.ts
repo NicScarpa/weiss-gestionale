@@ -43,7 +43,7 @@ async function movimentoSuddiviso(importo = 1000) {
 }
 
 function modifica(id: string, body: Record<string, unknown>) {
-  return callRoute<{ error?: string }>(
+  return callRoute<{ error?: string }, { id: string }>(
     PUT_movimento,
     jsonRequest(`/api/prima-nota/${id}`, { method: 'PUT', body }),
     { id }
@@ -141,7 +141,7 @@ describe('le altre due strade, per confronto', () => {
   it('la categorizzazione singola rifiuta un movimento suddiviso', async () => {
     const movimento = await movimentoSuddiviso()
 
-    const esito = await callRoute<{ error?: string }>(
+    const esito = await callRoute<{ error?: string }, { id: string }>(
       PATCH_categorize,
       jsonRequest(`/api/prima-nota/${movimento.id}/categorize`, {
         method: 'PATCH',
