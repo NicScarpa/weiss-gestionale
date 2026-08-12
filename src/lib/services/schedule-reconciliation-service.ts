@@ -13,8 +13,8 @@ import {
 } from '@/lib/scadenzario/stato-schedule'
 import {
   aggiornaContoDominante,
-  calcolaPesiDaRighe,
-  ripartisciProQuota,
+  calcolaPesiConIva,
+  ripartisciProQuotaConIva,
   type TransactionClient,
 } from './allocation-service'
 
@@ -77,11 +77,6 @@ function aliquoteDelloSnapshot(lineItems: unknown[]): Map<number, number> {
     mappa.set(numeroLinea, aliquotaIVA)
   }
   return mappa
-}
-
-/** Imponibile riportato al lordo. Senza aliquota nota, l'imponibile stesso. */
-function alLordo(imponibile: number, aliquota: number | undefined): number {
-  return aliquota === undefined ? imponibile : imponibile * (1 + aliquota / 100)
 }
 
 /**
@@ -207,13 +202,14 @@ async function ereditaFetteDaFattura(
     return
   }
 
-  const pesi = calcolaPesiDaRighe(
+  const pesi = calcolaPesiConIva(
     imputazioni.map((r) => ({
       accountId: r.accountId,
-      importo: alLordo(Number(r.importo), aliquotePerLinea.get(r.numeroLinea)),
+      imponibile: Number(r.importo),
+      aliquota: aliquotePerLinea.get(r.numeroLinea),
     }))
   )
-  const fette = ripartisciProQuota(pesi, quota)
+  const fette = ripartisciProQuotaConIva(pesi, quota)
   if (fette.length === 0) return
 
   await tx.journalEntryAllocation.createMany({
@@ -221,6 +217,7 @@ async function ereditaFetteDaFattura(
       journalEntryId,
       accountId: f.accountId,
       importo: new Prisma.Decimal(f.importo.toFixed(2)),
+      iva: f.iva === null ? null : new Prisma.Decimal(f.iva.toFixed(2)),
       origine: 'ereditata',
       reconciliationId,
     })),

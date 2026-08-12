@@ -83,6 +83,19 @@ async function fettePerConto(journalEntryId: string): Promise<Record<string, num
   return Object.fromEntries(righe.map((r) => [r.accountId, Number(r.importo)]))
 }
 
+/** Le fette scritte sul movimento, per conto, con importo e IVA in euro. */
+async function fetteConIvaPerConto(
+  journalEntryId: string
+): Promise<Record<string, { importo: number; iva: number | null }>> {
+  const righe = await prisma.journalEntryAllocation.findMany({
+    where: { journalEntryId },
+    select: { accountId: true, importo: true, iva: true },
+  })
+  return Object.fromEntries(
+    righe.map((r) => [r.accountId, { importo: Number(r.importo), iva: r.iva === null ? null : Number(r.iva) }])
+  )
+}
+
 let venueId: string
 let contoAlimentari: string
 let contoDetersivi: string
@@ -193,6 +206,32 @@ describe('ereditarietà pro-quota e aliquote IVA', () => {
 
     const fette = Object.values(await fettePerConto(movimento.id))
     expect(Number(fette.reduce((s, v) => s + v, 0).toFixed(2))).toBe(500)
+  })
+
+  it('scrive sulla fetta l\'IVA della sua aliquota, non una media', async () => {
+    const { fattura, lordo } = await creaFatturaConRighe([
+      { numeroLinea: 1, descrizione: 'Farina', prezzoTotale: 1000, aliquotaIVA: 10, accountId: contoAlimentari },
+      { numeroLinea: 2, descrizione: 'Detersivi', prezzoTotale: 100, aliquotaIVA: 22, accountId: contoDetersivi },
+    ])
+    expect(lordo).toBe(1222)
+
+    const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+    const movimento = await creaMovimento({ uscita: lordo, venueId })
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+    })
+    expect(esito.outcome).toBe('ok')
+
+    const fette = await fetteConIvaPerConto(movimento.id)
+
+    expect(fette[contoAlimentari]).toEqual({ importo: 1100, iva: 100 })
+    expect(fette[contoDetersivi]).toEqual({ importo: 122, iva: 22 })
+    // E la somma resta l'IVA del documento: 122.
+    expect(Object.values(fette).reduce((s, f) => s + (f.iva ?? 0), 0)).toBe(122)
   })
 
   it('una riga solo proposta blocca ancora tutta l\'ereditarietà', async () => {

@@ -39,8 +39,10 @@ import { logger } from '@/lib/logger'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
 import {
   aggiornaContoDominante,
+  calcolaPesiConIva,
   calcolaPesiDaRighe,
   ripartisciProQuota,
+  ripartisciProQuotaConIva,
   setEntryAllocations,
 } from '../allocation-service'
 
@@ -159,6 +161,69 @@ describe('calcolaPesiDaRighe', () => {
       { accountId: 'a', importo: 400 },
       { accountId: 'b', importo: 300 },
     ])
+  })
+})
+
+describe('calcolaPesiConIva', () => {
+  it('porta il lordo e l\'IVA esatta di ciascuna aliquota', () => {
+    const pesi = calcolaPesiConIva([
+      { accountId: 'alimentari', imponibile: 1000, aliquota: 10 },
+      { accountId: 'pulizia', imponibile: 100, aliquota: 22 },
+    ])
+
+    expect(pesi).toEqual([
+      { accountId: 'alimentari', importo: 1100, iva: 100 },
+      { accountId: 'pulizia', importo: 122, iva: 22 },
+    ])
+  })
+
+  it('somma le righe che vanno sullo stesso conto, IVA compresa', () => {
+    const pesi = calcolaPesiConIva([
+      { accountId: 'alimentari', imponibile: 1000, aliquota: 10 },
+      { accountId: 'alimentari', imponibile: 500, aliquota: 4 },
+    ])
+
+    expect(pesi).toEqual([{ accountId: 'alimentari', importo: 1620, iva: 120 }])
+  })
+
+  it('azzera l\'IVA di TUTTE le fette se anche una sola riga non ha aliquota', () => {
+    // Mescolare fette esatte e fette stimate darebbe un totale che non torna
+    // con nessuna delle due logiche: meglio un'intera fattura dichiaratamente
+    // approssimata.
+    const pesi = calcolaPesiConIva([
+      { accountId: 'alimentari', imponibile: 1000, aliquota: 10 },
+      { accountId: 'pulizia', imponibile: 100, aliquota: undefined },
+    ])
+
+    expect(pesi.every((p) => p.iva === null)).toBe(true)
+    // Senza aliquota il lordo di quella riga è l'imponibile stesso.
+    expect(pesi.find((p) => p.accountId === 'pulizia')?.importo).toBe(100)
+  })
+})
+
+describe('ripartisciProQuotaConIva', () => {
+  it('scala l\'IVA con la stessa frazione dell\'importo su un pagamento parziale', () => {
+    const fette = ripartisciProQuotaConIva(
+      [
+        { accountId: 'alimentari', importo: 1100, iva: 100 },
+        { accountId: 'pulizia', importo: 122, iva: 22 },
+      ],
+      611 // metà esatta di 1222
+    )
+
+    expect(fette).toEqual([
+      { accountId: 'alimentari', importo: 550, iva: 50 },
+      { accountId: 'pulizia', importo: 61, iva: 11 },
+    ])
+  })
+
+  it('propaga il null senza inventare uno zero', () => {
+    const fette = ripartisciProQuotaConIva(
+      [{ accountId: 'alimentari', importo: 1000, iva: null }],
+      500
+    )
+
+    expect(fette).toEqual([{ accountId: 'alimentari', importo: 500, iva: null }])
   })
 })
 

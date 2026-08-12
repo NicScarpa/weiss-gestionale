@@ -92,6 +92,84 @@ export function calcolaPesiDaRighe(
     .map(([accountId, importo]) => ({ accountId, importo }))
 }
 
+/** Un conto con quanto gli spetta al lordo e quanta IVA c'è dentro. */
+export interface PesoConIva {
+  accountId: string
+  importo: number
+  /** `null` quando l'aliquota di almeno una riga non era leggibile. */
+  iva: number | null
+}
+
+/**
+ * Aggrega le righe fattura per conto tenendo separata l'IVA di ciascuna.
+ *
+ * Perché serve: i pesi sono imponibili, la quota da ripartire è un pagamento,
+ * cioè lordo. Applicare proporzioni calcolate sul netto a un importo lordo
+ * sbaglia ogni volta che le aliquote non sono uniformi — ed è la fattura
+ * normale di un fornitore di ristorazione, alimentari al 10% e detersivi al
+ * 22%. Portando l'IVA di ogni riga fino in fondo, la fetta non ha più bisogno
+ * di essere stimata da nessuno.
+ *
+ * Tutto-o-niente sull'IVA: se anche una sola riga non ha un'aliquota
+ * leggibile, l'IVA di TUTTE le fette è `null`. Un insieme misto di fette
+ * esatte e fette stimate produrrebbe un totale che non quadra con nessuna
+ * delle due logiche, e nessun controllo se ne accorgerebbe.
+ */
+export function calcolaPesiConIva(
+  righe: Array<{ accountId: string; imponibile: number; aliquota: number | undefined }>
+): PesoConIva[] {
+  const ivaNota = righe.every((r) => r.aliquota !== undefined)
+
+  const totali = new Map<string, { importo: number; iva: number }>()
+  for (const riga of righe) {
+    const aliquota = riga.aliquota ?? 0
+    const iva = riga.imponibile * (aliquota / 100)
+    const corrente = totali.get(riga.accountId) ?? { importo: 0, iva: 0 }
+    totali.set(riga.accountId, {
+      importo: corrente.importo + riga.imponibile + iva,
+      iva: corrente.iva + iva,
+    })
+  }
+
+  return [...totali.entries()]
+    .filter(([, v]) => v.importo > 0)
+    .sort((a, b) => b[1].importo - a[1].importo)
+    .map(([accountId, v]) => ({
+      accountId,
+      importo: Math.round(v.importo * 100) / 100,
+      iva: ivaNota ? Math.round(v.iva * 100) / 100 : null,
+    }))
+}
+
+/**
+ * Come `ripartisciProQuota`, ma l'IVA scende insieme all'importo.
+ *
+ * Su un pagamento parziale ogni fetta si riduce con la propria IVA — metà
+ * fattura dà 550 con dentro 50 e 61 con dentro 11 — invece di ereditare una
+ * media che non corrisponde a nessuna delle aliquote pagate.
+ */
+export function ripartisciProQuotaConIva(
+  pesi: PesoConIva[],
+  quota: number
+): Array<{ accountId: string; importo: number; iva: number | null }> {
+  const fette = ripartisciProQuota(
+    pesi.map(({ accountId, importo }) => ({ accountId, importo })),
+    quota
+  )
+  const perConto = new Map(pesi.map((p) => [p.accountId, p]))
+
+  return fette.map((fetta) => {
+    const peso = perConto.get(fetta.accountId)
+    if (!peso || peso.iva === null || peso.importo <= 0) {
+      return { ...fetta, iva: null }
+    }
+    return {
+      ...fetta,
+      iva: Math.round(peso.iva * (fetta.importo / peso.importo) * 100) / 100,
+    }
+  })
+}
+
 /**
  * Il client dentro `prisma.$transaction`: con il client esteso dall'adapter
  * il tipo `Prisma.TransactionClient` di libreria non combacia, quindi lo si
