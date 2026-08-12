@@ -1,0 +1,73 @@
+{
+  "transactions": {
+    "booked": [
+      {
+        "transactionId": "20260810-1",
+        "entryReference": "20260810-1",
+        "endToEndId": "20260810-1",
+        "bookingDate": "2026-08-10",
+        "valueDate": "2026-08-10",
+        "transactionAmount": { "amount": "1250.00", "currency": "EUR" },
+        "remittanceInformationUnstructured": "Bonifico a vs favore *ACME PAGAMENTI SPA REF0000000111-2026 099887766 OP DEL. 10082026",
+        "proprietaryBankTransactionCode": "48//00",
+        "internalTransactionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1"
+      },
+      {
+        "transactionId": "20260810-2",
+        "entryReference": "20260810-2",
+        "endToEndId": "20260810-2",
+        "bookingDate": "2026-08-10",
+        "valueDate": "2026-08-10",
+        "transactionAmount": { "amount": "-0.75", "currency": "EUR" },
+        "remittanceInformationUnstructured": "Commissioni su bonifico tramite in",
+        "proprietaryBankTransactionCode": "16//37",
+        "internalTransactionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2"
+      },
+      {
+        "transactionId": "20260809-1",
+        "entryReference": "20260809-1",
+        "endToEndId": "20260809-1",
+        "bookingDate": "2026-08-09",
+        "valueDate": "2026-08-11",
+        "transactionAmount": { "amount": "-430.50", "currency": "EUR" },
+        "remittanceInformationUnstructured": "SDD Core - Richiesta Incasso SEPA saldo fattura luglio FORNITORE FINTO SRL 004321",
+        "proprietaryBankTransactionCode": "31//22",
+        "internalTransactionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3"
+      },
+      {
+        "transactionId": "20260807-4",
+        "entryReference": "20260807-4",
+        "endToEndId": "20260807-4",
+        "bookingDate": "2026-08-07",
+        "valueDate": "2026-08-07",
+        "transactionAmount": { "amount": "-1800.00", "currency": "EUR" },
+        "remittanceInformationUnstructured": "Disposizione per emolumenti intern *NOME FINTO STIPENDIO MESE LUGLIO 202ID.BON:0000000000000000000000000000LT",
+        "proprietaryBankTransactionCode": "39//11",
+        "internalTransactionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa4"
+      },
+      {
+        "transactionId": "20260806-2",
+        "entryReference": "20260806-2",
+        "endToEndId": "20260806-2",
+        "bookingDate": "2026-08-06",
+        "valueDate": "2026-08-06",
+        "transactionAmount": { "amount": "-2140.19", "currency": "EUR" },
+        "remittanceInformationUnstructured": "Imposte e tasse:Delega Unificata(p C.ATT:00000000000/99",
+        "proprietaryBankTransactionCode": "19//83",
+        "internalTransactionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa5"
+      },
+      {
+        "transactionId": "20260805-9",
+        "entryReference": "20260805-9",
+        "endToEndId": "20260805-9",
+        "bookingDate": "2026-08-05",
+        "valueDate": "2026-08-05",
+        "transactionAmount": { "amount": "500.00", "currency": "EUR" },
+        "remittanceInformationUnstructured": "Giro conto *DITTA FINTA SRL Giroconto interno",
+        "proprietaryBankTransactionCode": "34//00",
+        "internalTransactionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa6"
+      }
+    ],
+    "pending": []
+  }
+}

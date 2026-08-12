@@ -1,0 +1,29 @@
+{
+  "transactions": {
+    "booked": [
+      {
+        "transactionId": "20260810-1",
+        "entryReference": "20260810-1",
+        "endToEndId": "20260810-1",
+        "bookingDate": "2026-08-10",
+        "valueDate": "2026-08-10",
+        "transactionAmount": { "amount": "-0.30", "currency": "EUR" },
+        "remittanceInformationUnstructured": "Commissioni su bonifico tramite in",
+        "proprietaryBankTransactionCode": "16//37",
+        "internalTransactionId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1"
+      },
+      {
+        "transactionId": "20260810-2",
+        "entryReference": "20260810-2",
+        "endToEndId": "20260810-2",
+        "bookingDate": "2026-08-10",
+        "valueDate": "2026-08-10",
+        "transactionAmount": { "amount": "-9.90", "currency": "EUR" },
+        "remittanceInformationUnstructured": "Canone mensile tenuta conto",
+        "proprietaryBankTransactionCode": "16//22",
+        "internalTransactionId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2"
+      }
+    ],
+    "pending": []
+  }
+}

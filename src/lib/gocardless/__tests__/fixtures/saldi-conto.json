@@ -1,0 +1,6 @@
+{
+  "balances": [
+    { "balanceAmount": { "amount": "1234.56", "currency": "EUR" }, "balanceType": "closingBooked", "referenceDate": "2026-08-11" },
+    { "balanceAmount": { "amount": "1234.56", "currency": "EUR" }, "balanceType": "interimAvailable", "referenceDate": "2026-08-11" }
+  ]
+}
