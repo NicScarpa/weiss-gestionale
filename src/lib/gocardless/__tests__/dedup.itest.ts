@@ -62,6 +62,21 @@ describe('deduplicazione dei movimenti del provider', () => {
     expect(esito.duplicati).toBe(6)
   })
 
+  it('un identificativo ripetuto dentro la stessa risposta conta una volta sola', async () => {
+    const a = await contoDiTest('Conto A')
+    const movimenti = mappaMovimenti(rispostaMovimentiSchema.parse(contoA))
+    const [primo] = movimenti
+    // Lo stesso identificativo comparso due volte nella stessa risposta: è la
+    // stessa operazione elencata due volte, non un secondo movimento che per
+    // caso condivide l'id. Nessuno dei due è già a database.
+    const conRipetizione = [primo, primo]
+
+    const esito = await filtraGiaPresenti(prisma, { bankAccountId: a.id, movimenti: conRipetizione })
+
+    expect(esito.nuovi).toHaveLength(1)
+    expect(esito.duplicati).toBe(1)
+  })
+
   // IL TEST CHE CONTA. `20260810-1` e `20260810-2` esistono su entrambi i
   // conti riferiti a movimenti diversi. Con una chiave che non contiene il
   // conto, questi due sparirebbero.
@@ -106,9 +121,8 @@ describe('deduplicazione dei movimenti del provider', () => {
     await expect(salva(a.id, a.venueId, movimenti)).rejects.toThrow()
   })
 
-  it('non tocca i movimenti degli altri conti quando non trova nulla', async () => {
+  it('restituisce subito se non c\'è nulla da valutare', async () => {
     const a = await contoDiTest('Conto A')
-    const movimenti = mappaMovimenti(rispostaMovimentiSchema.parse(contoA))
 
     const esito = await filtraGiaPresenti(prisma, { bankAccountId: a.id, movimenti: [] })
 
