@@ -98,7 +98,12 @@ export function StatisticsTab({ userId }: StatisticsTabProps) {
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis dataKey="week" tick={{ fontSize: 12 }} tickFormatter={(v) => `Sett. ${v}`} />
                   <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `${v}h`} />
-                  <Tooltip formatter={(value: number) => [`${value.toFixed(1)}h`, 'Ore']} />
+                  <Tooltip
+                    formatter={(value: number | undefined) => [
+                      value === undefined ? '-' : `${value.toFixed(1)}h`,
+                      'Ore',
+                    ]}
+                  />
                   <Bar dataKey="hours" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>

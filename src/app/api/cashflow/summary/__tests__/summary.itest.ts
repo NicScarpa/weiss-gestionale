@@ -5,7 +5,7 @@ import { giornoCorrente, giornoIndietro } from '@/lib/saldi'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { loginAs } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
-import { venueDiTest } from '@/test/integration/fixtures/closures'
+import { venueDiTest, centroDiCostoDiDefault } from '@/test/integration/fixtures/closures'
 import { GET as getSummary } from '../route'
 
 /**
@@ -43,6 +43,7 @@ async function movimento(
       description: 'Movimento di prova',
       debitAmount: valori.entrata ?? null,
       creditAmount: valori.uscita ?? null,
+      costCenterId: await centroDiCostoDiDefault(),
     },
   })
 }

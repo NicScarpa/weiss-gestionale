@@ -29,7 +29,7 @@ vi.mock('@/lib/prisma', () => ({
   },
 }))
 
-import { auth } from '@/lib/auth'
+import { authDiRoute } from '@/test/auth-unitari'
 import { prisma } from '@/lib/prisma'
 
 const sessione = {
@@ -46,9 +46,7 @@ function buildRequest(body: unknown) {
 describe('PUT /api/chiusure/[id]', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    // `auth` ha più overload (sessione e wrapper middleware): senza `as never`
-    // TypeScript sceglie il secondo. È il pattern già in uso negli altri test.
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione)
     vi.mocked(prisma.dailyClosure.findUnique).mockResolvedValue({
       id: 'closure-1',
       status: 'DRAFT',
@@ -58,7 +56,7 @@ describe('PUT /api/chiusure/[id]', () => {
   })
 
   it('should return 401 if not authenticated', async () => {
-    vi.mocked(auth).mockResolvedValue(null)
+    vi.mocked(authDiRoute).mockResolvedValue(null)
 
     const response = await PUT(buildRequest({}), { params: Promise.resolve({ id: 'closure-1' }) })
 

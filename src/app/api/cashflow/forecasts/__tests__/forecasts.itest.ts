@@ -5,7 +5,7 @@ import { giornoCorrente, giornoIndietro } from '@/lib/saldi'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { loginAs } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
-import { venueDiTest } from '@/test/integration/fixtures/closures'
+import { venueDiTest, centroDiCostoDiDefault } from '@/test/integration/fixtures/closures'
 import { GET as listForecasts, POST as createForecast } from '../route'
 import {
   GET as getForecast,
@@ -92,6 +92,7 @@ describe('CRUD previsioni di cassa', () => {
         registerType: 'BANK',
         description: 'Incasso',
         debitAmount: 4200,
+        costCenterId: await centroDiCostoDiDefault(),
       },
     })
 
@@ -119,7 +120,7 @@ describe('CRUD previsioni di cassa', () => {
     await loginAs('admin')
     const previsione = await creaPrevisione()
 
-    const risposta = await callRoute<Forecast>(
+    const risposta = await callRoute<Forecast, { id: string }>(
       patchForecast,
       jsonRequest(`/api/cashflow/forecasts/${previsione.id}`, {
         method: 'PATCH',
@@ -209,7 +210,7 @@ describe('CRUD previsioni di cassa', () => {
       data: { stato: 'ATTIVA' },
     })
 
-    const risposta = await callRoute<{ error: string }>(
+    const risposta = await callRoute<{ error: string }, { id: string }>(
       deleteForecast,
       jsonRequest(`/api/cashflow/forecasts/${previsione.id}`, { method: 'DELETE' }),
       { id: previsione.id }
@@ -240,7 +241,7 @@ describe('CRUD previsioni di cassa', () => {
     const risposta = await callRoute<{
       lines: { saldoProgressivo: number }[]
       summary: { totaleEntrate: number; totaleUscite: number; saldoFinale: number }
-    }>(getForecast, jsonRequest(`/api/cashflow/forecasts/${previsione.id}`), { id: previsione.id })
+    }, { id: string }>(getForecast, jsonRequest(`/api/cashflow/forecasts/${previsione.id}`), { id: previsione.id })
 
     expect(risposta.status).toBe(200)
     expect(risposta.body.summary.totaleEntrate).toBe(300)
@@ -252,7 +253,7 @@ describe('CRUD previsioni di cassa', () => {
   it('elimina una singola riga', async () => {
     await loginAs('admin')
     const previsione = await creaPrevisione()
-    const creata = await callRoute<{ id: string }>(
+    const creata = await callRoute<{ id: string }, { id: string }>(
       createLine,
       jsonRequest(`/api/cashflow/forecasts/${previsione.id}/lines`, {
         method: 'POST',
@@ -280,7 +281,7 @@ describe('CRUD previsioni di cassa', () => {
     const mia = await creaPrevisione({ nome: 'Mia' })
     const altrui = await creaPrevisione({ nome: 'Altrui' })
 
-    const riga = await callRoute<{ id: string }>(
+    const riga = await callRoute<{ id: string }, { id: string }>(
       createLine,
       jsonRequest(`/api/cashflow/forecasts/${altrui.id}/lines`, {
         method: 'POST',

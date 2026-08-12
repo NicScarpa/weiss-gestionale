@@ -29,7 +29,7 @@ beforeEach(async () => {
 })
 
 function modifica(id: string, body: Record<string, unknown>) {
-  return callRoute<{ error?: string }>(
+  return callRoute<{ error?: string }, { id: string }>(
     PATCH_scadenza,
     jsonRequest(`/api/scadenzario/${id}`, { method: 'PATCH', body }),
     { id }

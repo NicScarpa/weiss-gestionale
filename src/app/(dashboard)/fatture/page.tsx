@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent } from '@/components/ui/card'
 import { BarChart, Bar, CartesianGrid, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts'
-import { formatCurrency } from '@/lib/formatters'
+import { formatCurrency, formatCurrencyOrDash } from '@/lib/formatters'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { FileText, Ban, Users, Info, Loader2, UploadIcon } from 'lucide-react'
@@ -131,7 +131,7 @@ export default function FattureSituazionePage() {
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                         <XAxis dataKey="mese" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
                         <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(val) => `${val / 1000}k`} />
-                        <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                        <Tooltip formatter={(value: number | undefined) => formatCurrencyOrDash(value)} />
                         <Bar dataKey="ricavi" fill="#29A382" radius={[4, 4, 0, 0]} barSize={12} />
                         <Bar dataKey="costi" fill="#E55C5C" radius={[4, 4, 0, 0]} barSize={12} />
                       </BarChart>
@@ -191,7 +191,7 @@ export default function FattureSituazionePage() {
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                         <XAxis dataKey="mese" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
                         <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(val) => `${val / 100}€`} />
-                        <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                        <Tooltip formatter={(value: number | undefined) => formatCurrencyOrDash(value)} />
                         <Bar dataKey="aCredito" fill="#29A382" radius={[4, 4, 0, 0]} barSize={12} />
                         <Bar dataKey="aDebito" fill="#E55C5C" radius={[4, 4, 0, 0]} barSize={12} />
                       </BarChart>

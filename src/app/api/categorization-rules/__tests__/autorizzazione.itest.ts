@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { entraCome } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
-import { venueDiTest } from '@/test/integration/fixtures/closures'
+import { venueDiTest, centroDiCostoDiDefault } from '@/test/integration/fixtures/closures'
 import { GET as elencoRegole, POST as creaRegola } from '../route'
 import { PATCH as modificaRegola, DELETE as eliminaRegola } from '../[id]/route'
 import { GET as elencoProposte, POST as applicaProposta } from '../proposals/route'
@@ -51,6 +51,7 @@ async function scrittureNonCategorizzate() {
     description: 'Spesa panificio',
     counterpartName: 'Panificio Rossi',
     creditAmount: 42.5,
+    costCenterId: await centroDiCostoDiDefault(),
   }
   const prima = await prisma.journalEntry.create({ data: dati })
   const seconda = await prisma.journalEntry.create({ data: dati })

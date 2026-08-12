@@ -21,7 +21,7 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
 
-import { auth } from '@/lib/auth'
+import { authDiRoute } from '@/test/auth-unitari'
 import { setEntryAllocations } from '@/lib/services/allocation-service'
 import { createAuditLog } from '@/lib/audit'
 
@@ -48,7 +48,7 @@ beforeEach(() => {
 
 describe('PUT /api/prima-nota/[id]/suddivisione', () => {
   it('rifiuta chi non è autenticato', async () => {
-    vi.mocked(auth).mockResolvedValue(null)
+    vi.mocked(authDiRoute).mockResolvedValue(null)
 
     const { request, context } = richiestaPut({ fette: [] })
     const response = await PUT(request, context)
@@ -58,7 +58,7 @@ describe('PUT /api/prima-nota/[id]/suddivisione', () => {
   })
 
   it('rifiuta i ruoli senza accesso ai dati finanziari', async () => {
-    vi.mocked(auth).mockResolvedValue({ user: { id: 'user-2', role: 'staff' } } as never)
+    vi.mocked(authDiRoute).mockResolvedValue({ user: { id: 'user-2', role: 'staff' } } as never)
 
     const { request, context } = richiestaPut({ fette: [] })
     const response = await PUT(request, context)
@@ -68,7 +68,7 @@ describe('PUT /api/prima-nota/[id]/suddivisione', () => {
   })
 
   it('split ok: chiama il service con la sede della sessione e le fette del body, 200', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(setEntryAllocations).mockResolvedValue({ outcome: 'ok', allocazioni: 2 })
 
     const { request, context } = richiestaPut({
@@ -102,7 +102,7 @@ describe('PUT /api/prima-nota/[id]/suddivisione', () => {
   })
 
   it('outcome invalid → 400 con il motivo', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(setEntryAllocations).mockResolvedValue({
       outcome: 'invalid',
       motivo: 'La somma delle fette supera l\'importo del movimento',
@@ -120,7 +120,7 @@ describe('PUT /api/prima-nota/[id]/suddivisione', () => {
   })
 
   it('outcome entry_not_found → 404', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(setEntryAllocations).mockResolvedValue({ outcome: 'entry_not_found' })
 
     const { request, context } = richiestaPut({
@@ -133,7 +133,7 @@ describe('PUT /api/prima-nota/[id]/suddivisione', () => {
   })
 
   it('valida il body: importo non positivo → 400', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
 
     const { request, context } = richiestaPut({
       fette: [{ accountId: 'conto-1', importo: -5 }],
@@ -145,7 +145,7 @@ describe('PUT /api/prima-nota/[id]/suddivisione', () => {
   })
 
   it('valida il body: accountId mancante → 400', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
 
     const { request, context } = richiestaPut({
       fette: [{ accountId: '', importo: 10 }],
@@ -159,7 +159,7 @@ describe('PUT /api/prima-nota/[id]/suddivisione', () => {
 
 describe('DELETE /api/prima-nota/[id]/suddivisione', () => {
   it('rifiuta chi non è autenticato', async () => {
-    vi.mocked(auth).mockResolvedValue(null)
+    vi.mocked(authDiRoute).mockResolvedValue(null)
 
     const { request, context } = richiestaDelete()
     const response = await DELETE(request, context)
@@ -169,7 +169,7 @@ describe('DELETE /api/prima-nota/[id]/suddivisione', () => {
   })
 
   it('rifiuta i ruoli senza accesso ai dati finanziari', async () => {
-    vi.mocked(auth).mockResolvedValue({ user: { id: 'user-2', role: 'staff' } } as never)
+    vi.mocked(authDiRoute).mockResolvedValue({ user: { id: 'user-2', role: 'staff' } } as never)
 
     const { request, context } = richiestaDelete()
     const response = await DELETE(request, context)
@@ -179,7 +179,7 @@ describe('DELETE /api/prima-nota/[id]/suddivisione', () => {
   })
 
   it('rimuove lo split: chiama il service con fette vuote', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(setEntryAllocations).mockResolvedValue({ outcome: 'ok', allocazioni: 0 })
 
     const { request, context } = richiestaDelete()
@@ -205,7 +205,7 @@ describe('DELETE /api/prima-nota/[id]/suddivisione', () => {
   })
 
   it('outcome entry_not_found → 404', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(setEntryAllocations).mockResolvedValue({ outcome: 'entry_not_found' })
 
     const { request, context } = richiestaDelete('inesistente')

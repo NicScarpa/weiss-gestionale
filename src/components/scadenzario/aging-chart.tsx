@@ -10,7 +10,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts'
-import { formatCurrency } from '@/lib/formatters'
+import { formatCurrencyOrDash } from '@/lib/formatters'
 
 interface AgingBand {
   fascia: string
@@ -50,7 +50,7 @@ export function AgingChart({ attive, passive }: AgingChartProps) {
         />
         <YAxis tickFormatter={formatYAxis} tick={{ fontSize: 11 }} />
         <Tooltip
-          formatter={(value: number) => formatCurrency(value)}
+          formatter={(value: number | undefined) => formatCurrencyOrDash(value)}
           labelStyle={{ fontWeight: 'bold' }}
         />
         <Legend />

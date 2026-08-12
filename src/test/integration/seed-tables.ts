@@ -10,7 +10,7 @@
  * e reinserire subito le righe del seed da una copia conservata in uno schema a
  * parte dello stesso database. La copia si crea una volta sola sul database
  * template, quindi ogni clone per worker se la ritrova già pronta e il costo
- * per test è quello di otto `INSERT ... SELECT` su poche decine di righe.
+ * per test è quello di nove `INSERT ... SELECT` su poche decine di righe.
  */
 
 /** Schema che ospita la copia del seed. */
@@ -29,6 +29,9 @@ export const SEED_TABLES = [
   // i cloni per worker nascevano senza, e ogni percorso che passa da
   // `risolviCentroDiCosto` falliva con «Nessun centro di costo di default
   // configurato» — un rosso che non dipendeva dal codice in prova.
+  // Sulla posizione: nessuna foreign key verso le altre tabelle del seed (né
+  // loro verso di lei), sta qui perché è anagrafica dello stesso tipo di
+  // `accounts`, non per un vincolo di dipendenza.
   'cost_centers',
   'users',
   'suppliers',

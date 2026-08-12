@@ -5,7 +5,7 @@ import { validateClosure } from '@/lib/services/closure-service'
 import { aggregateCategoriesForBudget } from '@/lib/budget/category-aggregator'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { loginAs } from '@/test/integration/auth-mock'
-import { venueDiTest } from '@/test/integration/fixtures/closures'
+import { venueDiTest, centroDiCostoDiDefault } from '@/test/integration/fixtures/closures'
 
 /**
  * Da dove vengono gli actual del budget.
@@ -58,6 +58,7 @@ async function movimento(
       description: 'Movimento di prova',
       debitAmount: valori.entrata ?? null,
       creditAmount: valori.uscita ?? null,
+      costCenterId: await centroDiCostoDiDefault(),
       accountId: valori.accountId,
     },
   })
@@ -82,7 +83,7 @@ describe('actual del budget', () => {
     await loginAs('admin')
     const venue = await venueDiTest()
     const budget = await budgetDellAnno(venue.id)
-    const materiePrime = await conto('500.01')
+    const materiePrime = await conto('20.4.01')
     await categoria(venue.id, {
       code: 'C-MATERIE',
       categoryType: 'COST',
@@ -103,7 +104,7 @@ describe('actual del budget', () => {
     const sessione = await loginAs('admin')
     const venue = await venueDiTest()
     const budget = await budgetDellAnno(venue.id)
-    const materiePrime = await conto('500.01')
+    const materiePrime = await conto('20.4.01')
     await categoria(venue.id, {
       code: 'C-MATERIE',
       categoryType: 'COST',
@@ -117,6 +118,7 @@ describe('actual del budget', () => {
         status: 'SUBMITTED',
         submittedById: sessione.user.id,
         submittedAt: new Date(),
+        costCenterId: await centroDiCostoDiDefault(),
         stations: {
           create: [{ name: 'CASSA 1', position: 0, cashAmount: 300, floatAmount: 114 }],
         },
@@ -149,8 +151,8 @@ describe('actual del budget', () => {
     await loginAs('admin')
     const venue = await venueDiTest()
     const budget = await budgetDellAnno(venue.id)
-    const bar = await conto('400.01')
-    const caffetteria = await conto('400.02')
+    const bar = await conto('10.01')
+    const caffetteria = await conto('11.01')
     await categoria(venue.id, { code: 'R-BAR', categoryType: 'REVENUE', contoId: bar.id })
     await categoria(venue.id, {
       code: 'R-CAFFE',
@@ -172,7 +174,7 @@ describe('actual del budget', () => {
     await loginAs('admin')
     const venue = await venueDiTest()
     const budget = await budgetDellAnno(venue.id)
-    const materiePrime = await conto('500.01')
+    const materiePrime = await conto('20.4.01')
     await categoria(venue.id, {
       code: 'C-MATERIE',
       categoryType: 'COST',
@@ -191,7 +193,7 @@ describe('actual del budget', () => {
     await loginAs('admin')
     const venue = await venueDiTest()
     const budget = await budgetDellAnno(venue.id)
-    const materiePrime = await conto('500.01')
+    const materiePrime = await conto('20.4.01')
     await categoria(venue.id, {
       code: 'C-MATERIE',
       categoryType: 'COST',
@@ -210,12 +212,20 @@ describe('actual del budget', () => {
     expect(actualDi(risultato, 'C-MATERIE')).toBe(400)
   })
 
-  // Il fatturato delle chiusure non porta con sé un conto di ricavo: finché è
-  // così, la differenza va detta invece di sparire dai totali.
+  // Dal piano v4 le scritture di chiusura nascono già imputate: l'incasso in
+  // contanti finisce sempre sul conto di sistema Corrispettivi (RICAVO —
+  // closure-journal-entries.ts, tabella "incasso contanti"). Il resto del
+  // fatturato dichiarato — qui, quello non incassato in contanti, niente POS
+  // in questo scenario — non ha invece nessun conto a sostenerlo: è quella
+  // differenza residua che il test verifica, non più l'assenza totale di un
+  // conto di ricavo.
   it('dichiara quanto fatturato non è imputato ad alcun conto di ricavo', async () => {
     const sessione = await loginAs('admin')
     const venue = await venueDiTest()
     const budget = await budgetDellAnno(venue.id)
+
+    const fatturatoDichiarato = 1000
+    const incassoContanti = 300
 
     const chiusura = await prisma.dailyClosure.create({
       data: {
@@ -224,13 +234,14 @@ describe('actual del budget', () => {
         status: 'SUBMITTED',
         submittedById: sessione.user.id,
         submittedAt: new Date(),
+        costCenterId: await centroDiCostoDiDefault(),
         stations: {
           create: [
             {
               name: 'CASSA 1',
               position: 0,
-              receiptAmount: 1000,
-              cashAmount: 300,
+              receiptAmount: fatturatoDichiarato,
+              cashAmount: incassoContanti,
               floatAmount: 114,
             },
           ],
@@ -246,7 +257,9 @@ describe('actual del budget', () => {
 
     const risultato = await aggregateCategoriesForBudget(budget.id, venue.id, ANNO)
 
-    expect(risultato.kpis.totalRevenue.annual).toBe(1000)
-    expect(risultato.kpis.unassignedRevenue.annual).toBe(1000)
+    expect(risultato.kpis.totalRevenue.annual).toBe(fatturatoDichiarato)
+    // L'incasso contanti è già su Corrispettivi: resta non imputato solo il
+    // fatturato dichiarato che quella scrittura non copre.
+    expect(risultato.kpis.unassignedRevenue.annual).toBe(fatturatoDichiarato - incassoContanti)
   })
 })

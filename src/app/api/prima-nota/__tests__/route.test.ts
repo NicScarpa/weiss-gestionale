@@ -207,7 +207,11 @@ describe('GET /api/prima-nota - filtro ?costCenterId=', () => {
   it('senza il parametro, il comportamento è invariato (nessun filtro sul centro)', async () => {
     await GET(new NextRequest('http://localhost:3000/api/prima-nota'))
 
+    // `findMany` accetta gli argomenti come opzionali, quindi il tipo di
+    // `calls[0][0]` li ammette assenti. Qui l'assenza non è un caso da
+    // tollerare: senza argomenti l'asserzione sotto passerebbe a vuoto.
     const callArgs = vi.mocked(prisma.journalEntry.findMany).mock.calls[0][0]
+    if (!callArgs) throw new Error('findMany chiamata senza argomenti')
     expect(callArgs.where).not.toHaveProperty('costCenterId')
   })
 })

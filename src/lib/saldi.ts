@@ -79,8 +79,11 @@ export interface Saldi {
  * Averla in un posto solo è ciò che rende vera la promessa di questo modulo:
  * se domani un'altra colonna dovesse escludere un movimento dai conti, si
  * aggiunge qui e vale per tutti i consumatori insieme.
+ *
+ * Esportata perché quei consumatori non stanno più solo qui: `cashflow/movimenti.ts`
+ * la riusa per restare d'accordo con i saldi su quali movimenti contano.
  */
-function movimentiChePesano(venueId: string): Prisma.JournalEntryWhereInput {
+export function movimentiChePesano(venueId: string): Prisma.JournalEntryWhereInput {
   return { venueId, hiddenAt: null }
 }
 

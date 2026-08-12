@@ -210,8 +210,8 @@ Serve:
 
 1. **Popolare `BudgetCategory`** con le 9 famiglie (livello 1) e i 39 sottogruppi (livello 2, `parentId` alla famiglia). Le categorie attualmente seedate (`FOOD_COST`, `BEVERAGE_COST`, `COSTI_FISSI`, `RICAVI_BAR`…) sono un template generico non allineato né al v4 né a questo design: vanno sostituite.
 2. **Aggiungere `PATRIMONIALE` ad `AccountType`** per il mastro 40. Il piano ha tre sezioni — RICAVI, COSTI, PATRIMONIALE — e il valore nuovo le rispecchia. L'alternativa, distribuire il mastro 40 su `ATTIVO`/`PASSIVO`, costringerebbe a stabilire arbitrariamente da che parte sta un F24 IVA. `ATTIVO` e `PASSIVO` restano per i conti di sistema (banca, cassa).
-3. **Un flag `isCashFlow`** sul conto (o sul mapping) per le 18 voci escluse.
-4. **Mapping completo**: ogni conto imputabile deve avere una `AccountBudgetMapping`, oppure `isCashFlow = false`. Nessun conto orfano.
+3. **Nessun flag `isCashFlow` sul conto.** L'informazione è nella struttura statica `src/lib/cashflow/riclassificazione.ts`: una voce o sta in un sottogruppo, o sta in `VOCI_FUORI_CASSA`. Una colonna che ripete un dato già presente è una seconda fonte destinata a divergere. Il rischio — un conto nuovo che sparisce in silenzio dal prospetto — lo copre il controllo C4.
+4. **Mapping completo**: ogni conto imputabile o è mappato a un sottogruppo tramite `AccountBudgetMapping`, o è dichiarato fuori cassa in `VOCI_FUORI_CASSA`. Nessun conto orfano: chi sfugge a entrambe le vie non sparisce in silenzio dal prospetto, lo segnala il controllo C4.
 
 ### Vincoli di integrità
 
@@ -229,7 +229,7 @@ Il modulo li esegue e li espone; non sono facoltativi. Tre su quattro intercetta
 | 1 | Somma del prospetto = variazione reale dei saldi di cassa e banca nel periodo | Voci non mappate, movimenti persi |
 | 2 | `40.4.01` in banca = `40.4.01` in cassa, di segno opposto | Versamenti registrati su una gamba sola |
 | 3 | Zero movimenti senza voce di conto | Righe non categorizzate che spariscono dal prospetto |
-| 4 | Zero movimenti su conti fuori piano o inattivi | Etichette duplicate, conti legacy |
+| 4 | Zero movimenti su conti fuori piano, inattivi, o non riconosciuti dalla riclassificazione | Etichette duplicate, conti legacy, conti nuovi mai mappati |
 
 ---
 

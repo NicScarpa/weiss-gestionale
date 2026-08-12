@@ -23,7 +23,7 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
 
-import { auth } from '@/lib/auth'
+import { authDiRoute } from '@/test/auth-unitari'
 import { prisma } from '@/lib/prisma'
 
 const sessione = { user: { id: 'user-1', role: 'admin' } } as unknown as Session
@@ -41,7 +41,7 @@ beforeEach(() => {
 
 describe('PATCH /api/scadenzario/[id]/verifica', () => {
   it('rifiuta chi non è autenticato', async () => {
-    vi.mocked(auth).mockResolvedValue(null)
+    vi.mocked(authDiRoute).mockResolvedValue(null)
 
     const { request, context } = richiesta()
     const response = await PATCH(request, context)
@@ -50,7 +50,7 @@ describe('PATCH /api/scadenzario/[id]/verifica', () => {
   })
 
   it('rifiuta i ruoli senza accesso ai dati finanziari', async () => {
-    vi.mocked(auth).mockResolvedValue({
+    vi.mocked(authDiRoute).mockResolvedValue({
       user: { id: 'user-2', role: 'staff' },
     } as never)
 
@@ -61,7 +61,7 @@ describe('PATCH /api/scadenzario/[id]/verifica', () => {
   })
 
   it('404 se la scadenza non esiste nella sede', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.schedule.findFirst).mockResolvedValue(null)
 
     const { request, context } = richiesta('inesistente')
@@ -71,7 +71,7 @@ describe('PATCH /api/scadenzario/[id]/verifica', () => {
   })
 
   it('inverte lo stato di verifica: una scadenza non verificata diventa verificata', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.schedule.findFirst).mockResolvedValue({
       id: 'sched-1',
       verificata: false,
@@ -96,7 +96,7 @@ describe('PATCH /api/scadenzario/[id]/verifica', () => {
   })
 
   it('la verifica è un toggle: una scadenza verificata torna da verificare', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.schedule.findFirst).mockResolvedValue({
       id: 'sched-1',
       verificata: true,
@@ -117,7 +117,7 @@ describe('PATCH /api/scadenzario/[id]/verifica', () => {
   })
 
   it('cerca la scadenza dentro la sede corrente, non ovunque', async () => {
-    vi.mocked(auth).mockResolvedValue(sessione as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.schedule.findFirst).mockResolvedValue({
       id: 'sched-1',
       verificata: false,

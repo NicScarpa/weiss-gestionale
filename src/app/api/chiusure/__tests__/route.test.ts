@@ -57,6 +57,22 @@ vi.mock('@/lib/prisma', () => ({
 import { authDiRoute } from '@/test/auth-unitari'
 import { prisma } from '@/lib/prisma'
 
+/**
+ * Le postazioni dentro il `create` annidato, sempre come elenco.
+ *
+ * Prisma accetta `stations.create` sia come oggetto singolo sia come array, e
+ * il tipo è l'unione dei due: indicizzarla con `[0]` non si può, perché metà
+ * dei rami non è un array. Qui si normalizza una volta invece di ripetere il
+ * controllo a ogni asserzione.
+ */
+function postazioniCreate(
+  chiamata: Parameters<typeof prisma.dailyClosure.create>[0]
+) {
+  const create = chiamata.data.stations?.create
+  if (!create) return []
+  return Array.isArray(create) ? create : [create]
+}
+
 describe('GET /api/chiusure', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -543,7 +559,7 @@ describe('POST /api/chiusure', () => {
       await POST(request)
 
       const createCall = vi.mocked(prisma.dailyClosure.create).mock.calls[0][0]
-      expect(createCall.data.stations?.create?.[0]?.floatAmount).toBe(114)
+      expect(postazioniCreate(createCall)[0]?.floatAmount).toBe(114)
     })
 
     it('should calculate station totalAmount correctly', async () => {
@@ -570,7 +586,7 @@ describe('POST /api/chiusure', () => {
       await POST(request)
 
       const createCall = vi.mocked(prisma.dailyClosure.create).mock.calls[0][0]
-      const stationData = createCall.data.stations?.create?.[0]
+      const stationData = postazioniCreate(createCall)[0]
       expect(stationData?.totalAmount).toBe(500) // 300 + 200
       expect(stationData?.nonReceiptAmount).toBe(50) // 500 - 450
     })

@@ -20,7 +20,7 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
 
-import { auth } from '@/lib/auth'
+import { authDiRoute } from '@/test/auth-unitari'
 import { prisma } from '@/lib/prisma'
 
 const sessioneAdmin = { user: { id: 'user-1', role: 'admin' } } as unknown as Session
@@ -120,14 +120,14 @@ function getRequest(query = '') {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(auth).mockResolvedValue(sessioneAdmin as never)
+  vi.mocked(authDiRoute).mockResolvedValue(sessioneAdmin as never)
   vi.mocked(prisma.journalEntry.findMany).mockResolvedValue(MOVIMENTI as never)
   vi.mocked(prisma.costCenter.findMany).mockResolvedValue(CENTRI as never)
 })
 
 describe('GET /api/report/conto-economico - autorizzazione', () => {
   it('senza sessione risponde 401', async () => {
-    vi.mocked(auth).mockResolvedValue(null)
+    vi.mocked(authDiRoute).mockResolvedValue(null)
 
     const response = await GET(getRequest())
 
@@ -136,7 +136,7 @@ describe('GET /api/report/conto-economico - autorizzazione', () => {
   })
 
   it('con ruolo non ammesso risponde 403', async () => {
-    vi.mocked(auth).mockResolvedValue({
+    vi.mocked(authDiRoute).mockResolvedValue({
       user: { id: 'user-2', role: 'staff' },
     } as unknown as Session as never)
 
@@ -147,7 +147,7 @@ describe('GET /api/report/conto-economico - autorizzazione', () => {
   })
 
   it('admin e manager sono entrambi ammessi', async () => {
-    vi.mocked(auth).mockResolvedValue({
+    vi.mocked(authDiRoute).mockResolvedValue({
       user: { id: 'user-3', role: 'manager' },
     } as unknown as Session as never)
 

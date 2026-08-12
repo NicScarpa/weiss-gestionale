@@ -1,0 +1,17 @@
+-- journal_entries.cost_center_id: da nullable a NOT NULL.
+--
+-- Chiude il follow-up lasciato aperto da 20260807000000_piano_v4_centri_costo,
+-- che aveva creato la colonna nullable perché il DDL andava in produzione
+-- prima del codice che la valorizza. Quel codice ora c'è: ogni percorso che
+-- scrive un movimento passa da `risolviCentroDiCosto`, che un centro lo
+-- restituisce sempre — o rifiuta la richiesta.
+--
+-- ATTENZIONE A CHI LEGGE QUESTA MIGRAZIONE PER RIFARLA ALTROVE: qui è stata
+-- eseguita su una tabella VUOTA (0 righe in produzione il 12 ago 2026, nessuna
+-- chiusura di cassa ancora registrata), quindi `SET NOT NULL` è stato
+-- istantaneo e non ha richiesto nessun backfill. Su una tabella popolata NON
+-- lo è: PostgreSQL fa una scansione completa tenendo un ACCESS EXCLUSIVE lock
+-- sulla tabella, e fallisce se anche una sola riga ha il centro a null. Su
+-- dati veri va prima riempita la colonna, e conviene passare da un CHECK ...
+-- NOT VALID seguito da VALIDATE CONSTRAINT, che non blocca le letture.
+ALTER TABLE "journal_entries" ALTER COLUMN "cost_center_id" SET NOT NULL;

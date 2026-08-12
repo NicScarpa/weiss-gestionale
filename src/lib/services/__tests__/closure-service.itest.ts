@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { loginAs } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
-import { creaChiusura } from '@/test/integration/fixtures/closures'
+import { creaChiusura, centroDiCostoDiDefault } from '@/test/integration/fixtures/closures'
 import { validateClosure } from '../closure-service'
 import { POST as validaChiusura } from '@/app/api/chiusure/[id]/validate/route'
 
@@ -155,7 +155,7 @@ describe('POST /api/chiusure/[id]/validate', () => {
     const closure = await creaChiusura({ status: 'DRAFT' })
     await loginAs('admin')
 
-    const response = await callRoute<{ error: string }>(
+    const response = await callRoute<{ error: string }, { id: string }>(
       validaChiusura,
       jsonRequest(`/api/chiusure/${closure.id}/validate`, {
         method: 'POST',
@@ -179,7 +179,7 @@ describe('POST /api/chiusure/[id]/validate', () => {
     })
     await loginAs('admin')
 
-    const response = await callRoute<{ error: string }>(
+    const response = await callRoute<{ error: string }, { id: string }>(
       validaChiusura,
       jsonRequest(`/api/chiusure/${closure.id}/validate`, {
         method: 'POST',
@@ -290,6 +290,7 @@ describe('validazione concorrente', () => {
         debitAmount: 537.9,
         closureId: closure.id,
         createdById: admin.user.id,
+        costCenterId: await centroDiCostoDiDefault(),
       },
     })
 
@@ -354,6 +355,7 @@ describe('rifiuto di una chiusura', () => {
         debitAmount: 537.9,
         closureId: closure.id,
         createdById: admin.user.id,
+        costCenterId: await centroDiCostoDiDefault(),
       },
     })
 

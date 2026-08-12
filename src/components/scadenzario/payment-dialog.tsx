@@ -163,8 +163,14 @@ function ModuloPagamento({
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0" align="start">
+            {/* `required`: la data di pagamento non è annullabile, e lo stato
+                che la tiene è una `Date` piena. Senza, ricliccare il giorno
+                già selezionato lo deselezionava e passava `undefined` a
+                `setDataPagamento`, dopodiché il `format` qui sopra andava in
+                RangeError e il dialog spariva. */}
             <Calendar
               mode="single"
+              required
               selected={dataPagamento}
               onSelect={setDataPagamento}
               initialFocus

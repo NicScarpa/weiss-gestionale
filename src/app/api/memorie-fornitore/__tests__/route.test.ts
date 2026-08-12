@@ -29,7 +29,7 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
 
-import { auth } from '@/lib/auth'
+import { authDiRoute } from '@/test/auth-unitari'
 import { prisma } from '@/lib/prisma'
 import { createAuditLog } from '@/lib/audit'
 
@@ -63,7 +63,7 @@ function richiestaSuId(metodo: 'DELETE' | 'PATCH', id = 'mem-1', body?: unknown)
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(auth).mockResolvedValue(sessione as never)
+  vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
   vi.mocked(prisma.supplierProductAccount.findMany).mockResolvedValue([memoria] as never)
   vi.mocked(prisma.supplierProductAccount.count).mockResolvedValue(1 as never)
   vi.mocked(prisma.supplierProductAccount.findFirst).mockResolvedValue(memoria as never)
@@ -78,13 +78,13 @@ beforeEach(() => {
 
 describe('GET /api/memorie-fornitore', () => {
   it('rifiuta chi non è autenticato', async () => {
-    vi.mocked(auth).mockResolvedValue(null)
+    vi.mocked(authDiRoute).mockResolvedValue(null)
 
     expect((await GET(richiestaGet())).status).toBe(401)
   })
 
   it('rifiuta i ruoli senza accesso ai dati finanziari', async () => {
-    vi.mocked(auth).mockResolvedValue(sessioneStaff as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessioneStaff as never)
 
     expect((await GET(richiestaGet())).status).toBe(403)
   })
@@ -133,7 +133,7 @@ describe('GET /api/memorie-fornitore', () => {
 
 describe('DELETE /api/memorie-fornitore/[id]', () => {
   it('rifiuta i ruoli senza accesso ai dati finanziari', async () => {
-    vi.mocked(auth).mockResolvedValue(sessioneStaff as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessioneStaff as never)
     const { request, context } = richiestaSuId('DELETE')
 
     expect((await DELETE(request, context)).status).toBe(403)

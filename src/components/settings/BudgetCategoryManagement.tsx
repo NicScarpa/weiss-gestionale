@@ -90,7 +90,7 @@ const CATEGORY_TYPE_COLORS: Record<string, string> = {
 export function BudgetCategoryManagement() {
   // Sede scelta esplicitamente dall'utente: se manca si usa la prima disponibile
   const [sceltaSede, setSceltaSede] = useState<string>('')
-  const [seeding, setSeeding] = useState(false)
+  const [confermaInstallazione, setConfermaInstallazione] = useState(false)
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [editCategory, setEditCategory] = useState<BudgetCategory | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<BudgetCategory | null>(null)
@@ -182,28 +182,24 @@ export function BudgetCategoryManagement() {
   const hierarchy = datiCategorie?.hierarchy || []
   const unmappedAccounts = datiConti?.unmappedAccounts || []
 
-  const seedCategories = async () => {
-    if (!selectedVenueId) return
-    setSeeding(true)
-    try {
-      const res = await fetch('/api/budget-categories/seed', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ venueId: selectedVenueId, skipExisting: false }),
-      })
-      const data = await res.json()
+  /**
+   * Installa la struttura del cash flow.
+   *
+   * Rilancia invece di ingoiare l'errore: il dialogo di conferma mostra il
+   * messaggio così com'è, e quando il seed si rifiuta di partire perché manca
+   * una migrazione quel messaggio dice all'operatore cosa fare. Un
+   * «impossibile creare le categorie» al suo posto lo lascerebbe a indovinare.
+   */
+  const installaCategorie = async () => {
+    const res = await fetch('/api/budget-categories/seed', { method: 'POST' })
+    const data = await res.json()
 
-      if (res.ok) {
-        toast.success(`${data.created?.length || 0} categorie create con successo`)
-        ricaricaCategorie()
-      } else {
-        throw new Error(data.error)
-      }
-    } catch (_error) {
-      toast.error('Impossibile creare le categorie predefinite')
-    } finally {
-      setSeeding(false)
+    if (!res.ok) {
+      throw new Error(data.error || 'Impossibile installare le categorie')
     }
+
+    toast.success(data.message || 'Categorie aggiornate')
+    ricaricaCategorie()
   }
 
   const handleSubmit = async () => {
@@ -390,6 +386,20 @@ export function BudgetCategoryManagement() {
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-4">
+                  {/*
+                    Sempre disponibile, e non solo quando non ci sono categorie:
+                    il seed serve proprio a rimpiazzare le 13 generiche, che in
+                    produzione esistono e sono attive. Legarlo al vuoto lo
+                    rendeva irraggiungibile esattamente quando serve.
+                  */}
+                  <Button
+                    variant="outline"
+                    onClick={() => setConfermaInstallazione(true)}
+                    disabled={!selectedVenueId}
+                  >
+                    <Wand2 className="h-4 w-4 mr-2" />
+                    Installa categorie cash flow
+                  </Button>
                   <Select value={selectedVenueId} onValueChange={setSceltaSede}>
                     <SelectTrigger className="w-48">
                       <SelectValue placeholder="Seleziona sede" />
@@ -418,18 +428,9 @@ export function BudgetCategoryManagement() {
                 Inizia con le categorie predefinite o creane di nuove
               </p>
               <div className="flex flex-wrap items-center justify-center gap-4">
-                <Button onClick={seedCategories} disabled={seeding}>
-                  {seeding ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Creazione...
-                    </>
-                  ) : (
-                    <>
-                      <Wand2 className="h-4 w-4 mr-2" />
-                      Crea categorie predefinite
-                    </>
-                  )}
+                <Button onClick={() => setConfermaInstallazione(true)}>
+                  <Wand2 className="h-4 w-4 mr-2" />
+                  Installa categorie cash flow
                 </Button>
                 <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
                   <DialogTrigger asChild>
@@ -662,6 +663,42 @@ export function BudgetCategoryManagement() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/*
+        Stesso dialogo delle azioni distruttive del resto delle impostazioni:
+        l'installazione spegne le categorie su cui il budget gira adesso, e
+        merita la stessa conferma battuta a mano. Il testo dice per intero cosa
+        disattiva e cosa installa, e il dialogo mostra da sé l'errore che torna
+        dal server — compreso quello che chiede di applicare le migrazioni.
+      */}
+      <DangerousDeleteDialog
+        open={confermaInstallazione}
+        onOpenChange={setConfermaInstallazione}
+        title="Installa le categorie del cash flow"
+        description="Sostituisce il template generico con la riclassificazione a tre livelli usata dal prospetto."
+        infoNote={
+          <>
+            <p>
+              <strong>Disattiva</strong> le 13 categorie generiche (Food Cost, Costi Fissi,
+              Marketing, Ricavi Bar…). Non le cancella: i movimenti che le citano restano
+              validi.
+            </p>
+            <p className="mt-1">
+              <strong>Installa</strong> 9 famiglie e 39 sottogruppi, e rimappa i conti del
+              piano v4 sul sottogruppo previsto. Le mappature riassegnate a mano tornano
+              alla categoria di default.
+            </p>
+            <p className="mt-1">
+              È tutto o niente: se qualcosa va storto non resta nulla a metà. Rieseguirla
+              non duplica.
+            </p>
+          </>
+        }
+        confirmationWord="installa"
+        confirmLabel="Installa categorie"
+        loadingLabel="Installazione..."
+        onConfirm={installaCategorie}
+      />
 
       <DangerousDeleteDialog
         open={!!deleteTarget}

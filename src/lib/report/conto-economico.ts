@@ -41,7 +41,7 @@
 export const UNASSIGNED = 'UNASSIGNED'
 
 /** I tipi di conto del piano. Solo i primi due entrano nel conto economico. */
-export type TipoConto = 'RICAVO' | 'COSTO' | 'ATTIVO' | 'PASSIVO'
+export type TipoConto = 'RICAVO' | 'COSTO' | 'ATTIVO' | 'PASSIVO' | 'PATRIMONIALE'
 
 /** I tipi che il conto economico misura. */
 export type TipoEconomico = 'RICAVO' | 'COSTO'

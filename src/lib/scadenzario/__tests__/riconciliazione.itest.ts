@@ -23,7 +23,7 @@ import { DELETE as DELETE_riconciliazione } from '@/app/api/scadenzario/[id]/ric
 setupIntegrationDb()
 
 async function riconcilia(scheduleId: string, journalEntryId: string, amount?: number) {
-  return callRoute<{ error?: string; id?: string; scheduleStato?: string }>(
+  return callRoute<{ error?: string; id?: string; scheduleStato?: string }, { id: string }>(
     POST_riconciliazione,
     jsonRequest(`/api/scadenzario/${scheduleId}/riconciliazioni`, {
       method: 'POST',

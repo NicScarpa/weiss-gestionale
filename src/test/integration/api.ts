@@ -62,8 +62,22 @@ type RouteHandler<P> = (
  * Chiama un handler di route e ne decodifica la risposta. I parametri di rotta
  * si passano come oggetto semplice: nell'App Router arrivano come Promise, e ci
  * pensa questa funzione ad avvolgerli.
+ *
+ * Sui due parametri di tipo, e perché il default di `P` è quello che è.
+ * TypeScript non inferisce a metà: se il chiamante scrive il tipo del corpo
+ * (`callRoute<{ error?: string }>(…)`), `P` non viene più dedotto dai `params`
+ * ma cade sul default. Il default vale quindi solo per le route statiche, e
+ * `Record<string, never>` è la loro forma esatta — la stessa `EmptyParams` di
+ * `withAuth`. Il vecchio default `Record<string, string>` prometteva chiavi
+ * qualsiasi e non era assegnabile né a `EmptyParams` né a un `{ id: string }`:
+ * a compilatore acceso, cinquanta chiamate su sessanta non passavano.
+ *
+ * Chi chiama una route dinamica e vuole anche tipare il corpo scrive entrambi:
+ * `callRoute<{ error?: string }, { id: string }>(handler, req, { id })`. Chi
+ * non tipa il corpo continua a non scrivere nulla: lì `P` si deduce dai
+ * `params` come prima.
  */
-export async function callRoute<T = unknown, P extends Record<string, string> = Record<string, string>>(
+export async function callRoute<T = unknown, P extends Record<string, string> = Record<string, never>>(
   handler: RouteHandler<P>,
   request: NextRequest,
   params: P = {} as P

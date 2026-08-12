@@ -157,10 +157,18 @@ export function BudgetSetupWizard({
                     <Layers className="h-5 w-5 text-green-600" />
                   </div>
                   <div>
-                    <h3 className="font-medium">Template predefinito (Consigliato)</h3>
+                    {/*
+                      Il testo dice cosa il seed installa davvero. Prometteva
+                      «Personale, Food Cost, Costi Fissi, Marketing»: sono le
+                      categorie del template generico, che questo seed non crea
+                      più — le disattiva.
+                    */}
+                    <h3 className="font-medium">Struttura del cash flow (consigliata)</h3>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Include categorie standard: Personale, Food Cost, Costi Fissi,
-                      Marketing, ecc. Puoi personalizzarle in seguito.
+                      Installa le 9 famiglie e i 39 sottogruppi della riclassificazione
+                      e mappa i conti del piano v4 sul sottogruppo previsto. Disattiva
+                      le 13 categorie generiche precedenti, senza cancellarle: i
+                      movimenti che le citano restano validi.
                     </p>
                   </div>
                 </div>
@@ -220,7 +228,7 @@ export function BudgetSetupWizard({
               </h2>
               <p className="text-muted-foreground">
                 {templateChoice === 'default'
-                  ? 'Le categorie predefinite sono state create. Puoi modificarle in qualsiasi momento dalle impostazioni.'
+                  ? 'La struttura del cash flow è installata e i conti sono mappati. Puoi modificarla in qualsiasi momento dalle impostazioni.'
                   : 'Potrai creare le tue categorie personalizzate dalle impostazioni.'}
               </p>
             </div>
@@ -234,9 +242,19 @@ export function BudgetSetupWizard({
                     ? 'Categorie budget create'
                     : 'Crea le tue categorie nelle impostazioni'}
                 </li>
+                {/* Con la struttura del cash flow la mappatura la fa il seed. */}
                 <li className="flex items-center gap-2">
-                  <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30" />
-                  Mappa i conti alle categorie
+                  {templateChoice === 'default' ? (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      Conti mappati sui sottogruppi
+                    </>
+                  ) : (
+                    <>
+                      <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30" />
+                      Mappa i conti alle categorie
+                    </>
+                  )}
                 </li>
                 <li className="flex items-center gap-2">
                   <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30" />

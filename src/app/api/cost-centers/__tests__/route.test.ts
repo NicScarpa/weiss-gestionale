@@ -14,7 +14,7 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
 
-import { auth } from '@/lib/auth'
+import { authDiRoute } from '@/test/auth-unitari'
 import { prisma } from '@/lib/prisma'
 
 const sessioneSenzaRuolo = { user: { id: 'user-1', role: 'employee' } } as unknown as Session
@@ -25,7 +25,7 @@ beforeEach(() => {
 
 describe('GET /api/cost-centers', () => {
   it('senza sessione risponde 401', async () => {
-    vi.mocked(auth).mockResolvedValue(null)
+    vi.mocked(authDiRoute).mockResolvedValue(null)
 
     const response = await GET()
 
@@ -34,7 +34,7 @@ describe('GET /api/cost-centers', () => {
   })
 
   it('non richiede un ruolo particolare: un utente non admin riceve comunque la lista', async () => {
-    vi.mocked(auth).mockResolvedValue(sessioneSenzaRuolo as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessioneSenzaRuolo as never)
     vi.mocked(prisma.costCenter.findMany).mockResolvedValue([] as never)
 
     const response = await GET()
@@ -43,7 +43,7 @@ describe('GET /api/cost-centers', () => {
   })
 
   it('filtra solo i centri attivi, ordinati per code, e restituisce { costCenters }', async () => {
-    vi.mocked(auth).mockResolvedValue(sessioneSenzaRuolo as never)
+    vi.mocked(authDiRoute).mockResolvedValue(sessioneSenzaRuolo as never)
     vi.mocked(prisma.costCenter.findMany).mockResolvedValue([
       { id: 'cc-str', code: 'STR', name: 'Struttura', isDefault: true },
       { id: 'cc-weiss', code: 'WEISS', name: 'Weiss', isDefault: false },

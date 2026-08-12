@@ -55,7 +55,7 @@ describe('POST /api/bank-transactions/[id]/ignore', () => {
     const transazione = await creaTransazione()
     await cancella(transazione.id)
 
-    const risposta = await callRoute<{ error?: string }>(
+    const risposta = await callRoute<{ error?: string }, { id: string }>(
       ignora,
       jsonRequest(`/api/bank-transactions/${transazione.id}/ignore`, { method: 'POST' }),
       { id: transazione.id }
@@ -88,7 +88,7 @@ describe('POST /api/bank-transactions/[id]/unmatch', () => {
     })
     await cancella(transazione.id)
 
-    const risposta = await callRoute<{ error?: string }>(
+    const risposta = await callRoute<{ error?: string }, { id: string }>(
       annullaMatch,
       jsonRequest(`/api/bank-transactions/${transazione.id}/unmatch`, { method: 'POST' }),
       { id: transazione.id }

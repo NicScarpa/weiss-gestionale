@@ -21,6 +21,8 @@
 - **Niente codice irraggiungibile:** una route senza consumer non si scrive. Il vincolo si valuta **sul piano intero, non sul singolo task**: i moduli dei Task 2-6 non sono raggiungibili dalla UI finché non arrivano la route (Task 7) e la pagina (Task 8), ed è previsto che sia così. Un modulo che resta senza consumer alla fine del Task 8 è invece un difetto.
 - **Convenzione di segno del prospetto:** entrate positive, uscite negative. Il valore di ogni voce è `dare − avere`, senza eccezioni per natura del conto.
 - **Le voci non si duplicano per locale:** la natura la dà la voce, il luogo il centro di costo.
+- **⚠️ Il `.env` di questo progetto punta al database di PRODUZIONE** (Supabase, `aws-1-eu-west-2.pooler.supabase.com`). Nessun task esegue comandi che scrivono sul database: niente `prisma migrate dev`, `prisma db push`, `prisma migrate deploy`, `prisma db seed`. I soli comandi Prisma ammessi sono `npx prisma generate` e `npx prisma validate`, che non aprono connessioni. Le migrazioni si **scrivono** e basta: le applica il committente, a mano, seguendo `docs/migrazione-piano-conti-v4.md`. I test di integrazione fanno eccezione perché non leggono `DATABASE_URL`: se la calcolano da soli su PostgreSQL locale (`src/test/integration/env-guard.ts`).
+- **Test di integrazione:** eseguirli con `TEST_DB_SUFFIX=cashflow` davanti al comando. Più copie di lavoro del repository condividono lo stesso PostgreSQL locale, e senza suffisso distinto due suite in parallelo si distruggono il database a vicenda.
 
 ## Scostamento dalla spec, deciso qui
 
@@ -349,13 +351,18 @@ ALTER TYPE "AccountType" ADD VALUE IF NOT EXISTS 'PATRIMONIALE';
 ALTER TYPE "BudgetCategoryType" ADD VALUE IF NOT EXISTS 'FINANCING';
 ```
 
-- [ ] **Step 7: Applicare la migrazione in locale e rigenerare il client**
+- [ ] **Step 7: Rigenerare il client, senza toccare il database**
 
-Run: `nvm use 22 && npx prisma migrate dev --name cash_flow_enums --skip-seed`
-Expected: la migrazione risulta applicata e il client Prisma viene rigenerato. Se Prisma segnala di aver già creato una cartella con nome diverso, rinominarla in `20260811000000_cash_flow_enums` e riallineare `_prisma_migrations`.
+**Non eseguire `prisma migrate dev`.** `DATABASE_URL` punta alla produzione: quel comando applicherebbe una `ALTER TYPE` al database reale, e togliere un valore da un enum PostgreSQL dopo è tutt'altro che banale. La migrazione appena scritta si applica in produzione a mano, insieme alle altre del piano v4.
+
+Run: `nvm use 22 && npx prisma generate`
+Expected: `Generated Prisma Client`. Il comando legge solo `schema.prisma`, non apre connessioni.
 
 Run: `nvm use 22 && npx tsc --noEmit`
-Expected: nessun errore.
+Expected: nessun errore. Se il compilatore non riconosce `'PATRIMONIALE'` come valore di `AccountType`, il client non è stato rigenerato: ripetere `npx prisma generate`.
+
+Run: `nvm use 22 && npx prisma validate`
+Expected: `The schema at prisma/schema.prisma is valid`.
 
 - [ ] **Step 8: Aggiornare la spec sullo scostamento**
 
@@ -2012,7 +2019,7 @@ describe('seedCategorieCashFlow', () => {
 
 - [ ] **Step 2: Eseguire il test per vederlo fallire**
 
-Run: `nvm use 22 && npm run test:integration -- src/lib/cashflow/__tests__/seed-categorie.itest.ts`
+Run: `nvm use 22 && TEST_DB_SUFFIX=cashflow npm run test:integration -- src/lib/cashflow/__tests__/seed-categorie.itest.ts`
 Expected: FAIL — `Cannot find module '../seed-categorie'`.
 
 Se il comando lamenta l'assenza del database di test, avviarlo come indicato in `docs/` e verificare `TEST_DB_SUFFIX`.
@@ -2213,7 +2220,7 @@ export async function POST() {
 
 - [ ] **Step 5: Eseguire i test di integrazione**
 
-Run: `nvm use 22 && npm run test:integration -- src/lib/cashflow/__tests__/seed-categorie.itest.ts`
+Run: `nvm use 22 && TEST_DB_SUFFIX=cashflow npm run test:integration -- src/lib/cashflow/__tests__/seed-categorie.itest.ts`
 Expected: PASS, quattro test.
 
 - [ ] **Step 6: Verificare che nulla si sia rotto altrove**
@@ -2246,63 +2253,58 @@ git commit -m "feat(cash-flow): seed delle 9 famiglie e 39 sottogruppi"
 
 Creare `src/app/api/cashflow/prospetto/__tests__/prospetto.itest.ts`:
 
+Usa l'infrastruttura di test del progetto — `setupIntegrationDb`, `entraCome`, `jsonRequest`, `callRoute` — come fa `src/app/api/budget-categories/__tests__/autorizzazione.itest.ts`. Non montare `vi.mock('@/lib/auth')` a mano: quel meccanismo esiste già dentro `entraCome`, che crea una sessione vera per il ruolo indicato.
+
 ```typescript
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
+import { setupIntegrationDb } from '@/test/integration/db'
+import { entraCome } from '@/test/integration/auth-mock'
+import { jsonRequest, callRoute } from '@/test/integration/api'
+import { GET as prospetto } from '../route'
 
-vi.mock('@/lib/auth', () => ({ auth: vi.fn() }))
+setupIntegrationDb()
 
-import { auth } from '@/lib/auth'
-import { GET } from '../route'
-
-function richiesta(url = 'http://localhost/api/cashflow/prospetto?anno=2026') {
-  return new Request(url) as never
+function richiesta(anno = '2026') {
+  return jsonRequest(`/api/cashflow/prospetto?anno=${anno}`)
 }
 
-beforeEach(() => vi.clearAllMocks())
-
 describe('GET /api/cashflow/prospetto', () => {
-  it('senza sessione risponde 401', async () => {
-    vi.mocked(auth).mockResolvedValue(null as never)
+  it('impedisce a uno staff di leggere il prospetto', async () => {
+    await entraCome('staff')
 
-    const risposta = await GET(richiesta())
-    expect(risposta.status).toBe(401)
+    const { status } = await callRoute(prospetto, richiesta())
+
+    expect(status).toBe(403)
   })
 
-  it('con ruolo staff risponde 403', async () => {
-    vi.mocked(auth).mockResolvedValue({ user: { id: 'u1', role: 'staff' } } as never)
+  it('lo consente a un manager, con prospetto e controlli', async () => {
+    await entraCome('manager')
 
-    const risposta = await GET(richiesta())
-    expect(risposta.status).toBe(403)
-  })
+    const { status, body } = await callRoute(prospetto, richiesta())
 
-  it('con ruolo manager restituisce prospetto e controlli', async () => {
-    vi.mocked(auth).mockResolvedValue({ user: { id: 'u1', role: 'manager' } } as never)
-
-    const risposta = await GET(richiesta())
-    expect(risposta.status).toBe(200)
-
-    const corpo = await risposta.json()
-    expect(corpo.prospetto.anno).toBe(2026)
-    expect(corpo.prospetto.righe.length).toBeGreaterThan(200)
-    expect(corpo.controlli.map((c: { codice: string }) => c.codice)).toEqual([
+    expect(status).toBe(200)
+    expect(body.prospetto.anno).toBe(2026)
+    // 203 righe: 9 famiglie + 39 sottogruppi + 149 voci + 3 totali + 3 memo
+    expect(body.prospetto.righe).toHaveLength(203)
+    expect(body.controlli.map((c: { codice: string }) => c.codice)).toEqual([
       'C1', 'C2', 'C3', 'C4',
     ])
   })
 
   it("anno non numerico: risponde 400 invece di produrre un prospetto vuoto", async () => {
-    vi.mocked(auth).mockResolvedValue({ user: { id: 'u1', role: 'admin' } } as never)
+    await entraCome('admin')
 
-    const risposta = await GET(
-      richiesta('http://localhost/api/cashflow/prospetto?anno=duemilaventisei')
-    )
-    expect(risposta.status).toBe(400)
+    const { status } = await callRoute(prospetto, richiesta('duemilaventisei'))
+    expect(status).toBe(400)
   })
 })
 ```
 
+Il test del 401 senza sessione non c'è: `entraCome` copre i ruoli, e l'assenza di sessione è già verificata dalla suite di autorizzazione del progetto. Se `callRoute` espone un modo per non autenticare affatto, aggiungilo; altrimenti non forzarlo.
+
 - [ ] **Step 2: Eseguire il test per vederlo fallire**
 
-Run: `nvm use 22 && npm run test:integration -- src/app/api/cashflow/prospetto`
+Run: `nvm use 22 && TEST_DB_SUFFIX=cashflow npm run test:integration -- src/app/api/cashflow/prospetto`
 Expected: FAIL — `Cannot find module '../route'`.
 
 - [ ] **Step 3: Scrivere la route**
@@ -2357,7 +2359,13 @@ export async function GET(request: Request) {
       movimentiCashFlow(venueId, anno),
       liquiditaAlGiorno(venueId, `${anno - 1}-12-31`),
       liquiditaAlGiorno(venueId, `${anno}-12-31`),
-      prisma.account.findMany({ where: { isActive: true }, select: { id: true, code: true } }),
+      // Tutti i conti, attivi e non. In questo progetto `isActive: false` è il
+      // soft-delete dei conti **che hanno movimenti** (vedi il DELETE in
+      // src/app/api/accounts/route.ts): filtrarli farebbe sparire dai controlli
+      // proprio lo storico che devono sorvegliare, e C4 segnalerebbe come
+      // ignoti dei conti perfettamente legittimi. Stessa scelta, e stesso
+      // motivo, di `codiciDeiConti()` in prospetto.ts.
+      prisma.account.findMany({ select: { id: true, code: true } }),
     ])
 
     const controlli = eseguiControlli({
@@ -2384,7 +2392,7 @@ export async function GET(request: Request) {
 
 - [ ] **Step 4: Eseguire i test**
 
-Run: `nvm use 22 && npm run test:integration -- src/app/api/cashflow/prospetto`
+Run: `nvm use 22 && TEST_DB_SUFFIX=cashflow npm run test:integration -- src/app/api/cashflow/prospetto`
 Expected: PASS, quattro test.
 
 - [ ] **Step 5: Commit**
@@ -2627,7 +2635,8 @@ Creare `src/app/(dashboard)/cash-flow/prospetto/ProspettoClient.tsx`:
 ```tsx
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select,
@@ -2648,37 +2657,21 @@ interface Risposta {
 
 export function ProspettoClient({ annoIniziale }: { annoIniziale: number }) {
   const [anno, setAnno] = useState(annoIniziale)
-  const [dati, setDati] = useState<Risposta | null>(null)
-  const [errore, setErrore] = useState<string | null>(null)
-  const [caricamento, setCaricamento] = useState(true)
 
-  useEffect(() => {
-    let annullato = false
-    setCaricamento(true)
-    setErrore(null)
-
-    fetch(`/api/cashflow/prospetto?anno=${anno}`)
-      .then(async (risposta) => {
-        if (!risposta.ok) {
-          const corpo = await risposta.json().catch(() => ({}))
-          throw new Error(corpo.error ?? 'Errore nel caricamento del prospetto')
-        }
-        return risposta.json() as Promise<Risposta>
-      })
-      .then((corpo) => {
-        if (!annullato) setDati(corpo)
-      })
-      .catch((e: Error) => {
-        if (!annullato) setErrore(e.message)
-      })
-      .finally(() => {
-        if (!annullato) setCaricamento(false)
-      })
-
-    return () => {
-      annullato = true
-    }
-  }, [anno])
+  // React Query come nel resto del progetto (vedi src/app/(dashboard)/cash-flow/page.tsx):
+  // l'anno sta nella chiave, quindi cambiarlo rifà la richiesta e i risultati già
+  // visti restano in cache invece di essere richiesti da capo.
+  const { data: dati, error: errore, isLoading: caricamento } = useQuery({
+    queryKey: ['cashflow', 'prospetto', anno],
+    queryFn: async (): Promise<Risposta> => {
+      const risposta = await fetch(`/api/cashflow/prospetto?anno=${anno}`)
+      if (!risposta.ok) {
+        const corpo = await risposta.json().catch(() => ({}))
+        throw new Error(corpo.error ?? 'Impossibile caricare il prospetto di cash flow')
+      }
+      return risposta.json()
+    },
+  })
 
   const anni = Array.from({ length: 5 }, (_, i) => annoIniziale - i)
 
@@ -2702,7 +2695,7 @@ export function ProspettoClient({ annoIniziale }: { annoIniziale: number }) {
 
       {errore && (
         <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
-          {errore}
+          {errore instanceof Error ? errore.message : 'Errore nel caricamento del prospetto'}
         </div>
       )}
 

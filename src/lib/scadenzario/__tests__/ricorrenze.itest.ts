@@ -21,7 +21,7 @@ beforeEach(async () => {
 })
 
 function genera(recurrenceId: string) {
-  return callRoute<{ error?: string; schedule?: { id: string } }>(
+  return callRoute<{ error?: string; schedule?: { id: string } }, { id: string }>(
     POST_genera,
     jsonRequest(`/api/scadenzario/ricorrenze/${recurrenceId}/genera`, { method: 'POST' }),
     { id: recurrenceId }
@@ -29,7 +29,7 @@ function genera(recurrenceId: string) {
 }
 
 function generaProssima(scheduleId: string) {
-  return callRoute<{ error?: string; schedule?: { id: string } }>(
+  return callRoute<{ error?: string; schedule?: { id: string } }, { id: string }>(
     POST_generaProssima,
     jsonRequest(`/api/scadenzario/${scheduleId}/genera-prossima`, { method: 'POST' }),
     { id: scheduleId }

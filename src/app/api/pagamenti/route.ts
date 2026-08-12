@@ -8,7 +8,23 @@ import { z } from 'zod'
 const createPagamentoSchema = z.object({
   tipo: z.enum(['BONIFICO', 'F24', 'ALTRO']),
   riferimentoInterno: z.string().optional(),
-  dataEsecuzione: z.string().optional(),
+  /**
+   * Obbligatoria, e validata prima di diventare una `Date`.
+   *
+   * `payments.data_esecuzione` è NOT NULL: finché questo campo era
+   * `z.string().optional()`, una POST che lo ometteva arrivava a Prisma con
+   * `null` e usciva come 500 non gestito (questa handler non ha try/catch),
+   * mentre una stringa non parsabile diventava un `Invalid Date` che finiva
+   * allo stesso modo. Il form manda sempre la data — chi non è il form deve
+   * ricevere un 400 che dice cosa manca.
+   *
+   * Come in `[id]/route.ts`: niente `z.coerce.date()`, che accetterebbe anche
+   * booleani e numeri.
+   */
+  dataEsecuzione: z
+    .string()
+    .refine((valore) => !Number.isNaN(Date.parse(valore)), { message: 'Data non valida' })
+    .transform((valore) => new Date(valore)),
   importo: z.number(),
   beneficiarioNome: z.string().min(1),
   beneficiarioIban: z.string().optional(),
@@ -91,7 +107,7 @@ export async function POST(request: NextRequest) {
       tipo: data.tipo,
       stato: 'BOZZA',
       riferimentoInterno: data.riferimentoInterno,
-      dataEsecuzione: data.dataEsecuzione ? new Date(data.dataEsecuzione) : null,
+      dataEsecuzione: data.dataEsecuzione,
       importo: data.importo,
       beneficiarioNome: data.beneficiarioNome,
       beneficiarioIban: data.beneficiarioIban,

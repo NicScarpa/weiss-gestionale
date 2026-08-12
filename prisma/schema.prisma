@@ -456,10 +456,17 @@ model JournalEntry {
   notes                String?
   verified             Boolean             @default(false)
   paymentId            String?             @unique @map("payment_id")
-  /// Centro di costo del movimento. Nullable di proposito: il DDL va in
-  /// produzione prima del deploy del codice che lo valorizza; il NOT NULL è
-  /// un follow-up successivo.
-  costCenterId         String?             @map("cost_center_id")
+  /// Centro di costo del movimento. NOT NULL dal 12 ago 2026: ogni movimento
+  /// nasce imputato a un centro, senza eccezioni. È ciò che rende sommabile la
+  /// prima nota per centro — un report che ignora le righe senza centro non
+  /// quadra con il totale, e nessuno se ne accorge finché i conti non tornano.
+  ///
+  /// Il vincolo è sostenibile perché la risoluzione non fallisce mai in
+  /// silenzio: `risolviCentroDiCosto` (cost-center-service.ts) o risponde con
+  /// un centro, o dichiara `invalid` e chi la chiama traduce in un 400, o
+  /// lancia se l'anagrafica dei centri non è configurata. Nessun percorso può
+  /// più ripiegare su null.
+  costCenterId         String              @map("cost_center_id")
   /// Provenienza di costCenterId: 'scelto' (da un umano, nel form o in una
   /// regola che ha configurato), 'piano' (dettata dalla regola del conto —
   /// DEFAULT_STR → STR), 'supposto' (indovinata dal sistema su un percorso
@@ -493,7 +500,7 @@ model JournalEntry {
   appliedRule          CategorizationRule? @relation(fields: [appliedRuleId], references: [id])
   budgetCategory       BudgetCategory?     @relation(fields: [budgetCategoryId], references: [id])
   closure              DailyClosure?       @relation(fields: [closureId], references: [id], onDelete: SetNull)
-  costCenter           CostCenter?         @relation(fields: [costCenterId], references: [id], onDelete: Restrict)
+  costCenter           CostCenter          @relation(fields: [costCenterId], references: [id], onDelete: Restrict)
   counterpart          Account?            @relation("Counterpart", fields: [counterpartId], references: [id])
   createdBy            User?               @relation(fields: [createdById], references: [id])
   venue                Venue               @relation(fields: [venueId], references: [id])
@@ -2181,6 +2188,7 @@ enum AccountType {
   COSTO
   ATTIVO
   PASSIVO
+  PATRIMONIALE
 }
 
 enum RegisterType {
@@ -2212,6 +2220,7 @@ enum BudgetCategoryType {
   TAX
   INVESTMENT
   VAT
+  FINANCING
 }
 
 enum BenchmarkComparison {

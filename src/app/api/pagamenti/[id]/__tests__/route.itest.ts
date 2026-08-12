@@ -4,7 +4,7 @@ import { toApi } from '@/lib/money'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { loginAs } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
-import { venueDiTest } from '@/test/integration/fixtures/closures'
+import { venueDiTest, centroDiCostoDiDefault } from '@/test/integration/fixtures/closures'
 import { PATCH as aggiornaPagamento, DELETE as eliminaPagamento } from '../route'
 
 /**
@@ -49,6 +49,7 @@ async function creaPagamentoEseguito() {
       creditAmount: IMPORTO,
       paymentId: pagamento.id,
       verified: true,
+      costCenterId: await centroDiCostoDiDefault(),
     },
   })
 
