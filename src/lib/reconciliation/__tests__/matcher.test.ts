@@ -77,4 +77,32 @@ describe('calculateMatchScore — bonus numero di distinta', () => {
 
     expect(conRiferimentoAssente).toBe(senza)
   })
+
+  // Un numero di distinta con punteggiatura ('88-4213') deve far scattare il
+  // bonus anche se la causale banca non normalizzata contiene lo stesso
+  // separatore: il confronto avviene fra le due stringhe normalizzate.
+  it('il bonus scatta anche con la punteggiatura nel documentRef', () => {
+    const senza = calculateMatchScore(bankTx(), entry())
+
+    const con = calculateMatchScore(
+      bankTx({ description: 'VERSAMENTO CONTANTI DIST 88-4213' }),
+      entry({ documentRef: '88-4213' })
+    )
+
+    expect(con).toBeGreaterThan(senza)
+  })
+
+  // Guardia di lunghezza: un documentRef di due caratteri è troppo corto per
+  // essere una firma affidabile e non deve dare bonus, anche se compare nella
+  // causale.
+  it('un documentRef più corto di tre caratteri non alza il punteggio', () => {
+    const senza = calculateMatchScore(bankTx(), entry())
+
+    const conRiferimentoCorto = calculateMatchScore(
+      bankTx({ description: 'VERSAMENTO CONTANTI DIST 42' }),
+      entry({ documentRef: '42' })
+    )
+
+    expect(conRiferimentoCorto).toBe(senza)
+  })
 })

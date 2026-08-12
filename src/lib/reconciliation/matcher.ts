@@ -118,13 +118,17 @@ export function calculateMatchScore(bankTx: BankTx, entry: JournalEntry): number
   const descSimilarity = stringSimilarity(bankTx.description, entry.description)
   score += MATCH_WEIGHTS.DESCRIPTION * descSimilarity
 
-  // Bonus: se il documento di riferimento è presente nella descrizione banca
+  // Bonus: se il documento di riferimento è presente nella descrizione banca.
+  // Entrambi i lati si normalizzano togliendo la punteggiatura (uno '88-4213'
+  // deve trovare '88-4213' anche se la causale scrive '884213' o viceversa),
+  // e la guardia sulla lunghezza evita che un documentRef di una cifra
+  // matcherebbe quasi ogni causale — vedi lo stesso schema in
+  // schedule-matcher.ts.
   if (entry.documentRef) {
-    const refInDesc = bankTx.description.toLowerCase().includes(
-      entry.documentRef.toLowerCase().replace(/[^a-z0-9]/gi, '')
-    )
-    if (refInDesc) {
-      score = Math.min(1, score + 0.1) // Bonus 10%
+    const numero = entry.documentRef.toLowerCase().replace(/[^a-z0-9]/gi, '')
+    const causale = bankTx.description.toLowerCase().replace(/[^a-z0-9]/gi, '')
+    if (numero.length >= 3 && causale.includes(numero)) {
+      score = Math.min(1, score + MATCH_WEIGHTS.DOCUMENTO)
     }
   }
 
