@@ -165,9 +165,9 @@ beforeEach(() => {
   vi.mocked(prisma.journalEntryAllocation.deleteMany).mockResolvedValue({ count: 0 } as never)
   // Default: nessuna fetta preesistente sul movimento, così i test che non
   // riguardano lo sforamento dell'importo utile non devono preoccuparsene.
-  vi.mocked(prisma.journalEntryAllocation.aggregate).mockResolvedValue({
-    _sum: { importo: null },
-  } as never)
+  // È la stessa lettura che dice se ci sono fette manuali e quanta IVA
+  // dichiarano quelle già scritte: una sola, come nel servizio.
+  vi.mocked(prisma.journalEntryAllocation.findMany).mockResolvedValue([] as never)
   // L'anagrafica dei centri, che l'ereditarietà interroga per rivalutare il
   // centro contro il conto arrivato dalle fette (percorso automatico).
   vi.mocked(prisma.costCenter.findFirst).mockImplementation(
@@ -651,7 +651,7 @@ describe('reconcileScheduleWithEntry - ereditarietà pro-quota dalla fattura (Fa
     ] as never)
     // Il movimento ha già una fetta 'manuale': vince e blocca l'ereditarietà
     vi.mocked(prisma.journalEntryAllocation.findMany).mockResolvedValue([
-      { accountId: 'conto-manuale', importo: new Prisma.Decimal(100) },
+      { accountId: 'conto-manuale', importo: new Prisma.Decimal(100), origine: 'manuale' },
     ] as never)
 
     const esito = await reconcileScheduleWithEntry({
@@ -684,14 +684,11 @@ describe('reconcileScheduleWithEntry - ereditarietà pro-quota dalla fattura (Fa
     vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([
       { accountId: 'conto-c', importo: new Prisma.Decimal(500) },
     ] as never)
-    // Nessuna fetta 'manuale' sul movimento (la ereditaFetteDaFattura fa
-    // sempre questo controllo per prima)
-    vi.mocked(prisma.journalEntryAllocation.findMany).mockResolvedValue([])
-    // Ma il movimento ha già 600 di fette 'ereditata' da un'altra
-    // riconciliazione: è quello che l'aggregate deve intercettare.
-    vi.mocked(prisma.journalEntryAllocation.aggregate).mockResolvedValue({
-      _sum: { importo: new Prisma.Decimal(600) },
-    } as never)
+    // Nessuna fetta 'manuale' sul movimento, ma 600 già 'ereditata' da
+    // un'altra riconciliazione: è la somma che la guardia deve intercettare.
+    vi.mocked(prisma.journalEntryAllocation.findMany).mockResolvedValue([
+      { accountId: 'conto-b', importo: new Prisma.Decimal(600), origine: 'ereditata', iva: null },
+    ] as never)
 
     const esito = await reconcileScheduleWithEntry({
       scheduleId: 'sched-2',
@@ -705,6 +702,55 @@ describe('reconcileScheduleWithEntry - ereditarietà pro-quota dalla fattura (Fa
     expect(esito.outcome).toBe('ok')
     expect(prisma.journalEntryAllocation.createMany).not.toHaveBeenCalled()
     expect(logger.warn).toHaveBeenCalled()
+  })
+
+  it('riga di sconto negativa: il conto sparisce dai pesi e l\'ereditarietà lo dice', async () => {
+    // Il `PrezzoTotale` negativo arriva dal parser senza normalizzazione e
+    // l'imputazione per riga lo accetta: il conto che lo riceve va sotto zero
+    // e viene scartato dai pesi. Le fette rimaste quadrano con la quota ma non
+    // più con il documento — l'approssimazione è deliberata (vedi il docblock
+    // di `calcolaPesiConIva`), il silenzio no.
+    vi.mocked(prisma.schedule.findFirst).mockResolvedValue(
+      scadenza({ invoiceId: 'inv-5', importoTotale: new Prisma.Decimal(978) }) as never
+    )
+    vi.mocked(prisma.journalEntry.findFirst).mockResolvedValue(
+      movimento({ creditAmount: new Prisma.Decimal(978) }) as never
+    )
+    vi.mocked(prisma.electronicInvoice.findUnique).mockResolvedValue({
+      lineItems: [
+        { numeroLinea: 1, aliquotaIVA: 10 },
+        { numeroLinea: 2, aliquotaIVA: 22 },
+      ],
+    } as never)
+    vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([
+      { accountId: 'alimentari', importo: new Prisma.Decimal(1000), numeroLinea: 1 },
+      { accountId: 'sconti', importo: new Prisma.Decimal(-100), numeroLinea: 2 },
+    ] as never)
+    vi.mocked(prisma.journalEntryAllocation.findMany)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { accountId: 'alimentari', importo: new Prisma.Decimal(978) },
+      ] as never)
+    vi.mocked(derivaBudgetCategoryDaConto).mockResolvedValue('cat-a')
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: 'sched-1',
+      journalEntryId: 'entry-1',
+      venueId: VENUE,
+      userId: 'user-1',
+    })
+
+    expect(esito.outcome).toBe('ok')
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('righe scartate dai pesi'),
+      expect.objectContaining({ invoiceId: 'inv-5', contiImputati: 2, contiNeiPesi: 1 })
+    )
+    // Una sola fetta, con la propria IVA ancora dichiarata: 100 riscalati
+    // sulla quota effettivamente pagata.
+    const fetteScritte = vi.mocked(prisma.journalEntryAllocation.createMany).mock.calls[0][0]
+      .data as Array<{ accountId: string; iva: Prisma.Decimal | null }>
+    expect(fetteScritte).toHaveLength(1)
+    expect(Number(fetteScritte[0].iva)).toBeCloseTo(88.91, 2)
   })
 
   it('scadenza senza invoiceId: nessuna lettura della fattura', async () => {

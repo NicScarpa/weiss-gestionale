@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { creaMovimento, creaScadenza } from '@/test/integration/fixtures/scadenzario'
 import { venueDiTest } from '@/test/integration/fixtures/closures'
+import { prospettoCashFlow } from '@/lib/cashflow/prospetto'
 import { reconcileScheduleWithEntry } from '../schedule-reconciliation-service'
 
 /**
@@ -251,5 +252,149 @@ describe('ereditarietà pro-quota e aliquote IVA', () => {
     })
 
     expect(await fettePerConto(movimento.id)).toEqual({})
+  })
+})
+
+/**
+ * L'IVA di testata e il prospetto che la legge.
+ *
+ * Le fette esatte da sole non bastavano: il movimento che l'import bancario
+ * crea non dichiara alcuna IVA, e il prospetto la toglieva alla testata una
+ * fetta per volta finché la testata non ne aveva −122. Siccome dopo la
+ * riconciliazione il conto di testata è quello della fetta dominante, quel
+ * numero negativo si sommava proprio alla famiglia più grossa: alimentari
+ * −1.122 invece di −1.000, pulizia −100 (giusta), e i 122 di IVA che non
+ * arrivavano mai al blocco G2. Nessuno dei quattro controlli di quadratura
+ * poteva vederlo — guardano il lordo, contano i conti, o quadrano per
+ * identità algebrica qualunque sia la distribuzione dell'IVA fra i conti.
+ *
+ * Per questo il prospetto qui si legge davvero, non si simula.
+ */
+describe('IVA di testata dopo la riconciliazione', () => {
+  /** Il conto del piano v4 per codice: il prospetto ragiona sui codici. */
+  async function contoPerCodice(code: string): Promise<string> {
+    const conto = await prisma.account.findFirst({ where: { code }, select: { id: true } })
+    if (!conto) throw new Error(`Conto ${code} assente dal seed del database di test`)
+    return conto.id
+  }
+
+  /** Il valore annuale di una riga del prospetto, per codice di riclassificazione. */
+  function valoreAnnuo(righe: { codice: string; valori: { annual: number } }[], codice: string) {
+    const riga = righe.find((r) => r.codice === codice)
+    if (!riga) throw new Error(`Riga ${codice} assente dal prospetto`)
+    return riga.valori.annual
+  }
+
+  /** La fattura mista dell'esempio: 1.000 al 10% e 100 al 22%, 1.222 lordi. */
+  async function fatturaMista() {
+    const food = await contoPerCodice('20.4.01')
+    const pulizia = await contoPerCodice('20.5.04')
+    const { fattura, lordo } = await creaFatturaConRighe([
+      { numeroLinea: 1, descrizione: 'Farina', prezzoTotale: 1000, aliquotaIVA: 10, accountId: food },
+      { numeroLinea: 2, descrizione: 'Detersivi', prezzoTotale: 100, aliquotaIVA: 22, accountId: pulizia },
+    ])
+    expect(lordo).toBe(1222)
+    return { fattura, lordo, food, pulizia }
+  }
+
+  it('il movimento eredita l\'IVA delle sue fette, che prima non dichiarava', async () => {
+    const { fattura, lordo } = await fatturaMista()
+
+    const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+    // Senza `iva`: è così che nascono i movimenti dell'import bancario, del
+    // motore delle regole e dell'esecuzione di un pagamento.
+    const movimento = await creaMovimento({ uscita: lordo, venueId })
+    expect(movimento.vatAmount).toBeNull()
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+    })
+    expect(esito.outcome).toBe('ok')
+
+    const dopo = await prisma.journalEntry.findUniqueOrThrow({ where: { id: movimento.id } })
+    expect(Number(dopo.vatAmount)).toBe(122)
+  })
+
+  it('un movimento che salda due fatture somma le due IVA invece di fermarsi alla prima', async () => {
+    // Il bonifico cumulativo: due fatture, due riconciliazioni, due gruppi di
+    // fette. La seconda trova in testata l'IVA che ha scritto la prima —
+    // esattamente quella delle fette già presenti — e la riconosce come
+    // propria: aggiorna il totale invece di astenersi.
+    const prima = await fatturaMista()
+    const seconda = await fatturaMista()
+    const movimento = await creaMovimento({ uscita: 2444, venueId })
+
+    for (const { fattura, lordo } of [prima, seconda]) {
+      const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+      const esito = await reconcileScheduleWithEntry({
+        scheduleId: scadenza.id,
+        journalEntryId: movimento.id,
+        venueId,
+        userId: null,
+      })
+      expect(esito.outcome).toBe('ok')
+    }
+
+    const dopo = await prisma.journalEntry.findUniqueOrThrow({ where: { id: movimento.id } })
+    expect(Number(dopo.vatAmount)).toBe(244)
+  })
+
+  it('il prospetto riceve i 122 di IVA e nessuna famiglia porta quella di un\'altra', async () => {
+    const { fattura, lordo } = await fatturaMista()
+
+    const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+    const movimento = await creaMovimento({ uscita: lordo, venueId, date: new Date('2026-08-03') })
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+    })
+    expect(esito.outcome).toBe('ok')
+
+    const { prospetto } = await prospettoCashFlow(venueId, 2026)
+
+    // B4 «Food» al netto della sua IVA, B5 «Consumabili di servizio» al netto
+    // della sua, e i 122 nel blocco G2 dove l'IVA pagata deve stare.
+    expect(valoreAnnuo(prospetto.righe, 'B4')).toBe(-1000)
+    expect(valoreAnnuo(prospetto.righe, 'B5')).toBe(-100)
+    expect(valoreAnnuo(prospetto.righe, 'G2')).toBe(-122)
+  })
+
+  it('non riscrive l\'IVA che un essere umano ha già dichiarato, e il prospetto regge lo stesso', async () => {
+    const { fattura, lordo } = await fatturaMista()
+
+    const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+    // Movimento inserito a mano con 30 € di IVA: un numero che qualcuno ha
+    // scritto, e che la riconciliazione non è autorizzata a correggere.
+    const movimento = await creaMovimento({
+      uscita: lordo,
+      iva: 30,
+      venueId,
+      date: new Date('2026-08-03'),
+    })
+
+    await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+    })
+
+    const dopo = await prisma.journalEntry.findUniqueOrThrow({ where: { id: movimento.id } })
+    expect(Number(dopo.vatAmount)).toBe(30)
+
+    // La testata dichiara meno delle sue fette: cede i 30 che ha e non un
+    // centesimo di più. Le famiglie restano quelle vere, il blocco IVA riceve
+    // quanto le fette dichiarano — di più di quanto la testata ammetta, ed è
+    // la scelta voluta: la fattura è la fonte autorevole.
+    const { prospetto } = await prospettoCashFlow(venueId, 2026)
+    expect(valoreAnnuo(prospetto.righe, 'B4')).toBe(-1000)
+    expect(valoreAnnuo(prospetto.righe, 'B5')).toBe(-100)
+    expect(valoreAnnuo(prospetto.righe, 'G2')).toBe(-122)
   })
 })

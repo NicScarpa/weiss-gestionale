@@ -114,6 +114,28 @@ export interface PesoConIva {
  * leggibile, l'IVA di TUTTE le fette è `null`. Un insieme misto di fette
  * esatte e fette stimate produrrebbe un totale che non quadra con nessuna
  * delle due logiche, e nessun controllo se ne accorgerebbe.
+ *
+ * **Il tutto-o-niente NON si estende al conto scartato**, ed è una scelta
+ * misurata, non una dimenticanza. Il filtro qui sotto butta via i conti il cui
+ * totale non è positivo: succede con una riga di sconto o di reso a
+ * `PrezzoTotale` negativo, che il parser non normalizza (sdi/parser.ts:276) e
+ * che l'imputazione per riga accetta come ogni altra. Quel conto se ne va con
+ * la propria IVA, i conti rimasti si dividono comunque l'intera quota pagata,
+ * e la loro IVA viene riscalata verso l'alto: dichiarata esatta, ma non più
+ * quella del documento.
+ *
+ * Reagire azzerandola peggiora i numeri invece di migliorarli, e di parecchio.
+ * Su alimentari 1.000 al 10% con uno sconto di 100 al 22% — documento 978
+ * lordi, 78 di IVA — tenere le fette «esatte» dichiara 88,91 di IVA, cioè
+ * 10,91 di troppo. Azzerarle ne fa dichiarare zero: da quando la
+ * riconciliazione scrive l'IVA di testata solo se le fette la dichiarano, una
+ * fetta a `null` su un movimento nato dall'import (che di suo non ha IVA)
+ * significa che il ripiego pro-quota divide zero, e il blocco IVA del
+ * prospetto perde tutti e 78. Sette volte l'errore che si voleva evitare, e
+ * sulla stessa famiglia. Finché le righe negative non entreranno nei pesi con
+ * il proprio segno (fase B, note di credito), l'approssimazione minore è
+ * questa — ma non resta invisibile: chi chiama avvisa quando un conto sparisce
+ * (vedi `ereditaFetteDaFattura`).
  */
 export function calcolaPesiConIva(
   righe: Array<{ accountId: string; imponibile: number; aliquota: number | undefined }>
@@ -147,6 +169,15 @@ export function calcolaPesiConIva(
  * Su un pagamento parziale ogni fetta si riduce con la propria IVA — metà
  * fattura dà 550 con dentro 50 e 61 con dentro 11 — invece di ereditare una
  * media che non corrisponde a nessuna delle aliquote pagate.
+ *
+ * Anche qui un peso può sparire: `ripartisciProQuota` scarta la fetta il cui
+ * cumulato non avanza di un centesimo, e la sua IVA se ne va con lei mentre le
+ * rimaste si riscalano. L'IVA resta comunque dichiarata, perché lo scarto è
+ * limitato per costruzione: una fetta si perde solo se vale meno di un
+ * centesimo della quota, quindi l'IVA che porta via è al massimo l'aliquota di
+ * un centesimo — frazioni di millesimo di euro. Rinunciare all'esattezza di
+ * tutta la fattura per un errore così sarebbe uno scambio in perdita, per la
+ * stessa ragione spiegata in `calcolaPesiConIva`.
  */
 export function ripartisciProQuotaConIva(
   pesi: PesoConIva[],

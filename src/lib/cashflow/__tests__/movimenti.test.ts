@@ -273,4 +273,69 @@ describe('aggregaMovimenti', () => {
     // 122 × (1100/1222) = 109,82 — il comportamento di prima, invariato.
     expect(aggregati.find((a) => a.accountId === 'alimentari')?.ivaDare.toNumber()).toBeCloseTo(109.82, 2)
   })
+
+  it("tratta una fetta con iva `undefined` come non dichiarata, non come zero", () => {
+    // `MoneyInput` ammette già `undefined`, quindi sotto `strict` una fetta
+    // senza IVA supera il typecheck: con un confronto `=== null` finiva nel
+    // ramo "dichiarata", dove `money(undefined)` vale 0, e un «non lo so»
+    // diventava in silenzio un «niente IVA».
+    const aggregati = aggregaMovimenti([
+      riga({
+        creditAmount: 1220,
+        vatAmount: 220,
+        allocations: [{ accountId: 'alimentari', importo: 610, iva: undefined }],
+      }),
+    ])
+
+    // Metà del lordo, quindi metà dell'IVA: il ripiego pro-quota, non zero.
+    expect(suConto(aggregati, 'alimentari').ivaAvere.toNumber()).toBe(110)
+  })
+
+  it('la testata non cede più IVA di quanta ne dichiari', () => {
+    // Il movimento come lo crea l'import bancario: `vatAmount` a null, cioè
+    // «non dichiarata». Le fette ereditate dalla fattura portano invece l'IVA
+    // esatta delle loro aliquote. Senza tetto la testata scendeva a −122 di
+    // IVA — e siccome dopo la riconciliazione il conto di testata È quello
+    // della fetta dominante, quei −122 si sommavano proprio ad alimentari:
+    // −1.122 invece di −1.000, con la famiglia piccola che guariva
+    // esattamente di quanto la grande si ammalava.
+    const aggregati = aggregaMovimenti([
+      riga({
+        accountId: 'alimentari',
+        creditAmount: 1222,
+        vatAmount: null,
+        allocations: [
+          { accountId: 'alimentari', importo: 1100, iva: 100 },
+          { accountId: 'pulizia', importo: 122, iva: 22 },
+        ],
+      }),
+    ])
+
+    expect(nettoDiIva(suConto(aggregati, 'alimentari')).toNumber()).toBe(-1000)
+    expect(nettoDiIva(suConto(aggregati, 'pulizia')).toNumber()).toBe(-100)
+    // L'IVA delle fette resta la loro, esatta: il tetto non gliela tocca.
+    expect(suConto(aggregati, 'pulizia').ivaAvere.toNumber()).toBe(22)
+  })
+
+  it('il tetto consuma l\'IVA di testata una volta sola, in ordine di fetta', () => {
+    // Testata che ne dichiara 30 e fette che ne dichiarano 122: la prima fetta
+    // esaurisce i 30, alla seconda non resta nulla da togliere. Il conto di
+    // testata arriva a zero, non sotto.
+    const aggregati = aggregaMovimenti([
+      riga({
+        creditAmount: 1222,
+        vatAmount: 30,
+        allocations: [
+          { accountId: 'alimentari', importo: 1100, iva: 100 },
+          { accountId: 'pulizia', importo: 122, iva: 22 },
+        ],
+      }),
+    ])
+
+    expect(suConto(aggregati, 'testata').ivaAvere.toNumber()).toBe(0)
+    expect(suConto(aggregati, 'alimentari').ivaAvere.toNumber()).toBe(100)
+    expect(suConto(aggregati, 'pulizia').ivaAvere.toNumber()).toBe(22)
+    expect(nettoDiIva(suConto(aggregati, 'alimentari')).toNumber()).toBe(-1000)
+    expect(nettoDiIva(suConto(aggregati, 'pulizia')).toNumber()).toBe(-100)
+  })
 })

@@ -6,6 +6,18 @@
 -- cose, e con essa la possibilità di accorgersi di una fetta creata da un
 -- percorso che ancora non valorizza il campo.
 --
--- Nessun backfill: `journal_entries` è vuota in produzione al 12 ago 2026,
--- quindi le fette sono necessariamente zero.
+-- Nessun backfill, e non perché la tabella sia vuota: `null` è esattamente il
+-- significato che serve alle fette già scritte. Vale "come prima", cioè il
+-- ripiego pro-quota, che è il comportamento che quelle fette hanno sempre
+-- avuto. La migrazione è quindi sicura su una tabella piena quanto su una
+-- vuota, e non appoggia la propria sicurezza su un conteggio che nessuno può
+-- più verificare a posteriori.
+--
+-- ORDINE DI RILASCIO: prima la migrazione, poi il codice nuovo. La lettura del
+-- prospetto di cash flow fa `select: { iva: true }` (src/lib/cashflow/
+-- movimenti.ts), quindi un'istanza nuova che servisse traffico prima che la
+-- colonna esista risponderebbe 500 su tutto il prospetto (P2022, colonna
+-- inesistente). `npm run db:migrate:deploy` va eseguito PRIMA che la build
+-- nuova vada in linea. L'ordine inverso è innocuo: il codice vecchio la
+-- colonna non la nomina nemmeno.
 ALTER TABLE "journal_entry_allocations" ADD COLUMN "iva" DECIMAL(10,2);

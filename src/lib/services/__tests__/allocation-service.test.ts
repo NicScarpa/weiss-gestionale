@@ -199,6 +199,35 @@ describe('calcolaPesiConIva', () => {
     // Senza aliquota il lordo di quella riga è l'imponibile stesso.
     expect(pesi.find((p) => p.accountId === 'pulizia')?.importo).toBe(100)
   })
+
+  it('la riga di sconto negativa sparisce dai pesi, e l\'IVA delle rimaste resta dichiarata', () => {
+    // Una riga a `PrezzoTotale` negativo — il parser non normalizza il segno —
+    // porta il suo conto sotto zero e il filtro lo scarta. Documenta la scelta
+    // misurata: le fette rimaste tengono la loro IVA anziché azzerarla tutta.
+    // Su questo documento (978 lordi, 78 di IVA) tenerla dichiara 88,91 alla
+    // riconciliazione, cioè 10,91 di troppo; azzerarla ne farebbe dichiarare
+    // zero, perché una fetta senza IVA lascia senza IVA anche la testata e il
+    // ripiego pro-quota finisce per dividere zero. Settantotto contro undici.
+    const pesi = calcolaPesiConIva([
+      { accountId: 'alimentari', imponibile: 1000, aliquota: 10 },
+      { accountId: 'sconti', imponibile: -100, aliquota: 22 },
+    ])
+
+    expect(pesi.map((p) => p.accountId)).toEqual(['alimentari'])
+    expect(pesi[0]).toEqual({ accountId: 'alimentari', importo: 1100, iva: 100 })
+  })
+
+  it('un conto che si annulla da sé sparisce senza portarsi via nulla', () => {
+    // Riga e suo storno sullo stesso conto: importo e IVA si azzerano a
+    // vicenda, quindi lo scarto non toglie niente alla somma del documento.
+    const pesi = calcolaPesiConIva([
+      { accountId: 'alimentari', imponibile: 1000, aliquota: 10 },
+      { accountId: 'resi', imponibile: 50, aliquota: 22 },
+      { accountId: 'resi', imponibile: -50, aliquota: 22 },
+    ])
+
+    expect(pesi).toEqual([{ accountId: 'alimentari', importo: 1100, iva: 100 }])
+  })
 })
 
 describe('ripartisciProQuotaConIva', () => {
@@ -224,6 +253,21 @@ describe('ripartisciProQuotaConIva', () => {
     )
 
     expect(fette).toEqual([{ accountId: 'alimentari', importo: 500, iva: null }])
+  })
+
+  it('il peso che si azzera nell\'arrotondamento porta via meno di un millesimo di IVA', () => {
+    // La fetta si perde solo se vale meno di un centesimo della quota, quindi
+    // l'IVA che si porta dietro è al massimo l'aliquota di un centesimo: qui
+    // 0,0022 €. Le rimaste tengono la propria, che resta esatta al centesimo.
+    const fette = ripartisciProQuotaConIva(
+      [
+        { accountId: 'alimentari', importo: 1000, iva: 90.91 },
+        { accountId: 'imballo', importo: 0.01, iva: 0.0022 },
+      ],
+      0.5
+    )
+
+    expect(fette).toEqual([{ accountId: 'alimentari', importo: 0.5, iva: 0.05 }])
   })
 })
 

@@ -56,6 +56,13 @@ export interface MovimentoFixture {
   entrata?: number
   /** Uscita (creditAmount): salda le scadenze passive. */
   uscita?: number
+  /**
+   * IVA dichiarata sulla testata. Assente = `null`, che è come nascono i
+   * movimenti dei tre percorsi automatici (import bancario, motore delle
+   * regole, esecuzione di un pagamento): serve poterla lasciare vuota tanto
+   * quanto serve poterla valorizzare.
+   */
+  iva?: number
   date?: Date
   description?: string
   venueId?: string
@@ -82,6 +89,7 @@ export async function creaMovimento(fixture: MovimentoFixture = {}) {
       description: fixture.description ?? 'Bonifico fornitore',
       debitAmount: fixture.entrata !== undefined ? decimal(fixture.entrata) : null,
       creditAmount: fixture.uscita !== undefined ? decimal(fixture.uscita) : null,
+      vatAmount: fixture.iva !== undefined ? decimal(fixture.iva) : null,
       closureId: fixture.closureId ?? null,
       costCenterId,
     },
