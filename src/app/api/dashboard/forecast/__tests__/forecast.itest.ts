@@ -5,7 +5,7 @@ import { giornoCorrente, giornoIndietro } from '@/lib/saldi'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { entraCome } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
-import { venueDiTest } from '@/test/integration/fixtures/closures'
+import { venueDiTest, centroDiCostoDiDefault } from '@/test/integration/fixtures/closures'
 import { GET as getForecast } from '../route'
 import { GET as getSummary } from '@/app/api/cashflow/summary/route'
 import { GET as getSaldiPrimaNota } from '@/app/api/prima-nota/saldi/route'
@@ -47,6 +47,7 @@ async function movimento(
       debitAmount: valori.entrata ?? null,
       creditAmount: valori.uscita ?? null,
       hiddenAt: valori.nascosto ? new Date() : null,
+      costCenterId: await centroDiCostoDiDefault(),
     },
   })
 }
@@ -104,6 +105,7 @@ async function primaNotaRealistica(venueId: string) {
         registerType: 'BANK',
         description: 'Incasso anno precedente',
         debitAmount: importo,
+        costCenterId: await centroDiCostoDiDefault(),
       },
     })
   }

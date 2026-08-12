@@ -8,7 +8,7 @@ import {
   saldiAlGiorno,
 } from '@/lib/saldi'
 import { setupIntegrationDb } from '@/test/integration/db'
-import { venueDiTest } from '@/test/integration/fixtures/closures'
+import { venueDiTest, centroDiCostoDiDefault } from '@/test/integration/fixtures/closures'
 
 /**
  * Cosa entra e cosa non entra in un saldo.
@@ -36,6 +36,7 @@ async function movimento(
       debitAmount: valori.entrata ?? null,
       creditAmount: valori.uscita ?? null,
       hiddenAt: valori.nascosto ? new Date() : null,
+      costCenterId: await centroDiCostoDiDefault(),
     },
   })
 }

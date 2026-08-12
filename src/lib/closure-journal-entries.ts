@@ -4,7 +4,11 @@ import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { generateClosureDescription } from '@/lib/prima-nota-utils'
 import { getSystemAccountOptional } from '@/lib/accounts/system'
-import { risolviCentroDiCosto, type OrigineCentro } from '@/lib/services/cost-center-service'
+import {
+  risolviCentroDiCosto,
+  trovaCentroStrutturale,
+  type OrigineCentro,
+} from '@/lib/services/cost-center-service'
 
 /**
  * Client Prisma o transazione: permette di generare le scritture dentro la
@@ -119,7 +123,7 @@ async function leggiContiSistema(): Promise<ContiSistema> {
 
 /**
  * Risolve il centro di costo di un movimento generato senza mai far fallire
- * la chiusura.
+ * la chiusura per colpa dell'anagrafica dei centri.
  *
  * Il centro esplicito viene dalla chiusura (testata) o dalla singola riga
  * spesa; quando non c'è — chiusure storiche, create prima che il form
@@ -128,40 +132,50 @@ async function leggiContiSistema(): Promise<ContiSistema> {
  * non lo si inventa, perché imputare a WEISS una chiusura che nessuno ha
  * classificato sarebbe un dato inventato, non un default.
  *
- * Se la risoluzione non riesce (centro disattivato, conto che ne pretende uno
- * su una chiusura senza testata, anagrafica centri non ancora popolata) il
- * movimento nasce senza centro — com'era prima — e resta la traccia nei log:
- * la quadratura contabile della chiusura non può dipendere dall'anagrafica
- * dei centri.
+ * Quando la risoluzione dichiara `invalid` — in pratica il solo caso del
+ * centro scelto in testata e disattivato dopo l'invio — il movimento ripiega
+ * sul centro di sistema con provenienza 'supposto', e resta la traccia nei
+ * log. Prima ripiegava su NESSUN centro: da quando `cost_center_id` è NOT NULL
+ * quella via non esiste più, e non è una perdita — un movimento senza centro
+ * spariva dai report per centro senza che nulla lo segnalasse, mentre uno su
+ * STR marcato 'supposto' è visibile e correggibile.
+ *
+ * Resta un solo modo di far fallire la generazione: l'anagrafica dei centri
+ * senza nessun default configurato. Non è uno stato in cui ripiegare abbia
+ * senso — non c'è su cosa — ed è un errore di installazione, non un dato della
+ * chiusura: `esigiCentroStrutturale` lancia e la transazione si annulla.
  */
 async function risolviCentroMovimento(
   client: PrismaLike,
   closureId: string,
   input: { accountId: string | null; costCenterId: string | null }
-): Promise<{ id: string; origine: OrigineCentro } | null> {
-  try {
-    const esito = await risolviCentroDiCosto(client, input)
-    if (esito.outcome === 'ok') {
-      // L'origine viaggia insieme all'id: dice se il centro l'ha scelto chi ha
-      // compilato la chiusura o se è il ripiego sul centro di sistema per una
-      // testata rimasta vuota. Scriverla sempre come 'scelto' bloccherebbe per
-      // sempre su STR un movimento che nessuno ha imputato — l'opposto di ciò
-      // che la colonna serve a ottenere.
-      return { id: esito.costCenterId, origine: esito.origine }
-    }
-
-    logger.warn('Chiusura: centro di costo non risolvibile, movimento senza centro', {
-      closureId,
-      accountId: input.accountId,
-      costCenterId: input.costCenterId,
-      code: esito.code,
-      motivo: esito.motivo,
-    })
-  } catch (error) {
-    logger.error('Chiusura: risoluzione del centro di costo fallita', error, { closureId })
+): Promise<{ id: string; origine: OrigineCentro }> {
+  const esito = await risolviCentroDiCosto(client, input)
+  if (esito.outcome === 'ok') {
+    // L'origine viaggia insieme all'id: dice se il centro l'ha scelto chi ha
+    // compilato la chiusura o se è il ripiego sul centro di sistema per una
+    // testata rimasta vuota. Scriverla sempre come 'scelto' bloccherebbe per
+    // sempre su STR un movimento che nessuno ha imputato — l'opposto di ciò
+    // che la colonna serve a ottenere.
+    return { id: esito.costCenterId, origine: esito.origine }
   }
 
-  return null
+  logger.warn('Chiusura: centro di costo non risolvibile, si ripiega sul centro di sistema', {
+    closureId,
+    accountId: input.accountId,
+    costCenterId: input.costCenterId,
+    code: esito.code,
+    motivo: esito.motivo,
+  })
+
+  const strutturale = await trovaCentroStrutturale(client)
+  if (!strutturale) {
+    throw new Error(
+      `Chiusura ${closureId}: nessun centro di costo di default configurato, ` +
+        'i movimenti non possono essere imputati.'
+    )
+  }
+  return { id: strutturale.id, origine: 'supposto' }
 }
 
 /**
@@ -224,21 +238,6 @@ export async function generateJournalEntriesFromClosure(
     costCenterId: closure.costCenterId ?? null,
   })
 
-  // Una risoluzione per riga spesa: l'override di riga vince sul centro di
-  // testata, e il conto della riga entra nella risoluzione perché può essere
-  // un conto che pretende un centro. Le righe a zero non diventano movimenti,
-  // quindi non si risolvono.
-  const centriSpese = await Promise.all(
-    closure.expenses.map((expense) =>
-      expense.amount > 0
-        ? risolviCentroMovimento(client, closure.id, {
-            accountId: expense.accountId,
-            costCenterId: expense.costCenterId ?? closure.costCenterId ?? null,
-          })
-        : Promise.resolve(null)
-    )
-  )
-
   // Calcola totale incassi (contanti + POS)
   const totalCash = closure.stations.reduce(
     (sum, s) => sum + (Number(s.cashAmount) || 0),
@@ -273,8 +272,8 @@ export async function generateJournalEntriesFromClosure(
       creditAmount: null,
       accountId: conti.corrispettivi,
       counterpartId: conti.cassa,
-      costCenterId: centroTestata?.id ?? null,
-      costCenterSource: centroTestata?.origine ?? null,
+      costCenterId: centroTestata.id,
+      costCenterSource: centroTestata.origine,
       closureId: closure.id,
       createdById: userId,
     })
@@ -282,8 +281,21 @@ export async function generateJournalEntriesFromClosure(
   }
 
   // 2. Movimenti USCITA su CASSA per ogni spesa
-  for (const [index, expense] of closure.expenses.entries()) {
+  //
+  // Una risoluzione per riga: l'override di riga vince sul centro di testata, e
+  // il conto della riga entra nella risoluzione perché può essere un conto che
+  // pretende un centro. Sta dentro il ciclo, e non in un `Promise.all` prima,
+  // per due motivi: le righe a zero non diventano movimenti e non hanno niente
+  // da imputare, e su un client di transazione le query condividono comunque
+  // una sola connessione — il parallelismo era apparente (stessa ragione
+  // spiegata in findClosureJournalLinks).
+  for (const expense of closure.expenses) {
     if (expense.amount > 0) {
+      const centroSpesa = await risolviCentroMovimento(client, closure.id, {
+        accountId: expense.accountId,
+        costCenterId: expense.costCenterId ?? closure.costCenterId ?? null,
+      })
+
       entries.push({
         venueId: closure.venueId,
         date: closure.date,
@@ -299,8 +311,8 @@ export async function generateJournalEntriesFromClosure(
         creditAmount: expense.amount,
         accountId: expense.accountId,
         counterpartId: conti.cassa,
-        costCenterId: centriSpese[index]?.id ?? null,
-        costCenterSource: centriSpese[index]?.origine ?? null,
+        costCenterId: centroSpesa.id,
+        costCenterSource: centroSpesa.origine,
         closureId: closure.id,
         createdById: userId,
       })
@@ -323,8 +335,8 @@ export async function generateJournalEntriesFromClosure(
       creditAmount: null,
       accountId: conti.corrispettivi,
       counterpartId: conti.banca,
-      costCenterId: centroTestata?.id ?? null,
-      costCenterSource: centroTestata?.origine ?? null,
+      costCenterId: centroTestata.id,
+      costCenterSource: centroTestata.origine,
       closureId: closure.id,
       createdById: userId,
     })
@@ -353,8 +365,8 @@ export async function generateJournalEntriesFromClosure(
       creditAmount: bankDeposit,
       accountId: conti.banca,
       counterpartId: conti.cassa,
-      costCenterId: centroTestata?.id ?? null,
-      costCenterSource: centroTestata?.origine ?? null,
+      costCenterId: centroTestata.id,
+      costCenterSource: centroTestata.origine,
       closureId: closure.id,
       createdById: userId,
     })
@@ -372,8 +384,8 @@ export async function generateJournalEntriesFromClosure(
       creditAmount: null,
       accountId: conti.cassa,
       counterpartId: conti.banca,
-      costCenterId: centroTestata?.id ?? null,
-      costCenterSource: centroTestata?.origine ?? null,
+      costCenterId: centroTestata.id,
+      costCenterSource: centroTestata.origine,
       closureId: closure.id,
       createdById: userId,
     })

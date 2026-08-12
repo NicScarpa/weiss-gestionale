@@ -5,7 +5,7 @@ import { aggregateCategoriesForBudget } from '@/lib/budget/category-aggregator'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { loginAs } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
-import { venueDiTest } from '@/test/integration/fixtures/closures'
+import { venueDiTest, centroDiCostoDiDefault } from '@/test/integration/fixtures/closures'
 import { GET as getConfronto } from '../route'
 
 /**
@@ -54,6 +54,7 @@ async function movimento(
       debitAmount: valori.entrata ?? null,
       creditAmount: valori.uscita ?? null,
       accountId: valori.accountId,
+      costCenterId: await centroDiCostoDiDefault(),
     },
   })
 }

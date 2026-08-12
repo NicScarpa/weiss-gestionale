@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { romeDateKey, toDateOnlyUtc } from '@/lib/timezone'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { loginAs } from '@/test/integration/auth-mock'
-import { venueDiTest } from '@/test/integration/fixtures/closures'
+import { venueDiTest, centroDiCostoDiDefault } from '@/test/integration/fixtures/closures'
 import { RegisterBalanceCards } from '@/components/prima-nota/RegisterBalanceCards'
 import PrimaNotaLayout from '../layout'
 
@@ -57,6 +57,7 @@ describe('layout della prima nota', () => {
         registerType: 'BANK',
         description: 'Incasso di prova',
         debitAmount: 150,
+        costCenterId: await centroDiCostoDiDefault(),
       },
     })
 

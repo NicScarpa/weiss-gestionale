@@ -787,7 +787,11 @@ describe('generateJournalEntriesFromClosure', () => {
       }
     })
 
-    it('centro disattivato: il movimento nasce senza centro e la chiusura non si blocca', async () => {
+    it('centro disattivato: si ripiega sul centro di sistema e la chiusura non si blocca', async () => {
+      // Il centro scelto in testata è stato disattivato dopo l'invio. Prima
+      // il movimento nasceva senza centro; da quando la colonna è NOT NULL
+      // quella via non c'è più, e ripiegare su STR è meglio che rifiutare la
+      // chiusura — l'imputazione si corregge, un incasso non registrato no.
       conContiDiSistema()
       vi.mocked(prisma.costCenter.findUnique).mockResolvedValue(
         { id: 'cc-weiss', isActive: false } as never
@@ -797,25 +801,27 @@ describe('generateJournalEntriesFromClosure', () => {
 
       expect(risultato.entriesCreated).toBe(5)
       for (const movimento of movimentiGenerati()) {
-        expect(movimento.costCenterId).toBeNull()
+        expect(movimento.costCenterId).toBe(CENTRO_DEFAULT.id)
       }
       expect(logger.warn).toHaveBeenCalled()
     })
 
-    it('anagrafica centri non ancora popolata: si genera lo stesso, senza centro', async () => {
-      // risolviCentroDiCosto lancia quando manca il centro di default: la
-      // quadratura della chiusura non può dipendere da quell'anagrafica.
+    it('anagrafica centri non popolata: la generazione fallisce invece di scrivere righe non imputate', async () => {
+      // Senza nessun centro di default non c'è su cosa ripiegare, e la
+      // colonna non ammette il vuoto: la transazione deve annullarsi. È un
+      // errore di installazione, non un dato della chiusura — meglio che
+      // esploda qui, con un messaggio che nomina la chiusura, che come
+      // violazione di vincolo grezza risalita da Postgres.
       conContiDiSistema()
       vi.mocked(prisma.costCenter.findFirst).mockResolvedValue(null as never)
 
       const { costCenterId: _testata, ...chiusuraStorica } = chiusuraCompleta
-      const risultato = await generateJournalEntriesFromClosure(chiusuraStorica, userId)
 
-      expect(risultato.entriesCreated).toBe(5)
-      for (const movimento of movimentiGenerati()) {
-        expect(movimento.costCenterId).toBeNull()
-      }
-      expect(logger.error).toHaveBeenCalled()
+      await expect(
+        generateJournalEntriesFromClosure(chiusuraStorica, userId)
+      ).rejects.toThrow('Nessun centro di costo di default configurato')
+
+      expect(prisma.journalEntry.createMany).not.toHaveBeenCalled()
     })
 
     it('il centro di questi movimenti è dichiarato scelto: nessuna automazione potrà rivalutarlo', async () => {
@@ -837,7 +843,10 @@ describe('generateJournalEntriesFromClosure', () => {
       }
     })
 
-    it('senza centro non si dichiara nessuna provenienza', async () => {
+    it('il ripiego si dichiara supposto, non scelto', async () => {
+      // Il centro su cui si è ripiegato non l'ha voluto nessuno: dirlo
+      // 'scelto' lo bloccherebbe su STR per sempre. 'supposto' lascia che una
+      // riconciliazione successiva lo rivaluti sul conto vero.
       conContiDiSistema()
       vi.mocked(prisma.costCenter.findUnique).mockResolvedValue(
         { id: 'cc-weiss', isActive: false } as never
@@ -846,8 +855,8 @@ describe('generateJournalEntriesFromClosure', () => {
       await generateJournalEntriesFromClosure(chiusuraCompleta, userId)
 
       for (const movimento of movimentiGenerati()) {
-        expect(movimento.costCenterId).toBeNull()
-        expect(movimento.costCenterSource).toBeNull()
+        expect(movimento.costCenterId).toBe(CENTRO_DEFAULT.id)
+        expect(movimento.costCenterSource).toBe('supposto')
       }
     })
   })
@@ -885,8 +894,14 @@ describe('generateJournalEntriesFromClosure', () => {
     const configurazioni: Array<[string, () => void]> = [
       ['piano dei conti v4 migrato', () => { conContiDiSistema(); conCentriAttivi() }],
       ['CORRISPETTIVI non ancora creata', () => { conCentriAttivi() }],
-      ['nessun conto e nessun centro configurato', () => {
-        vi.mocked(prisma.costCenter.findFirst).mockResolvedValue(null as never)
+      // Il centro di testata è sparito e nessun conto è configurato: si
+      // ripiega sul centro di sistema (i mock di beforeEach) e gli importi
+      // restano quelli. La variante «nemmeno il centro di sistema» non è più
+      // qui perché non è più uno stato in cui esistano movimenti da contare:
+      // la colonna è NOT NULL e la generazione fallisce, come verifica il test
+      // «anagrafica centri non popolata».
+      ['centro di testata sparito, nessun conto configurato', () => {
+        vi.mocked(prisma.costCenter.findUnique).mockResolvedValue(null as never)
       }],
     ]
 
@@ -917,10 +932,14 @@ describe('generateJournalEntriesFromClosure', () => {
       await generateJournalEntriesFromClosure({ ...chiusura, costCenterId: 'cc-weiss' }, userId)
       const conImputazione = movimentiGenerati().map((m) => ({ date: m.date, description: m.description }))
 
+      // Stesso giorno, nessuna imputazione da nessuna parte: niente conti di
+      // sistema, nessun centro in testata. Resta il centro di sistema, che
+      // esiste sempre — senza, non ci sarebbero movimenti da confrontare.
       vi.clearAllMocks()
       vi.mocked(prisma.account.findUnique).mockResolvedValue(null as never)
+      vi.mocked(prisma.account.findMany).mockResolvedValue([] as never)
       vi.mocked(prisma.costCenter.findUnique).mockResolvedValue(null as never)
-      vi.mocked(prisma.costCenter.findFirst).mockResolvedValue(null as never)
+      vi.mocked(prisma.costCenter.findFirst).mockResolvedValue(CENTRO_DEFAULT as never)
       await generateJournalEntriesFromClosure(chiusura, userId)
       const senzaImputazione = movimentiGenerati().map((m) => ({ date: m.date, description: m.description }))
 
@@ -945,6 +964,10 @@ describe('guardia contro le scritture doppie', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(prisma.journalEntry.count).mockResolvedValue(0)
+    // Il centro di sistema esiste: senza, la generazione si fermerebbe prima
+    // di arrivare alla guardia che questi test verificano.
+    vi.mocked(prisma.account.findMany).mockResolvedValue([] as never)
+    vi.mocked(prisma.costCenter.findFirst).mockResolvedValue(CENTRO_DEFAULT as never)
   })
 
   it('non scrive nulla se la chiusura ha già scritture vive', async () => {

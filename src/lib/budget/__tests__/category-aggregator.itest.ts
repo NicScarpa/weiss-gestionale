@@ -58,6 +58,7 @@ async function movimento(
       description: 'Movimento di prova',
       debitAmount: valori.entrata ?? null,
       creditAmount: valori.uscita ?? null,
+      costCenterId: await centroDiCostoDiDefault(),
       accountId: valori.accountId,
     },
   })

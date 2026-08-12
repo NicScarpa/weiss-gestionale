@@ -211,6 +211,7 @@ describe('quadratura fra prima nota, budget e cash flow', () => {
         registerType: 'BANK',
         description: 'Affitto di fine mese, non ancora pagato',
         creditAmount: 2000,
+        costCenterId: await centroDiCostoDiDefault(),
       },
     })
 
@@ -235,6 +236,7 @@ describe('quadratura fra prima nota, budget e cash flow', () => {
         registerType: 'BANK',
         description: "Incasso dell'ultimo giorno dell'anno scorso",
         debitAmount: 3000,
+        costCenterId: await centroDiCostoDiDefault(),
       },
     })
 

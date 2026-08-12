@@ -5,7 +5,7 @@ import { giornoCorrente, giornoIndietro } from '@/lib/saldi'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { loginAs } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
-import { venueDiTest } from '@/test/integration/fixtures/closures'
+import { venueDiTest, centroDiCostoDiDefault } from '@/test/integration/fixtures/closures'
 import { GET as getSaldi } from '../route'
 import { GET as getStorico } from '../storico/route'
 
@@ -56,6 +56,7 @@ async function statoDiPartenza() {
         registerType: 'BANK',
         description: 'Movimento di prova',
         debitAmount: importo,
+        costCenterId: await centroDiCostoDiDefault(),
       },
     })
   }

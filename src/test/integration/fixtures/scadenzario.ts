@@ -62,19 +62,17 @@ export interface MovimentoFixture {
   registerType?: 'CASH' | 'BANK'
   closureId?: string | null
   /**
-   * Centro di costo del movimento. Di default quello strutturale del seed:
-   * un movimento senza centro non può suddividersi né cambiare conto su un
-   * conto OBBLIGATORIO (`cost-center-service.ts` risponde 'invalid' in
-   * contesto interattivo, di proposito). Passa esplicitamente `null` solo nei
-   * test che verificano proprio quel rifiuto.
+   * Centro di costo del movimento. Di default quello strutturale del seed.
+   * Non ammette più `null`: `journal_entries.cost_center_id` è NOT NULL dal
+   * 12 ago 2026, quindi un movimento senza centro non è uno scenario da
+   * testare — è una riga che il database rifiuta.
    */
-  costCenterId?: string | null
+  costCenterId?: string
 }
 
 export async function creaMovimento(fixture: MovimentoFixture = {}) {
   const venueId = fixture.venueId ?? (await venueDiTest()).id
-  const costCenterId =
-    fixture.costCenterId === null ? null : (fixture.costCenterId ?? (await centroDiCostoDiDefault()))
+  const costCenterId = fixture.costCenterId ?? (await centroDiCostoDiDefault())
 
   return prisma.journalEntry.create({
     data: {
