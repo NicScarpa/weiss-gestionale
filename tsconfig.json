@@ -44,6 +44,7 @@
     "**/*.spec.ts",
     "**/__tests__/**",
     "e2e",
-    "playwright.config.ts"
+    "playwright.config.ts",
+    "vitest.setup.ts"
   ]
 }
