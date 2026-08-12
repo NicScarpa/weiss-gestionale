@@ -24,10 +24,30 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const rangeGiorni = parseInt(searchParams.get('range') || '90')
+
+    /**
+     * Giorni di storico (≤ 0) e di previsione (> 0) intorno a oggi.
+     *
+     * La finestra si esprime come «quanto passato» + «quanto futuro» invece
+     * che con due date assolute, perché è il modo in cui si ragiona in
+     * tesoreria e perché resta valida il giorno dopo senza reimpostarla.
+     *
+     * Entrambi i valori sono limitati: la serie si costruisce giorno per
+     * giorno, quindi una finestra arbitrariamente lunga arrivata dalla query
+     * string diventa un ciclo arbitrariamente lungo.
+     */
+    function intero(valore: string | null, predefinito: number, min: number, max: number): number {
+      const n = Number(valore)
+      if (valore === null || valore.trim() === '' || !Number.isFinite(n)) return predefinito
+      return Math.min(max, Math.max(min, Math.trunc(n)))
+    }
+
+    const rangeGiorni = intero(searchParams.get('range'), 90, 1, 90)
+    const ancoraGiorni = intero(searchParams.get('da'), 0, -365, 0)
     const includiScaduto = searchParams.get('includiScaduto') === 'true'
 
     const today = startOfDay(new Date())
+    const startDate = addDays(today, ancoraGiorni)
     const endDate = addDays(today, rangeGiorni)
 
     const venueId = await getVenueId()
@@ -115,7 +135,7 @@ export async function GET(request: NextRequest) {
     // di cassa e banca, non da `saldoOggi`, che è un netto sintetico usato
     // solo per il pannello "scaduto" qui sotto. Le due grandezze rispondono a
     // domande diverse e non vanno confuse.
-    const dal = format(today, 'yyyy-MM-dd')
+    const dal = format(startDate, 'yyyy-MM-dd')
     const al = format(endDate, 'yyyy-MM-dd')
     const serie = await serieProiettata(venueId, dal, al)
 
@@ -182,7 +202,7 @@ export async function GET(request: NextRequest) {
       },
       chartData,
       range: {
-        from: format(today, 'yyyy-MM-dd'),
+        from: dal,
         to: format(endDate, 'yyyy-MM-dd'),
       },
     })
