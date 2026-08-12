@@ -9,7 +9,7 @@ import { PUT as aggiornaChiusura } from '@/app/api/chiusure/[id]/route'
 import { setupIntegrationDb } from './db'
 import { loginAs } from './auth-mock'
 import { jsonRequest, callRoute } from './api'
-import { venueDiTest } from './fixtures/closures'
+import { venueDiTest, centroDiCostoDiDefault } from './fixtures/closures'
 import { creaScadenza } from './fixtures/scadenzario'
 
 /**
@@ -93,6 +93,7 @@ async function chiusuraValidata(venueId: string, userId: string, contanti = CONT
       status: 'SUBMITTED',
       submittedById: userId,
       submittedAt: new Date(),
+      costCenterId: await centroDiCostoDiDefault(),
       stations: {
         create: [
           {

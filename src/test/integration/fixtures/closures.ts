@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import type { ClosureStatus } from '@prisma/client'
 import { calculateTotalCounted } from '@/lib/closure-calculations'
+import { trovaCentroStrutturale } from '@/lib/services/cost-center-service'
 
 /**
  * Fixture per le chiusure di cassa.
@@ -17,6 +18,22 @@ export async function venueDiTest() {
     throw new Error('Sede WEISS assente: il seed non è stato applicato al database di test.')
   }
   return venue
+}
+
+/**
+ * Il centro di costo strutturale del seed (STR): lo stesso che sceglierebbe
+ * chi compila la chiusura in produzione, quando la sceglie. Le fixture non
+ * ne inventano uno: lo leggono, come farebbe il codice vero.
+ */
+export async function centroDiCostoDiDefault(): Promise<string> {
+  const centro = await trovaCentroStrutturale(prisma)
+  if (!centro) {
+    throw new Error(
+      'Nessun centro di costo di default (isDefault: true) nel seed di test: le ' +
+        'fixture non possono costruire lo scenario che la produzione usa davvero.'
+    )
+  }
+  return centro.id
 }
 
 /** Pezzi contati nel cassetto: solo i tagli che servono al test. */
@@ -62,6 +79,14 @@ export interface ChiusuraFixture {
   submittedById?: string
   postazioni?: PostazioneFixture[]
   uscite?: UscitaFixture[]
+  /**
+   * Centro di costo della chiusura. Di default quello strutturale del seed:
+   * senza, la chiusura è uno scenario che la produzione non ammette più
+   * (`closure-service.ts` rifiuta la validazione con `missing_cost_center`),
+   * quindi ometterlo costruirebbe un test contro uno stato impossibile. Passa
+   * esplicitamente `null` solo nei test che verificano proprio quel rifiuto.
+   */
+  costCenterId?: string | null
 }
 
 /**
@@ -70,6 +95,8 @@ export interface ChiusuraFixture {
  */
 export async function creaChiusura(fixture: ChiusuraFixture = {}) {
   const venueId = fixture.venueId ?? (await venueDiTest()).id
+  const costCenterId =
+    fixture.costCenterId === null ? null : (fixture.costCenterId ?? (await centroDiCostoDiDefault()))
 
   const closure = await prisma.dailyClosure.create({
     data: {
@@ -78,6 +105,7 @@ export async function creaChiusura(fixture: ChiusuraFixture = {}) {
       status: fixture.status ?? 'DRAFT',
       submittedById: fixture.submittedById ?? null,
       submittedAt: fixture.submittedById ? new Date() : null,
+      costCenterId,
       stations: {
         create: (fixture.postazioni ?? []).map((p, i) => ({
           name: p.name ?? `CASSA ${i + 1}`,

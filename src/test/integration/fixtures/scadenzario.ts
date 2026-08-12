@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
-import { venueDiTest } from './closures'
+import { venueDiTest, centroDiCostoDiDefault } from './closures'
 
 /**
  * Fixture per scadenzario, prima nota e fatture.
@@ -61,10 +61,20 @@ export interface MovimentoFixture {
   venueId?: string
   registerType?: 'CASH' | 'BANK'
   closureId?: string | null
+  /**
+   * Centro di costo del movimento. Di default quello strutturale del seed:
+   * un movimento senza centro non può suddividersi né cambiare conto su un
+   * conto OBBLIGATORIO (`cost-center-service.ts` risponde 'invalid' in
+   * contesto interattivo, di proposito). Passa esplicitamente `null` solo nei
+   * test che verificano proprio quel rifiuto.
+   */
+  costCenterId?: string | null
 }
 
 export async function creaMovimento(fixture: MovimentoFixture = {}) {
   const venueId = fixture.venueId ?? (await venueDiTest()).id
+  const costCenterId =
+    fixture.costCenterId === null ? null : (fixture.costCenterId ?? (await centroDiCostoDiDefault()))
 
   return prisma.journalEntry.create({
     data: {
@@ -75,6 +85,7 @@ export async function creaMovimento(fixture: MovimentoFixture = {}) {
       debitAmount: fixture.entrata !== undefined ? decimal(fixture.entrata) : null,
       creditAmount: fixture.uscita !== undefined ? decimal(fixture.uscita) : null,
       closureId: fixture.closureId ?? null,
+      costCenterId,
     },
   })
 }

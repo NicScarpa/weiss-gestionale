@@ -5,7 +5,7 @@ import { validateClosure } from '@/lib/services/closure-service'
 import { aggregateCategoriesForBudget } from '@/lib/budget/category-aggregator'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { loginAs } from '@/test/integration/auth-mock'
-import { venueDiTest } from '@/test/integration/fixtures/closures'
+import { venueDiTest, centroDiCostoDiDefault } from '@/test/integration/fixtures/closures'
 
 /**
  * Da dove vengono gli actual del budget.
@@ -117,6 +117,7 @@ describe('actual del budget', () => {
         status: 'SUBMITTED',
         submittedById: sessione.user.id,
         submittedAt: new Date(),
+        costCenterId: await centroDiCostoDiDefault(),
         stations: {
           create: [{ name: 'CASSA 1', position: 0, cashAmount: 300, floatAmount: 114 }],
         },
@@ -224,6 +225,7 @@ describe('actual del budget', () => {
         status: 'SUBMITTED',
         submittedById: sessione.user.id,
         submittedAt: new Date(),
+        costCenterId: await centroDiCostoDiDefault(),
         stations: {
           create: [
             {
