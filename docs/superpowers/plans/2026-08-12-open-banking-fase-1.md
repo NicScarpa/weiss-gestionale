@@ -45,14 +45,14 @@ I payload veri restano in `scripts/gocardless/snapshots/`, non versionati, e ser
 | `src/lib/gocardless/__tests__/fixtures/*.json` | Payload finti che imitano la forma vera. |
 | `src/lib/gocardless/__tests__/*.test.ts` | Unit test di tipi, mapper e client. |
 | `src/lib/gocardless/__tests__/dedup.itest.ts` | Test d'integrazione della deduplicazione, su PostgreSQL vero. |
-| `prisma/migrations/20260812000000_open_banking_fase_1/migration.sql` | DDL esplicito: due tabelle, sei colonne, un valore d'enum, un indice unico parziale, un backfill condizionale. |
+| `prisma/migrations/20260812120000_open_banking_fase_1/migration.sql` | DDL esplicito: due tabelle, sei colonne, un valore d'enum, un indice unico parziale, un backfill condizionale. |
 
 **Modificati**
 
 | File | Modifica |
 |---|---|
 | `prisma/schema.prisma` | Modelli `BankConnection` e `BankSyncRun`; colonne su `BankAccount`, `BankTransaction` e `Venue`; valore `PSD2_GOCARDLESS` nell'enum `ImportSource`. |
-| `prisma/sql/constraints.sql:174` | La dichiarazione canonica del nuovo indice unico parziale. **Obbligatoria**: vedi la nota qui sotto. |
+| `prisma/sql/constraints.sql:172` | La dichiarazione canonica del nuovo indice unico parziale. **Obbligatoria**: vedi la nota qui sotto. |
 | `src/types/reconciliation.ts:3` | Aggiunge `'PSD2_GOCARDLESS'` all'unione di tipi. |
 | `src/lib/validations/reconciliation.ts:9` | Aggiunge `'PSD2_GOCARDLESS'` all'enum zod. |
 | `src/components/reconciliation/TransactionDetailsDialog.tsx:53` | Aggiunge l'etichetta leggibile. |
@@ -1027,7 +1027,7 @@ Attenzione a tre trappole, tutte già costate tempo in questo progetto:
 
 **Files:**
 - Modify: `prisma/schema.prisma`
-- Create: `prisma/migrations/20260812000000_open_banking_fase_1/migration.sql`
+- Create: `prisma/migrations/20260812120000_open_banking_fase_1/migration.sql`
 - Modify: `src/types/reconciliation.ts:3`
 - Modify: `src/lib/validations/reconciliation.ts:9`
 - Modify: `src/components/reconciliation/TransactionDetailsDialog.tsx:53`
@@ -1142,7 +1142,7 @@ Nel modello `BankTransaction`, aggiungi i campi, la relazione e l'indice:
   /// deduplicazione va fatta su `(bankAccountId, providerTransactionId)`.
   /// L'indice UNIQUE parziale che lo impone è dichiarato in
   /// `prisma/sql/constraints.sql` e replicato nel migration.sql della
-  /// migrazione `20260812000000_open_banking_fase_1`, perché Prisma non sa
+  /// migrazione `20260812120000_open_banking_fase_1`, perché Prisma non sa
   /// rappresentare gli indici parziali. Vedi `ux_bank_transactions_conto_provider`.
   providerTransactionId String?  @map("provider_transaction_id") @db.VarChar(100)
   /// `proprietaryBankTransactionCode`, formato `NN//NN`. Presente sul 100% dei
@@ -1175,7 +1175,7 @@ Atteso: `The schema at prisma/schema.prisma is valid 🚀`
 
 - [ ] **Step 3: Scrivi la migrazione a mano**
 
-Crea `prisma/migrations/20260812000000_open_banking_fase_1/migration.sql`:
+Crea `prisma/migrations/20260812120000_open_banking_fase_1/migration.sql`:
 
 ```sql
 -- Fase 1 dell'integrazione open banking GoCardless.
@@ -1357,7 +1357,7 @@ Applica **tutte** le migrazioni in sequenza, dalla baseline alla nuova. Si usa `
 nvm use 22 && DATABASE_URL="postgresql://nicolascarpa@127.0.0.1:5433/weiss_ob_fase1" npx prisma migrate deploy
 ```
 
-Atteso: l'elenco delle migrazioni applicate si chiude con `20260812000000_open_banking_fase_1`, senza errori. Se PostgreSQL si lamenta dell'`ALTER TYPE`, è finito nella stessa transazione di qualcosa che usa il valore nuovo: va spostato in testa al file.
+Atteso: l'elenco delle migrazioni applicate si chiude con `20260812120000_open_banking_fase_1`, senza errori. Se PostgreSQL si lamenta dell'`ALTER TYPE`, è finito nella stessa transazione di qualcosa che usa il valore nuovo: va spostato in testa al file.
 
 Poi rigenera il client Prisma, che le task successive useranno per i tipi:
 
@@ -1408,7 +1408,7 @@ Atteso: `tsc` exit 0; lint 0 errori (i warning preesistenti restano); la suite u
 - [ ] **Step 9: Commit**
 
 ```bash
-git add prisma/schema.prisma prisma/migrations/20260812000000_open_banking_fase_1/ prisma/sql/constraints.sql src/types/reconciliation.ts src/lib/validations/reconciliation.ts src/components/reconciliation/TransactionDetailsDialog.tsx
+git add prisma/schema.prisma prisma/migrations/20260812120000_open_banking_fase_1/ prisma/sql/constraints.sql src/types/reconciliation.ts src/lib/validations/reconciliation.ts src/components/reconciliation/TransactionDetailsDialog.tsx
 git commit -m "feat(open-banking): tabelle connessione e sync, conto sui movimenti, chiave di deduplica per conto"
 ```
 
