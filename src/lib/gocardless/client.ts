@@ -11,7 +11,9 @@ import { z } from 'zod'
 
 import { ErroreGoCardless, LimiteRaggiunto } from './errori'
 import {
+  agreementSchema,
   istituzioneSchema,
+  requisitionSchema,
   rispostaDettagliSchema,
   rispostaMovimentiSchema,
   rispostaSaldiSchema,
@@ -187,7 +189,11 @@ export function creaClient(opzioni: OpzioniClient) {
     return token.valore
   }
 
-  async function chiama<T>(percorso: string, schema: z.ZodType<T>): Promise<Risposta<T>> {
+  async function chiama<T>(
+    percorso: string,
+    schema: z.ZodType<T>,
+    opzioni: { metodo?: 'GET' | 'POST'; corpo?: unknown } = {}
+  ): Promise<Risposta<T>> {
     // Un 401 sulla chiamata dati non è coperto dalla politica sui 5xx: non è
     // un guasto transitorio del server, è la cache locale del token che
     // mente (revoca lato GoCardless, o disallineamento rispetto alla
@@ -200,10 +206,16 @@ export function creaClient(opzioni: OpzioniClient) {
       try {
         return await conRitentativi(async () => {
           const accesso = await ottieniToken()
+          const headers: Record<string, string> = { accept: 'application/json', authorization: `Bearer ${accesso}` }
+          if (opzioni.corpo !== undefined) headers['content-type'] = 'application/json'
           const esito = await eseguiClassificato(
             eseguiFetch,
             `${BASE}${percorso}`,
-            { method: 'GET', headers: { accept: 'application/json', authorization: `Bearer ${accesso}` } },
+            {
+              method: opzioni.metodo ?? 'GET',
+              headers,
+              ...(opzioni.corpo !== undefined && { body: JSON.stringify(opzioni.corpo) }),
+            },
             `Chiamata a ${percorso} fallita`
           )
           if (esito.tipo !== 'ok') return esito
@@ -237,6 +249,21 @@ export function creaClient(opzioni: OpzioniClient) {
       const coda = query.length > 0 ? `?${query.join('&')}` : ''
       return chiama(`/accounts/${encodeURIComponent(conto)}/transactions/${coda}`, rispostaMovimentiSchema)
     },
+
+    creaAgreement: (corpo: {
+      institution_id: string
+      max_historical_days: number
+      access_valid_for_days: number
+      access_scope: string[]
+    }) => chiama('/agreements/enduser/', agreementSchema, { metodo: 'POST', corpo }),
+
+    creaRequisition: (corpo: {
+      institution_id: string
+      agreement: string
+      redirect: string
+      reference: string
+      user_language: string
+    }) => chiama('/requisitions/', requisitionSchema, { metodo: 'POST', corpo }),
   }
 }
 

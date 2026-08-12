@@ -79,6 +79,19 @@ export const istituzioneSchema = z.object({
   max_access_valid_for_days: z.union([z.string(), z.number()]).optional(),
 })
 
+export const agreementSchema = z.object({
+  id: z.string(),
+  max_historical_days: z.number().optional(),
+  access_valid_for_days: z.number().optional(),
+})
+
+export const requisitionSchema = z.object({
+  id: z.string(),
+  link: z.string(),
+  status: z.string(),
+  accounts: z.array(z.string()).default([]),
+})
+
 export type Movimento = z.infer<typeof movimentoSchema>
 export type RispostaMovimenti = z.infer<typeof rispostaMovimentiSchema>
 export type RispostaSaldi = z.infer<typeof rispostaSaldiSchema>
