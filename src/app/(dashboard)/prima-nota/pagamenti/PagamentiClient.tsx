@@ -202,7 +202,11 @@ export function PagamentiClient() {
       <PagamentiFilters
         dateFrom={filters.dateFrom}
         dateTo={filters.dateTo}
-        onDateRangeChange={(range) => setFilters(f => ({ ...f, dateFrom: range.from, dateTo: range.to }))}
+        // Svuotare la selezione emette `undefined`: azzera entrambe le date
+        // invece di andare in errore leggendo `range.from`.
+        onDateRangeChange={(range) =>
+          setFilters(f => ({ ...f, dateFrom: range?.from, dateTo: range?.to }))
+        }
         tipo={filters.tipo}
         onTipoChange={(v) => setFilters(f => ({ ...f, tipo: v }))}
         stato={filters.stato}

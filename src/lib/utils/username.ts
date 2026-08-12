@@ -7,7 +7,24 @@
  * - Se duplicato, aggiunge suffisso numerico (NomeCognome2, NomeCognome3, ...)
  */
 
-import { PrismaClient } from '@prisma/client'
+import type { Prisma } from '@prisma/client'
+
+/**
+ * Il solo pezzo di client che questa funzione usa.
+ *
+ * Descritto per struttura e non come `PrismaClient`: i chiamanti passano il
+ * client esteso di `@/lib/prisma` (cifratura + soft delete), i cui delegate non
+ * sono lo stesso tipo di quelli del client nudo. Prima qui c'era un `| any`,
+ * che rendeva `any` l'intero risultato di `findMany` e con esso ogni riga sotto.
+ */
+type ClientUtenti = {
+  user: {
+    findMany(args: {
+      where: Prisma.UserWhereInput
+      select: { username: true }
+    }): Promise<Array<{ username: string }>>
+  }
+}
 
 /**
  * Normalizza una stringa rimuovendo accenti, spazi e caratteri speciali
@@ -51,8 +68,7 @@ export function generateUsername(firstName: string, lastName: string): string {
  * @param excludeUserId - ID utente da escludere dalla verifica (per aggiornamenti)
  */
 export async function generateUniqueUsername(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  prisma: { user: PrismaClient['user'] } | any,
+  prisma: ClientUtenti,
   firstName: string,
   lastName: string,
   excludeUserId?: string

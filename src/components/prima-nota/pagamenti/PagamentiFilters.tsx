@@ -9,7 +9,12 @@ import { PAYMENT_STATUS_LABELS, PaymentType, PAYMENT_TYPE_LABELS } from '@/types
 interface PagamentiFiltersProps {
   dateFrom?: Date
   dateTo?: Date
-  onDateRangeChange?: (range: { from?: Date; to?: Date }) => void
+  /**
+   * `undefined` è il periodo azzerato: `DateRangePicker` lo passa quando si
+   * ricicca la data di inizio già selezionata. Stessa firma di
+   * `MovimentiFilters`, che lo dichiarava già.
+   */
+  onDateRangeChange?: (range: { from?: Date; to?: Date } | undefined) => void
   tipo?: PaymentType
   onTipoChange?: (value: PaymentType | undefined) => void
   beneficiarioNome?: string

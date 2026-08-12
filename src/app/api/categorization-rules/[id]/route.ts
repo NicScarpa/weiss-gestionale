@@ -58,17 +58,22 @@ export const PATCH = withAuth<{ id: string }>(
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
 
-      // Campi aggiornabili
-      const updatable = [
-        'name', 'direction', 'keywords', 'priority', 'isActive',
-        'budgetCategoryId', 'accountId', 'autoVerify', 'autoHide',
-      ]
-      const data: Prisma.CategorizationRuleUpdateInput = {}
-      for (const field of updatable) {
-        if (body[field] !== undefined) {
-          data[field] = body[field]
-        }
-      }
+      // Campi aggiornabili, elencati uno per uno invece che scorsi da un array
+      // di stringhe: così è il compilatore a dire se un nome non esiste sul
+      // modello, e chi rinomina una colonna se ne accorge qui e non in
+      // produzione. `Unchecked` perché il body porta gli id delle relazioni
+      // (budgetCategoryId, accountId), non le relazioni annidate — come fa
+      // anche la POST in ../route.ts.
+      const data: Prisma.CategorizationRuleUncheckedUpdateInput = {}
+      if (body.name !== undefined) data.name = body.name
+      if (body.direction !== undefined) data.direction = body.direction
+      if (body.keywords !== undefined) data.keywords = body.keywords
+      if (body.priority !== undefined) data.priority = body.priority
+      if (body.isActive !== undefined) data.isActive = body.isActive
+      if (body.budgetCategoryId !== undefined) data.budgetCategoryId = body.budgetCategoryId
+      if (body.accountId !== undefined) data.accountId = body.accountId
+      if (body.autoVerify !== undefined) data.autoVerify = body.autoVerify
+      if (body.autoHide !== undefined) data.autoHide = body.autoHide
 
       const rule = await prisma.categorizationRule.update({
         where: { id },

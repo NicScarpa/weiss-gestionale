@@ -228,31 +228,29 @@ export default function TimbraPage() {
           <CardContent>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                {statusData.todayAssignment.shiftDefinition && (
+                {todayAssignment.shiftDefinition && (
                   <div
                     className="w-3 h-10 rounded"
                     style={{
                       backgroundColor:
-                        statusData.todayAssignment.shiftDefinition.color ??
-                        '#6B7280',
+                        todayAssignment.shiftDefinition.color ?? '#6B7280',
                     }}
                   />
                 )}
                 <div>
                   <div className="font-medium">
-                    {statusData.todayAssignment.shiftDefinition?.name ??
-                      'Turno'}
+                    {todayAssignment.shiftDefinition?.name ?? 'Turno'}
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    {statusData.todayAssignment.venue.name}
+                    {todayAssignment.venue.name}
                   </div>
                 </div>
               </div>
               <div className="text-right">
                 <div className="flex items-center gap-1 font-mono font-medium">
                   <Clock className="h-4 w-4 text-muted-foreground" />
-                  {formatShiftTime(statusData.todayAssignment.startTime)} -{' '}
-                  {formatShiftTime(statusData.todayAssignment.endTime)}
+                  {formatShiftTime(todayAssignment.startTime)} -{' '}
+                  {formatShiftTime(todayAssignment.endTime)}
                 </div>
               </div>
             </div>

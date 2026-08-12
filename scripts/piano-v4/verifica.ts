@@ -169,17 +169,32 @@ async function main() {
   }
 
   // ==================== CENTRO SUI MOVIMENTI ====================
-  // Atteso zero solo dopo il follow-up che porta cost_center_id a NOT NULL:
-  // finché quello non c'è, è un avviso.
-  const senzaCentro = await prisma.journalEntry.count({ where: { costCenterId: null } })
-  if (senzaCentro === 0) {
-    console.log('  ✓ movimenti senza centro di costo: 0')
+  // Si guarda il vincolo, non le righe. Da quando `cost_center_id` è NOT NULL
+  // (12 ago 2026) contare i movimenti senza centro non può che dare zero: il
+  // client Prisma non sa nemmeno più esprimere quel filtro. Quello che resta
+  // da verificare è che la colonna sia NOT NULL sul database bersaglio — è il
+  // follow-up del DDL, e su un database rimasto indietro è l'unica cosa che
+  // lo rivela.
+  const colonnaCentro = await pool.query<{ is_nullable: string }>(
+    `SELECT is_nullable
+       FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND table_name = 'journal_entries'
+        AND column_name = 'cost_center_id'`
+  )
+  if (colonnaCentro.rows.length === 0) {
+    console.error('  ❌ colonna journal_entries.cost_center_id non trovata')
+    ok = false
+  } else if (colonnaCentro.rows[0].is_nullable === 'NO') {
+    console.log('  ✓ journal_entries.cost_center_id è NOT NULL')
   } else if (rigoroso) {
-    console.error(`  ❌ movimenti senza centro di costo: ${senzaCentro}`)
+    console.error(
+      '  ❌ journal_entries.cost_center_id è ancora nullable: follow-up NOT NULL non applicato'
+    )
     ok = false
   } else {
     console.warn(
-      `  ⚠️  movimenti senza centro di costo: ${senzaCentro} (atteso 0 dopo il follow-up NOT NULL su journal_entries.cost_center_id)`
+      '  ⚠️  journal_entries.cost_center_id è ancora nullable (atteso NOT NULL dopo il follow-up del DDL)'
     )
     avvisi++
   }
