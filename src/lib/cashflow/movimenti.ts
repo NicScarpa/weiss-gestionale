@@ -117,14 +117,13 @@ function negato(c: Contributo): Contributo {
  * voluto dire riscrivere la query degli actual di budget, che è in produzione.
  * Se si tocca la semantica qui, va guardato anche lì.
  *
- * C'è una terza copia, in report/conto-economico.ts (righe ~272-296), e lì la
- * regola NON è la stessa: quando un movimento ha fette, quella funzione
- * ignora del tutto il conto di testata invece di lasciargli il resto —
- * un'uscita da 1.000 € suddivisa 700/200 mostra 900 € "persi" invece di
- * restare sul conto di testata. Su una suddivisione parziale questo prospetto
- * e il conto economico raccontano quindi due numeri diversi per lo stesso
- * movimento. Quale dei due comportamenti sia quello giusto è una domanda per
- * chi possiede quel report, non qualcosa da uniformare qui di riflesso.
+ * C'è una terza copia, in report/conto-economico.ts (righe ~267-294): dal 12
+ * agosto 2026 applica la stessa regola. La testata tiene il resto, in tutti e
+ * tre i moduli — non solo qui e in saldi.ts. Prima di quella data
+ * `aggregaContoEconomico` ignorava del tutto il conto di testata quando un
+ * movimento aveva fette, e un'uscita da 1.000 € suddivisa 700/200 mostrava
+ * 900 € "persi" invece di restare sul conto di testata: stesso movimento, due
+ * numeri diversi fra questo prospetto e il conto economico.
  *
  * **L'IVA di una riga suddivisa viene dalla fetta stessa, quando la
  * dichiara.** `JournalEntryAllocation.iva` porta l'aliquota della fetta: se

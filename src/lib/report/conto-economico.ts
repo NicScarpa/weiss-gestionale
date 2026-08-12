@@ -278,18 +278,38 @@ export function aggregaContoEconomico(
       // esistere (la somma delle fette non può superare l'importo utile), e se
       // ce ne fosse una sarebbe dato corrotto, non un flusso reale.
       const versoDare = dare !== 0 || avere === 0
+      let coperto = 0
 
       for (const fetta of movimento.allocations) {
-        if (!isEconomica(fetta.account)) {
-          continue
-        }
         const quota = inCentesimi(fetta.importo)
+        // Si conta anche la fetta su un conto non economico: quel denaro è
+        // comunque uscito dalla testata, e ignorarlo qui lo farebbe ricomparire
+        // nel residuo.
+        coperto += quota
+        if (!isEconomica(fetta.account)) continue
         accumula(
           fetta.account,
           colonna,
           versoDare
             ? importoEconomico(fetta.account.type, quota, 0)
             : importoEconomico(fetta.account.type, 0, quota)
+        )
+      }
+
+      // Il residuo di testata. Fino al 12 ago 2026 questo blocco faceva
+      // `continue` e il residuo spariva: un bonifico da 2.000 che saldava una
+      // fattura da 1.222 mostrava 1.222 qui e 2.000 nel prospetto di cash
+      // flow. La suddivisione totale non è garantita — è obbligatoria sul
+      // DOCUMENTO, non sul movimento, che può contenere anche un acconto — e
+      // la semantica giusta è quella di saldi.ts: la testata tiene il resto.
+      const residuo = (versoDare ? dare : avere) - coperto
+      if (residuo > 0 && movimento.account !== null && isEconomica(movimento.account)) {
+        accumula(
+          movimento.account,
+          colonna,
+          versoDare
+            ? importoEconomico(movimento.account.type, residuo, 0)
+            : importoEconomico(movimento.account.type, 0, residuo)
         )
       }
       continue

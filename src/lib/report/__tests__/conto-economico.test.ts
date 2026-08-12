@@ -7,6 +7,7 @@ import {
   type MovimentoContoEconomico,
   type VoceConto,
 } from '../conto-economico'
+import { aggregaMovimenti, type MovimentoPrimaNota } from '@/lib/cashflow/movimenti'
 
 const CENTRI = [{ code: 'STR' }, { code: 'WEISS' }, { code: 'VV' }, { code: 'CAS' }]
 
@@ -55,6 +56,13 @@ const RIMANENZE_FINALI = voce({
   type: 'COSTO',
   gruppoCode: '20.6',
   gruppoNome: 'Rettifiche',
+})
+const PULIZIE = voce({
+  code: '20.3.01',
+  name: 'Detergenti e materiali di pulizia',
+  type: 'COSTO',
+  gruppoCode: '20.3',
+  gruppoNome: 'Pulizia',
 })
 const BANCA = voce({ code: '90.01', name: 'Banca c/c', type: 'ATTIVO' })
 
@@ -358,6 +366,81 @@ describe('aggregaContoEconomico — movimenti suddivisi', () => {
 
     expect(risultato.rows.map((r) => r.code)).toEqual(['20.1.01'])
     expect(risultato.totals).toEqual({ ricavi: 0, costi: 100, margine: -100 })
+  })
+
+  it('lascia sul conto di testata la parte non coperta dalle fette', () => {
+    // Bonifico da 2.000 che salda una fattura da 1.222: i restanti 778 sono un
+    // acconto non ancora abbinato e restano dove sono. `saldi.ts` e il prospetto
+    // di cash flow li contano già così; questo report li faceva sparire.
+    const risultato = aggregaContoEconomico(
+      [
+        movimento({
+          account: BEVERAGE,
+          centro: 'STR',
+          debitAmount: 2000,
+          allocations: [fetta(FOOD, 1100), fetta(PULIZIE, 122)],
+        }),
+      ],
+      CENTRI
+    )
+
+    expect(risultato.rows.find((r) => r.code === FOOD.code)?.total).toBe(1100)
+    expect(risultato.rows.find((r) => r.code === PULIZIE.code)?.total).toBe(122)
+    expect(risultato.rows.find((r) => r.code === BEVERAGE.code)?.total).toBe(778)
+  })
+})
+
+describe('aggregaContoEconomico — coerenza col cash flow', () => {
+  it('il residuo di testata coincide con quello che calcola aggregaMovimenti', () => {
+    // Fixture canonica, in centesimi: la stessa suddivisione parziale, letta
+    // una volta sola e adattata meccanicamente alla forma che vuole ciascun
+    // modulo. Il punto del test è verificare che i due moduli DERIVATI da
+    // questo unico fatto concordino — non che uno dei due sia uguale a se
+    // stesso, cosa che proverebbe solo l'esistenza della funzione.
+    const FATTO = {
+      testata: BEVERAGE,
+      importoTotale: 2000,
+      fette: [
+        { account: FOOD, importo: 1100 },
+        { account: PULIZIE, importo: 122 },
+      ],
+    }
+
+    const contoEconomico = aggregaContoEconomico(
+      [
+        movimento({
+          account: FATTO.testata,
+          centro: 'STR',
+          debitAmount: FATTO.importoTotale,
+          allocations: FATTO.fette.map((f) => fetta(f.account, f.importo)),
+        }),
+      ],
+      CENTRI
+    )
+    const residuoContoEconomico =
+      contoEconomico.rows.find((r) => r.code === FATTO.testata.code)?.total ?? 0
+
+    const rigaCashFlow: MovimentoPrimaNota = {
+      accountId: FATTO.testata.id,
+      date: new Date(Date.UTC(2026, 0, 15)),
+      debitAmount: FATTO.importoTotale,
+      creditAmount: 0,
+      vatAmount: 0,
+      allocations: FATTO.fette.map((f) => ({
+        accountId: f.account.id,
+        importo: f.importo,
+        iva: null,
+      })),
+    }
+    const [aggregatoCashFlow] = aggregaMovimenti([rigaCashFlow])
+    // `aggregaMovimenti` lavora in Money/dare-avere, non in euro con segno:
+    // la conversione all'unità comune del confronto avviene qui, dopo aver
+    // ricevuto il risultato — non prima, dentro l'input condiviso.
+    const residuoCashFlow = aggregatoCashFlow.dare.minus(aggregatoCashFlow.avere).toNumber()
+
+    expect(residuoContoEconomico).toBe(778)
+    expect(residuoCashFlow).toBe(778)
+    expect(residuoContoEconomico).toBe(residuoCashFlow)
   })
 })
 
