@@ -162,14 +162,18 @@ export interface ScheduleReminder {
 }
 
 export interface ScheduleSummary {
-  totaleAttive: number
-  totalePassive: number
+  /** Scadenze attive non ancora saldate (stato fuori da pagata/annullata). */
+  aperteAttiveCount: number
+  /** Residuo da incassare sulle scadenze attive non saldate (importoTotale - importoPagato). */
+  aperteAttiveImporto: number
+  /** Scadenze passive non ancora saldate (stato fuori da pagata/annullata). */
+  apertePassiveCount: number
+  /** Residuo da pagare sulle scadenze passive non saldate (importoTotale - importoPagato). */
+  apertePassiveImporto: number
   totaleScadute: number
   totaleScaduteImporto: number
   totaleInScadenza7Giorni: number
   totaleInScadenza7GiorniImporto: number
-  totaleAperte: number
-  totalePagate: number
   /** Scadenze con pagamenti registrati e nessun movimento di prima nota collegato. */
   pagateSenzaMovimento: number
   pagateSenzaMovimentoImporto: number

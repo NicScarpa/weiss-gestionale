@@ -32,21 +32,21 @@ export function ScheduleSummaryCards({ summary, isLoading = false, onPagateSenza
     },
     {
       title: 'Da incassare',
-      value: summary.totaleAperte,
-      amount: summary.totaleAttive,
+      value: summary.aperteAttiveCount,
+      amount: summary.aperteAttiveImporto,
       icon: ArrowDownLeft,
       color: 'text-emerald-600',
       bgColor: 'bg-emerald-50',
-      description: `${summary.totaleAperte} scadenze attive`,
+      description: `${summary.aperteAttiveCount} scadenze attive`,
     },
     {
       title: 'Da pagare',
-      value: summary.totalePagate,
-      amount: summary.totalePassive,
+      value: summary.apertePassiveCount,
+      amount: summary.apertePassiveImporto,
       icon: ArrowUpRight,
       color: 'text-rose-600',
       bgColor: 'bg-rose-50',
-      description: `${summary.totalePagate} scadenze passive`,
+      description: `${summary.apertePassiveCount} scadenze passive`,
     },
     // Solo quando c'è qualcosa da vedere: una card a zero è rumore quotidiano
     ...(summary.pagateSenzaMovimento > 0
