@@ -324,7 +324,7 @@ export function BudgetCategoryManagement() {
               )}
             </div>
             <div className="text-sm text-muted-foreground">
-              {category.benchmarkPercentage && (
+              {category.benchmarkPercentage !== null && (
                 <span>
                   Target: {category.benchmarkPercentage}%
                   {category.benchmarkComparison === 'LESS_THAN' ? ' max' : ' min'}

@@ -602,7 +602,7 @@ export function BolloSection({ datiBollo }: BolloSectionProps) {
           <span className="text-muted-foreground">Bollo Virtuale</span>
           <Badge variant="outline">Sì</Badge>
         </div>
-        {datiBollo.importoBollo && (
+        {!!datiBollo.importoBollo && (
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Importo</span>
             <span className="font-mono">{formatCurrency(datiBollo.importoBollo)}</span>
