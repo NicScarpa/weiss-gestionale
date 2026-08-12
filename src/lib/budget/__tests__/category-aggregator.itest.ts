@@ -211,12 +211,20 @@ describe('actual del budget', () => {
     expect(actualDi(risultato, 'C-MATERIE')).toBe(400)
   })
 
-  // Il fatturato delle chiusure non porta con sé un conto di ricavo: finché è
-  // così, la differenza va detta invece di sparire dai totali.
+  // Dal piano v4 le scritture di chiusura nascono già imputate: l'incasso in
+  // contanti finisce sempre sul conto di sistema Corrispettivi (RICAVO —
+  // closure-journal-entries.ts, tabella "incasso contanti"). Il resto del
+  // fatturato dichiarato — qui, quello non incassato in contanti, niente POS
+  // in questo scenario — non ha invece nessun conto a sostenerlo: è quella
+  // differenza residua che il test verifica, non più l'assenza totale di un
+  // conto di ricavo.
   it('dichiara quanto fatturato non è imputato ad alcun conto di ricavo', async () => {
     const sessione = await loginAs('admin')
     const venue = await venueDiTest()
     const budget = await budgetDellAnno(venue.id)
+
+    const fatturatoDichiarato = 1000
+    const incassoContanti = 300
 
     const chiusura = await prisma.dailyClosure.create({
       data: {
@@ -231,8 +239,8 @@ describe('actual del budget', () => {
             {
               name: 'CASSA 1',
               position: 0,
-              receiptAmount: 1000,
-              cashAmount: 300,
+              receiptAmount: fatturatoDichiarato,
+              cashAmount: incassoContanti,
               floatAmount: 114,
             },
           ],
@@ -248,7 +256,9 @@ describe('actual del budget', () => {
 
     const risultato = await aggregateCategoriesForBudget(budget.id, venue.id, ANNO)
 
-    expect(risultato.kpis.totalRevenue.annual).toBe(1000)
-    expect(risultato.kpis.unassignedRevenue.annual).toBe(1000)
+    expect(risultato.kpis.totalRevenue.annual).toBe(fatturatoDichiarato)
+    // L'incasso contanti è già su Corrispettivi: resta non imputato solo il
+    // fatturato dichiarato che quella scrittura non copre.
+    expect(risultato.kpis.unassignedRevenue.annual).toBe(fatturatoDichiarato - incassoContanti)
   })
 })
