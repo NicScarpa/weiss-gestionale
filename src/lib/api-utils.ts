@@ -111,11 +111,17 @@ export function handleApiError(
 }
 
 // Auth check helpers
-export interface AuthCheckResult {
-  authorized: boolean
-  response?: NextResponse<ApiErrorResponse>
-  session?: Session
-}
+//
+// Unione discriminata e non un oggetto con tre campi facoltativi: il controllo
+// o è passato — e allora c'è la sessione — o è fallito, e allora c'è la
+// risposta. Detto con `authorized: boolean` e due campi opzionali, il
+// compilatore non lo sapeva, e chi scriveva `return check.response` dentro un
+// `if (!check.authorized)` restituiva un `NextResponse | undefined`: una route
+// che, per il tipo, poteva non rispondere affatto. Da qui i `!` sparsi qui
+// sotto, che ora non servono più.
+export type AuthCheckResult =
+  | { authorized: true; session: Session; response?: undefined }
+  | { authorized: false; response: NextResponse<ApiErrorResponse>; session?: undefined }
 
 export function requireAuth(session: Session | null, allowMustChangePassword = false): AuthCheckResult {
   if (!session?.user) {
@@ -144,13 +150,15 @@ export function requireRole(
   const authCheck = requireAuth(session, allowMustChangePassword)
   if (!authCheck.authorized) return authCheck
 
-  if (!allowedRoles.includes(session!.user.role)) {
+  // `authCheck.session` e non `session!`: dopo la riga sopra è l'unione a
+  // garantire che ci sia, senza doverlo affermare.
+  if (!allowedRoles.includes(authCheck.session.user.role)) {
     return {
       authorized: false,
       response: forbidden(),
     }
   }
-  return { authorized: true, session: session! }
+  return authCheck
 }
 
 export function requireVenueAccess(
@@ -159,11 +167,12 @@ export function requireVenueAccess(
 ): AuthCheckResult {
   const authCheck = requireAuth(session)
   if (!authCheck.authorized) return authCheck
-  if (session!.user.role === 'admin') return { authorized: true, session: session! }
-  if (venueId && session!.user.venueId !== venueId) {
+  const utente = authCheck.session.user
+  if (utente.role === 'admin') return authCheck
+  if (venueId && utente.venueId !== venueId) {
     return { authorized: false, response: forbidden('Non hai accesso a questa sede') }
   }
-  return { authorized: true, session: session! }
+  return authCheck
 }
 
 /**
@@ -253,9 +262,9 @@ export function withAuth<TParams = EmptyParams>(
     const check = roles?.length
       ? requireRole(session, [...roles], allowMustChangePassword)
       : requireAuth(session, allowMustChangePassword)
-    if (!check.authorized) return check.response!
+    if (!check.authorized) return check.response
 
-    const authorizedSession = check.session!
+    const authorizedSession = check.session
     const params = ((await routeContext?.params) ?? {}) as TParams
     const base: AuthContext<TParams> = {
       session: authorizedSession,
@@ -279,7 +288,7 @@ export function withAuth<TParams = EmptyParams>(
     }
 
     const venueCheck = requireVenueAccess(authorizedSession, venueId)
-    if (!venueCheck.authorized) return venueCheck.response!
+    if (!venueCheck.authorized) return venueCheck.response
 
     return (handler as VenueScopedHandler<TParams>)(request, { ...base, venueId })
   }
