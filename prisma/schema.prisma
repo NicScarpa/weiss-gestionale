@@ -206,6 +206,13 @@ model BankConnection {
   status            String
   accessValidUntil  DateTime? @map("access_valid_until")
   maxHistoricalDays Int?      @map("max_historical_days")
+  /// Identificativi GoCardless dei conti che il consenso copre ma che
+  /// l'amministratore ha scelto di non importare — tipicamente un conto
+  /// personale che vive nello stesso home banking dell'azienda. Stanno qui e
+  /// non su `BankAccount` perché un conto ignorato non ha, e non deve avere,
+  /// una riga in anagrafica: crearne una disattivata metterebbe comunque quel
+  /// conto fra i conti aziendali.
+  contiIgnorati     String[]  @default([]) @map("conti_ignorati")
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
   deletedAt         DateTime? @map("deleted_at")

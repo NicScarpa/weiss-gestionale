@@ -95,6 +95,28 @@ describe('client GoCardless', () => {
     expect(chiamate).toHaveLength(4)
   })
 
+  // Le POST di creazione non sono idempotenti: un 5xx potrebbe voler dire che
+  // la risorsa è stata creata comunque dall'altra parte. Ritentarla ne
+  // creerebbe una seconda, e su un contingente di 4 chiamate al giorno ne
+  // spreca tre invece di una.
+  it('non riprova una creaRequisition su un 5xx: una sola chiamata', async () => {
+    const { impl, chiamate } = fetchFinto(risposta(TOKEN), risposta({ detail: 'guasto' }, 503))
+    const c = creaClient({ ...CREDENZIALI, fetchImpl: impl, attesa: senzaAttesa })
+
+    await expect(
+      c.creaRequisition({
+        institution_id: 'BANCA_FINTA_XXXX',
+        agreement: 'agr-1',
+        redirect: 'https://esempio.it/callback',
+        reference: 'rif-1',
+        user_language: 'IT',
+      })
+    ).rejects.toBeInstanceOf(ErroreGoCardless)
+
+    // Una chiamata per il token, una per la requisition: nessun ritentativo.
+    expect(chiamate).toHaveLength(2)
+  })
+
   it('si arrende dopo i tentativi previsti e lancia ErroreGoCardless', async () => {
     const { impl, chiamate } = fetchFinto(
       risposta(TOKEN),

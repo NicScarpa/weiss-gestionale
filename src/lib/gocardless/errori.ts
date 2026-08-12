@@ -1,5 +1,7 @@
 /**
- * Le due eccezioni del client.
+ * Le eccezioni del client, più `ConfigurazioneMancante` che non ne fa parte
+ * (nessuna chiamata è partita) ma vive qui accanto perché chi risponde alle
+ * rotte deve distinguere anche questo caso dagli altri due.
  *
  * `LimiteRaggiunto` è separata perché chi chiama deve poterla distinguere
  * senza leggere un codice numerico: un 429 dalla banca non è un errore
@@ -25,5 +27,17 @@ export class LimiteRaggiunto extends ErroreGoCardless {
   ) {
     super(message, 429, corpo)
     this.name = 'LimiteRaggiunto'
+  }
+}
+
+/**
+ * Le chiavi non sono configurate. È un problema di installazione, non un
+ * guasto: chi lo riceve deve sapere che manca una variabile d'ambiente, non
+ * pensare che la banca sia irraggiungibile.
+ */
+export class ConfigurazioneMancante extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ConfigurazioneMancante'
   }
 }
