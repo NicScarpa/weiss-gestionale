@@ -9,8 +9,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
 import { LinkIcon, XIcon, Undo2Icon, CheckCircle2Icon } from 'lucide-react'
 import { formatCurrency } from '@/lib/formatters'
+import {
+  SCHEDULE_MATCH_WEIGHTS,
+  SCHEDULE_MATCH_THRESHOLDS,
+} from '@/lib/reconciliation/schedule-matcher'
 
 interface Props {
   scheduleId: string
@@ -50,6 +55,12 @@ const SOURCE_LABELS: Record<string, string> = {
   PROPOSAL: 'Proposta',
   RULE: 'Da regola',
 }
+
+/**
+ * Formatta un numero decimale come percentuale.
+ * Esempio: 0.55 → "55%"
+ */
+const pct = (n: number) => `${Math.round(n * 100)}%`
 
 
 /**
@@ -137,6 +148,38 @@ export function ScheduleReconciliationPanel({ scheduleId, onChange }: Props) {
         <CardTitle className="text-base">Riconciliazione</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Spiegazione del punteggio */}
+        <Collapsible>
+          <CollapsibleTrigger className="text-xs text-muted-foreground hover:underline">
+            Come funziona il punteggio
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-2 rounded-md border p-3 text-xs text-muted-foreground space-y-1">
+            <p>Il punteggio pesa tre fattori:</p>
+            <ul className="ml-4 list-disc space-y-0.5">
+              <li>
+                <strong>Importo {pct(SCHEDULE_MATCH_WEIGHTS.AMOUNT)}</strong> — quanto il
+                movimento copre il residuo della scadenza
+              </li>
+              <li>
+                <strong>Data {pct(SCHEDULE_MATCH_WEIGHTS.DATE)}</strong> — quanto è vicino
+                alla data attesa
+              </li>
+              <li>
+                <strong>Descrizione {pct(SCHEDULE_MATCH_WEIGHTS.DESCRIPTION)}</strong> —
+                somiglianza fra causale e controparte
+              </li>
+              <li>
+                <strong>+15%</strong> se il numero documento compare nella causale
+              </li>
+            </ul>
+            <p>
+              Sopra il {pct(SCHEDULE_MATCH_THRESHOLDS.SUGGESTED)} il match è proposto come
+              attendibile. Sotto il {pct(SCHEDULE_MATCH_THRESHOLDS.MINIMUM)} il candidato
+              non viene mostrato.
+            </p>
+          </CollapsibleContent>
+        </Collapsible>
+
         {/* Movimenti collegati */}
         <div className="space-y-2">
           <h4 className="text-sm font-medium">Movimenti collegati</h4>
