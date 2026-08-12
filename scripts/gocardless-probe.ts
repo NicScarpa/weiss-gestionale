@@ -41,6 +41,7 @@ import 'dotenv/config'
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { descriviStato } from '../src/lib/gocardless/stati'
 
 // ════════════════════════════════════════════════════════════════════════
 //  COSTANTI E PERCORSI
@@ -63,18 +64,6 @@ type EndpointConto = (typeof ENDPOINT_CONTO)[number]
 
 const PASSI = ['institutions', 'consent', 'accounts', 'fetch', 'report'] as const
 type Passo = (typeof PASSI)[number]
-
-/** Stati di una requisition, dalla documentazione GoCardless. */
-const SIGNIFICATO_STATO: Record<string, string> = {
-  CR: 'CREATED — requisition creata, il link non è ancora stato aperto',
-  GC: 'GIVING_CONSENT — sei sulla pagina di consenso, non hai ancora confermato',
-  UA: 'UNDERGOING_AUTHENTICATION — SCA in corso presso la banca',
-  RJ: 'REJECTED — la banca ha rifiutato: va rifatto il consenso',
-  SA: 'SELECTING_ACCOUNTS — stai scegliendo quali conti condividere',
-  GA: 'GRANTING_ACCESS — accesso in concessione, manca poco',
-  LN: 'LINKED — collegata: i conti sono leggibili',
-  EX: 'EXPIRED — accesso scaduto: va rifatto il consenso',
-}
 
 // ════════════════════════════════════════════════════════════════════════
 //  ARGOMENTI DELLA RIGA DI COMANDO
@@ -766,7 +755,8 @@ async function passoConsenso(stato: Stato) {
   salvaStato(stato)
 
   console.log('')
-  console.log(`requisition ${esito.corpo.id} — stato ${esito.corpo.status} (${SIGNIFICATO_STATO[esito.corpo.status] ?? '?'})`)
+  const d = descriviStato(esito.corpo.status)
+  console.log(`requisition ${esito.corpo.id} — stato ${esito.corpo.status} (${d.nome} — ${d.spiegazione})`)
   stampaLink(esito.corpo.link)
   console.log('Adesso tocca a te:')
   console.log('  1. apri il link nel browser')
@@ -810,7 +800,8 @@ async function passoConti(stato: Stato) {
 
   const statoReq = esito.corpo?.status as string
   console.log('')
-  console.log(`Stato requisition: ${statoReq} — ${SIGNIFICATO_STATO[statoReq] ?? 'stato non documentato'}`)
+  const d = descriviStato(statoReq)
+  console.log(`Stato requisition: ${statoReq} — ${d.nome} — ${d.spiegazione}`)
 
   const conti = Array.isArray(esito.corpo?.accounts) ? (esito.corpo.accounts as string[]) : []
   if (statoReq !== 'LN') {
