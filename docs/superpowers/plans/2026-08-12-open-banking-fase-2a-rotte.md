@@ -1267,7 +1267,8 @@ describe('GET conti di un collegamento', () => {
   it('non espone il collegamento di un altra sede', async () => {
     await entraCome('admin')
     const { connessione } = await connessioneCollegata(['gc-a'])
-    const altra = await prisma.venue.create({ data: { name: 'Altra sede' } })
+    // `Venue.code` è obbligatorio e unico: senza, la `create` fallisce.
+    const altra = await prisma.venue.create({ data: { name: 'Altra sede', code: 'ALTRA' } })
     await prisma.bankConnection.update({ where: { id: connessione.id }, data: { venueId: altra.id } })
 
     const esito = await callRoute(leggiConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`), { id: connessione.id })
