@@ -127,8 +127,10 @@ export function calculateScheduleMatchScore(
     motivazioni.push('Entro dieci giorni dalla scadenza')
   } else if (giorni <= 30) {
     score += SCHEDULE_MATCH_WEIGHTS.DATE * 0.4
+    motivazioni.push('Entro trenta giorni dalla scadenza')
   } else if (giorni <= 60) {
     score += SCHEDULE_MATCH_WEIGHTS.DATE * 0.15
+    motivazioni.push('Entro sessanta giorni dalla scadenza')
   }
 
   // Descrizione e controparte: rafforzativi, mai determinanti
