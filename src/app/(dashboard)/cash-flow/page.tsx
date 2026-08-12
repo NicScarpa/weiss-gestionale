@@ -31,6 +31,10 @@ interface Summary {
   prossimoAlert?: { tipo: string; data: Date; messaggio: string } | null
 }
 
+interface ImpostazioniPrevisione {
+  lowBalanceThreshold: number
+}
+
 interface PuntoProiezione {
   data: string
   saldo: number
@@ -76,6 +80,19 @@ export default function CashflowDashboardPage() {
         )}`
       )
       if (!risposta.ok) throw new Error('Impossibile caricare la proiezione del saldo')
+      return risposta.json()
+    },
+  })
+
+  // Stessa fonte di CashFlowForecast.tsx: la soglia si configura in
+  // impostazioni cash flow (`CashFlowSetting`) e non ha una rotta propria,
+  // quindi si legge da `/api/dashboard/forecast`, con `days` al minimo
+  // accettato dalla rotta perché qui serve solo `settings.lowBalanceThreshold`.
+  const { data: impostazioni } = useQuery({
+    queryKey: ['cashflow', 'forecast-settings'],
+    queryFn: async (): Promise<{ settings: ImpostazioniPrevisione }> => {
+      const risposta = await fetch('/api/dashboard/forecast?days=7')
+      if (!risposta.ok) throw new Error('Impossibile caricare la soglia di liquidità')
       return risposta.json()
     },
   })
@@ -128,7 +145,7 @@ export default function CashflowDashboardPage() {
             entrata: punto.entrata,
             uscita: punto.uscita,
           }))}
-          sogliaMinima={5000}
+          sogliaMinima={impostazioni?.settings.lowBalanceThreshold ?? 5000}
         />
       )}
 
