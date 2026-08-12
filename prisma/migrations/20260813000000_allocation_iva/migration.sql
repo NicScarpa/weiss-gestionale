@@ -1,0 +1,11 @@
+-- journal_entry_allocations.iva: quanta IVA contiene una fetta.
+--
+-- Nullable per necessità semantica, non per prudenza: `null` significa "non
+-- dichiarata, ripartisci pro-quota come prima", mentre `0` significa "IVA
+-- assente". Un default a zero avrebbe fatto sparire la differenza fra le due
+-- cose, e con essa la possibilità di accorgersi di una fetta creata da un
+-- percorso che ancora non valorizza il campo.
+--
+-- Nessun backfill: `journal_entries` è vuota in produzione al 12 ago 2026,
+-- quindi le fette sono necessariamente zero.
+ALTER TABLE "journal_entry_allocations" ADD COLUMN "iva" DECIMAL(10,2);

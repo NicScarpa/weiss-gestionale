@@ -126,8 +126,8 @@ describe('aggregaMovimenti', () => {
       riga({
         creditAmount: 1000,
         allocations: [
-          { accountId: 'alimentari', importo: 700 },
-          { accountId: 'pulizie', importo: 300 },
+          { accountId: 'alimentari', importo: 700, iva: null },
+          { accountId: 'pulizie', importo: 300, iva: null },
         ],
       }),
     ])
@@ -142,7 +142,7 @@ describe('aggregaMovimenti', () => {
       riga({
         date: new Date(Date.UTC(2026, 6, 1)),
         creditAmount: 1000,
-        allocations: [{ accountId: 'alimentari', importo: 1000 }],
+        allocations: [{ accountId: 'alimentari', importo: 1000, iva: null }],
       }),
     ])
 
@@ -153,7 +153,7 @@ describe('aggregaMovimenti', () => {
     const aggregati = aggregaMovimenti([
       riga({
         creditAmount: 1000,
-        allocations: [{ accountId: 'alimentari', importo: 700 }],
+        allocations: [{ accountId: 'alimentari', importo: 700, iva: null }],
       }),
     ])
 
@@ -169,8 +169,8 @@ describe('aggregaMovimenti', () => {
         creditAmount: 1220,
         vatAmount: 220,
         allocations: [
-          { accountId: 'alimentari', importo: 854 },
-          { accountId: 'pulizie', importo: 366 },
+          { accountId: 'alimentari', importo: 854, iva: null },
+          { accountId: 'pulizie', importo: 366, iva: null },
         ],
       }),
     ])
@@ -189,7 +189,7 @@ describe('aggregaMovimenti', () => {
       riga({
         creditAmount: 1220,
         vatAmount: 220,
-        allocations: [{ accountId: 'alimentari', importo: 610 }],
+        allocations: [{ accountId: 'alimentari', importo: 610, iva: null }],
       }),
     ])
 
@@ -201,7 +201,7 @@ describe('aggregaMovimenti', () => {
     const aggregati = aggregaMovimenti([
       riga({
         debitAmount: 1000,
-        allocations: [{ accountId: 'eventi', importo: 400 }],
+        allocations: [{ accountId: 'eventi', importo: 400, iva: null }],
       }),
     ])
 
@@ -218,14 +218,59 @@ describe('aggregaMovimenti', () => {
         creditAmount: 1000,
         vatAmount: 220,
         allocations: [
-          { accountId: 'a', importo: '333.33' },
-          { accountId: 'b', importo: '333.33' },
-          { accountId: 'c', importo: '333.34' },
+          { accountId: 'a', importo: '333.33', iva: null },
+          { accountId: 'b', importo: '333.33', iva: null },
+          { accountId: 'c', importo: '333.34', iva: null },
         ],
       }),
     ])
 
     const ivaTotale = aggregati.reduce((tot, m) => tot.plus(m.ivaAvere), money(0))
     expect(ivaTotale.toFixed(2)).toBe('220.00')
+  })
+
+  it('usa l\'IVA dichiarata dalla fetta invece di stimarla pro-quota', () => {
+    // Fattura ad aliquote miste: 1.000 di alimentari al 10% (1.100 lordi,
+    // 100 di IVA) e 100 di detersivi al 22% (122 lordi, 22 di IVA).
+    // Il pro-quota darebbe 109,82 e 12,18: quasi 10 € spostati dalla
+    // famiglia piccola a quella grande.
+    const aggregati = aggregaMovimenti([
+      {
+        accountId: 'fornitori',
+        date: new Date(Date.UTC(2026, 6, 15)),
+        debitAmount: 1222,
+        creditAmount: 0,
+        vatAmount: 122,
+        allocations: [
+          { accountId: 'alimentari', importo: 1100, iva: 100 },
+          { accountId: 'pulizia', importo: 122, iva: 22 },
+        ],
+      },
+    ])
+
+    const alimentari = aggregati.find((a) => a.accountId === 'alimentari')
+    const pulizia = aggregati.find((a) => a.accountId === 'pulizia')
+
+    expect(alimentari?.ivaDare.toNumber()).toBe(100)
+    expect(pulizia?.ivaDare.toNumber()).toBe(22)
+  })
+
+  it('ricade sul pro-quota quando la fetta non dichiara l\'IVA', () => {
+    const aggregati = aggregaMovimenti([
+      {
+        accountId: 'fornitori',
+        date: new Date(Date.UTC(2026, 6, 15)),
+        debitAmount: 1222,
+        creditAmount: 0,
+        vatAmount: 122,
+        allocations: [
+          { accountId: 'alimentari', importo: 1100, iva: null },
+          { accountId: 'pulizia', importo: 122, iva: null },
+        ],
+      },
+    ])
+
+    // 122 × (1100/1222) = 109,82 — il comportamento di prima, invariato.
+    expect(aggregati.find((a) => a.accountId === 'alimentari')?.ivaDare.toNumber()).toBeCloseTo(109.82, 2)
   })
 })

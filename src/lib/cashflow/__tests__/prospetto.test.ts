@@ -205,8 +205,8 @@ describe('il prospetto sui movimenti suddivisi', () => {
           creditAmount: 1220,
           vatAmount: 220,
           allocations: [
-            { accountId: '20.1.01', importo: 854 },
-            { accountId: '28.1.01', importo: 366 },
+            { accountId: '20.1.01', importo: 854, iva: null },
+            { accountId: '28.1.01', importo: 366, iva: null },
           ],
         }),
       ]),
@@ -233,15 +233,15 @@ describe('il prospetto sui movimenti suddivisi', () => {
         creditAmount: 1220,
         vatAmount: 220,
         allocations: [
-          { accountId: '20.1.01', importo: 854 },
-          { accountId: '28.1.01', importo: 366 },
+          { accountId: '20.1.01', importo: 854, iva: null },
+          { accountId: '28.1.01', importo: 366, iva: null },
         ],
       }),
       // Suddivisione parziale: il resto deve restare sulla testata.
       rigaPrimaNota({
         accountId: '32.3.01',
         creditAmount: 500,
-        allocations: [{ accountId: '26.03', importo: 200 }],
+        allocations: [{ accountId: '26.03', importo: 200, iva: null }],
       }),
       rigaPrimaNota({ accountId: '40.2.01', creditAmount: 300 }),
     ]

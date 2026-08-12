@@ -41,7 +41,7 @@ export interface MovimentoPrimaNota {
   debitAmount: MoneyInput
   creditAmount: MoneyInput
   vatAmount: MoneyInput
-  allocations: readonly { accountId: string; importo: MoneyInput }[]
+  allocations: readonly { accountId: string; importo: MoneyInput; iva: MoneyInput | null }[]
 }
 
 /**
@@ -126,32 +126,36 @@ function negato(c: Contributo): Contributo {
  * movimento. Quale dei due comportamenti sia quello giusto è una domanda per
  * chi possiede quel report, non qualcosa da uniformare qui di riflesso.
  *
- * **L'IVA di una riga suddivisa si ripartisce pro-quota** sull'importo lordo
- * delle fette. L'alternativa — lasciarla tutta in testata — farebbe comparire
- * la famiglia del conto di testata con un secco −IVA e le famiglie delle fette
- * al lordo: cioè proprio i margini sbagliati che questo prospetto esiste per
- * mostrare giusti. Il pro-quota è anche la regola che la riconciliazione già
- * usa per le fette ereditate (`allocation-service.ts`).
+ * **L'IVA di una riga suddivisa viene dalla fetta stessa, quando la
+ * dichiara.** `JournalEntryAllocation.iva` porta l'aliquota della fetta: se
+ * è valorizzato si usa quello, altrimenti si ricade sul pro-quota
+ * sull'importo lordo — la stessa ripartizione di prima. Il ripiego non è un
+ * caso raro: nessun percorso di scrittura valorizza ancora il campo, quindi
+ * ogni fetta oggi in produzione ricade sul pro-quota esattamente come prima
+ * che questo campo esistesse.
  *
- * **Dove il pro-quota è esatto, e dove no.** È esatto per il caso che il
- * prodotto genera: le fette sono quote del lordo di un pagamento unico, e su
+ * **Cosa il pro-quota da solo sbaglia, e cosa evita una fetta che dichiara
+ * la propria IVA.** Il pro-quota è esatto per il caso che il prodotto
+ * genera: le fette sono quote del lordo di un pagamento unico, e su
  * un'aliquota uniforme la ripartizione è quella vera. L'errore compare con
  * aliquote miste, e le aliquote miste non sono un caso raro: la fattura che
  * mette insieme alimentari al 10% e detersivi al 22% è la normalità per un
  * fornitore di ristorazione (vedi il commento su `aliquoteDelloSnapshot` in
  * schedule-reconciliation-service.ts:170-177). Esempio: 1.000 € di alimentari
  * e 100 € di detersivi danno fette lorde di 1.100 e 122, con 122 € di IVA in
- * tutto; il pro-quota assegna 109,82 € e 12,18 € invece dei veri 100 e 22 —
- * quasi 10 € spostati dalla famiglia piccola a quella grande. Il totale resta
- * esatto (è tolto alla testata per differenza, non ricalcolato), la singola
- * famiglia no.
+ * tutto; il pro-quota da solo assegnerebbe 109,82 € e 12,18 € invece dei veri
+ * 100 e 22 — quasi 10 € spostati dalla famiglia piccola a quella grande. Una
+ * fetta che dichiara la propria IVA evita questo scostamento; una che non la
+ * dichiara lo subisce ancora, come prima. Il totale resta comunque esatto
+ * (è tolto alla testata per differenza, non ricalcolato): è la singola
+ * famiglia a poterne risentire.
  *
  * L'aliquota non è un dato ignoto: sta nello snapshot `invoice.lineItems` di
  * ogni riga fattura, e `schedule-reconciliation-service.ts:178` la legge già
- * per l'ereditarietà pro-quota delle fette. Quello che manca è che la fetta,
- * una volta creata su `JournalEntryAllocation`, non la porta con sé — il
- * modello non ha un campo aliquota. Il limite sta nel dato persistito, non in
- * un dato che non esiste.
+ * per l'ereditarietà pro-quota delle fette. Il campo che la persiste su
+ * `JournalEntryAllocation` esiste, ma nessun percorso di scrittura lo popola
+ * ancora: chi crea una fetta, manuale o ereditata, continua a lasciarla a
+ * `null`.
  */
 export function aggregaMovimenti(
   righe: readonly MovimentoPrimaNota[]
@@ -201,13 +205,24 @@ export function aggregaMovimenti(
 
     for (const fetta of riga.allocations) {
       const quota = money(fetta.importo)
-      const frazione = lordoRiga.isZero() ? money(0) : quota.div(lordoRiga)
+
+      // L'IVA della fetta: quella dichiarata se c'è, altrimenti la quota
+      // pro-quota dell'IVA di testata. Il ripiego resta perché una fetta
+      // creata a mano non dichiara un'aliquota, e perché una fattura le cui
+      // righe non riportano l'aliquota non può produrne una esatta.
+      const ivaTestata = ivaDare.plus(ivaAvere)
+      const ivaFetta =
+        fetta.iva === null
+          ? lordoRiga.isZero()
+            ? money(0)
+            : ivaTestata.times(quota.div(lordoRiga))
+          : money(fetta.iva)
 
       const spostamento: Contributo = {
         dare: inDare ? quota : money(0),
         avere: inDare ? money(0) : quota,
-        ivaDare: ivaDare.times(frazione),
-        ivaAvere: ivaAvere.times(frazione),
+        ivaDare: inDare ? ivaFetta : money(0),
+        ivaAvere: inDare ? money(0) : ivaFetta,
       }
 
       // Via dal conto di testata…
@@ -241,7 +256,7 @@ export async function movimentiCashFlow(
       // Le fette in join e non in una seconda query: sono già ristrette ai
       // movimenti che pesano dal filtro qui sopra, e il commento sul perché
       // di quel filtro resta uno solo.
-      allocations: { select: { accountId: true, importo: true } },
+      allocations: { select: { accountId: true, importo: true, iva: true } },
     },
   })
 
