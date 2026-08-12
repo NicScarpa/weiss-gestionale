@@ -10,12 +10,12 @@ import {
   format,
   parseISO,
   getDay,
-  getDate,
-  getMonth,
   differenceInDays,
 } from 'date-fns'
 import { it } from 'date-fns/locale'
 import { formatCurrency } from '@/lib/formatters'
+import { proietta, type FlussoPrevisto } from '@/lib/previsionale/proietta'
+import { leggiFlussi } from '@/lib/previsionale/leggi'
 
 import { logger } from '@/lib/logger'
 interface ForecastDay {
@@ -102,24 +102,72 @@ export const GET = withAuth(async (request, { venueId }) => {
       movingAverageDays
     )
 
-    // 3. Ottieni spese ricorrenti
-    const recurringExpenses = await prisma.recurringExpense.findMany({
-      where: {
-        venueId,
-        isActive: true,
-        OR: [
-          { endDate: null },
-          { endDate: { gte: today } },
-        ],
-      },
-    })
+    // La finestra parte da domani: il saldo di oggi, da cui la proiezione
+    // parte, include già i movimenti reali di oggi (`calculateCurrentBalance`
+    // usa `saldiAlGiorno` senza argomento, cioè il giorno civile corrente).
+    // Sommarci sopra una stima per lo stesso giorno raddoppierebbe l'incasso.
+    const dal = format(addDays(today, 1), 'yyyy-MM-dd')
+    const al = format(addDays(today, forecastDays), 'yyyy-MM-dd')
 
-    // 4. Genera previsione giorno per giorno
+    // 3. Le entrate stimate dallo storico chiusure: `calculateExpectedIncome`
+    // resta qui, perché nessun'altra fonte descrive l'incasso da banco.
+    // Diventano flussi `fonte: 'stima'`, senza chiave — non descrivono un
+    // impegno preso, quindi non devono mai poter scartare né essere scartate
+    // da nessun'altra fonte (vedi il commento in testa a `proietta.ts`).
+    const incomeByDate = new Map<
+      string,
+      { income: number; source: 'historical' | 'average' | 'hybrid' }
+    >()
+    const flussiStima: FlussoPrevisto[] = []
+
+    for (let i = 1; i <= forecastDays; i++) {
+      const forecastDate = addDays(today, i)
+      const dateStr = format(forecastDate, 'yyyy-MM-dd')
+      const { income, source } = calculateExpectedIncome(forecastDate, historicalData, forecastMethod)
+
+      incomeByDate.set(dateStr, { income, source })
+      if (income !== 0) {
+        flussiStima.push({
+          giorno: dateStr,
+          importo: income,
+          fonte: 'stima',
+          descrizione: 'Incasso previsto da banco',
+        })
+      }
+    }
+
+    // 4. Scadenze, spese ricorrenti e ricorrenze non ancora scadenzate: la
+    // stessa fonte unica di `/api/scadenzario/saldo-scalare` e
+    // `/api/cashflow/projection`. `calculateExpectedExpenses` non vive più
+    // qui: si è trasferita in `leggiFlussi`.
+    const flussiBase = await leggiFlussi(venueId, dal, al)
+
+    const serie = proietta({
+      saldoIniziale: currentBalance.total,
+      dal,
+      al,
+      flussi: [...flussiBase, ...flussiStima],
+    })
+    const serieByDate = new Map(serie.map((punto) => [punto.giorno, punto]))
+
+    // Il dettaglio "spese ricorrenti" del pannello «Come nasce la previsione»
+    // resta scoped alle uscite di fonte 'ricorrente' — la stessa cosa che
+    // raccontava `calculateExpectedExpenses` prima di trasferirsi: una
+    // scadenza reale (fonte 'scadenza') non è più una stima, e non compare
+    // qui, anche se è nata da una ricorrenza.
+    const speseRicorrentiPerGiorno = new Map<string, Array<{ name: string; amount: number }>>()
+    for (const flusso of flussiBase) {
+      if (flusso.fonte !== 'ricorrente' || flusso.importo >= 0) continue
+      const elenco = speseRicorrentiPerGiorno.get(flusso.giorno) ?? []
+      elenco.push({ name: flusso.descrizione, amount: Math.abs(flusso.importo) })
+      speseRicorrentiPerGiorno.set(flusso.giorno, elenco)
+    }
+
+    // 5. Assembla la previsione giorno per giorno dalla serie unica.
     const forecast: ForecastDay[] = []
-    let runningBalance = currentBalance.total
-    let minBalance = runningBalance
+    let minBalance = currentBalance.total
     let minBalanceDate = format(today, 'yyyy-MM-dd')
-    let maxBalance = runningBalance
+    let maxBalance = currentBalance.total
     let maxBalanceDate = format(today, 'yyyy-MM-dd')
     let totalExpectedIncome = 0
     let totalExpectedExpenses = 0
@@ -130,30 +178,21 @@ export const GET = withAuth(async (request, { venueId }) => {
       const dayOfWeek = getDay(forecastDate)
       const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
 
-      // Calcola entrate previste
-      const { income, source } = calculateExpectedIncome(
-        forecastDate,
-        historicalData,
-        forecastMethod
-      )
+      // `serie` copre ogni giorno della finestra `[dal, al]`, e questo loop
+      // genera esattamente quella finestra: la voce c'è sempre.
+      const punto = serieByDate.get(dateStr)!
+      const { source } = incomeByDate.get(dateStr)!
 
-      // Calcola uscite previste per questo giorno
-      const { total: expensesTotal, details: expenseDetails } =
-        calculateExpectedExpenses(forecastDate, recurringExpenses)
-
-      const netChange = income - expensesTotal
-      runningBalance += netChange
-
-      totalExpectedIncome += income
-      totalExpectedExpenses += expensesTotal
+      totalExpectedIncome += punto.entrate
+      totalExpectedExpenses += punto.uscite
 
       // Traccia min/max
-      if (runningBalance < minBalance) {
-        minBalance = runningBalance
+      if (punto.saldo < minBalance) {
+        minBalance = punto.saldo
         minBalanceDate = dateStr
       }
-      if (runningBalance > maxBalance) {
-        maxBalance = runningBalance
+      if (punto.saldo > maxBalance) {
+        maxBalance = punto.saldo
         maxBalanceDate = dateStr
       }
 
@@ -161,17 +200,17 @@ export const GET = withAuth(async (request, { venueId }) => {
         date: dateStr,
         dateFormatted: format(forecastDate, 'EEE d MMM', { locale: it }),
         dayOfWeek: format(forecastDate, 'EEEE', { locale: it }),
-        expectedIncome: Math.round(income * 100) / 100,
-        expectedExpenses: Math.round(expensesTotal * 100) / 100,
-        netChange: Math.round(netChange * 100) / 100,
-        projectedBalance: Math.round(runningBalance * 100) / 100,
+        expectedIncome: punto.entrate,
+        expectedExpenses: punto.uscite,
+        netChange: Math.round((punto.entrate - punto.uscite) * 100) / 100,
+        projectedBalance: punto.saldo,
         isWeekend,
         incomeSource: source,
-        expenses: expenseDetails,
+        expenses: speseRicorrentiPerGiorno.get(dateStr) ?? [],
       })
     }
 
-    // 5. Genera alert
+    // 6. Genera alert
     const alerts: ForecastResult['alerts'] = []
 
     // Alert saldo sotto soglia
@@ -407,89 +446,4 @@ function calculateExpectedIncome(
       }
       return { income: dowAverage || historicalData.overallAverage, source: 'average' }
   }
-}
-
-/**
- * Il mese (0-11) su cui ancorare una ricorrenza lunga: quello da cui la spesa è
- * attiva. Le date `@db.Date` sono mezzanotte UTC del giorno civile, quindi il
- * mese si legge in UTC — con l'ora locale una spesa attiva dal 1° del mese
- * finirebbe nel mese precedente.
- */
-function meseDiPartenza(startDate: Date | null | undefined, predefinito: number): number {
-  return startDate ? new Date(startDate).getUTCMonth() : predefinito
-}
-
-// Calcola spese previste per un giorno
-function calculateExpectedExpenses(
-  date: Date,
-  recurringExpenses: Array<{
-    id: string
-    name: string
-    amount: { toNumber(): number } | number | string
-    frequency: string
-    dayOfMonth: number | null
-    dayOfWeek: number | null
-    startDate: Date | null
-    endDate: Date | null
-  }>
-): { total: number; details: Array<{ name: string; amount: number }> } {
-  const details: Array<{ name: string; amount: number }> = []
-  let total = 0
-
-  const dayOfMonth = getDate(date)
-  const dayOfWeek = getDay(date)
-  const month = getMonth(date)
-
-  for (const expense of recurringExpenses) {
-    // Verifica date validità
-    if (expense.startDate && date < expense.startDate) continue
-    if (expense.endDate && date > expense.endDate) continue
-
-    const amount = Number(expense.amount)
-    let applies = false
-
-    switch (expense.frequency) {
-      case 'DAILY':
-        applies = true
-        break
-
-      case 'WEEKLY':
-        applies = expense.dayOfWeek === dayOfWeek
-        break
-
-      case 'BIWEEKLY':
-        // Ogni due settimane - semplificato: 1° e 15° del mese
-        applies =
-          expense.dayOfWeek === dayOfWeek &&
-          (dayOfMonth <= 7 || (dayOfMonth >= 15 && dayOfMonth <= 21))
-        break
-
-      case 'MONTHLY':
-        applies = expense.dayOfMonth === dayOfMonth
-        break
-
-      case 'QUARTERLY':
-        // Ogni tre mesi a partire dal mese in cui la spesa è entrata in vigore.
-        // Erano fissi gen/apr/lug/ott: un canone trimestrale attivo da febbraio
-        // veniva previsto con due mesi di scarto rispetto a quando esce davvero.
-        applies =
-          expense.dayOfMonth === dayOfMonth &&
-          (month - meseDiPartenza(expense.startDate, 0) + 12) % 3 === 0
-        break
-
-      case 'YEARLY':
-        // Nel mese in cui la spesa è entrata in vigore, non a gennaio: il mese
-        // fisso faceva sparire dalla previsione l'assicurazione di settembre.
-        applies =
-          expense.dayOfMonth === dayOfMonth && month === meseDiPartenza(expense.startDate, 0)
-        break
-    }
-
-    if (applies) {
-      details.push({ name: expense.name, amount })
-      total += amount
-    }
-  }
-
-  return { total, details }
 }

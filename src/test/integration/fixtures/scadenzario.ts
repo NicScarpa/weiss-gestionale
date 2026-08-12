@@ -22,6 +22,7 @@ export interface ScadenzaFixture {
   importoTotale?: number
   importoPagato?: number
   dataScadenza?: Date
+  dataAttesa?: Date | null
   dataPagamento?: Date | null
   supplierId?: string | null
   invoiceId?: string | null
@@ -42,6 +43,7 @@ export async function creaScadenza(fixture: ScadenzaFixture = {}) {
       importoTotale: decimal(fixture.importoTotale ?? 100),
       importoPagato: decimal(fixture.importoPagato ?? 0),
       dataScadenza: fixture.dataScadenza ?? new Date('2026-07-31'),
+      dataAttesa: fixture.dataAttesa ?? null,
       dataPagamento: fixture.dataPagamento ?? null,
       supplierId: fixture.supplierId ?? null,
       invoiceId: fixture.invoiceId ?? null,

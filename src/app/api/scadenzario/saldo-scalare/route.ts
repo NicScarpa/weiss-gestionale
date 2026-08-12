@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { addDays, startOfDay, format } from 'date-fns'
 import { getVenueId } from '@/lib/venue'
+import { serieProiettata } from '@/lib/previsionale/leggi'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function residuo(s: { importoTotale: any; importoPagato: any }) {
@@ -29,7 +30,8 @@ export async function GET(request: NextRequest) {
     const today = startOfDay(new Date())
     const endDate = addDays(today, rangeGiorni)
 
-    const venueFilter = { venueId: await getVenueId() }
+    const venueId = await getVenueId()
+    const venueFilter = { venueId }
 
     const selectFields = {
       id: true,
@@ -103,70 +105,27 @@ export async function GET(request: NextRequest) {
     // Saldo oggi: net position considering overdue + future
     const saldoOggi = incassiTotale + scadutoDaIncassare - pagamentiTotale - scadutoDaPagare
 
-    // Group schedules by date for chart
-    const schedulesByDate = new Map<string, typeof schedulesInRange>()
-    for (const s of schedulesInRange) {
-      const dateKey = format(new Date(s.dataAttesa ?? s.dataScadenza), 'yyyy-MM-dd')
-      if (!schedulesByDate.has(dateKey)) {
-        schedulesByDate.set(dateKey, [])
-      }
-      schedulesByDate.get(dateKey)!.push(s)
-    }
+    // Il grafico viene dal previsionale unico (Task 4): parte dal saldo reale
+    // di cassa e banca, non da `saldoOggi`, che è un netto sintetico usato
+    // solo per il pannello "scaduto" qui sotto. Le due grandezze rispondono a
+    // domande diverse e non vanno confuse.
+    const dal = format(today, 'yyyy-MM-dd')
+    const al = format(endDate, 'yyyy-MM-dd')
+    const serie = await serieProiettata(venueId, dal, al)
 
-    // Build chart: start from saldoOggi, then apply daily changes
-    const chartData: Array<{
-      date: string
-      saldo: number
-      uscite: number
-      entrate: number
-      usciteRicorrenti: number
-      entrateRicorrenti: number
-    }> = []
-
-    let balance = saldoOggi
-
-    // Initial point (today)
-    chartData.push({
-      date: format(today, 'yyyy-MM-dd'),
-      saldo: Math.round(balance * 100) / 100,
-      uscite: 0,
-      entrate: 0,
-      usciteRicorrenti: 0,
-      entrateRicorrenti: 0,
-    })
-
-    for (let d = 1; d <= rangeGiorni; d++) {
-      const dayDate = addDays(today, d)
-      const dateKey = format(dayDate, 'yyyy-MM-dd')
-      const daySchedules = schedulesByDate.get(dateKey) || []
-
-      const dayUscite = daySchedules
-        .filter(s => s.tipo === 'passiva')
-        .reduce((sum, s) => sum + residuo(s), 0)
-
-      const dayEntrate = daySchedules
-        .filter(s => s.tipo === 'attiva')
-        .reduce((sum, s) => sum + residuo(s), 0)
-
-      const dayUsciteRicorrenti = daySchedules
-        .filter(s => s.tipo === 'passiva' && s.isRicorrente)
-        .reduce((sum, s) => sum + residuo(s), 0)
-
-      const dayEntrateRicorrenti = daySchedules
-        .filter(s => s.tipo === 'attiva' && s.isRicorrente)
-        .reduce((sum, s) => sum + residuo(s), 0)
-
-      balance = balance + dayEntrate - dayUscite
-
-      chartData.push({
-        date: dateKey,
-        saldo: Math.round(balance * 100) / 100,
-        uscite: Math.round(dayUscite * 100) / 100,
-        entrate: Math.round(dayEntrate * 100) / 100,
-        usciteRicorrenti: Math.round(dayUsciteRicorrenti * 100) / 100,
-        entrateRicorrenti: Math.round(dayEntrateRicorrenti * 100) / 100,
-      })
-    }
+    const chartData = serie.map((punto) => ({
+      date: punto.giorno,
+      saldo: punto.saldo,
+      uscite: punto.uscite,
+      entrate: punto.entrate,
+      // Non esiste più un flag `isRicorrente` da sommare: la quota
+      // "ricorrente" del giorno è ciò che viene dalla fonte omonima di
+      // `proietta` — una spesa o un incasso proiettato che non ha ancora una
+      // scadenza reale a coprirlo. Una scadenza nata da una ricorrenza pesa
+      // già come `scadenza`, non compare qui: non è più solo una stima.
+      usciteRicorrenti: punto.perFonte.ricorrente < 0 ? Math.abs(punto.perFonte.ricorrente) : 0,
+      entrateRicorrenti: punto.perFonte.ricorrente > 0 ? punto.perFonte.ricorrente : 0,
+    }))
 
     const saldoFinale = chartData.length > 0 ? chartData[chartData.length - 1].saldo : saldoOggi
 

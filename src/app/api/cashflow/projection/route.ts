@@ -3,23 +3,35 @@ import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import { getVenueId } from '@/lib/venue'
 import { logger } from '@/lib/logger'
-import { money, toApi, type Money } from '@/lib/money'
 import { toDateOnlyUtc } from '@/lib/timezone'
-import { giornoCorrente, movimentiPerGiorno, saldiAlGiorno } from '@/lib/saldi'
+import { giornoCorrente } from '@/lib/saldi'
+import { serieProiettata } from '@/lib/previsionale/leggi'
 
 /**
  * GET /api/cashflow/projection — la curva del saldo nel tempo.
  *
- * Due difetti la rendevano peggio che inutile. I segni erano scambiati
- * (`entrata = creditAmount`, `uscita = debitAmount`): l'opposto della
- * convenzione del progetto, per cui su cassa e banca il dare è ciò che entra.
- * Un bonifico in uscita faceva salire la linea del saldo. E il progressivo
- * partiva da zero, mentre la card "Saldo Attuale" della stessa pagina partiva
- * dal saldo vero: due quote diverse per lo stesso denaro, a un centimetro di
- * distanza sullo schermo.
+ * Storicamente sommava solo i movimenti già registrati in prima nota: non
+ * vedeva le scadenze aperte né le ricorrenze, la stessa domanda a cui
+ * rispondevano — con basi diverse — `/api/scadenzario/saldo-scalare` e
+ * `/api/dashboard/forecast` (vedi il commento in testa a
+ * `src/lib/previsionale/proietta.ts`). Adesso proietta dalla stessa fonte
+ * unica delle altre due, `serieProiettata`: le tre curve, sulla stessa
+ * finestra, coincidono.
  *
- * Adesso i movimenti e l'apertura vengono entrambi da `@/lib/saldi`, come per
- * le card e per lo storico della prima nota.
+ * I nomi dei campi della risposta restano quelli di sempre (`data`, `saldo`,
+ * `entrata`, `uscita`): `CashFlowChart` li conosce già, e non è questo il
+ * momento di toccarlo. `proietta` restituisce `giorno`/`entrate`/`uscite` —
+ * la mappatura qui sotto non è ridondante, è ciò che tiene il contratto della
+ * rotta stabile mentre la fonte cambia sotto.
+ *
+ * `proietta` è densa per definizione: un punto per ogni giorno della
+ * finestra, anche senza flussi (serve a `saldo-scalare`, che deve poter
+ * disegnare una linea piatta). Questa rotta, da prima di questo refactor, è
+ * sparsa: un punto solo nei giorni in cui qualcosa si muove davvero — lo
+ * verificano i test già in `__tests__/projection.itest.ts` con asserzioni
+ * puntuali su `punti.at(-1)` e sulla lunghezza dell'array. Il filtro qui
+ * sotto non è un dettaglio: è ciò che mantiene quel contratto mentre la fonte
+ * dei dati cambia sotto.
  */
 
 const giornoSchema = z
@@ -67,48 +79,16 @@ export async function GET(request: NextRequest) {
       .toISOString()
       .slice(0, 10)
 
-    const [saldiFinali, movimenti] = await Promise.all([
-      saldiAlGiorno(venueId, al),
-      movimentiPerGiorno(venueId, { dal, al }),
-    ])
+    const serie = await serieProiettata(venueId, dal, al)
 
-    // Un punto per giorno: i due registri si sommano, perché la curva racconta
-    // la liquidità complessiva. Più movimenti nello stesso giorno producevano
-    // prima più punti sovrapposti sulla stessa ascissa.
-    const perGiorno = new Map<string, { entrata: Money; uscita: Money }>()
-
-    for (const riga of movimenti) {
-      const corrente = perGiorno.get(riga.giorno) ?? { entrata: money(0), uscita: money(0) }
-
-      perGiorno.set(riga.giorno, {
-        entrata: corrente.entrata.plus(riga.dare),
-        uscita: corrente.uscita.plus(riga.avere),
-      })
-    }
-
-    // L'apertura si ricava all'indietro dal saldo di fine finestra: è la stessa
-    // tecnica dello storico della prima nota, e per lo stesso motivo — chiedere
-    // il saldo "del giorno prima" sbaglia quando la finestra si apre il 1°
-    // gennaio, dove il giorno prima cade in un anno che il saldo iniziale non
-    // copre.
-    let saldo = Array.from(perGiorno.values()).reduce(
-      (progressivo, { entrata, uscita }) => progressivo.minus(entrata).plus(uscita),
-      money(saldiFinali.totalAvailable)
-    )
-
-    const projection: PuntoProiezione[] = []
-
-    for (const giorno of Array.from(perGiorno.keys()).sort()) {
-      const { entrata, uscita } = perGiorno.get(giorno)!
-      saldo = saldo.plus(entrata).minus(uscita)
-
-      projection.push({
-        data: giorno,
-        saldo: toApi(saldo),
-        entrata: toApi(entrata),
-        uscita: toApi(uscita),
-      })
-    }
+    const projection: PuntoProiezione[] = serie
+      .filter((punto) => punto.entrate !== 0 || punto.uscite !== 0)
+      .map((punto) => ({
+        data: punto.giorno,
+        saldo: punto.saldo,
+        entrata: punto.entrate,
+        uscita: punto.uscite,
+      }))
 
     return NextResponse.json(projection)
   } catch (error) {
