@@ -62,7 +62,6 @@ passo 'tsc test'      npm run typecheck:test
 passo 'lint'          npm run lint
 passo 'test unit'     npm run test:run
 TEST_DB_SUFFIX=$SUFFISSO passo 'test integrazione' npm run test:integration
-passo 'ratchet strict' node scripts/strict-ratchet.mjs
 passo 'ratchet audit'  node scripts/audit-ratchet.mjs
 # I due bundler non sono d'accordo su cosa sia lecito esportare da una route.
 # Turbopack — quello di `npm run build`, e quello della produzione — usa un

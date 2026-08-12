@@ -31,7 +31,7 @@
  * che la conversione proceda a lotti invece che in un big bang.
  *
  * COME AGGIORNARE LA BASELINE
- * Solo verso il basso, come per strict-ratchet.mjs. Dopo aver convertito degli
+ * Solo verso il basso, come per audit-ratchet.mjs. Dopo aver convertito degli
  * handler, esegui `node scripts/check-route-auth.mjs` e riporta il numero.
  * Alzarla per far passare la CI vanifica il cricchetto: se il tuo commit la
  * supera, la route nuova va scritta con withAuth, non tollerata.
