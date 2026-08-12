@@ -34,6 +34,7 @@ import { authDiRoute } from '@/test/auth-unitari'
 import { prisma } from '@/lib/prisma'
 import { createAuditLog } from '@/lib/audit'
 import { parseFatturaPA } from '@/lib/sdi/parser'
+import { LINEA_BOLLO } from '@/lib/sdi/righe-di-sistema'
 
 const sessione = { user: { id: 'user-1', role: 'admin' } } as unknown as Session
 
@@ -174,16 +175,18 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
     const data = await response.json()
 
     expect(response.status).toBe(400)
-    expect(data.error).toBe('Uno o più conti non esistono, non sono attivi o non sono di tipo COSTO')
+    expect(data.error).toBe(
+      'Uno o più conti non esistono, non sono attivi o non sono di tipo COSTO o PATRIMONIALE'
+    )
     expect(prisma.invoiceLineAccount.upsert).not.toHaveBeenCalled()
     expect(createAuditLog).not.toHaveBeenCalled()
   })
 
-  it('conto esistente e attivo ma non di tipo COSTO → 400 senza upsert (la validazione filtra per type)', async () => {
+  it('conto esistente e attivo ma di tipo RICAVO → 400 senza upsert (la validazione filtra per type)', async () => {
     vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
     // Il conto esiste ed è attivo, ma è di tipo RICAVO: la query di
-    // validazione filtra per type COSTO, quindi non lo trova.
+    // validazione filtra per type COSTO/PATRIMONIALE, quindi non lo trova.
     vi.mocked(prisma.account.findMany).mockResolvedValue([])
 
     const { request, context } = richiesta({
@@ -193,14 +196,33 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
     const data = await response.json()
 
     expect(response.status).toBe(400)
-    expect(data.error).toBe('Uno o più conti non esistono, non sono attivi o non sono di tipo COSTO')
+    expect(data.error).toBe(
+      'Uno o più conti non esistono, non sono attivi o non sono di tipo COSTO o PATRIMONIALE'
+    )
     expect(prisma.account.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ type: 'COSTO' }),
+        where: expect.objectContaining({ type: { in: ['COSTO', 'PATRIMONIALE'] } }),
       })
     )
     expect(prisma.invoiceLineAccount.upsert).not.toHaveBeenCalled()
     expect(createAuditLog).not.toHaveBeenCalled()
+  })
+
+  it('conto di tipo PATRIMONIALE → accettato (un frigorifero è un bene, non un costo)', async () => {
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
+    vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
+    vi.mocked(prisma.account.findMany).mockResolvedValue([
+      { id: 'conto-patrimoniale' },
+    ] as never)
+    vi.mocked(prisma.invoiceLineAccount.upsert).mockResolvedValue({} as never)
+
+    const { request, context } = richiesta({
+      righe: [{ numeroLinea: 1, accountId: 'conto-patrimoniale' }],
+    })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(200)
+    expect(prisma.invoiceLineAccount.upsert).toHaveBeenCalledTimes(1)
   })
 
   it('numeroLinea inesistente nell\'XML → 400 senza scritture', async () => {
@@ -214,6 +236,52 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
     expect(prisma.invoiceLineAccount.upsert).not.toHaveBeenCalled()
     expect(prisma.invoiceLineAccount.updateMany).not.toHaveBeenCalled()
     expect(createAuditLog).not.toHaveBeenCalled()
+  })
+
+  it('riga -1 (bollo) accettata su una fattura che lo riporta', async () => {
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
+    vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
+    vi.mocked(parseFatturaPA).mockReturnValue({
+      dettaglioLinee: dettaglioLineeFisse,
+      datiBollo: { importoBollo: 2 },
+    } as never)
+    vi.mocked(prisma.invoiceLineAccount.upsert).mockResolvedValue({} as never)
+
+    const { request, context } = richiesta({
+      righe: [{ numeroLinea: LINEA_BOLLO, accountId: 'conto-1' }],
+    })
+    const response = await PATCH(request, context)
+
+    expect(response.status).toBe(200)
+    expect(prisma.invoiceLineAccount.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { invoiceId_numeroLinea: { invoiceId: 'fatt-1', numeroLinea: LINEA_BOLLO } },
+        create: expect.objectContaining({
+          numeroLinea: LINEA_BOLLO,
+          descrizione: 'Imposta di bollo',
+          codiceArticolo: null,
+          importo: 2,
+          accountId: 'conto-1',
+        }),
+      })
+    )
+  })
+
+  it('riga -1 (bollo) rifiutata su una fattura senza bollo: la riga di sistema non esiste', async () => {
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
+    vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
+    // parseFatturaPA torna il default del beforeEach: dettaglioLinee fisse,
+    // senza datiBollo → righeDiSistema non produce la riga -1.
+
+    const { request, context } = richiesta({
+      righe: [{ numeroLinea: LINEA_BOLLO, accountId: 'conto-1' }],
+    })
+    const response = await PATCH(request, context)
+    const data = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(data.error).toBe(`La riga ${LINEA_BOLLO} non esiste nella fattura`)
+    expect(prisma.invoiceLineAccount.upsert).not.toHaveBeenCalled()
   })
 
   it('riga confermata manualmente con fornitore: upsert della memoria fornitore-prodotto', async () => {

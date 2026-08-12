@@ -2,6 +2,8 @@ import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { formatCurrency } from '@/lib/formatters'
+import { parseFatturaPA } from '@/lib/sdi/parser'
+import { righeDiSistema } from '@/lib/sdi/righe-di-sistema'
 import { applicaStimaSuScadenza, ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
 import {
   bloccaMovimento,
@@ -315,12 +317,35 @@ async function ereditaFetteDaFattura(
 ): Promise<void> {
   const invoice = await tx.electronicInvoice.findUnique({
     where: { id: invoiceId },
-    select: { lineItems: true },
+    select: { lineItems: true, xmlContent: true },
   })
 
   if (!invoice || !Array.isArray(invoice.lineItems)) {
     logger.info('Fattura senza righe estratte: nessuna ereditarietà pro-quota', { invoiceId })
     return
+  }
+
+  // Bollo e arrotondamento (Task 4) sono righe imputabili ma vivono fuori da
+  // `lineItems`: la copertura piena deve contarli anche loro, o la guardia
+  // sotto si convincerebbe che una fattura col bollo è coperta anche quando
+  // il bollo non è mai stato imputato a nessun conto. Serve l'XML, che qui
+  // può mancare (fatture importate prima che si iniziasse a conservarlo, o
+  // create nei test senza) oppure non essere più parsabile. In entrambi i
+  // casi si conta zero righe di sistema invece di astenersi dall'intera
+  // ereditarietà: è lo stesso comportamento di prima di questo task su ogni
+  // fattura che non ha mai avuto un bollo — cioè la maggioranza — e non un
+  // rischio nuovo, perché lineItems viene dalla stessa importazione che
+  // avrebbe scritto anche l'XML: se manca uno raramente c'è l'altro.
+  let numeroRigheSistema = 0
+  if (invoice.xmlContent) {
+    try {
+      numeroRigheSistema = righeDiSistema(parseFatturaPA(invoice.xmlContent)).length
+    } catch (error) {
+      logger.warn('XML della fattura non parsabile: si assume nessuna riga di sistema', {
+        invoiceId,
+        error,
+      })
+    }
   }
 
   // SOLO le imputazioni che un essere umano ha confermato.
@@ -345,11 +370,22 @@ async function ereditaFetteDaFattura(
   // La guardia contava le righe senza guardarne lo stato, quindi una fattura
   // interamente gialla la superava. Col filtro sopra, una fattura mezza
   // confermata non arriva al conteggio pieno e l'astensione scatta da sé.
-  if (imputazioni.length < invoice.lineItems.length) {
+  //
+  // Si contano i numeri di linea DISTINTI imputati, non le righe: dal Task 5
+  // una riga fattura potrà ricevere più imputazioni (un fornitore che
+  // accorpa articoli diversi in una riga sola), e contare le righe
+  // supererebbe la soglia anche col bollo mai imputato — due imputazioni su
+  // due numeri di linea diversi e una riga divisa in due danno entrambe 3
+  // righe, ma solo la prima copre davvero 3 numeri di linea. Oggi le due
+  // misure coincidono, perché un vincolo unique ammette una sola imputazione
+  // per numeroLinea, ma scriverla così non costa nulla e toglie un bug latente.
+  const numeroLineeImputate = new Set(imputazioni.map((r) => r.numeroLinea)).size
+  const righeAttese = invoice.lineItems.length + numeroRigheSistema
+  if (numeroLineeImputate < righeAttese) {
     logger.info('Righe fattura non tutte confermate: nessuna ereditarietà pro-quota', {
       invoiceId,
-      righe: invoice.lineItems.length,
-      confermate: imputazioni.length,
+      righe: righeAttese,
+      confermate: numeroLineeImputate,
     })
     return
   }

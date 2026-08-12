@@ -7,13 +7,24 @@ import { createAuditLog } from '@/lib/audit'
 import { logger } from '@/lib/logger'
 import { parseFatturaPA } from '@/lib/sdi/parser'
 import { alimentaMemoriaFornitore } from '@/lib/line-categorization/memoria'
+import { righeDiSistema, LINEA_BOLLO, LINEA_ARROTONDAMENTO } from '@/lib/sdi/righe-di-sistema'
 
 interface RouteContext {
   params: Promise<{ id: string }>
 }
 
 const rigaSchema = z.object({
-  numeroLinea: z.number().int().positive(),
+  // Un numeroLinea vero è sempre positivo (indice in DettaglioLinee), ma
+  // bollo e arrotondamento vivono fuori dall'XML e usano i due numeri
+  // riservati negativi: .int() da solo accetterebbe qualunque intero, quindi
+  // serve l'elenco esplicito di ciò che oltre ai positivi è ammesso.
+  numeroLinea: z
+    .number()
+    .int()
+    .refine(
+      (n) => n > 0 || n === LINEA_BOLLO || n === LINEA_ARROTONDAMENTO,
+      'numeroLinea deve essere positivo, oppure uno dei numeri riservati (bollo, arrotondamento)'
+    ),
   accountId: z.string().min(1),
 })
 
@@ -65,11 +76,17 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       const righeXml = new Map(
         (fattura.dettaglioLinee || []).map((linea) => [linea.numeroLinea, linea])
       )
+      // Bollo e arrotondamento non stanno in DettaglioLinee ma sono
+      // imputabili quanto le righe vere: senza contarli qui, una fattura che
+      // li porta non potrebbe mai coprire l'intero documento (vedi
+      // righe-di-sistema.ts).
+      const righeSistema = new Map(righeDiSistema(fattura).map((riga) => [riga.numeroLinea, riga]))
 
       // Valida tutte le righe richieste PRIMA di scrivere: un numeroLinea
-      // inesistente nell'XML non deve produrre scritture parziali.
+      // inesistente nell'XML (né fra le righe vere né fra quelle di sistema)
+      // non deve produrre scritture parziali.
       for (const riga of validated.righe) {
-        if (!righeXml.has(riga.numeroLinea)) {
+        if (!righeXml.has(riga.numeroLinea) && !righeSistema.has(riga.numeroLinea)) {
           return NextResponse.json(
             { error: `La riga ${riga.numeroLinea} non esiste nella fattura` },
             { status: 400 }
@@ -77,17 +94,23 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         }
       }
 
-      // Solo conti di tipo COSTO possono ricevere l'imputazione di una riga
-      // fattura: via API si potrebbe altrimenti imputare a un conto RICAVO,
-      // inquinando anche la memoria fornitore-prodotto e le future proposte.
+      // Conti di tipo COSTO o PATRIMONIALE possono ricevere l'imputazione di
+      // una riga fattura: un frigorifero acquistato con fattura è un bene
+      // patrimoniale, non un costo, e prima di questo cambiamento non poteva
+      // essere imputato. RICAVO, ATTIVO e PASSIVO restano esclusi: via API si
+      // potrebbe altrimenti imputare a un conto RICAVO, inquinando anche la
+      // memoria fornitore-prodotto e le future proposte.
       const accountIds = new Set(validated.righe.map((riga) => riga.accountId))
       const conti = await prisma.account.findMany({
-        where: { id: { in: [...accountIds] }, isActive: true, type: 'COSTO' },
+        where: { id: { in: [...accountIds] }, isActive: true, type: { in: ['COSTO', 'PATRIMONIALE'] } },
         select: { id: true },
       })
       if (conti.length !== accountIds.size) {
         return NextResponse.json(
-          { error: 'Uno o più conti non esistono, non sono attivi o non sono di tipo COSTO' },
+          {
+            error:
+              'Uno o più conti non esistono, non sono attivi o non sono di tipo COSTO o PATRIMONIALE',
+          },
           { status: 400 }
         )
       }
@@ -95,7 +118,16 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       const adesso = new Date()
 
       for (const riga of validated.righe) {
-        const linea = righeXml.get(riga.numeroLinea)!
+        // Una riga vera e una di sistema non condividono forma: la prima ha
+        // prezzoTotale e un eventuale codiceArticolo, la seconda solo
+        // descrizione e importo (il bollo non ha mai un codice articolo). La
+        // validazione sopra garantisce che almeno una delle due esista.
+        const dettaglio = righeXml.get(riga.numeroLinea)
+        const sistema = righeSistema.get(riga.numeroLinea)
+        const descrizione = dettaglio?.descrizione ?? sistema!.descrizione
+        const codiceArticolo = dettaglio?.codiceArticolo ?? null
+        const importo = dettaglio ? dettaglio.prezzoTotale : sistema!.importo
+
         await prisma.invoiceLineAccount.upsert({
           where: {
             invoiceId_numeroLinea: { invoiceId: id, numeroLinea: riga.numeroLinea },
@@ -103,9 +135,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           create: {
             invoiceId: id,
             numeroLinea: riga.numeroLinea,
-            descrizione: linea.descrizione,
-            codiceArticolo: linea.codiceArticolo ?? null,
-            importo: linea.prezzoTotale,
+            descrizione,
+            codiceArticolo,
+            importo,
             accountId: riga.accountId,
             stato: 'confermata',
             fonte: 'manuale',
@@ -113,9 +145,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
             confirmedAt: adesso,
           },
           update: {
-            descrizione: linea.descrizione,
-            codiceArticolo: linea.codiceArticolo ?? null,
-            importo: linea.prezzoTotale,
+            descrizione,
+            codiceArticolo,
+            importo,
             accountId: riga.accountId,
             stato: 'confermata',
             fonte: 'manuale',
@@ -131,8 +163,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           await alimentaMemoriaFornitore({
             venueId,
             supplierId: invoice.supplierId,
-            descrizione: linea.descrizione,
-            codiceArticolo: linea.codiceArticolo ?? null,
+            descrizione,
+            codiceArticolo,
             accountId: riga.accountId,
           })
         }
