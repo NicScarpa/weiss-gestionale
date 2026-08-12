@@ -446,7 +446,7 @@ export default function ScadenzarioPage() {
                           onClick={() => router.push(`/scadenzario/${schedule.id}`)}
                         >
                           <TableCell>
-                            <ScheduleStatusBadge stato={schedule.stato} giorniRitardo={giorniDiRitardo(schedule, today)} />
+                            <ScheduleStatusBadge stato={schedule.stato} giorniRitardo={giorniDiRitardo(schedule, new Date())} />
                           </TableCell>
                           <TableCell>
                             <div className="flex flex-col">
