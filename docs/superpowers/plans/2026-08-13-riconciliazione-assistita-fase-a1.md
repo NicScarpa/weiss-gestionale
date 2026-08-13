@@ -1402,6 +1402,28 @@ describe('trovaCombinazioni', () => {
   it('su nessuna candidata torna una lista vuota', () => {
     expect(trovaCombinazioni(1000, [])).toEqual([])
   })
+
+  it('non combina scadenze prive di qualunque dato sulla controparte', () => {
+    // Senza id e senza nome non c'è alcuna prova che le due scadenze siano
+    // collegate: l'unica cosa che le unirebbe è che i loro residui sommano
+    // all'importo, cioè la somma che quadra per caso.
+    const anonima = (id: string, residuo: number): ScadenzaCandidata => ({
+      ...scadenza(id, residuo),
+      supplierId: null,
+      controparteNome: null,
+    })
+    expect(trovaCombinazioni(1000, [anonima('a', 500), anonima('b', 500)])).toEqual([])
+  })
+
+  it('ma una scadenza col solo nome, senza id, resta combinabile', () => {
+    // È il fornitore non ancora in anagrafica: il nome è una prova sufficiente
+    const senzaId = (id: string, residuo: number): ScadenzaCandidata => ({
+      ...scadenza(id, residuo),
+      supplierId: null,
+      controparteNome: 'FORNITORE SENZA ANAGRAFICA',
+    })
+    expect(trovaCombinazioni(1000, [senzaId('a', 500), senzaId('b', 500)])).toHaveLength(1)
+  })
 })
 ```
 
@@ -1438,9 +1460,23 @@ export interface OpzioniCombinazioni {
   tolleranza?: number
 }
 
-/** Chiave d'identità della controparte: l'id se c'è, altrimenti il nome. */
+/**
+ * Chiave d'identità della controparte: l'id se c'è, altrimenti il nome.
+ *
+ * Va chiamata solo dopo aver scartato le scadenze prive di entrambi (vedi
+ * `haControparteIdentificabile`). Un ripiego su una costante — `'(ignota)'` —
+ * raccoglierebbe in un gruppo unico scadenze di controparti del tutto estranee,
+ * e la ricerca proporrebbe somme che le mescolano: l'unica cosa che le
+ * legherebbe sarebbe l'aritmetica, cioè precisamente la «somma che quadra per
+ * caso» che questo modulo esiste per non produrre.
+ */
 function chiaveControparte(scadenza: ScadenzaCandidata): string {
-  return scadenza.supplierId ?? scadenza.controparteNome ?? '(ignota)'
+  return (scadenza.supplierId ?? scadenza.controparteNome) as string
+}
+
+/** Vedi il commento su `chiaveControparte`: senza questi due, niente prova. */
+function haControparteIdentificabile(scadenza: ScadenzaCandidata): boolean {
+  return scadenza.supplierId !== null || scadenza.controparteNome !== null
 }
 
 /**
@@ -1461,6 +1497,7 @@ export function trovaCombinazioni(
   const perControparte = new Map<string, ScadenzaCandidata[]>()
   for (const scadenza of candidate) {
     if (scadenza.residuo <= tolleranza) continue
+    if (!haControparteIdentificabile(scadenza)) continue
     const chiave = chiaveControparte(scadenza)
     const gruppo = perControparte.get(chiave)
     if (gruppo) gruppo.push(scadenza)
@@ -1472,7 +1509,10 @@ export function trovaCombinazioni(
   for (const gruppo of perControparte.values()) {
     if (gruppo.length < 2) continue
 
-    // Le più grandi per prime: la potatura sul residuo morde subito
+    // Le più grandi per prime, così la potatura sul residuo morde subito.
+    // Il taglio a MAX_CANDIDATE è però una rinuncia dichiarata, non un
+    // dettaglio di prestazioni: scarta le candidate più piccole del gruppo,
+    // e fra quelle potrebbe esserci la combinazione giusta.
     const ordinate = [...gruppo]
       .sort((a, b) => b.residuo - a.residuo)
       .slice(0, MAX_CANDIDATE)
