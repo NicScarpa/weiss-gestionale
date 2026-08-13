@@ -1,4 +1,4 @@
-import { TIPI_DOCUMENTO_NOTA_CREDITO } from '@/lib/services/invoice-schedule-service'
+import { TIPI_DOCUMENTO_NOTA_CREDITO } from '@/lib/invoices/tipi-documento'
 
 /**
  * L'importo con il segno da MOSTRARE, mai quello da salvare.
