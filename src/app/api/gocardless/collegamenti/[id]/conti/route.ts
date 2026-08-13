@@ -2,14 +2,18 @@
  * I conti che il consenso copre, e le decisioni dell'amministratore su ognuno.
  *
  * Tre azioni possibili, e nessuna è il default:
- *  - `importa`  accende il conto, richiede un conto del gestionale e una data
- *               di taglio;
- *  - `ignora`   lo mette nella lista dei conti che il pannello non chiederà
- *               più (tipicamente un conto personale);
- *  - `lascia`   non fa niente, ed è quello che succede se non si decide.
+ *  - `configura` accende o spegne il conto (`attivo`); richiede sempre un
+ *                conto del gestionale e una data di taglio, anche da spento —
+ *                è la data con cui ripartirà quando verrà riacceso. Spegnere
+ *                non è ignorare: un conto spento resta abbinato, pronto a
+ *                essere riacceso;
+ *  - `ignora`    lo mette nella lista dei conti che il pannello non chiederà
+ *                più (tipicamente un conto personale);
+ *  - `lascia`    non fa niente, ed è quello che succede se non si decide.
  */
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import type { Prisma } from '@prisma/client'
 
 import { withAuth } from '@/lib/api-utils'
 import { prisma } from '@/lib/prisma'
@@ -18,18 +22,63 @@ import { clientDaAmbiente } from '@/lib/gocardless/servizio'
 import { rispostaErroreGoCardless } from '@/lib/gocardless/risposte'
 import { descriviStato, eCollegata } from '@/lib/gocardless/stati'
 import { abbinaConti, type ContoDaBanca } from '@/lib/gocardless/abbinamento'
+import { mascheraIban } from '@/lib/gocardless/maschere'
 
 const corpoSalvataggio = z.object({
   conti: z.array(
     z.object({
       providerAccountId: z.string().min(1),
-      azione: z.enum(['importa', 'ignora', 'lascia']),
+      azione: z.enum(['configura', 'ignora', 'lascia']),
       bankAccountId: z.string().optional(),
-      /** `YYYY-MM-DD`. Obbligatoria solo per `importa`. */
+      /** `YYYY-MM-DD`. Obbligatoria solo per `configura`. */
       dataTaglio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      /**
+       * Se il conto deve sincronizzare. Spegnere non è ignorare: un conto
+       * spento resta abbinato, con la sua data, pronto a essere riacceso;
+       * un conto ignorato è un conto che non vogliamo più vedere proposto.
+       */
+      attivo: z.boolean().optional(),
     })
   ),
 })
+
+/** Ciò che si conserva di un conto letto: mai l'IBAN, solo impronta e maschera. */
+export interface ContoConservato {
+  providerAccountId: string
+  ibanHash: string | null
+  ibanMascherato: string | null
+  intestatario: string | null
+  valuta: string | null
+}
+
+const contoConservatoSchema = z.object({
+  providerAccountId: z.string(),
+  ibanHash: z.string().nullable(),
+  ibanMascherato: z.string().nullable(),
+  intestatario: z.string().nullable(),
+  valuta: z.string().nullable(),
+})
+
+/**
+ * Rilegge la colonna, o `null` se la forma non torna. Una colonna JSON scritta
+ * da una versione precedente del codice non deve far esplodere il pannello:
+ * peggio che perdere la memoria è mostrare un errore per averla.
+ */
+function leggiConservati(valore: unknown): ContoConservato[] | null {
+  const esito = z.array(contoConservatoSchema).safeParse(valore)
+  return esito.success && esito.data.length > 0 ? esito.data : null
+}
+
+/** Un conto conservato, nella forma che l'abbinamento si aspetta. */
+function daConservato(c: ContoConservato): ContoDaBanca {
+  return {
+    providerAccountId: c.providerAccountId,
+    iban: null,
+    ibanHash: c.ibanHash,
+    intestatario: c.intestatario,
+    valuta: c.valuta,
+  }
+}
 
 async function connessioneDellaSede(id: string, venueId: string) {
   return prisma.bankConnection.findFirst({ where: { id, venueId, deletedAt: null } })
@@ -48,35 +97,68 @@ function dataDiTaglioValida(valore: string): boolean {
 }
 
 export const GET = withAuth<{ id: string }>(
-  async (_request, { venueId, params }) => {
+  async (request, { venueId, params }) => {
     try {
       const connessione = await connessioneDellaSede(params.id, venueId)
       if (!connessione) return NextResponse.json({ error: 'Collegamento non trovato' }, { status: 404 })
 
-      const client = clientDaAmbiente()
-      const requisition = await client.leggiRequisition(connessione.requisitionId)
-      const stato = requisition.dati.status
+      const aggiorna = new URL(request.url).searchParams.get('aggiorna') === '1'
+      const conservati = leggiConservati(connessione.contiLetti)
 
-      if (connessione.status !== stato) {
-        await prisma.bankConnection.update({ where: { id: connessione.id }, data: { status: stato } })
-      }
+      let stato = connessione.status
+      let contiBanca: ContoDaBanca[]
+      // In portata anche dopo il ramo: la maschera del percorso di
+      // aggiornamento vive qui, non in `conservati` (che lì è `null`). `const`
+      // e non `let`: si muta con `.push`, non si riassegna mai il binding.
+      const letti: ContoConservato[] = []
 
-      if (!eCollegata(stato)) {
-        return NextResponse.json({ stato: descriviStato(stato), conti: [] })
-      }
+      if (conservati && !aggiorna) {
+        contiBanca = conservati.map(daConservato)
+      } else {
+        const client = clientDaAmbiente()
+        const requisition = await client.leggiRequisition(connessione.requisitionId)
+        stato = requisition.dati.status
 
-      // I dettagli si chiedono un conto alla volta: è l'API a non avere una
-      // lettura in blocco. Sono chiamate contate contro il limite giornaliero
-      // (una per la requisition, più una per conto): questa è la rotta più
-      // costosa della fase, e non va invocata a ogni render del pannello.
-      const contiBanca: ContoDaBanca[] = []
-      for (const id of requisition.dati.accounts) {
-        const dettagli = await client.dettagliConto(id)
-        contiBanca.push({
-          providerAccountId: id,
-          iban: dettagli.dati.account.iban ?? null,
-          intestatario: dettagli.dati.account.ownerName ?? null,
-          valuta: dettagli.dati.account.currency ?? null,
+        if (connessione.status !== stato) {
+          await prisma.bankConnection.update({ where: { id: connessione.id }, data: { status: stato } })
+        }
+
+        if (!eCollegata(stato)) {
+          return NextResponse.json({
+            stato: descriviStato(stato),
+            conti: [],
+            lettiIl: connessione.contiLettiIl?.toISOString() ?? null,
+          })
+        }
+
+        // I dettagli si chiedono un conto alla volta: è l'API a non avere una
+        // lettura in blocco. Sono chiamate contate contro il limite giornaliero
+        // (una per la requisition, più una per conto): questa è la rotta più
+        // costosa della fase, ed è per questo che il risultato si conserva
+        // invece di richiederlo a ogni apertura del pannello.
+        for (const id of requisition.dati.accounts) {
+          const dettagli = await client.dettagliConto(id)
+          const iban = dettagli.dati.account.iban ?? null
+          letti.push({
+            providerAccountId: id,
+            // L'IBAN non si conserva: solo l'impronta, che serve ad abbinare, e
+            // la maschera, che serve a mostrarlo. Il valore non serve a nessuno
+            // dei due, e conservarlo lo metterebbe in chiaro accanto a una
+            // colonna che il middleware cifra.
+            ibanHash: iban ? lookupHash(iban) : null,
+            ibanMascherato: iban ? mascheraIban(iban) : null,
+            intestatario: dettagli.dati.account.ownerName ?? null,
+            valuta: dettagli.dati.account.currency ?? null,
+          })
+        }
+        contiBanca = letti.map(daConservato)
+
+        // Solo una lettura riuscita per intero merita di essere ricordata:
+        // una memoria parziale (metà conti, per un errore a metà giro) sarebbe
+        // peggio di nessuna memoria, perché il pannello la crederebbe completa.
+        await prisma.bankConnection.update({
+          where: { id: connessione.id },
+          data: { contiLetti: letti as unknown as Prisma.InputJsonValue, contiLettiIl: new Date() },
         })
       }
 
@@ -122,13 +204,41 @@ export const GET = withAuth<{ id: string }>(
         }
       }
 
+      // `conservati` è null sul percorso di aggiornamento, dove le maschere sono
+      // in `letti`: si prende quello che c'è, e in entrambi i casi si indicizza.
+      const maschere = new Map((conservati ?? letti).map((c) => [c.providerAccountId, c.ibanMascherato]))
+
+      // Quali conti, fra quelli già legati a QUESTA connessione, sono accesi e
+      // con quale data: senza, il pannello ripresenterebbe vuoto un campo che
+      // l'amministratore aveva già compilato.
+      const configurazioni = new Map(
+        (
+          await prisma.bankAccount.findMany({
+            where: { venueId, connectionId: connessione.id },
+            select: { id: true, syncEnabled: true, syncCutoffDate: true },
+          })
+        ).map((c) => [c.id, c])
+      )
+
       return NextResponse.json({
         stato: descriviStato(stato),
-        conti: abbinati.map((a) =>
-          'bankAccountId' in a
-            ? { ...a, ultimoMovimento: ultimi.get(a.bankAccountId) ?? null }
-            : { ...a, ultimoMovimento: null }
-        ),
+        conti: abbinati.map((a) => {
+          const ibanMascherato = maschere.get(a.conto.providerAccountId) ?? null
+          if ('bankAccountId' in a) {
+            const configurazione = configurazioni.get(a.bankAccountId)
+            return {
+              ...a,
+              ibanMascherato,
+              ultimoMovimento: ultimi.get(a.bankAccountId) ?? null,
+              syncEnabled: configurazione?.syncEnabled ?? false,
+              syncCutoffDate: configurazione?.syncCutoffDate
+                ? configurazione.syncCutoffDate.toISOString().slice(0, 10)
+                : null,
+            }
+          }
+          return { ...a, ibanMascherato, ultimoMovimento: null, syncEnabled: false, syncCutoffDate: null }
+        }),
+        lettiIl: connessione.contiLettiIl?.toISOString() ?? null,
       })
     } catch (errore) {
       return rispostaErroreGoCardless(errore, 'GET /api/gocardless/collegamenti/[id]/conti')
@@ -151,7 +261,7 @@ export const PUT = withAuth<{ id: string }>(
 
       // Due voci sullo stesso conto banca, con azioni in conflitto, non hanno
       // un vincitore sensato da dedurre: nella stessa transazione vince
-      // l'ultima scritta, e se è `ignora` dopo un `importa` il conto resta
+      // l'ultima scritta, e se è `ignora` dopo un `configura` il conto resta
       // acceso ma sparisce dal pannello — irraggiungibile per spegnerlo.
       // Si rifiuta il corpo, non si sceglie per l'amministratore.
       const conteggio = new Map<string, number>()
@@ -167,12 +277,12 @@ export const PUT = withAuth<{ id: string }>(
       }
 
       for (const c of analisi.data.conti) {
-        if (c.azione !== 'importa') continue
+        if (c.azione !== 'configura') continue
         if (!c.bankAccountId) {
-          return NextResponse.json({ error: `Il conto ${c.providerAccountId} è da importare ma non è abbinato` }, { status: 400 })
+          return NextResponse.json({ error: `Il conto ${c.providerAccountId} è da configurare ma non è abbinato` }, { status: 400 })
         }
         if (!c.dataTaglio) {
-          return NextResponse.json({ error: `Il conto ${c.providerAccountId} è da importare ma non ha una data di taglio` }, { status: 400 })
+          return NextResponse.json({ error: `Il conto ${c.providerAccountId} è da configurare ma non ha una data di taglio` }, { status: 400 })
         }
         if (!dataDiTaglioValida(c.dataTaglio)) {
           return NextResponse.json(
@@ -218,7 +328,7 @@ export const PUT = withAuth<{ id: string }>(
             data: {
               providerAccountId: c.providerAccountId,
               connectionId: connessione.id,
-              syncEnabled: true,
+              syncEnabled: c.attivo ?? true,
               syncCutoffDate: new Date(`${c.dataTaglio}T00:00:00.000Z`),
             },
           })

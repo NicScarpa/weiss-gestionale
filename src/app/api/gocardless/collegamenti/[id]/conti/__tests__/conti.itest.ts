@@ -25,14 +25,24 @@ async function connessioneCollegata(conti: string[]) {
       status: 'LN',
     },
   })
+  // Ogni chiamata al client finto (requisition o dettagli) aggiunge una voce
+  // qui: è ciò che permette ai test sul risparmio di chiamate di dimostrare
+  // che la seconda lettura non tocca la banca.
+  const chiamate: string[] = []
   impostaClientPerTest({
-    leggiRequisition: async () => ({ dati: { id: 'req-1', status: 'LN', accounts: conti, link: '' }, limiti: { restanti: null, ripresaFraSecondi: null } }),
-    dettagliConto: async (id: string) => ({
-      dati: { account: { iban: id === 'gc-a' ? IBAN_A : IBAN_B, currency: 'EUR' } },
-      limiti: { restanti: null, ripresaFraSecondi: null },
-    }),
+    leggiRequisition: async () => {
+      chiamate.push('leggiRequisition')
+      return { dati: { id: 'req-1', status: 'LN', accounts: conti, link: '' }, limiti: { restanti: null, ripresaFraSecondi: null } }
+    },
+    dettagliConto: async (id: string) => {
+      chiamate.push('dettagliConto')
+      return {
+        dati: { account: { iban: id === 'gc-a' ? IBAN_A : IBAN_B, currency: 'EUR' } },
+        limiti: { restanti: null, ripresaFraSecondi: null },
+      }
+    },
   } as unknown as ClientGoCardless)
-  return { venue, connessione }
+  return { venue, connessione, chiamate }
 }
 
 async function contoDiTest(venueId: string, nome: string, iban: string) {
@@ -122,7 +132,7 @@ describe('GET conti di un collegamento', () => {
       salvaConti,
       jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
         method: 'PUT',
-        body: { conti: [{ providerAccountId: 'gc-a', azione: 'importa', bankAccountId: conto.id, dataTaglio: '2026-08-12' }] },
+        body: { conti: [{ providerAccountId: 'gc-a', azione: 'configura', attivo: true, bankAccountId: conto.id, dataTaglio: '2026-08-12' }] },
       }),
       { id: connessione.id }
     )
@@ -159,7 +169,7 @@ describe('PUT configurazione dei conti', () => {
       salvaConti,
       jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
         method: 'PUT',
-        body: { conti: [{ providerAccountId: 'gc-a', azione: 'importa', bankAccountId: conto.id, dataTaglio: '2026-08-12' }] },
+        body: { conti: [{ providerAccountId: 'gc-a', azione: 'configura', attivo: true, bankAccountId: conto.id, dataTaglio: '2026-08-12' }] },
       }),
       { id: connessione.id }
     )
@@ -185,7 +195,7 @@ describe('PUT configurazione dei conti', () => {
       salvaConti,
       jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
         method: 'PUT',
-        body: { conti: [{ providerAccountId: 'gc-a', azione: 'importa', bankAccountId: conto.id }] },
+        body: { conti: [{ providerAccountId: 'gc-a', azione: 'configura', attivo: true, bankAccountId: conto.id }] },
       }),
       { id: connessione.id }
     )
@@ -226,7 +236,7 @@ describe('PUT configurazione dei conti', () => {
       salvaConti,
       jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
         method: 'PUT',
-        body: { conti: [{ providerAccountId: 'gc-a', azione: 'importa', bankAccountId: conto.id, dataTaglio: '2026-08-12' }] },
+        body: { conti: [{ providerAccountId: 'gc-a', azione: 'configura', attivo: true, bankAccountId: conto.id, dataTaglio: '2026-08-12' }] },
       }),
       { id: connessione.id }
     )
@@ -280,7 +290,7 @@ describe('PUT configurazione dei conti', () => {
         method: 'PUT',
         body: {
           conti: [
-            { providerAccountId: 'gc-a', azione: 'importa', bankAccountId: conto.id, dataTaglio: '2026-08-12' },
+            { providerAccountId: 'gc-a', azione: 'configura', attivo: true, bankAccountId: conto.id, dataTaglio: '2026-08-12' },
             { providerAccountId: 'gc-a', azione: 'ignora' },
           ],
         },
@@ -309,7 +319,7 @@ describe('PUT configurazione dei conti', () => {
       salvaConti,
       jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
         method: 'PUT',
-        body: { conti: [{ providerAccountId: 'gc-a', azione: 'importa', bankAccountId: cassa.id, dataTaglio: '2026-08-12' }] },
+        body: { conti: [{ providerAccountId: 'gc-a', azione: 'configura', attivo: true, bankAccountId: cassa.id, dataTaglio: '2026-08-12' }] },
       }),
       { id: connessione.id }
     )
@@ -332,7 +342,7 @@ describe('PUT configurazione dei conti', () => {
       salvaConti,
       jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
         method: 'PUT',
-        body: { conti: [{ providerAccountId: 'gc-a', azione: 'importa', bankAccountId: conto.id, dataTaglio: '2026-02-30' }] },
+        body: { conti: [{ providerAccountId: 'gc-a', azione: 'configura', attivo: true, bankAccountId: conto.id, dataTaglio: '2026-02-30' }] },
       }),
       { id: connessione.id }
     )
@@ -355,5 +365,92 @@ describe('PUT configurazione dei conti', () => {
     )
 
     expect(esito.status).toBe(403)
+  })
+})
+
+describe('memoria dei conti letti', () => {
+  it('la prima lettura interroga la banca e conserva ciò che ha letto', async () => {
+    await entraCome('admin')
+    const { connessione } = await connessioneCollegata(['gc-a'])
+
+    await callRoute(leggiConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`), { id: connessione.id })
+
+    const riga = await prisma.bankConnection.findUniqueOrThrow({ where: { id: connessione.id } })
+    expect(riga.contiLettiIl).not.toBeNull()
+    expect(Array.isArray(riga.contiLetti)).toBe(true)
+  })
+
+  // Il punto del task: quattro aperture del pannello non devono esaurire il
+  // contingente della banca.
+  it('la seconda lettura non chiama la banca', async () => {
+    await entraCome('admin')
+    const { connessione, chiamate } = await connessioneCollegata(['gc-a'])
+
+    await callRoute(leggiConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`), { id: connessione.id })
+    const dopoLaPrima = chiamate.length
+    await callRoute(leggiConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`), { id: connessione.id })
+
+    expect(chiamate.length).toBe(dopoLaPrima)
+  })
+
+  it('con ?aggiorna=1 richiede alla banca anche se ha memoria', async () => {
+    await entraCome('admin')
+    const { connessione, chiamate } = await connessioneCollegata(['gc-a'])
+
+    await callRoute(leggiConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`), { id: connessione.id })
+    const dopoLaPrima = chiamate.length
+    await callRoute(leggiConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti?aggiorna=1`), { id: connessione.id })
+
+    expect(chiamate.length).toBeGreaterThan(dopoLaPrima)
+  })
+
+  // Nessun IBAN in chiaro a riposo: la colonna conserva impronta e maschera.
+  it('non conserva mai l IBAN in chiaro', async () => {
+    await entraCome('admin')
+    const { connessione } = await connessioneCollegata(['gc-a'])
+
+    await callRoute(leggiConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`), { id: connessione.id })
+
+    const riga = await prisma.bankConnection.findUniqueOrThrow({ where: { id: connessione.id } })
+    expect(JSON.stringify(riga.contiLetti)).not.toContain(IBAN_A)
+  })
+
+  it('la risposta dice quali conti sono accesi e con quale data', async () => {
+    await entraCome('admin')
+    const { venue, connessione } = await connessioneCollegata(['gc-a'])
+    const conto = await contoDiTest(venue.id, 'Conto principale', IBAN_A)
+    await prisma.bankAccount.update({
+      where: { id: conto.id },
+      data: { connectionId: connessione.id, providerAccountId: 'gc-a', syncEnabled: true, syncCutoffDate: new Date('2026-08-13T00:00:00.000Z') },
+    })
+
+    const esito = await callRoute<{ conti: Array<{ syncEnabled: boolean; syncCutoffDate: string | null }> }>(
+      leggiConti,
+      jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`),
+      { id: connessione.id }
+    )
+
+    expect(esito.body.conti[0]).toMatchObject({ syncEnabled: true, syncCutoffDate: '2026-08-13' })
+  })
+})
+
+describe('configura con lo stato desiderato', () => {
+  it('spegne un conto senza ignorarlo, conservando abbinamento e data', async () => {
+    await entraCome('admin')
+    const { venue, connessione } = await connessioneCollegata(['gc-a'])
+    const conto = await contoDiTest(venue.id, 'Conto principale', IBAN_A)
+
+    const corpo = (attivo: boolean) => ({
+      conti: [{ providerAccountId: 'gc-a', azione: 'configura', bankAccountId: conto.id, dataTaglio: '2026-08-13', attivo }],
+    })
+
+    await callRoute(salvaConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, { method: 'PUT', body: corpo(true) }), { id: connessione.id })
+    await callRoute(salvaConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, { method: 'PUT', body: corpo(false) }), { id: connessione.id })
+
+    const aggiornato = await prisma.bankAccount.findUniqueOrThrow({ where: { id: conto.id } })
+    expect(aggiornato).toMatchObject({ syncEnabled: false, providerAccountId: 'gc-a', connectionId: connessione.id })
+    expect(aggiornato.syncCutoffDate).not.toBeNull()
+    const riga = await prisma.bankConnection.findUniqueOrThrow({ where: { id: connessione.id } })
+    expect(riga.contiIgnorati).toEqual([])
   })
 })

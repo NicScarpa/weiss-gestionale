@@ -7,6 +7,7 @@ const impronta = (iban: string) => `h:${iban}`
 const dallaBanca = (id: string, iban: string | null): ContoDaBanca => ({
   providerAccountId: id,
   iban,
+  ibanHash: null,
   intestatario: null,
   valuta: 'EUR',
 })
@@ -123,5 +124,29 @@ describe('abbinaConti', () => {
       impronta,
     })
     expect(esito[0]).toMatchObject({ tipo: 'riconosciuto', bankAccountId: 'ba-1' })
+  })
+})
+
+describe('abbinaConti con impronte già calcolate', () => {
+  it('accetta un conto della banca che porta già la sua impronta', () => {
+    const esito = abbinaConti({
+      contiBanca: [{ providerAccountId: 'gc-1', iban: null, ibanHash: impronta('IT00X001'), intestatario: null, valuta: 'EUR' }],
+      contiGestionale: [nelGestionale('ba-1', 'Conto principale', 'IT00X001')],
+      ignorati: [],
+      impronta,
+    })
+    expect(esito[0]).toMatchObject({ tipo: 'riconosciuto', bankAccountId: 'ba-1' })
+  })
+
+  // L'impronta conservata è l'unico modo di riabbinare senza richiedere gli
+  // IBAN alla banca: se venisse ignorata, la memoria non servirebbe a nulla.
+  it("preferisce l'impronta già calcolata all'IBAN, quando ci sono entrambi", () => {
+    const esito = abbinaConti({
+      contiBanca: [{ providerAccountId: 'gc-2', iban: 'IT00X999', ibanHash: impronta('IT00X001'), intestatario: null, valuta: null }],
+      contiGestionale: [nelGestionale('ba-1', 'Conto principale', 'IT00X001')],
+      ignorati: [],
+      impronta,
+    })
+    expect(esito[0].tipo).toBe('riconosciuto')
   })
 })

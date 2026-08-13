@@ -13,6 +13,12 @@
 export interface ContoDaBanca {
   providerAccountId: string
   iban: string | null
+  /**
+   * L'impronta, quando è già stata calcolata e conservata. È ciò che permette
+   * di riabbinare senza richiedere gli IBAN alla banca: se venisse ignorata,
+   * conservarla non servirebbe a nulla.
+   */
+  ibanHash: string | null
   intestatario: string | null
   valuta: string | null
 }
@@ -63,9 +69,11 @@ export function abbinaConti(parametri: {
 
   return contiBanca.map((conto): EsitoAbbinamento => {
     if (scartati.has(conto.providerAccountId)) return { tipo: 'ignorato', conto }
-    if (!conto.iban) return { tipo: 'sconosciuto', conto }
 
-    const corrispondente = perImpronta.get(impronta(conto.iban))
+    const suaImpronta = conto.ibanHash ?? (conto.iban ? impronta(conto.iban) : null)
+    if (!suaImpronta) return { tipo: 'sconosciuto', conto }
+
+    const corrispondente = perImpronta.get(suaImpronta)
     if (!corrispondente || gia.has(corrispondente.id)) return { tipo: 'sconosciuto', conto }
 
     gia.add(corrispondente.id)
