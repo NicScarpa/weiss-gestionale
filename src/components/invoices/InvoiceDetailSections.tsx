@@ -28,6 +28,8 @@ import {
   Banknote,
   Info,
   Cog,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react'
 import {
   getDocumentTypeAbbrev,
@@ -470,6 +472,69 @@ function messaggioRigheMancanti(righeMancanti: RigaVisualizzata[], residuo: numb
   const ultimo = riferimenti[riferimenti.length - 1]
   const resto = riferimenti.slice(0, -1)
   return `mancano ${resto.join(', ')} e ${ultimo}`
+}
+
+/** Un movimento le cui fette ereditate raccontano ancora un'imputazione superata. */
+export interface DivergenzaFattura {
+  journalEntryId: string
+  /** Data del movimento (ISO), non della modifica: è quella che identifica il movimento all'utente. */
+  movimentoData: string
+}
+
+interface AvvisoRiallineamentoProps {
+  divergenze: DivergenzaFattura[]
+  onRiallinea: (journalEntryId: string) => void
+  /** `journalEntryId` del riallineamento in corso, se ce n'è uno: disabilita solo il suo bottone. */
+  journalEntryIdInCorso?: string | null
+}
+
+/**
+ * L'avviso di divergenza fra le fette e la fattura (Task 7 rileva, Task 10
+ * collega — spec sez. 2 «Le fette sono una fotografia, e la fotografia
+ * parla»). Vive sul dettaglio fattura, non sul movimento: `imputazioniDivergenti`
+ * lavora per movimento e la fattura è già quella sotto gli occhi, quindi
+ * il testo non la rinomina — dice solo QUALE movimento è rimasto indietro.
+ */
+export function AvvisoRiallineamento({
+  divergenze,
+  onRiallinea,
+  journalEntryIdInCorso,
+}: AvvisoRiallineamentoProps) {
+  if (divergenze.length === 0) return null
+
+  return (
+    <div className="space-y-2">
+      {divergenze.map((d) => (
+        <div
+          key={d.journalEntryId}
+          className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm dark:border-amber-800 dark:bg-amber-950/20"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="flex-1">
+            <p className="font-medium text-amber-800 dark:text-amber-200">
+              Questa fattura è stata reimputata dopo il pagamento
+            </p>
+            <p className="mt-1 text-amber-700 dark:text-amber-300">
+              Il movimento del {formatDateIT(d.movimentoData)} usa ancora l&apos;imputazione precedente.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 border-amber-300 text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/40"
+            onClick={() => onRiallinea(d.journalEntryId)}
+            disabled={journalEntryIdInCorso === d.journalEntryId}
+          >
+            {journalEntryIdInCorso === d.journalEntryId ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              'Riallinea'
+            )}
+          </Button>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 export function LineItemsTable({

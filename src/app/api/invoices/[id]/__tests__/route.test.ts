@@ -14,6 +14,7 @@ vi.mock('@/lib/prisma', () => ({
   prisma: {
     electronicInvoice: { findFirst: vi.fn() },
     invoiceLineAccount: { findMany: vi.fn() },
+    scheduleReconciliation: { findMany: vi.fn() },
   },
 }))
 
@@ -26,9 +27,18 @@ vi.mock('@/lib/sdi/parser', () => ({
   TIPI_DOCUMENTO: { TD01: 'Fattura' },
 }))
 
+// Mockato al confine: `imputazioniDivergenti` ha già la propria suite
+// d'integrazione su database vero (riallineamento.itest.ts). Qui si verifica
+// solo che la rotta la interroghi per i movimenti giusti e filtri la
+// risposta sulla fattura corrente — non si riproduce la sua logica interna.
+vi.mock('@/lib/invoices/riallineamento', () => ({
+  imputazioniDivergenti: vi.fn(),
+}))
+
 import { authDiRoute } from '@/test/auth-unitari'
 import { prisma } from '@/lib/prisma'
 import { parseFatturaPA } from '@/lib/sdi/parser'
+import { imputazioniDivergenti } from '@/lib/invoices/riallineamento'
 
 const sessione = { user: { id: 'user-1', role: 'admin' } } as unknown as Session
 
@@ -50,6 +60,8 @@ beforeEach(() => {
   vi.mocked(parseFatturaPA).mockReturnValue({
     dettaglioLinee: [{ numeroLinea: 1, descrizione: 'Detersivi e tovaglioli', prezzoTotale: 100 }],
   } as never)
+  vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([] as never)
+  vi.mocked(prisma.scheduleReconciliation.findMany).mockResolvedValue([] as never)
 })
 
 describe('GET /api/invoices/[id]: righe divise nella risposta', () => {
@@ -203,5 +215,131 @@ describe('GET /api/invoices/[id]: righe di sistema (bollo, arrotondamento)', () 
     expect(rigaBollo.imputazioni).toEqual([
       expect.objectContaining({ accountId: 'conto-bollo', stato: 'confermata', importo: 2 }),
     ])
+  })
+})
+
+describe('GET /api/invoices/[id]: divergenze (Task 10)', () => {
+  it('nessuna riconciliazione collegata: divergenze è vuoto e imputazioniDivergenti non viene mai chiamata', async () => {
+    vi.mocked(prisma.scheduleReconciliation.findMany).mockResolvedValue([] as never)
+
+    const { request, context } = richiesta()
+    const response = await GET(request, context)
+    const data = await response.json()
+
+    expect(data.divergenze).toEqual([])
+    expect(imputazioniDivergenti).not.toHaveBeenCalled()
+  })
+
+  it('un movimento riconciliato senza divergenza: divergenze resta vuoto', async () => {
+    vi.mocked(prisma.scheduleReconciliation.findMany).mockResolvedValue([
+      { journalEntryId: 'mov-1', journalEntry: { date: new Date('2026-03-31') } },
+    ] as never)
+    vi.mocked(imputazioniDivergenti).mockResolvedValue({
+      divergente: false,
+      invoiceId: null,
+      modificataIl: null,
+    })
+
+    const { request, context } = richiesta()
+    const response = await GET(request, context)
+    const data = await response.json()
+
+    expect(imputazioniDivergenti).toHaveBeenCalledWith('mov-1')
+    expect(data.divergenze).toEqual([])
+  })
+
+  it('un movimento divergente per QUESTA fattura: compare in divergenze con la sua data', async () => {
+    vi.mocked(prisma.scheduleReconciliation.findMany).mockResolvedValue([
+      { journalEntryId: 'mov-1', journalEntry: { date: new Date('2026-03-31') } },
+    ] as never)
+    vi.mocked(imputazioniDivergenti).mockResolvedValue({
+      divergente: true,
+      invoiceId: 'fatt-1',
+      modificataIl: new Date('2026-08-01'),
+    })
+
+    const { request, context } = richiesta()
+    const response = await GET(request, context)
+    const data = await response.json()
+
+    expect(data.divergenze).toEqual([
+      { journalEntryId: 'mov-1', movimentoData: new Date('2026-03-31').toISOString() },
+    ])
+  })
+
+  it('bonifico cumulativo: la divergenza più recente del movimento appartiene a UN\'ALTRA fattura, e non compare qui', async () => {
+    // `imputazioniDivergenti` collassa sulla divergenza più recente di TUTTO
+    // il movimento (vedi il docblock in riallineamento.ts): un bonifico che
+    // salda anche un'altra fattura, se quella è la più recente a divergere,
+    // tornerebbe un invoiceId diverso dal nostro. Mostrarlo qui sarebbe
+    // attribuire a questa fattura un problema che non è suo.
+    vi.mocked(prisma.scheduleReconciliation.findMany).mockResolvedValue([
+      { journalEntryId: 'mov-cumulativo', journalEntry: { date: new Date('2026-03-31') } },
+    ] as never)
+    vi.mocked(imputazioniDivergenti).mockResolvedValue({
+      divergente: true,
+      invoiceId: 'fatt-ALTRA',
+      modificataIl: new Date('2026-08-01'),
+    })
+
+    const { request, context } = richiesta()
+    const response = await GET(request, context)
+    const data = await response.json()
+
+    expect(data.divergenze).toEqual([])
+  })
+
+  it('due riconciliazioni verificate sullo stesso movimento: imputazioniDivergenti viene chiamata una sola volta', async () => {
+    // Costo: niente chiamate duplicate per lo stesso journalEntryId, anche se
+    // più riconciliazioni verificate di questa fattura puntano allo stesso
+    // movimento (rate diverse saldate dallo stesso bonifico).
+    vi.mocked(prisma.scheduleReconciliation.findMany).mockResolvedValue([
+      { journalEntryId: 'mov-1', journalEntry: { date: new Date('2026-03-31') } },
+      { journalEntryId: 'mov-1', journalEntry: { date: new Date('2026-03-31') } },
+    ] as never)
+    vi.mocked(imputazioniDivergenti).mockResolvedValue({
+      divergente: false,
+      invoiceId: null,
+      modificataIl: null,
+    })
+
+    const { request, context } = richiesta()
+    await GET(request, context)
+
+    expect(imputazioniDivergenti).toHaveBeenCalledTimes(1)
+  })
+
+  it('due movimenti distinti, entrambi divergenti per questa fattura: entrambi compaiono', async () => {
+    vi.mocked(prisma.scheduleReconciliation.findMany).mockResolvedValue([
+      { journalEntryId: 'mov-1', journalEntry: { date: new Date('2026-03-31') } },
+      { journalEntryId: 'mov-2', journalEntry: { date: new Date('2026-05-15') } },
+    ] as never)
+    vi.mocked(imputazioniDivergenti).mockResolvedValue({
+      divergente: true,
+      invoiceId: 'fatt-1',
+      modificataIl: new Date('2026-08-01'),
+    })
+
+    const { request, context } = richiesta()
+    const response = await GET(request, context)
+    const data = await response.json()
+
+    expect(data.divergenze).toEqual([
+      { journalEntryId: 'mov-1', movimentoData: new Date('2026-03-31').toISOString() },
+      { journalEntryId: 'mov-2', movimentoData: new Date('2026-05-15').toISOString() },
+    ])
+  })
+
+  it('interroga scheduleReconciliation filtrando per fattura e stato verificato', async () => {
+    vi.mocked(prisma.scheduleReconciliation.findMany).mockResolvedValue([] as never)
+
+    const { request, context } = richiesta()
+    await GET(request, context)
+
+    expect(prisma.scheduleReconciliation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { status: 'VERIFIED', schedule: { invoiceId: 'fatt-1' } },
+      })
+    )
   })
 })

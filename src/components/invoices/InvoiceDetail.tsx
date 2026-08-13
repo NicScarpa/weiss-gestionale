@@ -37,7 +37,9 @@ import {
   PaymentSection,
   TransmissionDataSection,
   MetadataSection,
+  AvvisoRiallineamento,
   type ParsedInvoiceData,
+  type DivergenzaFattura,
 } from './InvoiceDetailSections'
 
 interface InvoiceDetailProps {
@@ -105,6 +107,8 @@ interface Invoice {
   }>
   // Parsed XML data from API
   parsedData?: ParsedInvoiceData
+  /** Task 10: movimenti collegati le cui fette raccontano un'imputazione superata (spec sez. 2). */
+  divergenze?: DivergenzaFattura[]
 }
 
 async function fetchInvoice(id: string): Promise<Invoice> {
@@ -188,6 +192,24 @@ async function updateRigheConti(id: string, data: RigheContiPayload): Promise<un
     throw new Error(errBody.error || "Errore nell'imputazione della riga")
   }
   return res.json()
+}
+
+/**
+ * Task 10: chiama la rotta di riallineamento (Task 7) sul MOVIMENTO
+ * divergente, non sulla fattura — `journalEntryId` viene da `divergenze`,
+ * calcolato dal server in `/api/invoices/[id]`. Il 409 (già allineato, o
+ * mai coperto per intero) e il 422 (fattura non rigenerabile: righe non
+ * confermate, capienza superata, nota di credito non imputata per intero)
+ * arrivano qui con lo stesso messaggio che la rotta scrive per l'utente:
+ * non si riscrive un testo diverso, si inoltra il suo.
+ */
+async function riallineaMovimento(journalEntryId: string): Promise<{ fette: number; message: string }> {
+  const res = await fetch(`/api/prima-nota/${journalEntryId}/riallinea`, { method: 'POST' })
+  const data = await res.json()
+  if (!res.ok) {
+    throw new Error(data.error || 'Errore nel riallineamento delle fette')
+  }
+  return data
 }
 
 export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
@@ -300,6 +322,21 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     mutationFn: (data: RigheContiPayload) => updateRigheConti(invoiceId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoice', invoiceId] })
+    },
+    onError: (err: Error) => {
+      toast.error(err.message)
+    },
+  })
+
+  // Task 10: invalidare la fattura dopo un riallineamento riuscito rilegge
+  // `divergenze` dal server — che con le fette appena rigenerate torna vuoto
+  // per quel movimento — ed è così che l'avviso sparisce, non con uno stato
+  // locale da tenere sincronizzato a mano.
+  const riallineaMutation = useMutation({
+    mutationFn: riallineaMovimento,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['invoice', invoiceId] })
+      toast.success(`${data.message} (${data.fette} fette)`)
     },
     onError: (err: Error) => {
       toast.error(err.message)
@@ -487,6 +524,14 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
 
       {/* Causale (if present) */}
       <CausaleSection causale={parsedData?.causale} />
+
+      {/* Task 10: avviso di divergenza e pulsante Riallinea, sopra la tabella
+          che ha causato l'imputazione superata */}
+      <AvvisoRiallineamento
+        divergenze={invoice.divergenze ?? []}
+        onRiallinea={(journalEntryId) => riallineaMutation.mutate(journalEntryId)}
+        journalEntryIdInCorso={riallineaMutation.isPending ? riallineaMutation.variables : null}
+      />
 
       {/* Line items table */}
       <LineItemsTable

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest'
 import { render, cleanup, fireEvent, screen, within, waitFor, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { LineItemsTable } from '../InvoiceDetailSections'
+import { LineItemsTable, AvvisoRiallineamento } from '../InvoiceDetailSections'
 import { LINEA_BOLLO, LINEA_ARROTONDAMENTO, CONTO_PROPOSTO_BOLLO } from '@/lib/sdi/righe-di-sistema'
 
 /**
@@ -839,5 +839,73 @@ describe('LineItemsTable — dividere una riga (Task 9)', () => {
     )
     expect(bottone).toBeDisabled()
     expect(bottone.getAttribute('title')).toContain('non può essere divisa')
+  })
+})
+
+/**
+ * Task 10: l'avviso di divergenza (Task 7 la rileva, qui solo si mostra e si
+ * agisce). Componente presentazionale — nessuna fetch propria, la mutation
+ * vive in InvoiceDetail.tsx (stesso schema di LineItemsTable/RigaDivisibile,
+ * che ricevono callback e non chiamano l'API da sole) — quindi niente
+ * QueryClientProvider qui, bastano props ed eventi.
+ */
+describe('AvvisoRiallineamento', () => {
+  it('nessuna divergenza: non renderizza nulla', () => {
+    const { container } = render(
+      <AvvisoRiallineamento divergenze={[]} onRiallinea={vi.fn()} />
+    )
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('una divergenza: nomina il movimento con la data in formato italiano e propone Riallinea', () => {
+    render(
+      <AvvisoRiallineamento
+        divergenze={[{ journalEntryId: 'mov-1', movimentoData: '2026-03-31T00:00:00.000Z' }]}
+        onRiallinea={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Questa fattura è stata reimputata dopo il pagamento')).not.toBeNull()
+    expect(screen.getByText(/Il movimento del 31\/03\/2026 usa ancora l'imputazione precedente/)).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Riallinea' })).not.toBeNull()
+  })
+
+  it('click su Riallinea chiama onRiallinea con il journalEntryId di QUEL movimento', () => {
+    const onRiallinea = vi.fn()
+    render(
+      <AvvisoRiallineamento
+        divergenze={[
+          { journalEntryId: 'mov-1', movimentoData: '2026-03-31T00:00:00.000Z' },
+          { journalEntryId: 'mov-2', movimentoData: '2026-05-15T00:00:00.000Z' },
+        ]}
+        onRiallinea={onRiallinea}
+      />
+    )
+
+    const bottoni = screen.getAllByRole('button', { name: 'Riallinea' })
+    expect(bottoni).toHaveLength(2)
+    fireEvent.click(bottoni[1])
+
+    expect(onRiallinea).toHaveBeenCalledExactlyOnceWith('mov-2')
+  })
+
+  it('riallineamento in corso: disabilita SOLO il bottone di quel movimento, gli altri restano cliccabili', () => {
+    render(
+      <AvvisoRiallineamento
+        divergenze={[
+          { journalEntryId: 'mov-1', movimentoData: '2026-03-31T00:00:00.000Z' },
+          { journalEntryId: 'mov-2', movimentoData: '2026-05-15T00:00:00.000Z' },
+        ]}
+        onRiallinea={vi.fn()}
+        journalEntryIdInCorso="mov-1"
+      />
+    )
+
+    const bottoni = screen.getAllByRole('button')
+    // Il bottone in corso perde il testo "Riallinea" (sostituito dallo
+    // spinner): getAllByRole('button', { name: 'Riallinea' }) ne troverebbe
+    // uno solo comunque, quindi si controlla lo stato disabled per indice.
+    expect(bottoni[0]).toBeDisabled()
+    expect(bottoni[1]).not.toBeDisabled()
   })
 })

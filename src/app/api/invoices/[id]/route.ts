@@ -5,6 +5,7 @@ import { InvoiceStatus } from '@prisma/client'
 import { z } from 'zod'
 import { parseFatturaPA, TIPI_DOCUMENTO } from '@/lib/sdi/parser'
 import { righeDiSistema } from '@/lib/sdi/righe-di-sistema'
+import { imputazioniDivergenti } from '@/lib/invoices/riallineamento'
 import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
@@ -190,7 +191,42 @@ export async function GET(request: NextRequest, context: RouteContext) {
       }
     }
 
-    return NextResponse.json({ ...invoice, parsedData })
+    // Task 10 (fuori piano, spec sez. 2): il pulsante "Riallinea" ha bisogno
+    // di sapere se un movimento collegato a questa fattura porta ancora
+    // fette nate da un'imputazione superata. `imputazioniDivergenti` lavora
+    // per MOVIMENTO, non per fattura — quindi si trovano prima i movimenti
+    // collegati attraverso le scadenze riconciliate di questa fattura (di
+    // norma uno solo, salvo pagamenti frazionati su più bonifici) e si
+    // interroga ciascuno.
+    //
+    // Costo: una query per i movimenti collegati, più 1-2 query per ciascun
+    // movimento distinto (quel che interroga `imputazioniDivergenti` al suo
+    // interno). Limitato alle riconciliazioni di QUESTA fattura: non cresce
+    // con una lista, perché gira solo qui, sul dettaglio di una singola
+    // fattura — mai su ogni riga di un elenco.
+    const movimentiCollegati = await prisma.scheduleReconciliation.findMany({
+      where: { status: 'VERIFIED', schedule: { invoiceId: id } },
+      select: { journalEntryId: true, journalEntry: { select: { date: true } } },
+    })
+    const dataPerMovimento = new Map(
+      movimentiCollegati.map((m) => [m.journalEntryId, m.journalEntry.date])
+    )
+
+    const divergenze: Array<{ journalEntryId: string; movimentoData: string }> = []
+    for (const journalEntryId of dataPerMovimento.keys()) {
+      const esito = await imputazioniDivergenti(journalEntryId)
+      // Un bonifico cumulativo può saldare più fatture: `imputazioniDivergenti`
+      // riporta la divergenza più recente di TUTTO il movimento, non
+      // necessariamente quella di questa fattura. Mostrarla comunque
+      // attribuirebbe a questa fattura un problema che è di un'altra —
+      // si verifica che l'`invoiceId` tornato sia proprio il nostro.
+      if (esito.divergente && esito.invoiceId === id) {
+        const data = dataPerMovimento.get(journalEntryId)
+        if (data) divergenze.push({ journalEntryId, movimentoData: data.toISOString() })
+      }
+    }
+
+    return NextResponse.json({ ...invoice, parsedData, divergenze })
   } catch (error) {
     logger.error('Errore GET /api/invoices/[id]', error)
     return NextResponse.json(

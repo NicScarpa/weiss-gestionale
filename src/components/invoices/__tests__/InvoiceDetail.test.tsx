@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import { render, cleanup, fireEvent, screen, waitFor, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -244,5 +244,197 @@ describe('InvoiceDetail — passo 3: il rifiuto del server è visibile', () => {
     // Sulla rejection, l'editor resta aperto coi valori digitati: un errore
     // del server non deve far sparire il lavoro dell'utente (vedi report).
     expect(screen.getByRole('button', { name: 'Salva' })).not.toBeNull()
+  })
+})
+
+/**
+ * Task 10: l'avviso di divergenza e il pulsante Riallinea, montati dentro
+ * InvoiceDetail per intero — è lì che vive la mutation vera (fetch reale
+ * verso /api/prima-nota/[id]/riallinea), non nel componente presentazionale
+ * (già testato a parte in InvoiceDetailSections.test.tsx). Le tre risposte
+ * della rotta (Task 7) devono arrivare a schermo: 200 fa sparire l'avviso e
+ * conferma quante fette sono state rigenerate, 409 e 422 mostrano il
+ * messaggio che la rotta scrive, senza inventarne uno diverso.
+ */
+describe('InvoiceDetail — Task 10: avviso di divergenza e Riallinea', () => {
+  // Il mock di `sonner` è unico per l'intero file (vi.mock in cima, fuori da
+  // ogni describe): senza azzerarne le chiamate, il toast.error del blocco
+  // Task 9 sopra resterebbe contato anche qui, e `toHaveBeenCalledTimes(1)`
+  // fallirebbe per un motivo che non ha niente a che fare con Task 10.
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
+
+  const FATTURA_BASE = {
+    id: 'inv-1',
+    invoiceNumber: '123',
+    invoiceDate: '2026-08-01T00:00:00.000Z',
+    documentType: 'TD01',
+    supplierVat: '12345678901',
+    supplierName: 'Fornitore SRL',
+    totalAmount: '1222.00',
+    vatAmount: '122.00',
+    netAmount: '1100.00',
+    status: 'RECORDED',
+    importedAt: '2026-08-01T00:00:00.000Z',
+    deadlines: [],
+    account: null,
+    parsedData: {
+      dettaglioLinee: [
+        {
+          numeroLinea: 1,
+          descrizione: 'Farina',
+          quantita: 1,
+          unitaMisura: 'kg',
+          prezzoUnitario: 1000,
+          prezzoTotale: 1000,
+          aliquotaIVA: 10,
+          imputazioni: [
+            { progressivo: 0, accountId: 'conto-alimentari', importo: 1000, stato: 'confermata', fonte: 'manuale' },
+          ],
+        },
+      ],
+      righeSistema: [],
+    },
+  }
+
+  function mockFetchConDivergenza(
+    divergenze: Array<{ journalEntryId: string; movimentoData: string }>,
+    rispostaRiallinea: () => Promise<{ ok: boolean; json: () => Promise<unknown> }>
+  ) {
+    // Dopo un riallineamento riuscito, InvoiceDetail invalida la query e
+    // rilegge la fattura: la seconda GET deve tornare senza la divergenza
+    // appena risolta, altrimenti il test non distinguerebbe "l'avviso è
+    // sparito" da "la GET non è mai stata richiamata".
+    let chiamateGet = 0
+    global.fetch = vi.fn().mockImplementation((input: string | URL, init?: RequestInit) => {
+      const url = new URL(String(input), 'http://localhost')
+      const method = (init?.method ?? 'GET').toUpperCase()
+
+      if (url.pathname === '/api/invoices/inv-1' && method === 'GET') {
+        chiamateGet += 1
+        const divergenzeDaMostrare = chiamateGet === 1 ? divergenze : []
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ ...FATTURA_BASE, divergenze: divergenzeDaMostrare }),
+        })
+      }
+      if (url.pathname.match(/^\/api\/prima-nota\/mov-\d+\/riallinea$/) && method === 'POST') {
+        return rispostaRiallinea()
+      }
+      if (url.pathname === '/api/accounts') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ accounts: [] }) })
+      }
+      if (url.pathname === '/api/cost-centers') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ costCenters: [] }) })
+      }
+      return Promise.reject(new Error(`URL non gestita nel mock InvoiceDetail (Task 10): ${method} ${url.pathname}`))
+    }) as unknown as typeof fetch
+  }
+
+  function montare() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <InvoiceDetail invoiceId="inv-1" />
+      </QueryClientProvider>
+    )
+  }
+
+  it('nessuna divergenza: l\'avviso non compare', async () => {
+    mockFetchConDivergenza([], () => Promise.reject(new Error('non dovrebbe essere chiamata')))
+
+    montare()
+
+    await waitFor(() => expect(screen.getByText('Fattura 123')).not.toBeNull())
+    expect(screen.queryByText('Questa fattura è stata reimputata dopo il pagamento')).toBeNull()
+  })
+
+  it('200: mostra quante fette sono state rigenerate e l\'avviso sparisce', async () => {
+    mockFetchConDivergenza(
+      [{ journalEntryId: 'mov-1', movimentoData: '2026-03-31T00:00:00.000Z' }],
+      () =>
+        Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              fette: 2,
+              invoiceId: 'inv-1',
+              message: 'Fette riallineate alle imputazioni correnti della fattura',
+            }),
+        })
+    )
+
+    montare()
+
+    const bottone = await waitFor(() => screen.getByRole('button', { name: 'Riallinea' }))
+    await act(async () => {
+      fireEvent.click(bottone)
+    })
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1))
+    expect(String(vi.mocked(toast.success).mock.calls[0][0])).toContain('2 fette')
+
+    await waitFor(() =>
+      expect(screen.queryByText('Questa fattura è stata reimputata dopo il pagamento')).toBeNull()
+    )
+  })
+
+  it('409: già allineato o mai coperto per intero — il messaggio della rotta arriva con toast.error, l\'avviso resta', async () => {
+    mockFetchConDivergenza(
+      [{ journalEntryId: 'mov-1', movimentoData: '2026-03-31T00:00:00.000Z' }],
+      () =>
+        Promise.resolve({
+          ok: false,
+          json: () =>
+            Promise.resolve({ error: 'Il movimento non ha imputazioni divergenti da riallineare' }),
+        })
+    )
+
+    montare()
+
+    const bottone = await waitFor(() => screen.getByRole('button', { name: 'Riallinea' }))
+    await act(async () => {
+      fireEvent.click(bottone)
+    })
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1))
+    expect(String(vi.mocked(toast.error).mock.calls[0][0])).toBe(
+      'Il movimento non ha imputazioni divergenti da riallineare'
+    )
+    // Il server non ha rigenerato nulla: l'avviso resta a schermo, non
+    // sparisce su un errore.
+    expect(screen.getByText('Questa fattura è stata reimputata dopo il pagamento')).not.toBeNull()
+  })
+
+  it('422: la fattura non è rigenerabile — il motivo delle guardie (righe non confermate, capienza, nota di credito) arriva a schermo', async () => {
+    const messaggio422 =
+      'Le fette non sono state rigenerate: verifica che tutte le righe della fattura siano ' +
+      'confermate, che la capienza del movimento non sia superata e che le note di credito ' +
+      'collegate siano imputate per intero.'
+    mockFetchConDivergenza(
+      [{ journalEntryId: 'mov-1', movimentoData: '2026-03-31T00:00:00.000Z' }],
+      () =>
+        Promise.resolve({
+          ok: false,
+          json: () => Promise.resolve({ error: messaggio422 }),
+        })
+    )
+
+    montare()
+
+    const bottone = await waitFor(() => screen.getByRole('button', { name: 'Riallinea' }))
+    await act(async () => {
+      fireEvent.click(bottone)
+    })
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1))
+    expect(String(vi.mocked(toast.error).mock.calls[0][0])).toBe(messaggio422)
+    expect(screen.getByText('Questa fattura è stata reimputata dopo il pagamento')).not.toBeNull()
   })
 })
