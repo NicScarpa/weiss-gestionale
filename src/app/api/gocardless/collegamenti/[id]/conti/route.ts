@@ -137,15 +137,31 @@ export const GET = withAuth<{ id: string }>(
             // non è mai stata completata — l'evento più ordinario di questa
             // integrazione (OTP sbagliato, app scaduta, scheda chiusa).
             //
-            // La durata si rilegge dall'istituto invece di conservarla dalla
-            // richiesta di consenso: non è una chiamata per conto, quindi
-            // non tocca il contingente di quattro al giorno su cui vale la
-            // guardia di `dettagliConto` qui sotto — è la stessa chiamata già
-            // fatta da POST /collegamenti e POST /rinnovo.
-            const elenco = await client.istituzioni('it')
-            const istituto = elenco.dati.find((i) => i.id === connessione.institutionId)
-            const accesso = Math.min(giorni(istituto?.max_access_valid_for_days, 90), 180)
-            aggiornamentoStato.accessValidUntil = new Date(Date.now() + accesso * 86_400_000)
+            // Un `try/catch` tutto suo: questa chiamata è un arricchimento,
+            // non l'essenziale. `istituzioni()` non è per conto, quindi non
+            // tocca il contingente su cui vale la guardia di `dettagliConto`
+            // qui sotto, ma sta nella stessa catena `await` che scrive lo
+            // stato — un 429 o un 5xx qui non deve far fallire l'intera
+            // lettura dei conti proprio quando l'amministratore torna dalla
+            // banca. Se fallisce, lo stato si scrive lo stesso e la data
+            // resta indietro fino alla prossima lettura che ci riesce.
+            try {
+              const elenco = await client.istituzioni('it')
+              const istituto = elenco.dati.find((i) => i.id === connessione.institutionId)
+              // Un istituto sparito dal catalogo non deve produrre una
+              // scadenza inventata: la stessa condizione, in POST /rinnovo,
+              // risponde con un 409 esplicito. Qui la conseguenza sarebbe
+              // invisibile — una data a schermo indistinguibile da una vera
+              // — quindi si tratta come «non ho l'informazione»: si lascia
+              // `accessValidUntil` com'era, non si scrivono 90 giorni per
+              // difetto.
+              if (istituto) {
+                const accesso = Math.min(giorni(istituto.max_access_valid_for_days, 90), 180)
+                aggiornamentoStato.accessValidUntil = new Date(Date.now() + accesso * 86_400_000)
+              }
+            } catch {
+              // Nessuna scadenza scritta: si riprova alla prossima lettura.
+            }
           }
           await prisma.bankConnection.update({ where: { id: connessione.id }, data: aggiornamentoStato })
         }
@@ -307,6 +323,26 @@ export const PUT = withAuth<{ id: string }>(
       if (duplicato) {
         return NextResponse.json(
           { error: `Il conto ${duplicato[0]} compare più di una volta nella richiesta, con azioni in conflitto` },
+          { status: 400 }
+        )
+      }
+
+      // Speculare al controllo sopra, sul verso opposto: due voci con
+      // `providerAccountId` diversi (quindi non fermate lì) possono scegliere
+      // lo stesso `bankAccountId`. Passerebbero entrambe la validazione per
+      // riga qui sotto e scriverebbero la stessa riga di `BankAccount` due
+      // volte nella stessa transazione — vince l'ultima, `salvati` ne conta
+      // comunque due, e nessuno saprebbe quale configurazione è davvero in
+      // vigore.
+      const conteggioBankAccountId = new Map<string, number>()
+      for (const c of analisi.data.conti) {
+        if (c.azione !== 'configura' || !c.bankAccountId) continue
+        conteggioBankAccountId.set(c.bankAccountId, (conteggioBankAccountId.get(c.bankAccountId) ?? 0) + 1)
+      }
+      const bankAccountIdDuplicato = [...conteggioBankAccountId.entries()].find(([, n]) => n > 1)
+      if (bankAccountIdDuplicato) {
+        return NextResponse.json(
+          { error: `Il conto del gestionale ${bankAccountIdDuplicato[0]} è scelto da più righe nella stessa richiesta` },
           { status: 400 }
         )
       }

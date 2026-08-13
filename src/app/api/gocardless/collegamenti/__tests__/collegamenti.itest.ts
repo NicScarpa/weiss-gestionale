@@ -119,10 +119,17 @@ describe('POST /api/gocardless/collegamenti', () => {
     expect(await prisma.bankConnection.count({ where: { venueId: venue.id, deletedAt: null } })).toBe(0)
   })
 
-  // Il campo gemello (`maxHistoricalDays`) usa già ciò che la banca concede;
-  // questo deve fare lo stesso, perché finisce all'amministratore come data
-  // di scadenza su cui si baserà il banner di rinnovo.
-  it('la scadenza del consenso segue ciò che la banca concede, non ciò che è stato chiesto', async () => {
+  // Ultimo giro della revisione finale: questa scrittura c'era ancora, la
+  // stessa forma del difetto di C1 nella rotta gemella. Il consenso non è
+  // ancora stato concesso quando questa POST risponde — lo sarà solo se
+  // l'amministratore completa l'autenticazione in banca, un passo fuori dal
+  // controllo del gestionale che può non arrivare mai (scheda chiusa, app
+  // scaduta). Scrivere già qui una scadenza a novanta giorni farebbe
+  // sembrare valido un consenso mai concesso, esattamente come in
+  // POST /rinnovo (vedi il commento in testa a quella rotta). La scrive
+  // GET .../conti, quando quella rotta scopre che lo stato è appena
+  // diventato `LN`.
+  it('non scrive la scadenza: il consenso non è ancora stato concesso', async () => {
     await entraCome('admin')
     const { client } = clientFinto({ accessValidForDaysConcessi: 90 })
     impostaClientPerTest(client)
@@ -133,12 +140,8 @@ describe('POST /api/gocardless/collegamenti', () => {
     )
 
     const riga = await prisma.bankConnection.findUnique({ where: { id: esito.body.connessioneId } })
-    const giorniAllaScadenza = Math.round((riga!.accessValidUntil!.getTime() - Date.now()) / 86_400_000)
-    // L'istituto finto dichiara max_access_valid_for_days: '180' (ciò che è
-    // stato chiesto), ma la banca ne concede solo 90: deve vincere il valore
-    // concesso.
-    expect(giorniAllaScadenza).toBeGreaterThanOrEqual(89)
-    expect(giorniAllaScadenza).toBeLessThanOrEqual(90)
+    expect(riga!.status).toBe('CR')
+    expect(riga!.accessValidUntil).toBeNull()
   })
 
   // Decisione del proprietario: un secondo collegamento vivo per la stessa

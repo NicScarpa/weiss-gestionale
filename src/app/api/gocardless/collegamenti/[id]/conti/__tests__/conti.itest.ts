@@ -227,6 +227,79 @@ describe('la scadenza si scrive quando il consenso diventa attivo, non prima', (
     expect(riga.status).toBe('UA')
     expect(riga.accessValidUntil).toBeNull()
   })
+
+  // Ultimo giro della revisione finale. L'istituto sparito dal catalogo
+  // (fusione, ritiro dall'elenco) non deve produrre una scadenza inventata:
+  // la stessa condizione, in POST /rinnovo, risponde con un 409 esplicito
+  // perché lì la conseguenza sarebbe visibile subito. Qui sarebbe
+  // invisibile — una data a schermo indistinguibile da una vera — quindi si
+  // tratta come «non ho l'informazione».
+  it("non scrive una scadenza inventata se l'istituto non è più disponibile", async () => {
+    await entraCome('admin')
+    const venue = await venueDiTest()
+    const connessione = await prisma.bankConnection.create({
+      data: {
+        venueId: venue.id,
+        institutionId: 'BANCA_SPARITA',
+        institutionName: 'Banca Sparita',
+        requisitionId: 'req-1',
+        status: 'UA',
+        accessValidUntil: null,
+      },
+    })
+    impostaClientPerTest({
+      leggiRequisition: async () => ({
+        dati: { id: 'req-1', status: 'LN', accounts: [], link: '' },
+        limiti: { restanti: null, ripresaFraSecondi: null },
+      }),
+      istituzioni: async () => ({
+        dati: [{ id: 'ALTRA_BANCA', name: 'Un altro istituto', max_access_valid_for_days: '90' }],
+        limiti: { restanti: null, ripresaFraSecondi: null },
+      }),
+    } as unknown as ClientGoCardless)
+
+    const esito = await callRoute(leggiConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`), { id: connessione.id })
+
+    expect(esito.status).toBe(200)
+    const riga = await prisma.bankConnection.findUniqueOrThrow({ where: { id: connessione.id } })
+    expect(riga.status).toBe('LN')
+    expect(riga.accessValidUntil).toBeNull()
+  })
+
+  // La stessa chiamata è un arricchimento, non l'essenziale: sta nella
+  // stessa catena `await` che scrive lo stato, e un 429 o un 5xx qui non
+  // deve far fallire l'intera lettura dei conti proprio quando
+  // l'amministratore torna dalla banca.
+  it('un errore di istituzioni() non fa fallire la lettura: lo stato si scrive lo stesso', async () => {
+    await entraCome('admin')
+    const venue = await venueDiTest()
+    const connessione = await prisma.bankConnection.create({
+      data: {
+        venueId: venue.id,
+        institutionId: 'BANCA_FINTA_XXXX',
+        institutionName: 'Banca Finta',
+        requisitionId: 'req-1',
+        status: 'UA',
+        accessValidUntil: null,
+      },
+    })
+    impostaClientPerTest({
+      leggiRequisition: async () => ({
+        dati: { id: 'req-1', status: 'LN', accounts: [], link: '' },
+        limiti: { restanti: null, ripresaFraSecondi: null },
+      }),
+      istituzioni: async () => {
+        throw new Error('la banca non risponde')
+      },
+    } as unknown as ClientGoCardless)
+
+    const esito = await callRoute(leggiConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`), { id: connessione.id })
+
+    expect(esito.status).toBe(200)
+    const riga = await prisma.bankConnection.findUniqueOrThrow({ where: { id: connessione.id } })
+    expect(riga.status).toBe('LN')
+    expect(riga.accessValidUntil).toBeNull()
+  })
 })
 
 describe('PUT configurazione dei conti', () => {
@@ -373,6 +446,36 @@ describe('PUT configurazione dei conti', () => {
     expect(aggiornato).toMatchObject({ syncEnabled: false, providerAccountId: null, connectionId: null })
     const riga = await prisma.bankConnection.findUniqueOrThrow({ where: { id: connessione.id } })
     expect(riga.contiIgnorati).toEqual([])
+  })
+
+  // Ultimo giro della revisione finale: speculare al test sopra, sul verso
+  // opposto. Due `providerAccountId` diversi non fermano il controllo dei
+  // duplicati, ma se scelgono lo stesso `bankAccountId` scriverebbero la
+  // stessa riga due volte nella stessa transazione — vince l'ultima,
+  // `salvati` ne conterebbe comunque due, e nessuno saprebbe quale
+  // configurazione è davvero in vigore.
+  it('rifiuta due righe che scelgono lo stesso conto del gestionale', async () => {
+    await entraCome('admin')
+    const { venue, connessione } = await connessioneCollegata(['gc-a', 'gc-b'])
+    const conto = await contoDiTest(venue.id, 'Conto principale', IBAN_A)
+
+    const esito = await callRoute(
+      salvaConti,
+      jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
+        method: 'PUT',
+        body: {
+          conti: [
+            { providerAccountId: 'gc-a', azione: 'configura', attivo: true, bankAccountId: conto.id, dataTaglio: '2026-08-12' },
+            { providerAccountId: 'gc-b', azione: 'configura', attivo: true, bankAccountId: conto.id, dataTaglio: '2026-08-12' },
+          ],
+        },
+      }),
+      { id: connessione.id }
+    )
+
+    expect(esito.status).toBe(400)
+    const invariato = await prisma.bankAccount.findUniqueOrThrow({ where: { id: conto.id } })
+    expect(invariato).toMatchObject({ syncEnabled: false, providerAccountId: null, connectionId: null })
   })
 
   // La lettura propone come candidati solo i conti BANK; senza filtrare

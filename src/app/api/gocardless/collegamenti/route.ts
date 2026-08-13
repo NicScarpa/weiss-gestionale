@@ -101,10 +101,15 @@ export const POST = withAuth(
           agreementId: agreement.dati.id,
           status: 'CR',
           maxHistoricalDays: agreement.dati.max_historical_days ?? storico,
-          // Come sopra: ciò che la banca concede, non ciò che è stato
-          // chiesto. Questo valore finisce all'amministratore come data di
-          // scadenza del consenso.
-          accessValidUntil: new Date(Date.now() + (agreement.dati.access_valid_for_days ?? accesso) * 86_400_000),
+          // `accessValidUntil` non si scrive qui: il consenso non è ancora
+          // stato concesso, solo richiesto. Se l'amministratore abbandona
+          // l'autenticazione in banca — l'evento più ordinario di questa
+          // integrazione — la riga resterebbe in `CR` con una scadenza a
+          // novanta giorni per un consenso mai esistito, ed è esattamente il
+          // difetto che la stessa scrittura in POST /rinnovo aveva (vedi il
+          // commento in testa a quella rotta). La si scrive in
+          // `GET .../conti`, quando quella rotta scopre che lo stato è
+          // appena diventato `LN`.
         },
       })
 
