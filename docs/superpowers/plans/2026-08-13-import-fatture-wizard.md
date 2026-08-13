@@ -537,10 +537,43 @@ In `prisma/schema.prisma`, dentro `model ElectronicInvoice`, sotto `vatSummary`:
   withholding    Json?             @map("withholding")
 ```
 
+> ⛔ **Non eseguire `prisma migrate dev`.** Il `.env` di questo worktree è un
+> collegamento a quello principale, e la sua `DATABASE_URL` punta al Supabase di
+> **produzione**: `migrate dev` applicherebbe la migrazione ai dati veri, e
+> userebbe anche uno shadow database sullo stesso server. La migrazione qui si
+> scrive a mano — è già lo stile del progetto, come si vede dai commenti estesi
+> di `prisma/migrations/20260813000002_nota_credito_rettifica/migration.sql`.
+
+Crea `prisma/migrations/20260813120000_ritenuta_su_fattura/migration.sql`:
+
+```sql
+-- electronic_invoices.withholding: la ritenuta d'acconto letta dall'XML
+-- (DatiRitenuta), conservata e mai imputata. Il trattamento contabile della
+-- ritenuta e' sospeso: e' un canale di saldo con ciclo di vita proprio (F24),
+-- non una riga da girare a conto. Leggerla e non salvarla la perderebbe; ecco
+-- perche' la colonna esiste prima che esista una schermata che la usa.
+--
+-- Nullable e senza backfill: le fatture gia' importate restano `null`, che e'
+-- il loro stato vero — l'unica fonte che puo' popolare il campo e' il flusso di
+-- import, che gira solo in avanti.
+--
+-- Json e non quattro colonne: i quattro campi (tipo, importo, aliquota,
+-- causale) si leggono e si scrivono sempre insieme, e nessuno di essi viene
+-- mai interrogato da solo. Stessa scelta gia' fatta per `line_items`,
+-- `references` e `vat_summary` sulla stessa tabella.
+ALTER TABLE "electronic_invoices" ADD COLUMN "withholding" JSONB;
+```
+
+Poi rigenera il client — questo comando **non** tocca alcun database:
+
 ```bash
-nvm use 22 && npx prisma migrate dev --name ritenuta_su_fattura
 nvm use 22 && npx prisma generate
 ```
+
+I test d'integrazione non hanno bisogno che la migrazione sia applicata: il loro
+database modello nasce da `prisma db push` sullo schema (`src/test/integration/global-setup.ts`),
+quindi basta che `prisma/schema.prisma` sia aggiornato. In produzione la applica
+il deploy, con `migrate deploy`.
 
 - [ ] **Step 7: Salvare il dato all'import**
 
