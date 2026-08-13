@@ -28,6 +28,14 @@ export interface ScadenzaFixture {
   venueId?: string
   recurrenceId?: string | null
   ricorrenzaParentId?: string | null
+  /** Riferimento del documento (es. numero fattura), cercato nella causale. */
+  numeroDocumento?: string | null
+  /** Ragione sociale della controparte, cercata nella causale. */
+  controparteNome?: string | null
+  /** IBAN della controparte, cercato nella causale. */
+  controparteIban?: string | null
+  /** 'bonifico', 'riba', 'sdd', 'carta', 'contanti', 'f24', 'altro' */
+  metodoPagamento?: string | null
 }
 
 export async function creaScadenza(fixture: ScadenzaFixture = {}) {
@@ -47,6 +55,10 @@ export async function creaScadenza(fixture: ScadenzaFixture = {}) {
       invoiceId: fixture.invoiceId ?? null,
       recurrenceId: fixture.recurrenceId ?? null,
       ricorrenzaParentId: fixture.ricorrenzaParentId ?? null,
+      numeroDocumento: fixture.numeroDocumento ?? null,
+      controparteNome: fixture.controparteNome ?? null,
+      controparteIban: fixture.controparteIban ?? null,
+      metodoPagamento: fixture.metodoPagamento ?? null,
     },
   })
 }
