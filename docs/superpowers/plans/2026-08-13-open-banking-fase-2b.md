@@ -393,7 +393,11 @@ La logica: se esiste memoria e non è stato chiesto `?aggiorna=1`, si usa la mem
       contiBanca = letti.map(daConservato)
       await prisma.bankConnection.update({
         where: { id: connessione.id },
-        data: { contiLetti: contiBanca as unknown as Prisma.InputJsonValue, contiLettiIl: new Date() },
+        // Si conserva `letti`, non `contiBanca`: la colonna deve contenere la
+        // forma con `ibanMascherato`, che è quella che `leggiConservati` sa
+        // rileggere. Scrivendoci `contiBanca` la validazione fallirebbe al giro
+        // successivo e la memoria non funzionerebbe mai — cioè il punto del task.
+        data: { contiLetti: letti as unknown as Prisma.InputJsonValue, contiLettiIl: new Date() },
       })
     }
 ```
