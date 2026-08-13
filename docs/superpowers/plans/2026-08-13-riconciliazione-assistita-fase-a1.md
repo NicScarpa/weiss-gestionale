@@ -1848,8 +1848,10 @@ describe('generaLotto', () => {
 
   it('usa un alias appreso per riconoscere una controparte scritta diversamente', async () => {
     const venue = await venueDiTest()
+    // `Supplier` è un'anagrafica **globale**: non ha `venueId`. Passarglielo
+    // non compila.
     const fornitore = await prisma.supplier.create({
-      data: { venueId: venue.id, name: 'Roma Gianfranco S.r.l.' },
+      data: { name: 'Roma Gianfranco S.r.l.' },
     })
     await prisma.counterpartyAlias.create({
       data: {
