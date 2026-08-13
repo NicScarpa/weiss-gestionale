@@ -1374,8 +1374,7 @@ export type StatoRiga = 'importata' | 'duplicata' | 'errore' | 'esclusa'
 
 ```typescript
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { PassoCaricamento } from '../PassoCaricamento'
 import { OPZIONI_PREDEFINITE } from '../tipi'
 
@@ -1426,7 +1425,7 @@ describe('PassoCaricamento', () => {
       <PassoCaricamento opzioni={OPZIONI_PREDEFINITE} onOpzioniChange={onOpzioniChange} fileScelti={[]} onFileScelti={vi.fn()} inLettura={false} />
     )
 
-    await userEvent.click(screen.getByRole('radio', { name: /sostituisci con i nuovi dati/i }))
+    fireEvent.click(screen.getByRole('radio', { name: /sostituisci con i nuovi dati/i }))
 
     expect(onOpzioniChange).toHaveBeenCalledWith(
       expect.objectContaining({ politicaDuplicati: 'sostituisci' })
@@ -1638,8 +1637,7 @@ export interface RigaAnteprima extends FatturaLetta {
 
 ```typescript
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { render, screen, within, fireEvent } from '@testing-library/react'
 import { PassoAnteprima } from '../PassoAnteprima'
 import type { RigaAnteprima } from '../PassoAnteprima'
 
@@ -1698,7 +1696,7 @@ describe('PassoAnteprima', () => {
     const onEsclusioneChange = vi.fn()
     render(<PassoAnteprima righe={[riga()]} onEsclusioneChange={onEsclusioneChange} metadatiIgnorati={0} scartati={[]} />)
 
-    await userEvent.click(screen.getByRole('checkbox', { name: /includi/i }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /includi/i }))
 
     expect(onEsclusioneChange).toHaveBeenCalledWith('IT07945211006_001.xml', true)
   })
@@ -1792,8 +1790,7 @@ interface Props {
 
 ```typescript
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { DialogConflitti } from '../DialogConflitti'
 
 const conflitti = [
@@ -1811,7 +1808,7 @@ describe('DialogConflitti', () => {
     const onContinua = vi.fn()
     render(<DialogConflitti aperto conflitti={conflitti} onAnnulla={vi.fn()} onContinua={onContinua} />)
 
-    await userEvent.click(screen.getByRole('button', { name: /continua importazione/i }))
+    fireEvent.click(screen.getByRole('button', { name: /continua importazione/i }))
 
     expect(onContinua).toHaveBeenCalledWith({ '111': 'importazione', '222': 'importazione' })
   })
@@ -1820,8 +1817,8 @@ describe('DialogConflitti', () => {
     const onContinua = vi.fn()
     render(<DialogConflitti aperto conflitti={conflitti} onAnnulla={vi.fn()} onContinua={onContinua} />)
 
-    await userEvent.click(screen.getByRole('button', { name: /usa l anagrafica per ROMA GIANFRANCO SRL/i }))
-    await userEvent.click(screen.getByRole('button', { name: /continua importazione/i }))
+    fireEvent.click(screen.getByRole('button', { name: /usa l anagrafica per ROMA GIANFRANCO SRL/i }))
+    fireEvent.click(screen.getByRole('button', { name: /continua importazione/i }))
 
     expect(onContinua).toHaveBeenCalledWith({ '111': 'anagrafica', '222': 'importazione' })
   })
@@ -1830,8 +1827,8 @@ describe('DialogConflitti', () => {
     const onContinua = vi.fn()
     render(<DialogConflitti aperto conflitti={conflitti} onAnnulla={vi.fn()} onContinua={onContinua} />)
 
-    await userEvent.click(screen.getByRole('button', { name: /tutti anagrafica/i }))
-    await userEvent.click(screen.getByRole('button', { name: /continua importazione/i }))
+    fireEvent.click(screen.getByRole('button', { name: /tutti anagrafica/i }))
+    fireEvent.click(screen.getByRole('button', { name: /continua importazione/i }))
 
     expect(onContinua).toHaveBeenCalledWith({ '111': 'anagrafica', '222': 'anagrafica' })
   })
@@ -2143,8 +2140,7 @@ export type FiltroEsito = 'tutte' | StatoRiga
 
 ```typescript
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { render, screen, within, fireEvent } from '@testing-library/react'
 import { RiepilogoFinale } from '../RiepilogoFinale'
 import type { EsitoRiga } from '../RiepilogoFinale'
 
@@ -2189,7 +2185,7 @@ describe('RiepilogoFinale', () => {
   it('filtra la tabella quando si preme un contatore', async () => {
     render(<RiepilogoFinale esiti={esiti} fattureCreate={1} fornitoriCreati={0} onChiudi={vi.fn()} onRicomincia={vi.fn()} />)
 
-    await userEvent.click(screen.getByRole('button', { name: /2 duplicate/i }))
+    fireEvent.click(screen.getByRole('button', { name: /2 duplicate/i }))
 
     const righe = screen.getAllByRole('row').slice(1) // via l'intestazione
     expect(righe).toHaveLength(2)
@@ -2200,7 +2196,7 @@ describe('RiepilogoFinale', () => {
   it('apre il dettaglio completo della fattura sulla riga', async () => {
     render(<RiepilogoFinale esiti={esiti} fattureCreate={1} fornitoriCreati={0} onChiudi={vi.fn()} onRicomincia={vi.fn()} />)
 
-    await userEvent.click(screen.getByRole('button', { name: /dettagli di a\.xml/i }))
+    fireEvent.click(screen.getByRole('button', { name: /dettagli di a\.xml/i }))
 
     expect(screen.getByText('07945211006')).toBeInTheDocument()   // P.IVA
     expect(screen.getByText(/TD01/)).toBeInTheDocument()          // tipo documento
@@ -2210,7 +2206,7 @@ describe('RiepilogoFinale', () => {
 
   it('spiega perché una riga è fallita', async () => {
     render(<RiepilogoFinale esiti={esiti} fattureCreate={1} fornitoriCreati={0} onChiudi={vi.fn()} onRicomincia={vi.fn()} />)
-    await userEvent.click(screen.getByRole('button', { name: /1 errori/i }))
+    fireEvent.click(screen.getByRole('button', { name: /1 errori/i }))
     expect(screen.getByText('P.IVA assente')).toBeInTheDocument()
   })
 
@@ -2352,12 +2348,25 @@ git commit -m "feat(import): esecuzione con contatori vivi e riepilogo interroga
 
 ```typescript
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import { ImportaFattureWizard } from '../ImportaFattureWizard'
 import { xmlFattura } from '@/test/factories/fattura-xml.factory'
 
 const XML_MINIMO = xmlFattura({ numero: '42', data: '2026-06-01', piva: '07945211006' })
+
+/**
+ * Deposita i file sull'input e lascia sfogare la lettura asincrona.
+ *
+ * L'idioma del progetto è `fireEvent`, non `userEvent`: i primitivi Radix usati
+ * qui (radio, checkbox) rispondono a un click diretto e non richiedono la
+ * simulazione degli eventi di puntatore. Vedi la revisione del Task 7.
+ */
+async function caricaFile(input: HTMLInputElement, ...files: File[]) {
+  Object.defineProperty(input, 'files', { value: files, configurable: true })
+  await act(async () => {
+    fireEvent.change(input)
+  })
+}
 
 beforeEach(() => {
   global.fetch = vi.fn(async (url: string) => {
@@ -2376,12 +2385,12 @@ describe('ImportaFattureWizard', () => {
     render(<ImportaFattureWizard open onOpenChange={vi.fn()} onImportComplete={vi.fn()} />)
 
     const input = document.querySelector('input[type="file"]') as HTMLInputElement
-    await userEvent.upload(input, new File([XML_MINIMO], 'IT07945211006_001.xml', { type: 'application/xml' }))
+    await caricaFile(input, new File([XML_MINIMO], 'IT07945211006_001.xml', { type: 'application/xml' }))
 
     // Passo 2
     expect(await screen.findByText(/1 fattura trovata nei file caricati/i)).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: /avvia importazione/i }))
+    fireEvent.click(screen.getByRole('button', { name: /avvia importazione/i }))
 
     // Passo 3 → riepilogo
     expect(await screen.findByText(/importazione completata/i)).toBeInTheDocument()
@@ -2407,9 +2416,9 @@ describe('ImportaFattureWizard', () => {
 
     render(<ImportaFattureWizard open onOpenChange={vi.fn()} onImportComplete={vi.fn()} />)
     const input = document.querySelector('input[type="file"]') as HTMLInputElement
-    await userEvent.upload(input, new File([XML_MINIMO], 'IT07945211006_001.xml', { type: 'application/xml' }))
+    await caricaFile(input, new File([XML_MINIMO], 'IT07945211006_001.xml', { type: 'application/xml' }))
 
-    await userEvent.click(await screen.findByRole('button', { name: /avvia importazione/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /avvia importazione/i }))
 
     expect(await screen.findByText(/termini di pagamento in conflitto/i)).toBeInTheDocument()
   })
