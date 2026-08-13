@@ -100,6 +100,8 @@ model User {
   uploadedDocuments            EmployeeDocument[]            @relation("DocumentUploader")
   journalEntryAllocations      JournalEntryAllocation[]      @relation("JournalEntryAllocationCreatedBy")
   invoiceLineAccountsConfirmed InvoiceLineAccount[]          @relation("InvoiceLineAccountConfirmedBy")
+  reconciliationBatchesCreated ReconciliationBatch[]         @relation("ReconciliationBatchCreatedBy")
+  reconciliationProposalsDecise ReconciliationProposal[]     @relation("ReconciliationProposalDecisoDa")
 
   @@map("users")
 }
@@ -187,6 +189,9 @@ model Venue {
   clockReminders          ClockReminder[]
   communications          Communication[]
   supplierProductAccounts SupplierProductAccount[]
+  reconciliationBatches   ReconciliationBatch[]
+  counterpartyAliases     CounterpartyAlias[]
+  reconciliationExclusions ReconciliationExclusion[]
 
   @@map("venues")
 }
@@ -601,6 +606,7 @@ model JournalEntry {
   payment                 Payment?
   scheduleReconciliations ScheduleReconciliation[]
   allocations             JournalEntryAllocation[]
+  reconciliationProposals ReconciliationProposal[]
 
   @@index([venueId, date])
   @@index([venueId, registerType, date])
@@ -677,6 +683,7 @@ model Supplier {
   defaultAccount     Account?                 @relation(fields: [defaultAccountId], references: [id])
   schedules          Schedule[]               @relation("ScheduleSupplier")
   productAccounts    SupplierProductAccount[]
+  counterpartyAliases CounterpartyAlias[]      @relation("CounterpartyAliasSupplier")
 
   @@index([fiscalCodeHash])
   @@map("suppliers")
@@ -700,6 +707,7 @@ model Customer {
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
   defaultAccount   Account? @relation(fields: [defaultAccountId], references: [id])
+  counterpartyAliases CounterpartyAlias[] @relation("CounterpartyAliasCustomer")
 
   @@map("customers")
 }
@@ -767,6 +775,8 @@ model Schedule {
   recurrence                    Recurrence?              @relation("ScheduleFromRecurrence", fields: [recurrenceId], references: [id])
   createdBy                     User?                    @relation("ScheduleCreatedBy", fields: [createdById], references: [id])
   venue                         Venue                    @relation(fields: [venueId], references: [id])
+  proposalLegs                  ReconciliationProposalLeg[]
+  reconciliationExclusions      ReconciliationExclusion[] @relation("ExclusionSchedule")
 
   @@index([venueId, dataScadenza])
   // Il previsionale ordina per dataAttesa ?? dataScadenza: senza questo indice
@@ -1956,6 +1966,10 @@ model BankTransaction {
 
   bankAccount BankAccount? @relation(fields: [bankAccountId], references: [id])
 
+  reconciliationProposals ReconciliationProposal[]
+  proposalLegsAsPeer      ReconciliationProposalLeg[] @relation("ProposalLegPeer")
+  reconciliationExclusions ReconciliationExclusion[]  @relation("ExclusionBankTransaction")
+
   // Unicità di (venueId, bankReference) come indice PARZIALE in
   // prisma/migrations/post-push/constraints.sql: vedi DailyClosure.
   @@index([venueId, bankReference])
@@ -1964,6 +1978,138 @@ model BankTransaction {
   @@index([importBatchId])
   @@index([bankAccountId, transactionDate])
   @@map("bank_transactions")
+}
+
+/// Un'esecuzione dell'analisi di riconciliazione assistita su un periodo.
+/// Le proposte si conservano — servono lo storico, il "Riprendi" e il referto
+/// dell'AI — ma alla rilettura ognuna viene ricontrollata per freschezza.
+model ReconciliationBatch {
+  id            String   @id @default(cuid())
+  venueId       String   @map("venue_id")
+  dateFrom      DateTime @map("date_from") @db.Date
+  dateTo        DateTime @map("date_to") @db.Date
+  /// Le sigle usate in questa esecuzione: ["R1","R2","R3","R4","R5"]
+  regoleUsate   String[] @map("regole_usate")
+  /// Sotto questo punteggio non si emettono proposte
+  sogliaMinima  Int      @default(40) @map("soglia_minima")
+  stato         String   @default("in_corso")
+  contaProposte Int      @default(0) @map("conta_proposte")
+  contaApprovate Int     @default(0) @map("conta_approvate")
+  contaScartate Int      @default(0) @map("conta_scartate")
+  contaSuperate Int      @default(0) @map("conta_superate")
+  /// Quando l'AI ha riletto il lotto. Null = mai.
+  aiRefertoAt   DateTime? @map("ai_referto_at")
+  aiReferto     Json?     @map("ai_referto")
+  createdById   String?   @map("created_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  venue     Venue                    @relation(fields: [venueId], references: [id])
+  createdBy User?                    @relation("ReconciliationBatchCreatedBy", fields: [createdById], references: [id])
+  proposte  ReconciliationProposal[]
+
+  @@index([venueId, createdAt])
+  @@map("reconciliation_batches")
+}
+
+/// Una proposta di abbinamento. Il punteggio è la somma dei sei fattori, che
+/// restano separati perché la barra segmentata e le motivazioni li mostrano.
+model ReconciliationProposal {
+  id         String @id @default(cuid())
+  batchId    String @map("batch_id")
+  /// R1..R8, vedi la spec
+  regola     String
+  punteggio  Int
+  /// { importo, riferimento, controparte, data, codiceBanca, unicita }
+  fattori    Json
+  /// [{ testo, segno }] — segno è "+" o "-"
+  motivazioni Json
+  stato      String @default("in_attesa")
+  /// Quale approvazione ha superato questa proposta
+  supersededByProposalId String? @map("superseded_by_proposal_id")
+  /// Il movimento a sinistra. Null solo per R6 (nota di credito ↔ fattura).
+  bankTransactionId String? @map("bank_transaction_id")
+  /// Usato dalla R4, dove il movimento contabile esiste già e non c'è documento
+  journalEntryId    String? @map("journal_entry_id")
+  decisoDaId String?   @map("deciso_da")
+  decisoAt   DateTime? @map("deciso_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  batch           ReconciliationBatch         @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  bankTransaction BankTransaction?            @relation(fields: [bankTransactionId], references: [id])
+  journalEntry    JournalEntry?               @relation(fields: [journalEntryId], references: [id])
+  decisoDa        User?                       @relation("ReconciliationProposalDecisoDa", fields: [decisoDaId], references: [id])
+  gambe           ReconciliationProposalLeg[]
+
+  @@index([batchId, stato])
+  @@index([bankTransactionId])
+  @@map("reconciliation_proposals")
+}
+
+/// Il lato destro di una proposta. Più righe = pagamento cumulativo; una riga
+/// con importo minore del residuo = acconto.
+model ReconciliationProposalLeg {
+  id         String  @id @default(cuid())
+  proposalId String  @map("proposal_id")
+  /// La scadenza saldata. Alternativo a peerBankTransactionId.
+  scheduleId String? @map("schedule_id")
+  /// L'altra riga bancaria, per i giroconti (R5)
+  peerBankTransactionId String? @map("peer_bank_transaction_id")
+  /// Quota imputata a questa gamba
+  importo    Decimal @db.Decimal(10, 2)
+
+  proposal ReconciliationProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  schedule Schedule?              @relation(fields: [scheduleId], references: [id])
+  peer     BankTransaction?       @relation("ProposalLegPeer", fields: [peerBankTransactionId], references: [id])
+
+  @@index([proposalId])
+  @@index([scheduleId])
+  @@map("reconciliation_proposal_legs")
+}
+
+/// La memoria delle controparti: "nella causale compare X → è il fornitore Y".
+/// Risolve il buco lasciato da GoCardless, che non manda il beneficiario.
+/// Si consulta prima del punteggio e si riempie dalle correzioni manuali.
+model CounterpartyAlias {
+  id                String   @id @default(cuid())
+  venueId           String   @map("venue_id")
+  /// Maiuscolo, senza punteggiatura, spazi normalizzati
+  testoNormalizzato String   @map("testo_normalizzato")
+  supplierId        String?  @map("supplier_id")
+  customerId        String?  @map("customer_id")
+  /// 'manuale' | 'ai' | 'import'
+  origine           String
+  confermeConta     Int      @default(1) @map("conferme_conta")
+  ultimaConferma    DateTime @default(now()) @map("ultima_conferma")
+  createdById       String?  @map("created_by")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  venue    Venue     @relation(fields: [venueId], references: [id])
+  supplier Supplier? @relation("CounterpartyAliasSupplier", fields: [supplierId], references: [id])
+  customer Customer? @relation("CounterpartyAliasCustomer", fields: [customerId], references: [id])
+
+  @@unique([venueId, testoNormalizzato])
+  @@index([venueId, supplierId])
+  @@map("counterparty_aliases")
+}
+
+/// Coppie scartate per sempre. Consultate PRIMA di generare: senza questa
+/// tabella ogni rilancio ripropone gli stessi falsi positivi, e il motore
+/// diventa più caro a ogni giro invece che meno.
+model ReconciliationExclusion {
+  id                String   @id @default(cuid())
+  venueId           String   @map("venue_id")
+  bankTransactionId String?  @map("bank_transaction_id")
+  scheduleId        String?  @map("schedule_id")
+  motivo            String?
+  createdById       String?  @map("created_by")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  venue           Venue            @relation(fields: [venueId], references: [id])
+  bankTransaction BankTransaction? @relation("ExclusionBankTransaction", fields: [bankTransactionId], references: [id])
+  schedule        Schedule?        @relation("ExclusionSchedule", fields: [scheduleId], references: [id])
+
+  @@index([venueId, bankTransactionId])
+  @@map("reconciliation_exclusions")
 }
 
 model ImportBatch {
