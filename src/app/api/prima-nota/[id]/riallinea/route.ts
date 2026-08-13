@@ -62,10 +62,15 @@ export async function POST(
         select: { id: true },
       })
 
+      // Non "Questa riconciliazione": su un bonifico cumulativo (più
+      // riconciliazioni sullo stesso movimento) basterebbe che UNA sia senza
+      // fette perché la query la trovi, anche quando le altre sono
+      // semplicemente allineate. Il messaggio resta meno assertivo apposta.
       return NextResponse.json(
         {
           error: senzaFette
-            ? 'Questa riconciliazione non ha mai generato fette ereditate: completa prima le imputazioni sulla fattura'
+            ? 'Una riconciliazione di questo movimento non ha mai generato fette ereditate ' +
+              '(probabilmente la fattura non era coperta per intero): completa prima le sue imputazioni'
             : 'Il movimento non ha imputazioni divergenti da riallineare',
         },
         { status: 409 }

@@ -138,10 +138,12 @@ export async function imputazioniDivergenti(
 /**
  * Il riallineamento di una riconciliazione non può procedere: le sue fette
  * `ereditata` sono già state cancellate, ma `ereditaFetteDaFattura` si è
- * astenuta dal riscriverle (una delle sue guardie è scattata — fattura non
- * più coperta per intero, fette manuali presenti sul movimento, capienza
- * superata, nota di credito non imputata per intero o più grande della riga
- * che rettifica, o la fattura stessa non più leggibile).
+ * astenuta dal riscriverle. Con `rigenerazione: true` la guardia "le manuali
+ * vincono" non è fra le cause possibili (vedi il commento su quella guardia
+ * in `schedule-reconciliation-service.ts`); restano le altre sei: fattura non
+ * più coperta per intero, capienza superata, nota di credito non imputata per
+ * intero o più grande della riga che rettifica, o la fattura stessa non più
+ * leggibile.
  *
  * Lasciare la riconciliazione senza fette sarebbe peggio di non aver
  * riallineato affatto: il prospetto sposterebbe l'intero importo sul conto
@@ -151,6 +153,14 @@ export async function imputazioniDivergenti(
  * Per questo l'intera operazione va indietro, non solo questo passaggio: chi
  * chiama (`riallineaFette`, dentro una `$transaction`) lascia che l'eccezione
  * risalga, così la transazione fa rollback e nessuna fetta va persa.
+ *
+ * Il messaggio non indica QUALE delle sei guardie sia scattata: distinguerle
+ * avrebbe richiesto una forma di ritorno più ricca da tutte le sette uscite
+ * di `ereditaFetteDaFattura`, condivisa anche dalla riconciliazione
+ * originaria che oggi ignora il valore ritornato. `riallineaFette` registra
+ * comunque un log immediatamente prima di lanciare, e il log della guardia
+ * specifica (già scritto da `ereditaFetteDaFattura` un istante prima, con lo
+ * stesso `journalEntryId`) resta la via per risalire alla causa esatta.
  */
 export class RiallineamentoNonRigenerabile extends Error {
   constructor(
@@ -159,8 +169,8 @@ export class RiallineamentoNonRigenerabile extends Error {
   ) {
     super(
       'Le fette non sono state rigenerate: verifica che tutte le righe della fattura siano ' +
-        'confermate, che non ci siano fette manuali sul movimento, che la capienza non sia ' +
-        'superata e che le note di credito collegate siano imputate per intero.'
+        'confermate, che la capienza del movimento non sia superata e che le note di credito ' +
+        'collegate siano imputate per intero.'
     )
     this.name = 'RiallineamentoNonRigenerabile'
   }
@@ -179,20 +189,23 @@ export interface RiconciliazioneRiallineata {
 /**
  * Cancella le fette `ereditata` divergenti del movimento e le rigenera dalle
  * imputazioni correnti della fattura. Le fette `manuale` non si toccano,
- * coerentemente con la regola che vincono sempre.
+ * coerentemente con la regola che vincono sempre — ma «intoccate» qualifica
+ * cosa il riallineamento non deve toccare, non una condizione che ne
+ * impedisce l'esecuzione (spec sezione 2): se una fetta manuale coesiste già
+ * con le ereditate (spec sezione 3, split del residuo, ammesso da
+ * `setEntryAllocations`), la rigenerazione procede lo stesso —
+ * `ereditaFetteDaFattura` riceve `rigenerazione: true`, che salta solo la
+ * guardia "le manuali vincono" e nessuna delle altre sei.
  *
- * **Tutto o niente.** Ogni riconciliazione divergente passa per lo stesso
- * ciclo cancella-e-riscrivi di `ereditaFetteDaFattura`: se quella funzione si
- * astiene (`scritte === 0`) dopo che le fette vecchie sono già state
- * cancellate, l'operazione lancia `RiallineamentoNonRigenerabile` invece di
- * proseguire. Questo vale anche per la guardia "le manuali vincono": se sul
- * movimento sono comparse fette manuali che bloccano la rigenerazione, non è
- * un no-op silenzioso come lo sarebbe per una riconciliazione nuova (che
- * semplicemente non ha ancora fette da perdere) — qui ci sono già fette vere,
- * e cancellarle senza rimpiazzarle sposterebbe soldi già categorizzati sul
- * conto di testata. Chi chiama (la rotta) apre la transazione con
- * `prisma.$transaction`: l'eccezione la fa fare rollback, e nessuna fetta
- * risulta mai persa.
+ * **Tutto o niente** sulle altre sei guardie. Ogni riconciliazione divergente
+ * passa per lo stesso ciclo cancella-e-riscrivi di `ereditaFetteDaFattura`:
+ * se quella funzione si astiene (`scritte === 0`) dopo che le fette vecchie
+ * sono già state cancellate — fattura non più coperta per intero, capienza
+ * superata, nota di credito non imputata per intero o più grande della riga
+ * che rettifica, fattura non più leggibile — l'operazione lancia
+ * `RiallineamentoNonRigenerabile` invece di proseguire. Chi chiama (la rotta)
+ * apre la transazione con `prisma.$transaction`: l'eccezione la fa fare
+ * rollback, e nessuna fetta risulta mai persa.
  *
  * **Non duplica il calcolo dei pesi.** Rigenera chiamando
  * `ereditaFetteDaFattura` — la stessa funzione della riconciliazione
@@ -273,9 +286,23 @@ export async function riallineaFette(
       reconciliationId,
       quota: Number(riconciliazione.amount),
       importoUtileMovimento: importoUtileMovimento(entry, riconciliazione.schedule.tipo),
+      // La guardia "le manuali vincono" non vale in rigenerazione: qui non si
+      // sta aggiungendo ereditarietà a un movimento diviso a mano, si sta
+      // riscrivendo la porzione ereditata di UNA riconciliazione che
+      // coesisteva già con quella manuale.
+      rigenerazione: true,
     })
 
     if (scritte === 0) {
+      // Il log della guardia specifica (fattura non coperta, capienza, nota
+      // di credito) l'ha già scritto `ereditaFetteDaFattura` un istante fa,
+      // con lo stesso journalEntryId: questo segna il punto in cui la
+      // transazione sta per andare indietro a causa sua.
+      logger.warn('Riallineamento impossibile: fette cancellate ma non rigenerate, rollback', {
+        journalEntryId,
+        reconciliationId,
+        invoiceId,
+      })
       throw new RiallineamentoNonRigenerabile(reconciliationId, invoiceId)
     }
 

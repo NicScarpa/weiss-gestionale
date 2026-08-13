@@ -388,7 +388,13 @@ describe('riallineaFette (Task 7, passo 2)', () => {
     expect((await imputazioniDivergenti(movimento.id)).divergente).toBe(true)
   })
 
-  it('tutto o niente: anche quando la causa è "le manuali vincono", non si perdono le fette ereditate già scritte', async () => {
+  it('coesiste con una fetta manuale (spec sezione 3): rigenera le ereditate e lascia la manuale intoccata', async () => {
+    // «Le fette manuali restano intoccate» (spec sezione 2) qualifica cosa il
+    // riallineamento non deve toccare, non una condizione che gli impedisce
+    // di eseguire: la guardia "le manuali vincono" di `ereditaFetteDaFattura`
+    // esiste per la riconciliazione NUOVA (non aggiungere ereditarietà dove
+    // un umano ha già diviso il movimento), non per la rigenerazione di una
+    // riconciliazione che con quella fetta manuale coesisteva già.
     const { fattura, lordo } = await fatturaMista()
     const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
     // Il movimento è più grande della fattura: la riconciliazione copre solo
@@ -418,23 +424,74 @@ describe('riallineaFette (Task 7, passo 2)', () => {
       fette: [{ accountId: contoTerzo, importo: 500 }],
     })
     expect(split.outcome).toBe('ok')
+    const fettaManualePrima = await prisma.journalEntryAllocation.findFirstOrThrow({
+      where: { journalEntryId: movimento.id, origine: 'manuale' },
+    })
 
+    // Entrambe le righe della fattura confluiscono sullo stesso conto: le
+    // ereditate diventano un'unica fetta da 1.222, più facile da verificare.
     await prisma.invoiceLineAccount.update({
       where: { invoiceId_numeroLinea_progressivo: { invoiceId: fattura.id, numeroLinea: 2, progressivo: 0 } },
-      data: { accountId: contoTerzo },
+      data: { accountId: contoAlimentari },
+    })
+    expect((await imputazioniDivergenti(movimento.id)).divergente).toBe(true)
+
+    const eseguiti = await prisma.$transaction((tx) => riallineaFette(tx, movimento.id))
+
+    expect(eseguiti).toEqual([
+      { reconciliationId: expect.any(String), invoiceId: fattura.id, fetteRimosse: 2, fetteScritte: 1 },
+    ])
+    // Le ereditate si sono rigenerate (1.100 + 122 sullo stesso conto ora),
+    // e la fetta manuale del residuo è ancora lì, invariata.
+    expect(await fettePerConto(movimento.id)).toEqual({
+      [contoAlimentari]: 1222,
+      [contoTerzo]: 500,
+    })
+    const fettaManualeDopo = await prisma.journalEntryAllocation.findFirstOrThrow({
+      where: { journalEntryId: movimento.id, origine: 'manuale' },
+    })
+    // Stessa riga di prima, non una ricreata: id invariato.
+    expect(fettaManualeDopo.id).toBe(fettaManualePrima.id)
+  })
+
+  it('tutto o niente: se la fattura non è più coperta il riallineamento va indietro anche con una fetta manuale coesistente', async () => {
+    // Distingue la guardia saltata (manuali) dalle altre sei ancora attive:
+    // qui la fetta manuale non c'entra, ma la fattura non è più coperta —
+    // deve bloccare la rigenerazione esattamente come senza fette manuali.
+    const { fattura, lordo } = await fatturaMista()
+    const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+    const movimento = await creaMovimento({ uscita: lordo + 500, venueId })
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+    })
+    expect(esito.outcome).toBe('ok')
+
+    const split = await setEntryAllocations({
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+      fette: [{ accountId: contoTerzo, importo: 500 }],
+    })
+    expect(split.outcome).toBe('ok')
+
+    // Un umano toglie la conferma alla riga dei detersivi: la fattura non è
+    // più coperta per intero, indipendentemente dalla fetta manuale.
+    await prisma.invoiceLineAccount.update({
+      where: { invoiceId_numeroLinea_progressivo: { invoiceId: fattura.id, numeroLinea: 2, progressivo: 0 } },
+      data: { stato: 'proposta' },
     })
     expect((await imputazioniDivergenti(movimento.id)).divergente).toBe(true)
 
     const fettePrimaDelTentativo = await fettePerConto(movimento.id)
 
-    // La guardia "le manuali vincono" blocca la riscrittura tanto quanto le
-    // altre sei: non è un no-op innocuo qui, perché a differenza di una
-    // riconciliazione nuova ci sono già fette vere da perdere.
     await expect(
       prisma.$transaction((tx) => riallineaFette(tx, movimento.id))
     ).rejects.toThrow(RiallineamentoNonRigenerabile)
 
-    // Né le fette ereditate né quella manuale sono sparite.
     expect(await fettePerConto(movimento.id)).toEqual(fettePrimaDelTentativo)
     expect((await imputazioniDivergenti(movimento.id)).divergente).toBe(true)
   })

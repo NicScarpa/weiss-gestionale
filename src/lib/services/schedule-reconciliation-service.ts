@@ -433,8 +433,10 @@ async function righeDaSottrarreNote(
  * tabella conta come categorizzata). Copertura parziale o fattura senza
  * righe estratte → nessuna ereditarietà, silenziosa (solo un log info).
  *
- * Le fette 'manuale' già presenti sul movimento vincono sempre: se ce ne
- * sono, questa funzione è un no-op.
+ * Le fette 'manuale' già presenti sul movimento vincono sempre su una
+ * riconciliazione NUOVA: se ce ne sono, questa funzione è un no-op. In
+ * rigenerazione (`rigenerazione: true`) no: vedi il commento sulla guardia,
+ * più sotto, per il perché.
  *
  * L'ereditarietà non rifiuta mai una riconciliazione per il centro di costo —
  * bloccarla per un dato che l'utente non sta toccando sarebbe peggio — ma il
@@ -464,6 +466,7 @@ export async function ereditaFetteDaFattura(
     reconciliationId,
     quota,
     importoUtileMovimento,
+    rigenerazione = false,
   }: {
     journalEntryId: string
     invoiceId: string
@@ -471,6 +474,12 @@ export async function ereditaFetteDaFattura(
     quota: number
     /** Importo utile del movimento (debit ?? credit): tetto che nessuna fetta, manuale o ereditata, può superare */
     importoUtileMovimento: number
+    /**
+     * `true` solo quando chiama `riallineaFette` (Task 7): salta la guardia
+     * "le manuali vincono", non le altre sei. Vedi il commento sulla
+     * guardia più sotto per il perché.
+     */
+    rigenerazione?: boolean
   }
 ): Promise<number> {
   const invoice = await tx.electronicInvoice.findUnique({
@@ -570,14 +579,32 @@ export async function ereditaFetteDaFattura(
   }
 
   // Le fette già sul movimento, lette una volta sola perché servono a tre
-  // cose: sapere se ce n'è una manuale (vince sempre), sommarne gli importi
-  // per il tetto di capienza, e sapere quanta IVA dichiarano — è ciò che
-  // stabilisce se l'IVA di testata è ancora nostra (`aggiornaIvaDiTestata`).
+  // cose: sapere se ce n'è una manuale (vince sempre su una riconciliazione
+  // NUOVA, non in rigenerazione — vedi sotto), sommarne gli importi per il
+  // tetto di capienza, e sapere quanta IVA dichiarano — è ciò che stabilisce
+  // se l'IVA di testata è ancora nostra (`aggiornaIvaDiTestata`).
   const esistenti = await tx.journalEntryAllocation.findMany({
     where: { journalEntryId },
     select: { origine: true, importo: true, iva: true },
   })
-  if (esistenti.some((f) => f.origine === 'manuale')) return 0 // le manuali vincono sempre
+  // "Le manuali vincono sempre" nasce per la riconciliazione NUOVA: non
+  // aggiungere fette ereditate dove un umano ha già diviso a mano il
+  // movimento, perché quella divisione non sapeva nulla di questa fattura.
+  // In RIGENERAZIONE (`rigenerazione: true`, solo da `riallineaFette`, Task
+  // 7) la premessa è diversa: le fette ereditate di QUESTA riconciliazione
+  // esistevano già ed erano state appena cancellate per essere riscritte —
+  // la fetta manuale coesisteva già con loro, è la divisione legittima del
+  // residuo che la spec (sezione 3) prevede e che `setEntryAllocations`
+  // ammette esplicitamente accanto alle ereditate. Bloccare la rigenerazione
+  // per la sola presenza di quella fetta lascerebbe "le manuali vincono"
+  // (spec sezione 2: le fette manuali restano intoccate) fraintesa come "le
+  // manuali impediscono", e il movimento mostrerebbe per sempre un avviso
+  // che nessuna azione può chiudere se non cancellando lo split manuale. Il
+  // vincolo vero resta la capienza, verificata comunque due righe sotto con
+  // gli stessi `esistenti`: qui si salta solo il rifiuto per la presenza in
+  // sé di una fetta manuale, non il tetto che impedisce di sforare il
+  // movimento.
+  if (esistenti.some((f) => f.origine === 'manuale') && !rigenerazione) return 0 // le manuali vincono sempre
 
   // Un movimento può riconciliare più scadenze (es. un bonifico cumulativo):
   // ogni riconciliazione calcola la propria quota sul disponibile pieno del
