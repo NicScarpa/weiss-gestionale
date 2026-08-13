@@ -1524,3 +1524,80 @@ describe('estrazione della ritenuta d acconto', () => {
     expect(con.totalAmount).toBe(senza.totalAmount)
   })
 })
+
+describe('estraiScadenze - giorniImposti', () => {
+  // Fix round 2 (Task 10): `giorniPagamento` vale solo per STIMARE quando la
+  // data manca — se il documento la porta, vince lei. Senza un canale
+  // separato, la finestra dei conflitti sui termini di pagamento non
+  // cambiava mai nulla: il documento quasi sempre ha la sua data.
+  const isoDay = (d: Date) => d.toISOString().slice(0, 10)
+
+  it('vince sulla data che il documento riporta', () => {
+    const fattura = parseFatturaPA(
+      xmlFattura({
+        data: '2026-06-01',
+        rate: [{ scadenza: '2026-07-01', importo: '122.00' }],
+      })
+    )
+
+    const scadenze = estraiScadenze(fattura, { giorniImposti: 60 })
+
+    expect(scadenze).toHaveLength(1)
+    // 2026-06-01 + 60 giorni, non 2026-07-01 (la data del documento)
+    expect(isoDay(scadenze[0].dueDate)).toBe('2026-07-31')
+  })
+
+  it('senza giorniImposti resta la data che il documento riporta', () => {
+    const fattura = parseFatturaPA(
+      xmlFattura({
+        data: '2026-06-01',
+        rate: [{ scadenza: '2026-07-01', importo: '122.00' }],
+      })
+    )
+
+    const scadenze = estraiScadenze(fattura)
+
+    expect(isoDay(scadenze[0].dueDate)).toBe('2026-07-01')
+  })
+
+  it('una scadenza imposta non è marcata come stimata', () => {
+    const fattura = parseFatturaPA(
+      xmlFattura({
+        data: '2026-06-01',
+        rate: [{ scadenza: '2026-07-01', importo: '122.00' }],
+      })
+    )
+
+    const scadenze = estraiScadenze(fattura, { giorniImposti: 60 })
+
+    expect(scadenze[0].dataStimata).toBe(false)
+    expect(scadenze[0].notaStima).toBeUndefined()
+  })
+
+  it('si applica anche quando il documento non porta alcuna data (come una stima, ma non lo è)', () => {
+    const fattura = parseFatturaPA(xmlFattura({ data: '2026-06-01', rate: [] }))
+
+    const scadenze = estraiScadenze(fattura, { giorniImposti: 60 })
+
+    expect(scadenze).toHaveLength(1)
+    expect(isoDay(scadenze[0].dueDate)).toBe('2026-07-31')
+    expect(scadenze[0].dataStimata).toBe(false)
+  })
+
+  it('non tocca giorniPagamento: i termini del fornitore restano solo per stimare', () => {
+    // `giorniPagamento` (termini fornitore) e `giorniImposti` (scelta
+    // esplicita) sono canali distinti: passare solo il primo non deve
+    // vincere su una data che il documento riporta.
+    const fattura = parseFatturaPA(
+      xmlFattura({
+        data: '2026-06-01',
+        rate: [{ scadenza: '2026-07-01', importo: '122.00' }],
+      })
+    )
+
+    const scadenze = estraiScadenze(fattura, { giorniPagamento: 60 })
+
+    expect(isoDay(scadenze[0].dueDate)).toBe('2026-07-01')
+    expect(scadenze[0].dataStimata).toBe(false)
+  })
+})

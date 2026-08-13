@@ -579,12 +579,16 @@ export async function POST(request: NextRequest) {
         )?.paymentTermsDays ?? undefined
       : undefined
 
-    // I giorni scelti nella finestra dei conflitti vincono sui termini
-    // dell'anagrafica, che a loro volta vincono sul default del parser.
-    const giorniPagamento = validatedData.giorniPagamentoScelti ?? terminiFornitore ?? undefined
-
+    // Due parametri diversi, non uno solo: `giorniPagamento` (termini del
+    // fornitore) vale solo per STIMARE una scadenza che il documento non
+    // riporta — una data scritta in fattura vince comunque su di lui.
+    // `giorniImposti` (la scelta esplicita fatta nella finestra dei
+    // conflitti) vince SEMPRE, anche sulla data del documento: è la
+    // differenza fra «il fornitore non ha scritto nulla, stimiamo coi suoi
+    // termini» e «il fornitore ha scritto 30 giorni, ma con noi sono 60».
     const scadenze = estraiScadenze(fattura, {
-      giorniPagamento,
+      giorniPagamento: terminiFornitore,
+      giorniImposti: validatedData.giorniPagamentoScelti,
     })
 
     // Estrai IBAN dai dati pagamento (se disponibile)

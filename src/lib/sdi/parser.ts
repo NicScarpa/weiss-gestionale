@@ -612,8 +612,24 @@ export interface OpzioniEstrazioneScadenze {
    * fattura. Il parser lavora sul solo XML e non legge il database: se il
    * chiamante conosce i termini (oggi non sono ancora anagrafati su
    * `Supplier`) li passa qui, altrimenti si applica GIORNI_PAGAMENTO_DEFAULT.
+   *
+   * Vale solo per STIMARE una scadenza che l'XML non riporta: se il
+   * documento porta una `DataScadenzaPagamento`, quella vince comunque su
+   * questo valore. Per un'imposizione che vinca anche sulla data del
+   * documento, vedi `giorniImposti`.
    */
   giorniPagamento?: number
+  /**
+   * Giorni imposti esplicitamente da chi importa (la finestra dei conflitti
+   * sui termini di pagamento, lato UI): a differenza di `giorniPagamento`,
+   * questi vincono SEMPRE, anche quando il documento riporta già una
+   * `DataScadenzaPagamento` — è la differenza fra "il fornitore ha scritto
+   * 30 giorni in fattura, ma con noi sono 60" e "il fornitore non ha scritto
+   * nulla, stimiamo coi suoi termini". Una scadenza ricalcolata così non è
+   * una stima (`dataStimata: false`, senza `notaStima`): è una decisione,
+   * non un'ipotesi del parser.
+   */
+  giorniImposti?: number
 }
 
 export interface ScadenzaEstratta {
@@ -647,6 +663,13 @@ function aggiungiGiorni(data: Date, giorni: number): Date {
  * e il singolo `DettaglioPagamento` privo di `DataScadenzaPagamento`. Entrambi
  * sono frequenti nelle fatture arretrate e nei fornitori che compilano l'XML al
  * minimo indispensabile.
+ *
+ * Un terzo caso non stima affatto, impone: `opzioni.giorniImposti` valorizzato
+ * ricalcola OGNI scadenza come data fattura + quei giorni, ignorando le
+ * `DataScadenzaPagamento` che il documento porta. Senza questo ramo, la
+ * finestra dei conflitti sui termini di pagamento non cambiava mai nulla: il
+ * documento quasi sempre porta la sua data, e `giorniPagamento` da solo cede
+ * il passo a quella data appena c'è.
  */
 export function estraiScadenze(
   fattura: FatturaParsata,
@@ -663,6 +686,25 @@ export function estraiScadenze(
     dataStimata: true as const,
     notaStima: `Scadenza stimata a ${giorniPagamento} giorni dalla data fattura (${origineTermini}): l'XML non riporta la data di pagamento.`,
   })
+
+  if (opzioni.giorniImposti !== undefined) {
+    const giorniImposti = opzioni.giorniImposti
+    const imposta = () => ({
+      dueDate: aggiungiGiorni(dataFattura, giorniImposti),
+      dataStimata: false as const,
+    })
+
+    if (!fattura.datiPagamento || fattura.datiPagamento.dettagliPagamento.length === 0) {
+      const { totalAmount } = calcolaImporti(fattura)
+      return [{ ...imposta(), amount: totalAmount, paymentMethod: MODALITA_NON_SPECIFICATA }]
+    }
+
+    return fattura.datiPagamento.dettagliPagamento.map((d) => ({
+      ...imposta(),
+      amount: d.importoPagamento,
+      paymentMethod: d.modalitaPagamento,
+    }))
+  }
 
   if (!fattura.datiPagamento || fattura.datiPagamento.dettagliPagamento.length === 0) {
     // Blocco DatiPagamento assente, o presente senza alcun DettaglioPagamento

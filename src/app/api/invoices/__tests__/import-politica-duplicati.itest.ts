@@ -184,4 +184,49 @@ describe('POST /api/invoices — politica duplicati', () => {
     // 2026-06-01 + 60 giorni
     expect(scadenze[0].dueDate.toISOString().slice(0, 10)).toBe('2026-07-31')
   })
+
+  it('i giorni scelti vincono anche quando il documento porta già una scadenza', async () => {
+    // Fix round 2: prima di questo fix, `giorniPagamentoScelti` non aveva
+    // alcun effetto quando il documento riportava una DataScadenzaPagamento
+    // (il caso più comune) — la finestra dei conflitti sui termini era una
+    // schermata che fingeva di decidere. La rata dichiara 2026-07-01: i
+    // giorni scelti devono ignorarla.
+    const conScadenza = xmlFattura({
+      numero: 'POL-3',
+      data: '2026-06-01',
+      rate: [{ scadenza: '2026-07-01', importo: '122.00' }],
+    })
+
+    const res = await POST(richiesta({
+      ...base,
+      xmlContent: conScadenza,
+      fileName: 'con-scadenza-imposta.xml',
+      giorniPagamentoScelti: 60,
+    }))
+
+    const { id } = await res.json()
+    const scadenze = await prisma.invoiceDeadline.findMany({ where: { invoiceId: id } })
+    expect(scadenze).toHaveLength(1)
+    // 2026-06-01 + 60 giorni, non 2026-07-01 (la data del documento)
+    expect(scadenze[0].dueDate.toISOString().slice(0, 10)).toBe('2026-07-31')
+  })
+
+  it('senza giorni scelti resta la scadenza che il documento porta', async () => {
+    const conScadenza = xmlFattura({
+      numero: 'POL-4',
+      data: '2026-06-01',
+      rate: [{ scadenza: '2026-07-01', importo: '122.00' }],
+    })
+
+    const res = await POST(richiesta({
+      ...base,
+      xmlContent: conScadenza,
+      fileName: 'con-scadenza-non-imposta.xml',
+    }))
+
+    const { id } = await res.json()
+    const scadenze = await prisma.invoiceDeadline.findMany({ where: { invoiceId: id } })
+    expect(scadenze).toHaveLength(1)
+    expect(scadenze[0].dueDate.toISOString().slice(0, 10)).toBe('2026-07-01')
+  })
 })
