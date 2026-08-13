@@ -13,7 +13,7 @@
  * attraverso quel salto: l'unico stato che sopravvive a un'apertura è
  * quello che si azzera alla chiusura, qui sotto.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertCircle, Loader2, Search } from 'lucide-react'
 import {
@@ -95,12 +95,25 @@ export function WizardCollegamento({ aperto, onChiudi }: { aperto: boolean; onCh
     setStep('conferma')
   }
 
-  // Non ripetibile: crea una richiesta di consenso vera presso la banca.
-  // Si esce dal passo 2 (e dal suo pulsante) appena parte, così un secondo
-  // clic non ha più nulla da cliccare — niente ritentativo automatico in
-  // caso di errore, solo «Torna indietro» più sotto.
+  // Non ripetibile: crea una richiesta di consenso vera presso la banca, e
+  // quella richiesta costa sul contingente di quattro chiamate al giorno.
+  // Smontare il pulsante passando a `step: 'viaggio'` NON basta da solo:
+  // `setStep` si applica al render successivo, non subito, e più eventi di
+  // clic ravvicinati (doppio clic reale, o solo una rete lenta) eseguono
+  // tutti questa stessa closure prima che React abbia rimontato — tre clic,
+  // tre `fetch`. Il ref è sincrono e condiviso fra tutte le invocazioni
+  // ravvicinate, a differenza dello stato React: si valorizza qui, prima di
+  // qualunque `await`, con lo stesso schema di `payment-dialog.tsx`
+  // (`invioRef`). Si azzera sempre in `finally`, non solo sull'errore:
+  // sul successo la pagina sta per navigare via comunque, quindi
+  // azzerarlo anche lì è innocuo, ma tenerlo bloccato dopo un 409/503
+  // impedirebbe di ripartire da «Torna indietro».
+  const vaiAllaBancaInCorso = useRef(false)
+
   async function vaiAllaBanca() {
     if (!istitutoScelto) return
+    if (vaiAllaBancaInCorso.current) return
+    vaiAllaBancaInCorso.current = true
     setStep('viaggio')
     setErrore(null)
     try {
@@ -120,6 +133,8 @@ export function WizardCollegamento({ aperto, onChiudi }: { aperto: boolean; onCh
       window.location.href = corpo.link
     } catch {
       setErrore('Il collegamento non è riuscito')
+    } finally {
+      vaiAllaBancaInCorso.current = false
     }
   }
 

@@ -10,6 +10,7 @@ import {
   smontare,
   attendere,
   cliccare,
+  cliccareTreVolte,
   scrivere,
   perTesto,
   perId,
@@ -113,6 +114,38 @@ describe('WizardCollegamento', () => {
       () => chiamate.some((u) => u.startsWith('/api/gocardless/collegamenti')),
       'la richiesta di collegamento'
     )
+
+    expect(chiamate.filter((u) => u.startsWith('/api/gocardless/collegamenti')).length).toBe(1)
+  })
+
+  // La POST non è ripetibile: crea una richiesta di consenso vera presso la
+  // banca, sul contingente di quattro chiamate al giorno. `setStep` da solo
+  // non basta a fermare un doppio clic: si applica al render successivo, non
+  // subito, e tre eventi di clic ravvicinati (rete lenta, tocco ripetuto)
+  // arrivano tutti prima che React abbia rimontato il pulsante.
+  it('tre clic ravvicinati su «Vai alla banca» mandano una sola richiesta', async () => {
+    stubFetch([
+      ['/api/gocardless/istituzioni', ISTITUZIONI],
+      ['/api/gocardless/collegamenti', { connessioneId: 'conn-9', link: 'https://banca.test/consenso' }],
+    ])
+
+    await montare(<WizardCollegamento aperto={true} onChiudi={vi.fn()} />)
+    await attendere()
+    await attendiChe(() => testoDellaPagina().includes('Banca della Marca'), "l'elenco degli istituti")
+
+    await cliccare(perTesto(/banca della marca/i))
+    await attendere()
+
+    await cliccareTreVolte(perTesto(/vai alla banca/i))
+    await attendiChe(
+      () => chiamate.some((u) => u.startsWith('/api/gocardless/collegamenti')),
+      'la richiesta di collegamento'
+    )
+    // Le tre chiamate erano sincrone (nello stesso giro): un solo
+    // `attendiChe` non lascia margine perché una quarta arrivi in ritardo, ma
+    // aggiungiamo comunque un giro di attesa per essere sicuri che non ne
+    // arrivino altre dopo la prima.
+    await attendere()
 
     expect(chiamate.filter((u) => u.startsWith('/api/gocardless/collegamenti')).length).toBe(1)
   })
