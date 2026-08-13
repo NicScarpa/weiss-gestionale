@@ -10,6 +10,8 @@ import {
   quotePronte,
   messaggioScarto,
   messaggioIncompleto,
+  etichettaConto,
+  messaggioUnione,
   type QuotaBozza,
 } from '../RigaDivisibile'
 import type { RigaVisualizzata } from '../riga-fattura-condivisa'
@@ -237,6 +239,48 @@ describe('messaggioScarto', () => {
   })
 })
 
+describe('etichettaConto', () => {
+  const accounts = [
+    { id: 'conto-a', code: '61.09', name: 'Detersivi' },
+    { id: 'conto-b', code: '61.10', name: 'Tovaglioli' },
+  ]
+
+  it('"codice — nome" per un conto presente nella lista', () => {
+    expect(etichettaConto(accounts, 'conto-a')).toBe('61.09 — Detersivi')
+  })
+
+  it('undefined se l\'id non è nella lista (conto non ancora caricato o disattivato)', () => {
+    expect(etichettaConto(accounts, 'conto-inesistente')).toBeUndefined()
+  })
+
+  it('undefined se l\'id è assente', () => {
+    expect(etichettaConto(accounts, undefined)).toBeUndefined()
+  })
+})
+
+describe('messaggioUnione', () => {
+  it('nomina il conto che resta e quello che sparisce (round 2 di revisione: non un generico "sei sicuro?")', () => {
+    const testo = messaggioUnione('61.09 — Detersivi', ['61.10 — Tovaglioli'])
+    expect(testo).toContain('61.09 — Detersivi')
+    expect(testo).toContain('61.10 — Tovaglioli')
+    expect(testo).toContain('sarà rimossa')
+  })
+
+  it('con più conti rimossi li elenca tutti, al plurale', () => {
+    const testo = messaggioUnione('Conto A', ['Conto B', 'Conto C'])
+    expect(testo).toContain('Conto B')
+    expect(testo).toContain('Conto C')
+    expect(testo).toContain('saranno rimosse')
+  })
+
+  it('senza conti da nominare (etichetta non risolta) dice solo dove vengono unite', () => {
+    const testo = messaggioUnione('61.09 — Detersivi', [])
+    expect(testo).toContain('61.09 — Detersivi')
+    expect(testo).not.toContain('rimossa')
+    expect(testo).not.toContain('rimosse')
+  })
+})
+
 describe('RigaDivisibile — rendering', () => {
   it('una riga divisa con la prima quota confermata e la seconda proposta mostra ENTRAMBI gli stati', () => {
     // Task 8, minor 9 del reviewer: prima si leggeva solo imputazioni[0], e
@@ -333,7 +377,11 @@ describe('RigaDivisibile — rendering', () => {
     expect(document.querySelector('span.text-green-600')).toBeNull()
   })
 
-  it('"Unisci in un conto solo" su una riga divisa chiama onSalva con UNA sola quota, sul conto della prima', async () => {
+  // Round 2 di revisione: "Unisci" è un'azione irreversibile e distruttiva
+  // (la quota rimossa non torna: una nuova divisione riparte sempre da due
+  // quote vuote). Il bottone ora apre una conferma che nomina i conti
+  // coinvolti, invece di salvare al primo clic.
+  it('"Unisci in un conto solo" apre una conferma che nomina il conto che resta e quello che sparisce', async () => {
     const onSalva = vi.fn()
     const riga = rigaBase({
       imputazioni: [
@@ -345,13 +393,66 @@ describe('RigaDivisibile — rendering', () => {
     // divisa (`divisa === true`), il caso in cui "Unisci" deve comparire.
     montare(riga, { onSalva, onAnnulla: undefined })
 
-    const bottoneUnisci = screen.getByRole('button', { name: 'Unisci in un conto solo' })
-    expect(bottoneUnisci).not.toBeDisabled()
+    // Il bottone resta disabilitato finché i conti (per nominarli nella
+    // conferma) non sono caricati.
+    const bottoneUnisci = await waitFor(() => {
+      const bottone = screen.getByRole('button', { name: 'Unisci in un conto solo' })
+      expect(bottone).not.toBeDisabled()
+      return bottone
+    })
     await act(async () => {
       fireEvent.click(bottoneUnisci)
     })
 
+    // La conferma è a schermo, con i nomi — non un generico "sei sicuro?" —
+    // e nessuna richiesta è ancora partita.
+    await waitFor(() => {
+      expect(screen.queryByText('Unire le quote in un conto solo?')).not.toBeNull()
+    })
+    const testo = document.body.textContent ?? ''
+    expect(testo).toContain('61.09')
+    expect(testo).toContain('Detersivi')
+    expect(testo).toContain('61.10')
+    expect(testo).toContain('Tovaglioli')
+    expect(onSalva).not.toHaveBeenCalled()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Unisci' }))
+    })
+
     expect(onSalva).toHaveBeenCalledWith([{ progressivo: 0, accountId: 'conto-a', importo: 100 }])
+  })
+
+  it('annullando la conferma di unione non parte nessuna richiesta', async () => {
+    const onSalva = vi.fn()
+    const riga = rigaBase({
+      imputazioni: [
+        { progressivo: 0, accountId: 'conto-a', importo: 60, stato: 'confermata', fonte: 'manuale' },
+        { progressivo: 1, accountId: 'conto-b', importo: 40, stato: 'confermata', fonte: 'manuale' },
+      ],
+    })
+    montare(riga, { onSalva, onAnnulla: undefined })
+
+    const bottoneUnisci = await waitFor(() => {
+      const bottone = screen.getByRole('button', { name: 'Unisci in un conto solo' })
+      expect(bottone).not.toBeDisabled()
+      return bottone
+    })
+    await act(async () => {
+      fireEvent.click(bottoneUnisci)
+    })
+    await waitFor(() => {
+      expect(screen.queryByText('Unire le quote in un conto solo?')).not.toBeNull()
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Annulla' }))
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByText('Unire le quote in un conto solo?')).toBeNull()
+    })
+    expect(onSalva).not.toHaveBeenCalled()
   })
 
   it('"Unisci in un conto solo" non compare quando la riga non è ancora divisa (Annulla presente)', () => {

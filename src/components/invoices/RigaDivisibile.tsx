@@ -22,7 +22,18 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { TableCell, TableRow } from '@/components/ui/table'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
+import { useAccountsForCombobox } from '@/hooks/useImputableAccounts'
 import { formatCurrencyOrZero as formatCurrency } from '@/lib/formatters'
 import { TOLLERANZA_IMPORTI, pallino, type RigaVisualizzata } from './riga-fattura-condivisa'
 
@@ -182,6 +193,41 @@ export function messaggioScarto(quote: QuotaBozza[], importoRiga: number): strin
   return `Le quote sommano a ${formatCurrency(somma)} su ${formatCurrency(importoRiga)}: ${scarto}`
 }
 
+/**
+ * "codice — nome" di un conto dato il suo id, o `undefined` se non è (ancora)
+ * nella lista caricata. Stesso schema del trigger di `AccountCombobox`
+ * (`${selected.code} — ${selected.name}`) — qui serve a nominare i conti
+ * nella conferma di "Unisci in un conto solo": un id da solo non permette a
+ * chi legge di riconoscere il conto giusto (revisione team lead, round 2).
+ */
+export function etichettaConto(
+  accounts: Array<{ id: string; code: string; name: string }>,
+  accountId: string | undefined
+): string | undefined {
+  if (!accountId) return undefined
+  const account = accounts.find((a) => a.id === accountId)
+  return account ? `${account.code} — ${account.name}` : undefined
+}
+
+/**
+ * Testo della conferma di unione: nomina il conto che resta e quello (o
+ * quelli) che spariscono, non un generico "sei sicuro?" — è quello che
+ * permette a chi legge di accorgersi di aver premuto il pulsante sbagliato
+ * prima che l'imputazione rimossa sia già andata (revisione team lead,
+ * round 2: prima "Unisci" cancellava senza dirlo, e la spiegazione di quale
+ * conto sarebbe sopravvissuto viveva solo in un `title`, un tooltip
+ * inaffidabile su touch e invisibile a uno screen reader).
+ */
+export function messaggioUnione(contoRimasto: string, contiRimossi: string[]): string {
+  if (contiRimossi.length === 0) {
+    return `Le quote saranno unite su ${contoRimasto}.`
+  }
+  if (contiRimossi.length === 1) {
+    return `Le quote saranno unite su ${contoRimasto}. L'imputazione a ${contiRimossi[0]} sarà rimossa.`
+  }
+  return `Le quote saranno unite su ${contoRimasto}. Le imputazioni a ${contiRimossi.join(', ')} saranno rimosse.`
+}
+
 interface RigaDivisibileProps {
   riga: RigaVisualizzata
   canEditAccounts: boolean
@@ -205,6 +251,12 @@ interface RigaDivisibileProps {
 
 export function RigaDivisibile({ riga, canEditAccounts, onAnnulla, onSalva }: RigaDivisibileProps) {
   const [quote, setQuote] = useState<QuotaBozza[]>(() => quoteIniziali(riga))
+  // Stessa query (stessa chiave, tipi COSTO+PATRIMONIALE) già in corso per
+  // ogni AccountCombobox della riga: nessuna fetch aggiuntiva. Serve a
+  // nominare i conti nella conferma di "Unisci in un conto solo", non al
+  // rendering delle tendine (che restano AccountCombobox, indipendenti).
+  const { data: accounts = [] } = useAccountsForCombobox(['COSTO', 'PATRIMONIALE'])
+  const [confermaUnione, setConfermaUnione] = useState(false)
 
   const aggiornaQuota = (indice: number, patch: Partial<QuotaBozza>) => {
     setQuote((prev) => prev.map((q, i) => (i === indice ? { ...q, ...patch } : q)))
@@ -231,10 +283,24 @@ export function RigaDivisibile({ riga, canEditAccounts, onAnnulla, onSalva }: Ri
   // la `deleteMany` che segue). È l'unica via di ritorno per una riga già
   // salvata: prima di questa azione non ce n'era nessuna (revisione team
   // lead, round 1, Important 2).
+  //
+  // L'azione è irreversibile e distruttiva (le quote diverse dalla prima
+  // spariscono per sempre: una nuova divisione riparte sempre da due quote
+  // vuote) — per questo passa da una conferma che nomina i conti coinvolti,
+  // non da un clic diretto (revisione team lead, round 2). Il bottone apre
+  // la conferma; solo `confermaEUnisci`, agganciata all'azione del dialog,
+  // chiama davvero `onSalva`.
   const primoConto = quote[0]?.accountId
-  const handleUnisci = () => {
+  const etichettaPrimoConto = etichettaConto(accounts, primoConto)
+  const contiRimossi = quote
+    .slice(1)
+    .map((q) => etichettaConto(accounts, q.accountId))
+    .filter((etichetta): etichetta is string => !!etichetta)
+
+  const confermaEUnisci = () => {
     if (!primoConto) return
     onSalva([{ progressivo: 0, accountId: primoConto, importo: riga.importo }])
+    setConfermaUnione(false)
   }
 
   return (
@@ -318,8 +384,12 @@ export function RigaDivisibile({ riga, canEditAccounts, onAnnulla, onSalva }: Ri
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={handleUnisci}
-                  disabled={!canEditAccounts || !primoConto}
+                  onClick={() => setConfermaUnione(true)}
+                  // Disabilitato anche finché il conto non ha un'etichetta
+                  // leggibile (accounts non ancora caricati): senza un nome
+                  // la conferma sarebbe un "sei sicuro?" generico quanto
+                  // l'azione diretta che sostituisce.
+                  disabled={!canEditAccounts || !etichettaPrimoConto}
                   title="Riporta la riga a un'unica imputazione, sul conto della prima quota"
                 >
                   Unisci in un conto solo
@@ -337,6 +407,20 @@ export function RigaDivisibile({ riga, canEditAccounts, onAnnulla, onSalva }: Ri
           </div>
         </TableCell>
       </TableRow>
+      <AlertDialog open={confermaUnione} onOpenChange={setConfermaUnione}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unire le quote in un conto solo?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {etichettaPrimoConto && messaggioUnione(etichettaPrimoConto, contiRimossi)}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
+            <AlertDialogAction onClick={confermaEUnisci}>Unisci</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }
