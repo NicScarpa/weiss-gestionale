@@ -1,9 +1,9 @@
-import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
-import { createAuditLog } from '@/lib/audit'
 import { bloccaMovimento, importoUtileMovimento } from '@/lib/scadenzario/stato-schedule'
-import { aggiornaContoDominante, type TransactionClient } from '@/lib/services/allocation-service'
+import { type TransactionClient } from '@/lib/services/allocation-service'
+import { TIPI_DOCUMENTO_NOTA_CREDITO } from '@/lib/services/invoice-schedule-service'
 import { ereditaFetteDaFattura, ritiraIvaDiTestata } from '@/lib/services/schedule-reconciliation-service'
+import { prisma } from '@/lib/prisma'
 
 /**
  * Divergenza fra le fette e la fattura, e il suo riallineamento (Task 7,
@@ -26,13 +26,14 @@ import { ereditaFetteDaFattura, ritiraIvaDiTestata } from '@/lib/services/schedu
 interface Divergenza {
   reconciliationId: string
   invoiceId: string
-  /** L'`updatedAt` più recente fra le imputazioni della fattura che hanno superato le fette. */
+  /** L'`updatedAt` più recente fra le imputazioni che hanno superato le fette. */
   modificataIl: Date
 }
 
 /**
  * Le riconciliazioni verificate del movimento le cui fette ereditate sono
- * più vecchie dell'ultima imputazione della loro fattura.
+ * più vecchie dell'ultima imputazione della loro fattura — o di una nota di
+ * credito che la rettifica.
  *
  * Guarda solo le riconciliazioni legate a una fattura — le scadenze senza
  * fattura (scontrini, spese) non hanno righe da reimputare — e solo quelle
@@ -42,10 +43,22 @@ interface Divergenza {
  * si astengono senza scrivere nulla — fattura non coperta per intero, righe
  * ancora in proposta, fette manuali che vincono sempre.
  *
+ * **Include le note di credito che rettificano la fattura** (spec sezione 4:
+ * «nota di credito arrivata dopo il pagamento... è il caso della sezione 2 —
+ * divergenza rilevata»). Confermare le righe di una nota non tocca
+ * `invoice_line_accounts` della fattura originaria, quindi senza questo `OR`
+ * quel caso non produrrebbe mai un avviso: `ereditaFetteDaFattura` la
+ * calcolerebbe comunque bene se richiamata a mano, ma nessuno vedrebbe il
+ * pulsante *Riallinea* comparire. **Stesso filtro sui tipi documento di
+ * `righeDaSottrarreNote`**: `rettificaInvoiceId` si valorizza anche per le
+ * note di DEBITO, che rettificano la fattura ma nel verso opposto — un
+ * avviso il cui riallineamento non cambierebbe nulla sarebbe la beffa dopo
+ * il bug del segno invertito (Task 6).
+ *
  * Non filtra per `numeroLinea` né per `progressivo` (Task 5): un `updatedAt`
- * su QUALSIASI imputazione della fattura, comprese le quote di una riga
- * divisa fra più conti, vale come divergenza — tutte concorrono al calcolo
- * dei pesi che ha generato quelle fette.
+ * su QUALSIASI imputazione, comprese le quote di una riga divisa fra più
+ * conti, vale come divergenza — tutte concorrono al calcolo dei pesi che ha
+ * generato quelle fette.
  *
  * Riceve il client di transazione perché il riallineamento la richiama SOTTO
  * lo stesso lock che protegge la scrittura (vedi `riallineaFette`): due
@@ -78,7 +91,15 @@ async function divergenzeDelMovimento(
     )
 
     const imputazioneSuperata = await client.invoiceLineAccount.findFirst({
-      where: { invoiceId, updatedAt: { gt: creataIl } },
+      where: {
+        updatedAt: { gt: creataIl },
+        invoice: {
+          OR: [
+            { id: invoiceId },
+            { rettificaInvoiceId: invoiceId, documentType: { in: [...TIPI_DOCUMENTO_NOTA_CREDITO] } },
+          ],
+        },
+      },
       orderBy: { updatedAt: 'desc' },
       select: { updatedAt: true },
     })
@@ -92,8 +113,9 @@ async function divergenzeDelMovimento(
 }
 
 /**
- * C'è una fattura, collegata a questo movimento, la cui imputazione è
- * cambiata dopo che le fette sono nate?
+ * C'è una fattura, collegata a questo movimento, la cui imputazione (o
+ * quella di una nota di credito che la rettifica) è cambiata dopo che le
+ * fette sono nate?
  *
  * Fuori transazione: è una lettura per decidere se mostrare l'avviso e il
  * pulsante *Riallinea*, non partecipa a nessuna scrittura. Se più
@@ -114,11 +136,63 @@ export async function imputazioniDivergenti(
 }
 
 /**
+ * Il riallineamento di una riconciliazione non può procedere: le sue fette
+ * `ereditata` sono già state cancellate, ma `ereditaFetteDaFattura` si è
+ * astenuta dal riscriverle (una delle sue guardie è scattata — fattura non
+ * più coperta per intero, fette manuali presenti sul movimento, capienza
+ * superata, nota di credito non imputata per intero o più grande della riga
+ * che rettifica, o la fattura stessa non più leggibile).
+ *
+ * Lasciare la riconciliazione senza fette sarebbe peggio di non aver
+ * riallineato affatto: il prospetto sposterebbe l'intero importo sul conto
+ * di testata, e lo stato sarebbe irrecuperabile dalla stessa rotta, perché
+ * senza fette la rilevazione (`divergenzeDelMovimento`) non trova più nulla
+ * da confrontare e smette di segnalare la riconciliazione come divergente.
+ * Per questo l'intera operazione va indietro, non solo questo passaggio: chi
+ * chiama (`riallineaFette`, dentro una `$transaction`) lascia che l'eccezione
+ * risalga, così la transazione fa rollback e nessuna fetta va persa.
+ */
+export class RiallineamentoNonRigenerabile extends Error {
+  constructor(
+    readonly reconciliationId: string,
+    readonly invoiceId: string
+  ) {
+    super(
+      'Le fette non sono state rigenerate: verifica che tutte le righe della fattura siano ' +
+        'confermate, che non ci siano fette manuali sul movimento, che la capienza non sia ' +
+        'superata e che le note di credito collegate siano imputate per intero.'
+    )
+    this.name = 'RiallineamentoNonRigenerabile'
+  }
+}
+
+/** Esito del riallineamento di una singola riconciliazione divergente. */
+export interface RiconciliazioneRiallineata {
+  reconciliationId: string
+  invoiceId: string
+  /** Fette `ereditata` cancellate (sempre ≥ 1: la rilevazione lo garantisce). */
+  fetteRimosse: number
+  /** Fette nuove scritte al loro posto (sempre ≥ 1, o l'operazione è andata indietro). */
+  fetteScritte: number
+}
+
+/**
  * Cancella le fette `ereditata` divergenti del movimento e le rigenera dalle
  * imputazioni correnti della fattura. Le fette `manuale` non si toccano,
- * coerentemente con la regola che vincono sempre — e se ce ne sono,
- * `ereditaFetteDaFattura` si astiene dallo scriverne di nuove, esattamente
- * come farebbe una riconciliazione nuova sullo stesso movimento.
+ * coerentemente con la regola che vincono sempre.
+ *
+ * **Tutto o niente.** Ogni riconciliazione divergente passa per lo stesso
+ * ciclo cancella-e-riscrivi di `ereditaFetteDaFattura`: se quella funzione si
+ * astiene (`scritte === 0`) dopo che le fette vecchie sono già state
+ * cancellate, l'operazione lancia `RiallineamentoNonRigenerabile` invece di
+ * proseguire. Questo vale anche per la guardia "le manuali vincono": se sul
+ * movimento sono comparse fette manuali che bloccano la rigenerazione, non è
+ * un no-op silenzioso come lo sarebbe per una riconciliazione nuova (che
+ * semplicemente non ha ancora fette da perdere) — qui ci sono già fette vere,
+ * e cancellarle senza rimpiazzarle sposterebbe soldi già categorizzati sul
+ * conto di testata. Chi chiama (la rotta) apre la transazione con
+ * `prisma.$transaction`: l'eccezione la fa fare rollback, e nessuna fetta
+ * risulta mai persa.
  *
  * **Non duplica il calcolo dei pesi.** Rigenera chiamando
  * `ereditaFetteDaFattura` — la stessa funzione della riconciliazione
@@ -133,32 +207,41 @@ export async function imputazioniDivergenti(
  * dell'annullo, con la stessa regola di proprietà: il campo si tocca solo
  * se è ancora nostro (assente, o uguale a quanto le fette cancellate
  * dichiaravano). `ereditaFetteDaFattura` poi lo riscrive da capo con la
- * stessa regola. Il risultato netto è quello atteso: se l'IVA di testata
- * era nostra, segue le fette nuove; se un essere umano l'aveva dichiarata
- * lui, il riallineamento la lascia esattamente com'era, come qualunque
- * altra scrittura di questo modulo.
+ * stessa regola.
+ *
+ * **Il conto dominante non va ricalcolato a parte.** Con il tutto-o-niente
+ * qui sopra, ogni riconciliazione che completa il ciclo senza lanciare ha
+ * `fetteScritte > 0`, e `ereditaFetteDaFattura` chiama già
+ * `aggiornaContoDominante` da sé quando scrive fette. Alla fine del ciclo lo
+ * stato è quindi sempre già coerente: un'altra chiamata qui sarebbe
+ * ridondante — non sbagliata, solo morta, perché non esiste un caso in cui
+ * il ciclo finisca senza lanciare e con zero fette sul movimento.
+ *
+ * **L'audit non lo scrive questa funzione**: userebbe il client globale
+ * `prisma`, non `tx`, quindi la riga si committerebbe subito e sopravviverebbe
+ * a un rollback — dichiarando un riallineamento mai avvenuto. Chi chiama
+ * scrive l'audit dopo che `$transaction` è risolta, con `RiconciliazioneRiallineata[]`
+ * che questa funzione ritorna.
  *
  * **Concorrenza**: prende lo stesso lock di riga della riconciliazione e
  * dell'annullo (`bloccaMovimento`), quindi non può correre in parallelo con
  * loro sullo stesso movimento.
  *
- * Ritorna il numero di fette scritte in totale (0 se il movimento non
- * esiste o non c'è nulla da riallineare): la route lo usa solo per
- * riportarlo in risposta, la decisione se rispondere 409 spetta a
- * `imputazioniDivergenti`, chiamata prima di aprire la transazione.
+ * Ritorna un elemento per riconciliazione riallineata (array vuoto se il
+ * movimento non esiste o non c'è nulla da riallineare) — mai un risultato
+ * parziale: o l'intero array, o l'eccezione e nessuna scrittura sopravvive.
  */
 export async function riallineaFette(
   tx: TransactionClient,
-  journalEntryId: string,
-  userId: string | null
-): Promise<number> {
+  journalEntryId: string
+): Promise<RiconciliazioneRiallineata[]> {
   const entry = await bloccaMovimento(tx, journalEntryId)
-  if (!entry) return 0
+  if (!entry) return []
 
   const divergenze = await divergenzeDelMovimento(tx, journalEntryId)
-  if (divergenze.length === 0) return 0
+  if (divergenze.length === 0) return []
 
-  let fetteScritte = 0
+  const eseguiti: RiconciliazioneRiallineata[] = []
 
   for (const { reconciliationId, invoiceId } of divergenze) {
     const riconciliazione = await tx.scheduleReconciliation.findUnique({
@@ -191,7 +274,10 @@ export async function riallineaFette(
       quota: Number(riconciliazione.amount),
       importoUtileMovimento: importoUtileMovimento(entry, riconciliazione.schedule.tipo),
     })
-    fetteScritte += scritte
+
+    if (scritte === 0) {
+      throw new RiallineamentoNonRigenerabile(reconciliationId, invoiceId)
+    }
 
     logger.info('Fette riallineate alle imputazioni correnti della fattura', {
       journalEntryId,
@@ -201,31 +287,8 @@ export async function riallineaFette(
       fetteScritte: scritte,
     })
 
-    await createAuditLog({
-      userId,
-      action: 'UPDATE',
-      entityType: 'ScheduleReconciliation',
-      entityId: reconciliationId,
-      oldValues: { fette: fetteRitirate.count },
-      newValues: { fette: scritte, invoiceId, riallineamento: true },
-    })
+    eseguiti.push({ reconciliationId, invoiceId, fetteRimosse: fetteRitirate.count, fetteScritte: scritte })
   }
 
-  // Come per l'annullo: il dominante si ricalcola su TUTTE le fette rimaste
-  // sul movimento, e se non ne resta nessuna la categorizzazione torna
-  // semplice. Serve anche quando `ereditaFetteDaFattura` ha già richiamato
-  // `aggiornaContoDominante` da sé (fette scritte): rifarlo qui una volta di
-  // più, sullo stato finale dopo l'intero ciclo, non costa nulla ed è l'unico
-  // modo di coprire anche il caso in cui l'ultima riconciliazione riallineata
-  // non abbia scritto nulla (una guardia si è astenuta) e quella chiamata
-  // interna non sia mai avvenuta.
-  const numeroFette = await aggiornaContoDominante(tx, journalEntryId, 'automatico')
-  if (numeroFette === 0) {
-    await tx.journalEntry.update({
-      where: { id: journalEntryId },
-      data: { categorizationSource: 'manual' },
-    })
-  }
-
-  return fetteScritte
+  return eseguiti
 }
