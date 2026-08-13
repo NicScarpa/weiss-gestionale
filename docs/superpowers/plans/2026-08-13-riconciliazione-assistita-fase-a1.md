@@ -3164,43 +3164,66 @@ function main(): void {
     process.exit(1)
   }
 
-  let conRiferimento = 0
-  let conPartitaIva = 0
-  let conCodiceBanca = 0
-  const codici = new Map<string, number>()
-  const senzaRiferimento: string[] = []
+  const uscite = movimenti.filter((m) => Number(m.transactionAmount?.amount ?? 0) < 0)
+  const entrate = movimenti.filter((m) => Number(m.transactionAmount?.amount ?? 0) >= 0)
 
-  for (const movimento of movimenti) {
-    const causale = causaleDi(movimento)
+  const conRiferimento = (gruppo: MovimentoSnapshot[]) =>
+    gruppo.filter((m) => estraiRiferimentiDocumento(causaleDi(m)).length > 0).length
 
-    if (estraiRiferimentiDocumento(causale).length > 0) conRiferimento++
-    else if (senzaRiferimento.length < 10) senzaRiferimento.push(causale.slice(0, 160))
+  const quota = (n: number, su: number) => (su === 0 ? '—' : `${((n / su) * 100).toFixed(1)}%`)
 
-    if (estraiPartiteIva(causale).length > 0) conPartitaIva++
+  console.log(`\nMovimenti letti (deduplicati su internalTransactionId): ${movimenti.length}\n`)
 
-    const codice = movimento.proprietaryBankTransactionCode
-    if (codice) {
-      conCodiceBanca++
-      codici.set(codice, (codici.get(codice) ?? 0) + 1)
-    }
+  // **Separati per verso, e il motivo non è cosmetico.** Un incasso da SumUp o
+  // da Stripe non cita una *nostra* fattura per costruzione: metterlo nello
+  // stesso denominatore dei pagamenti ai fornitori produce una percentuale
+  // bassa che sembra un difetto delle espressioni regolari e non lo è.
+  for (const [nome, gruppo] of [
+    ['USCITE', uscite],
+    ['ENTRATE', entrate],
+    ['TUTTI', movimenti],
+  ] as const) {
+    const n = conRiferimento(gruppo)
+    console.log(
+      `${nome.padEnd(8)} ${String(gruppo.length).padStart(4)} movimenti — con riferimento: ${String(n).padStart(3)} (${quota(n, gruppo.length)})`
+    )
   }
 
-  const percentuale = (n: number) => `${((n / movimenti.length) * 100).toFixed(1)}%`
+  const conPartitaIva = movimenti.filter((m) => estraiPartiteIva(causaleDi(m)).length > 0).length
+  const conCodice = movimenti.filter((m) => m.proprietaryBankTransactionCode).length
+  console.log(`\nCon una partita IVA nella causale:    ${conPartitaIva} (${quota(conPartitaIva, movimenti.length)})`)
+  console.log(`Con un codice operazione della banca:  ${conCodice} (${quota(conCodice, movimenti.length)})`)
 
-  console.log(`\nMovimenti letti: ${movimenti.length}\n`)
-  console.log(`Con un riferimento a documento leggibile: ${conRiferimento} (${percentuale(conRiferimento)})`)
-  console.log(`Con una partita IVA nella causale:        ${conPartitaIva} (${percentuale(conPartitaIva)})`)
-  console.log(`Con un codice operazione della banca:     ${conCodiceBanca} (${percentuale(conCodiceBanca)})`)
-
-  console.log('\nCodici operazione per frequenza (serve a costruire la mappa del fattore codice banca):')
-  const perFrequenza = [...codici.entries()].sort((a, b) => b[1] - a[1])
-  for (const [codice, conta] of perFrequenza) {
-    console.log(`  ${codice.padEnd(10)} ${String(conta).padStart(4)}  ${percentuale(conta)}`)
+  // **La tabella che conta davvero.** Non la frequenza del codice, ma il codice
+  // incrociato con la presenza di un riferimento e con un esempio di causale:
+  // è così che si capisce *cosa* è ciascun codice, e quindi come popolare
+  // `mappaCodiciBanca`. Un codice che copre il 30% delle uscite e non ha mai un
+  // riferimento non è un difetto: sono le commissioni bancarie, che una fattura
+  // non ce l'hanno.
+  console.log('\nCodici operazione delle USCITE — frequenza, riferimenti, e un esempio:')
+  const perCodice = new Map<string, MovimentoSnapshot[]>()
+  for (const m of uscite) {
+    const codice = m.proprietaryBankTransactionCode ?? '(assente)'
+    const gruppo = perCodice.get(codice)
+    if (gruppo) gruppo.push(m)
+    else perCodice.set(codice, [m])
+  }
+  for (const [codice, gruppo] of [...perCodice.entries()].sort((a, b) => b[1].length - a[1].length)) {
+    const n = conRiferimento(gruppo)
+    const esempio = normalizzaTesto(causaleDi(gruppo[0])).slice(0, 60)
+    console.log(
+      `  ${codice.padEnd(10)} ${String(gruppo.length).padStart(4)} (${quota(gruppo.length, uscite.length).padStart(6)})  rif: ${String(n).padStart(3)}  ${esempio}`
+    )
   }
 
-  console.log('\nPrime causali senza riferimento leggibile (per capire cosa manca alle espressioni regolari):')
-  for (const causale of senzaRiferimento) {
-    console.log(`  ${normalizzaTesto(causale).slice(0, 120)}`)
+  console.log('\nOtto uscite senza riferimento leggibile (col loro codice):')
+  let mostrate = 0
+  for (const m of uscite) {
+    if (mostrate >= 8) break
+    const causale = causaleDi(m)
+    if (estraiRiferimentiDocumento(causale).length > 0) continue
+    console.log(`  [${m.proprietaryBankTransactionCode}] ${normalizzaTesto(causale).slice(0, 100)}`)
+    mostrate++
   }
   console.log()
 }
@@ -3211,20 +3234,36 @@ main()
 - [ ] **Step 3: Esegui la misurazione**
 
 Run: `nvm use 22 && npx tsx scripts/riconciliazione/misura-motore.ts`
-Expected: il rapporto. **Leggi i numeri, non limitarti a vedere che gira.** Tre
-cose vanno guardate:
+Expected: il rapporto. **Leggi i numeri, non limitarti a vedere che gira.**
 
-1. **La percentuale con riferimento leggibile.** Se è sotto il 40%, le
-   espressioni regolari di `causale.ts` non coprono le forme che la banca usa
-   davvero: guarda le causali stampate in fondo e aggiungi i casi mancanti,
-   con un test in `causale.test.ts` per ciascuno.
-2. **La tabella dei codici operazione.** È il materiale grezzo della mappa
-   `mappaCodiciBanca`: un codice che compare 200 volte su 678 corrisponde
-   quasi certamente a un tipo di operazione preciso, e va identificato
-   guardando le causali che lo portano.
-3. **Se un solo codice copre quasi tutto**, il fattore codice banca non
-   discrimina nulla e i suoi dieci punti vanno redistribuiti — probabilmente
-   sull'importo. Questa è una scoperta, non un fallimento.
+> **Numeri attesi, misurati il 14 agosto 2026 prima di scrivere questo passo.**
+> Servono da controllo: se il tuo output diverge molto, qualcosa non va nel
+> codice, non nei dati.
+>
+> - **621 movimenti** deduplicati (il totale grezzo di 678 contiene i duplicati
+>   fra i due conti — è il difetto di `transactionId` già noto dalla Fase 0)
+> - USCITE 392, con riferimento **10,2%** · ENTRATE 229, con riferimento **0,4%**
+> - codice operazione presente sul **100%**, partita IVA nel 2,6%
+> - fra le uscite: `16//37` 31% (commissioni), `26//11` 24% (bonifici internet
+>   banking), `31//22` 13%, `39//11` 4% (emolumenti)
+
+Tre cose vanno guardate, e la prima **non è quella che sembra**:
+
+1. **La percentuale bassa di riferimenti non è un difetto delle espressioni
+   regolari.** Lo si vede dalla tabella per codice: il codice più frequente
+   fra le uscite sono le **commissioni bancarie**, che una fattura non ce
+   l'hanno; le entrate sono incassi SumUp e Stripe, che non citano una *nostra*
+   fattura per costruzione. Il denominatore giusto non è «tutti i movimenti» ma
+   «i movimenti che sono davvero pagamenti a fornitori» — e il codice della
+   banca è ciò che li identifica. Guarda la percentuale di riferimenti **dentro
+   `26//11`**: quello è il numero che dice se le espressioni regolari funzionano.
+2. **La tabella dei codici incrociata coi riferimenti è la mappa
+   `mappaCodiciBanca` in forma grezza.** Ogni codice va identificato leggendo
+   l'esempio di causale accanto, e tradotto nel metodo di pagamento atteso.
+3. **Se un solo codice coprisse quasi tutto**, il fattore codice banca non
+   discriminerebbe e i suoi dieci punti andrebbero redistribuiti. **Non è il
+   caso**: il più frequente sta al 31% e i primi quattro separano commissioni,
+   bonifici, incassi e stipendi. Il fattore è buono.
 
 - [ ] **Step 4: Scrivi il rapporto**
 
