@@ -479,11 +479,14 @@ export async function POST(request: NextRequest) {
         fornitoreTrovatoId = supplier.id
       }
     } else if (validatedData.createSupplier && validatedData.supplierData) {
-      // Crea nuovo fornitore. `createSupplierFromData` ritorna quello già
-      // esistente se la P.IVA/C.F. combaciano (evita duplicati anche su una
-      // corsa concorrente): il controllo qui, appena prima, è l'unico modo
-      // di sapere se la riga è davvero nuova — il dato che alimenta
-      // «fornitoreCreato» nella risposta.
+      // Crea nuovo fornitore con i dati corretti a mano dall'utente: quando
+      // arrivano dal client vincono sempre sui dati del documento, è il caso
+      // in cui l'anteprima aveva sbagliato qualcosa e l'utente l'ha
+      // sistemato prima di confermare. `createSupplierFromData` ritorna
+      // quello già esistente se la P.IVA/C.F. combaciano (evita duplicati
+      // anche su una corsa concorrente): il controllo qui, appena prima, è
+      // l'unico modo di sapere se la riga è davvero nuova — il dato che
+      // alimenta «fornitoreCreato» nella risposta.
       const supplierData = validatedData.supplierData as SuggestedSupplierData
       const preesistente =
         supplierData.vatNumber || supplierData.fiscalCode
@@ -494,6 +497,37 @@ export async function POST(request: NextRequest) {
       supplierNameForInvoice = newSupplier.name // Use new supplier name
       status = 'MATCHED'
       fornitoreCreato = !preesistente
+    } else if (validatedData.createSupplier) {
+      // `createSupplier: true` senza `supplierData`: il wizard nuovo (Task
+      // 12) calcola l'anteprima nel browser e non passa più da
+      // `/api/invoices/parse` per ottenere un `suggestedData` — a differenza
+      // del vecchio dialog che sostituisce, non rimanda al server dati che
+      // il server ha già. Il client non deve rimandare dati che il server
+      // già possiede: qui l'XML è già stato riparsato, `fattura.cedentePrestatore`
+      // è per intero sotto mano, ed è esattamente ciò che serve a
+      // `matchSupplier` per costruire `suggestedData` — la stessa funzione
+      // già usata da `/api/invoices/parse` per lo stesso scopo.
+      //
+      // Prima di questo fix la condizione del ramo sopra (che richiede
+      // `supplierData`) era sempre falsa per il wizard nuovo: 226 fatture
+      // importate dal campo, 0 fornitori creati, `supplierId` sempre NULL.
+      //
+      // Si tenta prima il match: due fatture dello stesso fornitore non
+      // devono creare due anagrafiche, e `matchSupplier` lo garantisce
+      // cercando per P.IVA/C.F. prima di suggerire una creazione.
+      const match = await matchSupplier(fattura)
+      if (match.matched && match.supplier) {
+        supplierId = match.supplier.id
+        supplierNameForInvoice = match.supplier.name
+        status = 'MATCHED'
+        fornitoreTrovatoId = match.supplier.id
+      } else {
+        const newSupplier = await createSupplierFromData(match.suggestedData)
+        supplierId = newSupplier.id
+        supplierNameForInvoice = newSupplier.name
+        status = 'MATCHED'
+        fornitoreCreato = true
+      }
     } else {
       // Cerca match automatico
       const match = await matchSupplier(fattura)

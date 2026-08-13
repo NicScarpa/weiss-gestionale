@@ -138,6 +138,77 @@ describe('POST /api/invoices — politica duplicati', () => {
     expect((await res.json()).fornitoreCreato).toBe(true)
   })
 
+  it('senza supplierData, «createSupplier» deriva i dati dal documento e crea il fornitore', async () => {
+    // Fix round 4: prova sul campo con 226 fatture vere — 0 fornitori
+    // creati, supplierId sempre NULL. Il wizard nuovo (Task 12) manda
+    // `createSupplier: true` ma MAI `supplierData` (calcola l'anteprima nel
+    // browser, non passa più da /api/invoices/parse): il ramo che richiede
+    // `createSupplier && supplierData` era quindi sempre falso. Qui non c'è
+    // `supplierData` in `base` — è esattamente lo scenario del campo.
+    const res = await POST(richiesta({ ...base, fileName: 'senza-supplier-data.xml' }))
+    const corpo = await res.json()
+
+    expect(corpo.fornitoreCreato).toBe(true)
+
+    const fattura = await prisma.electronicInvoice.findUnique({ where: { id: corpo.id } })
+    expect(fattura?.supplierId).toBeTruthy()
+
+    // I dati vengono da fattura.cedentePrestatore (via matchSupplier), non
+    // da un supplierData che il client non ha mandato.
+    const fornitore = await prisma.supplier.findUnique({ where: { id: fattura!.supplierId! } })
+    expect(fornitore?.vatNumber).toBe('07945211006')
+    expect(fornitore?.name).toBe('Torrefazione di prova Srl')
+  })
+
+  it('due fatture dello stesso fornitore non creano due anagrafiche', async () => {
+    const prima = await POST(richiesta({ ...base, fileName: 'prima.xml' }))
+    const corpoPrima = await prima.json()
+    expect(corpoPrima.fornitoreCreato).toBe(true)
+
+    // Stessa P.IVA di `base`, numero diverso: è una fattura successiva dello
+    // stesso fornitore, non un duplicato da respingere.
+    const secondaXml = xmlFattura({ numero: 'POL-6', data: '2026-06-01', piva: '07945211006' })
+    const seconda = await POST(richiesta({ ...base, xmlContent: secondaXml, fileName: 'seconda.xml' }))
+    const corpoSeconda = await seconda.json()
+
+    expect(corpoSeconda.fornitoreCreato).toBe(false)
+
+    const fatturaPrima = await prisma.electronicInvoice.findUnique({ where: { id: corpoPrima.id } })
+    const fatturaSeconda = await prisma.electronicInvoice.findUnique({ where: { id: corpoSeconda.id } })
+    expect(fatturaSeconda?.supplierId).toBeTruthy()
+    expect(fatturaSeconda?.supplierId).toBe(fatturaPrima?.supplierId)
+
+    const fornitori = await prisma.supplier.findMany({ where: { vatNumber: '07945211006' } })
+    expect(fornitori).toHaveLength(1)
+  })
+
+  it('con supplierData esplicito, i dati passati dal client vincono su quelli del documento', async () => {
+    const res = await POST(richiesta({
+      ...base,
+      fileName: 'dati-espliciti.xml',
+      supplierData: {
+        name: 'Nome Corretto A Mano Srl',
+        vatNumber: '07945211006',
+        fiscalCode: null,
+        address: 'Via Corretta 99',
+        city: 'Trento',
+        province: 'TN',
+        postalCode: '38100',
+      },
+    }))
+
+    const corpo = await res.json()
+    expect(corpo.fornitoreCreato).toBe(true)
+
+    const fattura = await prisma.electronicInvoice.findUnique({ where: { id: corpo.id } })
+    const fornitore = await prisma.supplier.findUnique({ where: { id: fattura!.supplierId! } })
+
+    // Non "Torrefazione di prova Srl" / "Bolzano" (i dati del documento):
+    // quelli passati esplicitamente dal client.
+    expect(fornitore?.name).toBe('Nome Corretto A Mano Srl')
+    expect(fornitore?.city).toBe('Trento')
+  })
+
   it('con «sovrascrivi anagrafica» aggiorna i dati del fornitore esistente', async () => {
     // La P.IVA deve coincidere con quella del documento (07945211006):
     // è la chiave con cui matchSupplier ritrova il fornitore da aggiornare.
