@@ -653,7 +653,20 @@ export async function ereditaFetteDaFattura(
   // su pulizia — un conto che non ha mai visto un centesimo di quella cifra.
   // Si torna ai pesi pieni della fattura, non ci si astiene: qui, a
   // differenza delle guardie 1 e 2, la risposta giusta esiste e si conosce.
-  if (righeNotaDaSottrarre.length > 0) {
+  //
+  // `pesi.every(iva !== null)`: il confronto regge solo se i pesi sono LORDI
+  // quanto la quota. Basta una riga senza aliquota nello snapshot perché
+  // `calcolaPesiConIva` cada nel tutto-o-niente — `iva: null` su ogni peso, e
+  // il peso di quella riga resta l'imponibile nudo (`aliquota ?? 0`). Da lì
+  // in poi si confronterebbe un pagamento lordo con una somma che lordo non
+  // è: il divario è tutta l'IVA delle righe illeggibili, quindi `quota >
+  // totaleRidotto` risulta vero quasi sempre e la nota di credito non
+  // verrebbe MAI sottratta su quella classe di fatture — Task 6 spento in
+  // silenzio, con un log che per giunta afferma il falso («non compensata su
+  // questo pagamento»: compensata lo era, sbagliato era il confronto).
+  // Quando l'IVA non è nota si rinuncia alla guardia, non alla sottrazione:
+  // la premessa della sottrazione resta la migliore che si abbia.
+  if (righeNotaDaSottrarre.length > 0 && pesi.every((p) => p.iva !== null)) {
     const totaleRidotto = pesi.reduce((s, p) => s + p.importo, 0)
     if (quota > totaleRidotto + TOLLERANZA_IMPORTI) {
       logger.info('Nota di credito non compensata su questo pagamento: si usano i pesi pieni della fattura', {
