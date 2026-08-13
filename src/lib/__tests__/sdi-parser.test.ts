@@ -1600,4 +1600,106 @@ describe('estraiScadenze - giorniImposti', () => {
     expect(isoDay(scadenze[0].dueDate)).toBe('2026-07-01')
     expect(scadenze[0].dataStimata).toBe(false)
   })
+
+  it('con rata singola resta la stessa regola del round 2 (nessuna distanza da conservare)', () => {
+    // Non un test nuovo di comportamento — verifica che il caso a tre rate
+    // qui sotto non abbia cambiato quello a una rata sola, già coperto da
+    // «vince sulla data che il documento riporta».
+    const fattura = parseFatturaPA(
+      xmlFattura({ data: '2026-06-01', rate: [{ scadenza: '2026-08-15', importo: '122.00' }] })
+    )
+
+    const scadenze = estraiScadenze(fattura, { giorniImposti: 60 })
+
+    expect(scadenze).toHaveLength(1)
+    expect(isoDay(scadenze[0].dueDate)).toBe('2026-07-31')
+  })
+
+  it('con più rate conserva lo scaglionamento: 30/60/90 imponendo 60 diventa 60/90/120', () => {
+    // Fix round 3: `imposta()` non guardava la posizione della rata — ogni
+    // DettaglioPagamento, qualunque fosse, otteneva la stessa data. Un
+    // documento a tre rate con termini imposti finiva con tre scadenze lo
+    // stesso giorno, false ai fini della previsione di cassa.
+    const fattura = parseFatturaPA(
+      xmlFattura({
+        data: '2026-06-01',
+        rate: [
+          { scadenza: '2026-07-01', importo: '40.00' }, // 30 giorni dalla fattura
+          { scadenza: '2026-07-31', importo: '40.00' }, // 60 giorni
+          { scadenza: '2026-08-30', importo: '42.00' }, // 90 giorni
+        ],
+      })
+    )
+
+    const scadenze = estraiScadenze(fattura, { giorniImposti: 60 })
+
+    expect(scadenze).toHaveLength(3)
+    // 60/90/120 giorni dalla data fattura: i 60 scelti per la prima rata si
+    // propagano, ma le distanze di 30 giorni fra le rate — la struttura
+    // rateale del fornitore — restano quelle del documento originale.
+    expect(scadenze.map((s) => isoDay(s.dueDate))).toEqual([
+      '2026-07-31',
+      '2026-08-30',
+      '2026-09-29',
+    ])
+    // Importo e modalità di pagamento restano quelli di ciascuna rata: solo
+    // la data cambia.
+    expect(scadenze.map((s) => s.amount)).toEqual([40, 40, 42])
+    expect(scadenze.every((s) => s.paymentMethod === 'MP05')).toBe(true)
+    expect(scadenze.every((s) => s.dataStimata === false)).toBe(true)
+  })
+
+  it('con rate prive di DataScadenzaPagamento non c è distanza da conservare: tutte alla stessa data', () => {
+    const fattura = parseFatturaPA(
+      xmlFattura({
+        data: '2026-06-01',
+        rate: [
+          { scadenza: '', importo: '40.00' },
+          { scadenza: '', importo: '40.00' },
+          { scadenza: '', importo: '42.00' },
+        ],
+      })
+    )
+
+    const scadenze = estraiScadenze(fattura, { giorniImposti: 60 })
+
+    expect(scadenze).toHaveLength(3)
+    // Il documento non esprime alcuno scaglionamento: la regola è la stessa
+    // della rata singola, per ciascuna.
+    expect(scadenze.every((s) => isoDay(s.dueDate) === '2026-07-31')).toBe(true)
+    expect(scadenze.map((s) => s.amount)).toEqual([40, 40, 42])
+  })
+
+  it('con rate in ordine non cronologico, la distanza resta relativa alla PRIMA per posizione', () => {
+    // Comportamento deliberato, non un bug: la "prima rata" è la prima per
+    // posizione nell'XML, non la più antica per data. Un ordine non
+    // cronologico è di per sé un documento fuori norma; ancorare sulla
+    // posizione tiene il comportamento deterministico senza inventare una
+    // politica di riordino che nessuno ha chiesto. Le distanze relative fra
+    // le rate restano corrette, semplicemente misurate da un'ancora diversa
+    // (qui, quella che nel documento viene per ultima in ordine di data).
+    const fattura = parseFatturaPA(
+      xmlFattura({
+        data: '2026-06-01',
+        rate: [
+          { scadenza: '2026-08-30', importo: '42.00' }, // 90 giorni — ma è la prima in elenco
+          { scadenza: '2026-07-01', importo: '40.00' }, // 30 giorni — 60 giorni PRIMA della prima
+          { scadenza: '2026-07-31', importo: '40.00' }, // 60 giorni — 30 giorni PRIMA della prima
+        ],
+      })
+    )
+
+    const scadenze = estraiScadenze(fattura, { giorniImposti: 60 })
+
+    expect(scadenze).toHaveLength(3)
+    // La prima rata (2026-08-30 nel documento) diventa dataFattura + 60 =
+    // 2026-07-31. Le altre due mantengono la loro distanza — negativa,
+    // perché nel documento cadevano PRIMA della prima rata in elenco.
+    expect(scadenze.map((s) => isoDay(s.dueDate))).toEqual([
+      '2026-07-31', // ancora: dataFattura + 60
+      '2026-06-01', // 60 giorni prima dell'ancora (era 60 giorni prima nel documento)
+      '2026-07-01', // 30 giorni prima dell'ancora (era 30 giorni prima nel documento)
+    ])
+    expect(scadenze.map((s) => s.amount)).toEqual([42, 40, 40])
+  })
 })

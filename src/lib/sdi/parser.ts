@@ -656,6 +656,12 @@ function aggiungiGiorni(data: Date, giorni: number): Date {
   return result
 }
 
+/** Differenza in giorni interi fra due date (può essere negativa). */
+function differenzaInGiorni(a: Date, b: Date): number {
+  const MS_PER_GIORNO = 24 * 60 * 60 * 1000
+  return Math.round((a.getTime() - b.getTime()) / MS_PER_GIORNO)
+}
+
 /**
  * Estrae le scadenze di pagamento dalla fattura.
  *
@@ -665,11 +671,23 @@ function aggiungiGiorni(data: Date, giorni: number): Date {
  * minimo indispensabile.
  *
  * Un terzo caso non stima affatto, impone: `opzioni.giorniImposti` valorizzato
- * ricalcola OGNI scadenza come data fattura + quei giorni, ignorando le
+ * ricalcola le scadenze a partire da data fattura + quei giorni, ignorando le
  * `DataScadenzaPagamento` che il documento porta. Senza questo ramo, la
  * finestra dei conflitti sui termini di pagamento non cambiava mai nulla: il
  * documento quasi sempre porta la sua data, e `giorniPagamento` da solo cede
  * il passo a quella data appena c'è.
+ *
+ * Con più rate, imporre i giorni NON le collassa tutte sullo stesso giorno:
+ * si conserva lo scaglionamento. La PRIMA rata del documento (per posizione,
+ * non per data — un ordine non cronologico nell'XML sposta quale rata fa da
+ * riferimento, non le distanze relative fra le rate) va a
+ * `dataFattura + giorniImposti`; ogni rata successiva mantiene la distanza in
+ * giorni che aveva da quella prima rata nel documento originale. 30/60/90
+ * imponendo 60 diventa 60/90/120: i venti scelti per la prima scadenza,
+ * struttura rateale del fornitore rispettata. Una rata priva di
+ * `DataScadenzaPagamento` — o l'intero documento, se è la prima rata a
+ * mancarne — non ha una distanza nota da conservare: ricade sulla stessa
+ * regola della rata singola, `dataFattura + giorniImposti`.
  */
 export function estraiScadenze(
   fattura: FatturaParsata,
@@ -688,22 +706,47 @@ export function estraiScadenze(
   })
 
   if (opzioni.giorniImposti !== undefined) {
-    const giorniImposti = opzioni.giorniImposti
-    const imposta = () => ({
-      dueDate: aggiungiGiorni(dataFattura, giorniImposti),
-      dataStimata: false as const,
-    })
+    const nuovaPrimaData = aggiungiGiorni(dataFattura, opzioni.giorniImposti)
 
     if (!fattura.datiPagamento || fattura.datiPagamento.dettagliPagamento.length === 0) {
       const { totalAmount } = calcolaImporti(fattura)
-      return [{ ...imposta(), amount: totalAmount, paymentMethod: MODALITA_NON_SPECIFICATA }]
+      return [
+        {
+          dueDate: nuovaPrimaData,
+          amount: totalAmount,
+          paymentMethod: MODALITA_NON_SPECIFICATA,
+          dataStimata: false,
+        },
+      ]
     }
 
-    return fattura.datiPagamento.dettagliPagamento.map((d) => ({
-      ...imposta(),
-      amount: d.importoPagamento,
-      paymentMethod: d.modalitaPagamento,
-    }))
+    const dettagli = fattura.datiPagamento.dettagliPagamento
+    // Riferimento per lo scaglionamento: la data che il documento assegna
+    // alla PRIMA rata (per posizione nell'XML). Assente se quella rata non
+    // porta una data — nel qual caso nessuna distanza è misurabile e ogni
+    // rata ricade sulla regola della rata singola, più sotto.
+    const primaData = dettagli[0]?.dataScadenzaPagamento
+      ? new Date(dettagli[0].dataScadenzaPagamento)
+      : null
+
+    return dettagli.map((d) => {
+      if (!d.dataScadenzaPagamento || !primaData) {
+        return {
+          dueDate: nuovaPrimaData,
+          amount: d.importoPagamento,
+          paymentMethod: d.modalitaPagamento,
+          dataStimata: false,
+        }
+      }
+
+      const distanzaGiorni = differenzaInGiorni(new Date(d.dataScadenzaPagamento), primaData)
+      return {
+        dueDate: aggiungiGiorni(nuovaPrimaData, distanzaGiorni),
+        amount: d.importoPagamento,
+        paymentMethod: d.modalitaPagamento,
+        dataStimata: false,
+      }
+    })
   }
 
   if (!fattura.datiPagamento || fattura.datiPagamento.dettagliPagamento.length === 0) {

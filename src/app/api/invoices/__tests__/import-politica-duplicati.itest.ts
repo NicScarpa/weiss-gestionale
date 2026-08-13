@@ -229,4 +229,40 @@ describe('POST /api/invoices — politica duplicati', () => {
     expect(scadenze).toHaveLength(1)
     expect(scadenze[0].dueDate.toISOString().slice(0, 10)).toBe('2026-07-01')
   })
+
+  it('con più rate, i giorni scelti conservano lo scaglionamento invece di collassarle', async () => {
+    // Fix round 3: verifica end-to-end che la rotta porti fino allo
+    // scadenzario tre scadenze distinte (non tre allo stesso giorno) quando
+    // il documento ha più rate e l'utente impone i giorni.
+    const treRate = xmlFattura({
+      numero: 'POL-5',
+      data: '2026-06-01',
+      rate: [
+        { scadenza: '2026-07-01', importo: '40.00' }, // 30 giorni
+        { scadenza: '2026-07-31', importo: '40.00' }, // 60 giorni
+        { scadenza: '2026-08-30', importo: '42.00' }, // 90 giorni
+      ],
+    })
+
+    const res = await POST(richiesta({
+      ...base,
+      xmlContent: treRate,
+      fileName: 'tre-rate-imposte.xml',
+      giorniPagamentoScelti: 60,
+    }))
+
+    const { id } = await res.json()
+    const scadenze = await prisma.invoiceDeadline.findMany({
+      where: { invoiceId: id },
+      orderBy: { dueDate: 'asc' },
+    })
+
+    expect(scadenze).toHaveLength(3)
+    // 60/90/120 giorni dalla data fattura, non tre volte 2026-07-31.
+    expect(scadenze.map((s) => s.dueDate.toISOString().slice(0, 10))).toEqual([
+      '2026-07-31',
+      '2026-08-30',
+      '2026-09-29',
+    ])
+  })
 })
