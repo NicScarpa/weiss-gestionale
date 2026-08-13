@@ -847,6 +847,22 @@ describe('il fattore controparte', () => {
     expect(esito.fattori.controparte).toBe(18)
   })
 
+  it('la ragione sociale per intero nella causale vale quanto un IBAN', () => {
+    // "ROMA GIANFRANCO SRL" (19 caratteri) compare dentro "…SRLFT 4320":
+    // una ragione sociale così lunga non ci finisce per caso
+    const esito = valutaCoppia(movimento(), scadenza(), CONTESTO_VUOTO)!
+    expect(esito.fattori.controparte).toBe(18)
+  })
+
+  it('un nome corto vale meno, perché la coincidenza è plausibile', () => {
+    const esito = valutaCoppia(
+      movimento({ causale: 'Bonifico ACME per fornitura' }),
+      scadenza({ controparteNome: 'ACME', numeroDocumento: null }),
+      CONTESTO_VUOTO
+    )!
+    expect(esito.fattori.controparte).toBe(12)
+  })
+
   it('non dà nulla quando non riconosce nessuno', () => {
     const esito = valutaCoppia(
       movimento({ causale: 'Addebito commissioni trimestrali' }),
@@ -892,10 +908,14 @@ describe('il fattore codice banca', () => {
 })
 
 describe('il totale e le fasce', () => {
-  it('la coppia perfetta arriva a 85 senza contare l\'unicità', () => {
-    // 30 importo + 20 riferimento + 20 controparte + 15 data + 0 codice banca
+  it('la coppia perfetta arriva a 83 senza contare l\'unicità', () => {
+    // 30 importo + 20 riferimento + 18 controparte + 15 data + 0 codice banca.
+    // Con l'unicità (unico candidato, +5) fa 88: fascia Alta. È il collaudo
+    // della taratura — se la coppia più evidente possibile non arrivasse in
+    // Alta, "Approva tutte le sicure" non avrebbe mai nulla da approvare, che
+    // è il difetto di CashKing che la spec vieta di copiare.
     const esito = valutaCoppia(movimento(), scadenza(), CONTESTO_VUOTO)!
-    expect(esito.punteggioParziale).toBe(85)
+    expect(esito.punteggioParziale).toBe(83)
     expect(esito.fattori.unicita).toBe(0)
   })
 
@@ -1160,11 +1180,18 @@ function punteggioControparte(
     }
   }
 
-  // 4. Il nome, che è l'indizio più debole perché la banca lo tronca e lo storpia
+  // 4. Il nome. Se compare **per intero e alla lettera** vale quanto l'IBAN:
+  // una ragione sociale di otto caratteri o più non finisce per caso dentro la
+  // causale di un bonifico. Sotto gli otto caratteri la coincidenza è
+  // plausibile ("ACME" dentro "ACMEBANK") e il punteggio scende.
   if (scadenza.controparteNome) {
     const nome = normalizzaTesto(scadenza.controparteNome)
-    if (nome.length >= 4 && causaleNormalizzata.includes(nome)) {
+    if (nome.length >= 8 && causaleNormalizzata.includes(nome)) {
       motivazioni.push({ testo: 'Nome della controparte presente nella causale', segno: '+' })
+      return 18
+    }
+    if (nome.length >= 4 && causaleNormalizzata.includes(nome)) {
+      motivazioni.push({ testo: 'Nome breve della controparte presente nella causale', segno: '+' })
       return 12
     }
     const somiglianza = stringSimilarity(causaleNormalizzata, nome)
@@ -1250,7 +1277,7 @@ export function valutaCoppia(
 - [ ] **Step 4: Esegui i test e verifica che passino**
 
 Run: `nvm use 22 && npm run test:run -- punteggio`
-Expected: PASS, 21 test.
+Expected: PASS, 25 test.
 
 - [ ] **Step 5: Verifica i tipi**
 
