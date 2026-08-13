@@ -3087,12 +3087,16 @@ ha trovato niente» da «ha sbagliato tutto»*, e un motore mai esposto a dati v
 assomiglia moltissimo a un motore che funziona.
 
 **Files:**
-- Create: `scripts/riconciliazione/misura-motore.ts`
+- Create: `scripts/riconciliazione/snapshot.ts` (la lettura degli snapshot, condivisa fra i due script)
+- Create: `scripts/riconciliazione/misura-motore.ts` (le statistiche delle causali, offline)
+- Create: `scripts/riconciliazione/misura-lotto.ts` (il motore su volumi veri, con database)
 - Create: `scripts/riconciliazione/README.md`
 
 **Interfaces:**
-- Consumes: gli snapshot in `scripts/gocardless/snapshots/*transactions*.json`; `valutaCoppia`, `fascia`, `SOGLIE` da `@/lib/reconciliation/punteggio`
-- Produces: uno script eseguibile con `npx tsx scripts/riconciliazione/misura-motore.ts`
+- Consumes: gli snapshot in `scripts/gocardless/snapshots/*transactions*.json`; `estraiRiferimentiDocumento`, `estraiPartiteIva`, `normalizzaTesto` da `@/lib/reconciliation/causale`; `generaLotto` da `@/lib/services/reconciliation-batch-service`; `fascia` da `@/lib/reconciliation/punteggio`
+- Produces:
+  - `leggiMovimenti(): MovimentoSnapshot[]` in `snapshot.ts`, usata da entrambi gli script
+  - due script eseguibili con `npx tsx`
 
 - [ ] **Step 1: Conferma la forma degli snapshot**
 
@@ -3311,14 +3315,67 @@ Tre cose vanno guardate, e la prima **non è quella che sembra**:
    caso**: il più frequente sta al 31% e i primi quattro separano commissioni,
    bonifici, incassi e stipendi. Il fattore è buono.
 
-- [ ] **Step 4: Scrivi il rapporto**
+- [ ] **Step 4: Il secondo script — quanto costa generare un lotto**
 
-Crea `scripts/riconciliazione/README.md` con i numeri ottenuti, la tabella dei
-codici, e la conclusione su quale delle tre cose sopra si è verificata. Questo
-documento è l'ingresso della decisione sulla soglia di 85 e sulla mappa dei
-codici, entrambe segnate come domande aperte nella spec.
+Il primo script misura le **causali**, offline. Questo misura il **motore**:
+carica i movimenti veri in un database di prova, esegue `generaLotto`, e riporta
+quante proposte escono, come si distribuiscono per fascia, e — il punto che una
+revisione ha lasciato aperto — **quante operazioni finiscono nella singola
+transazione** che le persiste.
 
-- [ ] **Step 5: Commit**
+Crea `scripts/riconciliazione/misura-lotto.ts`, eseguibile con
+`TEST_DB_SUFFIX=ric_a1 npx tsx scripts/riconciliazione/misura-lotto.ts`.
+
+Deve:
+
+1. **Caricare i movimenti veri** dagli snapshot come righe `BankTransaction`
+   sul database di prova (stesso `leggiMovimenti` del primo script, riusato
+   invece che ricopiato: estrailo in `scripts/riconciliazione/snapshot.ts` e
+   importalo da entrambi).
+2. **Costruire le scadenze dall'altro lato.** Non ne abbiamo di vere — vedi il
+   riquadro qui sotto — quindi genera scadenze **sintetiche ma plausibili**:
+   per una parte dei movimenti in uscita, una scadenza passiva di pari importo,
+   con la data spostata di qualche giorno e il numero documento estratto dalla
+   causale quando c'è. **Dichiara nel rapporto quante ne hai generate e con che
+   regola**, perché è ciò che rende interpretabile ogni numero che segue.
+3. **Eseguire `generaLotto`** sull'intero periodo e misurare: durata, proposte
+   totali, distribuzione per fascia, numero di gambe, e la lunghezza dell'array
+   passato a `$transaction`.
+4. **Ripulire** ciò che ha creato: è un database di prova, ma lasciare 621
+   movimenti in giro rende inaffidabili le esecuzioni successive.
+
+> ### Cosa questo script misura, e cosa no
+>
+> **Misura**: che il motore gira su volumi veri, quanto ci mette, e quanto
+> diventa grossa la transazione. Sono fatti meccanici, e bastano a chiudere la
+> riserva sulla scala.
+>
+> **Non misura**: se le proposte sono **giuste**. Le scadenze sono sintetiche,
+> quindi il tasso di correttezza che ne uscirebbe sarebbe una tautologia — il
+> motore ritroverebbe ciò che lo script ha appena costruito.
+>
+> **Il criterio della spec — «la fascia Alta dev'essere corretta quasi al 100%
+> su un campione controllato a mano» — non è raggiungibile in questa fase**, e
+> non per una mancanza del piano: richiede **i due lati veri insieme**, i
+> movimenti della banca e le fatture che pagano. In questo repository ci sono
+> solo i movimenti; le 226 fatture vere stanno nel database di produzione, non
+> come file. Quella misura diventa possibile **dopo la Fase 3**, quando i
+> movimenti sincronizzati si troveranno accanto alle fatture già importate — ed
+> è lì che va fatta, prima di costruire la coda della Fase A2 sopra una soglia
+> non misurata.
+
+- [ ] **Step 5: Scrivi il rapporto**
+
+Crea `scripts/riconciliazione/README.md` con: i numeri delle causali, la tabella
+dei codici incrociata coi riferimenti, i numeri del lotto (proposte, fasce,
+durata, dimensione della transazione), **quante scadenze sintetiche hai generato
+e come**, e la conclusione su quale delle tre cose dello Step 3 si è verificata.
+
+Chiudi il documento dicendo esplicitamente **cosa resta da misurare dopo la
+Fase 3**: la correttezza della fascia Alta su un campione controllato a mano.
+Chi legge quel README deve capire in dieci righe cosa sappiamo e cosa no.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add scripts/riconciliazione
@@ -3336,7 +3393,9 @@ git commit -m "chore(riconciliazione): misurare il motore sui movimenti veri del
 - [ ] `nvm use 22 && npm run build` — **senza `| tail`**
 - [ ] `nvm use 22 && node scripts/check-route-auth.mjs --ratchet` — il conteggio non è salito
 - [ ] `nvm use 22 && npm run rls:check` — nessuna tabella scoperta
-- [ ] Il rapporto in `scripts/riconciliazione/README.md` esiste e contiene numeri veri
+- [ ] Il rapporto in `scripts/riconciliazione/README.md` esiste e contiene numeri
+      veri — comprese la dimensione della transazione e la dichiarazione di cosa
+      resta da misurare dopo la Fase 3
 
 ## Cosa NON è in questa fase
 
