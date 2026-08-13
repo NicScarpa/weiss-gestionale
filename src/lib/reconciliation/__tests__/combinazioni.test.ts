@@ -81,4 +81,14 @@ describe('trovaCombinazioni', () => {
     ])
     expect(combinazioni).toHaveLength(0)
   })
+
+  it('ma una scadenza col solo nome, senza id, resta combinabile', () => {
+    // È il fornitore non ancora in anagrafica: il nome è prova sufficiente
+    const senzaId = (id: string, residuo: number): ScadenzaCandidata => ({
+      ...scadenza(id, residuo),
+      supplierId: null,
+      controparteNome: 'FORNITORE SENZA ANAGRAFICA',
+    })
+    expect(trovaCombinazioni(1000, [senzaId('a', 500), senzaId('b', 500)])).toHaveLength(1)
+  })
 })
