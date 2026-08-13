@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { withAuth } from '@/lib/api-utils'
 import { logger } from '@/lib/logger'
+import { createAuditLog } from '@/lib/audit'
 import { fascia } from '@/lib/reconciliation/punteggio'
 import { aggiornaFreschezza } from '@/lib/services/reconciliation-freshness'
 
@@ -105,11 +106,11 @@ export const GET = withAuth<Parametri>(
 
 /** DELETE — cancella un lotto su cui non è stato deciso nulla. */
 export const DELETE = withAuth<Parametri>(
-  async (_request, { venueId, params }) => {
+  async (_request, { venueId, user, params }) => {
     try {
       const lotto = await prisma.reconciliationBatch.findFirst({
         where: { id: params.id, venueId },
-        select: { id: true, contaApprovate: true },
+        select: { id: true, dateFrom: true, dateTo: true, contaProposte: true, contaApprovate: true },
       })
 
       if (!lotto) {
@@ -125,6 +126,23 @@ export const DELETE = withAuth<Parametri>(
 
       // Le proposte e le gambe cadono per cascata (vedi la migrazione)
       await prisma.reconciliationBatch.delete({ where: { id: lotto.id } })
+
+      // Simmetrico alla scrittura del POST: la creazione lascia traccia, la
+      // distruzione anche. `ReconciliationBatch` non è a cancellazione
+      // logica, quindi senza questo l'unica prova che il lotto sia esistito
+      // sparirebbe con lui.
+      await createAuditLog({
+        action: 'DELETE',
+        entityType: 'ReconciliationBatch',
+        entityId: lotto.id,
+        userId: user.id ?? null,
+        venueId,
+        oldValues: {
+          dateFrom: lotto.dateFrom.toISOString(),
+          dateTo: lotto.dateTo.toISOString(),
+          contaProposte: lotto.contaProposte,
+        },
+      })
 
       return new NextResponse(null, { status: 204 })
     } catch (errore) {

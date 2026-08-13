@@ -119,6 +119,25 @@ describe('GET /api/riconciliazione-assistita/lotti', () => {
       new Date(risposta.body.lotti[1].createdAt).getTime()
     )
   })
+
+  it('non elenca i lotti di un\'altra sede', async () => {
+    await sedeDiSessione()
+    const altraSede = await prisma.venue.create({
+      data: { name: 'Sede di prova', code: 'PROVA-LOTTI-COLLEZIONE' },
+    })
+    await prisma.reconciliationBatch.create({
+      data: {
+        venueId: altraSede.id,
+        dateFrom: new Date('2026-05-01'),
+        dateTo: new Date('2026-06-30'),
+        regoleUsate: ['R1'],
+      },
+    })
+
+    const risposta = await callRoute<{ lotti: Array<{ id: string }> }>(GET, jsonRequest(PERCORSO))
+    expect(risposta.status).toBe(200)
+    expect(risposta.body.lotti).toHaveLength(0)
+  })
 })
 
 interface Contatori {
@@ -181,6 +200,28 @@ describe('GET /api/riconciliazione-assistita/lotti/[id]', () => {
     )
     expect(risposta.status).toBe(404)
   })
+
+  it('risponde 404 per un lotto che esiste ma appartiene a un\'altra sede', async () => {
+    await sedeDiSessione()
+    const altraSede = await prisma.venue.create({
+      data: { name: 'Sede di prova', code: 'PROVA-LOTTI-GET' },
+    })
+    const lottoAltrove = await prisma.reconciliationBatch.create({
+      data: {
+        venueId: altraSede.id,
+        dateFrom: new Date('2026-07-01'),
+        dateTo: new Date('2026-07-31'),
+        regoleUsate: ['R1'],
+      },
+    })
+
+    const risposta = await callRoute<{ error?: string }, { id: string }>(
+      GET_UNO,
+      jsonRequest(`${PERCORSO}/${lottoAltrove.id}`),
+      { id: lottoAltrove.id }
+    )
+    expect(risposta.status).toBe(404)
+  })
 })
 
 describe('DELETE /api/riconciliazione-assistita/lotti/[id]', () => {
@@ -223,5 +264,32 @@ describe('DELETE /api/riconciliazione-assistita/lotti/[id]', () => {
     )
     expect(risposta.status).toBe(409)
     expect(await prisma.reconciliationBatch.findUnique({ where: { id: lotto.id } })).not.toBeNull()
+  })
+
+  it('non cancella un lotto che esiste ma appartiene a un\'altra sede', async () => {
+    await sedeDiSessione()
+    const altraSede = await prisma.venue.create({
+      data: { name: 'Sede di prova', code: 'PROVA-LOTTI-DELETE' },
+    })
+    const lottoAltrove = await prisma.reconciliationBatch.create({
+      data: {
+        venueId: altraSede.id,
+        dateFrom: new Date('2026-07-01'),
+        dateTo: new Date('2026-07-31'),
+        regoleUsate: ['R1'],
+      },
+    })
+
+    const risposta = await callRoute<{ error?: string }, { id: string }>(
+      DELETE,
+      jsonRequest(`${PERCORSO}/${lottoAltrove.id}`, { method: 'DELETE' }),
+      { id: lottoAltrove.id }
+    )
+    expect(risposta.status).toBe(404)
+    // Il 404 da solo non basta a provare che il DELETE non abbia comunque
+    // attraversato il confine: qui si rilegge il lotto per esserne certi.
+    expect(
+      await prisma.reconciliationBatch.findUnique({ where: { id: lottoAltrove.id } })
+    ).not.toBeNull()
   })
 })
