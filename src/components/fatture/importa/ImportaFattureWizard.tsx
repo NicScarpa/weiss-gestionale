@@ -186,6 +186,13 @@ export function ImportaFattureWizard({ open, onOpenChange, onImportComplete }: P
         toast.error('Impossibile verificare i conflitti sui termini di pagamento: procedo comunque')
       }
       setPasso('esecuzione')
+    } catch (errore) {
+      // Simmetrico a `handleFileScelti`: una `fetch` che lancia (rete assente,
+      // DNS, CORS) non passa dal ramo `else` sopra, che gestisce solo una
+      // risposta HTTP arrivata ma non ok. Senza questo catch lo spinner si
+      // sarebbe spento comunque (c'è il `finally`), ma l'utente sarebbe
+      // rimasto sull'anteprima senza sapere perché.
+      toast.error(errore instanceof Error ? errore.message : 'Errore nella verifica dei conflitti')
     } finally {
       setInVerificaConflitti(false)
     }
