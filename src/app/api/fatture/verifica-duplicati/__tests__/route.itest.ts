@@ -83,6 +83,42 @@ describe('POST /api/fatture/verifica-duplicati', () => {
     expect((await res.json()).duplicati).toHaveLength(0)
   })
 
+  it('non confonde fatture con lo stesso numero ma fornitore diverso', async () => {
+    // La chiave del confronto è (numero, data, P.IVA) insieme: un refactoring
+    // che indicizzasse solo sul numero passerebbe gli altri test di questo
+    // file e comincerebbe a segnalare come duplicate fatture di fornitori
+    // diversi che, comunissimo, numerano entrambi da 1.
+    await loginAs('admin')
+    await fatturaInArchivio('COMUNE-1', '2026-06-04', '01234567890')
+
+    const res = await POST(
+      jsonRequest('/api/fatture/verifica-duplicati', {
+        method: 'POST',
+        body: {
+          fatture: [{ chiave: 'a.xml', numero: 'COMUNE-1', data: '2026-06-04', partitaIva: '99999999999' }],
+        },
+      })
+    )
+
+    expect((await res.json()).duplicati).toHaveLength(0)
+  })
+
+  it('non confonde fatture con lo stesso numero e fornitore ma data diversa', async () => {
+    await loginAs('admin')
+    await fatturaInArchivio('COMUNE-2', '2026-06-05', '01234567890')
+
+    const res = await POST(
+      jsonRequest('/api/fatture/verifica-duplicati', {
+        method: 'POST',
+        body: {
+          fatture: [{ chiave: 'a.xml', numero: 'COMUNE-2', data: '2026-06-06', partitaIva: '01234567890' }],
+        },
+      })
+    )
+
+    expect((await res.json()).duplicati).toHaveLength(0)
+  })
+
   it('nega l accesso a chi non è admin o manager', async () => {
     await loginAs('staff')
 
