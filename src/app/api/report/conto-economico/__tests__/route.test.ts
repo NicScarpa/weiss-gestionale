@@ -20,7 +20,7 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
 
-import { authDiRoute } from '@/test/auth-unitari'
+import { authDiRoute, contestoRotta } from '@/test/auth-unitari'
 import { prisma } from '@/lib/prisma'
 
 const sessioneAdmin = { user: { id: 'user-1', role: 'admin' } } as unknown as Session
@@ -129,7 +129,7 @@ describe('GET /api/report/conto-economico - autorizzazione', () => {
   it('senza sessione risponde 401', async () => {
     vi.mocked(authDiRoute).mockResolvedValue(null)
 
-    const response = await GET(getRequest())
+    const response = await GET(getRequest(), contestoRotta())
 
     expect(response.status).toBe(401)
     expect(prisma.journalEntry.findMany).not.toHaveBeenCalled()
@@ -140,7 +140,7 @@ describe('GET /api/report/conto-economico - autorizzazione', () => {
       user: { id: 'user-2', role: 'staff' },
     } as unknown as Session as never)
 
-    const response = await GET(getRequest())
+    const response = await GET(getRequest(), contestoRotta())
 
     expect(response.status).toBe(403)
     expect(prisma.journalEntry.findMany).not.toHaveBeenCalled()
@@ -151,7 +151,7 @@ describe('GET /api/report/conto-economico - autorizzazione', () => {
       user: { id: 'user-3', role: 'manager' },
     } as unknown as Session as never)
 
-    const response = await GET(getRequest())
+    const response = await GET(getRequest(), contestoRotta())
 
     expect(response.status).toBe(200)
   })
@@ -159,7 +159,7 @@ describe('GET /api/report/conto-economico - autorizzazione', () => {
 
 describe('GET /api/report/conto-economico - forma della risposta', () => {
   it('espone period, costCenters e l\'output dell\'aggregatore', async () => {
-    const response = await GET(getRequest('?dateFrom=2026-01-01&dateTo=2026-12-31'))
+    const response = await GET(getRequest('?dateFrom=2026-01-01&dateTo=2026-12-31'), contestoRotta())
     const body = await response.json()
 
     expect(response.status).toBe(200)
@@ -177,7 +177,7 @@ describe('GET /api/report/conto-economico - forma della risposta', () => {
   })
 
   it('senza dateFrom/dateTo usa l\'anno corrente come default', async () => {
-    const response = await GET(getRequest())
+    const response = await GET(getRequest(), contestoRotta())
     const body = await response.json()
 
     const annoCorrente = new Date().getFullYear()
@@ -187,7 +187,7 @@ describe('GET /api/report/conto-economico - forma della risposta', () => {
   })
 
   it('filtra i movimenti per venue, registri di cassa/banca e periodo, e passa id in select', async () => {
-    await GET(getRequest('?dateFrom=2026-01-01&dateTo=2026-12-31'))
+    await GET(getRequest('?dateFrom=2026-01-01&dateTo=2026-12-31'), contestoRotta())
 
     expect(prisma.journalEntry.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -218,7 +218,7 @@ describe('GET /api/report/conto-economico - forma della risposta', () => {
 
 describe('GET /api/report/conto-economico - quadratura', () => {
   it('margine + senzaContoNetto per colonna corrisponde al netto avere-dare dei movimenti', async () => {
-    const response = await GET(getRequest('?dateFrom=2026-01-01&dateTo=2026-12-31'))
+    const response = await GET(getRequest('?dateFrom=2026-01-01&dateTo=2026-12-31'), contestoRotta())
     const body = await response.json()
 
     // Righe attese, calcolate a mano dal fixture:
