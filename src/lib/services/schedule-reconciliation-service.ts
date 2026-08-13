@@ -264,8 +264,13 @@ async function aggiornaIvaDiTestata(
  * calcolabile: ci si astiene e lo si registra. È la stessa guardia della
  * scrittura, e per la stessa ragione — senza quel totale il valore memorizzato
  * non potrebbe comunque risultare nostro.
+ *
+ * Esportata per il riallineamento (Task 7, `src/lib/invoices/riallineamento.ts`):
+ * cancellare le fette di una riconciliazione per rigenerarle è lo stesso
+ * identico problema di un annullo — l'IVA che se ne va va ritirata con la
+ * stessa regola di proprietà — e la firma non distingue i due contesti.
  */
-async function ritiraIvaDiTestata(
+export async function ritiraIvaDiTestata(
   tx: TransactionClient,
   {
     journalEntryId,
@@ -440,8 +445,18 @@ async function righeDaSottrarreNote(
  * Se ne occupa `aggiornaContoDominante` in contesto automatico, che imputa al
  * centro operativo predefinito quanto non è stato scelto da nessuno e lascia
  * il movimento da verificare.
+ *
+ * **Esportata e ritorna il numero di fette scritte** (0 se una guardia si è
+ * astenuta) per essere richiamata una seconda volta dal riallineamento (Task
+ * 7, `src/lib/invoices/riallineamento.ts`): stessa funzione, non una copia
+ * della logica. Chi riallinea cancella prima le fette `ereditata` della
+ * riconciliazione e richiama questa funzione con lo stesso `reconciliationId`
+ * e la stessa `quota`: la rilettura di `invoice_line_accounts` che segue è
+ * l'unica differenza, ed è proprio quella differenza a produrre fette nuove
+ * dalle imputazioni correnti invece che da quelle di quando la fattura fu
+ * pagata.
  */
-async function ereditaFetteDaFattura(
+export async function ereditaFetteDaFattura(
   tx: TransactionClient,
   {
     journalEntryId,
@@ -457,7 +472,7 @@ async function ereditaFetteDaFattura(
     /** Importo utile del movimento (debit ?? credit): tetto che nessuna fetta, manuale o ereditata, può superare */
     importoUtileMovimento: number
   }
-): Promise<void> {
+): Promise<number> {
   const invoice = await tx.electronicInvoice.findUnique({
     where: { id: invoiceId },
     select: { lineItems: true, xmlContent: true },
@@ -465,7 +480,7 @@ async function ereditaFetteDaFattura(
 
   if (!invoice || !Array.isArray(invoice.lineItems)) {
     logger.info('Fattura senza righe estratte: nessuna ereditarietà pro-quota', { invoiceId })
-    return
+    return 0
   }
 
   // Bollo e arrotondamento (Task 4) sono righe imputabili ma vivono fuori da
@@ -531,7 +546,7 @@ async function ereditaFetteDaFattura(
       righe: righeAttese,
       confermate: numeroLineeImputate,
     })
-    return
+    return 0
   }
 
   // I pesi sono i `PrezzoTotale` delle righe, cioè IMPONIBILI; la quota da
@@ -562,7 +577,7 @@ async function ereditaFetteDaFattura(
     where: { journalEntryId },
     select: { origine: true, importo: true, iva: true },
   })
-  if (esistenti.some((f) => f.origine === 'manuale')) return // le manuali vincono sempre
+  if (esistenti.some((f) => f.origine === 'manuale')) return 0 // le manuali vincono sempre
 
   // Un movimento può riconciliare più scadenze (es. un bonifico cumulativo):
   // ogni riconciliazione calcola la propria quota sul disponibile pieno del
@@ -581,7 +596,7 @@ async function ereditaFetteDaFattura(
       sommaEsistenti,
       importoUtileMovimento,
     })
-    return
+    return 0
   }
 
   const righeDaImputare = imputazioni.map((r) => ({
@@ -596,7 +611,7 @@ async function ereditaFetteDaFattura(
   // esatta. `null` significa che una delle due guardie ha chiesto di
   // astenersi dall'INTERA ereditarietà (già loggato da chi l'ha deciso).
   const righeNotaDaSottrarre = await righeDaSottrarreNote(tx, invoiceId, righeDaImputare)
-  if (righeNotaDaSottrarre === null) return
+  if (righeNotaDaSottrarre === null) return 0
 
   let righeCombinate = righeDaImputare.concat(righeNotaDaSottrarre)
   let pesi = calcolaPesiConIva(righeCombinate)
@@ -650,7 +665,7 @@ async function ereditaFetteDaFattura(
   }
 
   const fette = ripartisciProQuotaConIva(pesi, quota)
-  if (fette.length === 0) return
+  if (fette.length === 0) return 0
 
   await tx.journalEntryAllocation.createMany({
     data: fette.map((f) => ({
@@ -670,6 +685,8 @@ async function ereditaFetteDaFattura(
   })
 
   await aggiornaContoDominante(tx, journalEntryId, 'automatico')
+
+  return fette.length
 }
 
 /**
