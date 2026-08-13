@@ -98,9 +98,39 @@ Una frase esplicita è meglio di un utente che aspetta movimenti che nessuno sta
 
 ---
 
+## Cosa hanno insegnato le rotte (Fase 2a, 12 agosto 2026)
+
+La Fase 2a ha costruito le sei rotte ed è mergiata. Tre cose che questa spec non poteva sapere prima e che vincolano il pannello.
+
+### Leggere i conti costa, e il pannello non deve pagarlo a ogni apertura
+
+`GET /collegamenti/[id]/conti` spende una chiamata per la requisition **più una per ogni conto**. Il contingente della banca è di 4 al giorno **per conto**: quattro aperture del pannello nello stesso giorno lo esauriscono, e la quinta non mostrerebbe nulla — nemmeno la configurazione già salvata, che sta nel database e non richiederebbe la banca.
+
+Durante la configurazione iniziale, con qualche ripensamento, quattro aperture sono uno scenario ordinario, non un abuso.
+
+**Conseguenza sul design**: al primo `LN` riuscito i dettagli dei conti (IBAN, intestatario, valuta) si **persistono**, perché non cambiano. Le letture successive li rileggono dal database e chiamano la banca solo su richiesta esplicita di aggiornamento. Il pannello non invoca quella rotta al montaggio: la invoca al ritorno dal callback e quando l'amministratore chiede di aggiornare.
+
+### La risposta non dice quali conti stanno già sincronizzando
+
+`syncEnabled` e `syncCutoffDate` non compaiono nella risposta della lettura. Il pannello non avrebbe modo di sapere quali conti sono accesi né con quale data precompilare il campo — e ripresentarlo vuoto a ogni apertura, su un campo obbligatorio senza valore predefinito, significa chiedere all'amministratore di ridigitare una data che aveva già scelto. È il modo più diretto per farla sbagliare.
+
+Vanno aggiunti alla risposta insieme ai dettagli persistiti.
+
+### Spegnere un conto non ha una rappresentazione
+
+Le tre azioni sono `importa`, `ignora`, `lascia`. Spegnere **senza** ignorare non è esprimibile: `ignora` spegne ma marca anche il conto come «non chiedermelo più», che è un gesto più forte.
+
+Nel pannello il gesto giusto è un interruttore, non un comando in più — deciso il 12 agosto. Sotto, però, serve poterlo dire: lo stato desiderato diventa un campo dell'azione di configurazione, non una quarta azione. `ignora` resta il gesto forte, quello del conto personale.
+
+---
+
 ## Casi limite
 
 ### Il rinnovo, e un'incognita da tenere aperta
+
+> ❌ **Corretto dopo la Fase 2a.** Questa sezione diceva che il rinnovo avrebbe riusato `POST /collegamenti`. Non può: il rifiuto del secondo collegamento vivo — deciso dopo che questa spec era scritta — sbarra quella via, perché una connessione **scaduta** è comunque viva per quel controllo. E l'alternativa disponibile, `DELETE` seguito da `POST`, azzera `connectionId`, `providerAccountId` e `syncEnabled` su tutti i conti: sopravvive solo `syncCutoffDate`. Sarebbe l'opposto della decisione 3 qui sopra, il cui motivo dichiarato è che ridecidere le date di taglio ogni sei mesi è l'operazione più facile da sbagliare.
+>
+> Nessuna delle due decisioni era sbagliata: non erano mai state messe una accanto all'altra. **Il rinnovo ha una rotta sua**, `POST /api/gocardless/collegamenti/[id]/rinnovo`, che crea agreement e requisition nuovi e **aggiorna la riga esistente** (`agreementId`, `requisitionId`, `status`, `accessValidUntil`) senza toccare alcun `BankAccount`. Il nome dice che non è un collegamento nuovo, ed è la sola forma che non costringe il 409 a fare eccezioni.
 
 Il pulsante di rinnovo crea agreement e requisition nuovi per lo stesso istituto e manda all'autenticazione. Al ritorno i conti vanno ricollegati a quelli configurati.
 
