@@ -2,7 +2,12 @@
 
 import { useQuery } from '@tanstack/react-query'
 
-export type AccountType = 'RICAVO' | 'COSTO' | 'ATTIVO' | 'PASSIVO'
+// Il piano v4 (12 agosto 2026) ha aggiunto PATRIMONIALE: mancava qui, e senza
+// di lui `types={['COSTO', 'PATRIMONIALE']}` (Task 8, imputazione righe
+// fattura) non avrebbe nemmeno compilato — il tipo reale è in
+// `prisma/schema.prisma` (`enum AccountType`), questo lo rispecchia per il
+// bundle client.
+export type AccountType = 'RICAVO' | 'COSTO' | 'ATTIVO' | 'PASSIVO' | 'PATRIMONIALE'
 export type CostCenterRule = 'OBBLIGATORIO' | 'DEFAULT_STR'
 
 export interface ComboboxAccount {

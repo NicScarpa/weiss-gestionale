@@ -7,6 +7,7 @@ import {
   type MovimentoContoEconomico,
   type VoceConto,
 } from '../conto-economico'
+import { aggregaMovimenti, type MovimentoPrimaNota } from '@/lib/cashflow/movimenti'
 
 const CENTRI = [{ code: 'STR' }, { code: 'WEISS' }, { code: 'VV' }, { code: 'CAS' }]
 
@@ -55,6 +56,13 @@ const RIMANENZE_FINALI = voce({
   type: 'COSTO',
   gruppoCode: '20.6',
   gruppoNome: 'Rettifiche',
+})
+const PULIZIE = voce({
+  code: '20.3.01',
+  name: 'Detergenti e materiali di pulizia',
+  type: 'COSTO',
+  gruppoCode: '20.3',
+  gruppoNome: 'Pulizia',
 })
 const BANCA = voce({ code: '90.01', name: 'Banca c/c', type: 'ATTIVO' })
 
@@ -359,6 +367,81 @@ describe('aggregaContoEconomico — movimenti suddivisi', () => {
     expect(risultato.rows.map((r) => r.code)).toEqual(['20.1.01'])
     expect(risultato.totals).toEqual({ ricavi: 0, costi: 100, margine: -100 })
   })
+
+  it('lascia sul conto di testata la parte non coperta dalle fette', () => {
+    // Bonifico da 2.000 che salda una fattura da 1.222: i restanti 778 sono un
+    // acconto non ancora abbinato e restano dove sono. `saldi.ts` e il prospetto
+    // di cash flow li contano già così; questo report li faceva sparire.
+    const risultato = aggregaContoEconomico(
+      [
+        movimento({
+          account: BEVERAGE,
+          centro: 'STR',
+          debitAmount: 2000,
+          allocations: [fetta(FOOD, 1100), fetta(PULIZIE, 122)],
+        }),
+      ],
+      CENTRI
+    )
+
+    expect(risultato.rows.find((r) => r.code === FOOD.code)?.total).toBe(1100)
+    expect(risultato.rows.find((r) => r.code === PULIZIE.code)?.total).toBe(122)
+    expect(risultato.rows.find((r) => r.code === BEVERAGE.code)?.total).toBe(778)
+  })
+})
+
+describe('aggregaContoEconomico — coerenza col cash flow', () => {
+  it('il residuo di testata coincide con quello che calcola aggregaMovimenti', () => {
+    // Fixture canonica, in centesimi: la stessa suddivisione parziale, letta
+    // una volta sola e adattata meccanicamente alla forma che vuole ciascun
+    // modulo. Il punto del test è verificare che i due moduli DERIVATI da
+    // questo unico fatto concordino — non che uno dei due sia uguale a se
+    // stesso, cosa che proverebbe solo l'esistenza della funzione.
+    const FATTO = {
+      testata: BEVERAGE,
+      importoTotale: 2000,
+      fette: [
+        { account: FOOD, importo: 1100 },
+        { account: PULIZIE, importo: 122 },
+      ],
+    }
+
+    const contoEconomico = aggregaContoEconomico(
+      [
+        movimento({
+          account: FATTO.testata,
+          centro: 'STR',
+          debitAmount: FATTO.importoTotale,
+          allocations: FATTO.fette.map((f) => fetta(f.account, f.importo)),
+        }),
+      ],
+      CENTRI
+    )
+    const residuoContoEconomico =
+      contoEconomico.rows.find((r) => r.code === FATTO.testata.code)?.total ?? 0
+
+    const rigaCashFlow: MovimentoPrimaNota = {
+      accountId: FATTO.testata.id,
+      date: new Date(Date.UTC(2026, 0, 15)),
+      debitAmount: FATTO.importoTotale,
+      creditAmount: 0,
+      vatAmount: 0,
+      allocations: FATTO.fette.map((f) => ({
+        accountId: f.account.id,
+        importo: f.importo,
+        iva: null,
+      })),
+    }
+    const [aggregatoCashFlow] = aggregaMovimenti([rigaCashFlow])
+    // `aggregaMovimenti` lavora in Money/dare-avere, non in euro con segno:
+    // la conversione all'unità comune del confronto avviene qui, dopo aver
+    // ricevuto il risultato — non prima, dentro l'input condiviso.
+    const residuoCashFlow = aggregatoCashFlow.dare.minus(aggregatoCashFlow.avere).toNumber()
+
+    expect(residuoContoEconomico).toBe(778)
+    expect(residuoCashFlow).toBe(778)
+    expect(residuoContoEconomico).toBe(residuoCashFlow)
+  })
 })
 
 describe('aggregaContoEconomico — quello che non va perso', () => {
@@ -464,8 +547,16 @@ describe('aggregaContoEconomico — quello che non va perso', () => {
 describe('aggregaContoEconomico — quadratura', () => {
   /**
    * Il fixture mescola tutto quello che il report deve reggere: movimenti
-   * semplici in dare e in avere, suddivisi nei due versi, rettifiche negative,
-   * un patrimoniale da escludere, un movimento senza centro e due senza conto.
+   * semplici in dare e in avere, suddivisi nei due versi, **suddivisi solo in
+   * parte**, rettifiche negative, un patrimoniale da escludere, un movimento
+   * senza centro e due senza conto.
+   *
+   * La suddivisione parziale è arrivata insieme al residuo di testata (12 ago
+   * 2026) e non è un caso di contorno: finché ogni suddivisione copriva tutto
+   * il suo movimento, il residuo era sempre zero e l'oracolo qui sotto poteva
+   * ignorare la testata restando verde. Il controllo più forte del modulo —
+   * quello che vede un importo perduto o contato due volte — era cieco
+   * proprio sul punto che stava cambiando.
    */
   const MOVIMENTI: MovimentoContoEconomico[] = [
     movimento({ account: CORRISPETTIVI, centro: 'WEISS', creditAmount: 1000 }),
@@ -494,6 +585,16 @@ describe('aggregaContoEconomico — quadratura', () => {
       debitAmount: 200,
       allocations: [fetta(BEVERAGE, 150), fetta(BANCA, 50)],
     }),
+    // Suddivisione parziale: 600 sul conto della fetta, 400 che restano sulla
+    // testata. È l'acconto o il pagamento misto della decisione 3 della
+    // specifica — il vincolo di copertura totale è sul documento, non sul
+    // movimento.
+    movimento({
+      account: PULIZIE,
+      centro: 'CAS',
+      debitAmount: 1000,
+      allocations: [fetta(FOOD, 600)],
+    }),
   ]
 
   /**
@@ -502,7 +603,17 @@ describe('aggregaContoEconomico — quadratura', () => {
    * sa solo quali importi esistono e su quale centro stanno. Deve coincidere
    * con `margine + senzaContoNetto`, perché ricavi (avere − dare) meno costi
    * (dare − avere) è proprio quella somma.
+   *
+   * Conosce anche il **residuo di testata**: quello che le fette non coprono
+   * resta sul conto del movimento. Senza questa parte l'oracolo tornerebbe a
+   * dire che un movimento suddiviso vale la somma delle sue fette — la
+   * semantica di prima del 12 ago 2026 — e darebbe per buono proprio l'importo
+   * che allora spariva.
    */
+  function patrimoniale(conto: VoceConto): boolean {
+    return conto.type === 'ATTIVO' || conto.type === 'PASSIVO'
+  }
+
   function nettoPrimaNota(
     movimenti: MovimentoContoEconomico[],
     soloCentro?: string
@@ -516,14 +627,27 @@ describe('aggregaContoEconomico — quadratura', () => {
       const avere = inCentesimi(mov.creditAmount)
 
       if (mov.allocations.length > 0) {
+        // Il verso è quello del lato valorizzato, e le fette lo seguono.
+        const versoDare = dare !== 0 || avere === 0
+        let coperto = 0
+
         for (const f of mov.allocations) {
-          if (f.account.type === 'ATTIVO' || f.account.type === 'PASSIVO') continue
           const quota = inCentesimi(f.importo)
-          centesimi += dare !== 0 ? -quota : quota
+          // Anche la fetta su un conto patrimoniale copre la testata: quel
+          // denaro è uscito di lì comunque, e non contarlo lo farebbe
+          // ricomparire nel residuo.
+          coperto += quota
+          if (patrimoniale(f.account)) continue
+          centesimi += versoDare ? -quota : quota
+        }
+
+        const residuo = (versoDare ? dare : avere) - coperto
+        if (residuo > 0 && mov.account && !patrimoniale(mov.account)) {
+          centesimi += versoDare ? -residuo : residuo
         }
         continue
       }
-      if (mov.account && (mov.account.type === 'ATTIVO' || mov.account.type === 'PASSIVO')) {
+      if (mov.account && patrimoniale(mov.account)) {
         continue
       }
       centesimi += avere - dare
@@ -544,7 +668,7 @@ describe('aggregaContoEconomico — quadratura', () => {
 
     expect(margineCent + senzaContoCent).toBe(nettoPrimaNota(MOVIMENTI))
     // Valore atteso del fixture, calcolato a mano
-    expect(margineCent + senzaContoCent).toBe(85960)
+    expect(margineCent + senzaContoCent).toBe(-14040)
   })
 
   it('quadra colonna per colonna: nessuna fetta finisce sul centro sbagliato', () => {
@@ -654,10 +778,13 @@ describe('aggregaContoEconomico — quadratura', () => {
       ['10.01', 1090.45],
       ['10.09', -150.55],
       ['20.1.01', 690.1],
-      ['20.2.01', 160],
+      // 200 dalla fetta del movimento in dare più i 600 della suddivisione
+      // parziale; i 400 di residuo restano invece su 20.3.01, la testata.
+      ['20.2.01', 760],
+      ['20.3.01', 400],
       ['20.6.03', -800],
     ])
-    expect(risultato.totals).toEqual({ ricavi: 939.9, costi: 50.1, margine: 889.8 })
+    expect(risultato.totals).toEqual({ ricavi: 939.9, costi: 1050.1, margine: -110.2 })
     expect(risultato.senzaContoNetto.CAS).toBe(-42.3)
     expect(risultato.senzaContoNetto[UNASSIGNED]).toBe(12.1)
   })
@@ -677,11 +804,11 @@ describe('aggregaContoEconomico — quadratura', () => {
 
     const risultato = aggregaContoEconomico(conDecimal, CENTRI)
 
-    expect(risultato.totals).toEqual({ ricavi: 939.9, costi: 50.1, margine: 889.8 })
+    expect(risultato.totals).toEqual({ ricavi: 939.9, costi: 1050.1, margine: -110.2 })
     expect(
       inCentesimi(risultato.totals.margine) +
         sommaCentesimi(Object.values(risultato.senzaContoNetto))
-    ).toBe(85960)
+    ).toBe(-14040)
   })
 
   it('quadra su tanti importi a centesimi dispari, dove il float sbaglierebbe', () => {

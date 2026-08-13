@@ -623,6 +623,13 @@ model JournalEntryAllocation {
   journalEntryId   String   @map("journal_entry_id")
   accountId        String   @map("account_id")
   importo          Decimal  @db.Decimal(10, 2)
+  /// Quanta IVA contiene questa fetta. `null` = non nota: il consumatore
+  /// ricade sulla ripartizione pro-quota dell'IVA di testata. Diverso da
+  /// `0`, che significa "IVA assente" — la spesa senza diritto di
+  /// detrazione, dove l'IVA è già dentro l'imponibile.
+  /// Chi divide a mano scrive `null`, non `0`: non sta dichiarando
+  /// un'assenza, sta dicendo che non lo sa.
+  iva              Decimal? @db.Decimal(10, 2)
   /// 'manuale' (editor split) | 'ereditata' (pro-quota dalla riconciliazione, Fase 3)
   origine          String
   /// Riconciliazione che ha generato la fetta ereditata: chiave dell'undo (Fase 3)
@@ -1690,48 +1697,72 @@ model PushSubscription {
 }
 
 model ElectronicInvoice {
-  id             String               @id @default(cuid())
-  sdiId          String?              @unique @map("sdi_id")
-  invoiceNumber  String               @map("invoice_number")
-  invoiceDate    DateTime             @map("invoice_date") @db.Date
-  supplierId     String?              @map("supplier_id")
-  supplierVat    String               @map("supplier_vat")
-  supplierName   String               @map("supplier_name")
-  totalAmount    Decimal              @map("total_amount") @db.Decimal(10, 2)
-  vatAmount      Decimal              @map("vat_amount") @db.Decimal(10, 2)
-  netAmount      Decimal              @map("net_amount") @db.Decimal(10, 2)
-  status         InvoiceStatus        @default(IMPORTED)
-  accountId      String?              @map("account_id")
-  xmlContent     String?              @map("xml_content")
-  fileName       String?              @map("file_name")
-  importedAt     DateTime             @default(now()) @map("imported_at")
-  processedAt    DateTime?            @map("processed_at")
-  recordedAt     DateTime?            @map("recorded_at")
-  journalEntryId String?              @unique @map("journal_entry_id")
-  venueId        String               @map("venue_id")
-  createdBy      String?              @map("created_by")
-  notes          String?
-  causale        String?              @map("causale")
-  documentType   String?              @default("TD01") @map("document_type")
-  lineItems      Json?                @map("line_items")
-  references     Json?                @map("references")
-  vatSummary     Json?                @map("vat_summary")
-  deletedAt      DateTime?            @map("deleted_at")
-  deletedById    String?              @map("deleted_by_id")
-  account        Account?             @relation(fields: [accountId], references: [id])
-  journalEntry   JournalEntry?        @relation(fields: [journalEntryId], references: [id])
-  supplier       Supplier?            @relation(fields: [supplierId], references: [id])
-  venue          Venue                @relation(fields: [venueId], references: [id])
-  deadlines      InvoiceDeadline[]
+  id                 String               @id @default(cuid())
+  sdiId              String?              @unique @map("sdi_id")
+  invoiceNumber      String               @map("invoice_number")
+  invoiceDate        DateTime             @map("invoice_date") @db.Date
+  supplierId         String?              @map("supplier_id")
+  supplierVat        String               @map("supplier_vat")
+  supplierName       String               @map("supplier_name")
+  totalAmount        Decimal              @map("total_amount") @db.Decimal(10, 2)
+  vatAmount          Decimal              @map("vat_amount") @db.Decimal(10, 2)
+  netAmount          Decimal              @map("net_amount") @db.Decimal(10, 2)
+  status             InvoiceStatus        @default(IMPORTED)
+  accountId          String?              @map("account_id")
+  xmlContent         String?              @map("xml_content")
+  fileName           String?              @map("file_name")
+  importedAt         DateTime             @default(now()) @map("imported_at")
+  processedAt        DateTime?            @map("processed_at")
+  recordedAt         DateTime?            @map("recorded_at")
+  journalEntryId     String?              @unique @map("journal_entry_id")
+  venueId            String               @map("venue_id")
+  createdBy          String?              @map("created_by")
+  notes              String?
+  causale            String?              @map("causale")
+  documentType       String?              @default("TD01") @map("document_type")
+  lineItems          Json?                @map("line_items")
+  references         Json?                @map("references")
+  vatSummary         Json?                @map("vat_summary")
+  /// Documento di rettifica → fattura che rettifica (Task 6, fase B). Vale
+  /// per TUTTI E QUATTRO i tipi di `TIPI_DOCUMENTO_SENZA_SCADENZA`: le note
+  /// di CREDITO TD04/TD08, che riducono il dovuto, e le note di DEBITO
+  /// TD05/TD09, che lo aumentano (src/app/api/invoices/route.ts non
+  /// distingue: scrive il collegamento per tutte e quattro). Il campo dice
+  /// «questo documento rettifica quella fattura», non in quale verso.
+  /// Risolto una sola volta, all'import, leggendo
+  /// `references.datiFattureCollegate`: persistito invece di ricalcolato a
+  /// ogni lettura, perché il calcolo dei pesi alla riconciliazione lo
+  /// interroga una volta per fattura.
+  /// `null` finché non risolto, o se la fattura rettificata non è (ancora)
+  /// stata importata — non è un errore.
+  rettificaInvoiceId String?              @map("rettifica_invoice_id")
+  deletedAt          DateTime?            @map("deleted_at")
+  deletedById        String?              @map("deleted_by_id")
+  account            Account?             @relation(fields: [accountId], references: [id])
+  journalEntry       JournalEntry?        @relation(fields: [journalEntryId], references: [id])
+  supplier           Supplier?            @relation(fields: [supplierId], references: [id])
+  venue              Venue                @relation(fields: [venueId], references: [id])
+  deadlines          InvoiceDeadline[]
   /// Scadenze generate nello scadenzario da questa fattura
-  schedules      Schedule[]           @relation("ScheduleFromInvoice")
-  lineAccounts   InvoiceLineAccount[]
+  schedules          Schedule[]           @relation("ScheduleFromInvoice")
+  lineAccounts       InvoiceLineAccount[]
+  /// La fattura rettificata da questo documento di rettifica (lato "molti" →
+  /// "uno"). Vedi `rettificaInvoiceId`: TD04/TD08 o TD05/TD09, indistinti.
+  rettificaInvoice   ElectronicInvoice?   @relation("RettificaFattura", fields: [rettificaInvoiceId], references: [id])
+  /// I documenti che rettificano QUESTA fattura (lato opposto).
+  /// COMPRENDE LE NOTE DI DEBITO (TD05/TD09), che rettificano nel verso
+  /// opposto: chi sottrae deve filtrare su `TIPI_DOCUMENTO_NOTA_CREDITO`, mai
+  /// usare questa relazione così com'è. Sottrarre una nota di debito inverte
+  /// il segno due volte — il difetto chiuso dal commit 040a492, che
+  /// `righeDaSottrarreNote` evita filtrando nella query.
+  rettifiche         ElectronicInvoice[]  @relation("RettificaFattura")
 
   @@index([invoiceDate])
   @@index([supplierId])
   @@index([status])
   @@index([venueId])
   @@index([documentType])
+  @@index([rettificaInvoiceId])
   @@map("electronic_invoices")
 }
 
@@ -1745,6 +1776,10 @@ model InvoiceLineAccount {
   id             String    @id @default(cuid())
   invoiceId      String    @map("invoice_id")
   numeroLinea    Int       @map("numero_linea")
+  /// Progressivo della quota dentro la stessa riga di fattura: 0 quando la
+  /// riga va tutta su un conto solo, 0..n quando il fornitore ha accorpato
+  /// voci diverse in una riga e vanno separate.
+  progressivo    Int       @default(0)
   descrizione    String
   codiceArticolo String?   @map("codice_articolo")
   importo        Decimal   @db.Decimal(10, 2)
@@ -1762,7 +1797,7 @@ model InvoiceLineAccount {
   account     Account           @relation(fields: [accountId], references: [id], onDelete: Restrict)
   confirmedBy User?             @relation("InvoiceLineAccountConfirmedBy", fields: [confirmedById], references: [id])
 
-  @@unique([invoiceId, numeroLinea])
+  @@unique([invoiceId, numeroLinea, progressivo])
   @@index([invoiceId])
   @@map("invoice_line_accounts")
 }
