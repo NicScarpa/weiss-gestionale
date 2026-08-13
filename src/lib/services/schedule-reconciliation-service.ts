@@ -678,6 +678,20 @@ export async function ereditaFetteDaFattura(
       righeCombinate = righeDaImputare
       pesi = calcolaPesiConIva(righeCombinate)
     }
+  } else if (righeNotaDaSottrarre.length > 0) {
+    // Il ramo opposto (sopra) logga quando la guardia SCATTA; questo logga
+    // quando la guardia SALTA — c'è una nota da sottrarre, ma il confronto
+    // non si può fare perché almeno una riga non ha un'aliquota leggibile
+    // (`pesi` sono `iva: null` su ogni fetta, tutto-o-niente di
+    // `calcolaPesiConIva`). Si sottrae comunque, senza verificare la
+    // compensazione — la premessa della sottrazione resta la migliore che si
+    // abbia (vedi il commento sopra) — ma senza questo log, il giorno in cui
+    // quella scelta si rivelasse sbagliata su un pagamento non compensato non
+    // resterebbe traccia di quale dei due rami sia stato preso.
+    logger.info(
+      'Guardia sulla premessa della sottrazione saltata: aliquota non leggibile su almeno una riga, si sottrae comunque senza verificare la compensazione',
+      { invoiceId, journalEntryId, quota }
+    )
   }
 
   // Un conto sparito dai pesi portandosi via qualcosa è quasi sempre una riga

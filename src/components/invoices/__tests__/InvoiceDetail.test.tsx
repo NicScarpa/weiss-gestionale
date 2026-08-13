@@ -4,6 +4,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { InvoiceDetail, rigaBolloDaConfermare } from '../InvoiceDetail'
 import { LINEA_BOLLO, LINEA_ARROTONDAMENTO } from '@/lib/sdi/righe-di-sistema'
+// Importati dal modulo di soli testi della rotta (non da `route.ts`, che
+// porta `next/server`/`next-auth` e non risolverebbe sotto `jsdom`) invece
+// di ricopiati a mano — revisione Important 2, Task 10: un testo duplicato
+// letteralmente resterebbe verde anche il giorno in cui la rotta cambiasse
+// la propria parola.
+import {
+  MESSAGGIO_RIALLINEATO,
+  MESSAGGIO_NESSUNA_DIVERGENZA,
+} from '@/app/api/prima-nota/[id]/riallinea/messaggi'
+import { RiallineamentoNonRigenerabile } from '@/lib/invoices/riallineamento'
 
 vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn() },
@@ -355,7 +365,7 @@ describe('InvoiceDetail — Task 10: avviso di divergenza e Riallinea', () => {
     expect(screen.queryByText('Questa fattura è stata reimputata dopo il pagamento')).toBeNull()
   })
 
-  it('200: mostra quante fette sono state rigenerate e l\'avviso sparisce', async () => {
+  it('200: mostra quante fette sono state rigenerate, "sul movimento" e non "di questa fattura", e l\'avviso sparisce', async () => {
     mockFetchConDivergenza(
       [{ journalEntryId: 'mov-1', movimentoData: '2026-03-31T00:00:00.000Z' }],
       () =>
@@ -365,7 +375,7 @@ describe('InvoiceDetail — Task 10: avviso di divergenza e Riallinea', () => {
             Promise.resolve({
               fette: 2,
               invoiceId: 'inv-1',
-              message: 'Fette riallineate alle imputazioni correnti della fattura',
+              message: MESSAGGIO_RIALLINEATO,
             }),
         })
     )
@@ -377,11 +387,41 @@ describe('InvoiceDetail — Task 10: avviso di divergenza e Riallinea', () => {
       fireEvent.click(bottone)
     })
 
+    // "sul movimento": il riallineamento è per movimento (Task 7), e su un
+    // bonifico cumulativo il conteggio può includere fette di un'altra
+    // fattura — "di questa fattura" affermerebbe un ambito che il numero
+    // non rispetta (revisione minore, Task 10).
     await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1))
-    expect(String(vi.mocked(toast.success).mock.calls[0][0])).toContain('2 fette')
+    expect(String(vi.mocked(toast.success).mock.calls[0][0])).toBe(
+      `${MESSAGGIO_RIALLINEATO} — 2 fette rigenerate sul movimento`
+    )
 
     await waitFor(() =>
       expect(screen.queryByText('Questa fattura è stata reimputata dopo il pagamento')).toBeNull()
+    )
+  })
+
+  it('200 con una sola fetta: singolare "1 fetta rigenerata", non "1 fette rigenerate" (revisione minore, Task 10)', async () => {
+    mockFetchConDivergenza(
+      [{ journalEntryId: 'mov-1', movimentoData: '2026-03-31T00:00:00.000Z' }],
+      () =>
+        Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({ fette: 1, invoiceId: 'inv-1', message: MESSAGGIO_RIALLINEATO }),
+        })
+    )
+
+    montare()
+
+    const bottone = await waitFor(() => screen.getByRole('button', { name: 'Riallinea' }))
+    await act(async () => {
+      fireEvent.click(bottone)
+    })
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1))
+    expect(String(vi.mocked(toast.success).mock.calls[0][0])).toBe(
+      `${MESSAGGIO_RIALLINEATO} — 1 fetta rigenerata sul movimento`
     )
   })
 
@@ -391,8 +431,7 @@ describe('InvoiceDetail — Task 10: avviso di divergenza e Riallinea', () => {
       () =>
         Promise.resolve({
           ok: false,
-          json: () =>
-            Promise.resolve({ error: 'Il movimento non ha imputazioni divergenti da riallineare' }),
+          json: () => Promise.resolve({ error: MESSAGGIO_NESSUNA_DIVERGENZA }),
         })
     )
 
@@ -404,19 +443,17 @@ describe('InvoiceDetail — Task 10: avviso di divergenza e Riallinea', () => {
     })
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1))
-    expect(String(vi.mocked(toast.error).mock.calls[0][0])).toBe(
-      'Il movimento non ha imputazioni divergenti da riallineare'
-    )
+    expect(String(vi.mocked(toast.error).mock.calls[0][0])).toBe(MESSAGGIO_NESSUNA_DIVERGENZA)
     // Il server non ha rigenerato nulla: l'avviso resta a schermo, non
     // sparisce su un errore.
     expect(screen.getByText('Questa fattura è stata reimputata dopo il pagamento')).not.toBeNull()
   })
 
   it('422: la fattura non è rigenerabile — il motivo delle guardie (righe non confermate, capienza, nota di credito) arriva a schermo', async () => {
-    const messaggio422 =
-      'Le fette non sono state rigenerate: verifica che tutte le righe della fattura siano ' +
-      'confermate, che la capienza del movimento non sia superata e che le note di credito ' +
-      'collegate siano imputate per intero.'
+    // Costruito dalla classe reale, non ricopiato a mano: se `riallineamento.ts`
+    // cambia il testo, questo test lo segue invece di restare verde su una
+    // frase che la rotta non scrive più.
+    const messaggio422 = new RiallineamentoNonRigenerabile('reconciliation-1', 'inv-1').message
     mockFetchConDivergenza(
       [{ journalEntryId: 'mov-1', movimentoData: '2026-03-31T00:00:00.000Z' }],
       () =>

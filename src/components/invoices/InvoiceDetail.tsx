@@ -336,7 +336,13 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     mutationFn: riallineaMovimento,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['invoice', invoiceId] })
-      toast.success(`${data.message} (${data.fette} fette)`)
+      // "sul movimento", non "di questa fattura": il riallineamento è per
+      // MOVIMENTO (Task 7). Su un bonifico cumulativo che salda anche
+      // un'altra fattura divergente, `data.fette` conta anche le sue —
+      // dire "di questa fattura" qui affermerebbe un ambito che il numero
+      // non rispetta.
+      const fetteLabel = data.fette === 1 ? '1 fetta rigenerata' : `${data.fette} fette rigenerate`
+      toast.success(`${data.message} — ${fetteLabel} sul movimento`)
     },
     onError: (err: Error) => {
       toast.error(err.message)

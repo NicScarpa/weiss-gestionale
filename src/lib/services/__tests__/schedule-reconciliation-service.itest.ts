@@ -796,7 +796,17 @@ describe('nota di credito che rettifica (Task 6)', () => {
     // I due bolli stanno sullo stesso conto e si annullano, come i detersivi:
     // resta la sola farina. Se il bollo della nota non entrasse nei pesi,
     // 30.01 comparirebbe qui con i suoi 2 €.
-    expect(await fettePerConto(movimento.id)).toEqual({ [food]: 1100 })
+    //
+    // L'importo da solo non discrimina (revisione, ri-verifica): se il bollo
+    // della nota non venisse riconosciuto come riga con aliquota nota — cioè
+    // se `aliquotePerLineaNota` non ricevesse la sua voce da `righeSistemaNota`
+    // — la riga del bollo di QUESTA fattura (aliquota 0, letta dal proprio
+    // XML) e quella, col segno invertito, della nota (aliquota `undefined`,
+    // se la sua non venisse letta) si annullerebbero comunque nell'importo
+    // (2 − 2 = 0, filtrato) mentre il tutto-o-niente di `calcolaPesiConIva`
+    // azzererebbe l'IVA di OGNI fetta, farina compresa: stesso importo,
+    // `iva: null` invece di `100`. Solo l'IVA della fetta lo distingue.
+    expect(await fetteConIvaPerConto(movimento.id)).toEqual({ [food]: { importo: 1100, iva: 100 } })
   })
 
   it('round 3 — il bollo della nota su un conto che la fattura non alimenta: l\'ereditarietà si astiene per intero', async () => {

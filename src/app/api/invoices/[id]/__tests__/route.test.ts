@@ -342,4 +342,34 @@ describe('GET /api/invoices/[id]: divergenze (Task 10)', () => {
       })
     )
   })
+
+  it('revisione Important 1: un errore nel calcolo delle divergenze non fa fallire il resto della fattura', async () => {
+    // Accessoria quanto il parsing XML poco sopra (che ha lo stesso try/catch
+    // con lo stesso principio): un intoppo proprio sulle query più esposte
+    // della rotta (1+K, vedi il commento nel codice) non deve trasformare
+    // "manca l'avviso" in "manca la fattura".
+    vi.mocked(prisma.scheduleReconciliation.findMany).mockRejectedValue(new Error('timeout statement'))
+
+    const { request, context } = richiesta()
+    const response = await GET(request, context)
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data.id).toBe('fatt-1')
+    expect(data.divergenze).toEqual([])
+  })
+
+  it('revisione Important 1: un errore da imputazioniDivergenti stesso ha la stessa rete', async () => {
+    vi.mocked(prisma.scheduleReconciliation.findMany).mockResolvedValue([
+      { journalEntryId: 'mov-1', journalEntry: { date: new Date('2026-03-31') } },
+    ] as never)
+    vi.mocked(imputazioniDivergenti).mockRejectedValue(new Error('pool esaurito'))
+
+    const { request, context } = richiesta()
+    const response = await GET(request, context)
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data.divergenze).toEqual([])
+  })
 })

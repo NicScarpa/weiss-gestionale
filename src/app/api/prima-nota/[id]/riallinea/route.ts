@@ -5,6 +5,13 @@ import { getVenueId } from '@/lib/venue'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
 import { imputazioniDivergenti, riallineaFette, RiallineamentoNonRigenerabile } from '@/lib/invoices/riallineamento'
+import { MESSAGGIO_NESSUNA_DIVERGENZA, MESSAGGIO_MAI_GENERATE_FETTE, MESSAGGIO_RIALLINEATO } from './messaggi'
+
+// Ri-esportate: chi importava le costanti da qui (i test di questa rotta)
+// continua a trovarle, ma la definizione vive in `./messaggi.ts` — un modulo
+// senza `next/server`/`next-auth`, così un test lato client può importarle
+// senza portarsi dietro anche quelli (vedi il docblock in `messaggi.ts`).
+export { MESSAGGIO_NESSUNA_DIVERGENZA, MESSAGGIO_MAI_GENERATE_FETTE, MESSAGGIO_RIALLINEATO }
 
 /**
  * POST /api/prima-nota/[id]/riallinea
@@ -67,12 +74,7 @@ export async function POST(
       // fette perché la query la trovi, anche quando le altre sono
       // semplicemente allineate. Il messaggio resta meno assertivo apposta.
       return NextResponse.json(
-        {
-          error: senzaFette
-            ? 'Una riconciliazione di questo movimento non ha mai generato fette ereditate ' +
-              '(probabilmente la fattura non era coperta per intero): completa prima le sue imputazioni'
-            : 'Il movimento non ha imputazioni divergenti da riallineare',
-        },
+        { error: senzaFette ? MESSAGGIO_MAI_GENERATE_FETTE : MESSAGGIO_NESSUNA_DIVERGENZA },
         { status: 409 }
       )
     }
@@ -97,7 +99,7 @@ export async function POST(
     return NextResponse.json({
       fette: eseguiti.reduce((somma, esito) => somma + esito.fetteScritte, 0),
       invoiceId: divergenza.invoiceId,
-      message: 'Fette riallineate alle imputazioni correnti della fattura',
+      message: MESSAGGIO_RIALLINEATO,
     })
   } catch (error) {
     if (error instanceof RiallineamentoNonRigenerabile) {

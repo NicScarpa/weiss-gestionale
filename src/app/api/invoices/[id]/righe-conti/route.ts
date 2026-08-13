@@ -237,6 +237,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       // L'ordine dentro la transazione resta upsert-poi-deleteMany, mai
       // l'inverso: cancellare per prima cosa significherebbe, su
       // un'interruzione, aver distrutto lavoro già confermato.
+      //
+      // Il tetto: due statement per quota (upsert + un deleteMany per riga,
+      // non per quota) dentro il timeout di default di `$transaction`
+      // (5 secondi in Prisma 7), reggono senza avvicinarsi al limite fino a
+      // circa 200 statement — una fattura con qualche centinaio di righe
+      // divise. Chi in futuro collega qui un consumer che scrive in blocco
+      // (import massivo, "Accetta tutte" esteso a più fatture) deve saperlo
+      // prima di scoprirlo da un timeout in produzione.
       await prisma.$transaction(async (tx) => {
         for (const [numeroLinea, quote] of gruppiPerLinea) {
           // Una riga vera e una di sistema non condividono forma: la prima ha

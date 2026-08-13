@@ -199,31 +199,52 @@ export async function GET(request: NextRequest, context: RouteContext) {
     // norma uno solo, salvo pagamenti frazionati su più bonifici) e si
     // interroga ciascuno.
     //
-    // Costo: una query per i movimenti collegati, più 1-2 query per ciascun
-    // movimento distinto (quel che interroga `imputazioniDivergenti` al suo
-    // interno). Limitato alle riconciliazioni di QUESTA fattura: non cresce
-    // con una lista, perché gira solo qui, sul dettaglio di una singola
-    // fattura — mai su ogni riga di un elenco.
-    const movimentiCollegati = await prisma.scheduleReconciliation.findMany({
-      where: { status: 'VERIFIED', schedule: { invoiceId: id } },
-      select: { journalEntryId: true, journalEntry: { select: { date: true } } },
-    })
-    const dataPerMovimento = new Map(
-      movimentiCollegati.map((m) => [m.journalEntryId, m.journalEntry.date])
-    )
-
+    // Costo: una query per i movimenti collegati, più 1+K query per ciascun
+    // movimento distinto — K è quante riconciliazioni con fette ha QUEL
+    // movimento (non questa fattura: un bonifico cumulativo che salda anche
+    // altre fatture le conta tutte). Una fattura rateizzata pagata da N
+    // bonifici distinti costerebbe N×(1+K) round-trip in sequenza: le
+    // chiamate sui movimenti distinti corrono invece in parallelo
+    // (`Promise.all`). Resta comunque limitato al grafo di riconciliazioni di
+    // QUESTA fattura: non cresce con una lista, perché gira solo qui, sul
+    // dettaglio di una singola fattura — mai su ogni riga di un elenco.
+    //
+    // Accessoria quanto il parsing XML qui sopra (un avviso, non il
+    // documento): un errore in queste query — le più esposte della rotta,
+    // proprio perché sono 1+K — non deve poter far sparire l'intera fattura
+    // dietro un 500. Stesso principio, stessa forma di quel `try/catch`.
     const divergenze: Array<{ journalEntryId: string; movimentoData: string }> = []
-    for (const journalEntryId of dataPerMovimento.keys()) {
-      const esito = await imputazioniDivergenti(journalEntryId)
-      // Un bonifico cumulativo può saldare più fatture: `imputazioniDivergenti`
-      // riporta la divergenza più recente di TUTTO il movimento, non
-      // necessariamente quella di questa fattura. Mostrarla comunque
-      // attribuirebbe a questa fattura un problema che è di un'altra —
-      // si verifica che l'`invoiceId` tornato sia proprio il nostro.
-      if (esito.divergente && esito.invoiceId === id) {
-        const data = dataPerMovimento.get(journalEntryId)
-        if (data) divergenze.push({ journalEntryId, movimentoData: data.toISOString() })
+    try {
+      const movimentiCollegati = await prisma.scheduleReconciliation.findMany({
+        where: { status: 'VERIFIED', schedule: { invoiceId: id } },
+        select: { journalEntryId: true, journalEntry: { select: { date: true } } },
+      })
+      const dataPerMovimento = new Map(
+        movimentiCollegati.map((m) => [m.journalEntryId, m.journalEntry.date])
+      )
+
+      const esiti = await Promise.all(
+        [...dataPerMovimento.keys()].map(async (journalEntryId) => ({
+          journalEntryId,
+          esito: await imputazioniDivergenti(journalEntryId),
+        }))
+      )
+
+      for (const { journalEntryId, esito } of esiti) {
+        // Un bonifico cumulativo può saldare più fatture: `imputazioniDivergenti`
+        // riporta la divergenza più recente di TUTTO il movimento, non
+        // necessariamente quella di questa fattura. Mostrarla comunque
+        // attribuirebbe a questa fattura un problema che è di un'altra —
+        // si verifica che l'`invoiceId` tornato sia proprio il nostro.
+        if (esito.divergente && esito.invoiceId === id) {
+          const data = dataPerMovimento.get(journalEntryId)
+          if (data) divergenze.push({ journalEntryId, movimentoData: data.toISOString() })
+        }
       }
+    } catch (divergenzaError) {
+      // Non blocchiamo la risposta se il calcolo della divergenza fallisce:
+      // sparisce l'avviso su questo caricamento, non la fattura.
+      logger.error('Errore nel calcolo delle divergenze per il dettaglio fattura', divergenzaError)
     }
 
     return NextResponse.json({ ...invoice, parsedData, divergenze })
