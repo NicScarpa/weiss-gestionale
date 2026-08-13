@@ -149,7 +149,11 @@ interface RigheContiPayload {
   // (LINEA_BOLLO = -1, LINEA_ARROTONDAMENTO = -2, in
   // src/lib/sdi/righe-di-sistema.ts): sono `number` come le righe vere,
   // nessuna forma diversa serve per salvarne il conto.
-  righe?: Array<{ numeroLinea: number; accountId: string }>
+  // `progressivo` e `importo` sono opzionali: assenti per una riga a quota
+  // singola (il server ricava tutto dal documento), presenti insieme per
+  // ogni quota di una riga divisa (Task 9) — vedi RigaDivisibile.onSalva,
+  // che li valorizza sempre entrambi o nessuno dei due.
+  righe?: Array<{ numeroLinea: number; accountId: string; progressivo?: number; importo?: number }>
   confermaTutte?: boolean
 }
 
@@ -309,6 +313,27 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
 
   const handleLineAccountChange = (numeroLinea: number, accountId: string) => {
     righeContiMutation.mutate({ righe: [{ numeroLinea, accountId }] })
+  }
+
+  // Task 9: RigaDivisibile passa SEMPRE l'insieme completo delle quote della
+  // riga divisa (mai una alla volta) — è la stessa mutation di
+  // handleLineAccountChange, il server distingue una riga a quota singola da
+  // una divisa dal numero di elementi con lo stesso numeroLinea nella
+  // richiesta (righe-conti/route.ts). Un rifiuto (400: somma che non
+  // quadra) arriva qui come in ogni altro uso della mutation: onError già
+  // lo mostra con toast.error, nessuna gestione dedicata da aggiungere.
+  const handleSplitSave = (
+    numeroLinea: number,
+    quote: Array<{ progressivo: number; accountId: string; importo: number }>
+  ) => {
+    righeContiMutation.mutate({
+      righe: quote.map((q) => ({
+        numeroLinea,
+        progressivo: q.progressivo,
+        accountId: q.accountId,
+        importo: q.importo,
+      })),
+    })
   }
 
   // Loading state
@@ -474,6 +499,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         totaleDocumento={invoice.totalAmount}
         onAccountChange={handleLineAccountChange}
         onConfirmAllAccounts={handleConfirmAllLineAccounts}
+        onSplitSave={handleSplitSave}
       />
 
       {/* VAT Summary and Totals - side by side */}

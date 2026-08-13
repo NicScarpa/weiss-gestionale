@@ -170,6 +170,32 @@ async function apriTendina(testo: string) {
   return trigger
 }
 
+/**
+ * Apre la tendina conto della quota all'indice `indice` fra tutti i
+ * combobox a schermo (usata da RigaDivisibile, Task 9, dove più
+ * AccountCombobox convivono nella stessa riga divisa).
+ *
+ * Un solo click basta per il PRIMO popover Radix aperto in un test, ma non
+ * per i successivi: in jsdom, aprire un secondo Popover subito dopo che il
+ * primo si è chiuso lascia `aria-expanded` a "false" al primo click — non
+ * succede nei browser veri (lo stesso pattern, più AccountCombobox in una
+ * riga, è già in produzione in SplitEntryDialog), è un artefatto della
+ * dispatch sintetica di `fireEvent` senza il ciclo pointerdown→focus→click
+ * completo di un browser. Il secondo click scatta solo se il primo non ha
+ * già aperto la tendina, quindi l'helper resta corretto anche se in futuro
+ * bastasse un solo click.
+ */
+async function apriTendinaQuota(indice: number) {
+  await act(async () => {
+    fireEvent.click(screen.getAllByRole('combobox')[indice])
+  })
+  if (screen.getAllByRole('combobox')[indice].getAttribute('aria-expanded') !== 'true') {
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole('combobox')[indice])
+    })
+  }
+}
+
 describe('LineItemsTable — righe di sistema', () => {
   it('una fattura con bollo mostra una riga in più di dettaglioLinee.length', () => {
     righe({
@@ -593,5 +619,123 @@ describe('LineItemsTable — types COSTO e PATRIMONIALE', () => {
     })
 
     expect(onAccountChange).toHaveBeenCalledWith(1, 'conto-frigo')
+  })
+})
+
+describe('LineItemsTable — dividere una riga (Task 9)', () => {
+  // Un'unica riga da dividere: due comboboxAccount bastano a distinguerla
+  // (nessuna riga "sorella" con cui l'account della prima o della seconda
+  // quota potrebbe confondersi).
+  function rigaDaDividere() {
+    return righe({
+      dettaglioLinee: [
+        {
+          numeroLinea: 1,
+          descrizione: 'Detersivi',
+          quantita: 5,
+          unitaMisura: 'pz',
+          prezzoUnitario: 20,
+          prezzoTotale: 100,
+          aliquotaIVA: 22,
+          imputazioni: [],
+        },
+      ],
+    })
+  }
+
+  it('passo 1 — ÷ apre due righe figlie sul posto: la riga madre perde la tendina ma non il proprio totale', async () => {
+    rigaDaDividere()
+    expect(righeCorpo()).toHaveLength(1)
+
+    const bottoneDividi = await waitFor(() =>
+      screen.getByRole('button', { name: 'Dividi la riga fra più conti' })
+    )
+    await act(async () => {
+      fireEvent.click(bottoneDividi)
+    })
+
+    // Riga madre + 2 righe figlie + 1 riga di quadratura (Salva/Annulla):
+    // righeCorpo() prende ogni <tr> del tbody, quadratura compresa.
+    expect(righeCorpo()).toHaveLength(4)
+    const rigaMadre = righeCorpo()[0]
+    expect(within(rigaMadre).queryByRole('combobox')).toBeNull()
+    expect(rigaMadre.textContent).toContain('100,00')
+
+    expect(screen.getAllByRole('combobox')).toHaveLength(2)
+    expect(screen.getAllByRole('spinbutton')).toHaveLength(2)
+  })
+
+  it('passo 2 — lo scarto è visibile prima di salvare: 60+30 disabilita Salva e mostra "10,00", 60+40 lo abilita', async () => {
+    rigaDaDividere()
+    const bottoneDividi = await waitFor(() =>
+      screen.getByRole('button', { name: 'Dividi la riga fra più conti' })
+    )
+    await act(async () => {
+      fireEvent.click(bottoneDividi)
+    })
+
+    // Un conto per ciascuna quota: "Salva" richiede anche il conto
+    // (quoteComplete), non solo la quadratura — il passo 2 riguarda solo gli
+    // importi, quindi si fissano i conti prima di variare gli importi.
+    await apriTendinaQuota(0)
+    await waitFor(() => expect(screen.queryByText('Detersivi e materiale di pulizia')).not.toBeNull())
+    await act(async () => {
+      fireEvent.click(screen.getByText('Detersivi e materiale di pulizia'))
+    })
+
+    await apriTendinaQuota(1)
+    await waitFor(() => expect(screen.queryByText('Attrezzature da cucina')).not.toBeNull())
+    await act(async () => {
+      fireEvent.click(screen.getByText('Attrezzature da cucina'))
+    })
+
+    const inputImporti = screen.getAllByRole('spinbutton')
+    await act(async () => {
+      fireEvent.change(inputImporti[0], { target: { value: '60' } })
+    })
+    await act(async () => {
+      fireEvent.change(inputImporti[1], { target: { value: '30' } })
+    })
+
+    const bottoneSalva = screen.getByRole('button', { name: 'Salva' })
+    expect(bottoneSalva).toBeDisabled()
+    expect(normalizzaSpazi(document.body.textContent)).toContain('10,00')
+
+    await act(async () => {
+      fireEvent.change(screen.getAllByRole('spinbutton')[1], { target: { value: '40' } })
+    })
+
+    expect(screen.getByRole('button', { name: 'Salva' })).not.toBeDisabled()
+  })
+
+  it('Annulla su una divisione appena aperta la fa collassare: torna la tendina, spariscono le righe figlie', async () => {
+    rigaDaDividere()
+    const bottoneDividi = await waitFor(() =>
+      screen.getByRole('button', { name: 'Dividi la riga fra più conti' })
+    )
+    await act(async () => {
+      fireEvent.click(bottoneDividi)
+    })
+    expect(righeCorpo()).toHaveLength(4)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Annulla' }))
+    })
+
+    expect(righeCorpo()).toHaveLength(1)
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Dividi la riga fra più conti' })).not.toBeNull()
+    })
+  })
+
+  it('una riga di sistema non mostra il pulsante ÷: le righe di sistema non si dividono (Task 8)', () => {
+    righe({
+      dettaglioLinee: [],
+      righeSistema: [
+        { numeroLinea: LINEA_BOLLO, descrizione: 'Imposta di bollo', importo: 2, imputazioni: [] },
+      ],
+    })
+
+    expect(screen.queryByRole('button', { name: 'Dividi la riga fra più conti' })).toBeNull()
   })
 })

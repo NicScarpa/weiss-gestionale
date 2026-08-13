@@ -5,6 +5,7 @@
  * Displays all XML parsed data: causale, linee, riepilogo IVA, pagamenti, trasmissione SDI
  */
 
+import { Fragment, useState } from 'react'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -39,13 +40,15 @@ import { formatCurrencyOrZero as formatCurrency } from '@/lib/formatters'
 import { NATURA_OPERAZIONE } from '@/lib/sdi/types'
 import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
 import { LINEA_BOLLO, LINEA_ARROTONDAMENTO } from '@/lib/sdi/righe-di-sistema'
+import { RigaDivisibile } from './RigaDivisibile'
 
 // Stessa soglia di src/lib/scadenzario/stato-schedule.ts, duplicata invece
 // che importata: quel modulo porta `@prisma/client` (usato per altro al suo
 // interno), e un import così in un componente 'use client' rompe la build
 // in un modo che nessuna revisione del diff vede — bisogna lanciare
-// `npm run build` per accorgersene.
-const TOLLERANZA_IMPORTI = 0.005
+// `npm run build` per accorgersene. Esportata: RigaDivisibile.tsx (Task 9) la
+// usa per lo stesso controllo di quadratura, lato client, prima di salvare.
+export const TOLLERANZA_IMPORTI = 0.005
 
 // Type definitions for parsed data from API
 interface CedentePrestatore {
@@ -81,7 +84,7 @@ interface CessionarioCommittente {
  * dal server per progressivo crescente, è "la" imputazione principale per chi
  * non gestisce ancora le righe divise.
  */
-interface ImputazioneQuota {
+export interface ImputazioneQuota {
   progressivo: number
   accountId: string
   importo: number
@@ -350,10 +353,22 @@ interface LineItemsTableProps {
   totaleDocumento?: string | number
   onAccountChange?: (numeroLinea: number, accountId: string) => void
   onConfirmAllAccounts?: () => void
+  /**
+   * Salva l'intera divisione di una riga (Task 9): TUTTE le quote della riga
+   * in una volta, mai una per volta. Il server tratta la richiesta come
+   * autorevole sulla riga che nomina (righe-conti/route.ts) — cancella ogni
+   * quota di quel numeroLinea non citata — quindi una chiamata con una sola
+   * quota su una riga divisa ne cancellerebbe silenziosamente l'altra.
+   * `RigaDivisibile` costruisce sempre l'insieme completo prima di chiamarla.
+   */
+  onSplitSave?: (
+    numeroLinea: number,
+    quote: Array<{ progressivo: number; accountId: string; importo: number }>
+  ) => void
 }
 
 /** Una riga della tabella, vera o di sistema, ridotta ai campi comuni al rendering e al calcolo di copertura. */
-interface RigaVisualizzata {
+export interface RigaVisualizzata {
   numeroLinea: number
   descrizione: string
   isSistema: boolean
@@ -394,6 +409,30 @@ function importoConfermato(imputazioni: ImputazioneQuota[]): number {
  */
 function alLordo(importoNetto: number, riga: RigaVisualizzata): number {
   return importoNetto * (1 + (riga.aliquotaIVA ?? 0) / 100)
+}
+
+/**
+ * Colore e titolo del pallino di stato per UNA quota (verde confermata,
+ * ambra proposta, assente se la quota non esiste ancora). Estratta perché
+ * serve in due punti: la riga a quota singola qui sotto, e — quota per
+ * quota — `RigaDivisibile` (Task 9). Prima di questa estrazione il pallino
+ * si leggeva solo da `imputazioni[0]`: su una riga divisa con la prima quota
+ * confermata e la seconda ancora proposta, il pallino unico mostrava verde e
+ * la proposta pendente della seconda quota spariva dalla vista (Task 8,
+ * minor 9 del reviewer). Qui non si tratta più: ogni quota mostra il proprio
+ * pallino, non ce n'è uno solo da far quadrare con lo stato di tutte.
+ */
+export function pallino(
+  imputazione: ImputazioneQuota | undefined
+): { className: string; title: string } | undefined {
+  if (!imputazione) return undefined
+  if (imputazione.stato === 'confermata') {
+    return { className: 'bg-green-500', title: 'Imputazione confermata' }
+  }
+  return {
+    className: 'bg-amber-500',
+    title: `Imputazione proposta automaticamente${imputazione.motivazioneAi ? ` — ${imputazione.motivazioneAi}` : ''}`,
+  }
 }
 
 /** Riferimento leggibile a una riga mancante nel messaggio del contatore: le
@@ -437,7 +476,17 @@ export function LineItemsTable({
   totaleDocumento,
   onAccountChange,
   onConfirmAllAccounts,
+  onSplitSave,
 }: LineItemsTableProps) {
+  // Righe con una divisione APERTA ma non ancora salvata sul server (l'utente
+  // ha premuto ÷ su una riga a quota singola). Una riga con già 2+ quote sul
+  // server è "divisa" a prescindere da questo set — non serve tenerla qui —
+  // e ci resta ANCHE dopo un salvataggio riuscito o rifiutato: rimuoverla al
+  // click su "Salva" farebbe sparire l'editor (e i valori digitati) proprio
+  // nel caso in cui il server rifiuta e l'utente deve correggere e riprovare
+  // (passo 3). Solo "Annulla" la rimuove, esplicitamente.
+  const [righeAperte, setRigheAperte] = useState<Set<number>>(new Set())
+
   // Helper to format IVA display
   const formatIVA = (aliquota: number) => {
     if (aliquota === 0) return '0%'
@@ -545,22 +594,24 @@ export function LineItemsTable({
             </TableHeader>
             <TableBody>
               {righe.map((riga) => {
+                // Divisa sul server: 2+ quote già salvate (Task 9, decisione
+                // 3 dello spec). Aperta localmente: l'utente ha premuto ÷ su
+                // una riga ancora a quota singola e non ha ancora salvato.
+                // In entrambi i casi si mostrano le righe figlie al posto
+                // della tendina — l'unica differenza è se resta un modo per
+                // tornare indietro (vedi RigaDivisibile, prop onAnnulla).
+                const divisa = !riga.isSistema && riga.imputazioni.length >= 2
+                const inModifica = righeAperte.has(riga.numeroLinea)
+                const mostraFigli = divisa || inModifica
+
                 // imputazioni[0]: la quota col progressivo più basso (il
                 // server le ordina già così), cioè "la" imputazione
                 // principale finché la riga non è divisa fra più conti.
+                // Rilevante solo quando NON si mostrano le righe figlie: una
+                // riga divisa non ha più un'imputazione "principale" unica,
+                // ogni quota mostra il proprio pallino (vedi `pallino` sopra).
                 const principale = riga.imputazioni[0]
-                const dotClass =
-                  principale?.stato === 'confermata'
-                    ? 'bg-green-500'
-                    : principale?.stato === 'proposta'
-                      ? 'bg-amber-500'
-                      : undefined
-                const dotTitle =
-                  principale?.stato === 'confermata'
-                    ? 'Imputazione confermata'
-                    : principale?.stato === 'proposta'
-                      ? `Imputazione proposta automaticamente${principale.motivazioneAi ? ` — ${principale.motivazioneAi}` : ''}`
-                      : undefined
+                const stato = pallino(principale)
 
                 // Il bollo nasce proposto su CONTO_PROPOSTO_BOLLO (30.01):
                 // solo un suggerimento in tendina finché nessuno lo sceglie
@@ -579,84 +630,136 @@ export function LineItemsTable({
                         : undefined
 
                 return (
-                  <TableRow key={riga.numeroLinea}>
-                    <TableCell className="font-mono text-slate-500">
-                      {riga.isSistema ? (
-                        <Cog className="h-3.5 w-3.5" aria-label="Riga di sistema" />
-                      ) : (
-                        riga.numeroLinea
-                      )}
-                    </TableCell>
-                    <TableCell className="max-w-xs truncate" title={riga.descrizione}>
-                      {riga.descrizione}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {riga.quantita !== undefined ? (
-                        <>
-                          {riga.quantita.toLocaleString('it-IT', { useGrouping: true })}
-                          {riga.unitaMisura && (
-                            <span className="text-xs text-slate-500 ml-1">
-                              {riga.unitaMisura}
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        '—'
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {riga.prezzoUnitario !== undefined ? formatCurrency(riga.prezzoUnitario) : '—'}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {riga.aliquotaIVA !== undefined ? formatIVA(riga.aliquotaIVA) : '—'}
-                    </TableCell>
-                    <TableCell className="text-right font-mono font-medium">
-                      {formatCurrency(riga.importo)}
-                    </TableCell>
-                    {showAccountColumn && (
-                      <TableCell>
-                        {/*
-                          Decisione: le righe di sistema NON si dividono fra
-                          più conti (Task 8, in risposta al brief). Il bollo
-                          e l'arrotondamento sono importi unici e piccoli, non
-                          l'accorpamento di voci eterogenee che giustifica la
-                          divisione di una riga vera (decisione 3 dello
-                          spec) — dividere 2 € di bollo fra due conti non
-                          serve a nessuno scenario reale, e l'arrotondamento
-                          può essere negativo, dove il vincolo `.positive()`
-                          sulle quote (righe-conti/route.ts) non potrebbe
-                          comunque reggere una divisione.
-                          La task 9 non deve mostrare il pulsante `÷` quando
-                          `riga.isSistema` è vero. Il server rifiuta già
-                          esplicitamente (righe-conti/route.ts), non con
-                          l'errore generico di Zod.
-                        */}
-                        <div className="flex items-center gap-2">
-                          <AccountCombobox
-                            value={principale?.accountId}
-                            onChange={(accountId) => {
-                              if (accountId) onAccountChange?.(riga.numeroLinea, accountId)
-                            }}
-                            disabled={!canEditAccounts}
-                            // Un conto PATRIMONIALE è ammesso quanto uno di
-                            // COSTO: un frigorifero in fattura è un cespite,
-                            // non un costo, e prima non era imputabile
-                            // (Task 8, punto d). RICAVO resta escluso: lo
-                            // scarta già il server (righe-conti/route.ts),
-                            // qui evita solo di proporlo inutilmente.
-                            types={['COSTO', 'PATRIMONIALE']}
-                            placeholder={suggerimento ? `Suggerito: ${suggerimento}` : 'Seleziona conto'}
-                          />
-                          {dotClass && (
-                            <span
-                              className={`h-2.5 w-2.5 rounded-full shrink-0 ${dotClass}`}
-                              title={dotTitle}
-                            />
-                          )}
-                        </div>
+                  <Fragment key={riga.numeroLinea}>
+                    <TableRow>
+                      <TableCell className="font-mono text-slate-500">
+                        {riga.isSistema ? (
+                          <Cog className="h-3.5 w-3.5" aria-label="Riga di sistema" />
+                        ) : (
+                          riga.numeroLinea
+                        )}
                       </TableCell>
+                      <TableCell className="max-w-xs truncate" title={riga.descrizione}>
+                        {riga.descrizione}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {riga.quantita !== undefined ? (
+                          <>
+                            {riga.quantita.toLocaleString('it-IT', { useGrouping: true })}
+                            {riga.unitaMisura && (
+                              <span className="text-xs text-slate-500 ml-1">
+                                {riga.unitaMisura}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          '—'
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {riga.prezzoUnitario !== undefined ? formatCurrency(riga.prezzoUnitario) : '—'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {riga.aliquotaIVA !== undefined ? formatIVA(riga.aliquotaIVA) : '—'}
+                      </TableCell>
+                      <TableCell className="text-right font-mono font-medium">
+                        {formatCurrency(riga.importo)}
+                      </TableCell>
+                      {showAccountColumn && (
+                        <TableCell>
+                          {mostraFigli ? (
+                            // Riga divisa (salvata o in bozza): niente tendina
+                            // qui, ogni quota mostra il proprio conto e il
+                            // proprio pallino nelle righe figlie sotto (vedi
+                            // RigaDivisibile) — mai un conto solo per l'intera
+                            // riga, che non esiste più una volta divisa.
+                            <span className="text-sm text-muted-foreground">—</span>
+                          ) : (
+                            <>
+                              {/*
+                                Decisione: le righe di sistema NON si dividono fra
+                                più conti (Task 8, in risposta al brief). Il bollo
+                                e l'arrotondamento sono importi unici e piccoli, non
+                                l'accorpamento di voci eterogenee che giustifica la
+                                divisione di una riga vera (decisione 3 dello
+                                spec) — dividere 2 € di bollo fra due conti non
+                                serve a nessuno scenario reale, e l'arrotondamento
+                                può essere negativo, dove il vincolo `.positive()`
+                                sulle quote (righe-conti/route.ts) non potrebbe
+                                comunque reggere una divisione.
+                                Qui (Task 9) il pulsante `÷` non compare quando
+                                `riga.isSistema` è vero, per lo stesso motivo. Il
+                                server rifiuta già esplicitamente
+                                (righe-conti/route.ts), non con l'errore generico
+                                di Zod.
+                              */}
+                              <div className="flex items-center gap-2">
+                                <AccountCombobox
+                                  value={principale?.accountId}
+                                  onChange={(accountId) => {
+                                    if (accountId) onAccountChange?.(riga.numeroLinea, accountId)
+                                  }}
+                                  disabled={!canEditAccounts}
+                                  // Un conto PATRIMONIALE è ammesso quanto uno di
+                                  // COSTO: un frigorifero in fattura è un cespite,
+                                  // non un costo, e prima non era imputabile
+                                  // (Task 8, punto d). RICAVO resta escluso: lo
+                                  // scarta già il server (righe-conti/route.ts),
+                                  // qui evita solo di proporlo inutilmente.
+                                  types={['COSTO', 'PATRIMONIALE']}
+                                  placeholder={suggerimento ? `Suggerito: ${suggerimento}` : 'Seleziona conto'}
+                                />
+                                {stato && (
+                                  <span
+                                    className={`h-2.5 w-2.5 rounded-full shrink-0 ${stato.className}`}
+                                    title={stato.title}
+                                  />
+                                )}
+                                {!riga.isSistema && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 shrink-0 font-mono"
+                                    disabled={!canEditAccounts}
+                                    onClick={() =>
+                                      setRigheAperte((prev) => new Set(prev).add(riga.numeroLinea))
+                                    }
+                                    title="Dividi la riga fra più conti"
+                                    aria-label="Dividi la riga fra più conti"
+                                  >
+                                    ÷
+                                  </Button>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </TableCell>
+                      )}
+                    </TableRow>
+                    {showAccountColumn && mostraFigli && (
+                      <RigaDivisibile
+                        riga={riga}
+                        canEditAccounts={canEditAccounts}
+                        // Niente "Annulla" per una riga già divisa sul
+                        // server: non c'è una riga a quota singola a cui
+                        // tornare (decisione Task 9, vedi il report). Per una
+                        // bozza ancora non salvata, Annulla la toglie da
+                        // `righeAperte` e la riga torna alla tendina normale.
+                        onAnnulla={
+                          divisa
+                            ? undefined
+                            : () =>
+                                setRigheAperte((prev) => {
+                                  const next = new Set(prev)
+                                  next.delete(riga.numeroLinea)
+                                  return next
+                                })
+                        }
+                        onSalva={(quote) => onSplitSave?.(riga.numeroLinea, quote)}
+                      />
                     )}
-                  </TableRow>
+                  </Fragment>
                 )
               })}
             </TableBody>
