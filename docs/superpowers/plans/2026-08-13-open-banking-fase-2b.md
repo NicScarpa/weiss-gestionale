@@ -22,7 +22,8 @@
 - **Ogni rotta è solo amministratore**: `withAuth(handler, { roles: ['admin'], venueScoped: true })`, `venueId` dalla sessione. Ogni rotta avvolge il corpo in `try/catch` e risponde con `rispostaErroreGoCardless(errore, 'METODO /api/...')`. Unica eccezione già esistente e deliberata: `GET /api/gocardless/callback`, che non ne ha bisogno e non deve averne.
 - **Gli indici parziali vanno scritti in due posti** — nel `migration.sql` e in `prisma/sql/constraints.sql` — perché il database dei test nasce da `prisma db push`, che le migrazioni non le esegue. Se manca il secondo, il test che verifica il vincolo passa in verde senza che il vincolo esista.
 - **Il database Supabase è condiviso con la produzione.** Mai `prisma db push` su un database vero; DDL esplicito applicato in locale con un `DATABASE_URL` verso `127.0.0.1:5433`. `npm run guard:not-prod` non si scavalca.
-- **Segui l'idioma locale per caricare i dati.** `BancheEContiClient.tsx` usa `fetch` con `useState`/`useEffect` e `toast` da `sonner`; `DashboardClient.tsx` usa `useQuery` di `@tanstack/react-query`. Ogni pezzo nuovo segue quello del file in cui entra, non ne importa un terzo.
+- **Segui l'idioma locale per caricare i dati.** `BancheEContiClient.tsx` **legge** con `useQuery` di `@tanstack/react-query` (`refetchOnMount: 'always'`, `staleTime: 0`) e **scrive** con `fetch` nudo più `toast` di `sonner`. Ogni pezzo nuovo che entra in quel file segue lo stesso taglio, e non ne importa un terzo.
+- **`@testing-library/react` non è importabile in questo progetto.** È in `devDependencies` ma il suo peer `@testing-library/dom` no, e il solo import fa fallire la suite prima che venga eseguita. I test dei componenti montano con l'API di React 19 (`createRoot` + `act`) usando gli aiutanti di `src/components/scadenzario/__tests__/render-helpers.tsx` — che stubbano anche le API DOM che Radix usa e jsdom non implementa, e forniscono il `QueryClientProvider` che i componenti con `useQuery` danno per scontato. Riusali importandoli da lì: due copie di quel file esistono già, la terza sarebbe quella di troppo.
 - **Nomi e commenti in italiano.**
 - **TDD** sulle rotte: prima il test che fallisce, si lancia, lo si vede fallire, poi l'implementazione. Nei rapporti va incollato **l'output reale** del rosso.
 - Baseline all'inizio: `tsc --noEmit` exit 0; `npm run lint` 0 errori e 62 warning preesistenti; **1466 test unitari su 112 file**; **451 di integrazione su 60 file**.
@@ -69,15 +70,23 @@ La rotta più cara della fase spende una chiamata per conto a ogni invocazione, 
 - Create: `prisma/migrations/20260813090000_conti_letti_e_unicita/migration.sql`
 - Modify: `src/app/api/gocardless/collegamenti/[id]/conti/route.ts`
 - Modify: `src/lib/gocardless/abbinamento.ts` (accetta l'impronta già calcolata)
+- Create: `src/lib/gocardless/maschere.ts`
 - Test: `src/app/api/gocardless/collegamenti/[id]/conti/__tests__/conti.itest.ts` (esistente, si estende)
 - Test: `src/lib/gocardless/__tests__/abbinamento.test.ts` (esistente, si estende)
+- Test: `src/lib/gocardless/__tests__/maschere.test.ts`
 
 **Interfaces:**
 - Consumes: `abbinaConti`, `descriviStato`, `eCollegata`, `clientDaAmbiente`, `rispostaErroreGoCardless`
 - Produces:
   - campo Prisma `contiLetti Json?` su `BankConnection`
   - `interface ContoConservato { providerAccountId: string; ibanHash: string | null; ibanMascherato: string | null; intestatario: string | null; valuta: string | null }`
-  - `GET /api/gocardless/collegamenti/[id]/conti[?aggiorna=1]` → `200 { stato, conti: Array<EsitoAbbinamento & { ultimoMovimento: string | null; syncEnabled: boolean; syncCutoffDate: string | null }>, lettiIl: string | null }`
+  - `mascheraIban(iban: string): string` in `src/lib/gocardless/maschere.ts`
+  - `GET /api/gocardless/collegamenti/[id]/conti[?aggiorna=1]` → `200 { stato, conti: Array<EsitoAbbinamento & { ibanMascherato: string | null; ultimoMovimento: string | null; syncEnabled: boolean; syncCutoffDate: string | null }>, lettiIl: string | null }`
+
+  `ibanMascherato` sta **accanto** a `EsitoAbbinamento`, non dentro `conto`: è
+  ciò che il pannello mostra, e sul percorso normale — quello che rilegge dalla
+  memoria — `conto.iban` è `null`. Senza questo campo l'amministratore vedrebbe
+  un elenco di conti che non riesce a distinguere l'uno dall'altro.
   - `PUT` con `azione: 'configura' | 'ignora' | 'lascia'`; `configura` porta `bankAccountId`, `dataTaglio` e `attivo: boolean`
 
 - [ ] **Step 1: Aggiungi il campo allo schema**
@@ -431,9 +440,57 @@ function daConservato(c: ContoConservato): ContoDaBanca {
 }
 ```
 
-La forma mascherata non entra in `ContoDaBanca` — l'abbinamento non se ne fa niente — ma va nella risposta della rotta accanto a ogni conto, perché è ciò che il pannello mostra. Portala unendo l'elenco conservato all'esito dell'abbinamento sul `providerAccountId`.
+La forma mascherata non entra in `ContoDaBanca` — l'abbinamento non se ne fa niente — ma va nella risposta della rotta accanto a ogni conto, perché è ciò che il pannello mostra.
 
-`mascheraIban` va scritta accanto agli altri aiutanti del file — `IT` seguito da puntini e dalle ultime quattro cifre — oppure estratta in `src/lib/gocardless/maschere.ts` se preferisci averla provata da sola. `leggiConservati` valida la colonna con uno schema zod e restituisce `null` se la forma non torna: una colonna JSON scritta da una versione precedente del codice non deve far esplodere il pannello.
+`mascheraIban` sta in un file suo, `src/lib/gocardless/maschere.ts`, così è provata da sola:
+
+```ts
+/**
+ * L'IBAN in una forma che si può mostrare a schermo e scrivere in un log senza
+ * consegnarlo: le prime due lettere del paese e le ultime quattro cifre, che
+ * bastano a distinguere un conto dall'altro e non bastano a disporne.
+ */
+export function mascheraIban(iban: string): string {
+  const pulito = iban.replace(/\s+/g, '').toUpperCase()
+  if (pulito.length < 8) return '••••'
+  return `${pulito.slice(0, 2)}•• •••• ${pulito.slice(-4)}`
+}
+```
+
+con il suo test in `src/lib/gocardless/__tests__/maschere.test.ts`:
+
+```ts
+import { describe, it, expect } from 'vitest'
+import { mascheraIban } from '../maschere'
+
+describe('mascheraIban', () => {
+  it('tiene il paese e le ultime quattro cifre', () => {
+    expect(mascheraIban('IT60X0542811101000000123456')).toBe('IT•• •••• 3456')
+  })
+
+  it('ignora gli spazi con cui le banche stampano gli IBAN', () => {
+    expect(mascheraIban('it60 x054 2811 1010 0000 0123 456')).toBe('IT•• •••• 3456')
+  })
+
+  // Un IBAN troppo corto è un dato sbagliato, non un motivo per mostrarlo
+  // intero: nel dubbio non si consegna nulla.
+  it('non lascia trapelare nulla di un valore troppo corto', () => {
+    expect(mascheraIban('IT60X')).toBe('••••')
+  })
+})
+```
+
+La maschera si porta nella risposta unendo l'elenco conservato all'esito dell'abbinamento sul `providerAccountId`. `contiBanca` e `conservati` hanno gli stessi elementi nello stesso ordine, ma l'unione va fatta per chiave e non per posizione: l'abbinamento restituisce un esito per conto e nulla garantisce che l'ordine sopravviva a una modifica futura.
+
+```ts
+    // `conservati` è null sul percorso di aggiornamento, dove le maschere sono
+    // in `letti`: si prende quello che c'è, e in entrambi i casi si indicizza.
+    const maschere = new Map((conservati ?? letti).map((c) => [c.providerAccountId, c.ibanMascherato]))
+```
+
+Perché `letti` sia in portata anche qui, dichiaralo fuori dal ramo (`let letti: ContoConservato[] = []`) invece che dentro.
+
+`leggiConservati` valida la colonna con uno schema zod e restituisce `null` se la forma non torna: una colonna JSON scritta da una versione precedente del codice non deve far esplodere il pannello.
 
 Poi, dopo l'abbinamento, arricchisci ogni esito con lo stato del conto del gestionale:
 
@@ -853,66 +910,210 @@ git commit -m "feat(open-banking): anche la corsa sul doppio collegamento finisc
 
 Il blocco che sostituisce la card «Coming Soon». Ha due stati: nessuna connessione, oppure una connessione con i suoi conti.
 
-**Segui l'idioma del file in cui entra**: `BancheEContiClient.tsx` usa `fetch` con `useState`/`useEffect` e `toast` da `sonner`. Non introdurre react-query qui.
+**Segui l'idioma del file in cui entra.** `BancheEContiClient.tsx` legge con `useQuery` di TanStack Query (`refetchOnMount: 'always'`, `staleTime: 0`) e scrive con `fetch` nudo più `toast` di `sonner`. Fai lo stesso: niente `useEffect` che carica a mano, niente `useMutation`.
 
-**Non invocare la lettura dei conti al montaggio senza memoria.** La rotta ora ricorda, quindi una `GET` normale non costa chiamate — ma `?aggiorna=1` sì, una per conto: quel bottone è un gesto esplicito, mai automatico.
+**Non chiedere mai un aggiornamento forzato al montaggio.** La rotta ora ricorda, quindi una `GET` normale non costa chiamate alla banca — ma `?aggiorna=1` sì, una per conto su quattro al giorno. Quel bottone è un gesto esplicito.
+
+**Tre limiti delle rotte che il pannello deve rispettare invece di aggirare**, perché scriverlo contro rotte immaginarie è il modo più veloce di perdere un giorno:
+
+1. **La `PUT` non crea conti.** `configura` esige il `bankAccountId` di un conto che esiste già. Per un conto della banca che il gestionale non conosce le scelte sono quindi **due** — abbinalo a un conto esistente, oppure ignoralo — con accanto la strada per la terza: il pulsante «Nuovo conto» sta nella stessa pagina, sopra questo pannello.
+2. **Riprendere un conto ignorato non è un'azione a sé.** La `PUT` toglie un conto dagli ignorati come effetto dell'abbinarlo (`ignorati.delete` sul ramo `configura`). La riga di un conto ignorato mostra quindi lo stesso elenco di abbinamento, in grigio, e dice a chiare lettere che resta ignorato finché non lo si abbina.
+3. **`configura` vuole la data di taglio sempre**, anche a interruttore spento: è la data con cui il conto ripartirà quando lo si riaccende. Quindi «Salva» è disabilitato se una qualunque riga configurata ha la data vuota — non solo quelle accese.
+
+**I conti del gestionale arrivano dal genitore, non da una seconda lettura.** `BancheEContiClient` calcola già `filteredAccounts`, che quando la scheda attiva è `BANK` sono esattamente i conti bancari della sede. Passarli come prop evita una chiamata in più e, soprattutto, evita la trappola che ha già morso due volte in questa integrazione: `bank_accounts` contiene anche le **casse**, e una lettura fatta qui senza filtrare `accountType` offrirebbe una cassa come destinazione di movimenti bancari.
 
 **Files:**
 - Create: `src/components/settings/ConnessioniBancarie.tsx`
+- Create: `src/components/settings/RigaContoBancario.tsx`
 - Modify: `src/components/settings/BancheEContiClient.tsx` (la card «Coming Soon» lascia il posto al componente)
 - Test: `src/components/settings/__tests__/ConnessioniBancarie.test.tsx`
 
 **Interfaces:**
-- Consumes: `GET /api/gocardless/collegamenti`, `GET /api/gocardless/collegamenti/[id]/conti`, `PUT` della stessa, `DELETE /api/gocardless/collegamenti/[id]`, `POST /api/gocardless/collegamenti/[id]/rinnovo`
-- Produces: `export function ConnessioniBancarie()`
+- Consumes: `GET /api/gocardless/collegamenti`, `GET /api/gocardless/collegamenti/[id]/conti`, la sua `PUT`, `DELETE /api/gocardless/collegamenti/[id]`, `POST /api/gocardless/collegamenti/[id]/rinnovo` (Task 2), `formatDateShort` da `@/lib/constants`
+- Produces:
+  - `export function ConnessioniBancarie(props: { contiBancari: ContoBancarioDelGestionale[] })`
+  - `export interface ContoBancarioDelGestionale { id: string; name: string }`
+  - `export type ContoInPannello`, `export type Scelta` (definiti sotto, consumati da `RigaContoBancario`)
+  - `export function RigaContoBancario(props: { conto: ContoInPannello; scelta: Scelta; contiBancari: ContoBancarioDelGestionale[]; onCambia: (s: Scelta) => void })`
 
 - [ ] **Step 1: Scrivi il test che fallisce**
 
-I test dei componenti in questo progetto girano nella suite unitaria con `jsdom`. Verifica come sono scritti gli altri (`src/components/**/__tests__/*.test.tsx`) e segui quel modo — testing-library se già in uso. Il test minimo che serve, e che deve fallire ora:
+**`@testing-library/react` non si può importare in questo progetto.** È in `devDependencies` ma il suo peer `@testing-library/dom` no, e importarlo fa fallire la suite prima di eseguirla. I test dei componenti montano con l'API di React 19 (`createRoot` + `act`) tramite gli aiutanti in `src/components/scadenzario/__tests__/render-helpers.tsx`, che stubbano anche le API DOM che Radix usa e jsdom non ha, e avvolgono il montaggio in un `QueryClientProvider` — che qui serve, perché il componente usa `useQuery`.
+
+Riusa quel file invece di farne una terza copia: ne esistono già due, e la terza sarebbe la copia di troppo.
+
+Crea `src/components/settings/__tests__/ConnessioniBancarie.test.tsx`:
 
 ```tsx
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import { ConnessioniBancarie } from '../ConnessioniBancarie'
+// Gli aiutanti vivono nella cartella di prova dello scadenzario: montano con
+// `createRoot` + `act`, stubbano ciò che Radix usa e jsdom non ha, e forniscono
+// il QueryClientProvider. Importarli di là evita una terza copia dello stesso file.
+import {
+  installaStubDom,
+  montare,
+  smontare,
+  attendere,
+  cliccare,
+  perTesto,
+  testoDellaPagina,
+} from '@/components/scadenzario/__tests__/render-helpers'
 
-function rispondiCon(percorso: string, corpo: unknown) { /* mock di fetch per percorso */ }
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }))
 
-beforeEach(() => vi.restoreAllMocks())
+beforeAll(() => {
+  global.IS_REACT_ACT_ENVIRONMENT = true
+  installaStubDom()
+})
+
+afterEach(async () => {
+  await smontare()
+  vi.unstubAllGlobals()
+})
+
+/** Gli indirizzi chiamati, nell'ordine, per poter interrogare il traffico. */
+let chiamate: string[] = []
+
+/**
+ * Un `fetch` finto che risponde per prefisso di indirizzo. Nessun IBAN vero
+ * qui dentro: le forme mascherate sono inventate.
+ */
+function stubFetch(risposte: Array<[string, unknown]>) {
+  chiamate = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      const indirizzo = String(url)
+      chiamate.push(indirizzo)
+      const trovata = risposte.find(([prefisso]) => indirizzo.startsWith(prefisso))
+      return new Response(JSON.stringify(trovata ? trovata[1] : {}), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+  )
+}
+
+const CONTI_DEL_GESTIONALE = [
+  { id: 'ba-1', name: 'Banca della Marca — ordinario' },
+  { id: 'ba-2', name: 'Banca della Marca — secondo' },
+]
+
+const COLLEGAMENTO = {
+  connessione: {
+    id: 'conn-1',
+    istitutoNome: 'Banca della Marca',
+    stato: { sigla: 'LN', nome: 'Collegata', spiegazione: 'Il consenso è attivo.' },
+    scadeIl: '2026-12-01T00:00:00.000Z',
+  },
+}
+
+const CONTI = {
+  stato: { sigla: 'LN', nome: 'Collegata', spiegazione: 'Il consenso è attivo.' },
+  lettiIl: '2026-08-13T08:00:00.000Z',
+  conti: [
+    {
+      tipo: 'riconosciuto',
+      bankAccountId: 'ba-1',
+      nomeConto: 'Banca della Marca — ordinario',
+      conto: { providerAccountId: 'acc-1', iban: null, ibanHash: 'h1', intestatario: 'WEISS SRL', valuta: 'EUR' },
+      ibanMascherato: 'IT•• •••• 1111',
+      ultimoMovimento: '2026-07-31T00:00:00.000Z',
+      syncEnabled: true,
+      syncCutoffDate: '2026-08-01',
+    },
+    {
+      tipo: 'sconosciuto',
+      conto: { providerAccountId: 'acc-2', iban: null, ibanHash: 'h2', intestatario: null, valuta: 'EUR' },
+      ibanMascherato: 'IT•• •••• 2222',
+      ultimoMovimento: null,
+      syncEnabled: false,
+      syncCutoffDate: null,
+    },
+  ],
+}
+
+/** Gli interruttori a schermo, nell'ordine in cui compaiono. */
+function interruttori(): HTMLElement[] {
+  return Array.from(document.querySelectorAll<HTMLElement>('[role="switch"]'))
+}
 
 describe('ConnessioniBancarie', () => {
-  it('senza collegamento invita a collegarne uno', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ connessione: null }), { status: 200, headers: { 'content-type': 'application/json' } })))
-
-    render(<ConnessioniBancarie />)
-
-    expect(await screen.findByRole('button', { name: /collega la banca/i })).toBeInTheDocument()
+  beforeEach(() => {
+    vi.clearAllMocks()
   })
 
-  // Il pannello non deve spendere chiamate alla banca da solo: l'aggiornamento
-  // è un gesto esplicito.
+  it('senza collegamento invita a collegarne uno', async () => {
+    stubFetch([['/api/gocardless/collegamenti', { connessione: null }]])
+
+    await montare(<ConnessioniBancarie contiBancari={CONTI_DEL_GESTIONALE} />)
+    await attendere()
+
+    expect(perTesto(/collega la banca/i)).toBeTruthy()
+  })
+
+  // Una lettura forzata costa una chiamata per conto su un contingente di
+  // quattro al giorno: quattro aperture del pannello lo esaurirebbero, e la
+  // quinta non mostrerebbe nulla. L'aggiornamento è un gesto, non un effetto
+  // del montaggio.
   it('al montaggio non chiede mai un aggiornamento forzato', async () => {
-    const chiamate: string[] = []
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      chiamate.push(String(url))
-      return new Response(JSON.stringify({ connessione: null }), { status: 200, headers: { 'content-type': 'application/json' } })
-    }))
+    stubFetch([
+      ['/api/gocardless/collegamenti/conn-1/conti', CONTI],
+      ['/api/gocardless/collegamenti', COLLEGAMENTO],
+    ])
 
-    render(<ConnessioniBancarie />)
+    await montare(<ConnessioniBancarie contiBancari={CONTI_DEL_GESTIONALE} />)
+    await attendere()
 
-    await waitFor(() => expect(chiamate.length).toBeGreaterThan(0))
+    expect(chiamate.length).toBeGreaterThan(0)
     expect(chiamate.some((u) => u.includes('aggiorna=1'))).toBe(false)
   })
 
   it('con un collegamento mostra istituto, scadenza e conti', async () => {
-    // … stub che risponde alla GET dei collegamenti e a quella dei conti,
-    // con un conto riconosciuto acceso e uno sconosciuto …
-    // Asserzioni: il nome dell'istituto compare; compare la data di scadenza;
-    // compaiono i due conti; l'interruttore del primo risulta acceso.
+    stubFetch([
+      ['/api/gocardless/collegamenti/conn-1/conti', CONTI],
+      ['/api/gocardless/collegamenti', COLLEGAMENTO],
+    ])
+
+    await montare(<ConnessioniBancarie contiBancari={CONTI_DEL_GESTIONALE} />)
+    await attendere()
+
+    const testo = testoDellaPagina()
+    expect(testo).toContain('Banca della Marca')
+    expect(testo).toContain('01/12/2026')
+    expect(testo).toContain('IT•• •••• 1111')
+    expect(testo).toContain('IT•• •••• 2222')
+
+    // Il conto già acceso deve risultare acceso: se il pannello ripartisse
+    // spento, salvare lo spegnerebbe senza che nessuno l'abbia chiesto.
+    expect(interruttori()[0]?.getAttribute('data-state')).toBe('checked')
+  })
+
+  // `configura` esige la data di taglio anche a interruttore spento, ed è
+  // l'unica cosa che impedisce a un movimento già importato via CSV di
+  // entrare una seconda volta.
+  it('senza data di taglio non lascia salvare', async () => {
+    const contiSenzaData = {
+      ...CONTI,
+      conti: [{ ...CONTI.conti[0], syncEnabled: false, syncCutoffDate: null }],
+    }
+    stubFetch([
+      ['/api/gocardless/collegamenti/conn-1/conti', contiSenzaData],
+      ['/api/gocardless/collegamenti', COLLEGAMENTO],
+    ])
+
+    await montare(<ConnessioniBancarie contiBancari={CONTI_DEL_GESTIONALE} />)
+    await attendere()
+
+    await cliccare(interruttori()[0])
+
+    const salva = perTesto(/^salva$/i)
+    expect(salva).toBeTruthy()
+    expect((salva as HTMLButtonElement).disabled).toBe(true)
   })
 })
 ```
-
-Completa il terzo test con i dati finti che ti servono: nessun IBAN reale, solo forme mascherate inventate.
 
 - [ ] **Step 2: Lancia il test e verifica che fallisca**
 
@@ -922,33 +1123,517 @@ source ~/.nvm/nvm.sh && nvm use 22 && npx vitest run src/components/settings/__t
 
 Atteso: FAIL con `Failed to resolve import "../ConnessioniBancarie"`.
 
-- [ ] **Step 3: Scrivi il componente**
+- [ ] **Step 3: Scrivi la riga di un conto**
 
-Struttura, senza collegamento:
+Crea `src/components/settings/RigaContoBancario.tsx`:
 
-- una `Card` con bordo tratteggiato, titolo «Open Banking», una riga che spiega cosa fa, e un `Button` «Collega la banca» che apre il wizard (Task 5, per ora un `onCollega` passato come prop o uno stato locale che aprirà il dialogo).
+```tsx
+'use client'
 
-Con un collegamento:
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { formatDateShort } from '@/lib/constants'
+import type { ContoBancarioDelGestionale, ContoInPannello, Scelta } from './ConnessioniBancarie'
 
-- intestazione con il nome dell'istituto, lo stato tradotto (`stato.nome`, con `stato.spiegazione` sotto se non è «Collegata»), e la scadenza: «il consenso scade il … (fra N giorni)». Se mancano quattordici giorni o meno, un `Alert` con il pulsante «Rinnova».
-- l'elenco dei conti. Per ognuno: la forma mascherata dell'IBAN, l'intestatario se c'è, e a seconda del `tipo`:
-  - `riconosciuto` / `gia-collegato`: il nome del conto del gestionale, uno `Switch` per accendere e spegnere, e un campo data per il taglio. Sotto il campo, in piccolo: «il movimento più recente che ho per questo conto è del …», oppure «non ho movimenti per questo conto». Il campo è **obbligatorio per accendere**: se l'interruttore è acceso e la data è vuota, il pulsante di salvataggio è disabilitato e il campo è marcato.
-  - `sconosciuto`: tre scelte — «crea un conto nuovo», «abbina a…» con un elenco dei conti bancari della sede, «ignora».
-  - `ignorato`: la riga in grigio, con un pulsante «riprendi in considerazione» che lo toglie dagli ignorati.
-- in fondo: «Salva», e un pulsante secondario «Aggiorna dalla banca» con accanto, in piccolo, da quando sono i dati (`lettiIl`) e l'avvertenza che ogni aggiornamento consuma una delle quattro letture giornaliere per conto.
-- e una frase in chiaro: **nessuna sincronizzazione è attiva; i movimenti arriveranno con la fase successiva.** Meglio dirlo che lasciare qualcuno ad aspettare movimenti che nessuno sta scaricando.
-- «Scollega» in fondo, dietro conferma, con scritto che i movimenti già importati restano.
+interface Props {
+  conto: ContoInPannello
+  scelta: Scelta
+  contiBancari: ContoBancarioDelGestionale[]
+  onCambia: (scelta: Scelta) => void
+}
 
-Il salvataggio manda una `PUT` con un elemento per ogni conto toccato: `configura` con `attivo` per quelli con interruttore, `ignora` per quelli scartati, `lascia` per gli altri.
+/**
+ * Da quando partirebbero i movimenti, detto in modo che si capisca perché la
+ * data serve: il rischio è importare due volte ciò che è già entrato via CSV.
+ */
+function riferimento(ultimoMovimento: string | null): string {
+  return ultimoMovimento
+    ? `Il movimento più recente che ho per questo conto è del ${formatDateShort(ultimoMovimento)}.`
+    : 'Non ho ancora movimenti per questo conto.'
+}
 
-- [ ] **Step 4: Innesta il componente nel pannello**
+export function RigaContoBancario({ conto, scelta, contiBancari, onCambia }: Props) {
+  const etichetta = conto.ibanMascherato ?? conto.conto.providerAccountId
+  const abbinato = conto.tipo === 'riconosciuto' || conto.tipo === 'gia-collegato'
+  const ignorato = conto.tipo === 'ignorato' || scelta.azione === 'ignora'
 
-In `BancheEContiClient.tsx`, sostituisci il blocco `{/* Open Banking Placeholder */}` con `{activeTab === 'BANK' && <ConnessioniBancarie />}` e togli l'import di `Wifi` se resta inutilizzato — il lint lo segnalerebbe.
+  const idConto = scelta.azione === 'configura' ? scelta.bankAccountId : abbinato ? conto.bankAccountId : ''
+  const dataTaglio = scelta.azione === 'configura' ? scelta.dataTaglio : (conto.syncCutoffDate ?? '')
+  const acceso = scelta.azione === 'configura' ? scelta.attivo : conto.syncEnabled
 
-- [ ] **Step 5: Lancia i test, verifica completa, commit**
+  const intestazione = (
+    <div className="min-w-0">
+      <p className="font-mono text-sm">{etichetta}</p>
+      {conto.conto.intestatario && (
+        <p className="truncate text-xs text-muted-foreground">{conto.conto.intestatario}</p>
+      )}
+    </div>
+  )
+
+  if (ignorato) {
+    return (
+      <div className="space-y-2 rounded-md border border-dashed p-3 opacity-70">
+        <div className="flex items-center justify-between gap-3">
+          {intestazione}
+          <Badge variant="outline" className="text-xs">Ignorato</Badge>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Resta ignorato finché non lo abbini a un conto: abbinarlo è ciò che lo riprende.
+        </p>
+        <Select value={idConto || undefined} onValueChange={(id) => onCambia({ azione: 'configura', bankAccountId: id, dataTaglio: '', attivo: false })}>
+          <SelectTrigger className="w-full"><SelectValue placeholder="Abbina a un conto…" /></SelectTrigger>
+          <SelectContent>
+            {contiBancari.map((c) => (
+              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    )
+  }
+
+  if (!abbinato && scelta.azione !== 'configura') {
+    return (
+      <div className="space-y-2 rounded-md border p-3">
+        <div className="flex items-center justify-between gap-3">
+          {intestazione}
+          <Badge variant="outline" className="text-xs">Non riconosciuto</Badge>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Questo conto non corrisponde a nessuno di quelli registrati. Abbinalo, oppure ignoralo se
+          non riguarda l&apos;attività. Se manca, crealo con «Nuovo conto» qui sopra e poi torna qui.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Select onValueChange={(id) => onCambia({ azione: 'configura', bankAccountId: id, dataTaglio: '', attivo: true })}>
+            <SelectTrigger className="w-full sm:w-64"><SelectValue placeholder="Abbina a un conto…" /></SelectTrigger>
+            <SelectContent>
+              {contiBancari.map((c) => (
+                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="ghost" size="sm" onClick={() => onCambia({ azione: 'ignora' })}>
+            Ignora
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  const nome = abbinato ? conto.nomeConto : contiBancari.find((c) => c.id === idConto)?.name
+  const idCampoData = `taglio-${conto.conto.providerAccountId}`
+
+  return (
+    <div className="space-y-3 rounded-md border p-3">
+      <div className="flex items-center justify-between gap-3">
+        {intestazione}
+        <div className="flex items-center gap-2">
+          {nome && <span className="hidden text-sm text-muted-foreground sm:inline">{nome}</span>}
+          <Switch
+            checked={acceso}
+            aria-label={`Importa i movimenti di ${etichetta}`}
+            onCheckedChange={(valore) =>
+              onCambia({ azione: 'configura', bankAccountId: idConto, dataTaglio, attivo: valore })
+            }
+          />
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <Label htmlFor={idCampoData} className="text-xs">Importa i movimenti a partire dal</Label>
+        <Input
+          id={idCampoData}
+          type="date"
+          value={dataTaglio}
+          aria-invalid={scelta.azione === 'configura' && !scelta.dataTaglio}
+          onChange={(e) =>
+            onCambia({ azione: 'configura', bankAccountId: idConto, dataTaglio: e.target.value, attivo: acceso })
+          }
+        />
+        <p className="text-xs text-muted-foreground">{riferimento(conto.ultimoMovimento)}</p>
+      </div>
+    </div>
+  )
+}
+```
+
+- [ ] **Step 4: Scrivi il pannello**
+
+Crea `src/components/settings/ConnessioniBancarie.tsx`:
+
+```tsx
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import { RefreshCw, Wifi } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { formatDateShort } from '@/lib/constants'
+import { RigaContoBancario } from './RigaContoBancario'
+
+export interface ContoBancarioDelGestionale {
+  id: string
+  name: string
+}
+
+interface StatoRequisition {
+  sigla: string
+  nome: string
+  spiegazione: string
+}
+
+interface Connessione {
+  id: string
+  istitutoNome: string
+  stato: StatoRequisition
+  scadeIl: string | null
+}
+
+interface ContoDaBanca {
+  providerAccountId: string
+  iban: string | null
+  ibanHash: string | null
+  intestatario: string | null
+  valuta: string | null
+}
+
+export type ContoInPannello = (
+  | { tipo: 'riconosciuto' | 'gia-collegato'; bankAccountId: string; nomeConto: string }
+  | { tipo: 'sconosciuto' | 'ignorato' }
+) & {
+  conto: ContoDaBanca
+  ibanMascherato: string | null
+  ultimoMovimento: string | null
+  syncEnabled: boolean
+  syncCutoffDate: string | null
+}
+
+export type Scelta =
+  | { azione: 'lascia' }
+  | { azione: 'ignora' }
+  | { azione: 'configura'; bankAccountId: string; dataTaglio: string; attivo: boolean }
+
+interface RispostaConti {
+  stato: StatoRequisition
+  conti: ContoInPannello[]
+  lettiIl: string | null
+}
+
+/** Quanti giorni prima della scadenza si comincia a chiedere il rinnovo. */
+const PREAVVISO_GIORNI = 14
+
+function giorniAllaScadenza(iso: string | null): number | null {
+  if (!iso) return null
+  const scadenza = new Date(iso)
+  if (Number.isNaN(scadenza.getTime())) return null
+  return Math.ceil((scadenza.getTime() - Date.now()) / 86_400_000)
+}
+
+export function ConnessioniBancarie({ contiBancari }: { contiBancari: ContoBancarioDelGestionale[] }) {
+  const [scelte, setScelte] = useState<Record<string, Scelta>>({})
+  const [inCorso, setInCorso] = useState<'salvataggio' | 'aggiornamento' | 'scollegamento' | null>(null)
+
+  const { data: datiCollegamento, refetch: ricaricaCollegamento } = useQuery({
+    queryKey: ['gocardless-collegamento'],
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryFn: async (): Promise<{ connessione: Connessione | null }> => {
+      const res = await fetch('/api/gocardless/collegamenti')
+      if (!res.ok) throw new Error('Errore nel caricamento del collegamento')
+      return res.json()
+    },
+  })
+
+  const connessione = datiCollegamento?.connessione ?? null
+
+  const { data: datiConti, refetch: ricaricaConti } = useQuery({
+    queryKey: ['gocardless-conti', connessione?.id],
+    enabled: Boolean(connessione),
+    refetchOnMount: 'always',
+    staleTime: 0,
+    queryFn: async (): Promise<RispostaConti> => {
+      // Senza `aggiorna=1`: la rotta risponde dalla memoria. Chiedere alla
+      // banca costa una chiamata per conto su quattro al giorno, ed è un
+      // gesto che l'amministratore deve fare apposta.
+      const res = await fetch(`/api/gocardless/collegamenti/${connessione!.id}/conti`)
+      if (!res.ok) throw new Error('Errore nel caricamento dei conti')
+      return res.json()
+    },
+  })
+
+  const conti = datiConti?.conti ?? []
+
+  // Ogni rilettura riparte da ciò che è salvato: le scelte non confermate non
+  // devono sopravvivere a un aggiornamento e far salvare qualcosa che
+  // l'amministratore crede di aver scartato.
+  useEffect(() => {
+    setScelte({})
+  }, [datiConti])
+
+  const scelta = (c: ContoInPannello): Scelta =>
+    scelte[c.conto.providerAccountId] ?? { azione: 'lascia' }
+
+  const cambia = (providerAccountId: string, nuova: Scelta) =>
+    setScelte((precedenti) => ({ ...precedenti, [providerAccountId]: nuova }))
+
+  const daSalvare = Object.entries(scelte).filter(([, s]) => s.azione !== 'lascia')
+  const senzaData = daSalvare.some(([, s]) => s.azione === 'configura' && !s.dataTaglio)
+  const senzaConto = daSalvare.some(([, s]) => s.azione === 'configura' && !s.bankAccountId)
+
+  async function salva() {
+    if (!connessione) return
+    setInCorso('salvataggio')
+    try {
+      const res = await fetch(`/api/gocardless/collegamenti/${connessione.id}/conti`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conti: daSalvare.map(([providerAccountId, s]) =>
+            s.azione === 'configura'
+              ? {
+                  providerAccountId,
+                  azione: 'configura' as const,
+                  bankAccountId: s.bankAccountId,
+                  dataTaglio: s.dataTaglio,
+                  attivo: s.attivo,
+                }
+              : { providerAccountId, azione: 'ignora' as const }
+          ),
+        }),
+      })
+      const corpo = await res.json()
+      if (!res.ok) {
+        toast.error(corpo.error ?? 'Salvataggio non riuscito')
+        return
+      }
+      toast.success('Configurazione salvata')
+      await ricaricaConti()
+    } catch {
+      toast.error('Salvataggio non riuscito')
+    } finally {
+      setInCorso(null)
+    }
+  }
+
+  async function aggiornaDallaBanca() {
+    if (!connessione) return
+    setInCorso('aggiornamento')
+    try {
+      const res = await fetch(`/api/gocardless/collegamenti/${connessione.id}/conti?aggiorna=1`)
+      const corpo = await res.json()
+      if (!res.ok) {
+        toast.error(corpo.error ?? 'Aggiornamento non riuscito')
+        return
+      }
+      await ricaricaConti()
+      toast.success('Elenco aggiornato')
+    } catch {
+      toast.error('Aggiornamento non riuscito')
+    } finally {
+      setInCorso(null)
+    }
+  }
+
+  async function scollega() {
+    if (!connessione) return
+    setInCorso('scollegamento')
+    try {
+      const res = await fetch(`/api/gocardless/collegamenti/${connessione.id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const corpo = await res.json()
+        toast.error(corpo.error ?? 'Scollegamento non riuscito')
+        return
+      }
+      toast.success('Banca scollegata')
+      await ricaricaCollegamento()
+    } catch {
+      toast.error('Scollegamento non riuscito')
+    } finally {
+      setInCorso(null)
+    }
+  }
+
+  if (!connessione) {
+    return (
+      <Card className="border-dashed">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-50">
+              <Wifi className="h-5 w-5 text-blue-500" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Open Banking</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Collega l&apos;home banking per leggere i movimenti dei conti, senza più esportare
+                file dalla banca.
+              </p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {/* Il wizard è il Task 5, e sostituirà questa riga: fino ad allora il
+              pulsante esiste e lo dice, invece di sembrare rotto. */}
+          <Button onClick={() => toast.info('Il collegamento arriva col passo successivo')}>
+            Collega la banca
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const giorni = giorniAllaScadenza(connessione.scadeIl)
+  const inScadenza = giorni !== null && giorni <= PREAVVISO_GIORNI
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">{connessione.istitutoNome}</CardTitle>
+            <p className="text-sm text-muted-foreground">{connessione.stato.nome}</p>
+            {connessione.stato.sigla !== 'LN' && (
+              <p className="text-xs text-muted-foreground">{connessione.stato.spiegazione}</p>
+            )}
+            {connessione.scadeIl && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Il consenso scade il {formatDateShort(connessione.scadeIl)}
+                {giorni !== null && giorni >= 0 && ` (fra ${giorni} giorni)`}.
+              </p>
+            )}
+          </div>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" size="sm" disabled={inCorso !== null}>Scollega</Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Scollegare {connessione.istitutoNome}?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  I movimenti già importati restano dove sono: si interrompe solo la lettura dalla
+                  banca. Per riprenderla servirà autenticarsi di nuovo in home banking.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Annulla</AlertDialogCancel>
+                <AlertDialogAction onClick={scollega}>Scollega</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </CardHeader>
+
+      <CardContent className="space-y-4">
+        {inScadenza && (
+          <Alert>
+            <AlertTitle>Il consenso sta per scadere</AlertTitle>
+            <AlertDescription>
+              Alla scadenza la banca smette di rispondere. Rinnovarlo richiede solo una nuova
+              autenticazione in home banking: conti, interruttori e date restano come sono.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        <div className="space-y-3">
+          {conti.map((c) => (
+            <RigaContoBancario
+              key={c.conto.providerAccountId}
+              conto={c}
+              scelta={scelta(c)}
+              contiBancari={contiBancari}
+              onCambia={(nuova) => cambia(c.conto.providerAccountId, nuova)}
+            />
+          ))}
+        </div>
+
+        {/* Meglio dirlo che lasciare qualcuno ad aspettare movimenti che
+            nessuno sta ancora scaricando. */}
+        <p className="text-xs text-muted-foreground">
+          Nessuna sincronizzazione è attiva: qui si sceglie soltanto quali conti importare. I
+          movimenti arriveranno con il passo successivo.
+        </p>
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={aggiornaDallaBanca}
+              disabled={inCorso !== null}
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Aggiorna dalla banca
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              {datiConti?.lettiIl
+                ? `Elenco del ${formatDateShort(datiConti.lettiIl)}.`
+                : 'Elenco mai aggiornato.'}{' '}
+              Ogni aggiornamento consuma una delle quattro letture giornaliere per conto.
+            </p>
+          </div>
+          <Button
+            onClick={salva}
+            disabled={inCorso !== null || daSalvare.length === 0 || senzaData || senzaConto}
+          >
+            Salva
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+```
+
+- [ ] **Step 5: Innesta il pannello**
+
+In `src/components/settings/BancheEContiClient.tsx`, sostituisci l'intero blocco `{/* Open Banking Placeholder */}` — dal commento alla parentesi che chiude la `Card` — con:
+
+```tsx
+      {activeTab === 'BANK' && <ConnessioniBancarie contiBancari={filteredAccounts} />}
+```
+
+e aggiungi l'import accanto agli altri componenti locali:
+
+```tsx
+import { ConnessioniBancarie } from './ConnessioniBancarie'
+```
+
+`filteredAccounts` è già filtrato per `accountType === activeTab`, e qui `activeTab` vale `BANK`: sono i conti bancari della sede, senza casse. Poi togli dagli import `Wifi` **se non è più usato altrove nel file** — il lint segnala un import inutilizzato e la verifica fallirebbe.
+
+- [ ] **Step 6: Lancia i test e verifica che passino**
 
 ```bash
 source ~/.nvm/nvm.sh && nvm use 22 && npx vitest run src/components/settings/__tests__/ConnessioniBancarie.test.tsx
+```
+
+Atteso: 4 test verdi.
+
+- [ ] **Step 7: Verifica completa e commit**
+
+```bash
 source ~/.nvm/nvm.sh && nvm use 22 && npx tsc --noEmit && npm run lint && npx vitest run && npm run test:integration
 ```
 
@@ -1002,6 +1687,21 @@ Tre passi in un `Dialog`:
 1. **Scegli l'istituto.** Un `Input` di ricerca che filtra l'elenco caricato una volta all'apertura. Per ognuna: nome, e in piccolo «N giorni di storico · accesso valido N giorni».
 2. **Conferma.** Ricapitola cosa si sta per concedere — l'istituto, i giorni di storico, la durata dell'accesso, e che i permessi richiesti sono saldi, dettagli e movimenti. Un `Button` «Vai alla banca».
 3. **In viaggio.** Alla conferma si chiama `POST /api/gocardless/collegamenti`; con il link si fa `window.location.href = link`. Se la risposta è 409 si mostra il messaggio del server — esiste già un collegamento — e si invita a scollegare prima. Se è 503, che le chiavi non sono configurate. Il traduttore delle risposte esiste apposta: mostra il messaggio che arriva, non uno inventato dal client.
+
+- [ ] **Step 3b: Aprilo dal pannello**
+
+Il Task 4 ha lasciato il posto: in `ConnessioniBancarie.tsx`, nel ramo senza connessione, il pulsante «Collega la banca» chiama `toast.info('Il collegamento arriva col passo successivo')`. Sostituisci **quella riga** con uno stato locale e il wizard:
+
+```tsx
+  const [wizardAperto, setWizardAperto] = useState(false)
+```
+
+```tsx
+          <Button onClick={() => setWizardAperto(true)}>Collega la banca</Button>
+          <WizardCollegamento aperto={wizardAperto} onChiudi={() => setWizardAperto(false)} />
+```
+
+Se `toast` resta usato solo dai salvataggi, l'import non cambia; se non lo usa più nessuno, toglilo — il lint segnala gli import inutilizzati.
 
 - [ ] **Step 4: Lancia i test, verifica completa, commit**
 
