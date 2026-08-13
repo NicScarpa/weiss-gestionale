@@ -11,8 +11,8 @@ import { POST } from '../route'
  * mandato dal client, conto abituale del fornitore, regole dello scadenzario.
  *
  * Il gradino di mezzo è quello che il wizard aveva perso: i due dialog che ha
- * sostituito chiamavano `/api/invoices/parse` e ne rimandavano
- * `suggestedAccount`, il wizard non manda `accountId` affatto. Senza il
+ * sostituito chiedevano al server un'anteprima e ne rimandavano il conto
+ * suggerito, il wizard non manda `accountId` affatto. Senza il
  * gradino, una fattura di un fornitore con il conto assegnato a mano restava
  * senza conto, e `POST /api/invoices/[id]/record` la rifiutava con «Assegna
  * prima un conto alla fattura».

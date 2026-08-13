@@ -506,14 +506,12 @@ export async function POST(request: NextRequest) {
       fornitoreCreato = !preesistente
     } else if (validatedData.createSupplier) {
       // `createSupplier: true` senza `supplierData`: il wizard nuovo (Task
-      // 12) calcola l'anteprima nel browser e non passa più da
-      // `/api/invoices/parse` per ottenere un `suggestedData` — a differenza
-      // del vecchio dialog che sostituisce, non rimanda al server dati che
-      // il server ha già. Il client non deve rimandare dati che il server
-      // già possiede: qui l'XML è già stato riparsato, `fattura.cedentePrestatore`
+      // 12) calcola l'anteprima nel browser e non chiede più al server un
+      // `suggestedData` da rimandargli indietro, come facevano i due dialog
+      // che sostituisce. Il client non deve rimandare dati che il server già
+      // possiede: qui l'XML è già stato riparsato, `fattura.cedentePrestatore`
       // è per intero sotto mano, ed è esattamente ciò che serve a
-      // `matchSupplier` per costruire `suggestedData` — la stessa funzione
-      // già usata da `/api/invoices/parse` per lo stesso scopo.
+      // `matchSupplier` per costruire `suggestedData`.
       //
       // Prima di questo fix la condizione del ramo sopra (che richiede
       // `supplierData`) era sempre falsa per il wizard nuovo: 226 fatture
@@ -568,9 +566,9 @@ export async function POST(request: NextRequest) {
     // Categorizzazione, in tre gradini di precedenza: la scelta esplicita del
     // client, poi il conto abituale del fornitore, poi le regole dello
     // scadenzario. È l'ordine che i due dialog sostituiti dal wizard avevano
-    // di fatto: chiamavano `/api/invoices/parse`, ne prendevano
-    // `suggestedAccount` — cioè proprio `suggestAccountForSupplier` — e lo
-    // rimandavano qui come `accountId`.
+    // di fatto: chiedevano al server un'anteprima, ne prendevano il conto
+    // suggerito — cioè proprio `suggestAccountForSupplier` — e lo rimandavano
+    // qui come `accountId`.
     let accountId: string | null = validatedData.accountId || null
     let regolaApplicata: { ruleId: string; azione: string } | null = null
 

@@ -142,7 +142,7 @@ describe('POST /api/invoices — politica duplicati', () => {
     // Fix round 4: prova sul campo con 226 fatture vere — 0 fornitori
     // creati, supplierId sempre NULL. Il wizard nuovo (Task 12) manda
     // `createSupplier: true` ma MAI `supplierData` (calcola l'anteprima nel
-    // browser, non passa più da /api/invoices/parse): il ramo che richiede
+    // browser, senza chiederla al server): il ramo che richiede
     // `createSupplier && supplierData` era quindi sempre falso. Qui non c'è
     // `supplierData` in `base` — è esattamente lo scenario del campo.
     const res = await POST(richiesta({ ...base, fileName: 'senza-supplier-data.xml' }))
