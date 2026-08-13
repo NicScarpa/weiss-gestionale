@@ -62,7 +62,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { DangerousDeleteDialog } from '@/components/ui/dangerous-delete-dialog'
 import { toast } from 'sonner'
-import { InvoiceImportDialog } from './InvoiceImportDialog'
+import { ImportaFattureWizard } from '@/components/fatture/importa/ImportaFattureWizard'
 import {
   getDocumentTypeAbbrev,
   getDocumentTypeColor,
@@ -693,10 +693,10 @@ export function InvoiceList() {
       )}
 
       {/* Dialog import */}
-      <InvoiceImportDialog
+      <ImportaFattureWizard
         open={importDialogOpen}
         onOpenChange={setImportDialogOpen}
-        onSuccess={handleImportSuccess}
+        onImportComplete={handleImportSuccess}
       />
 
       {/* Dialog conferma eliminazione */}

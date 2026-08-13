@@ -1723,6 +1723,9 @@ model ElectronicInvoice {
   lineItems          Json?                @map("line_items")
   references         Json?                @map("references")
   vatSummary         Json?                @map("vat_summary")
+  /// Ritenuta d'acconto letta dall'XML (DatiRitenuta). Conservata, mai imputata:
+  /// il trattamento contabile è sospeso.
+  withholding        Json?                @map("withholding")
   /// Documento di rettifica → fattura che rettifica (Task 6, fase B). Vale
   /// per TUTTI E QUATTRO i tipi di `TIPI_DOCUMENTO_SENZA_SCADENZA`: le note
   /// di CREDITO TD04/TD08, che riducono il dovuto, e le note di DEBITO

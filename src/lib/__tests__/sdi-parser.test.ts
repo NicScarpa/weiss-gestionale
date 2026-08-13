@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { parseFatturaPA, calcolaImporti, estraiScadenze, parseFatturaPASafe } from '../sdi/parser'
 import { TIPI_DOCUMENTO, MODALITA_PAGAMENTO, NATURA_OPERAZIONE } from '../sdi/types'
+import { xmlFattura } from '@/test/factories/fattura-xml.factory'
 
 describe('sdi/parser - parseFatturaPA', () => {
   describe('Normalizzazione Partita IVA', () => {
@@ -746,6 +747,27 @@ describe('sdi/parser - parseFatturaPA', () => {
       expect(scadenze[0].dataStimata).toBe(true)
     })
 
+    it('con DatiPagamento ma nessun DettaglioPagamento stima comunque una scadenza', () => {
+      // Capita quando l'XML dichiara solo le CondizioniPagamento. Prima non
+      // usciva nessuna scadenza: la fattura risultava invisibile nello
+      // scadenzario e nel saldo scalare, cioè un debito che non compare da
+      // nessuna parte. Ora se ne stima una per l'intero documento, marcata
+      // come stimata. Vale anche per l'import preesistente, non solo per il
+      // wizard: nessun test lo fissava.
+      const result = parseFatturaPA(fatturaXml(`
+    <DatiPagamento>
+      <CondizioniPagamento>TP02</CondizioniPagamento>
+    </DatiPagamento>`))
+      expect(result.datiPagamento?.dettagliPagamento).toEqual([])
+
+      const scadenze = estraiScadenze(result)
+      expect(scadenze.length).toBe(1)
+      expect(scadenze[0].amount).toBe(122.00)
+      expect(scadenze[0].paymentMethod).toBe('NON_SPECIFICATO')
+      expect(isoDay(scadenze[0].dueDate)).toBe('2025-02-08')
+      expect(scadenze[0].dataStimata).toBe(true)
+    })
+
     it('non marca come stimata la scadenza presente nell XML', () => {
       const result = parseFatturaPA(fatturaXml(`
     <DatiPagamento>
@@ -1446,5 +1468,259 @@ describe('sdi/parser - parseFatturaPASafe', () => {
       expect(result.success).toBe(true)
       expect(result.warnings.some((w) => w.code === 'MISSING_TOTAL_AMOUNT')).toBe(true)
     })
+  })
+})
+
+describe('estrazione della ritenuta d acconto', () => {
+  it('legge tipo, importo, aliquota e causale', () => {
+    const xml = xmlFattura({
+      tipoDocumento: 'TD06',
+      ritenuta: { tipo: 'RT02', importo: '312.11', aliquota: '20.00', causale: 'A' },
+    })
+
+    const fattura = parseFatturaPASafe(xml, 'parcella.xml').data!
+
+    expect(fattura.datiRitenuta).toEqual({
+      tipoRitenuta: 'RT02',
+      importoRitenuta: 312.11,
+      aliquotaRitenuta: 20,
+      causalePagamento: 'A',
+    })
+  })
+
+  it('omette la causale quando il documento non la porta', () => {
+    const xml = xmlFattura({
+      tipoDocumento: 'TD06',
+      ritenuta: { tipo: 'RT01', importo: '226.00', aliquota: '20.00' },
+    })
+    const fattura = parseFatturaPASafe(xml, 'parcella.xml').data!
+
+    expect(fattura.datiRitenuta).toEqual({
+      tipoRitenuta: 'RT01',
+      importoRitenuta: 226,
+      aliquotaRitenuta: 20,
+    })
+  })
+
+  it('con due ritenute sullo stesso documento (erariale e previdenziale), prende solo la prima', () => {
+    const xml = xmlFattura({
+      tipoDocumento: 'TD06',
+      ritenuta: [
+        { tipo: 'RT02', importo: '312.11', aliquota: '20.00', causale: 'A' },
+        { tipo: 'RT03', importo: '50.00', aliquota: '4.00' },
+      ],
+    })
+
+    const fattura = parseFatturaPASafe(xml, 'parcella.xml').data!
+
+    // Aliquota e causale devono venire dalla STESSA ritenuta (la prima),
+    // non da una combinazione delle due: un mix silenzioso sarebbe peggio
+    // di prendere la seconda per intero.
+    expect(fattura.datiRitenuta).toEqual({
+      tipoRitenuta: 'RT02',
+      importoRitenuta: 312.11,
+      aliquotaRitenuta: 20,
+      causalePagamento: 'A',
+    })
+  })
+
+  it('lascia il campo assente quando la ritenuta non c è', () => {
+    const fattura = parseFatturaPASafe(xmlFattura(), 'fattura.xml').data!
+    expect(fattura.datiRitenuta).toBeUndefined()
+  })
+
+  it('non intacca gli importi del documento', () => {
+    const senza = calcolaImporti(parseFatturaPASafe(xmlFattura({ tipoDocumento: 'TD06' }), 'a.xml').data!)
+    const con = calcolaImporti(
+      parseFatturaPASafe(
+        xmlFattura({
+          tipoDocumento: 'TD06',
+          ritenuta: { tipo: 'RT02', importo: '100.00', aliquota: '20.00' },
+        }),
+        'b.xml'
+      ).data!
+    )
+
+    // Il lordo resta quello del documento: la ritenuta non si sottrae qui.
+    expect(con.totalAmount).toBe(senza.totalAmount)
+  })
+})
+
+describe('estraiScadenze - giorniImposti', () => {
+  // Fix round 2 (Task 10): `giorniPagamento` vale solo per STIMARE quando la
+  // data manca — se il documento la porta, vince lei. Senza un canale
+  // separato, la finestra dei conflitti sui termini di pagamento non
+  // cambiava mai nulla: il documento quasi sempre ha la sua data.
+  const isoDay = (d: Date) => d.toISOString().slice(0, 10)
+
+  it('vince sulla data che il documento riporta', () => {
+    const fattura = parseFatturaPA(
+      xmlFattura({
+        data: '2026-06-01',
+        rate: [{ scadenza: '2026-07-01', importo: '122.00' }],
+      })
+    )
+
+    const scadenze = estraiScadenze(fattura, { giorniImposti: 60 })
+
+    expect(scadenze).toHaveLength(1)
+    // 2026-06-01 + 60 giorni, non 2026-07-01 (la data del documento)
+    expect(isoDay(scadenze[0].dueDate)).toBe('2026-07-31')
+  })
+
+  it('senza giorniImposti resta la data che il documento riporta', () => {
+    const fattura = parseFatturaPA(
+      xmlFattura({
+        data: '2026-06-01',
+        rate: [{ scadenza: '2026-07-01', importo: '122.00' }],
+      })
+    )
+
+    const scadenze = estraiScadenze(fattura)
+
+    expect(isoDay(scadenze[0].dueDate)).toBe('2026-07-01')
+  })
+
+  it('una scadenza imposta non è marcata come stimata', () => {
+    const fattura = parseFatturaPA(
+      xmlFattura({
+        data: '2026-06-01',
+        rate: [{ scadenza: '2026-07-01', importo: '122.00' }],
+      })
+    )
+
+    const scadenze = estraiScadenze(fattura, { giorniImposti: 60 })
+
+    expect(scadenze[0].dataStimata).toBe(false)
+    expect(scadenze[0].notaStima).toBeUndefined()
+  })
+
+  it('si applica anche quando il documento non porta alcuna data (come una stima, ma non lo è)', () => {
+    const fattura = parseFatturaPA(xmlFattura({ data: '2026-06-01', rate: [] }))
+
+    const scadenze = estraiScadenze(fattura, { giorniImposti: 60 })
+
+    expect(scadenze).toHaveLength(1)
+    expect(isoDay(scadenze[0].dueDate)).toBe('2026-07-31')
+    expect(scadenze[0].dataStimata).toBe(false)
+  })
+
+  it('non tocca giorniPagamento: i termini del fornitore restano solo per stimare', () => {
+    // `giorniPagamento` (termini fornitore) e `giorniImposti` (scelta
+    // esplicita) sono canali distinti: passare solo il primo non deve
+    // vincere su una data che il documento riporta.
+    const fattura = parseFatturaPA(
+      xmlFattura({
+        data: '2026-06-01',
+        rate: [{ scadenza: '2026-07-01', importo: '122.00' }],
+      })
+    )
+
+    const scadenze = estraiScadenze(fattura, { giorniPagamento: 60 })
+
+    expect(isoDay(scadenze[0].dueDate)).toBe('2026-07-01')
+    expect(scadenze[0].dataStimata).toBe(false)
+  })
+
+  it('con rata singola resta la stessa regola del round 2 (nessuna distanza da conservare)', () => {
+    // Non un test nuovo di comportamento — verifica che il caso a tre rate
+    // qui sotto non abbia cambiato quello a una rata sola, già coperto da
+    // «vince sulla data che il documento riporta».
+    const fattura = parseFatturaPA(
+      xmlFattura({ data: '2026-06-01', rate: [{ scadenza: '2026-08-15', importo: '122.00' }] })
+    )
+
+    const scadenze = estraiScadenze(fattura, { giorniImposti: 60 })
+
+    expect(scadenze).toHaveLength(1)
+    expect(isoDay(scadenze[0].dueDate)).toBe('2026-07-31')
+  })
+
+  it('con più rate conserva lo scaglionamento: 30/60/90 imponendo 60 diventa 60/90/120', () => {
+    // Fix round 3: `imposta()` non guardava la posizione della rata — ogni
+    // DettaglioPagamento, qualunque fosse, otteneva la stessa data. Un
+    // documento a tre rate con termini imposti finiva con tre scadenze lo
+    // stesso giorno, false ai fini della previsione di cassa.
+    const fattura = parseFatturaPA(
+      xmlFattura({
+        data: '2026-06-01',
+        rate: [
+          { scadenza: '2026-07-01', importo: '40.00' }, // 30 giorni dalla fattura
+          { scadenza: '2026-07-31', importo: '40.00' }, // 60 giorni
+          { scadenza: '2026-08-30', importo: '42.00' }, // 90 giorni
+        ],
+      })
+    )
+
+    const scadenze = estraiScadenze(fattura, { giorniImposti: 60 })
+
+    expect(scadenze).toHaveLength(3)
+    // 60/90/120 giorni dalla data fattura: i 60 scelti per la prima rata si
+    // propagano, ma le distanze di 30 giorni fra le rate — la struttura
+    // rateale del fornitore — restano quelle del documento originale.
+    expect(scadenze.map((s) => isoDay(s.dueDate))).toEqual([
+      '2026-07-31',
+      '2026-08-30',
+      '2026-09-29',
+    ])
+    // Importo e modalità di pagamento restano quelli di ciascuna rata: solo
+    // la data cambia.
+    expect(scadenze.map((s) => s.amount)).toEqual([40, 40, 42])
+    expect(scadenze.every((s) => s.paymentMethod === 'MP05')).toBe(true)
+    expect(scadenze.every((s) => s.dataStimata === false)).toBe(true)
+  })
+
+  it('con rate prive di DataScadenzaPagamento non c è distanza da conservare: tutte alla stessa data', () => {
+    const fattura = parseFatturaPA(
+      xmlFattura({
+        data: '2026-06-01',
+        rate: [
+          { scadenza: '', importo: '40.00' },
+          { scadenza: '', importo: '40.00' },
+          { scadenza: '', importo: '42.00' },
+        ],
+      })
+    )
+
+    const scadenze = estraiScadenze(fattura, { giorniImposti: 60 })
+
+    expect(scadenze).toHaveLength(3)
+    // Il documento non esprime alcuno scaglionamento: la regola è la stessa
+    // della rata singola, per ciascuna.
+    expect(scadenze.every((s) => isoDay(s.dueDate) === '2026-07-31')).toBe(true)
+    expect(scadenze.map((s) => s.amount)).toEqual([40, 40, 42])
+  })
+
+  it('con rate in ordine non cronologico, la distanza resta relativa alla PRIMA per posizione', () => {
+    // Comportamento deliberato, non un bug: la "prima rata" è la prima per
+    // posizione nell'XML, non la più antica per data. Un ordine non
+    // cronologico è di per sé un documento fuori norma; ancorare sulla
+    // posizione tiene il comportamento deterministico senza inventare una
+    // politica di riordino che nessuno ha chiesto. Le distanze relative fra
+    // le rate restano corrette, semplicemente misurate da un'ancora diversa
+    // (qui, quella che nel documento viene per ultima in ordine di data).
+    const fattura = parseFatturaPA(
+      xmlFattura({
+        data: '2026-06-01',
+        rate: [
+          { scadenza: '2026-08-30', importo: '42.00' }, // 90 giorni — ma è la prima in elenco
+          { scadenza: '2026-07-01', importo: '40.00' }, // 30 giorni — 60 giorni PRIMA della prima
+          { scadenza: '2026-07-31', importo: '40.00' }, // 60 giorni — 30 giorni PRIMA della prima
+        ],
+      })
+    )
+
+    const scadenze = estraiScadenze(fattura, { giorniImposti: 60 })
+
+    expect(scadenze).toHaveLength(3)
+    // La prima rata (2026-08-30 nel documento) diventa dataFattura + 60 =
+    // 2026-07-31. Le altre due mantengono la loro distanza — negativa,
+    // perché nel documento cadevano PRIMA della prima rata in elenco.
+    expect(scadenze.map((s) => isoDay(s.dueDate))).toEqual([
+      '2026-07-31', // ancora: dataFattura + 60
+      '2026-06-01', // 60 giorni prima dell'ancora (era 60 giorni prima nel documento)
+      '2026-07-01', // 30 giorni prima dell'ancora (era 30 giorni prima nel documento)
+    ])
+    expect(scadenze.map((s) => s.amount)).toEqual([42, 40, 40])
   })
 })

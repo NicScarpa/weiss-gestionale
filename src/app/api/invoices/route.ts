@@ -3,7 +3,14 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { parseFatturaPASafe, calcolaImporti, estraiScadenze, estraiDatiEstesi } from '@/lib/sdi/parser'
 import type { ParseWarning } from '@/lib/sdi/types'
-import { matchSupplier, createSupplierFromData, type SuggestedSupplierData } from '@/lib/sdi/matcher'
+import {
+  matchSupplier,
+  createSupplierFromData,
+  findSupplierByVat,
+  suggestAccountForSupplier,
+  type SuggestedSupplierData,
+} from '@/lib/sdi/matcher'
+import { normalizzaPartitaIva } from '@/lib/invoices/partita-iva'
 import { trackPricesFromInvoice } from '@/lib/price-tracking'
 import {
   risolviContoDaRegole,
@@ -20,6 +27,8 @@ import { logger } from '@/lib/logger'
 import {
   generateSchedulesFromInvoice,
   TIPI_DOCUMENTO_SENZA_SCADENZA,
+  checkInvoiceDeletable,
+  softDeleteSchedulesForInvoice,
 } from '@/lib/services/invoice-schedule-service'
 import { ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
 import { categorizzaRigheFattura } from '@/lib/line-categorization'
@@ -86,6 +95,15 @@ const importInvoiceSchema = z.object({
   supplierId: z.string().optional(),
   // Categorizzazione opzionale
   accountId: z.string().optional(),
+  /** Cosa fare se la fattura è già in archivio. */
+  politicaDuplicati: z.enum(['salta', 'sostituisci']).default('salta'),
+  /**
+   * Giorni di dilazione decisi dall'utente nella finestra dei conflitti.
+   * Vincono sui termini dell'anagrafica, che a loro volta vincono sul default.
+   */
+  giorniPagamentoScelti: z.number().int().positive().max(365).optional(),
+  /** Aggiorna i dati del fornitore già esistente con quelli del documento. */
+  sovrascriviAnagrafica: z.boolean().default(false),
 })
 
 // GET /api/invoices - Lista fatture
@@ -321,7 +339,7 @@ async function trovaFatturaEsistente(
       invoiceDate,
       OR: [
         { supplierVat },
-        { supplierVat: supplierVat.replace(/^0+/, '') },
+        { supplierVat: normalizzaPartitaIva(supplierVat) },
       ],
     },
   })
@@ -387,20 +405,74 @@ export async function POST(request: NextRequest) {
       fatturaInCorso.partitaIva
     )
 
+    // Chi ha già una fattura in archivio decide cosa farne nella finestra dei
+    // conflitti: «salta» mantiene il comportamento di sempre (409), «sostituisci»
+    // archivia la vecchia — mai cancellata, è una scrittura contabile — e lascia
+    // proseguire l'import come se il duplicato non ci fosse.
+    //
+    // «Sostituisci» è, di fatto, un delete-e-reimporta: usa perciò la stessa
+    // guardia di DELETE /api/invoices/[id] e di bulk-delete, non una nuova.
+    // Una fattura già registrata in prima nota, o con pagamenti già segnati
+    // sulle sue scadenze, non si sostituisce a metà — si scollegherebbe un
+    // pagamento realmente uscito dal conto dal documento che lo giustifica.
+    // L'archiviazione vera e propria (fattura + sue scadenze) avviene dentro
+    // la transazione più sotto, insieme alla creazione della nuova: fuori da
+    // lì, un fallimento a valle lascerebbe il documento senza alcuna fattura
+    // attiva — né la vecchia (già archiviata) né la nuova (mai creata). È
+    // esattamente il guasto per cui esiste il commento sulla transazione qui
+    // sotto, «nascono insieme o non nascono affatto».
+    let idSostituita: string | null = null
+
     if (existingInvoice) {
-      return NextResponse.json(
-        {
-          error: 'Fattura già importata',
-          existingId: existingInvoice.id,
-        },
-        { status: 409 }
-      )
+      if (validatedData.politicaDuplicati === 'salta') {
+        return NextResponse.json(
+          {
+            error: 'Fattura già importata',
+            existingId: existingInvoice.id,
+          },
+          { status: 409 }
+        )
+      }
+
+      if (existingInvoice.status === 'RECORDED') {
+        return NextResponse.json(
+          {
+            error: 'Impossibile sostituire: la fattura già importata è registrata in prima nota',
+            existingId: existingInvoice.id,
+          },
+          { status: 409 }
+        )
+      }
+
+      const sostituzioneCheck = await checkInvoiceDeletable(existingInvoice.id)
+      if (!sostituzioneCheck.canDelete) {
+        return NextResponse.json(
+          {
+            error:
+              'Impossibile sostituire: sulla fattura già importata risultano pagamenti già registrati nello scadenzario. Annulla prima i pagamenti.',
+            existingId: existingInvoice.id,
+            scadenzeConPagamenti: sostituzioneCheck.schedulesWithPayments,
+          },
+          { status: 409 }
+        )
+      }
+
+      idSostituita = existingInvoice.id
     }
 
     // Gestione fornitore
     let supplierId: string | null = null
     let supplierNameForInvoice = fattura.cedentePrestatore.denominazione // Default name from XML
     let status: InvoiceStatus = 'IMPORTED'
+    // Alimenta «Fornitori creati» nella verifica di integrità (Task 11): vero
+    // solo quando questo import ha davvero inserito una riga Supplier nuova,
+    // non quando ne ha semplicemente trovata una già esistente.
+    let fornitoreCreato = false
+    // Un fornitore già in anagrafica, sia scelto esplicitamente sia trovato
+    // dal match automatico — mai quello appena creato, che ha già i dati del
+    // documento. È il "ramo in cui il fornitore viene trovato" a cui si
+    // applica `sovrascriviAnagrafica`.
+    let fornitoreTrovatoId: string | null = null
 
     if (validatedData.supplierId) {
       // Fornitore specificato dall'utente
@@ -411,13 +483,56 @@ export async function POST(request: NextRequest) {
         supplierId = supplier.id
         supplierNameForInvoice = supplier.name // Use DB name
         status = 'MATCHED'
+        fornitoreTrovatoId = supplier.id
       }
     } else if (validatedData.createSupplier && validatedData.supplierData) {
-      // Crea nuovo fornitore
-      const newSupplier = await createSupplierFromData(validatedData.supplierData as SuggestedSupplierData)
+      // Crea nuovo fornitore con i dati corretti a mano dall'utente: quando
+      // arrivano dal client vincono sempre sui dati del documento, è il caso
+      // in cui l'anteprima aveva sbagliato qualcosa e l'utente l'ha
+      // sistemato prima di confermare. `createSupplierFromData` ritorna
+      // quello già esistente se la P.IVA/C.F. combaciano (evita duplicati
+      // anche su una corsa concorrente): il controllo qui, appena prima, è
+      // l'unico modo di sapere se la riga è davvero nuova — il dato che
+      // alimenta «fornitoreCreato» nella risposta.
+      const supplierData = validatedData.supplierData as SuggestedSupplierData
+      const preesistente =
+        supplierData.vatNumber || supplierData.fiscalCode
+          ? await findSupplierByVat(supplierData.vatNumber, supplierData.fiscalCode)
+          : null
+      const newSupplier = await createSupplierFromData(supplierData)
       supplierId = newSupplier.id
       supplierNameForInvoice = newSupplier.name // Use new supplier name
       status = 'MATCHED'
+      fornitoreCreato = !preesistente
+    } else if (validatedData.createSupplier) {
+      // `createSupplier: true` senza `supplierData`: il wizard nuovo (Task
+      // 12) calcola l'anteprima nel browser e non chiede più al server un
+      // `suggestedData` da rimandargli indietro, come facevano i due dialog
+      // che sostituisce. Il client non deve rimandare dati che il server già
+      // possiede: qui l'XML è già stato riparsato, `fattura.cedentePrestatore`
+      // è per intero sotto mano, ed è esattamente ciò che serve a
+      // `matchSupplier` per costruire `suggestedData`.
+      //
+      // Prima di questo fix la condizione del ramo sopra (che richiede
+      // `supplierData`) era sempre falsa per il wizard nuovo: 226 fatture
+      // importate dal campo, 0 fornitori creati, `supplierId` sempre NULL.
+      //
+      // Si tenta prima il match: due fatture dello stesso fornitore non
+      // devono creare due anagrafiche, e `matchSupplier` lo garantisce
+      // cercando per P.IVA/C.F. prima di suggerire una creazione.
+      const match = await matchSupplier(fattura)
+      if (match.matched && match.supplier) {
+        supplierId = match.supplier.id
+        supplierNameForInvoice = match.supplier.name
+        status = 'MATCHED'
+        fornitoreTrovatoId = match.supplier.id
+      } else {
+        const newSupplier = await createSupplierFromData(match.suggestedData)
+        supplierId = newSupplier.id
+        supplierNameForInvoice = newSupplier.name
+        status = 'MATCHED'
+        fornitoreCreato = true
+      }
     } else {
       // Cerca match automatico
       const match = await matchSupplier(fattura)
@@ -425,10 +540,35 @@ export async function POST(request: NextRequest) {
         supplierId = match.supplier.id
         supplierNameForInvoice = match.supplier.name // Use matched DB name
         status = 'MATCHED'
+        fornitoreTrovatoId = match.supplier.id
       }
     }
 
-    // Categorizzazione: la scelta dell'utente ha sempre la precedenza sulle regole
+    // La finestra dei conflitti (Task 9) può chiedere di rinfrescare
+    // l'anagrafica del fornitore già a database con quella del documento
+    // appena letto: indirizzo e sede cambiano più spesso di quanto si
+    // aggiorni a mano. Non si applica al fornitore appena creato, che ha
+    // già questi stessi dati.
+    if (fornitoreTrovatoId && validatedData.sovrascriviAnagrafica) {
+      const sede = fattura.cedentePrestatore.sede
+      await prisma.supplier.update({
+        where: { id: fornitoreTrovatoId },
+        data: {
+          address: sede.indirizzo || undefined,
+          city: sede.comune || undefined,
+          province: sede.provincia || undefined,
+          postalCode: sede.cap || undefined,
+          fiscalCode: fattura.cedentePrestatore.codiceFiscale || undefined,
+        },
+      })
+    }
+
+    // Categorizzazione, in tre gradini di precedenza: la scelta esplicita del
+    // client, poi il conto abituale del fornitore, poi le regole dello
+    // scadenzario. È l'ordine che i due dialog sostituiti dal wizard avevano
+    // di fatto: chiedevano al server un'anteprima, ne prendevano il conto
+    // suggerito — cioè proprio `suggestAccountForSupplier` — e lo rimandavano
+    // qui come `accountId`.
     let accountId: string | null = validatedData.accountId || null
     let regolaApplicata: { ruleId: string; azione: string } | null = null
 
@@ -440,7 +580,31 @@ export async function POST(request: NextRequest) {
       if (account) {
         status = 'CATEGORIZED'
       }
-    } else {
+    } else if (supplierId) {
+      // Il conto predefinito del fornitore (o, in mancanza, quello della sua
+      // ultima fattura categorizzata). Viene prima delle regole perché sa una
+      // cosa che le regole non sanno: *chi* ha emesso il documento. Le regole
+      // ragionano per tipo documento e tipo pagamento, quindi non possono
+      // distinguere due fornitori che vanno su conti diversi.
+      //
+      // Senza questo gradino una fattura di un fornitore con il conto
+      // assegnato a mano arrivava senza conto di testata, e
+      // `POST /api/invoices/[id]/record` la rifiutava con «Assegna prima un
+      // conto alla fattura»: su un lotto da 226 fatture, lavoro a mano che
+      // prima non c'era.
+      const contoDelFornitore = await suggestAccountForSupplier(supplierId)
+      if (contoDelFornitore) {
+        accountId = contoDelFornitore
+        status = 'CATEGORIZED'
+        logger.info('Conto assegnato dal fornitore', {
+          invoiceNumber: fattura.numero,
+          supplierId,
+          contoId: contoDelFornitore,
+        })
+      }
+    }
+
+    if (!accountId) {
       // Nessun conto indicato: decidono le regole dello scadenzario.
       // Le fatture elettroniche importate qui sono documenti ricevuti
       // (il cedente/prestatore è il fornitore).
@@ -483,8 +647,16 @@ export async function POST(request: NextRequest) {
         )?.paymentTermsDays ?? undefined
       : undefined
 
+    // Due parametri diversi, non uno solo: `giorniPagamento` (termini del
+    // fornitore) vale solo per STIMARE una scadenza che il documento non
+    // riporta — una data scritta in fattura vince comunque su di lui.
+    // `giorniImposti` (la scelta esplicita fatta nella finestra dei
+    // conflitti) vince SEMPRE, anche sulla data del documento: è la
+    // differenza fra «il fornitore non ha scritto nulla, stimiamo coi suoi
+    // termini» e «il fornitore ha scritto 30 giorni, ma con noi sono 60».
     const scadenze = estraiScadenze(fattura, {
-      giorniPagamento: terminiFornitore ?? undefined,
+      giorniPagamento: terminiFornitore,
+      giorniImposti: validatedData.giorniPagamentoScelti,
     })
 
     // Estrai IBAN dai dati pagamento (se disponibile)
@@ -514,6 +686,20 @@ export async function POST(request: NextRequest) {
     // "già importata" — nessun modo di rimediare se non a mano sul database.
     const { invoice, schedulesResult } = await prisma.$transaction(
       async (tx) => {
+        // Prima si archivia la vecchia (fattura e sue scadenze), poi si crea
+        // la nuova: l'indice unico parziale su (numero, data, P.IVA) esclude
+        // solo le righe con `deletedAt` valorizzato, quindi la create qui
+        // sotto urterebbe ancora contro la vecchia se non fosse già archiviata
+        // — anche dentro la stessa transazione, il vincolo si controlla ad
+        // ogni istruzione, non solo al commit.
+        if (idSostituita) {
+          await softDeleteSchedulesForInvoice(idSostituita, session.user.id, tx)
+          await tx.electronicInvoice.update({
+            where: { id: idSostituita },
+            data: { deletedAt: new Date(), deletedById: session.user.id },
+          })
+        }
+
         const invoice = await tx.electronicInvoice.create({
           data: {
             invoiceNumber: fattura.numero,
@@ -535,6 +721,7 @@ export async function POST(request: NextRequest) {
             lineItems: (datiEstesi?.lineItems ?? Prisma.DbNull) as unknown as Prisma.InputJsonValue,
             references: (datiEstesi?.references ?? Prisma.DbNull) as unknown as Prisma.InputJsonValue,
             vatSummary: (datiEstesi?.vatSummary ?? Prisma.DbNull) as unknown as Prisma.InputJsonValue,
+            withholding: fattura.datiRitenuta as unknown as Prisma.InputJsonValue | undefined,
             causale: datiEstesi?.causale || null,
             deadlines: {
               create: scadenze.map((s, index) => ({
@@ -634,7 +821,7 @@ export async function POST(request: NextRequest) {
             // iniziali della P.IVA.
             OR: [
               { supplierVat: invoice.supplierVat },
-              { supplierVat: invoice.supplierVat.replace(/^0+/, '') },
+              { supplierVat: normalizzaPartitaIva(invoice.supplierVat) },
             ],
           }
           if (riferimento.data) {
@@ -746,6 +933,8 @@ export async function POST(request: NextRequest) {
         scadenzeGenerate: schedulesResult.created,
         // Warning dal parsing (tipo documento non riconosciuto, P.IVA non standard, etc.)
         parseWarnings: parseWarnings.length > 0 ? parseWarnings : undefined,
+        fornitoreCreato,
+        ...(idSostituita ? { sostituisce: idSostituita } : {}),
       },
       { status: 201 }
     )

@@ -11,7 +11,7 @@ import { FileText, Ban, Users, Info, Loader2, UploadIcon } from 'lucide-react'
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { Skeleton } from '@/components/ui/skeleton'
-import { CaricaFattureDialog } from '@/components/fatture/CaricaFattureDialog'
+import { ImportaFattureWizard } from '@/components/fatture/importa/ImportaFattureWizard'
 
 interface MonthlyData {
   mese: string
@@ -81,7 +81,7 @@ export default function FattureSituazionePage() {
 
   return (
     <>
-      <CaricaFattureDialog
+      <ImportaFattureWizard
         open={importDialogOpen}
         onOpenChange={setImportDialogOpen}
         onImportComplete={() => refetch()}
