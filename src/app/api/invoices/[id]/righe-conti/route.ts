@@ -206,113 +206,158 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
       const adesso = new Date()
 
-      for (const [numeroLinea, quote] of gruppiPerLinea) {
-        // Una riga vera e una di sistema non condividono forma: la prima ha
-        // prezzoTotale e un eventuale codiceArticolo, la seconda solo
-        // descrizione e importo (il bollo non ha mai un codice articolo). La
-        // validazione sopra garantisce che almeno una delle due esista.
-        // Ternario su `dettaglio` per tutti e tre i campi, non `?? sistema!`:
-        // `DettaglioLinea.descrizione` è `string`, mai opzionale, quindi un
-        // `??` qui suggerirebbe una possibilità che il tipo esclude. Il
-        // ternario dice la stessa cosa senza asserzioni di non-nullità.
-        const dettaglio = righeXml.get(numeroLinea)
-        const sistema = righeSistema.get(numeroLinea)
-        const descrizione = dettaglio ? dettaglio.descrizione : sistema!.descrizione
-        const codiceArticolo = dettaglio ? dettaglio.codiceArticolo ?? null : null
-        const importoRiga = dettaglio ? dettaglio.prezzoTotale : sistema!.importo
-        // Divisa = più di una quota per QUESTA richiesta su questo
-        // numeroLinea. L'importo di una riga intera resta quello del
-        // documento (mai quello del client, che per una riga intera non
-        // serve nemmeno); l'importo di una quota è quello dichiarato, già
-        // validato contro il totale sopra.
-        //
-        // `quote.length` non è solo la forma della richiesta: grazie alla
-        // `deleteMany` più sotto, che rende la richiesta autorevole sulla
-        // riga che nomina, è ANCHE il numero di quote che restano su questa
-        // riga a scrittura conclusa — le altre vengono rimosse. Per questo
-        // `divisa` è la base giusta sia per decidere l'importo (sopra) sia
-        // per decidere se alimentare la memoria (sotto): una richiesta che
-        // nomina una sola quota di una riga già divisa non lascia la riga
-        // "ancora divisa nel frattempo", la riporta a una quota sola.
-        const divisa = quote.length > 1
-        const progressiviScritti: number[] = []
+      // Le righe da insegnare alla memoria fornitore-prodotto si raccolgono
+      // qui dentro e si scrivono DOPO la transazione. `alimentaMemoriaFornitore`
+      // usa il client globale — è best-effort e non deve mai far fallire la
+      // conferma dell'utente — quindi trascinarla dentro non la renderebbe
+      // transazionale, allungherebbe soltanto la durata del lock. E una
+      // memoria alimentata da una scrittura poi annullata insegnerebbe una
+      // regola nata dal nulla, che tornerebbe proposta su ogni fattura
+      // successiva dello stesso fornitore.
+      const daInsegnare: Array<{
+        descrizione: string
+        codiceArticolo: string | null
+        accountId: string
+      }> = []
 
-        for (const [indice, riga] of quote.entries()) {
-          const progressivo = riga.progressivo ?? indice
-          const importo = divisa ? riga.importo! : importoRiga
-          progressiviScritti.push(progressivo)
+      // TUTTE le quote di TUTTE le righe in una sola transazione.
+      //
+      // Dal Task 5 una riga può avere più quote, e il ciclo le scrive una per
+      // volta prima di cancellare quelle non citate. Un'interruzione fra il
+      // primo e il secondo upsert lascerebbe la riga con la sola quota da 60
+      // su una riga che ne vale 100 — e la guardia di copertura
+      // (schedule-reconciliation-service.ts) conta i numeroLinea DISTINTI,
+      // quindi quella riga le risulta coperta. L'ereditarietà pro-quota
+      // scatterebbe assegnando a quel conto il 60% del peso che gli spetta,
+      // mentre gli altri si prendono il resto perché `ripartisciProQuota`
+      // chiude sempre sull'intera quota: nessun controllo se ne accorge,
+      // nessun log lo dice. Prima del Task 5 lo stesso incidente lasciava la
+      // riga NON imputata e la guardia si asteneva — il danno era visibile.
+      //
+      // L'ordine dentro la transazione resta upsert-poi-deleteMany, mai
+      // l'inverso: cancellare per prima cosa significherebbe, su
+      // un'interruzione, aver distrutto lavoro già confermato.
+      await prisma.$transaction(async (tx) => {
+        for (const [numeroLinea, quote] of gruppiPerLinea) {
+          // Una riga vera e una di sistema non condividono forma: la prima ha
+          // prezzoTotale e un eventuale codiceArticolo, la seconda solo
+          // descrizione e importo (il bollo non ha mai un codice articolo). La
+          // validazione sopra garantisce che almeno una delle due esista.
+          // Ternario su `dettaglio` per tutti e tre i campi, non `?? sistema!`:
+          // `DettaglioLinea.descrizione` è `string`, mai opzionale, quindi un
+          // `??` qui suggerirebbe una possibilità che il tipo esclude. Il
+          // ternario dice la stessa cosa senza asserzioni di non-nullità.
+          const dettaglio = righeXml.get(numeroLinea)
+          const sistema = righeSistema.get(numeroLinea)
+          const descrizione = dettaglio ? dettaglio.descrizione : sistema!.descrizione
+          const codiceArticolo = dettaglio ? dettaglio.codiceArticolo ?? null : null
+          const importoRiga = dettaglio ? dettaglio.prezzoTotale : sistema!.importo
+          // Divisa = più di una quota per QUESTA richiesta su questo
+          // numeroLinea. L'importo di una riga intera resta quello del
+          // documento (mai quello del client, che per una riga intera non
+          // serve nemmeno); l'importo di una quota è quello dichiarato, già
+          // validato contro il totale sopra.
+          //
+          // `quote.length` non è solo la forma della richiesta: grazie alla
+          // `deleteMany` più sotto, che rende la richiesta autorevole sulla
+          // riga che nomina, è ANCHE il numero di quote che restano su questa
+          // riga a scrittura conclusa — le altre vengono rimosse. Per questo
+          // `divisa` è la base giusta sia per decidere l'importo (sopra) sia
+          // per decidere se alimentare la memoria (sotto): una richiesta che
+          // nomina una sola quota di una riga già divisa non lascia la riga
+          // "ancora divisa nel frattempo", la riporta a una quota sola.
+          const divisa = quote.length > 1
+          const progressiviScritti: number[] = []
 
-          await prisma.invoiceLineAccount.upsert({
+          for (const [indice, riga] of quote.entries()) {
+            const progressivo = riga.progressivo ?? indice
+            const importo = divisa ? riga.importo! : importoRiga
+            progressiviScritti.push(progressivo)
+
+            await tx.invoiceLineAccount.upsert({
+              where: {
+                invoiceId_numeroLinea_progressivo: { invoiceId: id, numeroLinea, progressivo },
+              },
+              create: {
+                invoiceId: id,
+                numeroLinea,
+                progressivo,
+                descrizione,
+                codiceArticolo,
+                importo,
+                accountId: riga.accountId,
+                stato: 'confermata',
+                fonte: 'manuale',
+                confirmedById: session.user.id,
+                confirmedAt: adesso,
+              },
+              update: {
+                descrizione,
+                codiceArticolo,
+                importo,
+                accountId: riga.accountId,
+                stato: 'confermata',
+                fonte: 'manuale',
+                confirmedById: session.user.id,
+                confirmedAt: adesso,
+              },
+            })
+            righeConfermate++
+
+            // Un'imputazione manuale con fornitore noto alimenta la memoria
+            // fornitore-prodotto, riproposta in futuro per lo stesso articolo.
+            // Vale anche per bollo e arrotondamento: un fornitore che applica
+            // sempre il bollo insegna il conto anche per quello, `codiceArticolo`
+            // resta `null` come per ogni riga senza codice.
+            //
+            // Una riga DIVISA resta fuori: è specifica di questa fattura ("questi
+            // 100 € di detersivi erano 60 di detersivi e 40 di tovaglioli" non è
+            // una regola sul prodotto, è un fatto su un documento) e insegnarla
+            // produrrebbe proposte sbagliate su ogni fattura successiva dello
+            // stesso fornitore — proposte sbagliate che sembrano apprese.
+            //
+            // Qui si annota soltanto: la scrittura avviene dopo la
+            // transazione (vedi `daInsegnare`).
+            if (!divisa) {
+              daInsegnare.push({ descrizione, codiceArticolo, accountId: riga.accountId })
+            }
+          }
+
+          // La richiesta è autorevole sulla riga che nomina: ogni quota di
+          // QUESTO numeroLinea non citata in QUESTA richiesta viene rimossa.
+          // Senza questo passo, una richiesta che nomina un solo progressivo
+          // su una riga già divisa non sostituisce l'altra quota, la
+          // affianca: due imputazioni per l'intero importo della riga, in
+          // silenzio, e i pesi dell'ereditarietà pro-quota
+          // (schedule-reconciliation-service.ts) si sballano di conseguenza.
+          // Non è distruttivo per sbaglio: `InvoiceLineAccount` non è fra i
+          // `SOFT_DELETE_MODELS` (src/lib/prisma.ts), quindi qui la
+          // cancellazione vera è il comportamento giusto, e lo `scoping` sia
+          // sull'invoiceId sia sul singolo numeroLinea impedisce che tocchi le
+          // altre righe della stessa fattura.
+          await tx.invoiceLineAccount.deleteMany({
             where: {
-              invoiceId_numeroLinea_progressivo: { invoiceId: id, numeroLinea, progressivo },
-            },
-            create: {
               invoiceId: id,
               numeroLinea,
-              progressivo,
-              descrizione,
-              codiceArticolo,
-              importo,
-              accountId: riga.accountId,
-              stato: 'confermata',
-              fonte: 'manuale',
-              confirmedById: session.user.id,
-              confirmedAt: adesso,
-            },
-            update: {
-              descrizione,
-              codiceArticolo,
-              importo,
-              accountId: riga.accountId,
-              stato: 'confermata',
-              fonte: 'manuale',
-              confirmedById: session.user.id,
-              confirmedAt: adesso,
+              progressivo: { notIn: progressiviScritti },
             },
           })
-          righeConfermate++
-
-          // Un'imputazione manuale con fornitore noto alimenta la memoria
-          // fornitore-prodotto, riproposta in futuro per lo stesso articolo.
-          // Vale anche per bollo e arrotondamento: un fornitore che applica
-          // sempre il bollo insegna il conto anche per quello, `codiceArticolo`
-          // resta `null` come per ogni riga senza codice.
-          //
-          // Una riga DIVISA resta fuori: è specifica di questa fattura ("questi
-          // 100 € di detersivi erano 60 di detersivi e 40 di tovaglioli" non è
-          // una regola sul prodotto, è un fatto su un documento) e insegnarla
-          // produrrebbe proposte sbagliate su ogni fattura successiva dello
-          // stesso fornitore — proposte sbagliate che sembrano apprese.
-          if (invoice.supplierId && !divisa) {
-            await alimentaMemoriaFornitore({
-              venueId,
-              supplierId: invoice.supplierId,
-              descrizione,
-              codiceArticolo,
-              accountId: riga.accountId,
-            })
-          }
         }
+      })
 
-        // La richiesta è autorevole sulla riga che nomina: ogni quota di
-        // QUESTO numeroLinea non citata in QUESTA richiesta viene rimossa.
-        // Senza questo passo, una richiesta che nomina un solo progressivo
-        // su una riga già divisa non sostituisce l'altra quota, la
-        // affianca: due imputazioni per l'intero importo della riga, in
-        // silenzio, e i pesi dell'ereditarietà pro-quota
-        // (schedule-reconciliation-service.ts) si sballano di conseguenza.
-        // Non è distruttivo per sbaglio: `InvoiceLineAccount` non è fra i
-        // `SOFT_DELETE_MODELS` (src/lib/prisma.ts), quindi qui la
-        // cancellazione vera è il comportamento giusto, e lo `scoping` sia
-        // sull'invoiceId sia sul singolo numeroLinea impedisce che tocchi le
-        // altre righe della stessa fattura.
-        await prisma.invoiceLineAccount.deleteMany({
-          where: {
-            invoiceId: id,
-            numeroLinea,
-            progressivo: { notIn: progressiviScritti },
-          },
-        })
+      // Solo ora, a scrittura confermata: se la transazione fosse fallita non
+      // ci sarebbe nulla da imparare, e insegnarlo lo stesso produrrebbe una
+      // proposta futura fondata su un'imputazione che non esiste.
+      if (invoice.supplierId) {
+        for (const riga of daInsegnare) {
+          await alimentaMemoriaFornitore({
+            venueId,
+            supplierId: invoice.supplierId,
+            descrizione: riga.descrizione,
+            codiceArticolo: riga.codiceArticolo,
+            accountId: riga.accountId,
+          })
+        }
       }
     }
 
