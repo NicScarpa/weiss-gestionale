@@ -4,6 +4,7 @@ import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/re
 import { PassoEsecuzione } from '../PassoEsecuzione'
 import { OPZIONI_PREDEFINITE } from '../tipi'
 import type { OpzioniImport } from '../tipi'
+import type { ConflittoTermini } from '../DialogConflitti'
 import type { RigaAnteprima } from '../PassoAnteprima'
 import type { EsitoRiga } from '../RiepilogoFinale'
 
@@ -49,6 +50,22 @@ function promessaControllata<T>() {
 }
 
 const rispostaOk = { ok: true, status: 201, json: async () => ({ fornitoreCreato: false }) }
+
+const conflitto = (sovrascrivi: Partial<ConflittoTermini> = {}): ConflittoTermini => ({
+  partitaIva: '07945211006',
+  denominazione: 'Torrefazione di prova Srl',
+  giorniDalFile: 30,
+  giorniAnagrafica: 60,
+  aliquote: [22],
+  chiavi: ['a.xml'],
+  ...sovrascrivi,
+})
+
+/** Corpo davvero inviato alla `fetch` mockata, per ispezionare quali chiavi
+ * porta — non solo il loro valore, ma se ci sono affatto. */
+function corpoInviato(fetchMock: ReturnType<typeof vi.fn>, chiamata = 0) {
+  return JSON.parse(fetchMock.mock.calls[chiamata][1].body)
+}
 
 function montare(righe: RigaAnteprima[], opzioni: OpzioniImport, onFinito: (esiti: EsitoRiga[]) => void) {
   return render(
@@ -157,5 +174,57 @@ describe('PassoEsecuzione', () => {
     // e la fattura appena creata risulterebbe duplicata per errore.
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(onFinito.mock.calls[0][0]).toHaveLength(1)
+  })
+
+  it('con la scelta «anagrafica», il corpo porta i giorni concordati in anagrafica, non quelli del file', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(rispostaOk)
+    vi.stubGlobal('fetch', fetchMock)
+    const onFinito = vi.fn()
+
+    render(
+      <PassoEsecuzione
+        righe={[riga()]}
+        opzioni={OPZIONI_PREDEFINITE}
+        scelteConflitti={{ '07945211006': 'anagrafica' }}
+        conflitti={[conflitto()]}
+        onFinito={onFinito}
+      />
+    )
+
+    await waitFor(() => expect(onFinito).toHaveBeenCalled())
+    const corpo = corpoInviato(fetchMock)
+    expect(corpo.giorniPagamentoScelti).toBe(60) // giorniAnagrafica del conflitto, non giorniDalFile (30)
+  })
+
+  it('con la scelta «importazione», o senza conflitto per il fornitore, giorniPagamentoScelti non compare affatto', async () => {
+    // Caso 1: c'è un conflitto, ma l'utente ha scelto «importazione» — la
+    // data del documento deve restare a decidere da sola.
+    const fetchConConflitto = vi.fn().mockResolvedValue(rispostaOk)
+    vi.stubGlobal('fetch', fetchConConflitto)
+    const onFinito1 = vi.fn()
+
+    render(
+      <PassoEsecuzione
+        righe={[riga()]}
+        opzioni={OPZIONI_PREDEFINITE}
+        scelteConflitti={{ '07945211006': 'importazione' }}
+        conflitti={[conflitto()]}
+        onFinito={onFinito1}
+      />
+    )
+    await waitFor(() => expect(onFinito1).toHaveBeenCalled())
+    expect('giorniPagamentoScelti' in corpoInviato(fetchConConflitto)).toBe(false)
+
+    cleanup()
+
+    // Caso 2: nessun conflitto è mai stato rilevato per questo fornitore —
+    // stesso esito, la chiave non deve comparire.
+    const fetchSenzaConflitto = vi.fn().mockResolvedValue(rispostaOk)
+    vi.stubGlobal('fetch', fetchSenzaConflitto)
+    const onFinito2 = vi.fn()
+
+    montare([riga()], OPZIONI_PREDEFINITE, onFinito2)
+    await waitFor(() => expect(onFinito2).toHaveBeenCalled())
+    expect('giorniPagamentoScelti' in corpoInviato(fetchSenzaConflitto)).toBe(false)
   })
 })
