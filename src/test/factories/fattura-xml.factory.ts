@@ -16,8 +16,20 @@ export interface OpzioniXml {
   tipoDocumento?: string
   /** `DatiFattureCollegate`: il riferimento della nota alla fattura rettificata. */
   fattureCollegate?: Array<{ idDocumento: string; data?: string }>
-  /** DatiRitenuta nel documento: assente se non specificato. */
-  ritenuta?: { tipo: string; importo: string; aliquota: string; causale?: string }
+  /**
+   * DatiRitenuta nel documento: assente se non specificato. Un array genera
+   * più nodi `<DatiRitenuta>` fratelli (le parcelle possono averne due,
+   * erariale e previdenziale insieme) — utile per verificare che il parser
+   * ne prenda solo il primo, come dichiara il suo commento.
+   */
+  ritenuta?: RitenutaXml | RitenutaXml[]
+}
+
+interface RitenutaXml {
+  tipo: string
+  importo: string
+  aliquota: string
+  causale?: string
 }
 
 const NUMERO = '2026/0042'
@@ -56,9 +68,17 @@ export function xmlFattura(opzioni: OpzioniXml = {}): string {
     )
     .join('')
 
-  const datiRitenuta = opzioni.ritenuta
-    ? `<DatiRitenuta><TipoRitenuta>${opzioni.ritenuta.tipo}</TipoRitenuta><ImportoRitenuta>${opzioni.ritenuta.importo}</ImportoRitenuta><AliquotaRitenuta>${opzioni.ritenuta.aliquota}</AliquotaRitenuta>${opzioni.ritenuta.causale ? `<CausalePagamento>${opzioni.ritenuta.causale}</CausalePagamento>` : ''}</DatiRitenuta>`
-    : ''
+  const ritenute = opzioni.ritenuta
+    ? Array.isArray(opzioni.ritenuta)
+      ? opzioni.ritenuta
+      : [opzioni.ritenuta]
+    : []
+  const datiRitenuta = ritenute
+    .map(
+      (r) =>
+        `<DatiRitenuta><TipoRitenuta>${r.tipo}</TipoRitenuta><ImportoRitenuta>${r.importo}</ImportoRitenuta><AliquotaRitenuta>${r.aliquota}</AliquotaRitenuta>${r.causale ? `<CausalePagamento>${r.causale}</CausalePagamento>` : ''}</DatiRitenuta>`
+    )
+    .join('')
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <p:FatturaElettronica versione="FPR12" xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2">

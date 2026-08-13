@@ -1481,6 +1481,28 @@ describe('estrazione della ritenuta d acconto', () => {
     })
   })
 
+  it('con due ritenute sullo stesso documento (erariale e previdenziale), prende solo la prima', () => {
+    const xml = xmlFattura({
+      tipoDocumento: 'TD06',
+      ritenuta: [
+        { tipo: 'RT02', importo: '312.11', aliquota: '20.00', causale: 'A' },
+        { tipo: 'RT03', importo: '50.00', aliquota: '4.00' },
+      ],
+    })
+
+    const fattura = parseFatturaPASafe(xml, 'parcella.xml').data!
+
+    // Aliquota e causale devono venire dalla STESSA ritenuta (la prima),
+    // non da una combinazione delle due: un mix silenzioso sarebbe peggio
+    // di prendere la seconda per intero.
+    expect(fattura.datiRitenuta).toEqual({
+      tipoRitenuta: 'RT02',
+      importoRitenuta: 312.11,
+      aliquotaRitenuta: 20,
+      causalePagamento: 'A',
+    })
+  })
+
   it('lascia il campo assente quando la ritenuta non c è', () => {
     const fattura = parseFatturaPASafe(xmlFattura(), 'fattura.xml').data!
     expect(fattura.datiRitenuta).toBeUndefined()
