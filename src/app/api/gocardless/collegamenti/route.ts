@@ -78,6 +78,13 @@ export const POST = withAuth(
       const storico = Math.min(giorni(istituto.transaction_total_days, 90), 730)
       const accesso = Math.min(giorni(istituto.max_access_valid_for_days, 90), 180)
 
+      // Si calcola qui, prima di ogni scrittura e fuori dal `try` che segue:
+      // se manca la configurazione dell'indirizzo pubblico, `urlDiRitorno`
+      // protesta, e la protesta deve arrivare al `catch` esterno — che la
+      // riconosce e risponde «non è configurato» — non a quello sotto, che
+      // direbbe all'amministratore che la banca ha rifiutato il collegamento.
+      const redirect = urlDiRitorno()
+
       const agreement = await client.creaAgreement({
         institution_id: istituto.id,
         max_historical_days: storico,
@@ -117,7 +124,7 @@ export const POST = withAuth(
         const requisition = await client.creaRequisition({
           institution_id: istituto.id,
           agreement: agreement.dati.id,
-          redirect: urlDiRitorno(),
+          redirect,
           reference: connessione.id,
           user_language: 'IT',
         })
