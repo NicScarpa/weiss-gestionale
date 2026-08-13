@@ -15,3 +15,12 @@ export const OPZIONI_PREDEFINITE: OpzioniImport = {
 }
 
 export type StatoRiga = 'importata' | 'duplicata' | 'errore' | 'esclusa'
+
+/** Etichetta italiana per ogni stato: un solo posto, usata sia dal log vivo
+ * del passo 3 sia dal riepilogo finale, per non farle divergere. */
+export const ETICHETTE_STATO: Record<StatoRiga, string> = {
+  importata: 'Importata',
+  duplicata: 'Duplicata',
+  errore: 'Errore',
+  esclusa: 'Esclusa',
+}
