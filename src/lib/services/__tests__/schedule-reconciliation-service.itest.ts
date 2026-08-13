@@ -593,4 +593,44 @@ describe('nota di credito che rettifica (Task 6)', () => {
     expect(esito.outcome).toBe('ok')
     expect(await fettePerConto(movimento.id)).toEqual({})
   })
+
+  it('round 2 — una nota di DEBITO (TD05) collegata non si sottrae: i pesi restano quelli pieni', async () => {
+    // TD05 aumenta il dovuto, non lo riduce: se venisse sottratta come una
+    // nota di credito il segno si inverte due volte. Il filtro che la
+    // esclude vive nella query SQL (`documentType: { in: ['TD04','TD08'] }`),
+    // quindi va provato su un database vero — un mock di Prisma non applica
+    // mai un `where`, restituirebbe la riga a prescindere dal filtro.
+    //
+    // La quota è 1.100, non il lordo pieno (1.222): con un pagamento pieno
+    // la guardia "pagamento non compensato" (round 2) interverrebbe comunque
+    // e mascererebbe questo difetto specifico, ripiegando sui pesi pieni per
+    // una ragione diversa. A 1.100 — esattamente il totale ridotto SE la
+    // nota di debito venisse (erroneamente) sottratta come fosse di credito
+    // — quella guardia non scatta, e il difetto, se presente, resta isolato:
+    // pulizia sparirebbe (0) invece di ricevere la sua quota proporzionale.
+    const { fattura, lordo, food, pulizia } = await fatturaMista()
+    expect(lordo).toBe(1222)
+
+    await creaFatturaConRighe(
+      [{ numeroLinea: 1, descrizione: 'Addebito extra', prezzoTotale: 100, aliquotaIVA: 22, accountId: pulizia }],
+      { documentType: 'TD05', rettificaInvoiceId: fattura.id }
+    )
+
+    const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+    const movimento = await creaMovimento({ uscita: 1100, venueId })
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+    })
+    expect(esito.outcome).toBe('ok')
+
+    // Pagamento parziale sui pesi PIENI (1.100 di 1.222): pulizia riceve la
+    // sua quota proporzionale, non zero. Se la nota di debito venisse
+    // sottratta, pulizia sparirebbe del tutto e alimentari prenderebbe
+    // l'intera quota (1.100).
+    expect(await fettePerConto(movimento.id)).toEqual({ [food]: 990.18, [pulizia]: 109.82 })
+  })
 })

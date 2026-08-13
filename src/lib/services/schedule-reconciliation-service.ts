@@ -4,6 +4,7 @@ import { logger } from '@/lib/logger'
 import { formatCurrency } from '@/lib/formatters'
 import { parseFatturaPA } from '@/lib/sdi/parser'
 import { righeDiSistema, type RigaDiSistema } from '@/lib/sdi/righe-di-sistema'
+import { TIPI_DOCUMENTO_NOTA_CREDITO } from '@/lib/services/invoice-schedule-service'
 import { applicaStimaSuScadenza, ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
 import {
   bloccaMovimento,
@@ -318,6 +319,14 @@ async function ritiraIvaDiTestata(
  *   `calcolaPesiConIva` un totale esattamente zero (nota che azzera la riga,
  *   il caso atteso) e uno negativo sono indistinguibili — il filtro li
  *   scarta allo stesso modo — quindi il confronto va fatto prima, non dopo.
+ *
+ * **`documentType` filtrato a `TIPI_DOCUMENTO_NOTA_CREDITO`** (TD04/TD08):
+ * `rettificaInvoiceId` si valorizza anche per le note di DEBITO (TD05/TD09,
+ * vedi `route.ts`), che rettificano una fattura ma nel verso opposto —
+ * aumentano il dovuto, non lo riducono. Sottrarre una nota di debito come se
+ * fosse di credito inverte il segno due volte: un errore di importo doppio,
+ * sul conto sbagliato. Il filtro sta nella query, non dopo averle lette: una
+ * nota di debito non deve nemmeno entrare nel ciclo qui sotto.
  */
 async function righeDaSottrarreNote(
   tx: TransactionClient,
@@ -325,13 +334,26 @@ async function righeDaSottrarreNote(
   righeFattura: RigaDaImputare[]
 ): Promise<RigaDaImputare[] | null> {
   const note = await tx.electronicInvoice.findMany({
-    where: { rettificaInvoiceId: invoiceId },
+    where: { rettificaInvoiceId: invoiceId, documentType: { in: [...TIPI_DOCUMENTO_NOTA_CREDITO] } },
     select: { id: true, lineItems: true, xmlContent: true },
   })
   if (note.length === 0) return []
 
   const righeNota: RigaDaImputare[] = []
   for (const nota of note) {
+    // Nessuna riga estratta: come per la fattura stessa (poco sopra in
+    // `ereditaFetteDaFattura`), non si assume `righeAttese = 0` — sarebbe
+    // vero per costruzione e nasconderebbe uno snapshot mancante o corrotto.
+    // Si astiene e si logga, invece di trattare una nota "senza dati" come
+    // se non avesse nulla da sottrarre.
+    if (!Array.isArray(nota.lineItems)) {
+      logger.info("Nota di credito senza righe estratte: l'ereditarietà si astiene dall'intera fattura", {
+        invoiceId,
+        notaId: nota.id,
+      })
+      return null
+    }
+
     const righeSistemaNota = righeSistemaTolleranti(
       nota.xmlContent,
       'XML della nota di credito non parsabile: si assume nessuna riga di sistema',
@@ -344,8 +366,7 @@ async function righeDaSottrarreNote(
     })
 
     const numeroLineeImputate = new Set(imputazioniNota.map((r) => r.numeroLinea)).size
-    const righeAttese =
-      (Array.isArray(nota.lineItems) ? nota.lineItems.length : 0) + righeSistemaNota.length
+    const righeAttese = nota.lineItems.length + righeSistemaNota.length
     if (numeroLineeImputate < righeAttese) {
       logger.info("Nota di credito non imputata per intero: l'ereditarietà si astiene dall'intera fattura", {
         invoiceId,
@@ -356,9 +377,7 @@ async function righeDaSottrarreNote(
       return null
     }
 
-    const aliquotePerLineaNota = Array.isArray(nota.lineItems)
-      ? aliquoteDelloSnapshot(nota.lineItems)
-      : new Map<number, number>()
+    const aliquotePerLineaNota = aliquoteDelloSnapshot(nota.lineItems)
     for (const riga of righeSistemaNota) {
       aliquotePerLineaNota.set(riga.numeroLinea, riga.aliquota)
     }
@@ -578,9 +597,33 @@ async function ereditaFetteDaFattura(
   // astenersi dall'INTERA ereditarietà (già loggato da chi l'ha deciso).
   const righeNotaDaSottrarre = await righeDaSottrarreNote(tx, invoiceId, righeDaImputare)
   if (righeNotaDaSottrarre === null) return
-  const righeCombinate = righeDaImputare.concat(righeNotaDaSottrarre)
 
-  const pesi = calcolaPesiConIva(righeCombinate)
+  let righeCombinate = righeDaImputare.concat(righeNotaDaSottrarre)
+  let pesi = calcolaPesiConIva(righeCombinate)
+
+  // Guardia sulla premessa della sottrazione (Task 6, round 2): si sottrae la
+  // nota perché si presume che QUESTO pagamento sia già al netto della nota.
+  // Se la quota supera il totale ridotto, quella premessa è falsa — la nota
+  // sarà compensata altrove, non qui — e sottrarla comunque sposterebbe tutto
+  // sull'ultimo conto rimasto: `ripartisciProQuota` chiude sempre sull'intera
+  // quota, quindi un pagamento pieno di 1.222 su pesi ridotti a 1.100 (sola
+  // alimentari, pulizia azzerata dalla nota) darebbe 1.222 su alimentari e 0
+  // su pulizia — un conto che non ha mai visto un centesimo di quella cifra.
+  // Si torna ai pesi pieni della fattura, non ci si astiene: qui, a
+  // differenza delle guardie 1 e 2, la risposta giusta esiste e si conosce.
+  if (righeNotaDaSottrarre.length > 0) {
+    const totaleRidotto = pesi.reduce((s, p) => s + p.importo, 0)
+    if (quota > totaleRidotto + TOLLERANZA_IMPORTI) {
+      logger.info('Nota di credito non compensata su questo pagamento: si usano i pesi pieni della fattura', {
+        invoiceId,
+        journalEntryId,
+        quota,
+        totaleRidotto,
+      })
+      righeCombinate = righeDaImputare
+      pesi = calcolaPesiConIva(righeCombinate)
+    }
+  }
 
   // Un conto sparito dai pesi portandosi via qualcosa è quasi sempre una riga
   // di sconto o di reso a `PrezzoTotale` negativo DENTRO QUESTA STESSA

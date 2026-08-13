@@ -599,8 +599,12 @@ export async function POST(request: NextRequest) {
     //
     // Non trovata non è un errore: la fattura rettificata può semplicemente
     // non essere ancora stata importata (la nota spesso arriva prima). La
-    // nota resta comunque salvata con `rettificaInvoiceId: null` — il
-    // collegamento si potrà rifare quando la fattura arriverà (Task 7).
+    // nota resta comunque salvata con `rettificaInvoiceId: null` — E RESTA
+    // COSÌ: non esiste oggi un percorso che ritenti la risoluzione più tardi.
+    // Task 7 rileva la divergenza fra fette e imputazioni correnti, non
+    // ri-risolve questo collegamento — una nota importata prima della sua
+    // fattura resta scollegata per sempre, finché non si scrive quel
+    // percorso separatamente.
     //
     // Più di un riferimento nell'XML: si usa il primo. Una nota che rettifica
     // più fatture insieme non è rappresentabile da un `rettificaInvoiceId`
@@ -613,30 +617,55 @@ export async function POST(request: NextRequest) {
       try {
         const riferimento = datiEstesi.references.datiFattureCollegate[0]
         if (riferimento) {
-          const fatturaRettificata = await prisma.electronicInvoice.findFirst({
-            where: {
-              invoiceNumber: riferimento.idDocumento,
-              // Stessa normalizzazione di trovaFatturaEsistente: le fatture
-              // importate prima della normalizzazione hanno perso gli zeri
-              // iniziali della P.IVA.
-              OR: [
-                { supplierVat: invoice.supplierVat },
-                { supplierVat: invoice.supplierVat.replace(/^0+/, '') },
-              ],
-            },
+          // Numero + P.IVA da soli non sono una chiave: la rinumerazione
+          // annuale delle fatture è la norma, e lo stesso fornitore può avere
+          // legittimamente due fatture "1" in due anni diversi (la spec,
+          // §4, chiede "quel numero e quella data" — il brief l'aveva
+          // riassunto omettendo la data). Quando l'XML la porta si include
+          // nella query, che così torna a essere la stessa terna di
+          // `trovaFatturaEsistente`. Quando manca — non tutte le fatture
+          // collegate la riportano — resta l'ambiguità: si sceglie la più
+          // recente con un `orderBy` esplicito (mai l'ordine arbitrario del
+          // database) e si segnala se i candidati sono più di uno.
+          const dove: Prisma.ElectronicInvoiceWhereInput = {
+            invoiceNumber: riferimento.idDocumento,
+            // Stessa normalizzazione di trovaFatturaEsistente: le fatture
+            // importate prima della normalizzazione hanno perso gli zeri
+            // iniziali della P.IVA.
+            OR: [
+              { supplierVat: invoice.supplierVat },
+              { supplierVat: invoice.supplierVat.replace(/^0+/, '') },
+            ],
+          }
+          if (riferimento.data) {
+            dove.invoiceDate = new Date(riferimento.data)
+          }
+
+          const candidati = await prisma.electronicInvoice.findMany({
+            where: dove,
             select: { id: true },
+            orderBy: [{ invoiceDate: 'desc' }, { id: 'asc' }],
           })
 
-          if (fatturaRettificata) {
-            await prisma.electronicInvoice.update({
-              where: { id: invoice.id },
-              data: { rettificaInvoiceId: fatturaRettificata.id },
-            })
-          } else {
+          if (candidati.length === 0) {
             logger.info('Nota di credito: fattura rettificata non trovata (forse non ancora importata)', {
               invoiceId: invoice.id,
               numeroCercato: riferimento.idDocumento,
+              dataCercata: riferimento.data ?? null,
               supplierVat: invoice.supplierVat,
+            })
+          } else {
+            if (candidati.length > 1) {
+              logger.warn('Nota di credito: più fatture candidate per numero e fornitore, presa la più recente', {
+                invoiceId: invoice.id,
+                numeroCercato: riferimento.idDocumento,
+                supplierVat: invoice.supplierVat,
+                candidati: candidati.length,
+              })
+            }
+            await prisma.electronicInvoice.update({
+              where: { id: invoice.id },
+              data: { rettificaInvoiceId: candidati[0].id },
             })
           }
         }
