@@ -12,7 +12,17 @@ setupIntegrationDb()
 afterEach(() => impostaClientPerTest(null))
 
 /** Client finto che registra cosa gli viene chiesto. */
-function clientFinto(opzioni: { fallisceRequisition?: boolean; accessValidForDaysConcessi?: number } = {}) {
+function clientFinto(opzioni: {
+  fallisceRequisition?: boolean
+  accessValidForDaysConcessi?: number
+  /**
+   * Eseguito dentro `creaAgreement`, cioè dopo che il controllo applicativo è
+   * passato e prima che la riga venga creata: è l'unico punto in cui inserire
+   * un concorrente produce una corsa vera invece di un test che si ferma
+   * prima e passa per il motivo sbagliato.
+   */
+  duranteAgreement?: () => Promise<void>
+} = {}) {
   const chiamate: string[] = []
   const client = {
     istituzioni: async () => {
@@ -24,6 +34,7 @@ function clientFinto(opzioni: { fallisceRequisition?: boolean; accessValidForDay
     },
     creaAgreement: async () => {
       chiamate.push('agreement')
+      if (opzioni.duranteAgreement) await opzioni.duranteAgreement()
       return {
         dati: { id: 'agr-1', max_historical_days: 90, access_valid_for_days: opzioni.accessValidForDaysConcessi ?? 180 },
         limiti: { restanti: null, ripresaFraSecondi: null },
@@ -181,6 +192,37 @@ describe('POST /api/gocardless/collegamenti', () => {
     )
 
     expect(esito.status).toBe(201)
+  })
+
+  // Il controllo applicativo legge e poi scrive: due richieste concorrenti lo
+  // superano entrambe. L'indice unico parziale è la rete, e la sua violazione
+  // deve arrivare all'amministratore come il 409 che già conosce, non come un
+  // errore interno.
+  it('traduce la violazione dell indice in un 409, non in un 500', async () => {
+    await entraCome('admin')
+    const venue = await venueDiTest()
+    const { client } = clientFinto({
+      duranteAgreement: async () => {
+        await prisma.bankConnection.create({
+          data: {
+            venueId: venue.id,
+            institutionId: 'ALTRA_BANCA',
+            institutionName: 'Altra Banca',
+            requisitionId: 'req-corsa',
+            status: 'CR',
+          },
+        })
+      },
+    })
+    impostaClientPerTest(client)
+
+    const esito = await callRoute<{ error?: string }>(
+      creaCollegamento,
+      jsonRequest('http://localhost/api/gocardless/collegamenti', { method: 'POST', body: { istitutoId: 'BANCA_FINTA_XXXX' } })
+    )
+
+    expect(esito.status).toBe(409)
+    expect(esito.body.error).toContain('collegamento')
   })
 })
 

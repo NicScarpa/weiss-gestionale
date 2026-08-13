@@ -9,6 +9,7 @@
  */
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 
 import { withAuth } from '@/lib/api-utils'
 import { prisma } from '@/lib/prisma'
@@ -30,6 +31,27 @@ function urlDiRitorno(): string {
 function giorni(valore: unknown, difetto: number): number {
   const n = typeof valore === 'string' ? Number.parseInt(valore, 10) : typeof valore === 'number' ? valore : NaN
   return Number.isFinite(n) ? n : difetto
+}
+
+/**
+ * Il controllo applicativo legge e poi scrive: una corsa fra due richieste
+ * concorrenti lo supera. `ux_bank_connections_sede_viva` è la rete che
+ * ferma la seconda scrittura — questa funzione ne riconosce la violazione
+ * perché arrivi all'amministratore come il 409 che già conosce, non come un
+ * 500 anonimo.
+ *
+ * `meta.target` (la forma "da manuale" di Prisma) qui non c'è: con l'adapter
+ * driver per Postgres il nome del vincolo violato arriva solo dentro
+ * `meta.driverAdapterError.cause.originalMessage`, non in un campo dedicato.
+ * Si cerca quindi il nome dell'indice nell'intero `meta` serializzato,
+ * qualunque sia la forma esatta in cui è annidato.
+ */
+function eDoppioCollegamento(errore: unknown): boolean {
+  return (
+    errore instanceof Prisma.PrismaClientKnownRequestError &&
+    errore.code === 'P2002' &&
+    JSON.stringify(errore.meta ?? '').includes('ux_bank_connections_sede_viva')
+  )
 }
 
 export const POST = withAuth(
@@ -134,6 +156,13 @@ export const POST = withAuth(
         return NextResponse.json({ error: 'La banca non ha accettato la richiesta di collegamento' }, { status: 502 })
       }
     } catch (errore) {
+      if (eDoppioCollegamento(errore)) {
+        return NextResponse.json(
+          { error: 'Esiste già un collegamento attivo per questa sede: scollegalo prima di crearne uno nuovo' },
+          { status: 409 }
+        )
+      }
+
       return rispostaErroreGoCardless(errore, 'POST /api/gocardless/collegamenti')
     }
   },
