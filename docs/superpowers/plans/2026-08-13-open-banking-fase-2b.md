@@ -1129,7 +1129,13 @@ describe('ConnessioniBancarie', () => {
   // `configura` esige la data di taglio anche a interruttore spento, ed è
   // l'unica cosa che impedisce a un movimento già importato via CSV di
   // entrare una seconda volta.
-  it('senza data di taglio non lascia salvare', async () => {
+  //
+  // Le due asserzioni servono **entrambe**: «Salva» è disabilitato anche
+  // quando non è cambiato nulla, quindi la prima da sola passerebbe pure se il
+  // clic sull'interruttore non avesse alcun effetto. È la seconda — riempita
+  // la data, il pulsante si accende — a dimostrare che il clic è arrivato e
+  // che era la data a tenerlo chiuso.
+  it('senza data di taglio non lascia salvare, con la data sì', async () => {
     const contiSenzaData = {
       ...CONTI,
       conti: [{ ...CONTI.conti[0], syncEnabled: false, syncCutoffDate: null }],
@@ -1143,10 +1149,10 @@ describe('ConnessioniBancarie', () => {
     await attendere()
 
     await cliccare(interruttori()[0])
+    expect((perTesto(/^salva$/i) as HTMLButtonElement).disabled).toBe(true)
 
-    const salva = perTesto(/^salva$/i)
-    expect(salva).toBeTruthy()
-    expect((salva as HTMLButtonElement).disabled).toBe(true)
+    await scrivere(perId('taglio-acc-1'), '2026-08-01')
+    expect((perTesto(/^salva$/i) as HTMLButtonElement).disabled).toBe(false)
   })
 })
 ```
