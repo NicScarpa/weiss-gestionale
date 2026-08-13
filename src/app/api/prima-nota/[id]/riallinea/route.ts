@@ -1,7 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextResponse } from 'next/server'
+import { withAuth } from '@/lib/api-utils'
 import { prisma } from '@/lib/prisma'
-import { getVenueId } from '@/lib/venue'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
 import { imputazioniDivergenti, riallineaFette, RiallineamentoNonRigenerabile } from '@/lib/invoices/riallineamento'
@@ -25,91 +24,80 @@ export { MESSAGGIO_NESSUNA_DIVERGENZA, MESSAGGIO_MAI_GENERATE_FETTE, MESSAGGIO_R
  * `riallineaFette` ha già fatto fare rollback alla transazione, nessuna
  * fetta è andata persa.
  */
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const session = await auth()
+export const POST = withAuth<{ id: string }>(
+  async (request, { params, venueId, user }) => {
+    try {
+      const { id } = params
 
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    }
-
-    if (!['admin', 'manager'].includes(session.user.role || '')) {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
-    const { id } = await params
-    const venueId = await getVenueId()
-
-    const movimento = await prisma.journalEntry.findFirst({
-      where: { id, venueId },
-      select: { id: true },
-    })
-    if (!movimento) {
-      return NextResponse.json({ error: 'Movimento non trovato' }, { status: 404 })
-    }
-
-    const divergenza = await imputazioniDivergenti(id)
-    if (!divergenza.divergente) {
-      // Due cause diverse dietro lo stesso "niente da riallineare qui", e solo
-      // una è davvero "tutto a posto": una riconciliazione che non ha MAI
-      // scritto fette ereditate (la fattura non era coperta per intero
-      // all'epoca) non compare mai nella rilevazione, quindi risponderebbe lo
-      // stesso 409 di un movimento davvero allineato — ma qui non c'è nessun
-      // pulsante che aiuti: va completata l'imputazione sulla fattura.
-      const senzaFette = await prisma.scheduleReconciliation.findFirst({
-        where: {
-          journalEntryId: id,
-          status: 'VERIFIED',
-          schedule: { invoiceId: { not: null } },
-          allocations: { none: {} },
-        },
+      const movimento = await prisma.journalEntry.findFirst({
+        where: { id, venueId },
         select: { id: true },
       })
+      if (!movimento) {
+        return NextResponse.json({ error: 'Movimento non trovato' }, { status: 404 })
+      }
 
-      // Non "Questa riconciliazione": su un bonifico cumulativo (più
-      // riconciliazioni sullo stesso movimento) basterebbe che UNA sia senza
-      // fette perché la query la trovi, anche quando le altre sono
-      // semplicemente allineate. Il messaggio resta meno assertivo apposta.
+      const divergenza = await imputazioniDivergenti(id)
+      if (!divergenza.divergente) {
+        // Due cause diverse dietro lo stesso "niente da riallineare qui", e solo
+        // una è davvero "tutto a posto": una riconciliazione che non ha MAI
+        // scritto fette ereditate (la fattura non era coperta per intero
+        // all'epoca) non compare mai nella rilevazione, quindi risponderebbe lo
+        // stesso 409 di un movimento davvero allineato — ma qui non c'è nessun
+        // pulsante che aiuti: va completata l'imputazione sulla fattura.
+        const senzaFette = await prisma.scheduleReconciliation.findFirst({
+          where: {
+            journalEntryId: id,
+            status: 'VERIFIED',
+            schedule: { invoiceId: { not: null } },
+            allocations: { none: {} },
+          },
+          select: { id: true },
+        })
+
+        // Non "Questa riconciliazione": su un bonifico cumulativo (più
+        // riconciliazioni sullo stesso movimento) basterebbe che UNA sia senza
+        // fette perché la query la trovi, anche quando le altre sono
+        // semplicemente allineate. Il messaggio resta meno assertivo apposta.
+        return NextResponse.json(
+          { error: senzaFette ? MESSAGGIO_MAI_GENERATE_FETTE : MESSAGGIO_NESSUNA_DIVERGENZA },
+          { status: 409 }
+        )
+      }
+
+      const eseguiti = await prisma.$transaction((tx) => riallineaFette(tx, id))
+
+      // Scritto DOPO che la transazione è risolta: `createAuditLog` usa il
+      // client globale, non `tx`, quindi scriverlo prima si committerebbe anche
+      // se il resto facesse rollback (vedi il docblock di `riallineaFette`).
+      for (const esito of eseguiti) {
+        await createAuditLog({
+          userId: user.id,
+          action: 'UPDATE',
+          entityType: 'ScheduleReconciliation',
+          entityId: esito.reconciliationId,
+          venueId,
+          oldValues: { fette: esito.fetteRimosse },
+          newValues: { fette: esito.fetteScritte, invoiceId: esito.invoiceId, riallineamento: true },
+        })
+      }
+
+      return NextResponse.json({
+        fette: eseguiti.reduce((somma, esito) => somma + esito.fetteScritte, 0),
+        invoiceId: divergenza.invoiceId,
+        message: MESSAGGIO_RIALLINEATO,
+      })
+    } catch (error) {
+      if (error instanceof RiallineamentoNonRigenerabile) {
+        return NextResponse.json({ error: error.message }, { status: 422 })
+      }
+
+      logger.error('Errore POST /api/prima-nota/[id]/riallinea', error)
       return NextResponse.json(
-        { error: senzaFette ? MESSAGGIO_MAI_GENERATE_FETTE : MESSAGGIO_NESSUNA_DIVERGENZA },
-        { status: 409 }
+        { error: 'Errore nel riallineamento delle fette' },
+        { status: 500 }
       )
     }
-
-    const eseguiti = await prisma.$transaction((tx) => riallineaFette(tx, id))
-
-    // Scritto DOPO che la transazione è risolta: `createAuditLog` usa il
-    // client globale, non `tx`, quindi scriverlo prima si committerebbe anche
-    // se il resto facesse rollback (vedi il docblock di `riallineaFette`).
-    for (const esito of eseguiti) {
-      await createAuditLog({
-        userId: session.user.id,
-        action: 'UPDATE',
-        entityType: 'ScheduleReconciliation',
-        entityId: esito.reconciliationId,
-        venueId,
-        oldValues: { fette: esito.fetteRimosse },
-        newValues: { fette: esito.fetteScritte, invoiceId: esito.invoiceId, riallineamento: true },
-      })
-    }
-
-    return NextResponse.json({
-      fette: eseguiti.reduce((somma, esito) => somma + esito.fetteScritte, 0),
-      invoiceId: divergenza.invoiceId,
-      message: MESSAGGIO_RIALLINEATO,
-    })
-  } catch (error) {
-    if (error instanceof RiallineamentoNonRigenerabile) {
-      return NextResponse.json({ error: error.message }, { status: 422 })
-    }
-
-    logger.error('Errore POST /api/prima-nota/[id]/riallinea', error)
-    return NextResponse.json(
-      { error: 'Errore nel riallineamento delle fette' },
-      { status: 500 }
-    )
-  }
-}
+  },
+  { roles: ['admin', 'manager'], venueScoped: true }
+)
