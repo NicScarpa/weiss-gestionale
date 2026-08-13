@@ -34,6 +34,12 @@ export interface EsitoRiga {
   stato: StatoRiga
   messaggio?: string
   fattura: RigaAnteprima // il dettaglio completo, per l'espansione
+  /** Solo sul ramo `importata`, presi dal corpo della 201: il dato con cui
+   * il Task 12 verifica per davvero — non ricontando ciò che il client crede
+   * di aver fatto, ma rileggendo dal server cosa esiste. Opzionali per non
+   * rompere il test verbatim del brief, che non li valorizza. */
+  fornitoreCreato?: boolean
+  idCreata?: string | null
 }
 
 export type FiltroEsito = 'tutte' | StatoRiga

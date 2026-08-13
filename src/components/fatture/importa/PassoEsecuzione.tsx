@@ -10,13 +10,13 @@
  * Il payload per riga porta solo `xmlContent`: nessun invio in blocco dei 226
  * file insieme, che sul lotto reale saturerebbe la richiesta.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Loader2Icon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ETICHETTE_STATO, type OpzioniImport, type StatoRiga } from './tipi'
-import type { SceltaConflitto } from './DialogConflitti'
+import type { ConflittoTermini, SceltaConflitto } from './DialogConflitti'
 import type { RigaAnteprima } from './PassoAnteprima'
 import type { EsitoRiga } from './RiepilogoFinale'
 
@@ -24,10 +24,19 @@ interface Props {
   righe: RigaAnteprima[]
   opzioni: OpzioniImport
   scelteConflitti: Record<string, SceltaConflitto>
+  /** Gli stessi conflitti mostrati in `DialogConflitti`: qui servono solo per
+   * recuperare `giorniAnagrafica` di un fornitore quando l'utente ha scelto
+   * di farla vincere. */
+  conflitti: ConflittoTermini[]
   onFinito: (esiti: EsitoRiga[]) => void
 }
 
-function esitoDiRiga(riga: RigaAnteprima, stato: StatoRiga, messaggio?: string): EsitoRiga {
+function esitoDiRiga(
+  riga: RigaAnteprima,
+  stato: StatoRiga,
+  messaggio?: string,
+  creazione?: { fornitoreCreato: boolean; idCreata: string }
+): EsitoRiga {
   return {
     chiave: riga.chiave,
     nomeFile: riga.nomeFile,
@@ -36,15 +45,51 @@ function esitoDiRiga(riga: RigaAnteprima, stato: StatoRiga, messaggio?: string):
     stato,
     messaggio,
     fattura: riga,
+    fornitoreCreato: creazione?.fornitoreCreato ?? false,
+    idCreata: creazione?.idCreata ?? null,
   }
 }
 
-export function PassoEsecuzione({ righe, opzioni, scelteConflitti, onFinito }: Props) {
+export function PassoEsecuzione({ righe, opzioni, scelteConflitti, conflitti, onFinito }: Props) {
   const [fatte, setFatte] = useState<EsitoRiga[]>([])
   const interrompi = useRef(false)
+  // `avviato` sopravvive alla doppia invocazione dell'effetto di Strict
+  // Mode: garantisce che il ciclo sotto parta una sola volta. `vivo` è
+  // *diverso* dal flag locale usato prima del fix (era una `let` dentro
+  // l'effetto, azzerata per sempre dalla prima cleanup): qui è un ref
+  // condiviso che la seconda invocazione resuscita, così il ciclo avviato
+  // dalla prima invocazione continua a vedersi «vivo» anche dopo la
+  // cleanup fantasma di Strict Mode.
+  const avviato = useRef(false)
+  const vivo = useRef(true)
+
+  const giorniAnagraficaPerFornitore = useMemo(
+    () => Object.fromEntries(conflitti.map((c) => [c.partitaIva, c.giorniAnagrafica])),
+    [conflitti]
+  )
 
   useEffect(() => {
-    let vivo = true
+    // Guardia contro il doppio effetto di React Strict Mode (attivo di
+    // default in sviluppo su App Router): al primo mount React monta
+    // l'effetto, lo smonta e lo rimonta subito per scovare effetti non
+    // idempotenti. Senza questa guardia, la seconda invocazione avviava un
+    // secondo ciclo che rimandava la stessa prima riga al server: chi dei
+    // due arrivava secondo si beccava il 409 dell'altro e una fattura
+    // appena creata appariva come duplicata. `avviato` sopravvive fra le
+    // due invocazioni (è un ref), quindi il ciclo vero parte una sola
+    // volta; ma la cleanup dev'essere comunque quella «giusta», capace di
+    // fermare il ciclo quando il componente smonta per davvero — perciò la
+    // seconda invocazione, pur non avviando nulla, resuscita `vivo.current`
+    // (che la cleanup della prima invocazione aveva appena spento) e
+    // registra la cleanup che conterà da qui in avanti.
+    vivo.current = true
+    if (avviato.current) {
+      return () => {
+        vivo.current = false
+      }
+    }
+    avviato.current = true
+
     // Accumulo locale: `fatte` dentro questo effetto resta congelato al
     // valore del primo render (closure), quindi `onFinito` non può leggerlo.
     const raccolti: EsitoRiga[] = []
@@ -56,7 +101,7 @@ export function PassoEsecuzione({ righe, opzioni, scelteConflitti, onFinito }: P
 
     const esegui = async () => {
       for (const riga of righe) {
-        if (interrompi.current || !vivo) break
+        if (interrompi.current || !vivo.current) break
 
         if (riga.esclusa) {
           aggiungi(esitoDiRiga(riga, 'esclusa'))
@@ -64,6 +109,13 @@ export function PassoEsecuzione({ righe, opzioni, scelteConflitti, onFinito }: P
         }
 
         try {
+          // Con la scelta «anagrafica» il server ora impone i giorni scelti
+          // ignorando la data del documento: vanno mandati solo in quel
+          // caso, col valore concordato in anagrafica — mai `giorniDalFile`,
+          // che vincerebbe da sé restando muti (la data del documento).
+          const scelta = scelteConflitti[riga.partitaIvaFornitore]
+          const giorniAnagrafica = giorniAnagraficaPerFornitore[riga.partitaIvaFornitore]
+
           const res = await fetch('/api/invoices', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -74,12 +126,15 @@ export function PassoEsecuzione({ righe, opzioni, scelteConflitti, onFinito }: P
               createSupplier: true,
               politicaDuplicati: opzioni.politicaDuplicati,
               sovrascriviAnagrafica: opzioni.sovrascriviAnagrafica,
-              ...(scelteConflitti[riga.partitaIvaFornitore] !== 'anagrafica' &&
-              riga.giorniDalFile !== null
-                ? { giorniPagamentoScelti: riga.giorniDalFile }
+              ...(scelta === 'anagrafica' && giorniAnagrafica !== undefined
+                ? { giorniPagamentoScelti: giorniAnagrafica }
                 : {}),
             }),
           })
+
+          // Il componente potrebbe essere smontato per davvero mentre la
+          // fetch era in volo: non tocchiamo più stato né proseguiamo.
+          if (!vivo.current) break
 
           if (res.status === 409) {
             // I tre 409 non sono la stessa cosa: con «salta» è l'esito atteso
@@ -99,23 +154,35 @@ export function PassoEsecuzione({ righe, opzioni, scelteConflitti, onFinito }: P
             aggiungi(esitoDiRiga(riga, 'errore', corpo.error))
             continue
           }
-          aggiungi(esitoDiRiga(riga, 'importata'))
+          // Il corpo della 201 porta l'id vero e `fornitoreCreato`: il dato
+          // con cui il Task 12 verifica per davvero, rileggendo dal server
+          // cosa esiste — non ricontando ciò che il client crede di aver
+          // fatto.
+          const corpoCreata = await res.json()
+          aggiungi(
+            esitoDiRiga(riga, 'importata', undefined, {
+              fornitoreCreato: corpoCreata.fornitoreCreato === true,
+              idCreata: corpoCreata.id,
+            })
+          )
         } catch (errore) {
+          if (!vivo.current) break
           aggiungi(
             esitoDiRiga(riga, 'errore', errore instanceof Error ? errore.message : 'Errore di rete')
           )
         }
       }
 
-      if (vivo) onFinito(raccolti)
+      if (vivo.current) onFinito(raccolti)
     }
 
     void esegui()
     return () => {
-      vivo = false
+      vivo.current = false
     }
     // Va eseguito una sola volta, all'ingresso nel passo: le dipendenze
-    // (righe, opzioni, scelteConflitti) non cambiano durante l'esecuzione.
+    // (righe, opzioni, scelteConflitti, conflitti) non cambiano durante
+    // l'esecuzione.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -157,17 +224,22 @@ export function PassoEsecuzione({ righe, opzioni, scelteConflitti, onFinito }: P
       <div className="max-h-[40vh] overflow-y-auto rounded-lg border">
         <ul className="divide-y">
           {ultimeInCima.map((esito) => (
-            <li key={esito.chiave} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-              <span className="truncate" title={esito.nomeFile}>{esito.nomeFile}</span>
-              <span
-                className={cn(
-                  'shrink-0 font-medium',
-                  esito.stato === 'errore' && 'text-destructive',
-                  esito.stato === 'importata' && 'text-primary'
-                )}
-              >
-                {ETICHETTE_STATO[esito.stato]}
-              </span>
+            <li key={esito.chiave} className="flex flex-col gap-0.5 px-3 py-2 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="truncate" title={esito.nomeFile}>{esito.nomeFile}</span>
+                <span
+                  className={cn(
+                    'shrink-0 font-medium',
+                    esito.stato === 'errore' && 'text-destructive',
+                    esito.stato === 'importata' && 'text-primary'
+                  )}
+                >
+                  {ETICHETTE_STATO[esito.stato]}
+                </span>
+              </div>
+              {esito.stato === 'errore' && esito.messaggio && (
+                <p className="text-xs text-destructive">{esito.messaggio}</p>
+              )}
             </li>
           ))}
         </ul>
