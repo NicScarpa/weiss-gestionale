@@ -534,6 +534,81 @@ describe('LineItemsTable — contatore di copertura', () => {
     expect(testo).toContain('manca 50,00 € non riconducibile a una riga')
   })
 
+  it('due aliquote miste: l\'imposta si arrotonda una volta per aliquota, come l\'emittente, e la fattura risulta «completa»', () => {
+    // I numeri vengono dal DOCUMENTO, non da quello che produce il codice.
+    // FatturaPA porta un `DatiRiepilogo` per aliquota, con l'imposta già
+    // arrotondata al centesimo una volta sola per gruppo:
+    //   100,05 al 10% → imposta 10,005 → l'emittente scrive 10,01
+    //    50,25 al 22% → imposta 11,055 → l'emittente scrive 11,06
+    // ImportoTotaleDocumento = 100,05 + 50,25 + 10,01 + 11,06 = 171,37.
+    //
+    // Portando al lordo riga per riga senza arrotondare si ottiene invece
+    // 110,055 + 61,305 = 171,36: mezzo centesimo per aliquota, che con due
+    // aliquote supera la tolleranza di 0,005 e faceva dichiarare «manca
+    // 0,01 € non riconducibile a una riga» su una fattura interamente
+    // attribuita — proprio la fattura mista per cui esiste questo lavoro.
+    righe({
+      dettaglioLinee: [
+        {
+          numeroLinea: 1,
+          descrizione: 'Farina tipo 0',
+          prezzoUnitario: 100.05,
+          prezzoTotale: 100.05,
+          aliquotaIVA: 10,
+          imputazioni: [
+            { progressivo: 0, accountId: 'conto-detersivi', importo: 100.05, stato: 'confermata', fonte: 'manuale' },
+          ],
+        },
+        {
+          numeroLinea: 2,
+          descrizione: 'Detersivi',
+          prezzoUnitario: 50.25,
+          prezzoTotale: 50.25,
+          aliquotaIVA: 22,
+          imputazioni: [
+            { progressivo: 0, accountId: 'conto-detersivi', importo: 50.25, stato: 'confermata', fonte: 'manuale' },
+          ],
+        },
+      ],
+      righeSistema: [],
+      totaleDocumento: '171.37',
+    })
+
+    const testo = normalizzaSpazi(document.body.textContent)
+    expect(testo).toContain('Attribuito 171,37 € / 171,37 €')
+    expect(testo).toContain('✓ completa')
+    expect(testo).not.toContain('manca')
+  })
+
+  it('con una ritenuta d\'acconto il residuo è negativo: «ci sono … di troppo», non «manca»', () => {
+    // La ritenuta d'acconto si detrae da `ImportoTotaleDocumento`: il
+    // documento dichiara 1.020,00 (1.220 lordi meno 200 di ritenuta) mentre
+    // le righe attribuite valgono 1.220,00. Il residuo è −200: `Math.abs` lo
+    // faceva leggere come una mancanza, cioè l'esatto contrario di quel che
+    // è successo. È la stessa distinzione che il server fa già a parole nel
+    // messaggio di errore delle quote (righe-conti/route.ts).
+    righe({
+      dettaglioLinee: [
+        {
+          numeroLinea: 1,
+          descrizione: 'Prestazione professionale',
+          prezzoUnitario: 1000,
+          prezzoTotale: 1000,
+          aliquotaIVA: 22,
+          imputazioni: [
+            { progressivo: 0, accountId: 'conto-detersivi', importo: 1000, stato: 'confermata', fonte: 'manuale' },
+          ],
+        },
+      ],
+      righeSistema: [],
+      totaleDocumento: '1020.00',
+    })
+
+    const testo = normalizzaSpazi(document.body.textContent)
+    expect(testo).toContain('ci sono 200,00 € di troppo')
+    expect(testo).not.toContain('manca 200,00 €')
+  })
+
   it('un totale documento non numerico non mostra il contatore invece di stampare "/ € 0,00"', () => {
     righe({
       dettaglioLinee: [

@@ -370,13 +370,66 @@ function importoConfermato(imputazioni: ImputazioneQuota[]): number {
  * Porta un importo netto di una riga al lordo, con l'aliquota della riga
  * stessa — stesso schema di `aggregaPerConto` in
  * `src/lib/services/allocation-service.ts` (netto + netto × aliquota/100),
- * già rivisto e in produzione per lo stesso calcolo lato server. Le righe di
- * sistema hanno aliquota 0 per costruzione (né il bollo né l'arrotondamento
- * portano IVA, vedi `righeDiSistema`), quindi per loro il lordo coincide col
- * netto senza bisogno di un ramo a parte.
+ * già rivisto e in produzione per lo stesso calcolo lato server.
+ *
+ * Copiata e non importata per la stessa ragione di `TOLLERANZA_IMPORTI`
+ * (vedi `riga-fattura-condivisa.ts`): quel modulo porta `@prisma/client`, e
+ * un import così dentro un componente `'use client'` rompe il bundle in un
+ * modo che nessuna revisione del diff vede — bisogna lanciare `npm run build`
+ * per accorgersene.
+ *
+ * Serve al confronto RIGA PER RIGA (`righeMancanti`), dove il fattore
+ * (1 + aliquota/100) sta da entrambe le parti della differenza e non c'è
+ * nessun arrotondamento dell'emittente da rispettare. Il totale attribuito
+ * NON si calcola sommando questi lordi: vedi `attribuitoAlLordo`.
+ *
+ * Le righe di sistema hanno aliquota 0 per costruzione (né il bollo né
+ * l'arrotondamento portano IVA, vedi `righeDiSistema`), quindi per loro il
+ * lordo coincide col netto senza bisogno di un ramo a parte.
  */
 function alLordo(importoNetto: number, riga: RigaVisualizzata): number {
   return importoNetto * (1 + (riga.aliquotaIVA ?? 0) / 100)
+}
+
+/**
+ * Il totale attribuito al lordo, con l'imposta arrotondata UNA VOLTA per
+ * aliquota: l'algoritmo dell'emittente, non la somma dei lordi di riga.
+ *
+ * Il denominatore del contatore è `ImportoTotaleDocumento`, un numero scritto
+ * dal fornitore. FatturaPA gli fa dichiarare un `DatiRiepilogo` per ogni
+ * aliquota, con l'imposta già arrotondata al centesimo una volta per gruppo,
+ * e il totale del documento è la somma di quelle imposte. Sommare invece i
+ * lordi di riga non arrotondati diverge fino a mezzo centesimo per aliquota:
+ * con due aliquote supera già la tolleranza di 0,005 e il piede dichiarava
+ * «manca 0,01 € non riconducibile a una riga» su una fattura interamente
+ * attribuita — 100,05 al 10% (imposta 10,005, l'emittente scrive 10,01) più
+ * 50,25 al 22% (11,055 → 11,06) fanno 171,37 sul documento e davano 171,36
+ * qui. È esattamente la fattura mista per cui questo lavoro esiste.
+ *
+ * Allargare la tolleranza avrebbe nascosto anche gli scarti veri; replicare
+ * l'arrotondamento dell'emittente no.
+ *
+ * Le righe di sistema non portano aliquota e finiscono nel gruppo a zero:
+ * imposta zero, lordo uguale al netto, senza bisogno di un ramo a parte.
+ */
+function attribuitoAlLordo(righe: RigaVisualizzata[]): number {
+  const imponibilePerAliquota = new Map<number, number>()
+  for (const riga of righe) {
+    const aliquota = riga.aliquotaIVA ?? 0
+    imponibilePerAliquota.set(
+      aliquota,
+      (imponibilePerAliquota.get(aliquota) ?? 0) + importoConfermato(riga.imputazioni)
+    )
+  }
+
+  let totale = 0
+  for (const [aliquota, imponibile] of imponibilePerAliquota) {
+    // `imponibile × aliquota` è l'imposta in centesimi, perché l'aliquota è
+    // in punti percentuali: l'arrotondamento va fatto lì, una volta per
+    // gruppo, com'è scritto nel DatiRiepilogo da cui nasce il totale.
+    totale += imponibile + Math.round(imponibile * aliquota) / 100
+  }
+  return totale
 }
 
 /** Riferimento leggibile a una riga mancante nel messaggio del contatore: le
@@ -398,10 +451,19 @@ function riferimentoRiga(riga: RigaVisualizzata): string {
  * diventa oggi una riga di sistema, vedi `righeDiSistema`). In quel caso non
  * c'è una riga da nominare: si dichiara l'importo residuo invece di stampare
  * un messaggio vuoto o un `undefined`.
+ *
+ * Il residuo si legge col segno, non in valore assoluto: la ritenuta
+ * d'acconto si detrae da `ImportoTotaleDocumento`, quindi le righe attribuite
+ * valgono più del documento e il residuo è negativo. Con `Math.abs` l'utente
+ * leggeva «manca 200,00 €» mentre di euro ce n'erano 200 di troppo — il
+ * contrario di quel che era successo. Stesse parole che il server usa già per
+ * lo stesso scarto (`righe-conti/route.ts`).
  */
 function messaggioRigheMancanti(righeMancanti: RigaVisualizzata[], residuo: number): string {
   if (righeMancanti.length === 0) {
-    return `manca ${formatCurrency(Math.abs(residuo))} non riconducibile a una riga`
+    return residuo >= 0
+      ? `manca ${formatCurrency(residuo)} non riconducibile a una riga`
+      : `ci sono ${formatCurrency(-residuo)} di troppo, non riconducibili a una riga`
   }
   const riferimenti = righeMancanti.map(riferimentoRiga)
   if (riferimenti.length === 1) return `manca ${riferimenti[0]}`
@@ -486,14 +548,14 @@ export function LineItemsTable({
         : totaleDocumento
   const totale = totaleGrezzo !== undefined && Number.isFinite(totaleGrezzo) ? totaleGrezzo : undefined
 
-  // Numeratore e confronto per riga sono al LORDO (vedi `alLordo`): `importo`
-  // e `importoConfermato` sono netti, `totale` (invoice.totalAmount) è
-  // lordo — sommarli direttamente sottostimava sempre il numeratore e "✓
-  // completa" non si raggiungeva mai su una fattura vera.
-  const attribuito = righe.reduce(
-    (somma, r) => somma + alLordo(importoConfermato(r.imputazioni), r),
-    0
-  )
+  // Numeratore e confronto per riga sono al LORDO: `importo` e
+  // `importoConfermato` sono netti, `totale` (invoice.totalAmount) è lordo —
+  // sommarli direttamente sottostimava sempre il numeratore e "✓ completa"
+  // non si raggiungeva mai su una fattura vera. Il numeratore raggruppa per
+  // aliquota e arrotonda l'imposta una volta per gruppo (`attribuitoAlLordo`),
+  // il confronto riga per riga no (`alLordo`): sono due usi diversi, il
+  // perché sta nei due docblock.
+  const attribuito = attribuitoAlLordo(righe)
   const righeMancanti = righe.filter(
     (r) =>
       Math.abs(alLordo(r.importo, r) - alLordo(importoConfermato(r.imputazioni), r)) >
