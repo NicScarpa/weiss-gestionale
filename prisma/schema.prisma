@@ -1629,11 +1629,16 @@ model ElectronicInvoice {
   lineItems      Json?             @map("line_items")
   references     Json?             @map("references")
   vatSummary     Json?             @map("vat_summary")
-  /// Nota di credito → fattura che rettifica (Task 6, fase B). Risolto una
-  /// sola volta, all'import della nota, leggendo
-  /// `references.datiFattureCollegate` (src/app/api/invoices/route.ts):
-  /// persistito invece di ricalcolato a ogni lettura, perché il calcolo dei
-  /// pesi alla riconciliazione lo interroga una volta per fattura.
+  /// Documento di rettifica → fattura che rettifica (Task 6, fase B). Vale
+  /// per TUTTI E QUATTRO i tipi di `TIPI_DOCUMENTO_SENZA_SCADENZA`: le note
+  /// di CREDITO TD04/TD08, che riducono il dovuto, e le note di DEBITO
+  /// TD05/TD09, che lo aumentano (src/app/api/invoices/route.ts non
+  /// distingue: scrive il collegamento per tutte e quattro). Il campo dice
+  /// «questo documento rettifica quella fattura», non in quale verso.
+  /// Risolto una sola volta, all'import, leggendo
+  /// `references.datiFattureCollegate`: persistito invece di ricalcolato a
+  /// ogni lettura, perché il calcolo dei pesi alla riconciliazione lo
+  /// interroga una volta per fattura.
   /// `null` finché non risolto, o se la fattura rettificata non è (ancora)
   /// stata importata — non è un errore.
   rettificaInvoiceId String?      @map("rettifica_invoice_id")
@@ -1647,9 +1652,15 @@ model ElectronicInvoice {
   /// Scadenze generate nello scadenzario da questa fattura
   schedules      Schedule[]          @relation("ScheduleFromInvoice")
   lineAccounts   InvoiceLineAccount[]
-  /// La fattura rettificata da questa nota di credito (lato "molti" → "uno").
+  /// La fattura rettificata da questo documento di rettifica (lato "molti" →
+  /// "uno"). Vedi `rettificaInvoiceId`: TD04/TD08 o TD05/TD09, indistinti.
   rettificaInvoice ElectronicInvoice?   @relation("RettificaFattura", fields: [rettificaInvoiceId], references: [id])
-  /// Le note di credito che rettificano QUESTA fattura (lato opposto).
+  /// I documenti che rettificano QUESTA fattura (lato opposto).
+  /// COMPRENDE LE NOTE DI DEBITO (TD05/TD09), che rettificano nel verso
+  /// opposto: chi sottrae deve filtrare su `TIPI_DOCUMENTO_NOTA_CREDITO`, mai
+  /// usare questa relazione così com'è. Sottrarre una nota di debito inverte
+  /// il segno due volte — il difetto chiuso dal commit 040a492, che
+  /// `righeDaSottrarreNote` evita filtrando nella query.
   rettifiche       ElectronicInvoice[] @relation("RettificaFattura")
 
   @@index([invoiceDate])
