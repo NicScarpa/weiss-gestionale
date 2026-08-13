@@ -2419,6 +2419,7 @@ Crea `src/lib/services/reconciliation-freshness.ts`:
 
 ```typescript
 import { prisma } from '@/lib/prisma'
+import { TOLLERANZA } from '@/lib/reconciliation/punteggio'
 
 /**
  * Il controllo di freschezza delle proposte conservate.
@@ -2478,9 +2479,12 @@ export async function aggiornaFreschezza(batchId: string, venueId: string): Prom
       if (!scadenza) return false
       if (scadenza.deletedAt !== null) return true
       if (STATI_SCADENZA_CHIUSI.includes(scadenza.stato)) return true
-      // Il residuo non basta più a coprire la quota che la proposta rivendica
+      // Il residuo non basta più a coprire la quota che la proposta rivendica.
+      // La tolleranza viene da `punteggio.ts`, dove vive per tutta la fase:
+      // un centesimo scritto qui a mano si scollegherebbe dal resto al primo
+      // ritocco.
       const residuo = Number(scadenza.importoTotale) - Number(scadenza.importoPagato)
-      return residuo + 0.01 < Number(gamba.importo)
+      return residuo + TOLLERANZA < Number(gamba.importo)
     })
 
     if (gambaMorta) daSuperare.push(proposta.id)
