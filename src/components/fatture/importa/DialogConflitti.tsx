@@ -94,7 +94,7 @@ export function DialogConflitti({ aperto, conflitti, onAnnulla, onContinua }: Pr
 
   return (
     <Dialog open={aperto} onOpenChange={(valore) => !valore && onAnnulla()}>
-      <DialogContent className="sm:max-w-[700px]">
+      <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Termini di pagamento in conflitto</DialogTitle>
           <DialogDescription>
