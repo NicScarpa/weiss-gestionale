@@ -108,3 +108,7 @@ Piano dei conti/
 # Service worker: artefatto di build, prodotto da `npm run build:sw`
 /public/sw.js
 /public/sw.js.map
+
+# Fatture elettroniche vere usate per provare l'importatore: IBAN, partite IVA
+# e indirizzi di fornitori reali. Fuori dal repository: da git non si tolgono piu'.
+/docs/fatture/
