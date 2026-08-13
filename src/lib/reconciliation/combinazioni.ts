@@ -21,9 +21,22 @@ export interface OpzioniCombinazioni {
   tolleranza?: number
 }
 
-/** Chiave d'identità della controparte: l'id se c'è, altrimenti il nome. */
+/**
+ * Chiave d'identità della controparte: l'id se c'è, altrimenti il nome.
+ *
+ * Va chiamata solo dopo aver scartato le scadenze prive di entrambi (vedi
+ * `haControparteIdentificabile`): senza id né nome non c'è prova che due
+ * scadenze siano collegate, e l'unica cosa che le unirebbe sarebbe
+ * l'aritmetica — precisamente la «somma che quadra per caso» che questo
+ * modulo esiste per non produrre.
+ */
 function chiaveControparte(scadenza: ScadenzaCandidata): string {
-  return scadenza.supplierId ?? scadenza.controparteNome ?? '(ignota)'
+  return (scadenza.supplierId ?? scadenza.controparteNome) as string
+}
+
+/** Vedi il commento su `chiaveControparte`: senza questi due, niente prova. */
+function haControparteIdentificabile(scadenza: ScadenzaCandidata): boolean {
+  return scadenza.supplierId !== null || scadenza.controparteNome !== null
 }
 
 /**
@@ -44,6 +57,7 @@ export function trovaCombinazioni(
   const perControparte = new Map<string, ScadenzaCandidata[]>()
   for (const scadenza of candidate) {
     if (scadenza.residuo <= tolleranza) continue
+    if (!haControparteIdentificabile(scadenza)) continue
     const chiave = chiaveControparte(scadenza)
     const gruppo = perControparte.get(chiave)
     if (gruppo) gruppo.push(scadenza)
@@ -55,7 +69,10 @@ export function trovaCombinazioni(
   for (const gruppo of perControparte.values()) {
     if (gruppo.length < 2) continue
 
-    // Le più grandi per prime: la potatura sul residuo morde subito
+    // Le più grandi per prime, così la potatura sul residuo morde subito.
+    // Il taglio a MAX_CANDIDATE è una rinuncia dichiarata, non un dettaglio
+    // di prestazioni: scarta le candidate più piccole del gruppo, e fra
+    // quelle scartate potrebbe esserci la combinazione giusta.
     const ordinate = [...gruppo]
       .sort((a, b) => b.residuo - a.residuo)
       .slice(0, MAX_CANDIDATE)

@@ -66,4 +66,19 @@ describe('trovaCombinazioni', () => {
   it('su nessuna candidata torna una lista vuota', () => {
     expect(trovaCombinazioni(1000, [])).toEqual([])
   })
+
+  it('non combina scadenze senza controparte identificabile, anche se la somma torna', () => {
+    // Senza supplierId e senza controparteNome non c'è prova che siano
+    // collegate: l'unica cosa che le unirebbe sarebbe l'aritmetica.
+    const senzaControparte = (id: string, residuo: number): ScadenzaCandidata => ({
+      ...scadenza(id, residuo),
+      supplierId: null,
+      controparteNome: null,
+    })
+    const combinazioni = trovaCombinazioni(1000, [
+      senzaControparte('a', 500),
+      senzaControparte('b', 500),
+    ])
+    expect(combinazioni).toHaveLength(0)
+  })
 })
