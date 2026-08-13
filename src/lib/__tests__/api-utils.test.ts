@@ -11,6 +11,7 @@ vi.mock('../venue', () => ({ getVenueId: vi.fn() }))
 
 import { auth } from '../auth'
 import { getVenueId } from '../venue'
+import { contestoRotta } from '@/test/auth-unitari'
 import {
   errorResponse,
   badRequest,
@@ -376,7 +377,7 @@ describe('withAuth', () => {
       authMock.mockResolvedValue(null)
       const handler = vi.fn()
 
-      const response = await withAuth(handler)(request())
+      const response = await withAuth(handler)(request(), contestoRotta())
 
       expect(response.status).toBe(401)
       expect(handler).not.toHaveBeenCalled()
@@ -386,7 +387,7 @@ describe('withAuth', () => {
       authMock.mockResolvedValue(sessionOf('admin', { mustChangePassword: true }))
       const handler = vi.fn()
 
-      const response = await withAuth(handler)(request())
+      const response = await withAuth(handler)(request(), contestoRotta())
       const body = await response.json()
 
       expect(response.status).toBe(403)
@@ -398,7 +399,7 @@ describe('withAuth', () => {
       authMock.mockResolvedValue(sessionOf('staff', { mustChangePassword: true }))
       const handler = vi.fn().mockResolvedValue(ok({ fatto: true }))
 
-      const response = await withAuth(handler, { allowMustChangePassword: true })(request())
+      const response = await withAuth(handler, { allowMustChangePassword: true })(request(), contestoRotta())
 
       expect(response.status).toBe(200)
       expect(handler).toHaveBeenCalledOnce()
@@ -408,7 +409,7 @@ describe('withAuth', () => {
       authMock.mockResolvedValue(sessionOf('manager'))
       const handler = vi.fn().mockResolvedValue(ok({}))
 
-      await withAuth(handler, { roles: ['admin', 'manager'], venueScoped: true })(request())
+      await withAuth(handler, { roles: ['admin', 'manager'], venueScoped: true })(request(), contestoRotta())
 
       expect(authMock).toHaveBeenCalledOnce()
     })
@@ -419,7 +420,7 @@ describe('withAuth', () => {
       authMock.mockResolvedValue(sessionOf('staff'))
       const handler = vi.fn()
 
-      const response = await withAuth(handler, { roles: ['admin', 'manager'] })(request())
+      const response = await withAuth(handler, { roles: ['admin', 'manager'] })(request(), contestoRotta())
 
       expect(response.status).toBe(403)
       expect(handler).not.toHaveBeenCalled()
@@ -430,7 +431,7 @@ describe('withAuth', () => {
       authMock.mockResolvedValue(session)
       const handler = vi.fn().mockResolvedValue(ok({}))
 
-      await withAuth(handler, { roles: ['admin', 'manager'] })(request())
+      await withAuth(handler, { roles: ['admin', 'manager'] })(request(), contestoRotta())
 
       const context = handler.mock.calls[0][1]
       expect(context.session).toBe(session)
@@ -442,7 +443,7 @@ describe('withAuth', () => {
       authMock.mockResolvedValue(sessionOf('staff'))
       const handler = vi.fn().mockResolvedValue(ok({}))
 
-      const response = await withAuth(handler)(request())
+      const response = await withAuth(handler)(request(), contestoRotta())
 
       expect(response.status).toBe(200)
     })
@@ -454,7 +455,8 @@ describe('withAuth', () => {
       const handler = vi.fn().mockResolvedValue(ok({}))
 
       await withAuth(handler, { roles: ['manager'], venueScoped: true })(
-        request('http://localhost:3000/api/test?venueId=sede-di-un-altro')
+        request('http://localhost:3000/api/test?venueId=sede-di-un-altro'),
+        contestoRotta()
       )
 
       expect(handler.mock.calls[0][1].venueId).toBe(VENUE)
@@ -464,7 +466,7 @@ describe('withAuth', () => {
       authMock.mockResolvedValue(sessionOf('admin', { venueId: null }))
       const handler = vi.fn().mockResolvedValue(ok({}))
 
-      await withAuth(handler, { roles: ['admin'], venueScoped: true })(request())
+      await withAuth(handler, { roles: ['admin'], venueScoped: true })(request(), contestoRotta())
 
       expect(handler.mock.calls[0][1].venueId).toBe(VENUE)
     })
@@ -473,7 +475,7 @@ describe('withAuth', () => {
       authMock.mockResolvedValue(sessionOf('manager', { venueId: null }))
       const handler = vi.fn()
 
-      const response = await withAuth(handler, { roles: ['manager'], venueScoped: true })(request())
+      const response = await withAuth(handler, { roles: ['manager'], venueScoped: true })(request(), contestoRotta())
 
       expect(response.status).toBe(403)
       expect(handler).not.toHaveBeenCalled()
@@ -483,7 +485,7 @@ describe('withAuth', () => {
       authMock.mockResolvedValue(sessionOf('admin'))
       const handler = vi.fn().mockResolvedValue(ok({}))
 
-      await withAuth(handler)(request())
+      await withAuth(handler)(request(), contestoRotta())
 
       expect(getVenueIdMock).not.toHaveBeenCalled()
     })
@@ -493,7 +495,7 @@ describe('withAuth', () => {
       getVenueIdMock.mockRejectedValue(new Error('Nessuna sede attiva configurata'))
       const handler = vi.fn()
 
-      const response = await withAuth(handler, { venueScoped: true })(request())
+      const response = await withAuth(handler, { venueScoped: true })(request(), contestoRotta())
 
       expect(response.status).toBe(500)
       expect(handler).not.toHaveBeenCalled()
@@ -516,7 +518,7 @@ describe('withAuth', () => {
       authMock.mockResolvedValue(sessionOf('admin'))
       const handler = vi.fn().mockResolvedValue(ok({}))
 
-      await withAuth(handler)(request())
+      await withAuth(handler)(request(), contestoRotta())
 
       expect(handler.mock.calls[0][1].params).toEqual({})
     })

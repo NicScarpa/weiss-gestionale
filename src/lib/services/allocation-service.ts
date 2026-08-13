@@ -249,14 +249,13 @@ export function ripartisciProQuotaConIva(
 }
 
 /**
- * Il client dentro `prisma.$transaction`: con il client esteso dall'adapter
- * il tipo `Prisma.TransactionClient` di libreria non combacia, quindi lo si
- * ricava da quello reale (stesso pattern di src/lib/attendance/manual-punch.ts).
+ * Il client dentro `prisma.$transaction`. La definizione sta in
+ * `@/lib/prisma`, dove il tipo appartiene: è un fatto sul client, non
+ * sull'allocazione. Si ri-esporta di qui perché diversi moduli lo importano
+ * già da questo file.
  */
-export type TransactionClient = Omit<
-  typeof prisma,
-  '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
->
+import type { TransactionClient } from '@/lib/prisma'
+export type { TransactionClient }
 
 /**
  * Rivaluta il centro del movimento dopo che le fette gli hanno riscritto il

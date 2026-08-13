@@ -39,6 +39,12 @@ yarn-error.log*
 .env.*.local
 !.env.example
 credenziali*.env
+# Gli ambienti delle ondate d'audit: hanno dentro DATABASE_URL, NEXTAUTH_SECRET,
+# AUTH_SECRET, ENCRYPTION_KEY e CRON_SECRET veri. `credenziali*.env` qui sopra
+# non li prendeva, perche' il nome non comincia per «credenziali».
+audit/*.env
+*.env
+!.env.example
 
 # vercel
 .vercel
@@ -105,10 +111,33 @@ Piano dei conti/
 # chiamate al giorno per conto e per endpoint, riscaricarli costa un giorno.
 /scripts/gocardless/snapshots/
 
+# Materiali grezzi dell'analisi competitiva: screenshot, HAR e tracce delle
+# chiamate API dei tre prodotti osservati. Fuori dal repository tutti e tre,
+# per due ragioni distinte.
+#
+# La prima e' che una parte e' stata raccolta navigando l'ambiente di
+# PRODUZIONE: dentro ci sono IBAN, nomi di fornitori e importi veri. Il
+# repository e' pubblico.
+#
+# La seconda vale anche per il materiale innocuo: un HAR e' la registrazione
+# integrale di una sessione, cookie e token compresi. Una regola per cartella
+# lascerebbe scoperta la cartella aggiunta domani — quindi si esclude
+# `assets/` per intero, e le analisi che ne sono state ricavate vivono in
+# `docs/agicap`, `docs/cashking` e `docs/trezy`, che sono testo e stanno nel
+# repository.
+/assets/
+
+# Log delle ondate d'audit: output di npm ci, tsc, lint, test e build, con i
+# percorsi della macchina che li ha prodotti. Si rigenerano rieseguendo i
+# comandi; nella storia del repository non aggiungono niente.
+/audit/baseline-logs/
+
 # Service worker: artefatto di build, prodotto da `npm run build:sw`
 /public/sw.js
 /public/sw.js.map
 
-# Fatture elettroniche vere usate per provare l'importatore: IBAN, partite IVA
-# e indirizzi di fornitori reali. Fuori dal repository: da git non si tolgono piu'.
+# Fatture elettroniche vere, usate per provare l'importatore: dentro ci sono
+# IBAN, partite IVA e indirizzi di fornitori reali. Servono a mano (il
+# confronto con CashKing gira su questi 226 file), ma nella storia del
+# repository non devono entrare: da li' non si tolgono piu'.
 /docs/fatture/
