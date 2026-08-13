@@ -86,7 +86,15 @@ export function BancheEContiClient() {
 
   const {
     data,
-    isFetching: loading,
+    // `isPending`, non `isFetching`: quest'ultimo è vero anche durante una
+    // rilettura in sottofondo (dopo aver creato un conto, acceso «Mostra
+    // archiviati») e sostituiva l'intero sottoalbero con lo spinner — compreso
+    // `ConnessioniBancarie` qui sotto, che perdeva tutte le scelte non ancora
+    // salvate proprio nel momento in cui il suo stesso testo invita a creare
+    // un conto e «tornare qui». `isPending` è vero solo quando questa
+    // combinazione di `showInactive` non ha ancora dati: la lista resta a
+    // schermo (anche se in via di aggiornamento) in ogni altro caso.
+    isPending: loading,
     error: erroreCaricamento,
     refetch: fetchAccounts,
   } = useQuery({

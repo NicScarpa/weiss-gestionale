@@ -107,6 +107,19 @@ function collegamentoInScadenza(giorni: number) {
 /** Risposta minima dei conti, sufficiente quando il test non guarda l'elenco. */
 const CONTI_VUOTI = { stato: { sigla: 'LN', nome: 'Collegata', spiegazione: '' }, lettiIl: null, conti: [] }
 
+// Rifiutata: non ha mai avuto una scadenza (`accessValidUntil` si scrive solo
+// quando lo stato diventa 'LN'), quindi `scadeIl` è `null` per costruzione —
+// non un dettaglio del fixture, è come la rotta risponde davvero per questo
+// stato.
+const COLLEGAMENTO_RIFIUTATO = {
+  connessione: {
+    id: 'conn-1',
+    istitutoNome: 'Banca della Marca',
+    stato: { sigla: 'RJ', nome: 'Rifiutata', spiegazione: 'La banca ha rifiutato il consenso. Va rifatto da capo.' },
+    scadeIl: null,
+  },
+}
+
 const CONTI = {
   stato: { sigla: 'LN', nome: 'Collegata', spiegazione: 'Il consenso è attivo.' },
   lettiIl: '2026-08-13T08:00:00.000Z',
@@ -311,5 +324,78 @@ describe('ConnessioniBancarie', () => {
     await attendere()
 
     expect(chiamate.filter((u) => u.startsWith('/api/gocardless/collegamenti/conn-1/rinnovo')).length).toBe(1)
+  })
+
+  // Un collegamento rifiutato non ha mai una data di scadenza: senza questo,
+  // `inScadenza` (che guarda solo la data) non lo intercetta mai, e il
+  // pannello si limiterebbe a dire «va rifatto da capo» nel sottotitolo,
+  // senza offrire nulla da premere.
+  it('un collegamento da rifare offre «Rinnova il consenso» anche senza una scadenza vicina', async () => {
+    stubFetch([
+      ['/api/gocardless/collegamenti/conn-1/conti', CONTI_VUOTI],
+      ['/api/gocardless/collegamenti', COLLEGAMENTO_RIFIUTATO],
+    ])
+
+    await montare(<ConnessioniBancarie contiBancari={CONTI_DEL_GESTIONALE} />)
+    await attendere()
+    await attendiChe(() => testoDellaPagina().includes('Rinnova il consenso'), "l'avviso di rinnovo")
+
+    expect(perTesto(/rinnova il consenso/i)).toBeTruthy()
+  })
+
+  // A differenza del wizard (dove `setStep('viaggio')` smonta il pulsante),
+  // qui l'avviso resta a schermo dopo un rinnovo riuscito: se la guardia si
+  // riaprisse sul successo, un secondo clic mentre il browser sta ancora
+  // navigando verso la banca manderebbe una seconda POST /rinnovo.
+  it('dopo un rinnovo riuscito il pulsante resta disabilitato: un secondo clic non manda una seconda richiesta', async () => {
+    stubFetch([
+      ['/api/gocardless/collegamenti/conn-1/conti', CONTI_VUOTI],
+      ['/api/gocardless/collegamenti', collegamentoInScadenza(5)],
+      ['/api/gocardless/collegamenti/conn-1/rinnovo', { link: 'https://banca.test/consenso/rinnovo' }],
+    ])
+
+    await montare(<ConnessioniBancarie contiBancari={CONTI_DEL_GESTIONALE} />)
+    await attendere()
+    await attendiChe(() => testoDellaPagina().includes('Rinnova il consenso'), "l'avviso di scadenza")
+
+    await cliccare(perTesto(/rinnova il consenso/i))
+    await attendiChe(
+      () => chiamate.some((u) => u.startsWith('/api/gocardless/collegamenti/conn-1/rinnovo')),
+      'la richiesta di rinnovo'
+    )
+    await attendere()
+
+    const pulsante = perTesto(/rinnova il consenso/i) as HTMLButtonElement
+    expect(pulsante.disabled).toBe(true)
+
+    await cliccare(pulsante)
+    await attendere()
+
+    expect(chiamate.filter((u) => u.startsWith('/api/gocardless/collegamenti/conn-1/rinnovo')).length).toBe(1)
+  })
+
+  // `aggiornaDallaBanca` deve scrivere il corpo già ricevuto direttamente in
+  // cache: se richiamasse `ricaricaConti()`, una seconda GET su `.../conti`
+  // (senza `aggiorna=1`) partirebbe subito dopo — inutile sul percorso
+  // normale (risponde dalla memoria), ma una seconda chiamata vera alla banca
+  // quando la memoria non è ancora scritta.
+  it('«Aggiorna dalla banca» non rilegge una seconda volta', async () => {
+    stubFetch([
+      ['/api/gocardless/collegamenti/conn-1/conti', CONTI],
+      ['/api/gocardless/collegamenti', COLLEGAMENTO],
+    ])
+
+    await montare(<ConnessioniBancarie contiBancari={CONTI_DEL_GESTIONALE} />)
+    await attendere()
+    await attendiChe(() => testoDellaPagina().includes('IT•• •••• 2222'), 'il secondo conto a schermo')
+
+    await cliccare(perTesto(/aggiorna dalla banca/i))
+    await attendiChe(() => chiamate.some((u) => u.includes('aggiorna=1')), 'la richiesta con aggiorna=1')
+    await attendere()
+
+    const chiamateConti = chiamate.filter((u) => u.startsWith('/api/gocardless/collegamenti/conn-1/conti'))
+    // Il montaggio (senza aggiorna=1) più il clic (con aggiorna=1): due, non
+    // tre.
+    expect(chiamateConti.length).toBe(2)
   })
 })

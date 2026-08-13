@@ -78,6 +78,11 @@ export function WizardCollegamento({ aperto, onChiudi }: { aperto: boolean; onCh
     staleTime: 0,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+    // Senza `retry: false` il client di default ritenta tre volte: qui non
+    // costa il contingente per conto, ma un istituto scelto mentre il primo
+    // tentativo sta ancora ritentando in sottofondo mostrerebbe un elenco
+    // che sta per essere rimpiazzato sotto i piedi dell'amministratore.
+    retry: false,
     queryFn: async (): Promise<{ istituzioni: Istituto[] }> => {
       const res = await fetch('/api/gocardless/istituzioni')
       if (!res.ok) throw new Error('Errore nel caricamento degli istituti')

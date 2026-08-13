@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { AlertCircle, RefreshCw, Wifi } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatDateShort } from '@/lib/constants'
 import { PREAVVISO_GIORNI, giorniAllaScadenza } from '@/lib/gocardless/scadenza'
+import { eDaRifare } from '@/lib/gocardless/stati'
 import { RigaContoBancario } from './RigaContoBancario'
 import { WizardCollegamento } from './WizardCollegamento'
 
@@ -72,6 +73,7 @@ interface RispostaConti {
 }
 
 export function ConnessioniBancarie({ contiBancari }: { contiBancari: ContoBancarioDelGestionale[] }) {
+  const queryClient = useQueryClient()
   const [scelte, setScelte] = useState<Record<string, Scelta>>({})
   const [inCorso, setInCorso] = useState<'salvataggio' | 'aggiornamento' | 'scollegamento' | 'rinnovo' | null>(null)
   const [wizardAperto, setWizardAperto] = useState(false)
@@ -113,6 +115,15 @@ export function ConnessioniBancarie({ contiBancari }: { contiBancari: ContoBanca
     // pulsante «Aggiorna dalla banca».
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+    // Senza `retry: false` il client di default ne fa tre. Questa query, a
+    // memoria vuota, contatta la banca (`leggiRequisition` più un
+    // `dettagliConto` per conto — il contingente è quattro al giorno PER
+    // CONTO): un 429 su un solo conto già al limite, o un 502, verrebbe
+    // ritentato tre volte, e i conti che precedono quello fallito pagherebbero
+    // `dettagliConto` a ogni tentativo. Quattro giri esauriscono il
+    // contingente di tutti gli altri conti, e «Riprova» ne farebbe partire
+    // altri quattro.
+    retry: false,
     queryFn: async (): Promise<RispostaConti> => {
       // Senza `aggiorna=1`: la rotta risponde dalla memoria. Chiedere alla
       // banca costa una chiamata per conto su quattro al giorno, ed è un
@@ -193,7 +204,14 @@ export function ConnessioniBancarie({ contiBancari }: { contiBancari: ContoBanca
         toast.error(corpo.error ?? 'Aggiornamento non riuscito')
         return
       }
-      await ricaricaConti()
+      // `corpo` è già la stessa forma che la query si aspetta: si scrive
+      // direttamente in cache invece di richiamare `ricaricaConti()`. Sul
+      // percorso normale quella seconda lettura risponde dalla memoria e non
+      // costa nulla, ma quando la memoria non è stata scritta — requisition
+      // non ancora `LN`, o zero conti per un errore a metà giro — questa GET
+      // ricontatterebbe la banca una seconda volta, vanificando il perché
+      // esiste questo bottone invece di un refresh qualunque.
+      queryClient.setQueryData<RispostaConti>(['gocardless-conti', connessione.id], corpo)
       toast.success('Elenco aggiornato')
     } catch {
       toast.error('Aggiornamento non riuscito')
@@ -243,15 +261,21 @@ export function ConnessioniBancarie({ contiBancari }: { contiBancari: ContoBanca
         // apposta perché il client non debba indovinare cosa dire per un 429
         // o un 502: si mostra il messaggio che arriva, non uno inventato qui.
         toast.error(corpo.error ?? 'Il rinnovo non è riuscito')
+        rinnovoInCorso.current = false
+        setInCorso(null)
         return
       }
+      // Qui, a differenza del wizard, non si azzera la guardia sul successo:
+      // nel wizard `setStep('viaggio')` smonta il pulsante, quindi non c'è
+      // più niente da ripremere. Qui l'avviso resta a schermo con lo stesso
+      // pulsante mentre il browser sta ancora navigando verso la banca —
+      // riaprire la guardia lo lascerebbe cliccabile, e un secondo clic
+      // manderebbe una seconda POST /rinnovo con un secondo agreement e una
+      // seconda requisition, rischiando di far autenticare l'amministratore
+      // su quella che il gestionale ha già dimenticato.
       window.location.href = corpo.link
     } catch {
       toast.error('Il rinnovo non è riuscito')
-    } finally {
-      // Come nel wizard: sul successo la pagina sta per navigare via
-      // comunque, quindi azzerarlo anche lì è innocuo; tenerlo bloccato dopo
-      // un errore impedirebbe di riprovare.
       rinnovoInCorso.current = false
       setInCorso(null)
     }
@@ -313,6 +337,20 @@ export function ConnessioniBancarie({ contiBancari }: { contiBancari: ContoBanca
 
   const giorni = giorniAllaScadenza(connessione.scadeIl)
   const inScadenza = giorni !== null && giorni <= PREAVVISO_GIORNI
+  // RJ ed EX sono gli stati «da rifare» (`eDaRifare`, in stati.ts): un
+  // collegamento rifiutato non ha mai avuto una scadenza (`accessValidUntil`
+  // si scrive solo quando lo stato diventa `LN`, mai per RJ), quindi
+  // `inScadenza` da sola — che guarda solo la data — non lo intercetterebbe
+  // mai, e il pannello direbbe «va rifatto» nel sottotitolo senza offrire
+  // nulla da premere.
+  const daRifare = eDaRifare(connessione.stato.sigla)
+  const mostraAvvisoRinnovo = inScadenza || daRifare
+  // «Scaduto» e «da rifare» sono lo stesso avviso, urgente: la banca non
+  // risponde già ora, non fra qualche giorno. Il banner della dashboard
+  // (`BannerConsenso.tsx`) distingue solo scaduto/non scaduto perché lì la
+  // data è l'unico segnale che ha; qui il problema è lo stesso testo, la
+  // variante «destructive» in più.
+  const scaduto = daRifare || (giorni !== null && giorni < 0)
 
   return (
     <Card>
@@ -353,14 +391,17 @@ export function ConnessioniBancarie({ contiBancari }: { contiBancari: ContoBanca
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {inScadenza && (
-          <Alert>
-            <AlertTitle>Il consenso sta per scadere</AlertTitle>
+        {mostraAvvisoRinnovo && (
+          <Alert variant={scaduto ? 'destructive' : 'default'}>
+            <AlertTitle>{scaduto ? 'Il consenso va rinnovato' : 'Il consenso sta per scadere'}</AlertTitle>
             <AlertDescription>
               <p>
-                Alla scadenza la banca smette di rispondere. Il rinnovo richiede solo una nuova
-                autenticazione in home banking, e conserva abbinamenti, interruttori e date così
-                come sono — a differenza di «Scollega» qui sopra, che li perde.
+                {scaduto
+                  ? 'La banca ha smesso di rispondere: i movimenti non arrivano più finché non lo rinnovi.'
+                  : 'Alla scadenza la banca smette di rispondere e i movimenti smettono di arrivare.'}
+                {' '}Il rinnovo richiede solo una nuova autenticazione in home banking, e conserva
+                abbinamenti, interruttori e date così come sono — a differenza di «Scollega» qui
+                sopra, che li perde.
               </p>
               <Button variant="outline" size="sm" className="mt-1" onClick={rinnova} disabled={inCorso !== null}>
                 Rinnova il consenso
