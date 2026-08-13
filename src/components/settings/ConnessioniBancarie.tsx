@@ -19,6 +19,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatDateShort } from '@/lib/constants'
+import { PREAVVISO_GIORNI, giorniAllaScadenza } from '@/lib/gocardless/scadenza'
 import { RigaContoBancario } from './RigaContoBancario'
 import { WizardCollegamento } from './WizardCollegamento'
 
@@ -68,16 +69,6 @@ interface RispostaConti {
   stato: StatoRequisition
   conti: ContoInPannello[]
   lettiIl: string | null
-}
-
-/** Quanti giorni prima della scadenza si comincia a chiedere il rinnovo. */
-const PREAVVISO_GIORNI = 14
-
-function giorniAllaScadenza(iso: string | null): number | null {
-  if (!iso) return null
-  const scadenza = new Date(iso)
-  if (Number.isNaN(scadenza.getTime())) return null
-  return Math.ceil((scadenza.getTime() - Date.now()) / 86_400_000)
 }
 
 export function ConnessioniBancarie({ contiBancari }: { contiBancari: ContoBancarioDelGestionale[] }) {
