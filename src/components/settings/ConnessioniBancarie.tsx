@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatDateShort } from '@/lib/constants'
 import { RigaContoBancario } from './RigaContoBancario'
+import { WizardCollegamento } from './WizardCollegamento'
 
 export interface ContoBancarioDelGestionale {
   id: string
@@ -82,6 +83,7 @@ function giorniAllaScadenza(iso: string | null): number | null {
 export function ConnessioniBancarie({ contiBancari }: { contiBancari: ContoBancarioDelGestionale[] }) {
   const [scelte, setScelte] = useState<Record<string, Scelta>>({})
   const [inCorso, setInCorso] = useState<'salvataggio' | 'aggiornamento' | 'scollegamento' | null>(null)
+  const [wizardAperto, setWizardAperto] = useState(false)
 
   const {
     data: datiCollegamento,
@@ -275,11 +277,8 @@ export function ConnessioniBancarie({ contiBancari }: { contiBancari: ContoBanca
           </div>
         </CardHeader>
         <CardContent>
-          {/* Il wizard è il Task 5, e sostituirà questa riga: fino ad allora il
-              pulsante esiste e lo dice, invece di sembrare rotto. */}
-          <Button onClick={() => toast.info('Il collegamento arriva col passo successivo')}>
-            Collega la banca
-          </Button>
+          <Button onClick={() => setWizardAperto(true)}>Collega la banca</Button>
+          <WizardCollegamento aperto={wizardAperto} onChiudi={() => setWizardAperto(false)} />
         </CardContent>
       </Card>
     )
