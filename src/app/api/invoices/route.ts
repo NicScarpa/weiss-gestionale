@@ -3,7 +3,13 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { parseFatturaPASafe, calcolaImporti, estraiScadenze, estraiDatiEstesi } from '@/lib/sdi/parser'
 import type { ParseWarning } from '@/lib/sdi/types'
-import { matchSupplier, createSupplierFromData, findSupplierByVat, type SuggestedSupplierData } from '@/lib/sdi/matcher'
+import {
+  matchSupplier,
+  createSupplierFromData,
+  findSupplierByVat,
+  suggestAccountForSupplier,
+  type SuggestedSupplierData,
+} from '@/lib/sdi/matcher'
 import { normalizzaPartitaIva } from '@/lib/invoices/partita-iva'
 import { trackPricesFromInvoice } from '@/lib/price-tracking'
 import {
@@ -559,7 +565,12 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Categorizzazione: la scelta dell'utente ha sempre la precedenza sulle regole
+    // Categorizzazione, in tre gradini di precedenza: la scelta esplicita del
+    // client, poi il conto abituale del fornitore, poi le regole dello
+    // scadenzario. È l'ordine che i due dialog sostituiti dal wizard avevano
+    // di fatto: chiamavano `/api/invoices/parse`, ne prendevano
+    // `suggestedAccount` — cioè proprio `suggestAccountForSupplier` — e lo
+    // rimandavano qui come `accountId`.
     let accountId: string | null = validatedData.accountId || null
     let regolaApplicata: { ruleId: string; azione: string } | null = null
 
@@ -571,7 +582,31 @@ export async function POST(request: NextRequest) {
       if (account) {
         status = 'CATEGORIZED'
       }
-    } else {
+    } else if (supplierId) {
+      // Il conto predefinito del fornitore (o, in mancanza, quello della sua
+      // ultima fattura categorizzata). Viene prima delle regole perché sa una
+      // cosa che le regole non sanno: *chi* ha emesso il documento. Le regole
+      // ragionano per tipo documento e tipo pagamento, quindi non possono
+      // distinguere due fornitori che vanno su conti diversi.
+      //
+      // Senza questo gradino una fattura di un fornitore con il conto
+      // assegnato a mano arrivava senza conto di testata, e
+      // `POST /api/invoices/[id]/record` la rifiutava con «Assegna prima un
+      // conto alla fattura»: su un lotto da 226 fatture, lavoro a mano che
+      // prima non c'era.
+      const contoDelFornitore = await suggestAccountForSupplier(supplierId)
+      if (contoDelFornitore) {
+        accountId = contoDelFornitore
+        status = 'CATEGORIZED'
+        logger.info('Conto assegnato dal fornitore', {
+          invoiceNumber: fattura.numero,
+          supplierId,
+          contoId: contoDelFornitore,
+        })
+      }
+    }
+
+    if (!accountId) {
       // Nessun conto indicato: decidono le regole dello scadenzario.
       // Le fatture elettroniche importate qui sono documenti ricevuti
       // (il cedente/prestatore è il fornitore).
