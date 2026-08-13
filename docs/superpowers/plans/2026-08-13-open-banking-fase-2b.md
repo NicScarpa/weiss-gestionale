@@ -992,7 +992,9 @@ import {
   smontare,
   attendere,
   cliccare,
+  scrivere,
   perTesto,
+  perId,
   testoDellaPagina,
 } from '@/components/scadenzario/__tests__/render-helpers'
 
