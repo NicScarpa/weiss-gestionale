@@ -138,3 +138,13 @@ export function perId<T extends HTMLElement = HTMLInputElement>(id: string): T |
 export function dialogPresente(): boolean {
   return document.body.querySelector('[role="dialog"]') !== null
 }
+
+/**
+ * Il testo dell'intera pagina montata, con gli spazi normalizzati. Nasce nella
+ * copia del cash flow (`src/components/cashflow/__tests__/render-helpers.tsx`),
+ * dove non serve il `QueryClientProvider`; qui serve entrambe le cose insieme,
+ * quindi si aggiunge qui invece di aprire una terza copia del file.
+ */
+export function testoDellaPagina(): string {
+  return (document.body.textContent || '').replace(/\s+/g, ' ')
+}

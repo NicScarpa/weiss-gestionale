@@ -12,7 +12,17 @@ setupIntegrationDb()
 afterEach(() => impostaClientPerTest(null))
 
 /** Client finto che registra cosa gli viene chiesto. */
-function clientFinto(opzioni: { fallisceRequisition?: boolean; accessValidForDaysConcessi?: number } = {}) {
+function clientFinto(opzioni: {
+  fallisceRequisition?: boolean
+  accessValidForDaysConcessi?: number
+  /**
+   * Eseguito dentro `creaAgreement`, cioè dopo che il controllo applicativo è
+   * passato e prima che la riga venga creata: è l'unico punto in cui inserire
+   * un concorrente produce una corsa vera invece di un test che si ferma
+   * prima e passa per il motivo sbagliato.
+   */
+  duranteAgreement?: () => Promise<void>
+} = {}) {
   const chiamate: string[] = []
   const client = {
     istituzioni: async () => {
@@ -24,6 +34,7 @@ function clientFinto(opzioni: { fallisceRequisition?: boolean; accessValidForDay
     },
     creaAgreement: async () => {
       chiamate.push('agreement')
+      if (opzioni.duranteAgreement) await opzioni.duranteAgreement()
       return {
         dati: { id: 'agr-1', max_historical_days: 90, access_valid_for_days: opzioni.accessValidForDaysConcessi ?? 180 },
         limiti: { restanti: null, ripresaFraSecondi: null },
@@ -108,10 +119,17 @@ describe('POST /api/gocardless/collegamenti', () => {
     expect(await prisma.bankConnection.count({ where: { venueId: venue.id, deletedAt: null } })).toBe(0)
   })
 
-  // Il campo gemello (`maxHistoricalDays`) usa già ciò che la banca concede;
-  // questo deve fare lo stesso, perché finisce all'amministratore come data
-  // di scadenza su cui si baserà il banner di rinnovo.
-  it('la scadenza del consenso segue ciò che la banca concede, non ciò che è stato chiesto', async () => {
+  // Ultimo giro della revisione finale: questa scrittura c'era ancora, la
+  // stessa forma del difetto di C1 nella rotta gemella. Il consenso non è
+  // ancora stato concesso quando questa POST risponde — lo sarà solo se
+  // l'amministratore completa l'autenticazione in banca, un passo fuori dal
+  // controllo del gestionale che può non arrivare mai (scheda chiusa, app
+  // scaduta). Scrivere già qui una scadenza a novanta giorni farebbe
+  // sembrare valido un consenso mai concesso, esattamente come in
+  // POST /rinnovo (vedi il commento in testa a quella rotta). La scrive
+  // GET .../conti, quando quella rotta scopre che lo stato è appena
+  // diventato `LN`.
+  it('non scrive la scadenza: il consenso non è ancora stato concesso', async () => {
     await entraCome('admin')
     const { client } = clientFinto({ accessValidForDaysConcessi: 90 })
     impostaClientPerTest(client)
@@ -122,12 +140,8 @@ describe('POST /api/gocardless/collegamenti', () => {
     )
 
     const riga = await prisma.bankConnection.findUnique({ where: { id: esito.body.connessioneId } })
-    const giorniAllaScadenza = Math.round((riga!.accessValidUntil!.getTime() - Date.now()) / 86_400_000)
-    // L'istituto finto dichiara max_access_valid_for_days: '180' (ciò che è
-    // stato chiesto), ma la banca ne concede solo 90: deve vincere il valore
-    // concesso.
-    expect(giorniAllaScadenza).toBeGreaterThanOrEqual(89)
-    expect(giorniAllaScadenza).toBeLessThanOrEqual(90)
+    expect(riga!.status).toBe('CR')
+    expect(riga!.accessValidUntil).toBeNull()
   })
 
   // Decisione del proprietario: un secondo collegamento vivo per la stessa
@@ -181,6 +195,37 @@ describe('POST /api/gocardless/collegamenti', () => {
     )
 
     expect(esito.status).toBe(201)
+  })
+
+  // Il controllo applicativo legge e poi scrive: due richieste concorrenti lo
+  // superano entrambe. L'indice unico parziale è la rete, e la sua violazione
+  // deve arrivare all'amministratore come il 409 che già conosce, non come un
+  // errore interno.
+  it('traduce la violazione dell indice in un 409, non in un 500', async () => {
+    await entraCome('admin')
+    const venue = await venueDiTest()
+    const { client } = clientFinto({
+      duranteAgreement: async () => {
+        await prisma.bankConnection.create({
+          data: {
+            venueId: venue.id,
+            institutionId: 'ALTRA_BANCA',
+            institutionName: 'Altra Banca',
+            requisitionId: 'req-corsa',
+            status: 'CR',
+          },
+        })
+      },
+    })
+    impostaClientPerTest(client)
+
+    const esito = await callRoute<{ error?: string }>(
+      creaCollegamento,
+      jsonRequest('http://localhost/api/gocardless/collegamenti', { method: 'POST', body: { istitutoId: 'BANCA_FINTA_XXXX' } })
+    )
+
+    expect(esito.status).toBe(409)
+    expect(esito.body.error).toContain('collegamento')
   })
 })
 

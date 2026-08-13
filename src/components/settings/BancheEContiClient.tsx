@@ -34,8 +34,9 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Pencil, Archive, Loader2, Building2, Banknote, Wifi } from 'lucide-react'
+import { Plus, Pencil, Archive, Loader2, Building2, Banknote } from 'lucide-react'
 import { toast } from 'sonner'
+import { ConnessioniBancarie } from './ConnessioniBancarie'
 
 type AccountType = 'CASH' | 'BANK'
 
@@ -85,7 +86,15 @@ export function BancheEContiClient() {
 
   const {
     data,
-    isFetching: loading,
+    // `isPending`, non `isFetching`: quest'ultimo è vero anche durante una
+    // rilettura in sottofondo (dopo aver creato un conto, acceso «Mostra
+    // archiviati») e sostituiva l'intero sottoalbero con lo spinner — compreso
+    // `ConnessioniBancarie` qui sotto, che perdeva tutte le scelte non ancora
+    // salvate proprio nel momento in cui il suo stesso testo invita a creare
+    // un conto e «tornare qui». `isPending` è vero solo quando questa
+    // combinazione di `showInactive` non ha ancora dati: la lista resta a
+    // schermo (anche se in via di aggiornamento) in ogni altro caso.
+    isPending: loading,
     error: erroreCaricamento,
     refetch: fetchAccounts,
   } = useQuery({
@@ -327,27 +336,7 @@ export function BancheEContiClient() {
         </div>
       )}
 
-      {/* Open Banking Placeholder */}
-      {activeTab === 'BANK' && (
-        <Card className="border-dashed">
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
-                <Wifi className="h-5 w-5 text-blue-500" />
-              </div>
-              <div>
-                <CardTitle className="text-base">Open Banking</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Connetti i tuoi conti bancari per importare automaticamente i movimenti.
-                </p>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <Badge variant="outline" className="text-xs">Coming Soon</Badge>
-          </CardContent>
-        </Card>
-      )}
+      {activeTab === 'BANK' && <ConnessioniBancarie contiBancari={filteredAccounts} />}
 
       {/* Dialog crea/modifica */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

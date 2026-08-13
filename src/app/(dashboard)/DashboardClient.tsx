@@ -21,6 +21,7 @@ import {
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { formatCurrency } from '@/lib/formatters'
+import { BannerConsenso } from '@/components/dashboard/BannerConsenso'
 
 const CashFlowForecast = dynamic(
   () => import('@/components/dashboard/CashFlowForecast').then(mod => ({ default: mod.CashFlowForecast })),
@@ -166,6 +167,10 @@ export function DashboardClient({ userName }: { userName?: string }) {
 
   return (
     <div className="space-y-6">
+      {/* Avviso di scadenza del consenso bancario: muto per chi non è
+          amministratore, la rotta sotto risponde solo a quel ruolo. */}
+      <BannerConsenso />
+
       {/* Welcome Section + Quick Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>

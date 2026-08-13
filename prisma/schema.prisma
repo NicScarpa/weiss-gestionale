@@ -213,6 +213,18 @@ model BankConnection {
   /// una riga in anagrafica: crearne una disattivata metterebbe comunque quel
   /// conto fra i conti aziendali.
   contiIgnorati     String[]  @default([]) @map("conti_ignorati")
+  /// I conti che il consenso copre, come li ha restituiti la banca l'ultima
+  /// volta che glieli abbiamo chiesti. Si conservano perché rileggerli costa
+  /// una chiamata per conto su un contingente di quattro al giorno: senza
+  /// memoria, quattro aperture del pannello lo esaurirebbero e la quinta non
+  /// mostrerebbe nulla, nemmeno ciò che è già salvato qui.
+  ///
+  /// **Non contiene IBAN.** `BankAccount.iban` è cifrato dal middleware, e una
+  /// colonna JSON lo scavalcherebbe: si conservano l'impronta, che serve
+  /// all'abbinamento, e la forma mascherata, che serve a mostrarlo. Il valore
+  /// non serve a nessuno dei due.
+  contiLetti        Json?     @map("conti_letti")
+  contiLettiIl      DateTime? @map("conti_letti_il")
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
   deletedAt         DateTime? @map("deleted_at")

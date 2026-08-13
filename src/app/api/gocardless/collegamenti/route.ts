@@ -9,27 +9,37 @@
  */
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 
 import { withAuth } from '@/lib/api-utils'
 import { prisma } from '@/lib/prisma'
 import { clientDaAmbiente } from '@/lib/gocardless/servizio'
 import { rispostaErroreGoCardless } from '@/lib/gocardless/risposte'
 import { descriviStato } from '@/lib/gocardless/stati'
+import { giorni, urlDiRitorno } from '@/lib/gocardless/parametri'
 import { logger } from '@/lib/logger'
 
 const corpoCreazione = z.object({ istitutoId: z.string().min(1) })
 
-/** Dove la banca rimanda a fine autenticazione. */
-function urlDiRitorno(): string {
-  const esplicito = process.env.GOCARDLESS_REDIRECT_URI
-  if (esplicito) return esplicito
-  const base = process.env.APP_URL?.replace(/\/$/, '') ?? 'http://localhost:3000'
-  return `${base}/api/gocardless/callback`
-}
-
-function giorni(valore: unknown, difetto: number): number {
-  const n = typeof valore === 'string' ? Number.parseInt(valore, 10) : typeof valore === 'number' ? valore : NaN
-  return Number.isFinite(n) ? n : difetto
+/**
+ * Il controllo applicativo legge e poi scrive: una corsa fra due richieste
+ * concorrenti lo supera. `ux_bank_connections_sede_viva` è la rete che
+ * ferma la seconda scrittura — questa funzione ne riconosce la violazione
+ * perché arrivi all'amministratore come il 409 che già conosce, non come un
+ * 500 anonimo.
+ *
+ * `meta.target` (la forma "da manuale" di Prisma) qui non c'è: con l'adapter
+ * driver per Postgres il nome del vincolo violato arriva solo dentro
+ * `meta.driverAdapterError.cause.originalMessage`, non in un campo dedicato.
+ * Si cerca quindi il nome dell'indice nell'intero `meta` serializzato,
+ * qualunque sia la forma esatta in cui è annidato.
+ */
+function eDoppioCollegamento(errore: unknown): boolean {
+  return (
+    errore instanceof Prisma.PrismaClientKnownRequestError &&
+    errore.code === 'P2002' &&
+    JSON.stringify(errore.meta ?? '').includes('ux_bank_connections_sede_viva')
+  )
 }
 
 export const POST = withAuth(
@@ -91,10 +101,15 @@ export const POST = withAuth(
           agreementId: agreement.dati.id,
           status: 'CR',
           maxHistoricalDays: agreement.dati.max_historical_days ?? storico,
-          // Come sopra: ciò che la banca concede, non ciò che è stato
-          // chiesto. Questo valore finisce all'amministratore come data di
-          // scadenza del consenso.
-          accessValidUntil: new Date(Date.now() + (agreement.dati.access_valid_for_days ?? accesso) * 86_400_000),
+          // `accessValidUntil` non si scrive qui: il consenso non è ancora
+          // stato concesso, solo richiesto. Se l'amministratore abbandona
+          // l'autenticazione in banca — l'evento più ordinario di questa
+          // integrazione — la riga resterebbe in `CR` con una scadenza a
+          // novanta giorni per un consenso mai esistito, ed è esattamente il
+          // difetto che la stessa scrittura in POST /rinnovo aveva (vedi il
+          // commento in testa a quella rotta). La si scrive in
+          // `GET .../conti`, quando quella rotta scopre che lo stato è
+          // appena diventato `LN`.
         },
       })
 
@@ -134,6 +149,13 @@ export const POST = withAuth(
         return NextResponse.json({ error: 'La banca non ha accettato la richiesta di collegamento' }, { status: 502 })
       }
     } catch (errore) {
+      if (eDoppioCollegamento(errore)) {
+        return NextResponse.json(
+          { error: 'Esiste già un collegamento attivo per questa sede: scollegalo prima di crearne uno nuovo' },
+          { status: 409 }
+        )
+      }
+
       return rispostaErroreGoCardless(errore, 'POST /api/gocardless/collegamenti')
     }
   },

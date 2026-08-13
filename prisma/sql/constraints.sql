@@ -197,6 +197,20 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_bank_transactions_conto_provider
     AND provider_transaction_id IS NOT NULL;
 
 
+-- 5e. bank_connections — un solo collegamento vivo per sede.
+--
+--     Bug che impedisce: un doppio clic sul pulsante di conferma del wizard
+--     supera il controllo applicativo (findFirst poi create) due volte e crea
+--     due connessioni; il pannello ne mostra una e l'altra resta invisibile,
+--     avendo pero' gia' consumato tre chiamate alla banca.
+--
+--     Parziale su deleted_at perche' le connessioni scollegate restano in
+--     tabella e devono poter convivere con quella viva.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_bank_connections_sede_viva
+  ON bank_connections (venue_id)
+  WHERE deleted_at IS NULL;
+
+
 -- =============================================================================
 -- 6. Indici di performance
 -- =============================================================================
