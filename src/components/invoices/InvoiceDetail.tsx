@@ -23,6 +23,7 @@ import {
   useCostCenters,
 } from '@/components/prima-nota/shared/CostCenterSelect'
 import { useAccountsForCombobox, buildCostCenterRuleMap } from '@/hooks/useImputableAccounts'
+import { CONTO_PROPOSTO_BOLLO } from '@/lib/sdi/righe-di-sistema'
 
 import {
   DocumentInfoSection,
@@ -144,6 +145,10 @@ async function recordInvoice(id: string, costCenterId?: string): Promise<unknown
 }
 
 interface RigheContiPayload {
+  // numeroLinea accetta anche i numeri riservati delle righe di sistema
+  // (LINEA_BOLLO = -1, LINEA_ARROTONDAMENTO = -2, in
+  // src/lib/sdi/righe-di-sistema.ts): sono `number` come le righe vere,
+  // nessuna forma diversa serve per salvarne il conto.
   righe?: Array<{ numeroLinea: number; accountId: string }>
   confermaTutte?: boolean
 }
@@ -206,7 +211,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       const dati = query.state.data as Invoice | undefined
       const righe = dati?.parsedData?.dettaglioLinee
       if (!righe?.length) return false
-      if (righe.some((r) => r.imputazione)) return false
+      if (righe.some((r) => r.imputazioni.length > 0)) return false
       if (query.state.dataUpdateCount > 20) return false
       return 3000
     },
@@ -346,6 +351,15 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     ? `${defaultAccount.code} - ${defaultAccount.name}`
     : undefined
 
+  // Stesso principio per il bollo: CONTO_PROPOSTO_BOLLO è un codice
+  // (30.01), il conto stesso serve per mostrare "codice - nome" in
+  // tendina. È di tipo COSTO (piano v4, famiglia E), quindi già dentro la
+  // lista sopra: nessuna fetch dedicata.
+  const contoBollo = accounts?.find((a) => a.code === CONTO_PROPOSTO_BOLLO)
+  const defaultBolloAccountLabel = contoBollo
+    ? `${contoBollo.code} - ${contoBollo.name}`
+    : undefined
+
   return (
     <div className="container py-6 space-y-6">
       {/* Header with back button and actions */}
@@ -422,9 +436,12 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       {/* Line items table */}
       <LineItemsTable
         dettaglioLinee={parsedData?.dettaglioLinee}
+        righeSistema={parsedData?.righeSistema}
         showAccountColumn={isPassiva}
         canEditAccounts={canEdit && !righeContiMutation.isPending}
         defaultAccountLabel={defaultAccountLabel}
+        defaultBolloAccountLabel={defaultBolloAccountLabel}
+        totaleDocumento={invoice.totalAmount}
         onAccountChange={handleLineAccountChange}
         onConfirmAllAccounts={handleConfirmAllLineAccounts}
       />

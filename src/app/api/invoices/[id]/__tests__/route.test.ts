@@ -64,7 +64,7 @@ describe('GET /api/invoices/[id]: righe divise nella risposta', () => {
     )
   })
 
-  it('riga divisa: imputazione resta la quota col progressivo più basso, imputazioni porta tutte le quote', async () => {
+  it('riga divisa: imputazioni porta tutte le quote in ordine di progressivo, con importo', async () => {
     // Il mock torna già ordinato (0, poi 1): è quello che orderBy garantisce
     // in produzione. Il codice si fida di quell'ordine, non lo ricalcola.
     vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([
@@ -95,7 +95,9 @@ describe('GET /api/invoices/[id]: righe divise nella risposta', () => {
     const data = await response.json()
 
     const riga = data.parsedData.dettaglioLinee[0]
-    expect(riga.imputazione).toEqual(
+    // imputazioni[0] è "la" quota principale per chi non gestisce le righe
+    // divise (Task 8): deve essere quella col progressivo più basso.
+    expect(riga.imputazioni[0]).toEqual(
       expect.objectContaining({ accountId: 'conto-detersivi', stato: 'confermata' })
     )
     expect(riga.imputazioni).toEqual([
@@ -104,10 +106,10 @@ describe('GET /api/invoices/[id]: righe divise nella risposta', () => {
     ])
   })
 
-  it('riga con la sola quota al progressivo 1 (la quota 0 è stata rimossa): imputazione la usa comunque, non torna null', async () => {
+  it('riga con la sola quota al progressivo 1 (la quota 0 è stata rimossa): imputazioni[0] la usa comunque', async () => {
     // Caso limite dopo la revisione del Task 5: una richiesta autorevole può
     // lasciare una riga con l'unica quota superstite a un progressivo diverso
-    // da 0. `imputazione` deve seguirla, non sparire.
+    // da 0. imputazioni[0] deve seguirla, non sparire.
     vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([
       {
         numeroLinea: 1,
@@ -126,13 +128,13 @@ describe('GET /api/invoices/[id]: righe divise nella risposta', () => {
     const data = await response.json()
 
     const riga = data.parsedData.dettaglioLinee[0]
-    expect(riga.imputazione).toEqual(
+    expect(riga.imputazioni[0]).toEqual(
       expect.objectContaining({ accountId: 'conto-tovaglioli' })
     )
     expect(riga.imputazioni).toHaveLength(1)
   })
 
-  it('riga senza imputazioni: imputazione è null, imputazioni è un array vuoto', async () => {
+  it('riga senza imputazioni: imputazioni è un array vuoto', async () => {
     vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([] as never)
 
     const { request, context } = richiesta()
@@ -140,7 +142,66 @@ describe('GET /api/invoices/[id]: righe divise nella risposta', () => {
     const data = await response.json()
 
     const riga = data.parsedData.dettaglioLinee[0]
-    expect(riga.imputazione).toBeNull()
     expect(riga.imputazioni).toEqual([])
+  })
+})
+
+describe('GET /api/invoices/[id]: righe di sistema (bollo, arrotondamento)', () => {
+  it('fattura con bollo: righeSistema porta la riga -1 con descrizione e importo', async () => {
+    vi.mocked(parseFatturaPA).mockReturnValue({
+      dettaglioLinee: [{ numeroLinea: 1, descrizione: 'Detersivi', prezzoTotale: 100 }],
+      datiBollo: { importoBollo: 2 },
+    } as never)
+    vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([] as never)
+
+    const { request, context } = richiesta()
+    const response = await GET(request, context)
+    const data = await response.json()
+
+    expect(data.parsedData.righeSistema).toEqual([
+      expect.objectContaining({ numeroLinea: -1, descrizione: 'Imposta di bollo', importo: 2 }),
+    ])
+  })
+
+  it('fattura senza bollo né arrotondamento: righeSistema è un array vuoto', async () => {
+    vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([] as never)
+
+    const { request, context } = richiesta()
+    const response = await GET(request, context)
+    const data = await response.json()
+
+    expect(data.parsedData.righeSistema).toEqual([])
+  })
+
+  it('il conto scelto per il bollo si rilegge: la quota salvata su numeroLinea -1 finisce in imputazioni della riga di sistema', async () => {
+    // È l'asimmetria che la task 8 doveva chiudere: la PATCH righe-conti
+    // accetta già LINEA_BOLLO in scrittura, ma prima di questo cambiamento
+    // la GET non la restituiva mai — il conto si sarebbe salvato ma sarebbe
+    // sparito al primo refresh della pagina.
+    vi.mocked(parseFatturaPA).mockReturnValue({
+      dettaglioLinee: [{ numeroLinea: 1, descrizione: 'Detersivi', prezzoTotale: 100 }],
+      datiBollo: { importoBollo: 2 },
+    } as never)
+    vi.mocked(prisma.invoiceLineAccount.findMany).mockResolvedValue([
+      {
+        numeroLinea: -1,
+        progressivo: 0,
+        accountId: 'conto-bollo',
+        importo: new Prisma.Decimal(2),
+        stato: 'confermata',
+        fonte: 'manuale',
+        confidence: null,
+        motivazioneAi: null,
+      },
+    ] as never)
+
+    const { request, context } = richiesta()
+    const response = await GET(request, context)
+    const data = await response.json()
+
+    const rigaBollo = data.parsedData.righeSistema.find((r: { numeroLinea: number }) => r.numeroLinea === -1)
+    expect(rigaBollo.imputazioni).toEqual([
+      expect.objectContaining({ accountId: 'conto-bollo', stato: 'confermata', importo: 2 }),
+    ])
   })
 })

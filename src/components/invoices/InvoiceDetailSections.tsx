@@ -12,6 +12,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -25,6 +26,7 @@ import {
   Calculator,
   Banknote,
   Info,
+  Cog,
 } from 'lucide-react'
 import {
   getDocumentTypeAbbrev,
@@ -36,6 +38,14 @@ import {
 import { formatCurrencyOrZero as formatCurrency } from '@/lib/formatters'
 import { NATURA_OPERAZIONE } from '@/lib/sdi/types'
 import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
+import { LINEA_BOLLO, LINEA_ARROTONDAMENTO } from '@/lib/sdi/righe-di-sistema'
+
+// Stessa soglia di src/lib/scadenzario/stato-schedule.ts, duplicata invece
+// che importata: quel modulo porta `@prisma/client` (usato per altro al suo
+// interno), e un import così in un componente 'use client' rompe la build
+// in un modo che nessuna revisione del diff vede — bisogna lanciare
+// `npm run build` per accorgersene.
+const TOLLERANZA_IMPORTI = 0.005
 
 // Type definitions for parsed data from API
 interface CedentePrestatore {
@@ -64,9 +74,17 @@ interface CessionarioCommittente {
   }
 }
 
-/** Imputazione per conto salvata sulla riga (Task 9-10). */
-interface ImputazioneLinea {
+/**
+ * Una quota di riga imputata a un conto: un solo elemento nel caso comune,
+ * più d'uno per una riga divisa fra conti diversi (Task 9). `progressivo` la
+ * distingue dalle altre quote della stessa riga; `imputazioni[0]`, ordinato
+ * dal server per progressivo crescente, è "la" imputazione principale per chi
+ * non gestisce ancora le righe divise.
+ */
+interface ImputazioneQuota {
+  progressivo: number
   accountId: string
+  importo: number
   stato: 'proposta' | 'confermata'
   fonte: string
   confidence?: number | string | null
@@ -81,7 +99,20 @@ interface DettaglioLinea {
   prezzoUnitario: number
   prezzoTotale: number
   aliquotaIVA: number
-  imputazione?: ImputazioneLinea | null
+  imputazioni: ImputazioneQuota[]
+}
+
+/**
+ * Bollo virtuale e arrotondamento: righe imputabili come le altre ma fuori
+ * da `dettaglioLinee` (vedi `righeDiSistema` in `src/lib/sdi/righe-di-sistema.ts`,
+ * unica fonte del calcolo — qui si mostra solo quello che il server
+ * restituisce già pronto, non si ricalcola nulla).
+ */
+interface RigaDiSistema {
+  numeroLinea: number
+  descrizione: string
+  importo: number
+  imputazioni: ImputazioneQuota[]
 }
 
 interface DatiRiepilogo {
@@ -116,6 +147,7 @@ export interface ParsedInvoiceData {
   cedentePrestatore?: CedentePrestatore
   cessionarioCommittente?: CessionarioCommittente
   dettaglioLinee?: DettaglioLinea[]
+  righeSistema?: RigaDiSistema[]
   datiRiepilogo?: DatiRiepilogo[]
   datiPagamento?: DatiPagamento
   datiBollo?: DatiBollo
@@ -304,21 +336,73 @@ export function CausaleSection({ causale }: CausaleSectionProps) {
 // ==========================================
 interface LineItemsTableProps {
   dettaglioLinee?: DettaglioLinea[]
+  /** Bollo e arrotondamento: righe imputabili come le altre, già pronte con le loro imputazioni (righeDiSistema lato server). */
+  righeSistema?: RigaDiSistema[]
   /** Mostra la colonna "Conto": solo per fatture passive/ricevute, decide il genitore. */
   showAccountColumn?: boolean
   /** false quando la fattura non è più modificabile (registrata/pagata) o durante una PATCH in corso. */
   canEditAccounts?: boolean
   /** Suggerimento non salvato (conto di default del fornitore) per le righe senza imputazione. */
   defaultAccountLabel?: string
+  /** Suggerimento per la riga del bollo quando non ha ancora un'imputazione: es. "30.01 - Imposta di bollo" (CONTO_PROPOSTO_BOLLO). */
+  defaultBolloAccountLabel?: string
+  /** Totale del documento, righe di sistema comprese: denominatore del contatore di copertura. */
+  totaleDocumento?: string | number
   onAccountChange?: (numeroLinea: number, accountId: string) => void
   onConfirmAllAccounts?: () => void
 }
 
+/** Una riga della tabella, vera o di sistema, ridotta ai campi comuni al rendering e al calcolo di copertura. */
+interface RigaVisualizzata {
+  numeroLinea: number
+  descrizione: string
+  isSistema: boolean
+  quantita?: number
+  unitaMisura?: string
+  prezzoUnitario?: number
+  aliquotaIVA?: number
+  importo: number
+  imputazioni: ImputazioneQuota[]
+}
+
+/** Quanto di una riga è coperto da imputazioni CONFERMATE — non le proposte
+ * AI, ancora da rivedere. Specchia la guardia sul back end
+ * (schedule-reconciliation-service.ts, "numeroLineeImputate"), che conta solo
+ * le conferme umane per decidere se l'ereditarietà pro-quota può scattare:
+ * il contatore qui deve dire «completa» esattamente quando quella guardia
+ * passerebbe, non prima. */
+function importoConfermato(imputazioni: ImputazioneQuota[]): number {
+  return imputazioni
+    .filter((q) => q.stato === 'confermata')
+    .reduce((somma, q) => somma + q.importo, 0)
+}
+
+/** Riferimento leggibile a una riga mancante nel messaggio del contatore: le
+ * righe di sistema usano il loro numero riservato (LINEA_BOLLO/LINEA_ARROTONDAMENTO),
+ * che non ha senso mostrare all'utente com'è ("riga -1"). */
+function riferimentoRiga(riga: RigaVisualizzata): string {
+  if (riga.numeroLinea === LINEA_BOLLO) return 'il bollo'
+  if (riga.numeroLinea === LINEA_ARROTONDAMENTO) return "l'arrotondamento"
+  return `la riga ${riga.numeroLinea}`
+}
+
+/** «manca la riga 2» al singolare, «mancano la riga 2 e il bollo» al plurale. */
+function messaggioRigheMancanti(righeMancanti: RigaVisualizzata[]): string {
+  const riferimenti = righeMancanti.map(riferimentoRiga)
+  if (riferimenti.length === 1) return `manca ${riferimenti[0]}`
+  const ultimo = riferimenti[riferimenti.length - 1]
+  const resto = riferimenti.slice(0, -1)
+  return `mancano ${resto.join(', ')} e ${ultimo}`
+}
+
 export function LineItemsTable({
   dettaglioLinee,
+  righeSistema = [],
   showAccountColumn = false,
   canEditAccounts = true,
   defaultAccountLabel,
+  defaultBolloAccountLabel,
+  totaleDocumento,
   onAccountChange,
   onConfirmAllAccounts,
 }: LineItemsTableProps) {
@@ -332,8 +416,49 @@ export function LineItemsTable({
     return `${aliquota}%`
   }
 
+  // Un'unica lista, righe vere e di sistema mescolate nell'ordine in cui si
+  // mostrano: stessa tabella, stesso rendering, nessuna riga "di serie B".
+  const righe: RigaVisualizzata[] = [
+    ...dettaglioLinee.map((linea) => ({
+      numeroLinea: linea.numeroLinea,
+      descrizione: linea.descrizione,
+      isSistema: false,
+      quantita: linea.quantita,
+      unitaMisura: linea.unitaMisura,
+      prezzoUnitario: linea.prezzoUnitario,
+      aliquotaIVA: linea.aliquotaIVA,
+      importo: linea.prezzoTotale,
+      imputazioni: linea.imputazioni,
+    })),
+    ...righeSistema.map((riga) => ({
+      numeroLinea: riga.numeroLinea,
+      descrizione: riga.descrizione,
+      isSistema: true,
+      importo: riga.importo,
+      imputazioni: riga.imputazioni,
+    })),
+  ]
+
   const hasProposte =
-    showAccountColumn && dettaglioLinee.some((l) => l.imputazione?.stato === 'proposta')
+    showAccountColumn && righe.some((r) => r.imputazioni.some((q) => q.stato === 'proposta'))
+
+  // Contatore di copertura (decisione 5, "attribuzione totale obbligatoria"):
+  // quanto del documento è già coperto da imputazioni confermate, righe di
+  // sistema comprese. Il denominatore è il totale del DOCUMENTO — non la
+  // somma delle righe qui sotto — perché deve restare vero anche prima che
+  // l'ultima riga sia stata imputata.
+  const totale =
+    totaleDocumento === undefined
+      ? undefined
+      : typeof totaleDocumento === 'string'
+        ? parseFloat(totaleDocumento)
+        : totaleDocumento
+  const attribuito = righe.reduce((somma, r) => somma + importoConfermato(r.imputazioni), 0)
+  const righeMancanti = righe.filter(
+    (r) => Math.abs(r.importo - importoConfermato(r.imputazioni)) > TOLLERANZA_IMPORTI
+  )
+  const completa =
+    totale !== undefined && Math.abs(attribuito - totale) <= TOLLERANZA_IMPORTI
 
   return (
     <Card>
@@ -370,67 +495,92 @@ export function LineItemsTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {dettaglioLinee.map((linea) => {
-                const imputazione = linea.imputazione
+              {righe.map((riga) => {
+                // imputazioni[0]: la quota col progressivo più basso (il
+                // server le ordina già così), cioè "la" imputazione
+                // principale finché la riga non è divisa fra più conti.
+                const principale = riga.imputazioni[0]
                 const dotClass =
-                  imputazione?.stato === 'confermata'
+                  principale?.stato === 'confermata'
                     ? 'bg-green-500'
-                    : imputazione?.stato === 'proposta'
+                    : principale?.stato === 'proposta'
                       ? 'bg-amber-500'
                       : undefined
                 const dotTitle =
-                  imputazione?.stato === 'confermata'
+                  principale?.stato === 'confermata'
                     ? 'Imputazione confermata'
-                    : imputazione?.stato === 'proposta'
-                      ? `Imputazione proposta automaticamente${imputazione.motivazioneAi ? ` — ${imputazione.motivazioneAi}` : ''}`
+                    : principale?.stato === 'proposta'
+                      ? `Imputazione proposta automaticamente${principale.motivazioneAi ? ` — ${principale.motivazioneAi}` : ''}`
                       : undefined
 
+                // Il bollo nasce proposto su CONTO_PROPOSTO_BOLLO (30.01):
+                // solo un suggerimento in tendina finché nessuno lo sceglie
+                // davvero, esattamente come il conto di default del
+                // fornitore per le righe vere — non una proposta persistita,
+                // altrimenti "Accetta tutte" dovrebbe saperla confermare
+                // anche quando in database non esiste ancora nulla da
+                // confermare.
+                const suggerimento =
+                  principale
+                    ? undefined
+                    : riga.numeroLinea === LINEA_BOLLO
+                      ? defaultBolloAccountLabel
+                      : !riga.isSistema
+                        ? defaultAccountLabel
+                        : undefined
+
                 return (
-                  <TableRow key={linea.numeroLinea}>
+                  <TableRow key={riga.numeroLinea}>
                     <TableCell className="font-mono text-slate-500">
-                      {linea.numeroLinea}
+                      {riga.isSistema ? (
+                        <Cog className="h-3.5 w-3.5" aria-label="Riga di sistema" />
+                      ) : (
+                        riga.numeroLinea
+                      )}
                     </TableCell>
-                    <TableCell className="max-w-xs truncate" title={linea.descrizione}>
-                      {linea.descrizione}
+                    <TableCell className="max-w-xs truncate" title={riga.descrizione}>
+                      {riga.descrizione}
                     </TableCell>
                     <TableCell className="text-right">
-                      {linea.quantita !== undefined ? (
+                      {riga.quantita !== undefined ? (
                         <>
-                          {linea.quantita.toLocaleString('it-IT', { useGrouping: true })}
-                          {linea.unitaMisura && (
+                          {riga.quantita.toLocaleString('it-IT', { useGrouping: true })}
+                          {riga.unitaMisura && (
                             <span className="text-xs text-slate-500 ml-1">
-                              {linea.unitaMisura}
+                              {riga.unitaMisura}
                             </span>
                           )}
                         </>
                       ) : (
-                        '-'
+                        '—'
                       )}
                     </TableCell>
                     <TableCell className="text-right font-mono">
-                      {formatCurrency(linea.prezzoUnitario)}
+                      {riga.prezzoUnitario !== undefined ? formatCurrency(riga.prezzoUnitario) : '—'}
                     </TableCell>
                     <TableCell className="text-right">
-                      {formatIVA(linea.aliquotaIVA)}
+                      {riga.aliquotaIVA !== undefined ? formatIVA(riga.aliquotaIVA) : '—'}
                     </TableCell>
                     <TableCell className="text-right font-mono font-medium">
-                      {formatCurrency(linea.prezzoTotale)}
+                      {formatCurrency(riga.importo)}
                     </TableCell>
                     {showAccountColumn && (
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <AccountCombobox
-                            value={imputazione?.accountId}
+                            value={principale?.accountId}
                             onChange={(accountId) => {
-                              if (accountId) onAccountChange?.(linea.numeroLinea, accountId)
+                              if (accountId) onAccountChange?.(riga.numeroLinea, accountId)
                             }}
                             disabled={!canEditAccounts}
-                            types={['COSTO']}
-                            placeholder={
-                              !imputazione && defaultAccountLabel
-                                ? `Suggerito: ${defaultAccountLabel}`
-                                : 'Seleziona conto'
-                            }
+                            // Un conto PATRIMONIALE è ammesso quanto uno di
+                            // COSTO: un frigorifero in fattura è un cespite,
+                            // non un costo, e prima non era imputabile
+                            // (Task 8, punto d). RICAVO resta escluso: lo
+                            // scarta già il server (righe-conti/route.ts),
+                            // qui evita solo di proporlo inutilmente.
+                            types={['COSTO', 'PATRIMONIALE']}
+                            placeholder={suggerimento ? `Suggerito: ${suggerimento}` : 'Seleziona conto'}
                           />
                           {dotClass && (
                             <span
@@ -445,6 +595,24 @@ export function LineItemsTable({
                 )
               })}
             </TableBody>
+            {showAccountColumn && totale !== undefined && (
+              <TableFooter>
+                <TableRow>
+                  <TableCell colSpan={7} className="text-sm">
+                    <span className="font-medium">
+                      Attribuito {formatCurrency(attribuito)} / {formatCurrency(totale)}
+                    </span>
+                    {completa ? (
+                      <span className="ml-2 text-green-600">✓ completa</span>
+                    ) : (
+                      <span className="ml-2 text-amber-600">
+                        — {messaggioRigheMancanti(righeMancanti)}
+                      </span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              </TableFooter>
+            )}
           </Table>
         </div>
       </CardContent>

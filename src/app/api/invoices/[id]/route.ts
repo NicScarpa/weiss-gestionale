@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { InvoiceStatus } from '@prisma/client'
 import { z } from 'zod'
 import { parseFatturaPA, TIPI_DOCUMENTO } from '@/lib/sdi/parser'
+import { righeDiSistema } from '@/lib/sdi/righe-di-sistema'
 import { getVenueId } from '@/lib/venue'
 
 import { logger } from '@/lib/logger'
@@ -131,48 +132,48 @@ export async function GET(request: NextRequest, context: RouteContext) {
           else quotePerLinea.set(la.numeroLinea, [la])
         }
 
+        // Un solo modo di raccontare le quote di una riga, riusato sia dalle
+        // righe vere sia da quelle di sistema: prima esisteva anche un campo
+        // `imputazione` singolare (solo la quota col progressivo più basso,
+        // senza importo) accanto a questo array — un'asimmetria lasciata alla
+        // task 8. Portava meno informazione della stessa quota già presente
+        // in `imputazioni[0]` e nessun consumatore lo distingueva da questo,
+        // quindi è stato tolto invece di mantenere due copie che potevano
+        // disallinearsi: chi vuole "la" imputazione principale della riga
+        // legge `imputazioni[0]`, ordinato per progressivo dall'orderBy sopra.
+        const mappaImputazioni = (quote: typeof lineAccounts) =>
+          quote.map((q) => ({
+            progressivo: q.progressivo,
+            accountId: q.accountId,
+            importo: Number(q.importo),
+            stato: q.stato,
+            fonte: q.fonte,
+            confidence: q.confidence,
+            motivazioneAi: q.motivazioneAi,
+          }))
+
+        // Bollo e arrotondamento (Task 4) sono righe imputabili ma vivono
+        // fuori da `dettaglioLinee`: senza esporle qui il conto scelto per il
+        // bollo si salverebbe (righe-conti/route.ts già accetta LINEA_BOLLO)
+        // ma non si rileggerebbe mai — l'asimmetria che la task 8 doveva
+        // chiudere. `quotePerLinea` le contiene già, perché la query sopra
+        // non filtra per numeroLinea positivo.
+        const righeSistema = righeDiSistema(fattura)
+
         parsedData = {
           tipoDocumento: fattura.tipoDocumento,
           tipoDocumentoDesc: TIPI_DOCUMENTO[fattura.tipoDocumento] || fattura.tipoDocumento,
           causale: fattura.causale || [],
           cedentePrestatore: fattura.cedentePrestatore,
           cessionarioCommittente: fattura.cessionarioCommittente,
-          dettaglioLinee: (fattura.dettaglioLinee || []).map((linea) => {
-            const quote = quotePerLinea.get(linea.numeroLinea) ?? []
-            // La quota col progressivo più basso, grazie all'orderBy sopra:
-            // di norma è la 0, ma non è garantito che lo sia sempre (una
-            // riga può restare con la sola quota 1 se l'altra è stata
-            // rimossa). `imputazione` resta questo singolo oggetto per non
-            // rompere l'interfaccia esistente, che non sa ancora di righe
-            // divise: la task 8 deciderà come mostrare `imputazioni`.
-            const imputazione = quote[0]
-            return {
-              ...linea,
-              imputazione: imputazione
-                ? {
-                    accountId: imputazione.accountId,
-                    stato: imputazione.stato,
-                    fonte: imputazione.fonte,
-                    confidence: imputazione.confidence,
-                    motivazioneAi: imputazione.motivazioneAi,
-                  }
-                : null,
-              // Tutte le quote della riga, non solo la prima: senza questo
-              // campo una riga divisa resterebbe invisibile a metà anche se
-              // in database è corretta. La task 8 userà questo elenco per
-              // mostrare più conti sulla stessa riga, o lo ignorerà finché
-              // non è pronta.
-              imputazioni: quote.map((q) => ({
-                progressivo: q.progressivo,
-                accountId: q.accountId,
-                importo: Number(q.importo),
-                stato: q.stato,
-                fonte: q.fonte,
-                confidence: q.confidence,
-                motivazioneAi: q.motivazioneAi,
-              })),
-            }
-          }),
+          dettaglioLinee: (fattura.dettaglioLinee || []).map((linea) => ({
+            ...linea,
+            imputazioni: mappaImputazioni(quotePerLinea.get(linea.numeroLinea) ?? []),
+          })),
+          righeSistema: righeSistema.map((riga) => ({
+            ...riga,
+            imputazioni: mappaImputazioni(quotePerLinea.get(riga.numeroLinea) ?? []),
+          })),
           datiRiepilogo: fattura.datiRiepilogo || [],
           datiPagamento: fattura.datiPagamento,
           datiBollo: fattura.datiBollo,
