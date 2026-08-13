@@ -56,7 +56,7 @@ export function PassoAnteprima({ righe, onEsclusioneChange, metadatiIgnorati, sc
 
       <div className="max-h-[52vh] overflow-y-auto rounded-lg border">
         <Table>
-          <TableHeader>
+          <TableHeader className="sticky top-0 z-10 bg-background">
             <TableRow>
               <TableHead>Includi</TableHead>
               <TableHead>#</TableHead>
@@ -85,7 +85,7 @@ export function PassoAnteprima({ righe, onEsclusioneChange, metadatiIgnorati, sc
                   />
                 </TableCell>
                 <TableCell>{indice + 1}</TableCell>
-                <TableCell className="max-w-40 truncate">{r.nomeFile}</TableCell>
+                <TableCell className="max-w-40 truncate" title={r.nomeFile}>{r.nomeFile}</TableCell>
                 <TableCell>{r.numero}</TableCell>
                 <TableCell>{r.tipoDocumento}</TableCell>
                 <TableCell>{formattaData(r.data)}</TableCell>
@@ -99,8 +99,12 @@ export function PassoAnteprima({ righe, onEsclusioneChange, metadatiIgnorati, sc
                     )}
                   </span>
                 </TableCell>
-                <TableCell className="max-w-40 truncate">{r.denominazioneFornitore}</TableCell>
-                <TableCell className="max-w-40 truncate">{r.denominazioneCliente}</TableCell>
+                <TableCell className="max-w-40 truncate" title={r.denominazioneFornitore}>
+                  {r.denominazioneFornitore}
+                </TableCell>
+                <TableCell className="max-w-40 truncate" title={r.denominazioneCliente}>
+                  {r.denominazioneCliente}
+                </TableCell>
                 <TableCell>{formatCurrency(r.netAmount)}</TableCell>
                 <TableCell>{r.aliquote.map((a) => `${a}%`).join(' · ')}</TableCell>
                 <TableCell>{formatCurrency(r.totalAmount)}</TableCell>

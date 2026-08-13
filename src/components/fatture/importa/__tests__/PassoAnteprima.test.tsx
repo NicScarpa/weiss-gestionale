@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, within, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { PassoAnteprima } from '../PassoAnteprima'
 import type { RigaAnteprima } from '../PassoAnteprima'
 
