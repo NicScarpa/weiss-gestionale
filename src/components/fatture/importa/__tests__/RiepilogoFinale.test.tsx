@@ -82,4 +82,19 @@ describe('RiepilogoFinale', () => {
     render(<RiepilogoFinale esiti={esiti} fattureCreate={0} fornitoriCreati={0} onChiudi={vi.fn()} onRicomincia={vi.fn()} />)
     expect(screen.getByText(/non corrisponde/i)).toBeInTheDocument()
   })
+
+  it('con la verifica non eseguita dice che non si è potuta fare, senza gridare al lupo', () => {
+    // `null` non è `0`: la rilettura non ha risposto. Trattarlo come zero
+    // farebbe comparire «1 dichiarate, 0 create» in rosso su un'importazione
+    // perfettamente riuscita — un falso allarme che manda l'utente a
+    // cercare un guasto che non c'è.
+    render(<RiepilogoFinale esiti={esiti} fattureCreate={null} fornitoriCreati={0} onChiudi={vi.fn()} onRicomincia={vi.fn()} />)
+
+    expect(screen.getByText(/non è stato possibile verificare il conteggio/i)).toBeInTheDocument()
+    expect(screen.queryByText(/non corrisponde/i)).not.toBeInTheDocument()
+
+    // Il contatore non mente mostrando uno zero che nessuno ha contato.
+    const verifica = screen.getByRole('region', { name: /verifica integrità/i })
+    expect(within(verifica).getByText('—')).toBeInTheDocument()
+  })
 })

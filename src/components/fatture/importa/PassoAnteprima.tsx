@@ -29,6 +29,7 @@ import { InfoIcon } from 'lucide-react'
 import { formatCurrency } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
 import type { FatturaLetta } from '@/lib/sdi/lettura-file'
+import { formattaData } from './tipi'
 
 export interface RigaAnteprima extends FatturaLetta {
   duplicata: boolean
@@ -40,13 +41,6 @@ interface Props {
   onEsclusioneChange: (chiave: string, esclusa: boolean) => void
   metadatiIgnorati: number
   scartati: Array<{ nomeFile: string; motivo: string }>
-}
-
-/** `YYYY-MM-DD` (o null) in `gg/mm/aaaa`: qui non serve altro che uno split. */
-function formattaData(data: string | null): string {
-  if (!data) return '—'
-  const [anno, mese, giorno] = data.split('-')
-  return `${giorno}/${mese}/${anno}`
 }
 
 export function PassoAnteprima({ righe, onEsclusioneChange, metadatiIgnorati, scartati }: Props) {
@@ -127,8 +121,13 @@ export function PassoAnteprima({ righe, onEsclusioneChange, metadatiIgnorati, sc
           )}
           {scartati.length > 0 && (
             <ul className="space-y-0.5">
-              {scartati.map((s) => (
-                <li key={s.nomeFile}>
+              {/* La posizione entra nella chiave: due file omonimi da archivi
+                  diversi possono finire entrambi fra gli scartati, e il solo
+                  nome collide — è lo stesso caso che `lettura-file.ts`
+                  risolve per le fatture. Qui la lista non si riordina né si
+                  filtra, quindi l'indice è una chiave stabile. */}
+              {scartati.map((s, indice) => (
+                <li key={`${s.nomeFile}#${indice}`}>
                   {s.nomeFile}: {s.motivo}
                 </li>
               ))}

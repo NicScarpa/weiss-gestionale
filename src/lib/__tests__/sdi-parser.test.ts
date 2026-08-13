@@ -747,6 +747,27 @@ describe('sdi/parser - parseFatturaPA', () => {
       expect(scadenze[0].dataStimata).toBe(true)
     })
 
+    it('con DatiPagamento ma nessun DettaglioPagamento stima comunque una scadenza', () => {
+      // Capita quando l'XML dichiara solo le CondizioniPagamento. Prima non
+      // usciva nessuna scadenza: la fattura risultava invisibile nello
+      // scadenzario e nel saldo scalare, cioè un debito che non compare da
+      // nessuna parte. Ora se ne stima una per l'intero documento, marcata
+      // come stimata. Vale anche per l'import preesistente, non solo per il
+      // wizard: nessun test lo fissava.
+      const result = parseFatturaPA(fatturaXml(`
+    <DatiPagamento>
+      <CondizioniPagamento>TP02</CondizioniPagamento>
+    </DatiPagamento>`))
+      expect(result.datiPagamento?.dettagliPagamento).toEqual([])
+
+      const scadenze = estraiScadenze(result)
+      expect(scadenze.length).toBe(1)
+      expect(scadenze[0].amount).toBe(122.00)
+      expect(scadenze[0].paymentMethod).toBe('NON_SPECIFICATO')
+      expect(isoDay(scadenze[0].dueDate)).toBe('2025-02-08')
+      expect(scadenze[0].dataStimata).toBe(true)
+    })
+
     it('non marca come stimata la scadenza presente nell XML', () => {
       const result = parseFatturaPA(fatturaXml(`
     <DatiPagamento>

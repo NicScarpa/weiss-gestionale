@@ -211,4 +211,36 @@ describe('ImportaFattureWizard', () => {
     expect(leggiValorePannello('Fatture create nel database')).toBe('0')
     expect(screen.getByText(/il conteggio non corrisponde: 1 dichiarate, 0 create/i)).toBeInTheDocument()
   })
+
+  it('se la rilettura non risponde, dice che la verifica non è stata possibile invece di dare zero', async () => {
+    // La rilettura è la seconda chiamata a `verifica-duplicati`: qui
+    // fallisce con un 500. Contarla come zero produrrebbe l'avviso rosso
+    // «1 dichiarate, 0 create» su un'importazione riuscita — l'errore è
+    // nella verifica, non nell'import, e i due casi vanno detti diversi.
+    let chiamateVerificaDuplicati = 0
+    global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes('verifica-duplicati')) {
+        chiamateVerificaDuplicati += 1
+        if (chiamateVerificaDuplicati >= 2) {
+          return { ok: false, status: 500, json: async () => ({ error: 'Errore' }) } as Response
+        }
+        return { ok: true, status: 200, json: async () => ({ duplicati: [] }) } as Response
+      }
+      if (String(url).includes('conflitti-termini')) {
+        return { ok: true, status: 200, json: async () => ({ conflitti: [] }) } as Response
+      }
+      return { ok: true, status: 201, json: async () => ({ id: 'nuova-1', fornitoreCreato: false }) } as Response
+    }) as never
+
+    render(<ImportaFattureWizard open onOpenChange={vi.fn()} onImportComplete={vi.fn()} />)
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement
+    await caricaFile(input, new File([XML_MINIMO], 'IT07945211006_001.xml', { type: 'application/xml' }))
+
+    fireEvent.click(await screen.findByRole('button', { name: /avvia importazione/i }))
+    expect(await screen.findByText(/importazione completata/i)).toBeInTheDocument()
+
+    expect(leggiValorePannello('Fatture create nel database')).toBe('—')
+    expect(screen.getByText(/non è stato possibile verificare il conteggio/i)).toBeInTheDocument()
+    expect(screen.queryByText(/il conteggio non corrisponde/i)).not.toBeInTheDocument()
+  })
 })

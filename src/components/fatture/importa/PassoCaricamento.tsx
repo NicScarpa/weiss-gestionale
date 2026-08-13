@@ -44,8 +44,9 @@ export function PassoCaricamento({ opzioni, onOpzioniChange, fileScelti, onFileS
             Sovrascrivi dati anagrafici esistenti
           </Label>
           <p className="text-sm text-muted-foreground">
-            Se attivo, i dati anagrafici (indirizzo, P.IVA, città) dei fornitori già presenti
-            vengono aggiornati con quelli del file importato.
+            Se attivo, i dati anagrafici (indirizzo, città, provincia, CAP e codice fiscale) dei
+            fornitori già presenti vengono aggiornati con quelli del file importato. La partita
+            IVA non viene toccata: è la chiave con cui il fornitore viene riconosciuto.
           </p>
         </div>
       </div>

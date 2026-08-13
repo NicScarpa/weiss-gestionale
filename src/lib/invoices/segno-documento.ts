@@ -17,7 +17,7 @@ import { TIPI_DOCUMENTO_NOTA_CREDITO } from '@/lib/invoices/tipi-documento'
  */
 export function segnoDiPresentazione(tipoDocumento: string, importo: number): number {
   if (!TIPI_DOCUMENTO_NOTA_CREDITO.has(tipoDocumento)) return importo
-  // Il documento puo gia portare il segno: invertirlo di nuovo lo riporterebbe
+  // Il documento può già portare il segno: invertirlo di nuovo lo riporterebbe
   // positivo. E `importo <= 0` invece di `< 0` per non produrre -0.
   if (importo <= 0) return importo
   return -importo

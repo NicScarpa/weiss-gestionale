@@ -23,7 +23,7 @@ import {
 import { CheckCircle2Icon, ChevronDownIcon, ChevronRightIcon } from 'lucide-react'
 import { formatCurrency } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
-import { ETICHETTE_STATO, type StatoRiga } from './tipi'
+import { ETICHETTE_STATO, formattaData, type StatoRiga } from './tipi'
 import type { RigaAnteprima } from './PassoAnteprima'
 
 export interface EsitoRiga {
@@ -34,19 +34,20 @@ export interface EsitoRiga {
   stato: StatoRiga
   messaggio?: string
   fattura: RigaAnteprima // il dettaglio completo, per l'espansione
-  /** Solo sul ramo `importata`, presi dal corpo della 201: il dato con cui
-   * il Task 12 verifica per davvero — non ricontando ciò che il client crede
-   * di aver fatto, ma rileggendo dal server cosa esiste. Opzionali per non
-   * rompere il test verbatim del brief, che non li valorizza. */
+  /** Solo sul ramo `importata`, preso dal corpo della 201. Opzionale per non
+   * rompere il test verbatim del brief, che non lo valorizza. */
   fornitoreCreato?: boolean
-  idCreata?: string | null
 }
 
 export type FiltroEsito = 'tutte' | StatoRiga
 
 interface Props {
   esiti: EsitoRiga[]
-  fattureCreate: number
+  /** Quante fatture il server dice di avere davvero in archivio, rilette dopo
+   * l'importazione. `null` quando la rilettura non è stata possibile (rete,
+   * 500): allora il confronto non si può fare, e dirlo è meglio che dare per
+   * scontato zero. */
+  fattureCreate: number | null
   fornitoriCreati: number
   onChiudi: () => void
   onRicomincia: () => void
@@ -57,13 +58,6 @@ const VARIANTE_BADGE: Record<StatoRiga, 'default' | 'secondary' | 'destructive' 
   duplicata: 'secondary',
   errore: 'destructive',
   esclusa: 'outline',
-}
-
-/** `YYYY-MM-DD` (o null) in `gg/mm/aaaa`: qui non serve altro che uno split. */
-function formattaData(data: string | null): string {
-  if (!data) return '—'
-  const [anno, mese, giorno] = data.split('-')
-  return `${giorno}/${mese}/${anno}`
 }
 
 /** «1 fattura importata» / «N fatture importate», con l'accordo giusto. */
@@ -92,7 +86,8 @@ export function RiepilogoFinale({ esiti, fattureCreate, fornitoriCreati, onChiud
     setFiltro((precedente) => (precedente === stato ? 'tutte' : stato))
   }
 
-  const conteggioNonTorna = fattureCreate !== importate
+  const verificaNonEseguita = fattureCreate === null
+  const conteggioNonTorna = !verificaNonEseguita && fattureCreate !== importate
 
   return (
     <div className="space-y-4">
@@ -287,7 +282,7 @@ export function RiepilogoFinale({ esiti, fattureCreate, fornitoriCreati, onChiud
         <p className="font-medium">Verifica integrità importazione</p>
         <div className="grid grid-cols-3 gap-3 text-center">
           <div>
-            <p className="text-2xl font-semibold">{fattureCreate}</p>
+            <p className="text-2xl font-semibold">{fattureCreate ?? '—'}</p>
             <p className="text-sm text-muted-foreground">Fatture create nel database</p>
           </div>
           <div>
@@ -299,6 +294,12 @@ export function RiepilogoFinale({ esiti, fattureCreate, fornitoriCreati, onChiud
             <p className="text-sm text-muted-foreground">Righe totali processate</p>
           </div>
         </div>
+        {verificaNonEseguita && (
+          <p className="text-sm text-muted-foreground">
+            Non è stato possibile verificare il conteggio: il server non ha risposto alla
+            rilettura. L&apos;importazione può essere andata a buon fine lo stesso.
+          </p>
+        )}
         {conteggioNonTorna && (
           <p className="text-sm font-medium text-destructive">
             Il conteggio non corrisponde: {importate} dichiarate, {fattureCreate} create.

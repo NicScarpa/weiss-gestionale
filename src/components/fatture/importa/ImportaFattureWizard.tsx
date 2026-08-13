@@ -5,8 +5,8 @@
  * (caricamento, anteprima, esecuzione, riepilogo) e la finestra dei conflitti
  * sui termini di pagamento, che può aprirsi sopra il passo 2.
  *
- * Stessa firma di `CaricaFattureDialog`/`InvoiceImportDialog`, così le due
- * pagine che li montavano cambiano solo l'import.
+ * La firma è quella dei due dialog che ha sostituito, così le due pagine che
+ * li montavano hanno cambiato solo l'import.
  */
 import { useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -57,7 +57,9 @@ const STATO_INIZIALE = {
   inVerificaConflitti: false,
   scelteConflitti: {} as Record<string, SceltaConflitto>,
   esiti: [] as EsitoRiga[],
-  fattureCreate: 0,
+  /** `null` = la rilettura d'integrità non è stata possibile. Diverso da `0`,
+   * che significa «riletto, e non ne è stata trovata nessuna». */
+  fattureCreate: null as number | null,
   fornitoriCreati: 0,
 }
 
@@ -76,7 +78,7 @@ export function ImportaFattureWizard({ open, onOpenChange, onImportComplete }: P
     STATO_INIZIALE.scelteConflitti
   )
   const [esiti, setEsiti] = useState<EsitoRiga[]>(STATO_INIZIALE.esiti)
-  const [fattureCreate, setFattureCreate] = useState(STATO_INIZIALE.fattureCreate)
+  const [fattureCreate, setFattureCreate] = useState<number | null>(STATO_INIZIALE.fattureCreate)
   const [fornitoriCreati, setFornitoriCreati] = useState(STATO_INIZIALE.fornitoriCreati)
 
   const reset = () => {
@@ -239,10 +241,14 @@ export function ImportaFattureWizard({ open, onOpenChange, onImportComplete }: P
         const corpo: { duplicati: Array<{ chiave: string }> } = await res.json()
         setFattureCreate(corpo.duplicati.length)
       } else {
-        setFattureCreate(0)
+        // `null`, non `0`: la rilettura non ha risposto, quindi non sappiamo
+        // quante ne siano state create. Con `0` il riepilogo griderebbe «226
+        // dichiarate, 0 create» su un'importazione perfettamente riuscita —
+        // un falso allarme peggiore del silenzio.
+        setFattureCreate(null)
       }
     } catch {
-      setFattureCreate(0)
+      setFattureCreate(null)
     } finally {
       setPasso('riepilogo')
     }

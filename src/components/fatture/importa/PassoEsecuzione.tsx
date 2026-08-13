@@ -36,7 +36,7 @@ function esitoDiRiga(
   riga: RigaAnteprima,
   stato: StatoRiga,
   messaggio?: string,
-  creazione?: { fornitoreCreato: boolean; idCreata: string }
+  creazione?: { fornitoreCreato: boolean }
 ): EsitoRiga {
   return {
     chiave: riga.chiave,
@@ -47,7 +47,6 @@ function esitoDiRiga(
     messaggio,
     fattura: riga,
     fornitoreCreato: creazione?.fornitoreCreato ?? false,
-    idCreata: creazione?.idCreata ?? null,
   }
 }
 
@@ -178,15 +177,14 @@ export function PassoEsecuzione({ righe, opzioni, scelteConflitti, conflitti, on
             aggiungi(esitoDiRiga(riga, 'errore', corpo.error))
             continue
           }
-          // Il corpo della 201 porta l'id vero e `fornitoreCreato`: il dato
-          // con cui il Task 12 verifica per davvero, rileggendo dal server
-          // cosa esiste — non ricontando ciò che il client crede di aver
-          // fatto.
+          // Dalla 201 serve solo `fornitoreCreato`, che il client non può
+          // dedurre da sé. L'id della fattura appena creata non si tiene: il
+          // riepilogo verifica rileggendo dal server cosa esiste, non
+          // ricontando ciò che il client crede di aver fatto.
           const corpoCreata = await res.json()
           aggiungi(
             esitoDiRiga(riga, 'importata', undefined, {
               fornitoreCreato: corpoCreata.fornitoreCreato === true,
-              idCreata: corpoCreata.id,
             })
           )
         } catch (errore) {
