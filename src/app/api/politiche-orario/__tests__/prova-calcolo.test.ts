@@ -8,7 +8,7 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
 
-import { authDiRoute } from '@/test/auth-unitari'
+import { authDiRoute, contestoRotta } from '@/test/auth-unitari'
 import { POST } from '../prova-calcolo/route'
 
 const sessione = { user: { id: 'user-1', role: 'admin' } } as unknown as Session
@@ -54,7 +54,8 @@ describe('POST /api/politiche-orario/prova-calcolo', () => {
         policy: regolaBase,
         clockInMinutes: 9 * 60,
         clockOutMinutes: 18 * 60,
-      })
+      }),
+      contestoRotta()
     )
     const { data } = await response.json()
 
@@ -75,7 +76,8 @@ describe('POST /api/politiche-orario/prova-calcolo', () => {
         },
         clockInMinutes: 21 * 60,
         clockOutMinutes: 2 * 60,
-      })
+      }),
+      contestoRotta()
     )
     const { data } = await response.json()
 
@@ -94,7 +96,8 @@ describe('POST /api/politiche-orario/prova-calcolo', () => {
         },
         clockInMinutes: 9 * 60 + 6,
         clockOutMinutes: 18 * 60,
-      })
+      }),
+      contestoRotta()
     )
     const { data } = await response.json()
 
@@ -108,7 +111,8 @@ describe('POST /api/politiche-orario/prova-calcolo', () => {
         policy: { ...regolaBase, roundingMinutes: 15, roundingToleranceMinutes: 20 },
         clockInMinutes: 9 * 60,
         clockOutMinutes: 18 * 60,
-      })
+      }),
+      contestoRotta()
     )
 
     expect(response.status).toBe(400)
@@ -124,7 +128,8 @@ describe('POST /api/politiche-orario/prova-calcolo', () => {
         policy: regolaBase,
         clockInMinutes: 9 * 60,
         clockOutMinutes: 18 * 60,
-      })
+      }),
+      contestoRotta()
     )
 
     expect(response.status).toBe(403)
