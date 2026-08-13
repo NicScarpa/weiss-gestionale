@@ -10,6 +10,7 @@ import {
   smontare,
   attendere,
   cliccare,
+  cliccareTreVolte,
   scrivere,
   perTesto,
   perId,
@@ -85,6 +86,26 @@ const COLLEGAMENTO = {
     scadeIl: '2026-12-01T00:00:00.000Z',
   },
 }
+
+/**
+ * Una connessione la cui scadenza cade fra `giorni` giorni. Stesso schema di
+ * `connessioneConScadenza` in `BannerConsenso.test.tsx`: costruita su
+ * `Date.now()` invece di una data fissa, così il test resta valido qualunque
+ * sia il giorno in cui gira.
+ */
+function collegamentoInScadenza(giorni: number) {
+  return {
+    connessione: {
+      id: 'conn-1',
+      istitutoNome: 'Banca della Marca',
+      stato: { sigla: 'LN', nome: 'Collegata', spiegazione: 'Il consenso è attivo.' },
+      scadeIl: new Date(Date.now() + giorni * 86_400_000).toISOString(),
+    },
+  }
+}
+
+/** Risposta minima dei conti, sufficiente quando il test non guarda l'elenco. */
+const CONTI_VUOTI = { stato: { sigla: 'LN', nome: 'Collegata', spiegazione: '' }, lettiIl: null, conti: [] }
 
 const CONTI = {
   stato: { sigla: 'LN', nome: 'Collegata', spiegazione: 'Il consenso è attivo.' },
@@ -240,5 +261,55 @@ describe('ConnessioniBancarie', () => {
 
     await scrivere(perId('taglio-acc-3'), '2026-08-01')
     expect((perTesto(/^salva$/i) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  // Il banner della dashboard porta qui, dove l'avviso di scadenza compariva
+  // già ma senza nulla da premere: il giro si chiudeva a metà. La rotta di
+  // rinnovo esisteva dal Task 2 e nessun componente la chiamava.
+  it('con una scadenza vicina compare «Rinnova il consenso», e premendolo parte la richiesta giusta', async () => {
+    stubFetch([
+      ['/api/gocardless/collegamenti/conn-1/conti', CONTI_VUOTI],
+      ['/api/gocardless/collegamenti', collegamentoInScadenza(5)],
+      ['/api/gocardless/collegamenti/conn-1/rinnovo', { link: 'https://banca.test/consenso/rinnovo' }],
+    ])
+
+    await montare(<ConnessioniBancarie contiBancari={CONTI_DEL_GESTIONALE} />)
+    await attendere()
+    await attendiChe(() => testoDellaPagina().includes('Rinnova il consenso'), "l'avviso di scadenza")
+
+    await cliccare(perTesto(/rinnova il consenso/i))
+    await attendiChe(
+      () => chiamate.some((u) => u.startsWith('/api/gocardless/collegamenti/conn-1/rinnovo')),
+      'la richiesta di rinnovo'
+    )
+
+    expect(chiamate.some((u) => u.startsWith('/api/gocardless/collegamenti/conn-1/rinnovo'))).toBe(true)
+  })
+
+  // La POST non è ripetibile: apre una pratica di consenso vera presso la
+  // banca, sul contingente di quattro chiamate al giorno. Stesso test di
+  // WizardCollegamento.test.tsx ("tre clic ravvicinati... mandano una sola
+  // richiesta"), sullo stesso meccanismo (`rinnovoInCorso`, un ref sincrono).
+  it('tre clic ravvicinati su «Rinnova il consenso» mandano una sola richiesta', async () => {
+    stubFetch([
+      ['/api/gocardless/collegamenti/conn-1/conti', CONTI_VUOTI],
+      ['/api/gocardless/collegamenti', collegamentoInScadenza(5)],
+      ['/api/gocardless/collegamenti/conn-1/rinnovo', { link: 'https://banca.test/consenso/rinnovo' }],
+    ])
+
+    await montare(<ConnessioniBancarie contiBancari={CONTI_DEL_GESTIONALE} />)
+    await attendere()
+    await attendiChe(() => testoDellaPagina().includes('Rinnova il consenso'), "l'avviso di scadenza")
+
+    await cliccareTreVolte(perTesto(/rinnova il consenso/i))
+    await attendiChe(
+      () => chiamate.some((u) => u.startsWith('/api/gocardless/collegamenti/conn-1/rinnovo')),
+      'la richiesta di rinnovo'
+    )
+    // Le tre chiamate erano sincrone (nello stesso giro): un altro giro di
+    // attesa esclude che una quarta arrivi in ritardo dopo la prima.
+    await attendere()
+
+    expect(chiamate.filter((u) => u.startsWith('/api/gocardless/collegamenti/conn-1/rinnovo')).length).toBe(1)
   })
 })

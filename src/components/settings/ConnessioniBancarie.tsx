@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { AlertCircle, RefreshCw, Wifi } from 'lucide-react'
@@ -73,7 +73,7 @@ interface RispostaConti {
 
 export function ConnessioniBancarie({ contiBancari }: { contiBancari: ContoBancarioDelGestionale[] }) {
   const [scelte, setScelte] = useState<Record<string, Scelta>>({})
-  const [inCorso, setInCorso] = useState<'salvataggio' | 'aggiornamento' | 'scollegamento' | null>(null)
+  const [inCorso, setInCorso] = useState<'salvataggio' | 'aggiornamento' | 'scollegamento' | 'rinnovo' | null>(null)
   const [wizardAperto, setWizardAperto] = useState(false)
 
   const {
@@ -221,6 +221,42 @@ export function ConnessioniBancarie({ contiBancari }: { contiBancari: ContoBanca
     }
   }
 
+  // Non ripetibile: apre una pratica di consenso vera presso la banca, sul
+  // contingente di quattro chiamate al giorno. Lo stesso schema di
+  // `vaiAllaBancaInCorso` in WizardCollegamento.tsx e di `invioRef` in
+  // payment-dialog.tsx — un ref sincrono, valorizzato prima di qualunque
+  // `await`, perché `setInCorso` si applica al render successivo e tre clic
+  // ravvicinati eseguirebbero tutti questa closure prima che React abbia
+  // ridisegnato il pulsante disabilitato.
+  const rinnovoInCorso = useRef(false)
+
+  async function rinnova() {
+    if (!connessione) return
+    if (rinnovoInCorso.current) return
+    rinnovoInCorso.current = true
+    setInCorso('rinnovo')
+    try {
+      const res = await fetch(`/api/gocardless/collegamenti/${connessione.id}/rinnovo`, { method: 'POST' })
+      const corpo = await res.json()
+      if (!res.ok) {
+        // Il traduttore delle risposte (`rispostaErroreGoCardless`) esiste
+        // apposta perché il client non debba indovinare cosa dire per un 429
+        // o un 502: si mostra il messaggio che arriva, non uno inventato qui.
+        toast.error(corpo.error ?? 'Il rinnovo non è riuscito')
+        return
+      }
+      window.location.href = corpo.link
+    } catch {
+      toast.error('Il rinnovo non è riuscito')
+    } finally {
+      // Come nel wizard: sul successo la pagina sta per navigare via
+      // comunque, quindi azzerarlo anche lì è innocuo; tenerlo bloccato dopo
+      // un errore impedirebbe di riprovare.
+      rinnovoInCorso.current = false
+      setInCorso(null)
+    }
+  }
+
   // Un errore di lettura non è «non hai mai collegato nulla»: un
   // amministratore con un collegamento sano e un errore passeggero non va
   // invitato a rifare da capo una procedura che richiede di autenticarsi in
@@ -321,8 +357,14 @@ export function ConnessioniBancarie({ contiBancari }: { contiBancari: ContoBanca
           <Alert>
             <AlertTitle>Il consenso sta per scadere</AlertTitle>
             <AlertDescription>
-              Alla scadenza la banca smette di rispondere. Rinnovarlo richiede solo una nuova
-              autenticazione in home banking: conti, interruttori e date restano come sono.
+              <p>
+                Alla scadenza la banca smette di rispondere. Il rinnovo richiede solo una nuova
+                autenticazione in home banking, e conserva abbinamenti, interruttori e date così
+                come sono — a differenza di «Scollega» qui sopra, che li perde.
+              </p>
+              <Button variant="outline" size="sm" className="mt-1" onClick={rinnova} disabled={inCorso !== null}>
+                Rinnova il consenso
+              </Button>
             </AlertDescription>
           </Alert>
         )}
