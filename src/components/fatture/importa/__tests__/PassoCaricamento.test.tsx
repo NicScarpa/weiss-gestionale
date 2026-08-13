@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { PassoCaricamento } from '../PassoCaricamento'
 import { OPZIONI_PREDEFINITE } from '../tipi'
 
@@ -45,13 +44,13 @@ describe('PassoCaricamento', () => {
     expect(screen.getByText('a.xml')).toBeInTheDocument()
   })
 
-  it('riferisce la scelta della politica duplicati', async () => {
+  it('riferisce la scelta della politica duplicati', () => {
     const onOpzioniChange = vi.fn()
     render(
       <PassoCaricamento opzioni={OPZIONI_PREDEFINITE} onOpzioniChange={onOpzioniChange} fileScelti={[]} onFileScelti={vi.fn()} inLettura={false} />
     )
 
-    await userEvent.click(screen.getByRole('radio', { name: /sostituisci con i nuovi dati/i }))
+    fireEvent.click(screen.getByRole('radio', { name: /sostituisci con i nuovi dati/i }))
 
     expect(onOpzioniChange).toHaveBeenCalledWith(
       expect.objectContaining({ politicaDuplicati: 'sostituisci' })
