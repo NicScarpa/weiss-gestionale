@@ -13,8 +13,9 @@ import {
 } from '@/lib/scadenzario/stato-schedule'
 import {
   aggiornaContoDominante,
-  calcolaPesiDaRighe,
-  ripartisciProQuota,
+  calcolaPesiConIva,
+  contiScartatiConPeso,
+  ripartisciProQuotaConIva,
   type TransactionClient,
 } from './allocation-service'
 
@@ -79,9 +80,195 @@ function aliquoteDelloSnapshot(lineItems: unknown[]): Map<number, number> {
   return mappa
 }
 
-/** Imponibile riportato al lordo. Senza aliquota nota, l'imponibile stesso. */
-function alLordo(imponibile: number, aliquota: number | undefined): number {
-  return aliquota === undefined ? imponibile : imponibile * (1 + aliquota / 100)
+/**
+ * Scrive l'IVA di testata, ma solo finché quel numero è ancora **nostro**.
+ *
+ * La regola di proprietà sta scritta qui una volta sola perché le due parti
+ * che la usano devono per forza usarne una identica: chi scrive l'IVA
+ * ereditando le fette e chi la ritira annullando la riconciliazione. Due
+ * versioni anche solo leggermente diverse vorrebbero dire che l'annullo non
+ * riconosce come proprio ciò che l'ereditarietà aveva scritto, e il movimento
+ * resterebbe con l'IVA di una fattura che non salda più.
+ *
+ * Il campo è nostro quando è assente, oppure quando dista meno di mezzo
+ * centesimo da `ivaAttesa` — cioè da quanto le fette dichiaravano prima di
+ * questa operazione. Altrimenti ce l'ha messo qualcun altro (un essere umano
+ * dalla prima nota, o la registrazione della fattura) e non si tocca.
+ *
+ * `ivaNuova` a `null` riporta il campo a «non dichiarata», che è cosa diversa
+ * da `0`: `0` afferma un'assenza che nessuno ha constatato, `null` dice che
+ * il dato non c'è. È la distinzione su cui poggia tutta la lettura del
+ * prospetto, e vale anche all'indietro.
+ */
+async function scriviIvaDiTestataSeNostra(
+  tx: TransactionClient,
+  {
+    journalEntryId,
+    ivaAttesa,
+    ivaNuova,
+    contesto,
+  }: {
+    journalEntryId: string
+    /** Quanto la testata deve dichiarare perché quel numero sia nostro. */
+    ivaAttesa: number
+    /** Il valore nuovo; `null` riporta il campo a «non dichiarata». */
+    ivaNuova: number | null
+    /** Solo per il log: da quale delle due parti si arriva. */
+    contesto: 'ereditarietà' | 'annullo'
+  }
+): Promise<void> {
+  const movimento = await tx.journalEntry.findUnique({
+    where: { id: journalEntryId },
+    select: { vatAmount: true },
+  })
+  if (!movimento) return
+
+  if (
+    movimento.vatAmount !== null &&
+    Math.abs(Number(movimento.vatAmount) - ivaAttesa) > TOLLERANZA_IMPORTI
+  ) {
+    logger.info("L'IVA di testata è di qualcun altro: non la si tocca", {
+      journalEntryId,
+      contesto,
+      dichiarata: Number(movimento.vatAmount),
+      attesa: ivaAttesa,
+      nuova: ivaNuova,
+    })
+    return
+  }
+
+  await tx.journalEntry.update({
+    where: { id: journalEntryId },
+    data: { vatAmount: ivaNuova === null ? null : new Prisma.Decimal(ivaNuova.toFixed(2)) },
+  })
+}
+
+/** Somma l'IVA di un gruppo di fette. I `null` sono esclusi da chi chiama. */
+function sommaIvaDelleFette(fette: { iva: Prisma.Decimal | null }[]): number {
+  return fette.reduce<number>((s, f) => s + Number(f.iva ?? 0), 0)
+}
+
+/**
+ * Porta sulla testata l'IVA che le fette appena scritte dichiarano.
+ *
+ * Perché serve. Il movimento che salda una fattura nasce senza IVA su tutti e
+ * tre i percorsi automatici — import bancario, motore delle regole,
+ * esecuzione di un pagamento — mentre le fette ereditate portano quella
+ * esatta di ciascuna aliquota. Il prospetto di cash flow toglie alla testata
+ * l'IVA di ogni fetta, e una testata che ne dichiara zero finiva a −122 su
+ * una fattura mista da 1.222: un'IVA negativa su un conto, cioè un numero che
+ * in questo dominio non esiste. Il prospetto ora si difende da sé con un
+ * tetto (vedi `aggregaMovimenti`), ma il tetto da solo avrebbe lasciato in
+ * archivio movimenti che dichiarano zero IVA a fronte di un documento che ne
+ * ha: il campo vuoto è un difetto del dato, non della lettura.
+ *
+ * Quando si scrive, in ordine di importanza:
+ *
+ * 1. **Mai sopra un numero scritto da un essere umano.** Il campo si tocca
+ *    solo se è ancora *nostro*: assente, oppure esattamente uguale all'IVA
+ *    delle fette che c'erano prima di questa scrittura. Un movimento può
+ *    saldare più scadenze e ogni riconciliazione aggiunge le proprie fette:
+ *    la regola lascia alla seconda la facoltà di aggiornare il totale, e a
+ *    entrambe il divieto di sovrascrivere un valore che non hanno messo loro.
+ * 2. **Solo quando l'IVA è davvero nota.** Se una fetta scritta non la
+ *    dichiara — la regola del tutto-o-niente le rende esatte o `null` per
+ *    fattura intera — la testata resta com'è. Lo stesso se non la dichiara
+ *    una fetta preesistente: senza il loro totale non si può nemmeno decidere
+ *    se il numero in testata sia nostro.
+ *
+ * Il valore scritto è un modulo positivo, come fa la registrazione di una
+ * fattura in `invoices/[id]/record`: il verso lo decide `ripartisciIva` dal
+ * lato valorizzato del movimento. Sui pagamenti parziali non si riscala
+ * nulla: le fette sono già state ridotte da `ripartisciProQuotaConIva`,
+ * quindi la loro IVA è già quella pagata.
+ */
+async function aggiornaIvaDiTestata(
+  tx: TransactionClient,
+  {
+    journalEntryId,
+    fettePrecedenti,
+    ivaScritte,
+  }: {
+    journalEntryId: string
+    /** Le fette già presenti PRIMA di questa scrittura. */
+    fettePrecedenti: { iva: Prisma.Decimal | null }[]
+    /** L'IVA delle fette appena scritte. */
+    ivaScritte: (number | null)[]
+  }
+): Promise<void> {
+  if (ivaScritte.some((iva) => iva === null)) return
+  if (fettePrecedenti.some((f) => f.iva === null)) return
+
+  const ivaPreesistente = sommaIvaDelleFette(fettePrecedenti)
+  // Il `?? 0` è irraggiungibile — il `some` qui sopra ha già escluso ogni
+  // `null` — ma il tipo dell'array resta nullable e `reduce` lo eredita.
+  const nuovoTotale = ivaScritte.reduce<number>((s, iva) => s + (iva ?? 0), ivaPreesistente)
+
+  await scriviIvaDiTestataSeNostra(tx, {
+    journalEntryId,
+    ivaAttesa: ivaPreesistente,
+    ivaNuova: nuovoTotale,
+    contesto: 'ereditarietà',
+  })
+}
+
+/**
+ * Ritira dalla testata l'IVA delle fette che l'annullo sta cancellando.
+ *
+ * È lo specchio di `aggiornaIvaDiTestata`, e senza di esso l'ereditarietà
+ * lascerebbe dietro di sé un difetto che prima del 12 agosto 2026 non poteva
+ * esistere: `vatAmount` restava sempre `null`, quindi non c'era nulla da
+ * ritirare. Ora un movimento annullato conserverebbe l'IVA della fattura che
+ * non salda più — e se poi ne saldasse un'altra, la regola di proprietà si
+ * asterrebbe (giustamente: quel numero non è più suo) lasciandocela per
+ * sempre. Sul prospetto è il difetto di C1 col segno rovesciato: la testata
+ * dichiara più di quanto le fette chiedano, il tetto di `aggregaMovimenti` non
+ * morde perché interviene nel verso opposto, e il conto dominante si gonfia
+ * della differenza mentre il blocco IVA riceve il totale vecchio. Bonifico da
+ * 1.222 riconciliato con una fattura da 122 di IVA, annullato, poi
+ * riconciliato con una da 50: 72 € di IVA senza più un importo a cui
+ * appartenere, e 72 € di troppo sul conto più grosso.
+ *
+ * Il valore nuovo è l'IVA delle fette che **restano**: un bonifico cumulativo
+ * di cui si annulla una sola riconciliazione scende all'IVA della superstite.
+ * Se non ne resta nessuna si torna a `null` — non a `0` — perché il movimento
+ * è tornato non riconciliato, cioè esattamente lo stato di prima.
+ *
+ * Se una qualsiasi delle fette coinvolte non dichiara l'IVA, la somma non è
+ * calcolabile: ci si astiene e lo si registra. È la stessa guardia della
+ * scrittura, e per la stessa ragione — senza quel totale il valore memorizzato
+ * non potrebbe comunque risultare nostro.
+ */
+async function ritiraIvaDiTestata(
+  tx: TransactionClient,
+  {
+    journalEntryId,
+    reconciliationId,
+    fettePrima,
+  }: {
+    journalEntryId: string
+    /** La riconciliazione annullata: le sue fette sono quelle appena sparite. */
+    reconciliationId: string
+    /** TUTTE le fette del movimento come stavano PRIMA della cancellazione. */
+    fettePrima: { iva: Prisma.Decimal | null; reconciliationId: string | null }[]
+  }
+): Promise<void> {
+  if (fettePrima.some((f) => f.iva === null)) {
+    logger.info("Fette senza IVA dichiarata: l'annullo lascia l'IVA di testata com'è", {
+      journalEntryId,
+      reconciliationId,
+    })
+    return
+  }
+
+  const restano = fettePrima.filter((f) => f.reconciliationId !== reconciliationId)
+
+  await scriviIvaDiTestataSeNostra(tx, {
+    journalEntryId,
+    ivaAttesa: sommaIvaDelleFette(fettePrima),
+    ivaNuova: restano.length === 0 ? null : sommaIvaDelleFette(restano),
+    contesto: 'annullo',
+  })
 }
 
 /**
@@ -177,11 +364,15 @@ async function ereditaFetteDaFattura(
   // aliquote uguali fra le righe il fattore si semplifica e non cambia nulla.
   const aliquotePerLinea = aliquoteDelloSnapshot(invoice.lineItems)
 
-  const manuali = await tx.journalEntryAllocation.findMany({
-    where: { journalEntryId, origine: 'manuale' },
-    select: { id: true },
+  // Le fette già sul movimento, lette una volta sola perché servono a tre
+  // cose: sapere se ce n'è una manuale (vince sempre), sommarne gli importi
+  // per il tetto di capienza, e sapere quanta IVA dichiarano — è ciò che
+  // stabilisce se l'IVA di testata è ancora nostra (`aggiornaIvaDiTestata`).
+  const esistenti = await tx.journalEntryAllocation.findMany({
+    where: { journalEntryId },
+    select: { origine: true, importo: true, iva: true },
   })
-  if (manuali.length > 0) return // le fette manuali vincono sempre
+  if (esistenti.some((f) => f.origine === 'manuale')) return // le manuali vincono sempre
 
   // Un movimento può riconciliare più scadenze (es. un bonifico cumulativo):
   // ogni riconciliazione calcola la propria quota sul disponibile pieno del
@@ -191,11 +382,7 @@ async function ereditaFetteDaFattura(
   // difende sullo split manuale. Se sfora, l'ereditarietà si astiene (skip
   // silenzioso, coerente con le altre guardie della funzione): la
   // riconciliazione della scadenza procede comunque.
-  const aggregato = await tx.journalEntryAllocation.aggregate({
-    where: { journalEntryId },
-    _sum: { importo: true },
-  })
-  const sommaEsistenti = Number(aggregato._sum.importo ?? 0)
+  const sommaEsistenti = esistenti.reduce((s, f) => s + Number(f.importo), 0)
   if (sommaEsistenti + quota > importoUtileMovimento + 0.01) {
     logger.warn('Ereditarietà pro-quota: la quota sforerebbe l\'importo utile del movimento, si salta', {
       journalEntryId,
@@ -207,13 +394,35 @@ async function ereditaFetteDaFattura(
     return
   }
 
-  const pesi = calcolaPesiDaRighe(
-    imputazioni.map((r) => ({
-      accountId: r.accountId,
-      importo: alLordo(Number(r.importo), aliquotePerLinea.get(r.numeroLinea)),
-    }))
-  )
-  const fette = ripartisciProQuota(pesi, quota)
+  const righeDaImputare = imputazioni.map((r) => ({
+    accountId: r.accountId,
+    imponibile: Number(r.importo),
+    aliquota: aliquotePerLinea.get(r.numeroLinea),
+  }))
+  const pesi = calcolaPesiConIva(righeDaImputare)
+
+  // Un conto sparito dai pesi portandosi via qualcosa è quasi sempre una riga
+  // di sconto o di reso a `PrezzoTotale` negativo, che il parser non
+  // normalizza. La quota si ripartisce comunque fra i conti rimasti, che si
+  // prendono anche la sua parte, IVA compresa: ogni fetta resta fedele alla
+  // propria aliquota ma il totale non è più quello del documento. È
+  // l'approssimazione minore fra quelle disponibili — il perché, con i numeri,
+  // sta nel docblock di `calcolaPesiConIva` — e finché la fase B non farà
+  // entrare le righe negative nei pesi col proprio segno, l'unica cosa che si
+  // può fare in più è non lasciarla silenziosa. Il conteggio ignora i conti
+  // che si annullano da sé (la riga in omaggio, o la riga e il suo storno):
+  // spariscono anche loro, ma senza togliere niente a nessuno.
+  const scartati = contiScartatiConPeso(righeDaImputare)
+  if (scartati > 0) {
+    logger.warn('Fattura con righe scartate dai pesi: le fette quadrano con la quota, non con il documento', {
+      invoiceId,
+      journalEntryId,
+      contiScartati: scartati,
+      contiNeiPesi: pesi.length,
+    })
+  }
+
+  const fette = ripartisciProQuotaConIva(pesi, quota)
   if (fette.length === 0) return
 
   await tx.journalEntryAllocation.createMany({
@@ -221,9 +430,16 @@ async function ereditaFetteDaFattura(
       journalEntryId,
       accountId: f.accountId,
       importo: new Prisma.Decimal(f.importo.toFixed(2)),
+      iva: f.iva === null ? null : new Prisma.Decimal(f.iva.toFixed(2)),
       origine: 'ereditata',
       reconciliationId,
     })),
+  })
+
+  await aggiornaIvaDiTestata(tx, {
+    journalEntryId,
+    fettePrecedenti: esistenti,
+    ivaScritte: fette.map((f) => f.iva),
   })
 
   await aggiornaContoDominante(tx, journalEntryId, 'automatico')
@@ -467,6 +683,17 @@ export async function undoScheduleReconciliation({
     })
     if (!reconciliation) return null
 
+    // Le fette come stanno PRIMA della cancellazione: dopo la `deleteMany` la
+    // domanda «quanta IVA dichiaravano in tutto» non è più rispondibile, e
+    // senza quella risposta non si può decidere se l'IVA di testata sia
+    // nostra da ritirare (vedi `ritiraIvaDiTestata`).
+    const fettePrima = movimento
+      ? await tx.journalEntryAllocation.findMany({
+          where: { journalEntryId: reconciliation.journalEntryId },
+          select: { iva: true, reconciliationId: true },
+        })
+      : []
+
     // Le fette ereditate (Fase 3) vanno ritirate PRIMA di cancellare la
     // riconciliazione: la FK JournalEntryAllocation.reconciliationId è
     // onDelete: SetNull, quindi cancellando prima la riconciliazione il DB
@@ -500,6 +727,16 @@ export async function undoScheduleReconciliation({
     // 'supposto' resta 'supposto', quindi nessuna automazione lo promuoverà a
     // verificato e la prossima riconciliazione lo rivaluterà da capo.
     if (movimento && fetteRitirate.count > 0) {
+      // L'IVA di testata segue le fette anche all'indietro: se era la loro,
+      // scende a quella delle rimaste, o torna a `null` se non ne resta
+      // nessuna. Prima dell'ereditarietà con l'IVA questo passaggio non
+      // serviva, perché `vatAmount` non veniva mai scritto.
+      await ritiraIvaDiTestata(tx, {
+        journalEntryId: reconciliation.journalEntryId,
+        reconciliationId,
+        fettePrima,
+      })
+
       const numeroFette = await aggiornaContoDominante(tx, reconciliation.journalEntryId)
       if (numeroFette === 0) {
         // Fette ereditate ritirate e nessuna residua: il movimento torna alla

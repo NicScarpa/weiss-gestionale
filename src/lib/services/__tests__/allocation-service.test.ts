@@ -39,8 +39,11 @@ import { logger } from '@/lib/logger'
 import { derivaBudgetCategoryDaConto } from '@/lib/accounts/mapping'
 import {
   aggiornaContoDominante,
+  calcolaPesiConIva,
   calcolaPesiDaRighe,
+  contiScartatiConPeso,
   ripartisciProQuota,
+  ripartisciProQuotaConIva,
   setEntryAllocations,
 } from '../allocation-service'
 
@@ -159,6 +162,135 @@ describe('calcolaPesiDaRighe', () => {
       { accountId: 'a', importo: 400 },
       { accountId: 'b', importo: 300 },
     ])
+  })
+})
+
+describe('calcolaPesiConIva', () => {
+  it('porta il lordo e l\'IVA esatta di ciascuna aliquota', () => {
+    const pesi = calcolaPesiConIva([
+      { accountId: 'alimentari', imponibile: 1000, aliquota: 10 },
+      { accountId: 'pulizia', imponibile: 100, aliquota: 22 },
+    ])
+
+    expect(pesi).toEqual([
+      { accountId: 'alimentari', importo: 1100, iva: 100 },
+      { accountId: 'pulizia', importo: 122, iva: 22 },
+    ])
+  })
+
+  it('somma le righe che vanno sullo stesso conto, IVA compresa', () => {
+    const pesi = calcolaPesiConIva([
+      { accountId: 'alimentari', imponibile: 1000, aliquota: 10 },
+      { accountId: 'alimentari', imponibile: 500, aliquota: 4 },
+    ])
+
+    expect(pesi).toEqual([{ accountId: 'alimentari', importo: 1620, iva: 120 }])
+  })
+
+  it('azzera l\'IVA di TUTTE le fette se anche una sola riga non ha aliquota', () => {
+    // Mescolare fette esatte e fette stimate darebbe un totale che non torna
+    // con nessuna delle due logiche: meglio un'intera fattura dichiaratamente
+    // approssimata.
+    const pesi = calcolaPesiConIva([
+      { accountId: 'alimentari', imponibile: 1000, aliquota: 10 },
+      { accountId: 'pulizia', imponibile: 100, aliquota: undefined },
+    ])
+
+    expect(pesi.every((p) => p.iva === null)).toBe(true)
+    // Senza aliquota il lordo di quella riga è l'imponibile stesso.
+    expect(pesi.find((p) => p.accountId === 'pulizia')?.importo).toBe(100)
+  })
+
+  it('la riga di sconto negativa sparisce dai pesi, e l\'IVA delle rimaste resta dichiarata', () => {
+    // Una riga a `PrezzoTotale` negativo — il parser non normalizza il segno —
+    // porta il suo conto sotto zero e il filtro lo scarta. Documenta la scelta
+    // misurata: le fette rimaste tengono la loro IVA anziché azzerarla tutta.
+    // Su questo documento (978 lordi, 78 di IVA) tenerla dichiara 88,91 alla
+    // riconciliazione, cioè 10,91 di troppo; azzerarla ne farebbe dichiarare
+    // zero, perché una fetta senza IVA lascia senza IVA anche la testata e il
+    // ripiego pro-quota finisce per dividere zero. Settantotto contro undici.
+    const pesi = calcolaPesiConIva([
+      { accountId: 'alimentari', imponibile: 1000, aliquota: 10 },
+      { accountId: 'sconti', imponibile: -100, aliquota: 22 },
+    ])
+
+    expect(pesi.map((p) => p.accountId)).toEqual(['alimentari'])
+    expect(pesi[0]).toEqual({ accountId: 'alimentari', importo: 1100, iva: 100 })
+  })
+
+  it('conta come scartato solo il conto che si portava via qualcosa', () => {
+    // La riga negativa toglie davvero qualcosa alla somma; la riga in omaggio
+    // e il conto che si annulla da sé no. Un avviso che grida quando non è
+    // successo niente insegna a ignorarlo, e il primo caso vero passerebbe
+    // inosservato.
+    expect(
+      contiScartatiConPeso([
+        { accountId: 'alimentari', imponibile: 1000, aliquota: 10 },
+        { accountId: 'sconti', imponibile: -100, aliquota: 22 },
+      ])
+    ).toBe(1)
+
+    expect(
+      contiScartatiConPeso([
+        { accountId: 'alimentari', imponibile: 1000, aliquota: 10 },
+        { accountId: 'omaggi', imponibile: 0, aliquota: 22 },
+        { accountId: 'resi', imponibile: 50, aliquota: 22 },
+        { accountId: 'resi', imponibile: -50, aliquota: 22 },
+      ])
+    ).toBe(0)
+  })
+
+  it('un conto che si annulla da sé sparisce senza portarsi via nulla', () => {
+    // Riga e suo storno sullo stesso conto: importo e IVA si azzerano a
+    // vicenda, quindi lo scarto non toglie niente alla somma del documento.
+    const pesi = calcolaPesiConIva([
+      { accountId: 'alimentari', imponibile: 1000, aliquota: 10 },
+      { accountId: 'resi', imponibile: 50, aliquota: 22 },
+      { accountId: 'resi', imponibile: -50, aliquota: 22 },
+    ])
+
+    expect(pesi).toEqual([{ accountId: 'alimentari', importo: 1100, iva: 100 }])
+  })
+})
+
+describe('ripartisciProQuotaConIva', () => {
+  it('scala l\'IVA con la stessa frazione dell\'importo su un pagamento parziale', () => {
+    const fette = ripartisciProQuotaConIva(
+      [
+        { accountId: 'alimentari', importo: 1100, iva: 100 },
+        { accountId: 'pulizia', importo: 122, iva: 22 },
+      ],
+      611 // metà esatta di 1222
+    )
+
+    expect(fette).toEqual([
+      { accountId: 'alimentari', importo: 550, iva: 50 },
+      { accountId: 'pulizia', importo: 61, iva: 11 },
+    ])
+  })
+
+  it('propaga il null senza inventare uno zero', () => {
+    const fette = ripartisciProQuotaConIva(
+      [{ accountId: 'alimentari', importo: 1000, iva: null }],
+      500
+    )
+
+    expect(fette).toEqual([{ accountId: 'alimentari', importo: 500, iva: null }])
+  })
+
+  it('il peso che si azzera nell\'arrotondamento porta via meno di un millesimo di IVA', () => {
+    // La fetta si perde solo se vale meno di un centesimo della quota, quindi
+    // l'IVA che si porta dietro è al massimo l'aliquota di un centesimo: qui
+    // 0,0022 €. Le rimaste tengono la propria, che resta esatta al centesimo.
+    const fette = ripartisciProQuotaConIva(
+      [
+        { accountId: 'alimentari', importo: 1000, iva: 90.91 },
+        { accountId: 'imballo', importo: 0.01, iva: 0.0022 },
+      ],
+      0.5
+    )
+
+    expect(fette).toEqual([{ accountId: 'alimentari', importo: 0.5, iva: 0.05 }])
   })
 })
 

@@ -529,6 +529,13 @@ model JournalEntryAllocation {
   journalEntryId   String   @map("journal_entry_id")
   accountId        String   @map("account_id")
   importo          Decimal  @db.Decimal(10, 2)
+  /// Quanta IVA contiene questa fetta. `null` = non nota: il consumatore
+  /// ricade sulla ripartizione pro-quota dell'IVA di testata. Diverso da
+  /// `0`, che significa "IVA assente" — la spesa senza diritto di
+  /// detrazione, dove l'IVA è già dentro l'imponibile.
+  /// Chi divide a mano scrive `null`, non `0`: non sta dichiarando
+  /// un'assenza, sta dicendo che non lo sa.
+  iva              Decimal? @db.Decimal(10, 2)
   /// 'manuale' (editor split) | 'ereditata' (pro-quota dalla riconciliazione, Fase 3)
   origine          String
   /// Riconciliazione che ha generato la fetta ereditata: chiave dell'undo (Fase 3)
