@@ -1,0 +1,15 @@
+-- electronic_invoices.withholding: la ritenuta d'acconto letta dall'XML
+-- (DatiRitenuta), conservata e mai imputata. Il trattamento contabile della
+-- ritenuta e' sospeso: e' un canale di saldo con ciclo di vita proprio (F24),
+-- non una riga da girare a conto. Leggerla e non salvarla la perderebbe; ecco
+-- perche' la colonna esiste prima che esista una schermata che la usa.
+--
+-- Nullable e senza backfill: le fatture gia' importate restano `null`, che e'
+-- il loro stato vero — l'unica fonte che puo' popolare il campo e' il flusso di
+-- import, che gira solo in avanti.
+--
+-- Json e non quattro colonne: i quattro campi (tipo, importo, aliquota,
+-- causale) si leggono e si scrivono sempre insieme, e nessuno di essi viene
+-- mai interrogato da solo. Stessa scelta gia' fatta per `line_items`,
+-- `references` e `vat_summary` sulla stessa tabella.
+ALTER TABLE "electronic_invoices" ADD COLUMN "withholding" JSONB;

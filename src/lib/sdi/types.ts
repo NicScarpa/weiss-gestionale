@@ -145,6 +145,9 @@ export interface FatturaParsata {
   // Bollo
   datiBollo?: DatiBollo
 
+  // Ritenuta d'acconto
+  datiRitenuta?: DatiRitenuta
+
   // Metadati parsing
   xmlOriginale?: string
   nomeFile?: string
@@ -154,6 +157,20 @@ export interface FatturaParsata {
 export interface DatiBollo {
   bolloVirtuale?: string // SI/NO
   importoBollo?: number
+}
+
+/**
+ * Ritenuta d'acconto sul documento. Viene letta e conservata, mai imputata:
+ * il trattamento contabile della ritenuta è sospeso — è un canale di saldo con
+ * ciclo di vita proprio (F24), non una riga da girare a conto.
+ */
+export interface DatiRitenuta {
+  /** RT01 persone fisiche, RT02 persone giuridiche, RT03 INPS, RT04 ENASARCO… */
+  tipoRitenuta: string
+  importoRitenuta: number
+  aliquotaRitenuta: number
+  /** Causale del modello 770 (A, B, C…) */
+  causalePagamento?: string
 }
 
 // ============================================================================

@@ -13,6 +13,7 @@ import type {
   DatiPagamento,
   DettaglioPagamento,
   DatiBollo,
+  DatiRitenuta,
   DatiRiferimenti,
   DatoDDT,
   DatoRiferimento,
@@ -341,6 +342,33 @@ function parseDatiBollo(datiGeneraliDocumento: Record<string, unknown>): DatiBol
 }
 
 /**
+ * `DatiRitenuta` sta dentro `DatiGeneraliDocumento`. Nelle parcelle può essere
+ * ripetuto (ritenuta erariale e previdenziale insieme): prendiamo il primo,
+ * che è quello erariale, e ignoriamo gli altri finché il tema non si riapre.
+ */
+function estraiDatiRitenuta(datiGeneraliDocumento: unknown): DatiRitenuta | undefined {
+  const nodo = (datiGeneraliDocumento as Record<string, unknown>)?.DatiRitenuta
+  if (!nodo) return undefined
+
+  const primo = Array.isArray(nodo) ? nodo[0] : nodo
+  const r = primo as Record<string, unknown>
+
+  const importoRitenuta = parseDecimal(r.ImportoRitenuta)
+  const tipoRitenuta = getText(r.TipoRitenuta)
+
+  if (!tipoRitenuta && importoRitenuta === 0) return undefined
+
+  const causalePagamento = getText(r.CausalePagamento)
+
+  return {
+    tipoRitenuta,
+    importoRitenuta,
+    aliquotaRitenuta: parseDecimal(r.AliquotaRitenuta),
+    ...(causalePagamento ? { causalePagamento } : {}),
+  }
+}
+
+/**
  * Estrae un singolo riferimento documento (Ordine, Contratto, Convenzione, Fattura Collegata)
  */
 function parseRiferimentoDocumento(data: Record<string, unknown>): DatoRiferimento {
@@ -512,6 +540,9 @@ export function parseFatturaPA(xmlContent: string, fileName?: string): FatturaPa
 
     // Bollo
     datiBollo: parseDatiBollo(datiGeneraliDocumento),
+
+    // Ritenuta d'acconto
+    datiRitenuta: estraiDatiRitenuta(datiGeneraliDocumento),
 
     // Metadati
     xmlOriginale: xmlContent,
@@ -958,6 +989,7 @@ export function parseFatturaPASafe(xmlContent: string, fileName?: string): Parse
       datiRiepilogo: parseDatiRiepilogo(datiBeniServizi),
       datiPagamento: parseDatiPagamento(body.DatiPagamento),
       datiBollo: parseDatiBollo(datiGeneraliDocumento),
+      datiRitenuta: estraiDatiRitenuta(datiGeneraliDocumento),
       xmlOriginale: xmlContent,
       nomeFile: fileName,
     }

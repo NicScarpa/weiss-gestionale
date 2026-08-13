@@ -535,6 +535,7 @@ export async function POST(request: NextRequest) {
             lineItems: (datiEstesi?.lineItems ?? Prisma.DbNull) as unknown as Prisma.InputJsonValue,
             references: (datiEstesi?.references ?? Prisma.DbNull) as unknown as Prisma.InputJsonValue,
             vatSummary: (datiEstesi?.vatSummary ?? Prisma.DbNull) as unknown as Prisma.InputJsonValue,
+            withholding: fattura.datiRitenuta as unknown as Prisma.InputJsonValue | undefined,
             causale: datiEstesi?.causale || null,
             deadlines: {
               create: scadenze.map((s, index) => ({

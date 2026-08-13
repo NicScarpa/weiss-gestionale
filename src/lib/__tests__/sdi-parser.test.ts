@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { parseFatturaPA, calcolaImporti, estraiScadenze, parseFatturaPASafe } from '../sdi/parser'
 import { TIPI_DOCUMENTO, MODALITA_PAGAMENTO, NATURA_OPERAZIONE } from '../sdi/types'
+import { xmlFattura } from '@/test/factories/fattura-xml.factory'
 
 describe('sdi/parser - parseFatturaPA', () => {
   describe('Normalizzazione Partita IVA', () => {
@@ -1446,5 +1447,58 @@ describe('sdi/parser - parseFatturaPASafe', () => {
       expect(result.success).toBe(true)
       expect(result.warnings.some((w) => w.code === 'MISSING_TOTAL_AMOUNT')).toBe(true)
     })
+  })
+})
+
+describe('estrazione della ritenuta d acconto', () => {
+  it('legge tipo, importo, aliquota e causale', () => {
+    const xml = xmlFattura({
+      tipoDocumento: 'TD06',
+      ritenuta: { tipo: 'RT02', importo: '312.11', aliquota: '20.00', causale: 'A' },
+    })
+
+    const fattura = parseFatturaPASafe(xml, 'parcella.xml').data!
+
+    expect(fattura.datiRitenuta).toEqual({
+      tipoRitenuta: 'RT02',
+      importoRitenuta: 312.11,
+      aliquotaRitenuta: 20,
+      causalePagamento: 'A',
+    })
+  })
+
+  it('omette la causale quando il documento non la porta', () => {
+    const xml = xmlFattura({
+      tipoDocumento: 'TD06',
+      ritenuta: { tipo: 'RT01', importo: '226.00', aliquota: '20.00' },
+    })
+    const fattura = parseFatturaPASafe(xml, 'parcella.xml').data!
+
+    expect(fattura.datiRitenuta).toEqual({
+      tipoRitenuta: 'RT01',
+      importoRitenuta: 226,
+      aliquotaRitenuta: 20,
+    })
+  })
+
+  it('lascia il campo assente quando la ritenuta non c è', () => {
+    const fattura = parseFatturaPASafe(xmlFattura(), 'fattura.xml').data!
+    expect(fattura.datiRitenuta).toBeUndefined()
+  })
+
+  it('non intacca gli importi del documento', () => {
+    const senza = calcolaImporti(parseFatturaPASafe(xmlFattura({ tipoDocumento: 'TD06' }), 'a.xml').data!)
+    const con = calcolaImporti(
+      parseFatturaPASafe(
+        xmlFattura({
+          tipoDocumento: 'TD06',
+          ritenuta: { tipo: 'RT02', importo: '100.00', aliquota: '20.00' },
+        }),
+        'b.xml'
+      ).data!
+    )
+
+    // Il lordo resta quello del documento: la ritenuta non si sottrae qui.
+    expect(con.totalAmount).toBe(senza.totalAmount)
   })
 })
