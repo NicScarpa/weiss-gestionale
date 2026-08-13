@@ -68,6 +68,50 @@ describe('POST /api/invoices — politica duplicati', () => {
     expect(vecchia?.deletedAt).not.toBeNull()
   })
 
+  it('con «sostituisci» annulla anche le scadenze della vecchia fattura', async () => {
+    // Fix round 1: `Schedule` è un modello a cancellazione logica proprio —
+    // il suo `deletedAt` non ha alcun legame automatico con quello della
+    // `ElectronicInvoice` da cui nasce. Prima del fix, sostituire una
+    // fattura lasciava viva la scadenza della vecchia e ne generava una
+    // seconda per la nuova: due debiti aperti per un solo documento reale.
+    const prima = await POST(richiesta(base))
+    const idVecchio = (await prima.json()).id
+
+    const seconda = await POST(richiesta({ ...base, politicaDuplicati: 'sostituisci' }))
+    const idNuovo = (await seconda.json()).id
+
+    // `Schedule` è anch'esso fra i SOFT_DELETE_MODELS: una `findMany` "nuda"
+    // mostra solo le righe attive — esattamente il conteggio che conta per
+    // scadenzario, aging e previsione di cassa.
+    const scadenzeAttive = await prisma.schedule.findMany({
+      where: { invoiceId: { in: [idVecchio, idNuovo] } },
+    })
+
+    expect(scadenzeAttive).toHaveLength(1)
+    expect(scadenzeAttive[0].invoiceId).toBe(idNuovo)
+  })
+
+  it('rifiuta la sostituzione se la fattura esistente è registrata in prima nota', async () => {
+    const prima = await POST(richiesta(base))
+    const idVecchio = (await prima.json()).id
+
+    await prisma.electronicInvoice.update({
+      where: { id: idVecchio },
+      data: { status: 'RECORDED' },
+    })
+
+    const seconda = await POST(richiesta({ ...base, politicaDuplicati: 'sostituisci' }))
+
+    expect(seconda.status).toBe(409)
+    expect((await seconda.json()).existingId).toBe(idVecchio)
+
+    // Non toccata: né archiviata, né duplicata.
+    const invariata = await prisma.electronicInvoice.findUnique({ where: { id: idVecchio } })
+    expect(invariata?.deletedAt).toBeNull()
+    const scadenzeInvariate = await prisma.schedule.findMany({ where: { invoiceId: idVecchio } })
+    expect(scadenzeInvariate).toHaveLength(1)
+  })
+
   it('dice se il fornitore è stato creato', async () => {
     const res = await POST(richiesta({ ...base, fileName: 'nuovo-fornitore.xml' }))
     expect(await res.json()).toHaveProperty('fornitoreCreato')

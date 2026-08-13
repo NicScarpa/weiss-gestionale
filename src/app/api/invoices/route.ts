@@ -20,6 +20,8 @@ import { logger } from '@/lib/logger'
 import {
   generateSchedulesFromInvoice,
   TIPI_DOCUMENTO_SENZA_SCADENZA,
+  checkInvoiceDeletable,
+  softDeleteSchedulesForInvoice,
 } from '@/lib/services/invoice-schedule-service'
 import { ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
 import { categorizzaRigheFattura } from '@/lib/line-categorization'
@@ -400,6 +402,18 @@ export async function POST(request: NextRequest) {
     // conflitti: «salta» mantiene il comportamento di sempre (409), «sostituisci»
     // archivia la vecchia — mai cancellata, è una scrittura contabile — e lascia
     // proseguire l'import come se il duplicato non ci fosse.
+    //
+    // «Sostituisci» è, di fatto, un delete-e-reimporta: usa perciò la stessa
+    // guardia di DELETE /api/invoices/[id] e di bulk-delete, non una nuova.
+    // Una fattura già registrata in prima nota, o con pagamenti già segnati
+    // sulle sue scadenze, non si sostituisce a metà — si scollegherebbe un
+    // pagamento realmente uscito dal conto dal documento che lo giustifica.
+    // L'archiviazione vera e propria (fattura + sue scadenze) avviene dentro
+    // la transazione più sotto, insieme alla creazione della nuova: fuori da
+    // lì, un fallimento a valle lascerebbe il documento senza alcuna fattura
+    // attiva — né la vecchia (già archiviata) né la nuova (mai creata). È
+    // esattamente il guasto per cui esiste il commento sulla transazione qui
+    // sotto, «nascono insieme o non nascono affatto».
     let idSostituita: string | null = null
 
     if (existingInvoice) {
@@ -413,10 +427,29 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      await prisma.electronicInvoice.update({
-        where: { id: existingInvoice.id },
-        data: { deletedAt: new Date(), deletedById: session.user.id },
-      })
+      if (existingInvoice.status === 'RECORDED') {
+        return NextResponse.json(
+          {
+            error: 'Impossibile sostituire: la fattura già importata è registrata in prima nota',
+            existingId: existingInvoice.id,
+          },
+          { status: 409 }
+        )
+      }
+
+      const sostituzioneCheck = await checkInvoiceDeletable(existingInvoice.id)
+      if (!sostituzioneCheck.canDelete) {
+        return NextResponse.json(
+          {
+            error:
+              'Impossibile sostituire: sulla fattura già importata risultano pagamenti già registrati nello scadenzario. Annulla prima i pagamenti.',
+            existingId: existingInvoice.id,
+            scadenzeConPagamenti: sostituzioneCheck.schedulesWithPayments,
+          },
+          { status: 409 }
+        )
+      }
+
       idSostituita = existingInvoice.id
     }
 
@@ -581,6 +614,20 @@ export async function POST(request: NextRequest) {
     // "già importata" — nessun modo di rimediare se non a mano sul database.
     const { invoice, schedulesResult } = await prisma.$transaction(
       async (tx) => {
+        // Prima si archivia la vecchia (fattura e sue scadenze), poi si crea
+        // la nuova: l'indice unico parziale su (numero, data, P.IVA) esclude
+        // solo le righe con `deletedAt` valorizzato, quindi la create qui
+        // sotto urterebbe ancora contro la vecchia se non fosse già archiviata
+        // — anche dentro la stessa transazione, il vincolo si controlla ad
+        // ogni istruzione, non solo al commit.
+        if (idSostituita) {
+          await softDeleteSchedulesForInvoice(idSostituita, session.user.id, tx)
+          await tx.electronicInvoice.update({
+            where: { id: idSostituita },
+            data: { deletedAt: new Date(), deletedById: session.user.id },
+          })
+        }
+
         const invoice = await tx.electronicInvoice.create({
           data: {
             invoiceNumber: fattura.numero,
