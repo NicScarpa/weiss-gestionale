@@ -889,7 +889,7 @@ Poi il test:
     )
 
     expect(esito.status).toBe(409)
-    expect((await esito.json()).error).toContain('collegamento')
+    expect(esito.body.error).toContain('collegamento')
   })
 ```
 
@@ -912,7 +912,13 @@ function eDoppioCollegamento(errore: unknown): boolean {
   return (
     errore instanceof Prisma.PrismaClientKnownRequestError &&
     errore.code === 'P2002' &&
-    String(errore.meta?.target ?? '').includes('bank_connections')
+    // NON `errore.meta?.target`: questo progetto usa l'adapter driver Postgres,
+    // dove quel campo non esiste — il meta vero annida tutto sotto
+    // `driverAdapterError.cause` e il nome del vincolo compare solo dentro
+    // `originalMessage`. La forma «da manuale» non riconosce nulla e lascia
+    // passare un 500 anonimo. Si cerca quindi nel meta serializzato, e per il
+    // nome preciso dell'indice invece che per la tabella.
+    JSON.stringify(errore.meta ?? '').includes('ux_bank_connections_sede_viva')
   )
 }
 ```
