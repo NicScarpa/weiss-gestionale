@@ -208,3 +208,239 @@ potare.
    quale il motore di regole non ha niente da masticare.
 6. **La Fase 5**, che con la decisione di oggi è più piccola di come era stata immaginata: non
    spegnere il CSV, ma dichiarare chi fa cosa e mostrare la provenienza di ogni movimento.
+
+---
+
+## Parte 5 — Il contesto necessario per eseguire
+
+Tutto ciò che chi riprende deve sapere prima di scrivere una riga. Verificato il 13 agosto 2026.
+
+### Dove si lavora
+
+- **`main` vive nella worktree `~/Desktop/accounting-presenze`**, non nella cartella principale.
+  La cartella `~/Desktop/accounting` è su un altro ramo, e ce ne sono una quindicina di altre.
+- **Più sessioni lavorano in parallelo su questo repository.** Prima di toccare file condivisi —
+  `prisma/schema.prisma` su tutti — vale la pena chiedere all'altra sessione cosa sta facendo:
+  il 13 agosto è servito a evitare due rilasci intrecciati e a sapere in anticipo che il conflitto
+  sarebbe stato solo testuale.
+- **Node 22 obbligatorio**: anteporre `source ~/.nvm/nvm.sh && nvm use 22 &&` a ogni comando
+  `npm`/`npx`/`node`, **nella stessa riga di shell**. Il Node di sistema è la v25 e `npm` si
+  rifiuta di partire (`EBADENGINE`), non fallisce in modo vago.
+
+### Le misure di partenza, da non peggiorare
+
+| Cosa | Valore al 13 agosto |
+|---|---|
+| `npx tsc --noEmit` | exit 0 |
+| `npm run lint` | 0 errori, **62 warning** |
+| `npx vitest run` | **1638 test su 122 file** |
+| `npm run test:integration` | **515 test su 63 file** |
+| `npm run build` | exit 0 |
+| `node scripts/check-route-auth.mjs --ratchet` | **258** (baseline scritta: 255) |
+
+**Il build va eseguito e il suo codice d'uscita letto direttamente.** Mai `npm run build | tail`:
+il codice d'uscita diventerebbe quello di `tail`, cioè sempre zero. È l'unico controllo capace di
+vedere un import lato client che tira dentro Prisma e rompe il pacchetto finale — invisibile a
+`tsc`, ai test e a qualunque rilettura del codice.
+
+**I test di integrazione girano su PostgreSQL locale, porta 5433.** Se un'altra sessione lavora,
+serve `TEST_DB_SUFFIX=<nome>` davanti al comando, altrimenti due suite si ricreano il database a
+vicenda e i sintomi sembrano difetti veri (tabelle inesistenti, fallimenti intermittenti).
+
+### Le trappole che hanno già morso, e come non ricascarci
+
+1. **Dopo un merge o un cambio di ramo, il client Prisma è quello di prima**, e `tsc` accusa file
+   perfettamente corretti — di solito quelli scritti dall'altra sessione. Cura: `npx prisma
+   generate`; cambiando ramo nella stessa worktree serve anche `rm -rf .next`. **La tentazione è
+   `--no-verify` ed è sbagliata**: il controllo sta dicendo la verità su uno stato dell'albero
+   diverso da quello che si crede di avere.
+2. **`bank_accounts` contiene anche le casse** (`accountType`: `CASH` o `BANK`). Ogni lettura che
+   non filtri il tipo è sbagliata: in questa integrazione l'errore è già stato commesso **tre
+   volte**, e ogni volta sembrava innocuo.
+3. **La cifratura non è deterministica.** `encrypt` usa un vettore d'inizializzazione casuale,
+   quindi due cifrature dello stesso IBAN sono byte diversi e nessun indice unico le vede uguali.
+   **L'unica colonna confrontabile è `ibanHash`.** Un ragionamento che si appoggi all'unicità
+   dell'IBAN cifrato è sbagliato in partenza.
+4. **Gli indici parziali vanno scritti in due posti**: nel `migration.sql` e in
+   `prisma/sql/constraints.sql`. Il database dei test nasce da `prisma db push`, che le migrazioni
+   non le esegue: se manca il secondo, il test che verifica il vincolo passa in verde **senza che
+   il vincolo esista**.
+5. **`errore.meta?.target` non esiste su un `P2002` in questo progetto**, perché si usa l'adapter
+   driver Postgres: il nome del vincolo violato compare solo dentro `originalMessage`. La forma
+   «da manuale» non riconosce nulla e lascia passare un 500 anonimo dove doveva esserci un 409.
+6. **`@testing-library/react` non è importabile**: manca il suo peer e il solo import fa fallire
+   la suite prima di eseguirla. I test dei componenti montano con `createRoot` + `act` usando gli
+   aiutanti di `src/components/scadenzario/__tests__/render-helpers.tsx`. **Quegli aiutanti
+   impongono `retry: false` a tutti i test**, quindi un difetto legato ai ritentativi delle query
+   è invisibile sotto test: le query che chiamano la banca vanno guardate a mano.
+7. **Una migrazione Prisma non è atomica.** Se uno statement fallisce, le colonne già aggiunte
+   restano scritte mentre il registro dice che non è stato applicato nulla. Recupero:
+   `prisma migrate resolve --rolled-back <nome>`, poi disfare a mano, poi ridare il deploy.
+
+### Come si rilascia, adesso
+
+`railway.json` imposta `preDeployCommand: npm run db:migrate:deploy`, che è
+`prisma migrate deploy && npm run rls:enable`. Conseguenze:
+
+- **Spingere su `main` applica le migrazioni da solo**, dopo la build e **prima** che la versione
+  nuova prenda traffico. Se una migrazione fallisce, il deploy si ferma e il traffico resta al
+  codice vecchio.
+- **`rls:enable` cicla su `pg_tables`**, quindi ogni tabella nuova nasce protetta. Con
+  `prisma migrate deploy` nudo non sarebbe successo, e il deploy sarebbe stato verde lo stesso.
+- Prima di una migrazione che tocca dati, **copia di sicurezza**: serve il client PostgreSQL 18 in
+  `/opt/homebrew/opt/libpq/bin/pg_dump`, perché il `postgresql@16` di Homebrew si rifiuta di
+  leggere un server più recente. Verificarla davvero con `pg_restore -l`, non solo produrla.
+- Guardare l'SQL prima: `npx prisma migrate diff --from-config-datasource --to-schema
+  prisma/schema.prisma --script`. **Se compaiono `DROP`, fermarsi.**
+
+### Cosa esiste già, per non riscriverlo
+
+**Moduli** in `src/lib/gocardless/`:
+
+| File | A cosa serve |
+|---|---|
+| `client.ts` | Il client HTTP. `creaClient()`, e `Risposta<T>` porta `limiti` con i contatori del contingente letti dagli header |
+| `servizio.ts` | `clientDaAmbiente()` — **l'unico punto che legge i segreti** — e `impostaClientPerTest()` |
+| `mapper.ts` | `mappaMovimento` / `mappaMovimenti`: dal grezzo della banca a `MovimentoDaSalvare` |
+| `dedup.ts` | `filtraGiaPresenti()`: la deduplicazione, **per conto**, non globale |
+| `abbinamento.ts` | `abbinaConti()`: accoppia i conti della banca con quelli del gestionale, **per impronta** |
+| `stati.ts` | `descriviStato`, `eCollegata`, `eDaRifare`: gli stati della requisition in italiano |
+| `risposte.ts` | `rispostaErroreGoCardless()`: 429 con i secondi alla ripresa, 503, 502 |
+| `maschere.ts`, `scadenza.ts`, `parametri.ts` | Maschera dell'IBAN, giorni alla scadenza, tetti dei giorni |
+
+**Rotte** sotto `/api/gocardless/`: `istituzioni`, `collegamenti` (GET/POST), `collegamenti/[id]`
+(DELETE), `collegamenti/[id]/conti` (GET/PUT), `collegamenti/[id]/rinnovo` (POST), `callback` (GET).
+Tutte con `withAuth(handler, { roles: ['admin'], venueScoped: true })` tranne il callback, che è la
+redirezione della banca e non può averla.
+
+**Campi già a schema, e ancora nessuno li usa**: `BankAccount.syncEnabled`, `syncCutoffDate`,
+`lastSyncAt`, `providerAccountId`, `connectionId`, `openBankingReady`. E il modello
+**`BankSyncRun`**, pensato apposta per il contatore: `movimentiLetti`, `movimentiNuovi`,
+`movimentiDuplicati`, `rateLimitRemaining`, `rateLimitResetAt`, `esito`, `httpStatus`, `errore`.
+
+**Il ponte verso la contabilità**: `src/lib/reconciliation/matcher.ts` prende un `BankTransaction`,
+cerca i `JournalEntry` candidati e scrive l'abbinamento sul movimento bancario.
+
+### I fatti della banca, misurati sul campo (spike del 12 agosto)
+
+- **4 chiamate al giorno per conto e per endpoint.** Una sprecata costa un giorno.
+- **90 giorni di storico, 180 di accesso** — è ciò che concede Banca della Marca, non i massimi
+  teorici del protocollo.
+- **`transactionId` non è unico fra conti**: 249 collisioni su 678 movimenti. La deduplicazione
+  deve essere **per conto**, e lo è.
+- **La controparte non arriva.** `creditorName`/`debtorName` non esistono nella risposta reale,
+  esistono solo nella documentazione.
+- **Il codice proprietario è valorizzato sul 100% dei movimenti**, 28 codici distinti.
+- Lo script della sonda è ancora in `scripts/gocardless-probe.ts`, ripartibile per passi
+  (`--step=institutions|consent|accounts|fetch|report`) e salva ogni risposta su disco **prima** di
+  analizzarla, perché una chiamata sprecata costa un giorno.
+
+### Il metodo che ha funzionato
+
+Discussione → specifica → piano → esecuzione con un subagente per task, ciascuno rivisto da un
+revisore indipendente, e **una revisione finale sull'intero ramo**. Quella finale, sulla Fase 2b,
+ha trovato due difetti gravi e quattro importanti su un ramo dove **ogni task era già stato
+approvato**: nascevano tutti *fra* i pezzi, dove una revisione per task non può guardare. Vale la
+pena chiederle esplicitamente quattro cose: quanto consuma una giornata d'uso della risorsa
+scarsa, quali invarianti reggono solo per una ragione scritta in un altro file, quali
+ragionamenti sono stati copiati insieme a una premessa che altrove non vale, e cosa succede a una
+persona che percorre il flusso dall'inizio alla fine.
+
+---
+
+## Parte 6 — I prompt per ricominciare
+
+Da incollare così come sono, in una sessione nuova aperta su `~/Desktop/accounting-presenze`.
+
+### Prompt A — La sonda, secondo passaggio (prima di tutto, costa poco)
+
+> Leggi `docs/Cosa_Resta_Da_Fare_2026-08-13.md` per il contesto.
+>
+> Devi verificare un'ipotesi su cui poggia la deduplicazione dei movimenti bancari: che gli
+> identificativi che GoCardless assegna ai movimenti siano **stabili nel tempo**. Lo spike del 12
+> agosto li ha letti una volta sola, quindi la stabilità non è mai stata provata.
+>
+> Rilancia `scripts/gocardless-probe.ts --step=fetch` e poi `--step=report`, confronta con le
+> risposte salvate il 12 agosto in `scripts/gocardless/snapshots/`, e dimmi se gli identificativi
+> dei movimenti già visti sono rimasti gli stessi.
+>
+> Vincoli non negoziabili: le chiavi stanno in `.env`, non cercarle altrove e **non stamparne mai
+> il valore**. Il limite è di **4 chiamate al giorno per conto e per endpoint** e una sprecata
+> costa un giorno: salva ogni risposta su disco prima di analizzarla, e non rilanciare un passo
+> «per sicurezza». Il conto personale dell'amministratore (finale 2322) resta **escluso**.
+>
+> Se gli identificativi non fossero stabili, dimmelo con chiarezza: cambierebbe il progetto della
+> Fase 3, e va saputo prima di scriverla.
+
+### Prompt B — Decidere di `analisi/onda-1`
+
+> Leggi `docs/Cosa_Resta_Da_Fare_2026-08-13.md`, Parte 4.
+>
+> Il ramo `analisi/onda-1` ha 57 commit mai integrati, fermi al 12 agosto, e nel frattempo gli
+> mancano 87 commit di `main`. È l'unica voce dell'elenco che peggiora da sola.
+>
+> Non riallinearlo ancora. Prima dimmi **cosa contiene davvero** e **quanto costa recuperarlo**:
+> quali file tocca, quali di quelli sono stati cambiati anche su `main`, e quali dei problemi che
+> quel lavoro risolveva sono già stati chiusi altrove nel frattempo — misurando su `main`, non sul
+> ramo, perché un ramo vecchio fa «trovare» problemi chiusi da settimane.
+>
+> Poi propommi una delle tre: riallineare, recuperare solo una parte, o chiudere e archiviare.
+> Con il costo di ciascuna. Decido io.
+
+### Prompt C — Riaccendere la verifica della build
+
+> Leggi `docs/Cosa_Resta_Da_Fare_2026-08-13.md`, Parte 2 punto 8 e Parte 4.
+>
+> La CI non verifica la build di nessuno: il controllo del lint è rosso — `node
+> scripts/check-route-auth.mjs --ratchet` dà 258 contro una baseline di 255 — e quando quello
+> fallisce, il job Build viene **saltato**. È proprio la verifica capace di vedere un import lato
+> client che tira dentro Prisma e rompe il pacchetto finale.
+>
+> Tre handler da sistemare. Due preesistenti, che vanno convertiti a `withAuth(handler, { roles,
+> venueScoped })` seguendo il modello di `src/app/api/prima-nota/[id]/riallinea/route.ts` — non le
+> rotte sorelle di `prima-nota/`, che usano ancora il controllo scritto a mano e riprodurrebbero il
+> debito. Il terzo è `GET /api/gocardless/callback`, che **non può** avere `withAuth`: è il
+> bersaglio della redirezione con cui la banca rimanda l'utente, e con la sessione scaduta
+> risponderebbe con un JSON 401 al posto della pagina. Quello va tolto da sotto `/api` — non è
+> un'API, è una redirezione per il browser — e il conteggio guarda solo `src/app/api/`.
+>
+> Attenzione: spostarlo cambia il percorso di ritorno dalla banca, che si prova solo con un
+> collegamento vero. Fallo quando puoi verificarlo, o dimmi come intendi verificarlo.
+>
+> Alla fine il cricchetto deve dare **255 o meno**, e la baseline nello script va abbassata a
+> quel numero.
+
+### Prompt D — La Fase 3, la sincronizzazione
+
+> Leggi `docs/Cosa_Resta_Da_Fare_2026-08-13.md` per intero: contiene il contesto, le trappole e
+> cosa esiste già. Poi leggi la specifica
+> `docs/superpowers/specs/2026-08-08-open-banking-gocardless-design.md` e la sezione «Dopo il
+> piano: cosa resta» di `docs/superpowers/plans/2026-08-13-open-banking-fase-2b.md`.
+>
+> Progetta ed esegui la Fase 3 dell'integrazione open banking: la sincronizzazione dei movimenti.
+> Usa il metodo che ha funzionato: discussione, poi specifica, poi piano, poi esecuzione con un
+> subagente per task e una revisione indipendente per ciascuno, e alla fine **una revisione
+> dell'intero ramo** sul modello più capace.
+>
+> **Non cominciare a scrivere codice prima di avermi presentato il progetto e avere il mio via.**
+>
+> Le cose su cui non transigere:
+>
+> - **Il contingente della banca**: 4 chiamate al giorno per conto e per endpoint, e nel caso
+>   peggiore una singola sincronizzazione ne consuma sei. Il contatore deve contare **le chiamate
+>   HTTP reali**, non le sincronizzazioni. `BankSyncRun` è già a schema con i campi per farlo.
+> - **`syncCutoffDate` va letto davvero** per calcolare da quando scaricare. Esiste, è
+>   obbligatorio per accendere un conto, e oggi non lo legge nessuno: è l'unica cosa che impedisce
+>   a un movimento già entrato da file di entrare una seconda volta.
+> - **Solo i conti accesi**, e mai una cassa: `bank_accounts` contiene anche quelle.
+> - **Ogni movimento diventa subito una scrittura di prima nota non verificata**, passata dalle
+>   regole. È la decisione dell'8 agosto.
+> - **L'import da CSV e XLSX non si dismette**: resta come riserva e per i conti che GoCardless
+>   non copre. Scrivi `importSource` sui movimenti e rendi visibile la provenienza.
+> - **Nessuna chiamata di rete vera nei test**, mai: si inietta un client finto con
+>   `impostaClientPerTest`.
+>
+> E una verifica da fare **appena i primi movimenti veri entrano**, non alla fine: guardare
+> **quanti** abbinamenti il matcher della riconciliazione trova e con che confidenza. Oggi
+> `bank_transactions` in produzione è vuota, e un matcher che non ha mai visto dati veri assomiglia
+> moltissimo a uno che funziona finché l'ingresso è vuoto.
