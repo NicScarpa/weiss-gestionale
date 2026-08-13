@@ -2,6 +2,22 @@
 description: Create an app spec for autonomous coding (project)
 ---
 
+# AMBIENTE: Node 22 obbligatorio
+
+**Prima di qualsiasi comando `npm`, `npx` o `node`, anteporre `nvm use 22 &&` nella stessa riga di shell.**
+
+```bash
+nvm use 22 && npm run dev
+nvm use 22 && npm test -- --run
+nvm use 22 && npx tsc --noEmit
+```
+
+Perché serve: il `node` di sistema (Homebrew) è la v25, ma `package.json` dichiara `engines: node >=22.0.0 <23.0.0` e `.npmrc` ha `engine-strict=true`. Con la v25 `npm` non fallisce con un errore vago, si rifiuta proprio: `EBADENGINE`. La versione giusta è installata sotto nvm (v22.22.0, fissata anche in `.nvmrc` e `.node-version`).
+
+Va ripetuto **a ogni chiamata dello strumento Bash**: ogni invocazione parte da una shell nuova, quindi un `nvm use 22` dato prima non vale per il comando dopo. La cartella di lavoro persiste, la versione di Node no.
+
+---
+
 # PROJECT DIRECTORY
 
 This command **requires** the project directory as an argument via `/Users/nicolascarpa/Desktop/accounting`.
