@@ -26,7 +26,7 @@ describe('DialogConflitti', () => {
     const onContinua = vi.fn()
     render(<DialogConflitti aperto conflitti={conflitti} onAnnulla={vi.fn()} onContinua={onContinua} />)
 
-    fireEvent.click(screen.getByRole('button', { name: /usa l anagrafica per ROMA GIANFRANCO SRL/i }))
+    fireEvent.click(screen.getByRole('button', { name: /usa l['’\s]anagrafica per ROMA GIANFRANCO SRL/i }))
     fireEvent.click(screen.getByRole('button', { name: /continua importazione/i }))
 
     expect(onContinua).toHaveBeenCalledWith({ '111': 'anagrafica', '222': 'importazione' })
@@ -46,5 +46,26 @@ describe('DialogConflitti', () => {
     render(<DialogConflitti aperto conflitti={conflitti} onAnnulla={vi.fn()} onContinua={vi.fn()} />)
     expect(screen.getByText('1 giorno data fattura')).toBeInTheDocument()
     expect(screen.getAllByText('3 giorni data fattura')).toHaveLength(2)
+  })
+
+  it('azzera le scelte quando cambia la lista dei conflitti, anche se il dialog resta montato', () => {
+    const onContinua = vi.fn()
+    const { rerender } = render(
+      <DialogConflitti aperto conflitti={conflitti} onAnnulla={vi.fn()} onContinua={onContinua} />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /usa l['’\s]anagrafica per ROMA GIANFRANCO SRL/i }))
+
+    // Un secondo import (Task 12): il dialog resta montato, cambia solo la
+    // prop `conflitti` — con un nuovo array che ripropone la stessa partita
+    // IVA già vista prima.
+    const secondoImport = [
+      { partitaIva: '111', denominazione: 'ROMA GIANFRANCO SRL', giorniDalFile: 5, giorniAnagrafica: 3, aliquote: [10], chiavi: ['d.xml'] },
+    ]
+    rerender(<DialogConflitti aperto conflitti={secondoImport} onAnnulla={vi.fn()} onContinua={onContinua} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /continua importazione/i }))
+
+    expect(onContinua).toHaveBeenCalledWith({ '111': 'importazione' })
   })
 })

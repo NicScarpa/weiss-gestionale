@@ -69,6 +69,19 @@ export function DialogConflitti({ aperto, conflitti, onAnnulla, onContinua }: Pr
   // quando la lista dei conflitti cambia da un caricamento all'altro.
   const [scelteUtente, setScelteUtente] = useState<Record<string, SceltaConflitto>>({})
 
+  // Il dialog resta montato fra un import e l'altro (il Task 12 alterna solo
+  // `aperto`): senza questo reset, la scelta fatta su una partita IVA in un
+  // import precedente riaffiorerebbe come preselezione per un conflitto che
+  // l'utente non ha ancora visto in questa sessione. Si aggiorna lo stato
+  // durante il render, non in un effect — il pattern che React raccomanda
+  // per azzerare uno stato quando cambia una prop, senza il rendering in più
+  // che un effect introdurrebbe.
+  const [conflittiPrecedenti, setConflittiPrecedenti] = useState(conflitti)
+  if (conflitti !== conflittiPrecedenti) {
+    setConflittiPrecedenti(conflitti)
+    setScelteUtente({})
+  }
+
   const totaleFatture = conflitti.reduce((somma, c) => somma + c.chiavi.length, 0)
 
   const scelte = Object.fromEntries(
@@ -130,7 +143,7 @@ export function DialogConflitti({ aperto, conflitti, onAnnulla, onContinua }: Pr
                         <Button
                           size="sm"
                           variant={scelta === 'importazione' ? 'default' : 'outline'}
-                          aria-label={`Usa l importazione per ${c.denominazione}`}
+                          aria-label={`Usa l'importazione per ${c.denominazione}`}
                           onClick={() =>
                             setScelteUtente((precedenti) => ({ ...precedenti, [c.partitaIva]: 'importazione' }))
                           }
@@ -140,7 +153,7 @@ export function DialogConflitti({ aperto, conflitti, onAnnulla, onContinua }: Pr
                         <Button
                           size="sm"
                           variant={scelta === 'anagrafica' ? 'default' : 'outline'}
-                          aria-label={`Usa l anagrafica per ${c.denominazione}`}
+                          aria-label={`Usa l'anagrafica per ${c.denominazione}`}
                           onClick={() =>
                             setScelteUtente((precedenti) => ({ ...precedenti, [c.partitaIva]: 'anagrafica' }))
                           }
