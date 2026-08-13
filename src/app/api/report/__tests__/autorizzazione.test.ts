@@ -42,6 +42,7 @@ vi.mock('@/lib/prisma', () => {
 })
 
 import { auth } from '@/lib/auth'
+import { contestoRotta } from '@/test/auth-unitari'
 
 const sessione = (role: string): Session =>
   ({ user: { id: 'u1', role, email: 'x@y.z' } }) as unknown as Session
@@ -67,7 +68,7 @@ describe.each(ROUTE)('GET /api/report/$nome — autorizzazione', ({ nome, carica
     vi.mocked(auth).mockResolvedValue(null as never)
     const { GET } = await carica()
 
-    const res = await GET(richiesta(nome))
+    const res = await GET(richiesta(nome), contestoRotta())
 
     expect(res.status).toBe(401)
     expect(await res.json()).toMatchObject({ error: 'Non autorizzato' })
@@ -77,7 +78,7 @@ describe.each(ROUTE)('GET /api/report/$nome — autorizzazione', ({ nome, carica
     vi.mocked(auth).mockResolvedValue({} as never)
     const { GET } = await carica()
 
-    expect((await GET(richiesta(nome))).status).toBe(401)
+    expect((await GET(richiesta(nome), contestoRotta())).status).toBe(401)
   })
 
   it.each(['staff', 'employee', ''])(
@@ -86,7 +87,7 @@ describe.each(ROUTE)('GET /api/report/$nome — autorizzazione', ({ nome, carica
       vi.mocked(auth).mockResolvedValue(sessione(role) as never)
       const { GET } = await carica()
 
-      const res = await GET(richiesta(nome))
+      const res = await GET(richiesta(nome), contestoRotta())
 
       expect(res.status).toBe(403)
       expect(await res.json()).toMatchObject({ error: 'Accesso negato' })
@@ -97,7 +98,7 @@ describe.each(ROUTE)('GET /api/report/$nome — autorizzazione', ({ nome, carica
     vi.mocked(auth).mockResolvedValue(sessione(role) as never)
     const { GET } = await carica()
 
-    const res = await GET(richiesta(nome))
+    const res = await GET(richiesta(nome), contestoRotta())
 
     // Non si asserisce 200: oltre il guard c'è il report vero, che con un
     // Prisma finto può legittimamente inciampare. Quel che conta — e che la

@@ -6,11 +6,13 @@ import { createAuditLog } from '@/lib/audit'
 import { imputazioniDivergenti, riallineaFette, RiallineamentoNonRigenerabile } from '@/lib/invoices/riallineamento'
 import { MESSAGGIO_NESSUNA_DIVERGENZA, MESSAGGIO_MAI_GENERATE_FETTE, MESSAGGIO_RIALLINEATO } from './messaggi'
 
-// Ri-esportate: chi importava le costanti da qui (i test di questa rotta)
-// continua a trovarle, ma la definizione vive in `./messaggi.ts` — un modulo
-// senza `next/server`/`next-auth`, così un test lato client può importarle
-// senza portarsi dietro anche quelli (vedi il docblock in `messaggi.ts`).
-export { MESSAGGIO_NESSUNA_DIVERGENZA, MESSAGGIO_MAI_GENERATE_FETTE, MESSAGGIO_RIALLINEATO }
+// Le costanti NON si ri-esportano di qui. Una route può esportare solo i
+// metodi HTTP e `config`: qualunque altro simbolo fa fallire il controllo che
+// Next genera sotto webpack (`OmitWithTag ... does not satisfy { [x: string]:
+// never }`). La ri-esportazione era un ponte per chi le importava da questa
+// rotta, e non la usa più nessuno: i due test le prendono già da
+// `./messaggi.ts`, che è anche il posto giusto — un modulo senza
+// `next/server`/`next-auth`, importabile da un test lato client.
 
 /**
  * POST /api/prima-nota/[id]/riallinea

@@ -57,7 +57,7 @@ describe('POST rinnovo del consenso', () => {
     const { connessione } = await collegamentoScadutoConConto()
     impostaClientPerTest(clientFinto())
 
-    const esito = await callRoute<{ link: string }>(
+    const esito = await callRoute<{ link: string }, { id: string }>(
       rinnova,
       jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/rinnovo`, { method: 'POST' }),
       { id: connessione.id }
