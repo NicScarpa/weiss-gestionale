@@ -30,6 +30,8 @@ export const PESI = {
   DATA: 15,
   CODICE_BANCA: 10,
   UNICITA: 5,
+  /** Il bonus quando esiste esattamente un'altra alternativa plausibile. */
+  UNICITA_PARZIALE: 2,
 } as const
 
 /**

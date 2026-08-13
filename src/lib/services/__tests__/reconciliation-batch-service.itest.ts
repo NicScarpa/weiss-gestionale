@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { prisma } from '@/lib/prisma'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { venueDiTest } from '@/test/integration/fixtures/closures'
-import { creaScadenza } from '@/test/integration/fixtures/scadenzario'
+import { creaScadenza, creaFattura } from '@/test/integration/fixtures/scadenzario'
 import { generaLotto } from '../reconciliation-batch-service'
 
 /**
@@ -191,5 +191,136 @@ describe('generaLotto', () => {
     expect(esito.perFascia.alta + esito.perFascia.media + esito.perFascia.bassa).toBe(
       esito.contaProposte
     )
+  })
+
+  it('assegna R1 alla passiva con fattura, R2 all\'attiva con fattura, R3 senza fattura', async () => {
+    const venue = await venueDiTest()
+
+    const fatturaPassiva = await creaFattura({
+      venueId: venue.id,
+      totalAmount: 300,
+      invoiceNumber: 'FT-301',
+    })
+    await creaMovimentoBancario(venue.id, {
+      importo: -300,
+      causale: 'Bonifico a ROMA UNO SRL Causale: FT301',
+      data: new Date('2026-07-10'),
+    })
+    await creaScadenza({
+      venueId: venue.id,
+      tipo: 'passiva',
+      importoTotale: 300,
+      dataScadenza: new Date('2026-07-10'),
+      numeroDocumento: 'FT301',
+      controparteNome: 'ROMA UNO SRL',
+      invoiceId: fatturaPassiva.id,
+      descrizione: 'Roma Uno SRL — fattura 301',
+    })
+
+    const fatturaAttiva = await creaFattura({
+      venueId: venue.id,
+      totalAmount: 400,
+      invoiceNumber: 'FT-302',
+    })
+    await creaMovimentoBancario(venue.id, {
+      importo: 400,
+      causale: 'Bonifico da CLIENTE DUE SRL Causale: FT302',
+      data: new Date('2026-07-11'),
+    })
+    await creaScadenza({
+      venueId: venue.id,
+      tipo: 'attiva',
+      importoTotale: 400,
+      dataScadenza: new Date('2026-07-11'),
+      numeroDocumento: 'FT302',
+      controparteNome: 'CLIENTE DUE SRL',
+      invoiceId: fatturaAttiva.id,
+      descrizione: 'Cliente Due SRL — fattura 302',
+    })
+
+    await creaMovimentoBancario(venue.id, {
+      importo: -500,
+      causale: 'Bonifico a FORNITORE TRE SRL Causale: FT303',
+      data: new Date('2026-07-12'),
+    })
+    await creaScadenza({
+      venueId: venue.id,
+      tipo: 'passiva',
+      importoTotale: 500,
+      dataScadenza: new Date('2026-07-12'),
+      numeroDocumento: 'FT303',
+      controparteNome: 'FORNITORE TRE SRL',
+      invoiceId: null,
+      descrizione: 'Fornitore Tre SRL — fattura 303',
+    })
+
+    const esito = await generaLotto({
+      venueId: venue.id,
+      dateFrom: new Date('2026-07-01'),
+      dateTo: new Date('2026-07-31'),
+      regole: ['R1', 'R2', 'R3'],
+      userId: null,
+    })
+
+    const proposte = await prisma.reconciliationProposal.findMany({
+      where: { batchId: esito.batchId },
+      include: { gambe: true },
+    })
+    expect(proposte).toHaveLength(3)
+
+    const regolaPerQuota = (importo: number) =>
+      proposte.find((p) => Math.abs(Number(p.gambe[0]?.importo ?? 0) - importo) < 0.01)?.regola
+
+    expect(regolaPerQuota(300)).toBe('R1')
+    expect(regolaPerQuota(400)).toBe('R2')
+    expect(regolaPerQuota(500)).toBe('R3')
+  })
+
+  it('un pagamento cumulativo produce una proposta con tre gambe, e le quote sommano l\'importo del movimento', async () => {
+    const venue = await venueDiTest()
+
+    await creaMovimentoBancario(venue.id, {
+      importo: -500,
+      causale: 'Bonifico a FORNITORE CUMULATIVO SRL saldo scadenze multiple',
+      data: new Date('2026-07-20'),
+    })
+
+    const residui = [100, 150, 250]
+    const scadenzeCreate = await Promise.all(
+      residui.map((importoTotale) =>
+        creaScadenza({
+          venueId: venue.id,
+          tipo: 'passiva',
+          importoTotale,
+          dataScadenza: new Date('2026-07-20'),
+          numeroDocumento: null,
+          controparteNome: 'FORNITORE CUMULATIVO SRL',
+          descrizione: `Fornitore cumulativo — quota ${importoTotale}`,
+        })
+      )
+    )
+
+    const esito = await generaLotto({
+      venueId: venue.id,
+      dateFrom: new Date('2026-07-01'),
+      dateTo: new Date('2026-07-31'),
+      regole: ['R1'],
+      userId: null,
+    })
+
+    const proposte = await prisma.reconciliationProposal.findMany({
+      where: { batchId: esito.batchId },
+      include: { gambe: true },
+    })
+    expect(proposte).toHaveLength(1)
+    expect(proposte[0].gambe).toHaveLength(3)
+
+    const scheduleIds = new Set(scadenzeCreate.map((s) => s.id))
+    for (const gamba of proposte[0].gambe) {
+      expect(scheduleIds.has(gamba.scheduleId!)).toBe(true)
+    }
+
+    const sommaQuote = proposte[0].gambe.reduce((totale, g) => totale + Number(g.importo), 0)
+    expect(sommaQuote).toBeCloseTo(500, 2)
   })
 })

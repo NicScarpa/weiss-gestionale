@@ -29,7 +29,7 @@ export function applicaUnicita(valutazione: Valutazione, alternative: number): V
     unicita = PESI.UNICITA
     motivazioni.push({ testo: 'Unico abbinamento possibile', segno: '+' })
   } else if (alternative === 2) {
-    unicita = 2
+    unicita = PESI.UNICITA_PARZIALE
     motivazioni.push({ testo: 'Esiste un\'altra alternativa plausibile', segno: '-' })
   } else {
     unicita = 0

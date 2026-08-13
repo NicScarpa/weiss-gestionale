@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import {
   valutaCoppia,
   fascia,
+  PESI,
   SOGLIE,
   TOLLERANZA,
   type ContestoValutazione,
@@ -170,6 +171,9 @@ export async function generaLotto(input: GeneraLottoInput): Promise<GeneraLottoE
 
   const perFascia = { alta: 0, media: 0, bassa: 0 }
   let contaProposte = 0
+  // Le `create` non vengono eseguite qui: si accumulano e partono tutte
+  // insieme nella transazione finale, vedi sotto.
+  const operazioni: Prisma.PrismaPromise<unknown>[] = []
 
   for (const grezzo of movimentiGrezzi) {
     const movimento: MovimentoBanca = {
@@ -202,7 +206,17 @@ export async function generaLotto(input: GeneraLottoInput): Promise<GeneraLottoE
     }
 
     // Combinazioni cumulative: si valutano contro la somma dei residui,
-    // rappresentata da una scadenza sintetica che non viene mai persistita
+    // rappresentata da una scadenza sintetica che non viene mai persistita.
+    //
+    // Il rappresentante è `combinazione[0]`, che è sempre la scadenza col
+    // residuo maggiore fra le gambe scelte: `trovaCombinazioni` ordina le
+    // candidate per residuo decrescente e le esplora per indice crescente,
+    // quindi il primo elemento di ogni combinazione è la più grossa del
+    // gruppo, mai la più vicina per data né quella citata nella causale. Per
+    // controparte e codice banca è irrilevante — la combinazione è già
+    // ristretta alla stessa controparte. Per riferimento e data è
+    // un'approssimazione consapevole: si valuta la fattura dominante, non
+    // necessariamente quella più pertinente.
     const importoAssoluto = Math.abs(movimento.importo)
     for (const combinazione of trovaCombinazioni(importoAssoluto, nellaFinestra)) {
       const sommaResidui = combinazione.reduce((totale, s) => totale + s.residuo, 0)
@@ -229,8 +243,11 @@ export async function generaLotto(input: GeneraLottoInput): Promise<GeneraLottoE
 
     if (valutate.length === 0) continue
 
-    // L'unicità si applica ora, che si conoscono le alternative sopra soglia
-    const sopraSoglia = valutate.filter((v) => v.punteggioParziale >= sogliaMinima - 5)
+    // L'unicità si applica ora, che si conoscono le alternative sopra soglia.
+    // La preselezione usa sogliaMinima - PESI.UNICITA: sotto quel margine
+    // nessun bonus di unicità (al massimo PESI.UNICITA) potrebbe comunque
+    // farla arrivare alla soglia vera.
+    const sopraSoglia = valutate.filter((v) => v.punteggioParziale >= sogliaMinima - PESI.UNICITA)
     const alternative = sopraSoglia.length
 
     const finali = sopraSoglia
@@ -247,32 +264,49 @@ export async function generaLotto(input: GeneraLottoInput): Promise<GeneraLottoE
     for (const finale of finali) {
       const quotaPerGamba = ripartisci(importoAssoluto, finale.scadenze)
 
-      await prisma.reconciliationProposal.create({
-        data: {
-          batchId: lotto.id,
-          regola: regolaDi(finale.scadenze[0], conFattura),
-          punteggio: finale.punteggio,
-          fattori: finale.fattori as unknown as Prisma.InputJsonValue,
-          motivazioni: finale.motivazioni as unknown as Prisma.InputJsonValue,
-          bankTransactionId: movimento.id,
-          gambe: {
-            create: finale.scadenze.map((s, indice) => ({
-              scheduleId: s.id,
-              importo: new Prisma.Decimal(quotaPerGamba[indice].toFixed(2)),
-            })),
+      operazioni.push(
+        prisma.reconciliationProposal.create({
+          data: {
+            batchId: lotto.id,
+            regola: regolaDi(finale.scadenze[0], conFattura),
+            punteggio: finale.punteggio,
+            fattori: finale.fattori as unknown as Prisma.InputJsonValue,
+            motivazioni: finale.motivazioni as unknown as Prisma.InputJsonValue,
+            bankTransactionId: movimento.id,
+            gambe: {
+              create: finale.scadenze.map((s, indice) => ({
+                scheduleId: s.id,
+                importo: new Prisma.Decimal(quotaPerGamba[indice].toFixed(2)),
+              })),
+            },
           },
-        },
-      })
+        })
+      )
 
       contaProposte++
       perFascia[fascia(finale.punteggio)]++
     }
   }
 
-  await prisma.reconciliationBatch.update({
-    where: { id: lotto.id },
-    data: { contaProposte },
-  })
+  // Proposte e contatore nella stessa transazione: senza, un'interruzione a
+  // metà corsa — realistica sui volumi veri del Task 9 — lascerebbe proposte
+  // persistite con `contaProposte` ancora a zero sul lotto. È lo stesso
+  // difetto che questo disegno esiste per evitare, spostato dal contatore in
+  // memoria a quello su disco. Il calcolo che precede (valutaCoppia,
+  // trovaCombinazioni, applicaUnicita) resta fuori: sono funzioni pure senza
+  // I/O, quindi non allungano il tempo in cui la transazione tiene la
+  // connessione aperta — dentro ci sono solo le scritture. La forma array di
+  // `$transaction` (a differenza di quella interattiva) non accetta un
+  // timeout esplicito: esegue le operazioni come un batch unico, senza
+  // attese fra una scrittura e l'altra, quindi il timeout di default basta
+  // anche per centinaia di proposte.
+  await prisma.$transaction([
+    ...operazioni,
+    prisma.reconciliationBatch.update({
+      where: { id: lotto.id },
+      data: { contaProposte },
+    }),
+  ])
 
   return { batchId: lotto.id, contaProposte, perFascia }
 }
