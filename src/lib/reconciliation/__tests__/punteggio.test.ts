@@ -196,6 +196,37 @@ describe('il fattore controparte', () => {
     )!
     expect(esito.fattori.controparte).toBe(0)
   })
+
+  it('l\'alias appreso vince sull\'IBAN, perché una correzione confermata pesa più di un indizio dedotto', () => {
+    const contesto: ContestoValutazione = {
+      alias: new Map([['BEN ROMA GIANFRANCO SRLFT 4320 CAUSALE FT 4320', 'sup-1']]),
+      mappaCodiciBanca: new Map(),
+    }
+    const esito = valutaCoppia(
+      movimento({
+        causale: 'BEN ROMA GIANFRANCO SRLFT 4320 Causale: FT 4320 IBAN IT78S07084612000000000900667',
+      }),
+      scadenza({ controparteIban: 'IT78S07084612000000000900667' }),
+      contesto
+    )!
+    expect(esito.fattori.controparte).toBe(PESI.CONTROPARTE)
+  })
+
+  it('l\'IBAN vince sul nome quando valgono lo stesso punteggio: lo si vede dalla motivazione', () => {
+    const esito = valutaCoppia(
+      movimento({
+        causale: 'BEN ROMA GIANFRANCO SRLFT 4320 Causale: FT 4320 IBAN IT78S07084612000000000900667',
+      }),
+      scadenza({ controparteIban: 'IT78S07084612000000000900667' }),
+      CONTESTO_VUOTO
+    )!
+    expect(
+      esito.motivazioni.some((m) => m.testo === 'IBAN della controparte presente nella causale')
+    ).toBe(true)
+    expect(
+      esito.motivazioni.some((m) => m.testo === 'Nome della controparte presente nella causale')
+    ).toBe(false)
+  })
 })
 
 describe('il fattore codice banca', () => {
