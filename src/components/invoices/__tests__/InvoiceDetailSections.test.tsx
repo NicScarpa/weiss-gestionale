@@ -738,4 +738,31 @@ describe('LineItemsTable — dividere una riga (Task 9)', () => {
 
     expect(screen.queryByRole('button', { name: 'Dividi la riga fra più conti' })).toBeNull()
   })
+
+  // Round 1 di revisione, minor: una riga di sconto/reso (FatturaPA la
+  // ammette con importo negativo) non è divisibile per costruzione — le
+  // quote devono essere positive e sommare all'importo della riga, e non
+  // esistono due positivi la cui somma sia zero o negativa. Il pulsante
+  // resta a schermo (non sparisce: l'utente deve capire perché è spento),
+  // ma disabilitato con un titolo che lo spiega.
+  it('una riga con importo negativo (sconto/reso) mostra ÷ disabilitato, con un titolo che spiega perché', async () => {
+    righe({
+      dettaglioLinee: [
+        {
+          numeroLinea: 1,
+          descrizione: 'Sconto',
+          prezzoUnitario: -50,
+          prezzoTotale: -50,
+          aliquotaIVA: 22,
+          imputazioni: [],
+        },
+      ],
+    })
+
+    const bottone = await waitFor(() =>
+      screen.getByRole('button', { name: 'Dividi la riga fra più conti' })
+    )
+    expect(bottone).toBeDisabled()
+    expect(bottone.getAttribute('title')).toContain('non può essere divisa')
+  })
 })

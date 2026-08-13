@@ -24,7 +24,7 @@ import { Input } from '@/components/ui/input'
 import { TableCell, TableRow } from '@/components/ui/table'
 import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
 import { formatCurrencyOrZero as formatCurrency } from '@/lib/formatters'
-import { TOLLERANZA_IMPORTI, pallino, type RigaVisualizzata } from './InvoiceDetailSections'
+import { TOLLERANZA_IMPORTI, pallino, type RigaVisualizzata } from './riga-fattura-condivisa'
 
 /**
  * Una quota in fase di compilazione. `importo` è una stringa, non un
@@ -86,19 +86,78 @@ export function quoteQuadrano(quote: QuotaBozza[], importoRiga: number): boolean
   return Math.abs(sommaQuote(quote) - importoRiga) <= TOLLERANZA_IMPORTI
 }
 
+/** Arrotonda al centesimo: lo stesso schema di `round2` in SplitEntryDialog
+ * (suddivisione di un movimento), duplicato invece che condiviso perché è
+ * tre righe e l'unico punto in comune fra i due componenti è il concetto,
+ * non il codice — SplitEntryDialog divide un movimento per importo,
+ * RigaDivisibile una riga fattura, con vincoli diversi (qui la somma deve
+ * combaciare esattamente, là può restare un residuo). */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100
+}
+
 /**
- * Ogni quota ha un conto scelto e un importo valido e positivo (stesso
- * `.positive()` di righe-conti/route.ts): condizione necessaria, insieme a
- * `quoteQuadrano`, per poter salvare. Senza questo controllo una quota
- * incompleta produrrebbe una richiesta che il server rifiuterebbe comunque
- * (Zod), ma con un errore generico invece del messaggio mirato che il
- * pulsante disabilitato già evita di far scattare.
+ * Quote pronte per essere salvate, o `null` se anche una sola non lo è.
+ * "Pronta" = ha un conto e un importo che, arrotondato al centesimo come lo
+ * arrotonda il salvataggio, è positivo — stesso `.positive()` del server
+ * (righe-conti/route.ts). Controllare l'importo grezzo con `n > 0` (versione
+ * precedente) lasciava passare un caso limite: `parseFloat('0.001')` è `0.001`,
+ * supera `> 0`, ma `round2` lo porta a `0`, che il server rifiuta con
+ * l'errore generico di Zod invece che col pulsante già disabilitato
+ * (revisione team lead, round 1, minor).
+ *
+ * Un'unica funzione sia per decidere se "Salva" può abilitarsi
+ * (`quotePronte(quote) !== null`) sia per costruire il payload esatto da
+ * inviare: le due cose non possono disallinearsi, e dentro il ciclo
+ * TypeScript restringe `accountId` da opzionale a `string` sul controllo
+ * `!q.accountId`, senza bisogno di un'asserzione `!` che dipendesse solo dal
+ * pulsante disabilitato per essere sicura (revisione team lead, round 1,
+ * minor: prima l'asserzione in `handleSalva` era sicura solo perché il
+ * bottone era spento, non perché il codice lo garantisse da sé).
+ */
+export function quotePronte(
+  quote: QuotaBozza[]
+): Array<{ progressivo: number; accountId: string; importo: number }> | null {
+  const pronte: Array<{ progressivo: number; accountId: string; importo: number }> = []
+  for (const q of quote) {
+    const n = parseFloat(q.importo)
+    if (!q.accountId || Number.isNaN(n) || round2(n) <= 0) return null
+    pronte.push({ progressivo: q.progressivo, accountId: q.accountId, importo: round2(n) })
+  }
+  return pronte
+}
+
+/**
+ * Ogni quota ha un conto scelto e un importo valido e positivo: condizione
+ * necessaria, insieme a `quoteQuadrano`, per poter salvare. Implementata
+ * sopra `quotePronte` invece di ripetere il controllo, per non avere due
+ * definizioni di "completa" che potrebbero divergere.
  */
 export function quoteComplete(quote: QuotaBozza[]): boolean {
-  return quote.every((q) => {
-    const n = parseFloat(q.importo)
-    return !!q.accountId && !Number.isNaN(n) && n > 0
+  return quotePronte(quote) !== null
+}
+
+/**
+ * Cosa manca perché tutte le quote siano compilate — usata quando
+ * `quotePronte` è `null`, per dire ESATTAMENTE cosa manca invece di lasciare
+ * che il messaggio racconti solo la somma. Senza questo, 60 + 40 su una
+ * riga da 100 con il conto della seconda quota non ancora scelto mostrava
+ * il messaggio verde di `messaggioScarto` ("le quote coprono l'importo
+ * della riga") mentre "Salva" restava spento per un motivo che non
+ * compariva da nessuna parte — il vincolo del passo 2 visibile solo a
+ * metà (revisione team lead, round 1, Important 1).
+ */
+export function messaggioIncompleto(quote: QuotaBozza[]): string {
+  const problemi = quote.flatMap((quota, indice) => {
+    const lista: string[] = []
+    if (!quota.accountId) lista.push(`manca il conto della quota ${indice + 1}`)
+    const n = parseFloat(quota.importo)
+    if (Number.isNaN(n) || round2(n) <= 0) {
+      lista.push(`la quota ${indice + 1} deve avere un importo maggiore di zero`)
+    }
+    return lista
   })
+  return problemi.join('; ')
 }
 
 /**
@@ -106,6 +165,9 @@ export function quoteComplete(quote: QuotaBozza[]): boolean {
  * (righe-conti/route.ts: «mancano X» / «ci sono X di troppo») così che, se
  * il salvataggio viene comunque rifiutato (passo 3), chi legge riconosce la
  * stessa frase invece di due formulazioni diverse per lo stesso concetto.
+ * Presuppone quote già `quotePronte` (conto e importo a posto): il chiamante
+ * mostra `messaggioIncompleto` finché non lo sono, questa funzione non torna
+ * a ripetere quel controllo.
  */
 export function messaggioScarto(quote: QuotaBozza[], importoRiga: number): string {
   const somma = sommaQuote(quote)
@@ -120,30 +182,24 @@ export function messaggioScarto(quote: QuotaBozza[], importoRiga: number): strin
   return `Le quote sommano a ${formatCurrency(somma)} su ${formatCurrency(importoRiga)}: ${scarto}`
 }
 
-/** Arrotonda al centesimo: lo stesso schema di `round2` in SplitEntryDialog
- * (suddivisione di un movimento), duplicato invece che condiviso perché è
- * tre righe e l'unico punto in comune fra i due componenti è il concetto,
- * non il codice — SplitEntryDialog divide un movimento per importo,
- * RigaDivisibile una riga fattura, con vincoli diversi (qui la somma deve
- * combaciare esattamente, là può restare un residuo). */
-function round2(n: number): number {
-  return Math.round(n * 100) / 100
-}
-
 interface RigaDivisibileProps {
   riga: RigaVisualizzata
   canEditAccounts: boolean
   /**
-   * Assente per una riga già divisa e salvata: non esiste più una riga a
-   * quota singola a cui tornare, quindi niente pulsante Annulla. Presente
-   * solo per una divisione appena aperta e non ancora salvata: la riporta
-   * alla tendina normale, scartando la bozza (Task 9, decisione sul
-   * collasso — vedi il report).
+   * Assente per una riga già divisa e salvata: niente pulsante Annulla,
+   * perché non c'è una riga a quota singola non ancora esistita a cui
+   * tornare. L'unione (vedi `onSalva` con una sola quota, sotto) è la via
+   * di ritorno equivalente per quel caso — non un ripristino della bozza,
+   * ma un salvataggio esplicito che il server sa già interpretare come
+   * "torna a quota singola" (righe-conti/route.ts, `divisa = quote.length
+   * > 1`). Presente solo per una divisione appena aperta e non ancora
+   * salvata: la riporta alla tendina normale, scartando la bozza.
    */
   onAnnulla?: () => void
-  /** Riceve SEMPRE l'insieme completo delle quote correnti: il chiamante
-   * (`LineItemsTable`) lo inoltra a `onSplitSave`, che il server tratta come
-   * autorevole sull'intera riga. */
+  /** Riceve SEMPRE l'insieme completo delle quote da salvare — una sola per
+   * "unisci in un conto solo", tutte per un salvataggio normale — mai un
+   * sottoinsieme arbitrario: il chiamante (`LineItemsTable`) lo inoltra a
+   * `onSplitSave`, che il server tratta come autorevole sull'intera riga. */
   onSalva: (quote: Array<{ progressivo: number; accountId: string; importo: number }>) => void
 }
 
@@ -155,20 +211,30 @@ export function RigaDivisibile({ riga, canEditAccounts, onAnnulla, onSalva }: Ri
   }
 
   const quadra = quoteQuadrano(quote, riga.importo)
-  const completa = quoteComplete(quote)
-  const puoSalvare = quadra && completa
+  const pronte = quotePronte(quote)
+  const puoSalvare = quadra && pronte !== null
+  // Finché una quota non è pronta (conto o importo mancante), il messaggio
+  // dice QUELLO — non lo scarto sulla somma, che potrebbe già quadrare
+  // (60+40=100) e mostrarsi verde mentre "Salva" resta spento per un motivo
+  // che altrimenti non comparirebbe da nessuna parte.
+  const messaggio = pronte ? messaggioScarto(quote, riga.importo) : messaggioIncompleto(quote)
 
   const handleSalva = () => {
-    onSalva(
-      quote.map((q) => ({
-        progressivo: q.progressivo,
-        // Sicuro grazie a `puoSalvare` (disabilita il bottone finché
-        // `quoteComplete` non è vera): a questo punto ogni quota ha già un
-        // accountId e un importo numerico valido.
-        accountId: q.accountId!,
-        importo: round2(parseFloat(q.importo)),
-      }))
-    )
+    if (!pronte) return
+    onSalva(pronte)
+  }
+
+  // Riporta la riga a un'unica imputazione, sul conto della prima quota:
+  // una sola quota nella richiesta e il server smette di trattare la riga
+  // come divisa, ricalcolando l'importo dal documento e cancellando le
+  // quote non citate (righe-conti/route.ts, `divisa = quote.length > 1` e
+  // la `deleteMany` che segue). È l'unica via di ritorno per una riga già
+  // salvata: prima di questa azione non ce n'era nessuna (revisione team
+  // lead, round 1, Important 2).
+  const primoConto = quote[0]?.accountId
+  const handleUnisci = () => {
+    if (!primoConto) return
+    onSalva([{ progressivo: 0, accountId: primoConto, importo: riga.importo }])
   }
 
   return (
@@ -195,7 +261,7 @@ export function RigaDivisibile({ riga, canEditAccounts, onAnnulla, onSalva }: Ri
               <Input
                 type="number"
                 step="0.01"
-                placeholder="0,00"
+                placeholder="0.00"
                 value={quota.importo}
                 onChange={(e) => aggiornaQuota(indice, { importo: e.target.value })}
                 disabled={!canEditAccounts}
@@ -229,9 +295,12 @@ export function RigaDivisibile({ riga, canEditAccounts, onAnnulla, onSalva }: Ri
       <TableRow className="bg-slate-50/60">
         <TableCell colSpan={7} className="py-2">
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-            <span className={quadra ? 'text-green-600' : 'text-amber-600'}>
-              {messaggioScarto(quote, riga.importo)}
-            </span>
+            {/* Verde solo quando "Salva" è davvero abilitato: prima il
+                colore seguiva solo `quadra` (la somma), quindi un conto
+                scelto su due poteva già mostrare verde — "le quote coprono
+                l'importo della riga" — con Salva ancora spento perché manca
+                l'altro conto (revisione team lead, round 1, Important 1). */}
+            <span className={puoSalvare ? 'text-green-600' : 'text-amber-600'}>{messaggio}</span>
             <div className="flex gap-2">
               {onAnnulla && (
                 <Button
@@ -242,6 +311,18 @@ export function RigaDivisibile({ riga, canEditAccounts, onAnnulla, onSalva }: Ri
                   disabled={!canEditAccounts}
                 >
                   Annulla
+                </Button>
+              )}
+              {!onAnnulla && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleUnisci}
+                  disabled={!canEditAccounts || !primoConto}
+                  title="Riporta la riga a un'unica imputazione, sul conto della prima quota"
+                >
+                  Unisci in un conto solo
                 </Button>
               )}
               <Button

@@ -41,14 +41,12 @@ import { NATURA_OPERAZIONE } from '@/lib/sdi/types'
 import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
 import { LINEA_BOLLO, LINEA_ARROTONDAMENTO } from '@/lib/sdi/righe-di-sistema'
 import { RigaDivisibile } from './RigaDivisibile'
-
-// Stessa soglia di src/lib/scadenzario/stato-schedule.ts, duplicata invece
-// che importata: quel modulo porta `@prisma/client` (usato per altro al suo
-// interno), e un import così in un componente 'use client' rompe la build
-// in un modo che nessuna revisione del diff vede — bisogna lanciare
-// `npm run build` per accorgersene. Esportata: RigaDivisibile.tsx (Task 9) la
-// usa per lo stesso controllo di quadratura, lato client, prima di salvare.
-export const TOLLERANZA_IMPORTI = 0.005
+// Tipi e utilità condivisi con RigaDivisibile.tsx: vivono in un terzo modulo
+// (non qui) apposta, per non fare importare a RigaDivisibile.tsx questo
+// stesso file — che a sua volta lo importa per il componente. Era un ciclo
+// (revisione team lead, round 1, minor): funzionava perché ogni uso reale
+// era dentro funzioni, mai a livello di modulo, ma restava fragile.
+import { TOLLERANZA_IMPORTI, pallino, type ImputazioneQuota, type RigaVisualizzata } from './riga-fattura-condivisa'
 
 // Type definitions for parsed data from API
 interface CedentePrestatore {
@@ -75,23 +73,6 @@ interface CessionarioCommittente {
     provincia?: string
     nazione: string
   }
-}
-
-/**
- * Una quota di riga imputata a un conto: un solo elemento nel caso comune,
- * più d'uno per una riga divisa fra conti diversi (Task 9). `progressivo` la
- * distingue dalle altre quote della stessa riga; `imputazioni[0]`, ordinato
- * dal server per progressivo crescente, è "la" imputazione principale per chi
- * non gestisce ancora le righe divise.
- */
-export interface ImputazioneQuota {
-  progressivo: number
-  accountId: string
-  importo: number
-  stato: 'proposta' | 'confermata'
-  fonte: string
-  confidence?: number | string | null
-  motivazioneAi?: string | null
 }
 
 interface DettaglioLinea {
@@ -367,19 +348,6 @@ interface LineItemsTableProps {
   ) => void
 }
 
-/** Una riga della tabella, vera o di sistema, ridotta ai campi comuni al rendering e al calcolo di copertura. */
-export interface RigaVisualizzata {
-  numeroLinea: number
-  descrizione: string
-  isSistema: boolean
-  quantita?: number
-  unitaMisura?: string
-  prezzoUnitario?: number
-  aliquotaIVA?: number
-  importo: number
-  imputazioni: ImputazioneQuota[]
-}
-
 /** Quanto di una riga è coperto da imputazioni CONFERMATE — non le proposte
  * AI, ancora da rivedere. Specchia la guardia sul back end
  * (schedule-reconciliation-service.ts, "numeroLineeImputate"), che conta solo
@@ -409,30 +377,6 @@ function importoConfermato(imputazioni: ImputazioneQuota[]): number {
  */
 function alLordo(importoNetto: number, riga: RigaVisualizzata): number {
   return importoNetto * (1 + (riga.aliquotaIVA ?? 0) / 100)
-}
-
-/**
- * Colore e titolo del pallino di stato per UNA quota (verde confermata,
- * ambra proposta, assente se la quota non esiste ancora). Estratta perché
- * serve in due punti: la riga a quota singola qui sotto, e — quota per
- * quota — `RigaDivisibile` (Task 9). Prima di questa estrazione il pallino
- * si leggeva solo da `imputazioni[0]`: su una riga divisa con la prima quota
- * confermata e la seconda ancora proposta, il pallino unico mostrava verde e
- * la proposta pendente della seconda quota spariva dalla vista (Task 8,
- * minor 9 del reviewer). Qui non si tratta più: ogni quota mostra il proprio
- * pallino, non ce n'è uno solo da far quadrare con lo stato di tutte.
- */
-export function pallino(
-  imputazione: ImputazioneQuota | undefined
-): { className: string; title: string } | undefined {
-  if (!imputazione) return undefined
-  if (imputazione.stato === 'confermata') {
-    return { className: 'bg-green-500', title: 'Imputazione confermata' }
-  }
-  return {
-    className: 'bg-amber-500',
-    title: `Imputazione proposta automaticamente${imputazione.motivazioneAi ? ` — ${imputazione.motivazioneAi}` : ''}`,
-  }
 }
 
 /** Riferimento leggibile a una riga mancante nel messaggio del contatore: le
@@ -604,6 +548,18 @@ export function LineItemsTable({
                 const inModifica = righeAperte.has(riga.numeroLinea)
                 const mostraFigli = divisa || inModifica
 
+                // Una riga a importo zero o negativo (sconto, reso: FatturaPA
+                // li ammette come righe vere) non è divisibile per
+                // costruzione: le quote di RigaDivisibile devono essere
+                // positive E sommare all'importo della riga, e non esistono
+                // due positivi la cui somma sia zero o negativa. Il pulsante
+                // resta visibile ma spento, con un titolo che lo spiega — non
+                // sparisce, sullo stesso principio del bottone "Registra" di
+                // InvoiceDetail quando manca il centro di costo: l'utente
+                // deve capire perché è spento, non chiedersi dove sia finito
+                // (revisione team lead, round 1, minor).
+                const divisibile = riga.importo > 0
+
                 // imputazioni[0]: la quota col progressivo più basso (il
                 // server le ordina già così), cioè "la" imputazione
                 // principale finché la riga non è divisa fra più conti.
@@ -721,11 +677,15 @@ export function LineItemsTable({
                                     variant="ghost"
                                     size="icon"
                                     className="h-7 w-7 shrink-0 font-mono"
-                                    disabled={!canEditAccounts}
+                                    disabled={!canEditAccounts || !divisibile}
                                     onClick={() =>
                                       setRigheAperte((prev) => new Set(prev).add(riga.numeroLinea))
                                     }
-                                    title="Dividi la riga fra più conti"
+                                    title={
+                                      divisibile
+                                        ? 'Dividi la riga fra più conti'
+                                        : 'Una riga con importo zero o negativo non può essere divisa: le quote devono essere positive'
+                                    }
                                     aria-label="Dividi la riga fra più conti"
                                   >
                                     ÷
