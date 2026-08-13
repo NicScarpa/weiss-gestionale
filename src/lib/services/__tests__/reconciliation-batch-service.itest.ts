@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { prisma } from '@/lib/prisma'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { venueDiTest } from '@/test/integration/fixtures/closures'
-import { creaScadenza, creaFattura } from '@/test/integration/fixtures/scadenzario'
+import { creaScadenza, creaFattura, fornitoreDiTest } from '@/test/integration/fixtures/scadenzario'
 import { generaLotto } from '../reconciliation-batch-service'
 
 /**
@@ -122,9 +122,11 @@ describe('generaLotto', () => {
 
   it('usa un alias appreso per riconoscere una controparte scritta diversamente', async () => {
     const venue = await venueDiTest()
-    const fornitore = await prisma.supplier.create({
-      data: { name: 'Roma Gianfranco S.r.l.' },
-    })
+    // Un fornitore qualsiasi del seed: la sua ragione sociale non conta,
+    // qui serve solo un id valido a cui appendere l'alias — il punteggio
+    // dell'alias non guarda affatto `supplier.name` (vedi `punteggio.ts`,
+    // ramo 1 di `punteggioControparte`).
+    const fornitore = await fornitoreDiTest()
     await prisma.counterpartyAlias.create({
       data: {
         venueId: venue.id,
