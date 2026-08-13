@@ -16,22 +16,10 @@ import { prisma } from '@/lib/prisma'
 import { clientDaAmbiente } from '@/lib/gocardless/servizio'
 import { rispostaErroreGoCardless } from '@/lib/gocardless/risposte'
 import { descriviStato } from '@/lib/gocardless/stati'
+import { giorni, urlDiRitorno } from '@/lib/gocardless/parametri'
 import { logger } from '@/lib/logger'
 
 const corpoCreazione = z.object({ istitutoId: z.string().min(1) })
-
-/** Dove la banca rimanda a fine autenticazione. */
-function urlDiRitorno(): string {
-  const esplicito = process.env.GOCARDLESS_REDIRECT_URI
-  if (esplicito) return esplicito
-  const base = process.env.APP_URL?.replace(/\/$/, '') ?? 'http://localhost:3000'
-  return `${base}/api/gocardless/callback`
-}
-
-function giorni(valore: unknown, difetto: number): number {
-  const n = typeof valore === 'string' ? Number.parseInt(valore, 10) : typeof valore === 'number' ? valore : NaN
-  return Number.isFinite(n) ? n : difetto
-}
 
 /**
  * Il controllo applicativo legge e poi scrive: una corsa fra due richieste

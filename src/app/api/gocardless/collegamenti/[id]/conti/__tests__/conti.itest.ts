@@ -159,6 +159,76 @@ describe('GET conti di un collegamento', () => {
   })
 })
 
+// C1 della revisione finale: `accessValidUntil` non si scrive più in
+// POST /collegamenti o POST /rinnovo, ma qui — nel punto in cui la GET
+// scopre che lo stato è appena passato a `LN`. Prima di allora un consenso
+// mai concesso (autenticazione mai completata) non deve avere una scadenza.
+describe('la scadenza si scrive quando il consenso diventa attivo, non prima', () => {
+  it('scrive accessValidUntil nel momento in cui lo stato passa a LN', async () => {
+    await entraCome('admin')
+    const venue = await venueDiTest()
+    const connessione = await prisma.bankConnection.create({
+      data: {
+        venueId: venue.id,
+        institutionId: 'BANCA_FINTA_XXXX',
+        institutionName: 'Banca Finta',
+        requisitionId: 'req-1',
+        status: 'UA',
+        accessValidUntil: null,
+      },
+    })
+    impostaClientPerTest({
+      leggiRequisition: async () => ({
+        dati: { id: 'req-1', status: 'LN', accounts: [], link: '' },
+        limiti: { restanti: null, ripresaFraSecondi: null },
+      }),
+      istituzioni: async () => ({
+        dati: [{ id: 'BANCA_FINTA_XXXX', name: 'Banca Finta', max_access_valid_for_days: '90' }],
+        limiti: { restanti: null, ripresaFraSecondi: null },
+      }),
+    } as unknown as ClientGoCardless)
+
+    await callRoute(leggiConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`), { id: connessione.id })
+
+    const riga = await prisma.bankConnection.findUniqueOrThrow({ where: { id: connessione.id } })
+    expect(riga.status).toBe('LN')
+    expect(riga.accessValidUntil).not.toBeNull()
+    const giorniAllaScadenza = Math.round((riga.accessValidUntil!.getTime() - Date.now()) / 86_400_000)
+    expect(giorniAllaScadenza).toBeGreaterThanOrEqual(89)
+    expect(giorniAllaScadenza).toBeLessThanOrEqual(90)
+  })
+
+  // Il client finto non ha `istituzioni`: se il codice la chiamasse fuori dal
+  // ramo `LN` il test esploderebbe con un errore chiaro invece di passare in
+  // silenzio, dimostrando che quella chiamata resta condizionata allo stato.
+  it('non tocca la scadenza se lo stato resta non attivo', async () => {
+    await entraCome('admin')
+    const venue = await venueDiTest()
+    const connessione = await prisma.bankConnection.create({
+      data: {
+        venueId: venue.id,
+        institutionId: 'BANCA_FINTA_XXXX',
+        institutionName: 'Banca Finta',
+        requisitionId: 'req-1',
+        status: 'CR',
+        accessValidUntil: null,
+      },
+    })
+    impostaClientPerTest({
+      leggiRequisition: async () => ({
+        dati: { id: 'req-1', status: 'UA', accounts: [], link: '' },
+        limiti: { restanti: null, ripresaFraSecondi: null },
+      }),
+    } as unknown as ClientGoCardless)
+
+    await callRoute(leggiConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`), { id: connessione.id })
+
+    const riga = await prisma.bankConnection.findUniqueOrThrow({ where: { id: connessione.id } })
+    expect(riga.status).toBe('UA')
+    expect(riga.accessValidUntil).toBeNull()
+  })
+})
+
 describe('PUT configurazione dei conti', () => {
   it('accende un conto con la sua data di taglio', async () => {
     await entraCome('admin')
@@ -329,6 +399,85 @@ describe('PUT configurazione dei conti', () => {
     expect(aggiornata).toMatchObject({ syncEnabled: false, providerAccountId: null, connectionId: null })
   })
 
+  // I3 della revisione finale. Il pannello abbina per impronta dell'IBAN, la
+  // sincronizzazione userà `providerAccountId`: se un secondo conto banca
+  // (senza IBAN, per esempio una carta) si abbina allo stesso conto del
+  // gestionale già legato al primo, il pannello continuerebbe a mostrare
+  // l'abbinamento per impronta (rifatto alla lettura successiva) mentre la
+  // banca dati userebbe per sincronizzare il conto appena scritto — due cose
+  // diverse, e nessuna delle due lo direbbe.
+  it('rifiuta di abbinare un conto del gestionale già abbinato a un altro conto banca', async () => {
+    await entraCome('admin')
+    const { venue, connessione } = await connessioneCollegata(['gc-a', 'gc-b'])
+    const conto = await contoDiTest(venue.id, 'Conto principale', IBAN_A)
+
+    await callRoute(
+      salvaConti,
+      jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
+        method: 'PUT',
+        body: { conti: [{ providerAccountId: 'gc-a', azione: 'configura', attivo: true, bankAccountId: conto.id, dataTaglio: '2026-08-12' }] },
+      }),
+      { id: connessione.id }
+    )
+
+    const esito = await callRoute(
+      salvaConti,
+      jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
+        method: 'PUT',
+        body: { conti: [{ providerAccountId: 'gc-b', azione: 'configura', attivo: true, bankAccountId: conto.id, dataTaglio: '2026-08-12' }] },
+      }),
+      { id: connessione.id }
+    )
+
+    expect(esito.status).toBe(400)
+    const aggiornato = await prisma.bankAccount.findUniqueOrThrow({ where: { id: conto.id } })
+    expect(aggiornato.providerAccountId).toBe('gc-a')
+  })
+
+  // Lo stesso abbinamento, riscritto (stesso conto banca, stesso conto del
+  // gestionale) resta permesso: è solo un cambio di data o interruttore, non
+  // lo spostamento descritto sopra.
+  it('permette di riscrivere lo stesso abbinamento già salvato', async () => {
+    await entraCome('admin')
+    const { venue, connessione } = await connessioneCollegata(['gc-a'])
+    const conto = await contoDiTest(venue.id, 'Conto principale', IBAN_A)
+    const corpo = (dataTaglio: string) => ({
+      conti: [{ providerAccountId: 'gc-a', azione: 'configura', attivo: true, bankAccountId: conto.id, dataTaglio }],
+    })
+
+    await callRoute(salvaConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, { method: 'PUT', body: corpo('2026-08-12') }), { id: connessione.id })
+    const esito = await callRoute(salvaConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, { method: 'PUT', body: corpo('2026-08-20') }), { id: connessione.id })
+
+    expect(esito.status).toBe(200)
+    const aggiornato = await prisma.bankAccount.findUniqueOrThrow({ where: { id: conto.id } })
+    expect(aggiornato.syncCutoffDate?.toISOString().slice(0, 10)).toBe('2026-08-20')
+  })
+
+  // m3 della revisione finale. `filteredAccounts` porta dentro anche gli
+  // archiviati quando «Mostra archiviati» è acceso: senza questo controllo,
+  // un conto archiviato diventerebbe destinazione di movimenti bancari pur
+  // restando invisibile alle operazioni quotidiane.
+  it('rifiuta di abbinare un conto archiviato', async () => {
+    await entraCome('admin')
+    const { venue, connessione } = await connessioneCollegata(['gc-a'])
+    const conto = await prisma.bankAccount.create({
+      data: { venueId: venue.id, name: 'Conto archiviato', accountType: 'BANK', iban: IBAN_A, currency: 'EUR', isActive: false },
+    })
+
+    const esito = await callRoute(
+      salvaConti,
+      jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
+        method: 'PUT',
+        body: { conti: [{ providerAccountId: 'gc-a', azione: 'configura', attivo: true, bankAccountId: conto.id, dataTaglio: '2026-08-12' }] },
+      }),
+      { id: connessione.id }
+    )
+
+    expect(esito.status).toBe(400)
+    const aggiornato = await prisma.bankAccount.findUniqueOrThrow({ where: { id: conto.id } })
+    expect(aggiornato).toMatchObject({ syncEnabled: false, providerAccountId: null, connectionId: null })
+  })
+
   // Il regex accetta `2026-02-30`: `new Date(...)` non lancia, normalizza in
   // silenzio al primo marzo. Questa data è l'unica cosa che impedisce di
   // reimportare quello che il CSV ha già portato dentro, quindi uno
@@ -385,6 +534,22 @@ describe('memoria dei conti letti', () => {
   it('la seconda lettura non chiama la banca', async () => {
     await entraCome('admin')
     const { connessione, chiamate } = await connessioneCollegata(['gc-a'])
+
+    await callRoute(leggiConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`), { id: connessione.id })
+    const dopoLaPrima = chiamate.length
+    await callRoute(leggiConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`), { id: connessione.id })
+
+    expect(chiamate.length).toBe(dopoLaPrima)
+  })
+
+  // Differito della revisione finale: un array vuoto è memoria valida quanto
+  // uno pieno. Prima di questo fix `leggiConservati` lo scartava (la
+  // lunghezza doveva essere > 0), quindi un consenso che copre zero conti
+  // ricontattava la banca a ogni apertura del pannello — con C1 addosso,
+  // quella chiamata sprecata sarebbe arrivata a costarne quattro.
+  it('un consenso che copre zero conti non richiede di nuovo alla banca', async () => {
+    await entraCome('admin')
+    const { connessione, chiamate } = await connessioneCollegata([])
 
     await callRoute(leggiConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`), { id: connessione.id })
     const dopoLaPrima = chiamate.length

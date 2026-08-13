@@ -23,6 +23,7 @@ import { rispostaErroreGoCardless } from '@/lib/gocardless/risposte'
 import { descriviStato, eCollegata } from '@/lib/gocardless/stati'
 import { abbinaConti, type ContoDaBanca } from '@/lib/gocardless/abbinamento'
 import { mascheraIban } from '@/lib/gocardless/maschere'
+import { giorni } from '@/lib/gocardless/parametri'
 
 const corpoSalvataggio = z.object({
   conti: z.array(
@@ -63,10 +64,16 @@ const contoConservatoSchema = z.object({
  * Rilegge la colonna, o `null` se la forma non torna. Una colonna JSON scritta
  * da una versione precedente del codice non deve far esplodere il pannello:
  * peggio che perdere la memoria è mostrare un errore per averla.
+ *
+ * Un array vuoto è memoria valida quanto uno pieno: un consenso che copre
+ * zero conti (banca senza conti da esporre, o tutti già ignorati a monte) è
+ * un esito legittimo della lettura, non un «non ho ancora letto». A
+ * distinguere «mai letto» da «letto e vuoto» ci pensa già `contiLettiIl`, che
+ * qui sotto è `null` solo nel primo caso: la lunghezza dell'array non serve.
  */
 function leggiConservati(valore: unknown): ContoConservato[] | null {
   const esito = z.array(contoConservatoSchema).safeParse(valore)
-  return esito.success && esito.data.length > 0 ? esito.data : null
+  return esito.success ? esito.data : null
 }
 
 /** Un conto conservato, nella forma che l'abbinamento si aspetta. */
@@ -120,7 +127,27 @@ export const GET = withAuth<{ id: string }>(
         stato = requisition.dati.status
 
         if (connessione.status !== stato) {
-          await prisma.bankConnection.update({ where: { id: connessione.id }, data: { status: stato } })
+          const aggiornamentoStato: Prisma.BankConnectionUpdateInput = { status: stato }
+          if (stato === 'LN') {
+            // Il momento giusto per scrivere `accessValidUntil`: qui il
+            // consenso è davvero concesso, non solo richiesto. Scriverla già
+            // in POST /collegamenti o POST /rinnovo (che infatti non la
+            // scrive più: vedi il commento in testa a quel file) farebbe
+            // sembrare valido un consenso per cui l'autenticazione in banca
+            // non è mai stata completata — l'evento più ordinario di questa
+            // integrazione (OTP sbagliato, app scaduta, scheda chiusa).
+            //
+            // La durata si rilegge dall'istituto invece di conservarla dalla
+            // richiesta di consenso: non è una chiamata per conto, quindi
+            // non tocca il contingente di quattro al giorno su cui vale la
+            // guardia di `dettagliConto` qui sotto — è la stessa chiamata già
+            // fatta da POST /collegamenti e POST /rinnovo.
+            const elenco = await client.istituzioni('it')
+            const istituto = elenco.dati.find((i) => i.id === connessione.institutionId)
+            const accesso = Math.min(giorni(istituto?.max_access_valid_for_days, 90), 180)
+            aggiornamentoStato.accessValidUntil = new Date(Date.now() + accesso * 86_400_000)
+          }
+          await prisma.bankConnection.update({ where: { id: connessione.id }, data: aggiornamentoStato })
         }
 
         if (!eCollegata(stato)) {
@@ -303,11 +330,41 @@ export const PUT = withAuth<{ id: string }>(
         // cassa — altrimenti la si trasforma in un conto sincronizzato. È la
         // stessa tabella che nella Fase 1 aveva già morso per lo stesso
         // motivo, sul backfill.
-        const esiste = await prisma.bankAccount.count({
+        const contoDelGestionale = await prisma.bankAccount.findFirst({
           where: { id: c.bankAccountId, venueId, accountType: 'BANK' },
+          select: { providerAccountId: true, isActive: true },
         })
-        if (esiste === 0) {
+        if (!contoDelGestionale) {
           return NextResponse.json({ error: 'Conto del gestionale inesistente' }, { status: 400 })
+        }
+        // Un conto archiviato non è più fra quelli proposti dalla GET (che
+        // non filtra su `isActive`, ma la pagina nasconde gli archiviati a
+        // meno che «Mostra archiviati» sia acceso): accenderlo qui lo
+        // renderebbe destinazione di movimenti bancari mentre resta invisibile
+        // alle operazioni quotidiane.
+        if (!contoDelGestionale.isActive) {
+          return NextResponse.json(
+            { error: `Il conto del gestionale scelto per ${c.providerAccountId} è archiviato: riattivalo prima di abbinarlo` },
+            { status: 400 }
+          )
+        }
+        // Il pannello abbina per impronta dell'IBAN, la sincronizzazione userà
+        // `providerAccountId`: se il conto del gestionale è già legato a un
+        // ALTRO conto banca, sovrascriverlo farebbe divergere ciò che il
+        // pannello continua a mostrare (l'abbinamento per impronta, rifatto
+        // alla lettura successiva) da ciò che la banca dati userà davvero per
+        // sincronizzare. Riscrivere lo stesso conto banca sullo stesso
+        // abbinamento resta permesso: è solo un cambio di data o interruttore.
+        if (
+          contoDelGestionale.providerAccountId &&
+          contoDelGestionale.providerAccountId !== c.providerAccountId
+        ) {
+          return NextResponse.json(
+            {
+              error: `Il conto del gestionale scelto per ${c.providerAccountId} è già abbinato a un altro conto della banca (${contoDelGestionale.providerAccountId})`,
+            },
+            { status: 400 }
+          )
         }
       }
 

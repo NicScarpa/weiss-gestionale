@@ -9,10 +9,26 @@
  * ogni sei mesi, che è l'operazione più facile da sbagliare di tutta
  * l'integrazione.
  *
- * Qui la riga resta la stessa e cambiano solo agreement, requisition, stato e
- * scadenza. I `BankAccount` non si toccano: al ritorno dalla banca il
- * riabbinamento per impronta aggiornerà `providerAccountId` se GoCardless
- * avrà cambiato gli identificativi — cosa che non sappiamo ancora se faccia.
+ * Qui la riga resta la stessa e cambiano solo agreement, requisition e
+ * stato. I `BankAccount` non si toccano: `providerAccountId` resta quello di
+ * prima, e nessun riabbinamento automatico li aggiorna al ritorno dalla
+ * banca — la GET dei conti riabbina solo per **mostrare** a schermo, l'unica
+ * scrittura è la PUT dietro «Salva», che dopo un rinnovo riuscito nessuno
+ * preme perché il pannello mostra già tutto in ordine. Se GoCardless
+ * cambiasse gli identificativi dei conti a un rinnovo, riscriverli è un
+ * lavoro della Fase 3, non di questa rotta.
+ *
+ * **Non scrive `accessValidUntil`.** Il consenso non è ancora concesso al
+ * momento di questa POST — lo sarà solo se l'amministratore completa
+ * l'autenticazione in banca, un passo fuori dal controllo del gestionale che
+ * può fallire nel modo più ordinario (OTP sbagliato, app scaduta, scheda
+ * chiusa). Scrivere già qui una scadenza futura farebbe sparire l'avviso di
+ * rinnovo — e il pulsante per rifarlo — per un consenso che in realtà non è
+ * mai stato concesso: l'unica uscita rimasta sarebbe scollegare, cioè
+ * esattamente ciò che questa rotta esiste per evitare. La scadenza si scrive
+ * in `GET /api/gocardless/collegamenti/[id]/conti`, nel punto in cui quella
+ * rotta scopre che lo stato è diventato `LN` — l'unico momento in cui il
+ * consenso è davvero attivo.
  */
 import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
@@ -21,18 +37,7 @@ import { withAuth } from '@/lib/api-utils'
 import { prisma } from '@/lib/prisma'
 import { clientDaAmbiente } from '@/lib/gocardless/servizio'
 import { rispostaErroreGoCardless } from '@/lib/gocardless/risposte'
-
-function urlDiRitorno(): string {
-  const esplicito = process.env.GOCARDLESS_REDIRECT_URI
-  if (esplicito) return esplicito
-  const base = process.env.APP_URL?.replace(/\/$/, '') ?? 'http://localhost:3000'
-  return `${base}/api/gocardless/callback`
-}
-
-function giorni(valore: unknown, difetto: number): number {
-  const n = typeof valore === 'string' ? Number.parseInt(valore, 10) : typeof valore === 'number' ? valore : NaN
-  return Number.isFinite(n) ? n : difetto
-}
+import { giorni, urlDiRitorno } from '@/lib/gocardless/parametri'
 
 export const POST = withAuth<{ id: string }>(
   async (_request, { venueId, params }) => {
@@ -74,9 +79,10 @@ export const POST = withAuth<{ id: string }>(
           requisitionId: requisition.dati.id,
           status: requisition.dati.status,
           maxHistoricalDays: agreement.dati.max_historical_days ?? storico,
-          accessValidUntil: new Date(
-            Date.now() + (agreement.dati.access_valid_for_days ?? accesso) * 86_400_000
-          ),
+          // `accessValidUntil` non si tocca qui: vedi il commento in testa al
+          // file. La si scrive quando il consenso è davvero concesso, non
+          // quando lo si è solo richiesto.
+          //
           // I conti letti appartengono al consenso vecchio: dopo l'SCA la
           // banca potrebbe esporne un insieme diverso, e riabbinare su dati
           // vecchi produrrebbe corrispondenze inventate. Un campo Json si

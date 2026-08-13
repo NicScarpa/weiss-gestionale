@@ -102,6 +102,32 @@ describe('POST rinnovo del consenso', () => {
     expect(riga.contiLettiIl).toBeNull()
   })
 
+  // Il punto del Critical della revisione finale: l'autenticazione in banca
+  // è un passo fuori dal controllo del gestionale, e può non completarsi mai
+  // (OTP sbagliato, app scaduta, scheda chiusa) — l'evento più ordinario di
+  // tutta l'integrazione. Se questa POST spostasse già la scadenza,
+  // l'avviso di rinnovo sparirebbe per un consenso mai davvero concesso, e
+  // l'unica uscita rimasta sarebbe scollegare.
+  it('non sposta la scadenza finché l autenticazione non è completata', async () => {
+    await entraCome('admin')
+    const { connessione } = await collegamentoScadutoConConto()
+    const scadenzaPrimaDelRinnovo = connessione.accessValidUntil
+    impostaClientPerTest(clientFinto())
+
+    const esito = await callRoute(
+      rinnova,
+      jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/rinnovo`, { method: 'POST' }),
+      { id: connessione.id }
+    )
+
+    expect(esito.status).toBe(200)
+    // Il client finto risponde con la requisition in 'CR': l'autenticazione
+    // non è ancora avvenuta.
+    const riga = await prisma.bankConnection.findUniqueOrThrow({ where: { id: connessione.id } })
+    expect(riga.status).toBe('CR')
+    expect(riga.accessValidUntil?.toISOString()).toBe(scadenzaPrimaDelRinnovo?.toISOString())
+  })
+
   it('non rinnova il collegamento di un altra sede', async () => {
     await entraCome('admin')
     const { connessione } = await collegamentoScadutoConConto()
