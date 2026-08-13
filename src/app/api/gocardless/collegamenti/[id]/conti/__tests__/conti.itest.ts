@@ -57,7 +57,7 @@ describe('GET conti di un collegamento', () => {
     const { venue, connessione } = await connessioneCollegata(['gc-a', 'gc-b'])
     await contoDiTest(venue.id, 'Conto principale', IBAN_A)
 
-    const esito = await callRoute<{ conti: Array<{ tipo: string; nomeConto?: string }> }>(
+    const esito = await callRoute<{ conti: Array<{ tipo: string; nomeConto?: string }> }, { id: string }>(
       leggiConti,
       jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`),
       { id: connessione.id }
@@ -82,7 +82,7 @@ describe('GET conti di un collegamento', () => {
       },
     })
 
-    const esito = await callRoute<{ conti: Array<{ ultimoMovimento: string | null }> }>(
+    const esito = await callRoute<{ conti: Array<{ ultimoMovimento: string | null }> }, { id: string }>(
       leggiConti,
       jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`),
       { id: connessione.id }
@@ -96,7 +96,7 @@ describe('GET conti di un collegamento', () => {
     const { venue, connessione } = await connessioneCollegata(['gc-a'])
     await contoDiTest(venue.id, 'Conto principale', IBAN_A)
 
-    const esito = await callRoute<{ conti: Array<{ ultimoMovimento: string | null }> }>(
+    const esito = await callRoute<{ conti: Array<{ ultimoMovimento: string | null }> }, { id: string }>(
       leggiConti,
       jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`),
       { id: connessione.id }
@@ -110,7 +110,7 @@ describe('GET conti di un collegamento', () => {
     const { connessione } = await connessioneCollegata(['gc-a'])
     await prisma.bankConnection.update({ where: { id: connessione.id }, data: { contiIgnorati: ['gc-a'] } })
 
-    const esito = await callRoute<{ conti: Array<{ tipo: string }> }>(
+    const esito = await callRoute<{ conti: Array<{ tipo: string }> }, { id: string }>(
       leggiConti,
       jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`),
       { id: connessione.id }
@@ -137,7 +137,7 @@ describe('GET conti di un collegamento', () => {
       { id: connessione.id }
     )
 
-    const esito = await callRoute<{ conti: Array<{ tipo: string; bankAccountId?: string }> }>(
+    const esito = await callRoute<{ conti: Array<{ tipo: string; bankAccountId?: string }> }, { id: string }>(
       leggiConti,
       jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`),
       { id: connessione.id }
@@ -308,7 +308,7 @@ describe('PUT configurazione dei conti', () => {
     const { venue, connessione } = await connessioneCollegata(['gc-a'])
     const conto = await contoDiTest(venue.id, 'Conto principale', IBAN_A)
 
-    const esito = await callRoute<{ salvati: number }>(
+    const esito = await callRoute<{ salvati: number }, { id: string }>(
       salvaConti,
       jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
         method: 'PUT',
@@ -598,7 +598,7 @@ describe('PUT configurazione dei conti', () => {
     // Popola la memoria: senza, il controllo si salterebbe (caso 4 sotto).
     await callRoute(leggiConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`), { id: connessione.id })
 
-    const esito = await callRoute<{ error: string }>(
+    const esito = await callRoute<{ error: string }, { id: string }>(
       salvaConti,
       jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
         method: 'PUT',
@@ -803,7 +803,7 @@ describe('memoria dei conti letti', () => {
       data: { connectionId: connessione.id, providerAccountId: 'gc-a', syncEnabled: true, syncCutoffDate: new Date('2026-08-13T00:00:00.000Z') },
     })
 
-    const esito = await callRoute<{ conti: Array<{ syncEnabled: boolean; syncCutoffDate: string | null }> }>(
+    const esito = await callRoute<{ conti: Array<{ syncEnabled: boolean; syncCutoffDate: string | null }> }, { id: string }>(
       leggiConti,
       jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`),
       { id: connessione.id }

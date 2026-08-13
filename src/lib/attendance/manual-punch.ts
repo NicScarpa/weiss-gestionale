@@ -1,5 +1,4 @@
 import { PunchMethod, PunchType } from '@prisma/client'
-import { prisma } from '@/lib/prisma'
 import {
   romeDateKey,
   romeDayRange,
@@ -12,14 +11,12 @@ import { getEffectiveTimekeepingPolicy } from './policy-resolver'
 import { toWorkdayMinutes } from './workday'
 
 /**
- * Il client dentro `prisma.$transaction`: con il client esteso dall'adapter
- * il tipo `Prisma.TransactionClient` di libreria non combacia, quindi lo si
- * ricava da quello reale.
+ * Il client dentro `prisma.$transaction`. La definizione sta in
+ * `@/lib/prisma`; si ri-esporta di qui perché i moduli delle presenze la
+ * importano già da questo file.
  */
-export type TransactionClient = Omit<
-  typeof prisma,
-  '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
->
+import type { TransactionClient } from '@/lib/prisma'
+export type { TransactionClient }
 
 /**
  * Creazione di una timbratura manuale: trova il turno pianificato della

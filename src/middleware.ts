@@ -19,6 +19,15 @@ const PUBLIC_PREFIXES = [
   // con il segreto CRON_SECRET nell'header Authorization.
   '/api/attendance/auto-clockout',
   '/api/promemoria-timbratura/cron',
+  // Il ritorno dalla banca a fine autenticazione PSD2. Arriva da fuori — dal
+  // sito dell'istituto, e spesso dal telefono su cui si è approvato l'OTP,
+  // non dal dispositivo dove la sessione è aperta. Protetta, il middleware la
+  // manderebbe a /login **perdendo il parametro `ref`**, cioè l'unico dato
+  // che porta: quale collegamento ha appena concluso l'autenticazione.
+  // La route non legge e non scrive niente, prende `ref` dalla query e
+  // redirige al pannello — che ha la sua autorizzazione e manda al login chi
+  // deve autenticarsi. Vedi il commento in testa a quel file.
+  '/api/gocardless/callback',
   // La pagina «Sei offline» non guarda nessun dato e viene scaricata dal
   // service worker mentre si installa — cioè al primo caricamento, che per
   // tutti avviene su /login, senza sessione. Protetta, in cache finirebbe la

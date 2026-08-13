@@ -13,7 +13,7 @@
  * parziali — `skipDuplicates` non saprebbe su cosa appoggiarsi. L'indice resta
  * comunque la rete di sicurezza contro due sincronizzazioni in parallelo.
  */
-import type { Prisma, PrismaClient } from '@prisma/client'
+import type { TransactionClient } from '@/lib/prisma'
 
 import type { MovimentoDaSalvare } from './mapper'
 
@@ -23,7 +23,7 @@ export interface EsitoDeduplica {
 }
 
 export async function filtraGiaPresenti(
-  db: PrismaClient | Prisma.TransactionClient,
+  db: TransactionClient,
   parametri: { bankAccountId: string; movimenti: MovimentoDaSalvare[] }
 ): Promise<EsitoDeduplica> {
   const { bankAccountId, movimenti } = parametri
