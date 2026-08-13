@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { auth } from '@/lib/auth'
+import { withAuth } from '@/lib/api-utils'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { normalizzaPartitaIva } from '@/lib/invoices/partita-iva'
@@ -28,14 +28,8 @@ const schema = z.object({
  * L'aliquota IVA non entra nel confronto: non esiste un'aliquota predefinita per
  * fornitore, e mostrarne una sarebbe promettere un'automazione che non c'è.
  */
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async (request) => {
   try {
-    const session = await auth()
-    if (!session?.user) return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    if (session.user.role !== 'admin' && session.user.role !== 'manager') {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
     const { fatture } = schema.parse(await request.json())
     const conTermini = fatture.filter((f) => f.giorniDalFile !== null)
     if (conTermini.length === 0) return NextResponse.json({ conflitti: [] })
@@ -114,4 +108,4 @@ export async function POST(request: NextRequest) {
     logger.error('Errore POST /api/fatture/conflitti-termini', error)
     return NextResponse.json({ error: 'Errore nel calcolo dei conflitti' }, { status: 500 })
   }
-}
+}, { roles: ['admin', 'manager'] })

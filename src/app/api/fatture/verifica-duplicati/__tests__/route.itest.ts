@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { prisma } from '@/lib/prisma'
 import { setupIntegrationDb } from '@/test/integration/db'
-import { loginAs } from '@/test/integration/auth-mock'
+import { loginAs, entraCome } from '@/test/integration/auth-mock'
 import { jsonRequest } from '@/test/integration/api'
 import { venueDiTest } from '@/test/integration/fixtures/closures'
+import { contestoRotta } from '@/test/auth-unitari'
 import { POST } from '../route'
 
 setupIntegrationDb()
@@ -25,7 +26,7 @@ async function fatturaInArchivio(numero: string, data: string, piva: string) {
 
 describe('POST /api/fatture/verifica-duplicati', () => {
   it('segnala solo le fatture già presenti', async () => {
-    await loginAs('admin')
+    await entraCome('admin')
     const esistente = await fatturaInArchivio('DUP-1', '2026-06-01', '01234567890')
 
     const res = await POST(
@@ -37,7 +38,8 @@ describe('POST /api/fatture/verifica-duplicati', () => {
             { chiave: 'mai-vista.xml', numero: 'MAI-9999', data: '2026-08-01', partitaIva: '01234567890' },
           ],
         },
-      })
+      }),
+      contestoRotta()
     )
 
     expect(res.status).toBe(200)
@@ -48,7 +50,7 @@ describe('POST /api/fatture/verifica-duplicati', () => {
   })
 
   it('riconosce la stessa fattura scritta con gli zeri iniziali', async () => {
-    await loginAs('admin')
+    await entraCome('admin')
     await fatturaInArchivio('ZERI-1', '2026-06-02', '1234567890')
 
     const res = await POST(
@@ -57,14 +59,15 @@ describe('POST /api/fatture/verifica-duplicati', () => {
         body: {
           fatture: [{ chiave: 'a.xml', numero: 'ZERI-1', data: '2026-06-02', partitaIva: '0001234567890' }],
         },
-      })
+      }),
+      contestoRotta()
     )
 
     expect((await res.json()).duplicati).toHaveLength(1)
   })
 
   it('ignora le fatture archiviate', async () => {
-    await loginAs('admin')
+    await entraCome('admin')
     const archiviata = await fatturaInArchivio('CANC-1', '2026-06-03', '01234567890')
     await prisma.electronicInvoice.update({
       where: { id: archiviata.id },
@@ -77,7 +80,8 @@ describe('POST /api/fatture/verifica-duplicati', () => {
         body: {
           fatture: [{ chiave: 'a.xml', numero: 'CANC-1', data: '2026-06-03', partitaIva: '01234567890' }],
         },
-      })
+      }),
+      contestoRotta()
     )
 
     expect((await res.json()).duplicati).toHaveLength(0)
@@ -88,7 +92,7 @@ describe('POST /api/fatture/verifica-duplicati', () => {
     // che indicizzasse solo sul numero passerebbe gli altri test di questo
     // file e comincerebbe a segnalare come duplicate fatture di fornitori
     // diversi che, comunissimo, numerano entrambi da 1.
-    await loginAs('admin')
+    await entraCome('admin')
     await fatturaInArchivio('COMUNE-1', '2026-06-04', '01234567890')
 
     const res = await POST(
@@ -97,14 +101,15 @@ describe('POST /api/fatture/verifica-duplicati', () => {
         body: {
           fatture: [{ chiave: 'a.xml', numero: 'COMUNE-1', data: '2026-06-04', partitaIva: '99999999999' }],
         },
-      })
+      }),
+      contestoRotta()
     )
 
     expect((await res.json()).duplicati).toHaveLength(0)
   })
 
   it('non confonde fatture con lo stesso numero e fornitore ma data diversa', async () => {
-    await loginAs('admin')
+    await entraCome('admin')
     await fatturaInArchivio('COMUNE-2', '2026-06-05', '01234567890')
 
     const res = await POST(
@@ -113,7 +118,8 @@ describe('POST /api/fatture/verifica-duplicati', () => {
         body: {
           fatture: [{ chiave: 'a.xml', numero: 'COMUNE-2', data: '2026-06-06', partitaIva: '01234567890' }],
         },
-      })
+      }),
+      contestoRotta()
     )
 
     expect((await res.json()).duplicati).toHaveLength(0)
@@ -123,7 +129,8 @@ describe('POST /api/fatture/verifica-duplicati', () => {
     await loginAs('staff')
 
     const res = await POST(
-      jsonRequest('/api/fatture/verifica-duplicati', { method: 'POST', body: { fatture: [] } })
+      jsonRequest('/api/fatture/verifica-duplicati', { method: 'POST', body: { fatture: [] } }),
+      contestoRotta()
     )
 
     expect(res.status).toBe(403)

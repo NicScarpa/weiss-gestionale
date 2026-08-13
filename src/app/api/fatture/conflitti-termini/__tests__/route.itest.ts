@@ -1,17 +1,18 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { prisma } from '@/lib/prisma'
 import { setupIntegrationDb } from '@/test/integration/db'
-import { loginAs } from '@/test/integration/auth-mock'
+import { loginAs, entraCome } from '@/test/integration/auth-mock'
 import { jsonRequest } from '@/test/integration/api'
+import { contestoRotta } from '@/test/auth-unitari'
 import { POST } from '../route'
 
 setupIntegrationDb()
 
 const richiesta = (body: unknown) =>
-  jsonRequest('/api/fatture/conflitti-termini', { method: 'POST', body })
+  POST(jsonRequest('/api/fatture/conflitti-termini', { method: 'POST', body }), contestoRotta())
 
 beforeEach(async () => {
-  await loginAs('admin')
+  await entraCome('admin')
 })
 
 describe('POST /api/fatture/conflitti-termini', () => {
@@ -20,14 +21,12 @@ describe('POST /api/fatture/conflitti-termini', () => {
       data: { name: 'PROVA CONFLITTI SRL', vatNumber: '99999999999', paymentTermsDays: 60 },
     })
 
-    const res = await POST(
-      richiesta({
-        fatture: [
-          { chiave: 'a.xml', partitaIva: '99999999999', denominazione: 'PROVA CONFLITTI SRL', giorniDalFile: 30, aliquote: [22] },
-          { chiave: 'b.xml', partitaIva: '99999999999', denominazione: 'PROVA CONFLITTI SRL', giorniDalFile: 30, aliquote: [10] },
-        ],
-      })
-    )
+    const res = await richiesta({
+      fatture: [
+        { chiave: 'a.xml', partitaIva: '99999999999', denominazione: 'PROVA CONFLITTI SRL', giorniDalFile: 30, aliquote: [22] },
+        { chiave: 'b.xml', partitaIva: '99999999999', denominazione: 'PROVA CONFLITTI SRL', giorniDalFile: 30, aliquote: [10] },
+      ],
+    })
 
     const body = await res.json()
     expect(body.conflitti).toHaveLength(1)
@@ -47,11 +46,9 @@ describe('POST /api/fatture/conflitti-termini', () => {
     const fornitore = await prisma.supplier.create({
       data: { name: 'CONCORDE SRL', vatNumber: '88888888888', paymentTermsDays: 30 },
     })
-    const res = await POST(
-      richiesta({
-        fatture: [{ chiave: 'a.xml', partitaIva: '88888888888', denominazione: 'CONCORDE SRL', giorniDalFile: 30 }],
-      })
-    )
+    const res = await richiesta({
+      fatture: [{ chiave: 'a.xml', partitaIva: '88888888888', denominazione: 'CONCORDE SRL', giorniDalFile: 30 }],
+    })
     expect((await res.json()).conflitti).toHaveLength(0)
     await prisma.supplier.delete({ where: { id: fornitore.id } })
   })
@@ -60,11 +57,9 @@ describe('POST /api/fatture/conflitti-termini', () => {
     const fornitore = await prisma.supplier.create({
       data: { name: 'SENZA TERMINI SRL', vatNumber: '77777777777', paymentTermsDays: null },
     })
-    const res = await POST(
-      richiesta({
-        fatture: [{ chiave: 'a.xml', partitaIva: '77777777777', denominazione: 'SENZA TERMINI SRL', giorniDalFile: 15 }],
-      })
-    )
+    const res = await richiesta({
+      fatture: [{ chiave: 'a.xml', partitaIva: '77777777777', denominazione: 'SENZA TERMINI SRL', giorniDalFile: 15 }],
+    })
     expect((await res.json()).conflitti).toHaveLength(0)
     await prisma.supplier.delete({ where: { id: fornitore.id } })
   })
@@ -76,11 +71,9 @@ describe('POST /api/fatture/conflitti-termini', () => {
     const fornitore = await prisma.supplier.create({
       data: { name: 'X', vatNumber: '99999999999', paymentTermsDays: 45 },
     })
-    const res = await POST(
-      richiesta({
-        fatture: [{ chiave: 'a.xml', partitaIva: '99999999999', denominazione: 'X', giorniDalFile: null }],
-      })
-    )
+    const res = await richiesta({
+      fatture: [{ chiave: 'a.xml', partitaIva: '99999999999', denominazione: 'X', giorniDalFile: null }],
+    })
     expect((await res.json()).conflitti).toHaveLength(0)
     await prisma.supplier.delete({ where: { id: fornitore.id } })
   })
@@ -92,14 +85,12 @@ describe('POST /api/fatture/conflitti-termini', () => {
     const fornitore = await prisma.supplier.create({
       data: { name: 'WEISS S.R.L.', vatNumber: '66666666666', paymentTermsDays: 60 },
     })
-    const res = await POST(
-      richiesta({
-        fatture: [
-          { chiave: 'a.xml', partitaIva: '66666666666', denominazione: 'WEISS S.R.L.', giorniDalFile: 30 },
-          { chiave: 'b.xml', partitaIva: '66666666666', denominazione: 'WEISS SRL SOCIO UNICO', giorniDalFile: 30 },
-        ],
-      })
-    )
+    const res = await richiesta({
+      fatture: [
+        { chiave: 'a.xml', partitaIva: '66666666666', denominazione: 'WEISS S.R.L.', giorniDalFile: 30 },
+        { chiave: 'b.xml', partitaIva: '66666666666', denominazione: 'WEISS SRL SOCIO UNICO', giorniDalFile: 30 },
+      ],
+    })
     const body = await res.json()
     expect(body.conflitti).toHaveLength(1)
     expect(body.conflitti[0].chiavi).toEqual(['a.xml', 'b.xml'])
@@ -114,11 +105,9 @@ describe('POST /api/fatture/conflitti-termini', () => {
     const fornitore = await prisma.supplier.create({
       data: { name: 'ZERI SRL', vatNumber: '1234567890', paymentTermsDays: 60 },
     })
-    const res = await POST(
-      richiesta({
-        fatture: [{ chiave: 'a.xml', partitaIva: '001234567890', denominazione: 'ZERI SRL', giorniDalFile: 30 }],
-      })
-    )
+    const res = await richiesta({
+      fatture: [{ chiave: 'a.xml', partitaIva: '001234567890', denominazione: 'ZERI SRL', giorniDalFile: 30 }],
+    })
     const body = await res.json()
     expect(body.conflitti).toHaveLength(1)
     expect(body.conflitti[0]).toMatchObject({ giorniDalFile: 30, giorniAnagrafica: 60 })
@@ -133,7 +122,7 @@ describe('POST /api/fatture/conflitti-termini', () => {
   it('nega l accesso a chi non è admin o manager', async () => {
     await loginAs('staff')
 
-    const res = await POST(richiesta({ fatture: [] }))
+    const res = await richiesta({ fatture: [] })
 
     expect(res.status).toBe(403)
   })

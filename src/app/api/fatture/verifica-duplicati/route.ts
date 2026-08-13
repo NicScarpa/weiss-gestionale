@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { auth } from '@/lib/auth'
+import { withAuth } from '@/lib/api-utils'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { normalizzaPartitaIva } from '@/lib/invoices/partita-iva'
@@ -23,14 +23,8 @@ const schema = z.object({
  * Serve a marcare i duplicati in anteprima: l'utente decide sapendo, invece di
  * scoprire a cose fatte quante ne sono state saltate.
  */
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async (request) => {
   try {
-    const session = await auth()
-    if (!session?.user) return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-    if (session.user.role !== 'admin' && session.user.role !== 'manager') {
-      return NextResponse.json({ error: 'Accesso negato' }, { status: 403 })
-    }
-
     const { fatture } = schema.parse(await request.json())
     if (fatture.length === 0) return NextResponse.json({ duplicati: [] })
 
@@ -79,4 +73,4 @@ export async function POST(request: NextRequest) {
     logger.error('Errore POST /api/fatture/verifica-duplicati', error)
     return NextResponse.json({ error: 'Errore nella verifica dei duplicati' }, { status: 500 })
   }
-}
+}, { roles: ['admin', 'manager'] })
