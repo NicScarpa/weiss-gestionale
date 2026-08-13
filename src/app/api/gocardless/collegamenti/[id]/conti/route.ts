@@ -310,6 +310,12 @@ export const PUT = withAuth<{ id: string }>(
       // Si valida tutto prima di scrivere qualsiasi cosa: metà configurazione
       // salvata è peggio di nessuna, perché sembra riuscita.
 
+      // Serve più sotto, per il controllo sull'impronta: la stessa lettura
+      // che la GET usa per abbinare a schermo. `null` quando la memoria non
+      // è ancora stata scritta — in quel caso il controllo si salta, non
+      // rifiuta tutto (non c'è nulla con cui confrontare).
+      const conservati = leggiConservati(connessione.contiLetti)
+
       // Due voci sullo stesso conto banca, con azioni in conflitto, non hanno
       // un vincitore sensato da dedurre: nella stessa transazione vince
       // l'ultima scritta, e se è `ignora` dopo un `configura` il conto resta
@@ -368,7 +374,7 @@ export const PUT = withAuth<{ id: string }>(
         // motivo, sul backfill.
         const contoDelGestionale = await prisma.bankAccount.findFirst({
           where: { id: c.bankAccountId, venueId, accountType: 'BANK' },
-          select: { providerAccountId: true, isActive: true },
+          select: { providerAccountId: true, isActive: true, ibanHash: true },
         })
         if (!contoDelGestionale) {
           return NextResponse.json({ error: 'Conto del gestionale inesistente' }, { status: 400 })
@@ -401,6 +407,27 @@ export const PUT = withAuth<{ id: string }>(
             },
             { status: 400 }
           )
+        }
+        // Il controllo sopra guarda la colonna SALVATA, che per un conto
+        // abbinato solo per impronta — mostrato «riconosciuto» dalla GET, ma
+        // mai passato da un «Salva» — è vuota: non basta da solo. Se il
+        // conto del gestionale scelto ha la stessa impronta di un conto
+        // della banca DIVERSO da quello che si sta salvando, salvare
+        // comunque farebbe divergere ciò che la lettura successiva
+        // riabbina per impronta (mostrato a schermo) da ciò che la colonna
+        // dice davvero. Senza `conservati` (memoria mai scritta) non c'è
+        // nulla con cui confrontare, e un conto senza impronta propria non
+        // corrisponde a niente: in entrambi i casi il controllo si salta.
+        if (conservati && contoDelGestionale.ibanHash) {
+          const corrispondente = conservati.find((conto) => conto.ibanHash === contoDelGestionale.ibanHash)
+          if (corrispondente && corrispondente.providerAccountId !== c.providerAccountId) {
+            return NextResponse.json(
+              {
+                error: `Il conto del gestionale scelto per ${c.providerAccountId} corrisponde per IBAN al conto ${corrispondente.ibanMascherato ?? corrispondente.providerAccountId} della banca: abbinalo a quello, oppure scegli un altro conto del gestionale`,
+              },
+              { status: 400 }
+            )
+          }
         }
       }
 

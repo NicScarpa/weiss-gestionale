@@ -581,6 +581,117 @@ describe('PUT configurazione dei conti', () => {
     expect(aggiornato).toMatchObject({ syncEnabled: false, providerAccountId: null, connectionId: null })
   })
 
+  // Chiusura del punto 5 di «Dopo il piano: cosa resta». Il controllo su
+  // `providerAccountId` sopra guarda la colonna SALVATA, che per un conto
+  // abbinato solo per impronta (mostrato «riconosciuto» dalla GET, mai
+  // passato da un «Salva») è vuota: non basta da solo. Scenario esatto: `X`
+  // ha la stessa impronta di `gc-a` (mai salvata su `X`), `gc-b` non ha
+  // impronta che corrisponda a nulla. Scegliere `X` per `gc-b` passerebbe il
+  // controllo sulla colonna — vuota — ma alla lettura successiva
+  // `abbinaConti` riabbina `gc-a → X` per impronta, con l'interruttore e la
+  // data pensati per `gc-b`: il pannello mostra un abbinamento, la colonna
+  // ne dice un altro.
+  it("rifiuta un conto del gestionale che corrisponde per IBAN a un altro conto della banca", async () => {
+    await entraCome('admin')
+    const { venue, connessione } = await connessioneCollegata(['gc-a', 'gc-b'])
+    const conto = await contoDiTest(venue.id, 'Conto principale', IBAN_A)
+    // Popola la memoria: senza, il controllo si salterebbe (caso 4 sotto).
+    await callRoute(leggiConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`), { id: connessione.id })
+
+    const esito = await callRoute<{ error: string }>(
+      salvaConti,
+      jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
+        method: 'PUT',
+        body: { conti: [{ providerAccountId: 'gc-b', azione: 'configura', attivo: true, bankAccountId: conto.id, dataTaglio: '2026-08-13' }] },
+      }),
+      { id: connessione.id }
+    )
+
+    expect(esito.status).toBe(400)
+    // Il messaggio nomina la forma mascherata del conto con cui fa coppia,
+    // così l'amministratore capisce cosa fare invece di un rifiuto muto.
+    expect(esito.body.error).toContain('IT•• •••• 1111')
+    const invariato = await prisma.bankAccount.findUniqueOrThrow({ where: { id: conto.id } })
+    expect(invariato).toMatchObject({ syncEnabled: false, providerAccountId: null, connectionId: null })
+  })
+
+  // I quattro casi che devono continuare a passare: è facilissimo romperli
+  // aggiungendo il controllo sull'impronta sopra.
+  describe('il controllo sull\'impronta non rompe i casi normali', () => {
+    it('caso 1: accetta quando l\'impronta corrisponde proprio al conto che si sta salvando', async () => {
+      await entraCome('admin')
+      const { venue, connessione } = await connessioneCollegata(['gc-a'])
+      const conto = await contoDiTest(venue.id, 'Conto principale', IBAN_A)
+      await callRoute(leggiConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`), { id: connessione.id })
+
+      const esito = await callRoute(
+        salvaConti,
+        jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
+          method: 'PUT',
+          body: { conti: [{ providerAccountId: 'gc-a', azione: 'configura', attivo: true, bankAccountId: conto.id, dataTaglio: '2026-08-13' }] },
+        }),
+        { id: connessione.id }
+      )
+
+      expect(esito.status).toBe(200)
+    })
+
+    it('caso 2: permette di risalvare lo stesso abbinamento cambiando solo la data', async () => {
+      await entraCome('admin')
+      const { venue, connessione } = await connessioneCollegata(['gc-a'])
+      const conto = await contoDiTest(venue.id, 'Conto principale', IBAN_A)
+      await callRoute(leggiConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`), { id: connessione.id })
+      const corpo = (dataTaglio: string) => ({
+        conti: [{ providerAccountId: 'gc-a', azione: 'configura', attivo: true, bankAccountId: conto.id, dataTaglio }],
+      })
+
+      await callRoute(salvaConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, { method: 'PUT', body: corpo('2026-08-12') }), { id: connessione.id })
+      const esito = await callRoute(salvaConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, { method: 'PUT', body: corpo('2026-08-20') }), { id: connessione.id })
+
+      expect(esito.status).toBe(200)
+      const aggiornato = await prisma.bankAccount.findUniqueOrThrow({ where: { id: conto.id } })
+      expect(aggiornato.syncCutoffDate?.toISOString().slice(0, 10)).toBe('2026-08-20')
+    })
+
+    it('caso 3: un conto del gestionale senza IBAN è abbinabile a qualunque conto della banca', async () => {
+      await entraCome('admin')
+      const { venue, connessione } = await connessioneCollegata(['gc-a'])
+      const conto = await prisma.bankAccount.create({
+        data: { venueId: venue.id, name: 'Conto senza IBAN', accountType: 'BANK', currency: 'EUR' },
+      })
+      await callRoute(leggiConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`), { id: connessione.id })
+
+      const esito = await callRoute(
+        salvaConti,
+        jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
+          method: 'PUT',
+          body: { conti: [{ providerAccountId: 'gc-a', azione: 'configura', attivo: true, bankAccountId: conto.id, dataTaglio: '2026-08-13' }] },
+        }),
+        { id: connessione.id }
+      )
+
+      expect(esito.status).toBe(200)
+    })
+
+    it('caso 4: senza memoria dei conti letti il controllo si salta, non rifiuta tutto', async () => {
+      await entraCome('admin')
+      const { venue, connessione } = await connessioneCollegata(['gc-a', 'gc-b'])
+      const conto = await contoDiTest(venue.id, 'Conto principale', IBAN_A)
+      // Nessuna GET prima di questa PUT: `connessione.contiLetti` è null.
+
+      const esito = await callRoute(
+        salvaConti,
+        jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`, {
+          method: 'PUT',
+          body: { conti: [{ providerAccountId: 'gc-b', azione: 'configura', attivo: true, bankAccountId: conto.id, dataTaglio: '2026-08-13' }] },
+        }),
+        { id: connessione.id }
+      )
+
+      expect(esito.status).toBe(200)
+    })
+  })
+
   // Il regex accetta `2026-02-30`: `new Date(...)` non lancia, normalizza in
   // silenzio al primo marzo. Questa data è l'unica cosa che impedisce di
   // reimportare quello che il CSV ha già portato dentro, quindi uno
