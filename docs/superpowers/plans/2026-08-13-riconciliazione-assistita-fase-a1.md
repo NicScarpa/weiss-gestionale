@@ -478,6 +478,18 @@ describe('normalizzaTesto', () => {
     expect(normalizzaTesto('Società Cooperativa')).toBe('SOCIETA COOPERATIVA')
   })
 
+  it('collassa le sigle societarie, che la banca scrive senza punti', () => {
+    expect(normalizzaTesto('Bar S.p.A.')).toBe('BAR SPA')
+    expect(normalizzaTesto('Alfa S.n.c.')).toBe('ALFA SNC')
+  })
+
+  it('ma gli altri segni separano le parole invece di sparire', () => {
+    // Cancellare tutta la punteggiatura darebbe PAGAMENTOFATTURA, che non
+    // troverebbe mai "Pagamento fattura" scritto nell'anagrafica
+    expect(normalizzaTesto('PAGAMENTO-FATTURA')).toBe('PAGAMENTO FATTURA')
+    expect(normalizzaTesto('ACME,SPA')).toBe('ACME SPA')
+  })
+
   it('sulla stringa vuota torna la stringa vuota', () => {
     expect(normalizzaTesto('')).toBe('')
   })
@@ -564,12 +576,21 @@ const LUNGHEZZA_MINIMA_RIFERIMENTO = 3
  * Gli accenti si tolgono perché la banca li perde già per conto suo: nelle
  * causali osservate "Località" arriva come "Localit?", e confrontare una
  * ragione sociale accentata con la sua versione mutilata non funzionerebbe.
+ *
+ * **Il punto si cancella, il resto della punteggiatura diventa spazio.** Non è
+ * un capriccio: in italiano il punto è il segno dell'abbreviazione societaria —
+ * `S.r.l.`, `S.p.A.`, `S.n.c.` — e la banca scrive quelle sigle *senza* punti.
+ * Se il punto diventasse spazio, `S.r.l.` darebbe `S R L` e non troverebbe mai
+ * `SRL` nella causale. Gli altri segni invece separano parole (`PAGAMENTO-FATTURA`
+ * deve dare due parole, non una), e cancellarli tutti creerebbe il difetto
+ * opposto.
  */
 export function normalizzaTesto(testo: string): string {
   return testo
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toUpperCase()
+    .replace(/\./g, '')
     .replace(/[^A-Z0-9 ]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
