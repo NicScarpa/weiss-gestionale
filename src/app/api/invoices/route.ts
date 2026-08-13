@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { parseFatturaPASafe, calcolaImporti, estraiScadenze, estraiDatiEstesi } from '@/lib/sdi/parser'
 import type { ParseWarning } from '@/lib/sdi/types'
-import { matchSupplier, createSupplierFromData, type SuggestedSupplierData } from '@/lib/sdi/matcher'
+import { matchSupplier, createSupplierFromData, findSupplierByVat, type SuggestedSupplierData } from '@/lib/sdi/matcher'
 import { trackPricesFromInvoice } from '@/lib/price-tracking'
 import {
   risolviContoDaRegole,
@@ -86,6 +86,15 @@ const importInvoiceSchema = z.object({
   supplierId: z.string().optional(),
   // Categorizzazione opzionale
   accountId: z.string().optional(),
+  /** Cosa fare se la fattura è già in archivio. */
+  politicaDuplicati: z.enum(['salta', 'sostituisci']).default('salta'),
+  /**
+   * Giorni di dilazione decisi dall'utente nella finestra dei conflitti.
+   * Vincono sui termini dell'anagrafica, che a loro volta vincono sul default.
+   */
+  giorniPagamentoScelti: z.number().int().positive().max(365).optional(),
+  /** Aggiorna i dati del fornitore già esistente con quelli del documento. */
+  sovrascriviAnagrafica: z.boolean().default(false),
 })
 
 // GET /api/invoices - Lista fatture
@@ -387,20 +396,43 @@ export async function POST(request: NextRequest) {
       fatturaInCorso.partitaIva
     )
 
+    // Chi ha già una fattura in archivio decide cosa farne nella finestra dei
+    // conflitti: «salta» mantiene il comportamento di sempre (409), «sostituisci»
+    // archivia la vecchia — mai cancellata, è una scrittura contabile — e lascia
+    // proseguire l'import come se il duplicato non ci fosse.
+    let idSostituita: string | null = null
+
     if (existingInvoice) {
-      return NextResponse.json(
-        {
-          error: 'Fattura già importata',
-          existingId: existingInvoice.id,
-        },
-        { status: 409 }
-      )
+      if (validatedData.politicaDuplicati === 'salta') {
+        return NextResponse.json(
+          {
+            error: 'Fattura già importata',
+            existingId: existingInvoice.id,
+          },
+          { status: 409 }
+        )
+      }
+
+      await prisma.electronicInvoice.update({
+        where: { id: existingInvoice.id },
+        data: { deletedAt: new Date(), deletedById: session.user.id },
+      })
+      idSostituita = existingInvoice.id
     }
 
     // Gestione fornitore
     let supplierId: string | null = null
     let supplierNameForInvoice = fattura.cedentePrestatore.denominazione // Default name from XML
     let status: InvoiceStatus = 'IMPORTED'
+    // Alimenta «Fornitori creati» nella verifica di integrità (Task 11): vero
+    // solo quando questo import ha davvero inserito una riga Supplier nuova,
+    // non quando ne ha semplicemente trovata una già esistente.
+    let fornitoreCreato = false
+    // Un fornitore già in anagrafica, sia scelto esplicitamente sia trovato
+    // dal match automatico — mai quello appena creato, che ha già i dati del
+    // documento. È il "ramo in cui il fornitore viene trovato" a cui si
+    // applica `sovrascriviAnagrafica`.
+    let fornitoreTrovatoId: string | null = null
 
     if (validatedData.supplierId) {
       // Fornitore specificato dall'utente
@@ -411,13 +443,24 @@ export async function POST(request: NextRequest) {
         supplierId = supplier.id
         supplierNameForInvoice = supplier.name // Use DB name
         status = 'MATCHED'
+        fornitoreTrovatoId = supplier.id
       }
     } else if (validatedData.createSupplier && validatedData.supplierData) {
-      // Crea nuovo fornitore
-      const newSupplier = await createSupplierFromData(validatedData.supplierData as SuggestedSupplierData)
+      // Crea nuovo fornitore. `createSupplierFromData` ritorna quello già
+      // esistente se la P.IVA/C.F. combaciano (evita duplicati anche su una
+      // corsa concorrente): il controllo qui, appena prima, è l'unico modo
+      // di sapere se la riga è davvero nuova — il dato che alimenta
+      // «fornitoreCreato» nella risposta.
+      const supplierData = validatedData.supplierData as SuggestedSupplierData
+      const preesistente =
+        supplierData.vatNumber || supplierData.fiscalCode
+          ? await findSupplierByVat(supplierData.vatNumber, supplierData.fiscalCode)
+          : null
+      const newSupplier = await createSupplierFromData(supplierData)
       supplierId = newSupplier.id
       supplierNameForInvoice = newSupplier.name // Use new supplier name
       status = 'MATCHED'
+      fornitoreCreato = !preesistente
     } else {
       // Cerca match automatico
       const match = await matchSupplier(fattura)
@@ -425,7 +468,27 @@ export async function POST(request: NextRequest) {
         supplierId = match.supplier.id
         supplierNameForInvoice = match.supplier.name // Use matched DB name
         status = 'MATCHED'
+        fornitoreTrovatoId = match.supplier.id
       }
+    }
+
+    // La finestra dei conflitti (Task 9) può chiedere di rinfrescare
+    // l'anagrafica del fornitore già a database con quella del documento
+    // appena letto: indirizzo e sede cambiano più spesso di quanto si
+    // aggiorni a mano. Non si applica al fornitore appena creato, che ha
+    // già questi stessi dati.
+    if (fornitoreTrovatoId && validatedData.sovrascriviAnagrafica) {
+      const sede = fattura.cedentePrestatore.sede
+      await prisma.supplier.update({
+        where: { id: fornitoreTrovatoId },
+        data: {
+          address: sede.indirizzo || undefined,
+          city: sede.comune || undefined,
+          province: sede.provincia || undefined,
+          postalCode: sede.cap || undefined,
+          fiscalCode: fattura.cedentePrestatore.codiceFiscale || undefined,
+        },
+      })
     }
 
     // Categorizzazione: la scelta dell'utente ha sempre la precedenza sulle regole
@@ -483,8 +546,12 @@ export async function POST(request: NextRequest) {
         )?.paymentTermsDays ?? undefined
       : undefined
 
+    // I giorni scelti nella finestra dei conflitti vincono sui termini
+    // dell'anagrafica, che a loro volta vincono sul default del parser.
+    const giorniPagamento = validatedData.giorniPagamentoScelti ?? terminiFornitore ?? undefined
+
     const scadenze = estraiScadenze(fattura, {
-      giorniPagamento: terminiFornitore ?? undefined,
+      giorniPagamento,
     })
 
     // Estrai IBAN dai dati pagamento (se disponibile)
@@ -747,6 +814,8 @@ export async function POST(request: NextRequest) {
         scadenzeGenerate: schedulesResult.created,
         // Warning dal parsing (tipo documento non riconosciuto, P.IVA non standard, etc.)
         parseWarnings: parseWarnings.length > 0 ? parseWarnings : undefined,
+        fornitoreCreato,
+        ...(idSostituita ? { sostituisce: idSostituita } : {}),
       },
       { status: 201 }
     )

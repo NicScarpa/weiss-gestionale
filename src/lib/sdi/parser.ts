@@ -664,8 +664,11 @@ export function estraiScadenze(
     notaStima: `Scadenza stimata a ${giorniPagamento} giorni dalla data fattura (${origineTermini}): l'XML non riporta la data di pagamento.`,
   })
 
-  if (!fattura.datiPagamento) {
-    // Nessun blocco DatiPagamento: una rata unica per l'intero documento
+  if (!fattura.datiPagamento || fattura.datiPagamento.dettagliPagamento.length === 0) {
+    // Blocco DatiPagamento assente, o presente senza alcun DettaglioPagamento
+    // (capita quando l'XML dichiara solo CondizioniPagamento): in entrambi i
+    // casi non c'è una rata da leggere, e si stima un'unica scadenza per
+    // l'intero documento.
     const { totalAmount } = calcolaImporti(fattura)
     return [
       {
