@@ -444,3 +444,157 @@ Da incollare così come sono, in una sessione nuova aperta su `~/Desktop/account
 > **quanti** abbinamenti il matcher della riconciliazione trova e con che confidenza. Oggi
 > `bank_transactions` in produzione è vuota, e un matcher che non ha mai visto dati veri assomiglia
 > moltissimo a uno che funziona finché l'ingresso è vuoto.
+
+---
+
+## Parte 7 — Le fatture: cosa resta dopo il rilascio del 13 agosto
+
+*Aggiunta dalla sessione della suddivisione per righe. Il lavoro è in produzione — PR #15 e #16,
+tre migrazioni applicate, RLS confermata — e quanto segue è il residuo dichiarato, non un elenco
+di guasti.*
+
+### 7.1 Il problema aperto: cassa previdenziale e ritenuta d'acconto
+
+**Deciso il 13 agosto di sospendere**, non di risolvere in fretta. Si estraggono prima le fatture
+vere dei professionisti — commercialista, avvocato, consulente del lavoro — e si guarda come lo
+risolvono i concorrenti, prima di scegliere una forma.
+
+**Di che si tratta.** La fattura di un professionista porta due voci che non sono righe:
+
+- la **cassa previdenziale**, una percentuale che **si aggiunge** all'imponibile e finisce alla
+  cassa di categoria. È un costo a tutti gli effetti;
+- la **ritenuta d'acconto**, una parte che **si sottrae**: al professionista si paga di meno, e la
+  differenza si versa allo Stato con un F24. **Non è un costo**: è una trattenuta che diventa un
+  debito verso l'erario.
+
+Sono cose diverse e vanno trattate diversamente. Nel file XML nessuna delle due sta in
+`DettaglioLinee`: vivono nei totali del documento.
+
+**Cosa fa il sistema oggi — verificato sul codice, non dedotto.** Il piano della suddivisione ha
+modellato come «righe di sistema» solo **bollo** e **arrotondamento**. Cassa e ritenuta no.
+
+> ⚠️ **Una imprecisione ha circolato e va corretta qui, perché è finita in un referto di revisione
+> e in due riepiloghi.** Non è vero che «su quelle fatture l'ereditarietà non parte». La guardia di
+> `src/lib/services/schedule-reconciliation-service.ts:550-552` confronta il numero di
+> **`numeroLinea` distinti** imputati con `lineItems.length + righeSistema.length` — cioè **conta
+> righe, non importi** — e cassa e ritenuta non entrano in `righeAttese`. Con tutte le righe vere
+> imputate la guardia **passa** e l'ereditarietà **parte**.
+
+Le conseguenze vere sono due:
+
+1. **Il contatore a schermo non dirà mai «completa».** Quello confronta importi contro il totale
+   del documento, e mostrerà per esempio `Attribuito 1.000,00 € / 1.040,00 € — mancano 40,00 €
+   non riconducibili a una riga`. È onesto: quei 40 € esistono e nessuna riga li spiega.
+2. **L'importo finisce sul conto sbagliato per approssimazione.** `ripartisciProQuota` chiude
+   sempre sull'intera quota pagata, quindi la cassa viene **spalmata proporzionalmente sui conti
+   delle righe** invece di avere un conto suo; con la ritenuta il pagamento risulta parziale e
+   ogni conto riceve la sua percentuale. **Il totale resta esatto** — non si crea né si perde un
+   euro — ma l'attribuzione non è una scelta di nessuno.
+
+### 7.2 Cosa fa CashKing, e perché cambia la domanda
+
+Dall'analisi competitiva già in casa (`docs/cashking/03-modello-dati.md` e
+`04-logiche-di-calcolo.md`):
+
+**La ritenuta non è una riga da imputare. È un attributo di prima classe della fattura**, con
+quattro campi dedicati — `hasWithholding`, `withholdingRate`, `withholdingBaseAmount`,
+`withholdingAmount` — più `splitPayment` per la scissione verso la pubblica amministrazione.
+
+**Ha un ciclo di vita proprio dopo il pagamento.** Esiste una rotta `/withholdings`, una stampa
+`/prints/withholding-f24`, e un flag `hasUnsettledWithholdings` — «ritenute non ancora versate».
+Perché quei soldi trattenuti poi si devono allo Stato, e finché non si versano sono un debito
+aperto.
+
+**E soprattutto: il saldo di una fattura non è «pagata sì/no».** È un aggregato su **sette canali
+distinti**, una tabella di collegamento per ciascuno: bonifico bancario, carta di credito, gateway
+di pagamento, compensazione con nota di credito, compensazione con partita opposta, **ritenuta
+trattenuta**, differenza di cambio. I flag `has*` sono la versione precalcolata per filtrare senza
+ricalcolare.
+
+**Perché questo cambia la domanda.** Noi ci chiedevamo «come modello cassa e ritenuta come righe di
+sistema, accanto a bollo e arrotondamento». Se la lettura di CashKing è giusta, è la forma
+sbagliata: la ritenuta non è una voce da attribuire a un conto di costo, è **uno dei modi in cui un
+debito si chiude**, più una passività verso l'erario con vita propria. Trattarla come una riga la
+farebbe finire su un conto di spesa — concettualmente sbagliato anche se i totali tornassero.
+
+**Sulla cassa previdenziale non sappiamo nulla.** Cercando «previdenz» in `docs/cashking/`,
+`docs/trezy/` e `docs/agicap/`: **zero occorrenze**. Trezy non nomina nemmeno la ritenuta. È
+esattamente il buco che l'osservazione diretta deve colmare — ed è anche il caso più semplice dei
+due, perché la cassa **è** un costo e potrebbe bastarle una riga di sistema come il bollo.
+
+### 7.3 Le altre voci del residuo delle fatture
+
+**L'avviso di riallineamento è solo sul dettaglio fattura.** Se si cambia il conto di una riga dopo
+che la fattura è già stata pagata, il movimento continua a usare i conti vecchi: il sistema lo
+rileva e mostra un avviso col pulsante *Riallinea*. Ma lo si vede **solo aprendo la fattura**. Dal
+lato prima nota non c'è nulla — verificato: `MovimentiTable.tsx` non nomina né collega la fattura,
+quindi non esiste neppure una via indiretta. La specifica lo chiedeva «sul dettaglio fattura **e
+sul movimento**»; la seconda metà resta aperta e servirebbe prima una pagina di dettaglio del
+movimento, che oggi non esiste.
+
+**La nota di credito col bollo su un conto anomalo ferma tutto in silenzio.** Se anche la nota
+porta un bollo e lo si imputa a un conto che nessuna riga della fattura usa, il sistema si astiene
+dall'intera ereditarietà. **È la scelta giusta** — sottrarne una parte darebbe numeri che non
+corrispondono a nessuna lettura coerente dei due documenti, sbagliati e con l'aria di essere giusti
+— ma l'unico segnale è un `logger.warn`. Si vede un movimento senza suddivisione e non si ha modo
+di sapere che basterebbe spostare il bollo della nota su `30.01`. La sede naturale del segnale è
+l'avviso di divergenza di cui sopra.
+
+**Il contatore e l'arrotondamento dell'emittente.** Il contatore replica l'algoritmo di chi emette
+la fattura (IVA arrotondata al centesimo **per gruppo di aliquota**) e su una fattura normale torna
+esatto. Resta un caso di bordo su fatture lunghe con molte aliquote diverse.
+
+**Una decina di rilievi minori** sono parcheggiati con la loro motivazione nel registro della
+sessione, in `.superpowers/sdd/2026-08-12-suddivisione-fatture-per-righe/progress.md` dentro il
+worktree `.claude/worktrees/fatture-righe`. **Quella cartella è git-ignored: sparisce col
+worktree.** Le lezioni durature sono già in memoria di progetto; i rapporti dettagliati delle dieci
+task no.
+
+### 7.4 Cose da sapere prima di toccare quest'area
+
+- **La regola è «o tutto o niente» sul documento, non sul movimento.** Un bonifico da 2.000 che
+  salda una fattura da 1.222 lascia legittimamente 778 sul conto di testata.
+- **`null` e `0` sull'IVA di una fetta non sono la stessa cosa**: `null` significa «non dichiarata,
+  stima pro-quota», `0` significa «IVA assente». Tutto il disegno poggia su quella distinzione.
+- **Le righe di sistema non si dividono** fra più conti: deciso, e rifiutato lato server con un
+  messaggio proprio.
+- **La richiesta di conferma è autorevole sulla riga che nomina**: il server cancella le quote di
+  quel `numeroLinea` che la richiesta non menziona. Qualunque interfaccia nuova deve mandare
+  **sempre l'insieme completo** delle quote di una riga.
+- **Il commento di `schema.prisma` sulla relazione `rettifiche` va letto**: comprende anche le note
+  di **debito** (TD05/TD09), che rettificano nel verso opposto. Chi sottrae deve filtrare su
+  `TIPI_DOCUMENTO_NOTA_CREDITO`, mai usare quella relazione così com'è.
+
+### Prompt E — Cassa previdenziale e ritenuta d'acconto
+
+> Leggi `docs/Cosa_Resta_Da_Fare_2026-08-13.md`, Parte 7, e la specifica
+> `docs/superpowers/specs/2026-08-12-suddivisione-per-righe-design.md` per il modello attuale.
+>
+> Devi progettare — **non implementare** — come il gestionale deve trattare le fatture dei
+> professionisti che portano **cassa previdenziale** e/o **ritenuta d'acconto**. Oggi non sono
+> modellate: il contatore di copertura non arriva mai a «completa» e quegli importi vengono
+> spalmati proporzionalmente sui conti delle righe invece di avere una collocazione propria.
+>
+> **Parti dai dati veri**, che ti verranno forniti: quante fatture con cassa, quante con ritenuta,
+> quante con entrambe, e su quali conti finiscono oggi. Senza quelli non si capisce se serve un
+> modello o basta un'approssimazione dichiarata.
+>
+> **Poi guarda come lo risolvono i concorrenti.** In `docs/cashking/` c'è già l'analisi: la
+> ritenuta è modellata come attributo di prima classe con quattro campi, ha una rotta e una stampa
+> F24 proprie, un flag per quelle non ancora versate, e soprattutto **il saldo di una fattura è un
+> aggregato su sette canali distinti** di cui la ritenuta è uno. In `docs/trezy/` e `docs/agicap/`
+> la cassa previdenziale non compare affatto: quel buco va colmato con l'osservazione diretta.
+>
+> **La domanda che voglio vedere sciolta è questa: la ritenuta è un costo o un debito verso
+> l'erario?** Se è la seconda — e CashKing dice che lo è — modellarla come «riga di sistema»
+> accanto al bollo è la forma sbagliata, e va detto chiaramente invece di adattarla al meccanismo
+> che c'è già. La cassa previdenziale è probabilmente un caso diverso e più semplice, perché **è**
+> un costo: non trattarle come un blocco unico.
+>
+> Verifica prima di affermare. In particolare non fidarti dell'idea che «su quelle fatture
+> l'ereditarietà non parte»: è falsa, la guardia conta righe e non importi
+> (`schedule-reconciliation-service.ts:550-552`). Circolava in un referto di revisione ed è
+> arrivata fino a due riepiloghi prima che qualcuno la controllasse sul codice.
+>
+> Consegna una specifica di design con la skill `superpowers:brainstorming`, non del codice.
+> Decisioni con la loro motivazione, e ciò che resta fuori perimetro dichiarato.
