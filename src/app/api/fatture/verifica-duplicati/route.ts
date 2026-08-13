@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { normalizzaPartitaIva } from '@/lib/invoices/partita-iva'
 
 const schema = z.object({
   fatture: z
@@ -51,15 +52,14 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    const senzaZeri = (piva: string) => piva.replace(/^0+/, '')
     const indice = new Map<string, (typeof candidate)[number]>()
     for (const c of candidate) {
       const giorno = c.invoiceDate.toISOString().slice(0, 10)
-      indice.set(`${c.invoiceNumber}|${giorno}|${senzaZeri(c.supplierVat)}`, c)
+      indice.set(`${c.invoiceNumber}|${giorno}|${normalizzaPartitaIva(c.supplierVat)}`, c)
     }
 
     const duplicati = fatture.flatMap((f) => {
-      const trovata = indice.get(`${f.numero}|${f.data}|${senzaZeri(f.partitaIva)}`)
+      const trovata = indice.get(`${f.numero}|${f.data}|${normalizzaPartitaIva(f.partitaIva)}`)
       if (!trovata) return []
       return [
         {

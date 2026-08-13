@@ -122,6 +122,11 @@ describe('POST /api/fatture/conflitti-termini', () => {
     const body = await res.json()
     expect(body.conflitti).toHaveLength(1)
     expect(body.conflitti[0]).toMatchObject({ giorniDalFile: 30, giorniAnagrafica: 60 })
+    // La forma della chiave fa parte del contratto, non è un dettaglio: il
+    // wizard ci cerca sopra la scelta dell'utente, e il documento porta la
+    // P.IVA con gli zeri. Finché entrambi i lati normalizzano si incontrano;
+    // pinnarlo qui è ciò che rende visibile un cambio di forma.
+    expect(body.conflitti[0].partitaIva).toBe('1234567890')
     await prisma.supplier.delete({ where: { id: fornitore.id } })
   })
 

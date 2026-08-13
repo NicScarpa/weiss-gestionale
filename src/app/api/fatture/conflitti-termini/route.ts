@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { normalizzaPartitaIva } from '@/lib/invoices/partita-iva'
 
 const schema = z.object({
   fatture: z
@@ -45,8 +46,9 @@ export async function POST(request: NextRequest) {
     // positivo: un conflitto vero non verrebbe mai segnalato. Non si può
     // filtrare la query sui valori esatti proposti dal file per lo stesso
     // motivo, quindi si prendono tutti i fornitori con termini concordati e si
-    // confronta in memoria sulla forma normalizzata.
-    const senzaZeri = (piva: string) => piva.replace(/^0+/, '')
+    // confronta in memoria sulla forma normalizzata. La normalizzazione è
+    // quella condivisa: la P.IVA normalizzata esce da qui come chiave del
+    // conflitto, e il wizard deve poterla ritrovare con la stessa regola.
     const fornitori = await prisma.supplier.findMany({
       where: { vatNumber: { not: null }, isActive: true, paymentTermsDays: { not: null } },
       select: { vatNumber: true, name: true, paymentTermsDays: true },
@@ -54,7 +56,7 @@ export async function POST(request: NextRequest) {
 
     const terminiPerPiva = new Map(
       fornitori.map((f) => [
-        senzaZeri(f.vatNumber as string),
+        normalizzaPartitaIva(f.vatNumber as string),
         { giorni: f.paymentTermsDays as number, nome: f.name },
       ])
     )
@@ -71,7 +73,7 @@ export async function POST(request: NextRequest) {
     >()
 
     for (const f of conTermini) {
-      const piva = senzaZeri(f.partitaIva)
+      const piva = normalizzaPartitaIva(f.partitaIva)
       const anagrafica = terminiPerPiva.get(piva)
       if (!anagrafica) continue
       if (anagrafica.giorni === f.giorniDalFile) continue
@@ -85,10 +87,11 @@ export async function POST(request: NextRequest) {
         // `giorniDalFile` resta quello della prima fattura del gruppo: se due
         // fatture della stessa P.IVA divergono fra loro (es. 30 e 45 giorni),
         // qui non si distinguono. Non è un difetto: questa risposta serve solo
-        // a *mostrare* il conflitto e a far scegliere fra file e anagrafica; la
-        // scelta «usa i valori del file» viene poi applicata riga per riga, con
-        // il `giorniDalFile` della singola fattura — non con quello mostrato
-        // qui, che è indicativo e mai operativo.
+        // a *mostrare* il conflitto e a far scegliere fra file e anagrafica.
+        // Il valore mostrato non diventa mai operativo: scegliendo
+        // «Importazione» il wizard non manda alcun termine e la data scritta
+        // sul singolo documento vince da sé, riga per riga; solo la scelta
+        // «Anagrafica» spedisce un numero, ed è `giorniAnagrafica`.
         continue
       }
 

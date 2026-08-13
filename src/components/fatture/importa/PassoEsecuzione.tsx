@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Loader2Icon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { normalizzaPartitaIva } from '@/lib/invoices/partita-iva'
 import { ETICHETTE_STATO, type OpzioniImport, type StatoRiga } from './tipi'
 import type { ConflittoTermini, SceltaConflitto } from './DialogConflitti'
 import type { RigaAnteprima } from './PassoAnteprima'
@@ -63,9 +64,31 @@ export function PassoEsecuzione({ righe, opzioni, scelteConflitti, conflitti, on
   const avviato = useRef(false)
   const vivo = useRef(true)
 
+  // Le due mappe sono chiavate sulla P.IVA *normalizzata*, e così vengono
+  // interrogate più sotto. Non è pignoleria: la rotta dei conflitti raggruppa
+  // sulla forma senza zeri iniziali e restituisce quella, mentre
+  // `riga.partitaIvaFornitore` è la forma grezza del documento. Cercando con
+  // la grezza, per ogni fornitore con la P.IVA che inizia per zero il lookup
+  // dava `undefined` e la scelta fatta nella finestra dei conflitti veniva
+  // scartata senza un errore. Normalizzando entrambi i lati il disallineamento
+  // non può ripresentarsi, da qualunque forma arrivi la risposta.
   const giorniAnagraficaPerFornitore = useMemo(
-    () => Object.fromEntries(conflitti.map((c) => [c.partitaIva, c.giorniAnagrafica])),
+    () =>
+      Object.fromEntries(
+        conflitti.map((c) => [normalizzaPartitaIva(c.partitaIva), c.giorniAnagrafica])
+      ),
     [conflitti]
+  )
+
+  const scelteNormalizzate = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(scelteConflitti).map(([piva, scelta]) => [
+          normalizzaPartitaIva(piva),
+          scelta,
+        ])
+      ),
+    [scelteConflitti]
   )
 
   useEffect(() => {
@@ -113,8 +136,9 @@ export function PassoEsecuzione({ righe, opzioni, scelteConflitti, conflitti, on
           // ignorando la data del documento: vanno mandati solo in quel
           // caso, col valore concordato in anagrafica — mai `giorniDalFile`,
           // che vincerebbe da sé restando muti (la data del documento).
-          const scelta = scelteConflitti[riga.partitaIvaFornitore]
-          const giorniAnagrafica = giorniAnagraficaPerFornitore[riga.partitaIvaFornitore]
+          const pivaFornitore = normalizzaPartitaIva(riga.partitaIvaFornitore)
+          const scelta = scelteNormalizzate[pivaFornitore]
+          const giorniAnagrafica = giorniAnagraficaPerFornitore[pivaFornitore]
 
           const res = await fetch('/api/invoices', {
             method: 'POST',

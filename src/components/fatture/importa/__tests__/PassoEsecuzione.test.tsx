@@ -51,8 +51,17 @@ function promessaControllata<T>() {
 
 const rispostaOk = { ok: true, status: 201, json: async () => ({ fornitoreCreato: false }) }
 
+/**
+ * `partitaIva` porta la P.IVA **senza gli zeri iniziali**: è la forma che
+ * `/api/fatture/conflitti-termini` produce davvero, perché raggruppa i
+ * conflitti sulla P.IVA normalizzata. La riga d'anteprima porta invece quella
+ * grezza del documento (`07945211006`), e i due lati devono comunque
+ * incontrarsi — è il difetto che la revisione finale ha trovato: con le
+ * fixture nella stessa forma, i test passavano su dati che la rotta non
+ * genera mai.
+ */
 const conflitto = (sovrascrivi: Partial<ConflittoTermini> = {}): ConflittoTermini => ({
-  partitaIva: '07945211006',
+  partitaIva: '7945211006',
   denominazione: 'Torrefazione di prova Srl',
   giorniDalFile: 30,
   giorniAnagrafica: 60,
@@ -185,7 +194,7 @@ describe('PassoEsecuzione', () => {
       <PassoEsecuzione
         righe={[riga()]}
         opzioni={OPZIONI_PREDEFINITE}
-        scelteConflitti={{ '07945211006': 'anagrafica' }}
+        scelteConflitti={{ '7945211006': 'anagrafica' }}
         conflitti={[conflitto()]}
         onFinito={onFinito}
       />
@@ -194,6 +203,33 @@ describe('PassoEsecuzione', () => {
     await waitFor(() => expect(onFinito).toHaveBeenCalled())
     const corpo = corpoInviato(fetchMock)
     expect(corpo.giorniPagamentoScelti).toBe(60) // giorniAnagrafica del conflitto, non giorniDalFile (30)
+  })
+
+  it('la scelta arriva al server anche se la P.IVA del documento inizia per zero', async () => {
+    // Il caso reale, e la larghissima maggioranza delle P.IVA italiane: la
+    // riga porta `07945211006` (forma grezza del documento), la rotta ha
+    // restituito il conflitto sotto `7945211006` (forma normalizzata) e
+    // `DialogConflitti` ha chiavato la scelta su quest'ultima. Senza una
+    // normalizzazione condivisa i due lati non si incontrano, il lookup dà
+    // `undefined` e `giorniPagamentoScelti` non parte: l'utente sceglie
+    // «Anagrafica», la finestra si chiude, e il server usa comunque la data
+    // del documento — nessun errore, nessun avviso.
+    const fetchMock = vi.fn().mockResolvedValue(rispostaOk)
+    vi.stubGlobal('fetch', fetchMock)
+    const onFinito = vi.fn()
+
+    render(
+      <PassoEsecuzione
+        righe={[riga({ partitaIvaFornitore: '07945211006' })]}
+        opzioni={OPZIONI_PREDEFINITE}
+        scelteConflitti={{ '7945211006': 'anagrafica' }}
+        conflitti={[conflitto({ partitaIva: '7945211006' })]}
+        onFinito={onFinito}
+      />
+    )
+
+    await waitFor(() => expect(onFinito).toHaveBeenCalled())
+    expect(corpoInviato(fetchMock).giorniPagamentoScelti).toBe(60)
   })
 
   it('con la scelta «importazione», o senza conflitto per il fornitore, giorniPagamentoScelti non compare affatto', async () => {
@@ -207,7 +243,7 @@ describe('PassoEsecuzione', () => {
       <PassoEsecuzione
         righe={[riga()]}
         opzioni={OPZIONI_PREDEFINITE}
-        scelteConflitti={{ '07945211006': 'importazione' }}
+        scelteConflitti={{ '7945211006': 'importazione' }}
         conflitti={[conflitto()]}
         onFinito={onFinito1}
       />

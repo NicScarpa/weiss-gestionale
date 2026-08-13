@@ -104,7 +104,10 @@ describe('ImportaFattureWizard', () => {
             // `aliquote` è obbligatorio su `ConflittoTermini` (Task 5/9): l'API
             // reale lo valorizza sempre, qui va aggiunto a mano per non far
             // saltare `DialogConflitti`, che lo usa senza controllo di nullità.
-            conflitti: [{ partitaIva: '07945211006', denominazione: 'FORNITORE SPA', giorniDalFile: 30, giorniAnagrafica: 60, aliquote: [22], chiavi: ['IT07945211006_001.xml'] }],
+            // `partitaIva` senza gli zeri iniziali: è la forma che la rotta
+            // produce davvero (raggruppa sulla P.IVA normalizzata), diversa
+            // da quella grezza del documento — `07945211006`.
+            conflitti: [{ partitaIva: '7945211006', denominazione: 'FORNITORE SPA', giorniDalFile: 30, giorniAnagrafica: 60, aliquote: [22], chiavi: ['IT07945211006_001.xml'] }],
           }),
         } as Response
       }

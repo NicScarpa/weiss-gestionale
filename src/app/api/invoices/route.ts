@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { parseFatturaPASafe, calcolaImporti, estraiScadenze, estraiDatiEstesi } from '@/lib/sdi/parser'
 import type { ParseWarning } from '@/lib/sdi/types'
 import { matchSupplier, createSupplierFromData, findSupplierByVat, type SuggestedSupplierData } from '@/lib/sdi/matcher'
+import { normalizzaPartitaIva } from '@/lib/invoices/partita-iva'
 import { trackPricesFromInvoice } from '@/lib/price-tracking'
 import {
   risolviContoDaRegole,
@@ -332,7 +333,7 @@ async function trovaFatturaEsistente(
       invoiceDate,
       OR: [
         { supplierVat },
-        { supplierVat: supplierVat.replace(/^0+/, '') },
+        { supplierVat: normalizzaPartitaIva(supplierVat) },
       ],
     },
   })
@@ -787,7 +788,7 @@ export async function POST(request: NextRequest) {
             // iniziali della P.IVA.
             OR: [
               { supplierVat: invoice.supplierVat },
-              { supplierVat: invoice.supplierVat.replace(/^0+/, '') },
+              { supplierVat: normalizzaPartitaIva(invoice.supplierVat) },
             ],
           }
           if (riferimento.data) {
