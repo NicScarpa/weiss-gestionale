@@ -201,4 +201,44 @@ describe('ConnessioniBancarie', () => {
     await scrivere(perId('taglio-acc-1'), '2026-08-01')
     expect((perTesto(/^salva$/i) as HTMLButtonElement).disabled).toBe(false)
   })
+
+  // `conto.tipo === 'ignorato'` è il dato del server: non cambia finché non
+  // arriva una rilettura. Abbinare un conto del gestionale a una riga
+  // ignorata deve aprirla alla stessa riga piena (interruttore + data) del
+  // conto sconosciuto — non lasciarla bloccata sulla sola select, altrimenti
+  // `dataTaglio` resta vuoto per sempre e quella riga da sola disabilita
+  // «Salva» per l'intero pannello.
+  it('un conto ignorato si sblocca abbinandolo, con la data', async () => {
+    const contoIgnorato = {
+      tipo: 'ignorato',
+      conto: { providerAccountId: 'acc-3', iban: null, ibanHash: 'h3', intestatario: null, valuta: 'EUR' },
+      ibanMascherato: 'IT•• •••• 3333',
+      ultimoMovimento: null,
+      syncEnabled: false,
+      syncCutoffDate: null,
+    }
+    stubFetch([
+      ['/api/gocardless/collegamenti/conn-1/conti', { ...CONTI, conti: [contoIgnorato] }],
+      ['/api/gocardless/collegamenti', COLLEGAMENTO],
+    ])
+
+    await montare(<ConnessioniBancarie contiBancari={CONTI_DEL_GESTIONALE} />)
+    await attendere()
+    await attendiChe(() => testoDellaPagina().includes('IT•• •••• 3333'), 'il conto ignorato a schermo')
+
+    // Prima dell'abbinamento non c'è ancora un campo data: solo la select.
+    expect(perId('taglio-acc-3')).toBeNull()
+
+    await cliccare(document.body.querySelector<HTMLElement>('button[role="combobox"]'))
+    await attendiChe(() => document.body.querySelector('[role="option"]') !== null, 'le opzioni della select')
+    await cliccare(document.body.querySelector<HTMLElement>('[role="option"]'))
+
+    // Abbinato: la riga si apre al campo data, e senza compilarlo «Salva»
+    // resta chiuso.
+    await attendiChe(() => perId('taglio-acc-3') !== null, "il campo data dopo l'abbinamento")
+    expect((perTesto(/^salva$/i) as HTMLButtonElement).disabled).toBe(true)
+
+    await scrivere(perId('taglio-acc-3'), '2026-08-01')
+    expect((perTesto(/^salva$/i) as HTMLButtonElement).disabled).toBe(false)
+  })
 })

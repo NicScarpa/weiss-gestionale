@@ -35,7 +35,15 @@ function riferimento(ultimoMovimento: string | null): string {
 export function RigaContoBancario({ conto, scelta, contiBancari, onCambia }: Props) {
   const etichetta = conto.ibanMascherato ?? conto.conto.providerAccountId
   const abbinato = conto.tipo === 'riconosciuto' || conto.tipo === 'gia-collegato'
-  const ignorato = conto.tipo === 'ignorato' || scelta.azione === 'ignora'
+  // `conto.tipo === 'ignorato'` è il dato del server e non cambia finché non
+  // arriva una rilettura: senza `&& scelta.azione !== 'configura'`, una volta
+  // scelto il conto a cui abbinarlo la riga restava bloccata sulla sola
+  // select, senza mai arrivare al campo data — e quella riga da sola
+  // disabilitava «Salva» per l'intero pannello, perché `dataTaglio` restava
+  // vuoto per sempre. Abbinarlo (non un'azione separata) è ciò che lo
+  // riprende: la riga deve aprirsi alla stessa via d'uscita del conto
+  // sconosciuto.
+  const ignorato = (conto.tipo === 'ignorato' && scelta.azione !== 'configura') || scelta.azione === 'ignora'
 
   const idConto = scelta.azione === 'configura' ? scelta.bankAccountId : abbinato ? conto.bankAccountId : ''
   const dataTaglio = scelta.azione === 'configura' ? scelta.dataTaglio : (conto.syncCutoffDate ?? '')

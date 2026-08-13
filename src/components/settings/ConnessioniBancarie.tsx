@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { RefreshCw, Wifi } from 'lucide-react'
+import { AlertCircle, RefreshCw, Wifi } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   AlertDialog,
@@ -83,10 +83,20 @@ export function ConnessioniBancarie({ contiBancari }: { contiBancari: ContoBanca
   const [scelte, setScelte] = useState<Record<string, Scelta>>({})
   const [inCorso, setInCorso] = useState<'salvataggio' | 'aggiornamento' | 'scollegamento' | null>(null)
 
-  const { data: datiCollegamento, refetch: ricaricaCollegamento } = useQuery({
+  const {
+    data: datiCollegamento,
+    isError: erroreCollegamento,
+    refetch: ricaricaCollegamento,
+  } = useQuery({
     queryKey: ['gocardless-collegamento'],
     refetchOnMount: 'always',
     staleTime: 0,
+    // Una rilettura involontaria (focus, riconnessione) azzererebbe le scelte
+    // non ancora salvate più sotto: la si vuole solo quando è l'amministratore
+    // a chiederla esplicitamente (mount o pulsante), non come effetto
+    // collaterale del tornare su questa scheda del browser.
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     queryFn: async (): Promise<{ connessione: Connessione | null }> => {
       const res = await fetch('/api/gocardless/collegamenti')
       if (!res.ok) throw new Error('Errore nel caricamento del collegamento')
@@ -96,11 +106,20 @@ export function ConnessioniBancarie({ contiBancari }: { contiBancari: ContoBanca
 
   const connessione = datiCollegamento?.connessione ?? null
 
-  const { data: datiConti, refetch: ricaricaConti } = useQuery({
+  const {
+    data: datiConti,
+    isError: erroreConti,
+    refetch: ricaricaConti,
+  } = useQuery({
     queryKey: ['gocardless-conti', connessione?.id],
     enabled: Boolean(connessione),
     refetchOnMount: 'always',
     staleTime: 0,
+    // Stesso motivo della query sopra: qui una rilettura azzera le scelte non
+    // salvate, quindi niente refetch involontari fuori dal mount o dal
+    // pulsante «Aggiorna dalla banca».
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     queryFn: async (): Promise<RispostaConti> => {
       // Senza `aggiorna=1`: la rotta risponde dalla memoria. Chiedere alla
       // banca costa una chiamata per conto su quattro al giorno, ed è un
@@ -209,6 +228,35 @@ export function ConnessioniBancarie({ contiBancari }: { contiBancari: ContoBanca
     }
   }
 
+  // Un errore di lettura non è «non hai mai collegato nulla»: un
+  // amministratore con un collegamento sano e un errore passeggero non va
+  // invitato a rifare da capo una procedura che richiede di autenticarsi in
+  // banca. I due stati vanno distinti, non entrambi appiattiti sulla stessa
+  // schermata vuota.
+  if (erroreCollegamento) {
+    return (
+      <Card className="border-dashed">
+        <CardHeader>
+          <CardTitle className="text-base">Open Banking</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Lettura del collegamento non riuscita</AlertTitle>
+            <AlertDescription>
+              Non sono riuscito a sapere se una banca è già collegata. Potrebbe esserlo:
+              ripeti la lettura prima di collegarne una nuova.
+            </AlertDescription>
+          </Alert>
+          <Button variant="outline" size="sm" onClick={() => ricaricaCollegamento()}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Riprova
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
   if (!connessione) {
     return (
       <Card className="border-dashed">
@@ -289,24 +337,46 @@ export function ConnessioniBancarie({ contiBancari }: { contiBancari: ContoBanca
           </Alert>
         )}
 
-        <div className="space-y-3">
-          {conti.map((c) => (
-            <RigaContoBancario
-              key={c.conto.providerAccountId}
-              conto={c}
-              scelta={scelta(c)}
-              contiBancari={contiBancari}
-              onCambia={(nuova) => cambia(c.conto.providerAccountId, nuova)}
-            />
-          ))}
-        </div>
+        {erroreConti ? (
+          // Un errore qui non è «collegato, nessun conto coperto»: un elenco
+          // vuoto per un errore di lettura nasconderebbe conti che esistono
+          // davvero, e salvare in questo stato configurerebbe zero conti.
+          <div className="space-y-3">
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Lettura dei conti non riuscita</AlertTitle>
+              <AlertDescription>
+                Non sono riuscito a leggere l&apos;elenco dei conti coperti dal consenso. Non è
+                detto che siano zero: riprova prima di considerarlo tale.
+              </AlertDescription>
+            </Alert>
+            <Button variant="outline" size="sm" onClick={() => ricaricaConti()}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Riprova
+            </Button>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-3">
+              {conti.map((c) => (
+                <RigaContoBancario
+                  key={c.conto.providerAccountId}
+                  conto={c}
+                  scelta={scelta(c)}
+                  contiBancari={contiBancari}
+                  onCambia={(nuova) => cambia(c.conto.providerAccountId, nuova)}
+                />
+              ))}
+            </div>
 
-        {/* Meglio dirlo che lasciare qualcuno ad aspettare movimenti che
-            nessuno sta ancora scaricando. */}
-        <p className="text-xs text-muted-foreground">
-          Nessuna sincronizzazione è attiva: qui si sceglie soltanto quali conti importare. I
-          movimenti arriveranno con il passo successivo.
-        </p>
+            {/* Meglio dirlo che lasciare qualcuno ad aspettare movimenti che
+                nessuno sta ancora scaricando. */}
+            <p className="text-xs text-muted-foreground">
+              Nessuna sincronizzazione è attiva: qui si sceglie soltanto quali conti importare. I
+              movimenti arriveranno con il passo successivo.
+            </p>
+          </>
+        )}
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
