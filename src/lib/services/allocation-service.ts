@@ -132,10 +132,13 @@ export interface PesoConIva {
  * fetta a `null` su un movimento nato dall'import (che di suo non ha IVA)
  * significa che il ripiego pro-quota divide zero, e il blocco IVA del
  * prospetto perde tutti e 78. Sette volte l'errore che si voleva evitare, e
- * sulla stessa famiglia. Finché le righe negative non entreranno nei pesi con
- * il proprio segno (fase B, note di credito), l'approssimazione minore è
- * questa — ma non resta invisibile: chi chiama avvisa quando un conto sparisce
- * (vedi `ereditaFetteDaFattura`).
+ * sulla stessa famiglia. La fase B (Task 6) ha dato un segno proprio alle
+ * righe negative delle NOTE DI CREDITO — un documento a parte, sottratto ai
+ * pesi con le sue guardie dedicate — ma non a una riga di sconto dentro la
+ * STESSA fattura, che resta questo caso: finché anche quella non entrerà nei
+ * pesi col proprio segno, l'approssimazione minore è questa — ma non resta
+ * invisibile: chi chiama avvisa quando un conto sparisce (vedi
+ * `ereditaFetteDaFattura`).
  */
 export function calcolaPesiConIva(righe: RigaDaImputare[]): PesoConIva[] {
   const ivaNota = righe.every((r) => r.aliquota !== undefined)
@@ -158,7 +161,22 @@ export interface RigaDaImputare {
   aliquota: number | undefined
 }
 
-/** Il lordo e l'IVA di ciascun conto. La formula sta qui, e solo qui. */
+/**
+ * Il lordo e l'IVA di ciascun conto.
+ *
+ * La formula — netto + netto × aliquota/100 — è duplicata in `alLordo`, dentro
+ * `src/components/invoices/InvoiceDetailSections.tsx`, e la duplicazione è
+ * voluta: quel componente è `'use client'` e importare questo modulo, che
+ * porta `@prisma/client`, romperebbe il bundle in un modo che nessuna
+ * revisione del diff vede (lo stesso motivo per cui `TOLLERANZA_IMPORTI` è
+ * ricopiata in `riga-fattura-condivisa.ts`). Chi cambia il calcolo qui deve
+ * cambiarlo anche là.
+ *
+ * Il contatore di copertura della stessa tabella non usa più questa formula
+ * per il totale: raggruppa per aliquota e arrotonda l'imposta una volta per
+ * gruppo, perché lì il confronto è con `ImportoTotaleDocumento`, che
+ * l'emittente scrive proprio così (vedi `attribuitoAlLordo`).
+ */
 function aggregaPerConto(righe: RigaDaImputare[]): Map<string, { importo: number; iva: number }> {
   const totali = new Map<string, { importo: number; iva: number }>()
   for (const riga of righe) {

@@ -405,7 +405,9 @@ describe('categorizzaRigheFattura', () => {
     })
     // ...poi rimessa in dubbio senza toccare fonte/accountId.
     expect(prisma.invoiceLineAccount.update).toHaveBeenCalledWith({
-      where: { invoiceId_numeroLinea: { invoiceId: INVOICE_ID, numeroLinea: 1 } },
+      where: {
+        invoiceId_numeroLinea_progressivo: { invoiceId: INVOICE_ID, numeroLinea: 1, progressivo: 0 },
+      },
       data: {
         stato: 'proposta',
         motivazioneAi: 'Il fornitore di solito consegna pane speciale su questo articolo',
@@ -483,7 +485,9 @@ describe('categorizzaRigheFattura', () => {
       expect.objectContaining({ data: expect.objectContaining({ numeroLinea: 1 }) })
     )
     expect(prisma.invoiceLineAccount.update).not.toHaveBeenCalledWith(
-      expect.objectContaining({ where: { invoiceId_numeroLinea: { invoiceId: INVOICE_ID, numeroLinea: 1 } } })
+      expect.objectContaining({
+        where: { invoiceId_numeroLinea_progressivo: { invoiceId: INVOICE_ID, numeroLinea: 1, progressivo: 0 } },
+      })
     )
     // La riga 2, scoperta, viene comunque creata dalla proposta AI.
     expect(prisma.invoiceLineAccount.create).toHaveBeenCalledWith({

@@ -1,0 +1,607 @@
+import { describe, it, expect, beforeEach } from 'vitest'
+import { prisma } from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
+import { setupIntegrationDb } from '@/test/integration/db'
+import { creaMovimento, creaScadenza } from '@/test/integration/fixtures/scadenzario'
+import { venueDiTest } from '@/test/integration/fixtures/closures'
+import { reconcileScheduleWithEntry } from '@/lib/services/schedule-reconciliation-service'
+import { setEntryAllocations } from '@/lib/services/allocation-service'
+import { imputazioniDivergenti, riallineaFette, RiallineamentoNonRigenerabile } from '../riallineamento'
+
+/**
+ * La divergenza fra fette e fattura, e il suo riallineamento (Task 7), su
+ * database vero: la rilevazione interroga `invoice_line_accounts` con
+ * `updatedAt`, che Prisma valorizza da sé a ogni scrittura — un dettaglio
+ * che nessun mock potrebbe riprodurre in modo affidabile.
+ */
+setupIntegrationDb()
+
+interface RigaFixture {
+  numeroLinea: number
+  descrizione: string
+  prezzoTotale: number
+  aliquotaIVA: number | null
+  accountId: string
+  stato?: 'proposta' | 'confermata'
+}
+
+/** Fattura con snapshot delle righe e imputazioni per conto, come dopo l'import. */
+async function creaFatturaConRighe(
+  righe: RigaFixture[],
+  overrides: { documentType?: string; rettificaInvoiceId?: string } = {}
+) {
+  const venueId = (await venueDiTest()).id
+  const netto = righe.reduce((s, r) => s + r.prezzoTotale, 0)
+  const lordo = righe.reduce((s, r) => s + r.prezzoTotale * (1 + (r.aliquotaIVA ?? 0) / 100), 0)
+
+  const fattura = await prisma.electronicInvoice.create({
+    data: {
+      venueId,
+      invoiceNumber: `FT-${Math.random().toString(36).slice(2, 10)}`,
+      invoiceDate: new Date('2026-07-01'),
+      supplierVat: '01234567890',
+      supplierName: 'Fornitore misto',
+      totalAmount: new Prisma.Decimal(lordo.toFixed(2)),
+      netAmount: new Prisma.Decimal(netto.toFixed(2)),
+      vatAmount: new Prisma.Decimal((lordo - netto).toFixed(2)),
+      status: 'RECORDED',
+      ...overrides,
+      lineItems: righe.map((r) => ({
+        numeroLinea: r.numeroLinea,
+        descrizione: r.descrizione,
+        prezzoUnitario: r.prezzoTotale,
+        prezzoTotale: r.prezzoTotale,
+        ...(r.aliquotaIVA === null ? {} : { aliquotaIVA: r.aliquotaIVA }),
+      })),
+    },
+  })
+
+  await prisma.invoiceLineAccount.createMany({
+    data: righe.map((r) => ({
+      invoiceId: fattura.id,
+      numeroLinea: r.numeroLinea,
+      descrizione: r.descrizione,
+      importo: new Prisma.Decimal(r.prezzoTotale.toFixed(2)),
+      accountId: r.accountId,
+      stato: r.stato ?? 'confermata',
+      fonte: 'manuale',
+    })),
+  })
+
+  return { fattura, lordo: Number(lordo.toFixed(2)) }
+}
+
+/** Le fette scritte sul movimento, per conto, in euro. */
+async function fettePerConto(journalEntryId: string): Promise<Record<string, number>> {
+  const righe = await prisma.journalEntryAllocation.findMany({
+    where: { journalEntryId },
+    select: { accountId: true, importo: true },
+  })
+  // Sommato, non sovrascritto: due riconciliazioni sullo stesso movimento
+  // possono finire sullo stesso conto (spec sezione 3, «due righe distinte in
+  // archivio... sommate in lettura»), e un `Object.fromEntries` naïf
+  // nasconderebbe la seconda riga dietro la prima invece di sommarle.
+  const totali = new Map<string, number>()
+  for (const r of righe) {
+    totali.set(r.accountId, (totali.get(r.accountId) ?? 0) + Number(r.importo))
+  }
+  return Object.fromEntries(totali)
+}
+
+/** L'IVA dichiarata dal movimento, `null` compreso. */
+async function ivaDiTestata(journalEntryId: string): Promise<number | null> {
+  const movimento = await prisma.journalEntry.findUniqueOrThrow({ where: { id: journalEntryId } })
+  return movimento.vatAmount === null ? null : Number(movimento.vatAmount)
+}
+
+let venueId: string
+let contoAlimentari: string
+let contoDetersivi: string
+let contoTerzo: string
+
+beforeEach(async () => {
+  venueId = (await venueDiTest()).id
+  const conti = await prisma.account.findMany({
+    where: { isActive: true },
+    select: { id: true },
+    orderBy: { code: 'asc' },
+    take: 3,
+  })
+  contoAlimentari = conti[0].id
+  contoDetersivi = conti[1].id
+  contoTerzo = conti[2].id
+})
+
+/** La fattura mista dell'esempio della spec: 1.000 al 10% e 100 al 22%, 1.222 lordi. */
+async function fatturaMista() {
+  const { fattura, lordo } = await creaFatturaConRighe([
+    { numeroLinea: 1, descrizione: 'Farina', prezzoTotale: 1000, aliquotaIVA: 10, accountId: contoAlimentari },
+    { numeroLinea: 2, descrizione: 'Detersivi', prezzoTotale: 100, aliquotaIVA: 22, accountId: contoDetersivi },
+  ])
+  expect(lordo).toBe(1222)
+  return { fattura, lordo }
+}
+
+describe('imputazioniDivergenti (Task 7, passo 1)', () => {
+  it('nessuna divergenza appena riconciliato: nessuna imputazione è stata toccata', async () => {
+    const { fattura, lordo } = await fatturaMista()
+    const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+    const movimento = await creaMovimento({ uscita: lordo, venueId })
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+    })
+    expect(esito.outcome).toBe('ok')
+
+    expect(await imputazioniDivergenti(movimento.id)).toEqual({
+      divergente: false,
+      invoiceId: null,
+      modificataIl: null,
+    })
+  })
+
+  it('divergenza quando un\'imputazione cambia dopo che le fette sono nate', async () => {
+    const { fattura, lordo } = await fatturaMista()
+    const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+    const movimento = await creaMovimento({ uscita: lordo, venueId })
+
+    await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+    })
+
+    // Un umano riclassifica i detersivi su un conto diverso, mesi dopo il
+    // pagamento: `updatedAt` avanza da sé, Prisma lo gestisce.
+    await prisma.invoiceLineAccount.update({
+      where: { invoiceId_numeroLinea_progressivo: { invoiceId: fattura.id, numeroLinea: 2, progressivo: 0 } },
+      data: { accountId: contoTerzo },
+    })
+
+    const divergenza = await imputazioniDivergenti(movimento.id)
+    expect(divergenza.divergente).toBe(true)
+    expect(divergenza.invoiceId).toBe(fattura.id)
+    expect(divergenza.modificataIl).not.toBeNull()
+  })
+
+  it('una riga divisa fra più conti (Task 5): la divergenza si vede anche cambiando una sola quota', async () => {
+    // Una riga sola, imputata in due quote (progressivo 0 e 1) fra due conti.
+    const venue = await venueDiTest()
+    const fattura = await prisma.electronicInvoice.create({
+      data: {
+        venueId: venue.id,
+        invoiceNumber: `FT-${Math.random().toString(36).slice(2, 10)}`,
+        invoiceDate: new Date('2026-07-01'),
+        supplierVat: '01234567890',
+        supplierName: 'Fornitore misto',
+        totalAmount: new Prisma.Decimal('122.00'),
+        netAmount: new Prisma.Decimal('100.00'),
+        vatAmount: new Prisma.Decimal('22.00'),
+        status: 'RECORDED',
+        lineItems: [
+          { numeroLinea: 1, descrizione: 'Detersivi assortiti', prezzoUnitario: 100, prezzoTotale: 100, aliquotaIVA: 22 },
+        ],
+      },
+    })
+    await prisma.invoiceLineAccount.createMany({
+      data: [
+        { invoiceId: fattura.id, numeroLinea: 1, progressivo: 0, descrizione: 'Quota A', importo: new Prisma.Decimal('60.00'), accountId: contoDetersivi, stato: 'confermata', fonte: 'manuale' },
+        { invoiceId: fattura.id, numeroLinea: 1, progressivo: 1, descrizione: 'Quota B', importo: new Prisma.Decimal('40.00'), accountId: contoTerzo, stato: 'confermata', fonte: 'manuale' },
+      ],
+    })
+
+    const scadenza = await creaScadenza({ importoTotale: 122, invoiceId: fattura.id, venueId })
+    const movimento = await creaMovimento({ uscita: 122, venueId })
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+    })
+    expect(esito.outcome).toBe('ok')
+    expect(await imputazioniDivergenti(movimento.id)).toMatchObject({ divergente: false })
+
+    // Si tocca SOLO la seconda quota: la rilevazione non deve limitarsi alla prima.
+    await prisma.invoiceLineAccount.update({
+      where: { invoiceId_numeroLinea_progressivo: { invoiceId: fattura.id, numeroLinea: 1, progressivo: 1 } },
+      data: { accountId: contoAlimentari },
+    })
+
+    expect(await imputazioniDivergenti(movimento.id)).toMatchObject({ divergente: true, invoiceId: fattura.id })
+  })
+
+  it('una nota di credito imputata dopo il pagamento produce una divergenza rilevabile (spec sezione 4)', async () => {
+    const { fattura, lordo } = await fatturaMista()
+    const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+    const movimento = await creaMovimento({ uscita: lordo, venueId })
+
+    await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+    })
+    expect((await imputazioniDivergenti(movimento.id)).divergente).toBe(false)
+
+    // La nota arriva e viene imputata DOPO il pagamento: non tocca nessuna
+    // riga della fattura originaria, solo le proprie — la rilevazione deve
+    // guardare anche quelle.
+    await creaFatturaConRighe(
+      [{ numeroLinea: 1, descrizione: 'Detersivi resi', prezzoTotale: 100, aliquotaIVA: 22, accountId: contoDetersivi }],
+      { documentType: 'TD04', rettificaInvoiceId: fattura.id }
+    )
+
+    const divergenza = await imputazioniDivergenti(movimento.id)
+    expect(divergenza.divergente).toBe(true)
+    expect(divergenza.invoiceId).toBe(fattura.id)
+  })
+
+  it('una nota di DEBITO imputata dopo il pagamento non produce una divergenza: rettifica nel verso opposto', async () => {
+    const { fattura, lordo } = await fatturaMista()
+    const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+    const movimento = await creaMovimento({ uscita: lordo, venueId })
+
+    await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+    })
+
+    // TD05 aumenta il dovuto, non lo riduce (Task 6): un avviso qui sarebbe
+    // la beffa perfetta, perché il riallineamento non cambierebbe nulla.
+    await creaFatturaConRighe(
+      [{ numeroLinea: 1, descrizione: 'Addebito extra', prezzoTotale: 100, aliquotaIVA: 22, accountId: contoDetersivi }],
+      { documentType: 'TD05', rettificaInvoiceId: fattura.id }
+    )
+
+    expect((await imputazioniDivergenti(movimento.id)).divergente).toBe(false)
+  })
+})
+
+describe('riallineaFette (Task 7, passo 2)', () => {
+  it('rigenera le fette dall\'imputazione corrente, non da quella con cui il movimento fu pagato', async () => {
+    const { fattura, lordo } = await fatturaMista()
+    const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+    const movimento = await creaMovimento({ uscita: lordo, venueId })
+
+    await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+    })
+    expect(await fettePerConto(movimento.id)).toEqual({
+      [contoAlimentari]: 1100,
+      [contoDetersivi]: 122,
+    })
+
+    await prisma.invoiceLineAccount.update({
+      where: { invoiceId_numeroLinea_progressivo: { invoiceId: fattura.id, numeroLinea: 2, progressivo: 0 } },
+      data: { accountId: contoTerzo },
+    })
+    expect((await imputazioniDivergenti(movimento.id)).divergente).toBe(true)
+
+    const eseguiti = await prisma.$transaction((tx) => riallineaFette(tx, movimento.id))
+    expect(eseguiti).toEqual([
+      { reconciliationId: expect.any(String), invoiceId: fattura.id, fetteRimosse: 2, fetteScritte: 2 },
+    ])
+
+    // La fetta dei detersivi ora sta sul conto nuovo, non più su quello vecchio,
+    // e con lo stesso importo: solo l'attribuzione è cambiata.
+    expect(await fettePerConto(movimento.id)).toEqual({
+      [contoAlimentari]: 1100,
+      [contoTerzo]: 122,
+    })
+  })
+
+  it('il riallineamento non lascia una divergenza dietro di sé, e non ci arriva cancellando senza riscrivere', async () => {
+    const { fattura, lordo } = await fatturaMista()
+    const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+    const movimento = await creaMovimento({ uscita: lordo, venueId })
+
+    await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+    })
+    await prisma.invoiceLineAccount.update({
+      where: { invoiceId_numeroLinea_progressivo: { invoiceId: fattura.id, numeroLinea: 2, progressivo: 0 } },
+      data: { accountId: contoTerzo },
+    })
+
+    const eseguiti = await prisma.$transaction((tx) => riallineaFette(tx, movimento.id))
+
+    // Non basta che la rilevazione taccia dopo: una versione che cancellasse
+    // le fette senza mai riscriverle darebbe lo stesso silenzio, perché la
+    // rilevazione salta le riconciliazioni senza fette (vedi il report,
+    // rischio "verde per la ragione sbagliata"). Qui si controlla anche che
+    // le fette esistano davvero.
+    expect(eseguiti[0].fetteScritte).toBeGreaterThan(0)
+    expect(await fettePerConto(movimento.id)).not.toEqual({})
+
+    expect(await imputazioniDivergenti(movimento.id)).toEqual({
+      divergente: false,
+      invoiceId: null,
+      modificataIl: null,
+    })
+  })
+
+  it('riallineare un movimento senza divergenza non scrive nulla', async () => {
+    const { fattura, lordo } = await fatturaMista()
+    const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+    const movimento = await creaMovimento({ uscita: lordo, venueId })
+    await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+    })
+    const prima = await fettePerConto(movimento.id)
+
+    const eseguiti = await prisma.$transaction((tx) => riallineaFette(tx, movimento.id))
+
+    expect(eseguiti).toEqual([])
+    expect(await fettePerConto(movimento.id)).toEqual(prima)
+  })
+
+  it('tutto o niente: se la fattura non è più coperta il riallineamento va indietro, non lascia la riconciliazione senza fette', async () => {
+    const { fattura, lordo } = await fatturaMista()
+    const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+    const movimento = await creaMovimento({ uscita: lordo, venueId })
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+    })
+    expect(esito.outcome).toBe('ok')
+    const fettePrimaDelTentativo = await fettePerConto(movimento.id)
+    const ivaPrimaDelTentativo = await ivaDiTestata(movimento.id)
+
+    // Un umano toglie la conferma alla riga dei detersivi (magari per
+    // riguardarla): `updatedAt` avanza (innesca la rilevazione) e la fattura
+    // non è più coperta per intero (innesca la guardia di copertura di
+    // `ereditaFetteDaFattura`, DOPO che le fette vecchie sono già cancellate).
+    await prisma.invoiceLineAccount.update({
+      where: { invoiceId_numeroLinea_progressivo: { invoiceId: fattura.id, numeroLinea: 2, progressivo: 0 } },
+      data: { stato: 'proposta' },
+    })
+    expect((await imputazioniDivergenti(movimento.id)).divergente).toBe(true)
+
+    await expect(
+      prisma.$transaction((tx) => riallineaFette(tx, movimento.id))
+    ).rejects.toThrow(RiallineamentoNonRigenerabile)
+
+    // Rollback vero, non una cancellazione a metà: le fette vecchie ci sono
+    // ancora, tali e quali, e l'IVA di testata pure.
+    expect(await fettePerConto(movimento.id)).toEqual(fettePrimaDelTentativo)
+    expect(await ivaDiTestata(movimento.id)).toBe(ivaPrimaDelTentativo)
+    // E lo stato resta segnalato, non "già allineato": si può risistemare la
+    // fattura e riprovare dalla stessa rotta.
+    expect((await imputazioniDivergenti(movimento.id)).divergente).toBe(true)
+  })
+
+  it('coesiste con una fetta manuale (spec sezione 3): rigenera le ereditate e lascia la manuale intoccata', async () => {
+    // «Le fette manuali restano intoccate» (spec sezione 2) qualifica cosa il
+    // riallineamento non deve toccare, non una condizione che gli impedisce
+    // di eseguire: la guardia "le manuali vincono" di `ereditaFetteDaFattura`
+    // esiste per la riconciliazione NUOVA (non aggiungere ereditarietà dove
+    // un umano ha già diviso il movimento), non per la rigenerazione di una
+    // riconciliazione che con quella fetta manuale coesisteva già.
+    const { fattura, lordo } = await fatturaMista()
+    const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+    // Il movimento è più grande della fattura: la riconciliazione copre solo
+    // 1.222, i restanti 500 restano sul conto di testata (spec sezione 3) — è
+    // lì che arriva, in seguito, uno split manuale del residuo.
+    const movimento = await creaMovimento({ uscita: lordo + 500, venueId })
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+    })
+    expect(esito.outcome).toBe('ok')
+    expect(await fettePerConto(movimento.id)).toEqual({
+      [contoAlimentari]: 1100,
+      [contoDetersivi]: 122,
+    })
+
+    // Split manuale del residuo, con la vera API di prima nota (non una
+    // scrittura diretta): è lo stato che l'applicazione ammette davvero,
+    // fette ereditate e fetta manuale che coesistono sullo stesso movimento.
+    const split = await setEntryAllocations({
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+      fette: [{ accountId: contoTerzo, importo: 500 }],
+    })
+    expect(split.outcome).toBe('ok')
+    const fettaManualePrima = await prisma.journalEntryAllocation.findFirstOrThrow({
+      where: { journalEntryId: movimento.id, origine: 'manuale' },
+    })
+
+    // Entrambe le righe della fattura confluiscono sullo stesso conto: le
+    // ereditate diventano un'unica fetta da 1.222, più facile da verificare.
+    await prisma.invoiceLineAccount.update({
+      where: { invoiceId_numeroLinea_progressivo: { invoiceId: fattura.id, numeroLinea: 2, progressivo: 0 } },
+      data: { accountId: contoAlimentari },
+    })
+    expect((await imputazioniDivergenti(movimento.id)).divergente).toBe(true)
+
+    const eseguiti = await prisma.$transaction((tx) => riallineaFette(tx, movimento.id))
+
+    expect(eseguiti).toEqual([
+      { reconciliationId: expect.any(String), invoiceId: fattura.id, fetteRimosse: 2, fetteScritte: 1 },
+    ])
+    // Le ereditate si sono rigenerate (1.100 + 122 sullo stesso conto ora),
+    // e la fetta manuale del residuo è ancora lì, invariata.
+    expect(await fettePerConto(movimento.id)).toEqual({
+      [contoAlimentari]: 1222,
+      [contoTerzo]: 500,
+    })
+    const fettaManualeDopo = await prisma.journalEntryAllocation.findFirstOrThrow({
+      where: { journalEntryId: movimento.id, origine: 'manuale' },
+    })
+    // Stessa riga di prima, non una ricreata: id invariato.
+    expect(fettaManualeDopo.id).toBe(fettaManualePrima.id)
+  })
+
+  it('tutto o niente: se la fattura non è più coperta il riallineamento va indietro anche con una fetta manuale coesistente', async () => {
+    // Distingue la guardia saltata (manuali) dalle altre sei ancora attive:
+    // qui la fetta manuale non c'entra, ma la fattura non è più coperta —
+    // deve bloccare la rigenerazione esattamente come senza fette manuali.
+    const { fattura, lordo } = await fatturaMista()
+    const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+    const movimento = await creaMovimento({ uscita: lordo + 500, venueId })
+
+    const esito = await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+    })
+    expect(esito.outcome).toBe('ok')
+
+    const split = await setEntryAllocations({
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+      fette: [{ accountId: contoTerzo, importo: 500 }],
+    })
+    expect(split.outcome).toBe('ok')
+
+    // Un umano toglie la conferma alla riga dei detersivi: la fattura non è
+    // più coperta per intero, indipendentemente dalla fetta manuale.
+    await prisma.invoiceLineAccount.update({
+      where: { invoiceId_numeroLinea_progressivo: { invoiceId: fattura.id, numeroLinea: 2, progressivo: 0 } },
+      data: { stato: 'proposta' },
+    })
+    expect((await imputazioniDivergenti(movimento.id)).divergente).toBe(true)
+
+    const fettePrimaDelTentativo = await fettePerConto(movimento.id)
+
+    await expect(
+      prisma.$transaction((tx) => riallineaFette(tx, movimento.id))
+    ).rejects.toThrow(RiallineamentoNonRigenerabile)
+
+    expect(await fettePerConto(movimento.id)).toEqual(fettePrimaDelTentativo)
+    expect((await imputazioniDivergenti(movimento.id)).divergente).toBe(true)
+  })
+})
+
+describe('riallineaFette e l\'IVA di testata (Task 7 su Fase A)', () => {
+  it('non riscrive l\'IVA che un essere umano ha dichiarato, anche dopo il riallineamento', async () => {
+    const { fattura, lordo } = await fatturaMista()
+    const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+    // 30 € dichiarati a mano: la riconciliazione si asterrà già dallo scriverci sopra.
+    const movimento = await creaMovimento({ uscita: lordo, iva: 30, venueId })
+
+    await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+    })
+    expect(await ivaDiTestata(movimento.id)).toBe(30)
+
+    await prisma.invoiceLineAccount.update({
+      where: { invoiceId_numeroLinea_progressivo: { invoiceId: fattura.id, numeroLinea: 2, progressivo: 0 } },
+      data: { accountId: contoTerzo },
+    })
+    await prisma.$transaction((tx) => riallineaFette(tx, movimento.id))
+
+    // Il riallineamento cancella e riscrive le fette, ma il numero che un
+    // essere umano ha messo in testata non è mai stato suo da toccare.
+    expect(await ivaDiTestata(movimento.id)).toBe(30)
+  })
+
+  it("l'IVA di testata segue le fette nuove quando è ancora la nostra, con un totale diverso da prima", async () => {
+    // Scenario Task 6 spostato al riallineamento: fattura mista pagata al
+    // netto di una nota che non esiste ancora (1.100 di 1.222, come nel test
+    // di riconciliazione di Task 6), poi arriva e viene imputata una nota di
+    // credito che rettifica i detersivi (100 @22% = 122 lordi). Alla
+    // riconciliazione originaria i pesi sono quelli pieni — nessuna nota
+    // esisteva — e il pagamento parziale si spalma su entrambi i conti; dopo
+    // il riallineamento la nota entra nel calcolo e i detersivi spariscono
+    // del tutto: un totale IVA realmente diverso, non lo stesso numero
+    // riscritto due volte.
+    //
+    // Non si tocca nessuna riga della fattura originaria: confermare la nota
+    // basta da sola a far scattare la rilevazione (vedi i test del passo 1),
+    // quindi qui non serve altro innesco.
+    const { fattura } = await fatturaMista()
+    const scadenza = await creaScadenza({ importoTotale: 1222, invoiceId: fattura.id, venueId })
+    const movimento = await creaMovimento({ uscita: 1100, venueId })
+
+    await reconcileScheduleWithEntry({
+      scheduleId: scadenza.id,
+      journalEntryId: movimento.id,
+      venueId,
+      userId: null,
+    })
+    expect(await fettePerConto(movimento.id)).toEqual({
+      [contoAlimentari]: 990.18,
+      [contoDetersivi]: 109.82,
+    })
+
+    await creaFatturaConRighe(
+      [{ numeroLinea: 1, descrizione: 'Detersivi resi', prezzoTotale: 100, aliquotaIVA: 22, accountId: contoDetersivi }],
+      { documentType: 'TD04', rettificaInvoiceId: fattura.id }
+    )
+    expect((await imputazioniDivergenti(movimento.id)).divergente).toBe(true)
+
+    const eseguiti = await prisma.$transaction((tx) => riallineaFette(tx, movimento.id))
+    expect(eseguiti).toEqual([
+      { reconciliationId: expect.any(String), invoiceId: fattura.id, fetteRimosse: 2, fetteScritte: 1 },
+    ])
+
+    // Tutti i 1.100 pagati vanno sugli alimentari (conto invariato): la nota,
+    // imputata per intero, azzera del tutto i detersivi.
+    expect(await fettePerConto(movimento.id)).toEqual({ [contoAlimentari]: 1100 })
+    expect(await ivaDiTestata(movimento.id)).toBe(100)
+  })
+
+  it('un movimento che salda due fatture: riallineare la prima non tocca l\'IVA della seconda', async () => {
+    const prima = await fatturaMista()
+    const seconda = await fatturaMista()
+    const movimento = await creaMovimento({ uscita: 2444, venueId })
+
+    for (const { fattura, lordo } of [prima, seconda]) {
+      const scadenza = await creaScadenza({ importoTotale: lordo, invoiceId: fattura.id, venueId })
+      const esito = await reconcileScheduleWithEntry({
+        scheduleId: scadenza.id,
+        journalEntryId: movimento.id,
+        venueId,
+        userId: null,
+      })
+      expect(esito.outcome).toBe('ok')
+    }
+    expect(await ivaDiTestata(movimento.id)).toBe(244)
+
+    await prisma.invoiceLineAccount.update({
+      where: { invoiceId_numeroLinea_progressivo: { invoiceId: prima.fattura.id, numeroLinea: 2, progressivo: 0 } },
+      data: { accountId: contoTerzo },
+    })
+
+    await prisma.$transaction((tx) => riallineaFette(tx, movimento.id))
+
+    // Il totale non cambia — riassegnare un conto non cambia l'IVA del
+    // documento — ma deve restare 244 passando per il ritiro e la riscrittura,
+    // non per caso: se il ritiro avesse la quota sbagliata il totale finale
+    // sarebbe diverso da 244 (vedi il report per la controprova per inversione).
+    expect(await ivaDiTestata(movimento.id)).toBe(244)
+    expect(await fettePerConto(movimento.id)).toEqual({
+      [contoAlimentari]: 1100 + 1100,
+      [contoTerzo]: 122,
+      [contoDetersivi]: 122,
+    })
+  })
+})

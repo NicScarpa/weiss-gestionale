@@ -251,6 +251,18 @@ describe('calcolaPesiConIva', () => {
 
     expect(pesi).toEqual([{ accountId: 'alimentari', importo: 1100, iva: 100 }])
   })
+
+  it('sottrae le righe della nota di credito dai pesi della fattura rettificata', () => {
+    // Fattura: alimentari 1.000 @10%, detersivi 100 @22%. Nota di credito:
+    // i detersivi resi. Pagamento di 1.100.
+    const pesi = calcolaPesiConIva([
+      { accountId: 'alimentari', imponibile: 1000, aliquota: 10 },
+      { accountId: 'pulizia', imponibile: 100, aliquota: 22 },
+      { accountId: 'pulizia', imponibile: -100, aliquota: 22 },
+    ])
+
+    expect(pesi).toEqual([{ accountId: 'alimentari', importo: 1100, iva: 100 }])
+  })
 })
 
 describe('ripartisciProQuotaConIva', () => {

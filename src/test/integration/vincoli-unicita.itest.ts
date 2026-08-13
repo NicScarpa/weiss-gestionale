@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { prisma } from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
 import { setupIntegrationDb } from './db'
 import { creaChiusura, venueDiTest } from './fixtures/closures'
 
@@ -56,5 +57,103 @@ describe('vincoli di unicità nel database di test', () => {
     const seconda = await creaChiusura({ date: GIORNO, venueId: altra.id })
 
     expect(seconda.venueId).toBe(altra.id)
+  })
+})
+
+/**
+ * `InvoiceLineAccount`: il vincolo di unicità che il Task 5 sposta.
+ *
+ * Prima era `unique(invoiceId, numeroLinea)`, che vietava per costruzione due
+ * imputazioni sulla stessa riga — cioè vietava il fornitore che accorpa voci
+ * diverse in una riga sola (100 € di "detersivi" che sono 60 di detersivi e
+ * 40 di tovaglioli). Il vincolo nuovo, `unique(invoiceId, numeroLinea,
+ * progressivo)`, apre quel caso senza aprire i duplicati: stesso numeroLinea
+ * e progressivo diverso convivono, stesso numeroLinea e stesso progressivo no.
+ */
+describe('InvoiceLineAccount: la riga di fattura divisibile fra più conti', () => {
+  async function fatturaDiTest() {
+    const venueId = (await venueDiTest()).id
+    return prisma.electronicInvoice.create({
+      data: {
+        venueId,
+        invoiceNumber: `FT-${Math.random().toString(36).slice(2, 10)}`,
+        invoiceDate: new Date('2026-08-01'),
+        supplierVat: '01234567890',
+        supplierName: 'Fornitore di prova',
+        totalAmount: new Prisma.Decimal(100),
+        netAmount: new Prisma.Decimal(100),
+        vatAmount: new Prisma.Decimal(0),
+        status: 'RECORDED',
+      },
+    })
+  }
+
+  async function contoDiTest() {
+    const conto = await prisma.account.findFirst({ where: { isActive: true } })
+    if (!conto) {
+      throw new Error('Nessun conto attivo nel seed di test.')
+    }
+    return conto.id
+  }
+
+  it('due imputazioni sullo stesso numeroLinea con progressivo diverso: entrambe valide', async () => {
+    const fattura = await fatturaDiTest()
+    const accountId = await contoDiTest()
+
+    await prisma.invoiceLineAccount.create({
+      data: {
+        invoiceId: fattura.id,
+        numeroLinea: 1,
+        progressivo: 0,
+        descrizione: 'Detersivi',
+        importo: new Prisma.Decimal(60),
+        accountId,
+        fonte: 'manuale',
+      },
+    })
+    const seconda = await prisma.invoiceLineAccount.create({
+      data: {
+        invoiceId: fattura.id,
+        numeroLinea: 1,
+        progressivo: 1,
+        descrizione: 'Tovaglioli',
+        importo: new Prisma.Decimal(40),
+        accountId,
+        fonte: 'manuale',
+      },
+    })
+
+    expect(seconda.progressivo).toBe(1)
+  })
+
+  it('due imputazioni sullo stesso numeroLinea e stesso progressivo: violazione di unicità', async () => {
+    const fattura = await fatturaDiTest()
+    const accountId = await contoDiTest()
+
+    await prisma.invoiceLineAccount.create({
+      data: {
+        invoiceId: fattura.id,
+        numeroLinea: 1,
+        progressivo: 0,
+        descrizione: 'Detersivi',
+        importo: new Prisma.Decimal(60),
+        accountId,
+        fonte: 'manuale',
+      },
+    })
+
+    await expect(
+      prisma.invoiceLineAccount.create({
+        data: {
+          invoiceId: fattura.id,
+          numeroLinea: 1,
+          progressivo: 0,
+          descrizione: 'Tovaglioli',
+          importo: new Prisma.Decimal(40),
+          accountId,
+          fonte: 'manuale',
+        },
+      })
+    ).rejects.toMatchObject({ code: 'P2002' })
   })
 })

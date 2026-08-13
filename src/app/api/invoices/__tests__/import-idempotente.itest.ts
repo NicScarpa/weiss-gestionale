@@ -65,6 +65,10 @@ interface OpzioniXml {
   piva?: string
   /** Rate del documento: una riga DettaglioPagamento ciascuna. */
   rate?: Array<{ scadenza: string; importo: string }>
+  /** TD01 di default; TD04/TD05/TD08/TD09 per le note (Task 6). */
+  tipoDocumento?: string
+  /** `DatiFattureCollegate`: il riferimento della nota alla fattura rettificata. */
+  fattureCollegate?: Array<{ idDocumento: string; data?: string }>
 }
 
 /**
@@ -77,6 +81,7 @@ function xmlFattura(opzioni: OpzioniXml = {}): string {
   const data = opzioni.data ?? DATA
   const piva = opzioni.piva ?? PIVA
   const rate = opzioni.rate ?? [{ scadenza: '2026-07-01', importo: '122.00' }]
+  const tipoDocumento = opzioni.tipoDocumento ?? 'TD01'
 
   const dettagliPagamento = rate
     .map(
@@ -86,6 +91,15 @@ function xmlFattura(opzioni: OpzioniXml = {}): string {
         <DataScadenzaPagamento>${rata.scadenza}</DataScadenzaPagamento>
         <ImportoPagamento>${rata.importo}</ImportoPagamento>
       </DettaglioPagamento>`
+    )
+    .join('')
+
+  const datiFattureCollegate = (opzioni.fattureCollegate ?? [])
+    .map(
+      (rif) => `
+      <DatiFattureCollegate>
+        <IdDocumento>${rif.idDocumento}</IdDocumento>${rif.data ? `\n        <Data>${rif.data}</Data>` : ''}
+      </DatiFattureCollegate>`
     )
     .join('')
 
@@ -129,12 +143,12 @@ function xmlFattura(opzioni: OpzioniXml = {}): string {
   <FatturaElettronicaBody>
     <DatiGenerali>
       <DatiGeneraliDocumento>
-        <TipoDocumento>TD01</TipoDocumento>
+        <TipoDocumento>${tipoDocumento}</TipoDocumento>
         <Divisa>EUR</Divisa>
         <Data>${data}</Data>
         <Numero>${numero}</Numero>
         <ImportoTotaleDocumento>122.00</ImportoTotaleDocumento>
-      </DatiGeneraliDocumento>
+      </DatiGeneraliDocumento>${datiFattureCollegate}
     </DatiGenerali>
     <DatiBeniServizi>
       <DettaglioLinee>
@@ -275,6 +289,79 @@ describe('POST /api/invoices — atomicità', () => {
     expect(risposta.body.scadenzeGenerate).toBe(2)
     expect(await prisma.invoiceDeadline.count()).toBe(2)
     expect(await prisma.schedule.count()).toBe(2)
+  })
+})
+
+/**
+ * Task 6, round 2 (Important 3 e 4): la risoluzione di `rettificaInvoiceId`
+ * all'import di una nota di credito non aveva alcun test — le tre falle del
+ * round 1 (nota di debito sottratta, pagamento pieno, collegamento senza
+ * data) sono passate tutte da qui.
+ */
+describe('POST /api/invoices — nota di credito: risoluzione del collegamento (Task 6)', () => {
+  it('TD04 che referenzia una fattura esistente: rettificaInvoiceId si valorizza', async () => {
+    await loginAs('admin')
+
+    const fattura = await importa<{ id: string }>(xmlFattura())
+    expect(fattura.status).toBe(201)
+
+    const nota = await importa<{ id: string }>(
+      xmlFattura({
+        numero: 'NC-0001',
+        tipoDocumento: 'TD04',
+        fattureCollegate: [{ idDocumento: NUMERO, data: DATA }],
+      })
+    )
+    expect(nota.status).toBe(201)
+
+    const notaDb = await prisma.electronicInvoice.findUniqueOrThrow({ where: { id: nota.body.id } })
+    expect(notaDb.rettificaInvoiceId).toBe(fattura.body.id)
+  })
+
+  it('TD04 che referenzia un numero sconosciuto: resta null, l\'import risponde comunque 201', async () => {
+    await loginAs('admin')
+
+    const nota = await importa<{ id: string }>(
+      xmlFattura({
+        numero: 'NC-0002',
+        tipoDocumento: 'TD04',
+        fattureCollegate: [{ idDocumento: '9999/9999', data: '2020-01-01' }],
+      })
+    )
+
+    expect(nota.status).toBe(201)
+    const notaDb = await prisma.electronicInvoice.findUniqueOrThrow({ where: { id: nota.body.id } })
+    expect(notaDb.rettificaInvoiceId).toBeNull()
+  })
+
+  it('due fatture con lo stesso numero (rinumerazione annuale): la data nel riferimento sceglie quella giusta', async () => {
+    // Lo stesso fornitore, lo stesso numero "1" in due anni diversi — la
+    // norma, non un caso limite. Senza la data la query prenderebbe una
+    // fattura arbitraria; con la data presente nell'XML deve prendere
+    // esattamente quella referenziata, mai l'altra.
+    await loginAs('admin')
+
+    const vecchia = await importa<{ id: string }>(
+      xmlFattura({ numero: '1', data: '2025-03-10' })
+    )
+    const nuova = await importa<{ id: string }>(
+      xmlFattura({ numero: '1', data: '2026-03-10' })
+    )
+    expect(vecchia.status).toBe(201)
+    expect(nuova.status).toBe(201)
+
+    const nota = await importa<{ id: string }>(
+      xmlFattura({
+        numero: 'NC-0003',
+        tipoDocumento: 'TD04',
+        fattureCollegate: [{ idDocumento: '1', data: '2025-03-10' }],
+      })
+    )
+    expect(nota.status).toBe(201)
+
+    const notaDb = await prisma.electronicInvoice.findUniqueOrThrow({ where: { id: nota.body.id } })
+    expect(notaDb.rettificaInvoiceId).toBe(vecchia.body.id)
+    expect(notaDb.rettificaInvoiceId).not.toBe(nuova.body.id)
   })
 })
 

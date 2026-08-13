@@ -5,17 +5,44 @@ import { z } from 'zod'
 import { getVenueId } from '@/lib/venue'
 import { createAuditLog } from '@/lib/audit'
 import { logger } from '@/lib/logger'
+import { formatCurrency } from '@/lib/formatters'
+import { TOLLERANZA_IMPORTI } from '@/lib/scadenzario/stato-schedule'
 import { parseFatturaPA } from '@/lib/sdi/parser'
 import { alimentaMemoriaFornitore } from '@/lib/line-categorization/memoria'
+import { righeDiSistema, LINEA_BOLLO, LINEA_ARROTONDAMENTO } from '@/lib/sdi/righe-di-sistema'
 
 interface RouteContext {
   params: Promise<{ id: string }>
 }
 
 const rigaSchema = z.object({
-  numeroLinea: z.number().int().positive(),
+  // Un numeroLinea vero è sempre positivo (indice in DettaglioLinee), ma
+  // bollo e arrotondamento vivono fuori dall'XML e usano i due numeri
+  // riservati negativi: .int() da solo accetterebbe qualunque intero, quindi
+  // serve l'elenco esplicito di ciò che oltre ai positivi è ammesso.
+  numeroLinea: z
+    .number()
+    .int()
+    .refine(
+      (n) => n > 0 || n === LINEA_BOLLO || n === LINEA_ARROTONDAMENTO,
+      'numeroLinea deve essere positivo, oppure uno dei numeri riservati (bollo, arrotondamento)'
+    ),
+  // Quota dentro la riga: più elementi con lo stesso numeroLinea e progressivo
+  // diverso sono le quote di una riga divisa fra più conti. Se assente, il
+  // server assegna la posizione della quota dentro il gruppo (0, 1, 2, ...).
+  progressivo: z.number().int().nonnegative().optional(),
   accountId: z.string().min(1),
+  // L'importo di una riga intera si legge sempre dal documento (XML o riga
+  // di sistema): questo campo serve solo alle quote di una riga divisa, dove
+  // nessun documento sa dire come si spartisce il totale fra i conti.
+  // `.positive()`: una riga di sconto/reso a importo negativo è cosa del
+  // documento (righeXml può portarla), non qualcosa che una quota scritta a
+  // mano debba poter fabbricare — e uno zero occuperebbe un progressivo
+  // senza portare nulla, sotto la soglia di ogni controllo a valle.
+  importo: z.number().positive().optional(),
 })
+
+type Riga = z.infer<typeof rigaSchema>
 
 const righeContiSchema = z.object({
   righe: z.array(rigaSchema).optional(),
@@ -65,11 +92,17 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       const righeXml = new Map(
         (fattura.dettaglioLinee || []).map((linea) => [linea.numeroLinea, linea])
       )
+      // Bollo e arrotondamento non stanno in DettaglioLinee ma sono
+      // imputabili quanto le righe vere: senza contarli qui, una fattura che
+      // li porta non potrebbe mai coprire l'intero documento (vedi
+      // righe-di-sistema.ts).
+      const righeSistema = new Map(righeDiSistema(fattura).map((riga) => [riga.numeroLinea, riga]))
 
       // Valida tutte le righe richieste PRIMA di scrivere: un numeroLinea
-      // inesistente nell'XML non deve produrre scritture parziali.
+      // inesistente nell'XML (né fra le righe vere né fra quelle di sistema)
+      // non deve produrre scritture parziali.
       for (const riga of validated.righe) {
-        if (!righeXml.has(riga.numeroLinea)) {
+        if (!righeXml.has(riga.numeroLinea) && !righeSistema.has(riga.numeroLinea)) {
           return NextResponse.json(
             { error: `La riga ${riga.numeroLinea} non esiste nella fattura` },
             { status: 400 }
@@ -77,62 +110,259 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         }
       }
 
-      // Solo conti di tipo COSTO possono ricevere l'imputazione di una riga
-      // fattura: via API si potrebbe altrimenti imputare a un conto RICAVO,
-      // inquinando anche la memoria fornitore-prodotto e le future proposte.
+      // Conti di tipo COSTO o PATRIMONIALE possono ricevere l'imputazione di
+      // una riga fattura: un frigorifero acquistato con fattura è un bene
+      // patrimoniale, non un costo, e prima di questo cambiamento non poteva
+      // essere imputato. RICAVO, ATTIVO e PASSIVO restano esclusi: via API si
+      // potrebbe altrimenti imputare a un conto RICAVO, inquinando anche la
+      // memoria fornitore-prodotto e le future proposte.
       const accountIds = new Set(validated.righe.map((riga) => riga.accountId))
       const conti = await prisma.account.findMany({
-        where: { id: { in: [...accountIds] }, isActive: true, type: 'COSTO' },
+        where: { id: { in: [...accountIds] }, isActive: true, type: { in: ['COSTO', 'PATRIMONIALE'] } },
         select: { id: true },
       })
       if (conti.length !== accountIds.size) {
         return NextResponse.json(
-          { error: 'Uno o più conti non esistono, non sono attivi o non sono di tipo COSTO' },
+          {
+            error:
+              'Uno o più conti non esistono, non sono attivi o non sono di tipo COSTO o PATRIMONIALE',
+          },
           { status: 400 }
         )
       }
 
+      // Raggruppa le righe della richiesta per numeroLinea: più elementi con
+      // lo stesso numeroLinea sono le quote di una riga divisa fra più conti
+      // (un fornitore che accorpa voci diverse in una riga sola). Una riga
+      // con una sola quota si comporta come prima del Task 5.
+      const gruppiPerLinea = new Map<number, Riga[]>()
+      for (const riga of validated.righe) {
+        const gruppo = gruppiPerLinea.get(riga.numeroLinea)
+        if (gruppo) gruppo.push(riga)
+        else gruppiPerLinea.set(riga.numeroLinea, [riga])
+      }
+
+      // Prevalidazione delle righe divise, PRIMA di scrivere qualunque riga:
+      // una riga divisa che non quadra è un 400, non un salvataggio
+      // parziale — e questo vale anche quando la richiesta ne contiene più
+      // d'una, la prima valida non deve scriversi se la seconda è sbagliata.
+      for (const [numeroLinea, quote] of gruppiPerLinea) {
+        if (quote.length < 2) continue
+
+        // Le righe di sistema non si dividono fra più conti (decisione
+        // Task 8): sono importi unici e piccoli — il bollo, l'arrotondamento
+        // — non l'accorpamento di voci eterogenee che giustifica la
+        // divisione di una riga vera. Senza questo controllo un bollo si
+        // sarebbe potuto dividere silenziosamente (nulla lo impediva), e un
+        // arrotondamento negativo avrebbe comunque fallito, ma con l'errore
+        // generico di Zod su `.positive()` invece che con una spiegazione.
+        if (numeroLinea === LINEA_BOLLO || numeroLinea === LINEA_ARROTONDAMENTO) {
+          return NextResponse.json(
+            { error: 'Le righe di sistema (bollo, arrotondamento) non si dividono fra più conti' },
+            { status: 400 }
+          )
+        }
+
+        // Progressivi duplicati sovrascriverebbero silenziosamente una quota
+        // con l'altra (stesso vincolo di unicità di riga-conto-progressivo):
+        // si scarta prima di scrivere, non dopo.
+        const progressivi = quote.map((riga, indice) => riga.progressivo ?? indice)
+        if (new Set(progressivi).size !== progressivi.length) {
+          return NextResponse.json(
+            { error: `La riga ${numeroLinea} ha due quote con lo stesso progressivo` },
+            { status: 400 }
+          )
+        }
+
+        // L'importo di ogni quota non è derivabile dal documento (che
+        // conosce solo il totale della riga): deve arrivare dal chiamante.
+        if (quote.some((riga) => riga.importo === undefined)) {
+          return NextResponse.json(
+            {
+              error: `La riga ${numeroLinea} è divisa in più quote: ogni quota deve indicare il proprio importo`,
+            },
+            { status: 400 }
+          )
+        }
+
+        const dettaglio = righeXml.get(numeroLinea)
+        const sistema = righeSistema.get(numeroLinea)
+        const importoRiga = dettaglio ? dettaglio.prezzoTotale : sistema!.importo
+        const sommaQuote = quote.reduce((s, riga) => s + riga.importo!, 0)
+        const differenza = importoRiga - sommaQuote
+        if (Math.abs(differenza) > TOLLERANZA_IMPORTI) {
+          const scarto =
+            differenza > 0
+              ? `mancano ${formatCurrency(differenza)}`
+              : `ci sono ${formatCurrency(Math.abs(differenza))} di troppo`
+          return NextResponse.json(
+            {
+              error: `Le quote della riga ${numeroLinea} sommano a ${formatCurrency(sommaQuote)}, ma la riga vale ${formatCurrency(importoRiga)}: ${scarto}`,
+            },
+            { status: 400 }
+          )
+        }
+      }
+
       const adesso = new Date()
 
-      for (const riga of validated.righe) {
-        const linea = righeXml.get(riga.numeroLinea)!
-        await prisma.invoiceLineAccount.upsert({
-          where: {
-            invoiceId_numeroLinea: { invoiceId: id, numeroLinea: riga.numeroLinea },
-          },
-          create: {
-            invoiceId: id,
-            numeroLinea: riga.numeroLinea,
-            descrizione: linea.descrizione,
-            codiceArticolo: linea.codiceArticolo ?? null,
-            importo: linea.prezzoTotale,
-            accountId: riga.accountId,
-            stato: 'confermata',
-            fonte: 'manuale',
-            confirmedById: session.user.id,
-            confirmedAt: adesso,
-          },
-          update: {
-            descrizione: linea.descrizione,
-            codiceArticolo: linea.codiceArticolo ?? null,
-            importo: linea.prezzoTotale,
-            accountId: riga.accountId,
-            stato: 'confermata',
-            fonte: 'manuale',
-            confirmedById: session.user.id,
-            confirmedAt: adesso,
-          },
-        })
-        righeConfermate++
+      // Le righe da insegnare alla memoria fornitore-prodotto si raccolgono
+      // qui dentro e si scrivono DOPO la transazione. `alimentaMemoriaFornitore`
+      // usa il client globale — è best-effort e non deve mai far fallire la
+      // conferma dell'utente — quindi trascinarla dentro non la renderebbe
+      // transazionale, allungherebbe soltanto la durata del lock. E una
+      // memoria alimentata da una scrittura poi annullata insegnerebbe una
+      // regola nata dal nulla, che tornerebbe proposta su ogni fattura
+      // successiva dello stesso fornitore.
+      const daInsegnare: Array<{
+        descrizione: string
+        codiceArticolo: string | null
+        accountId: string
+      }> = []
 
-        // Un'imputazione manuale con fornitore noto alimenta la memoria
-        // fornitore-prodotto, riproposta in futuro per lo stesso articolo.
-        if (invoice.supplierId) {
+      // TUTTE le quote di TUTTE le righe in una sola transazione.
+      //
+      // Dal Task 5 una riga può avere più quote, e il ciclo le scrive una per
+      // volta prima di cancellare quelle non citate. Un'interruzione fra il
+      // primo e il secondo upsert lascerebbe la riga con la sola quota da 60
+      // su una riga che ne vale 100 — e la guardia di copertura
+      // (schedule-reconciliation-service.ts) conta i numeroLinea DISTINTI,
+      // quindi quella riga le risulta coperta. L'ereditarietà pro-quota
+      // scatterebbe assegnando a quel conto il 60% del peso che gli spetta,
+      // mentre gli altri si prendono il resto perché `ripartisciProQuota`
+      // chiude sempre sull'intera quota: nessun controllo se ne accorge,
+      // nessun log lo dice. Prima del Task 5 lo stesso incidente lasciava la
+      // riga NON imputata e la guardia si asteneva — il danno era visibile.
+      //
+      // L'ordine dentro la transazione resta upsert-poi-deleteMany, mai
+      // l'inverso: cancellare per prima cosa significherebbe, su
+      // un'interruzione, aver distrutto lavoro già confermato.
+      //
+      // Il tetto: due statement per quota (upsert + un deleteMany per riga,
+      // non per quota) dentro il timeout di default di `$transaction`
+      // (5 secondi in Prisma 7), reggono senza avvicinarsi al limite fino a
+      // circa 200 statement — una fattura con qualche centinaio di righe
+      // divise. Chi in futuro collega qui un consumer che scrive in blocco
+      // (import massivo, "Accetta tutte" esteso a più fatture) deve saperlo
+      // prima di scoprirlo da un timeout in produzione.
+      await prisma.$transaction(async (tx) => {
+        for (const [numeroLinea, quote] of gruppiPerLinea) {
+          // Una riga vera e una di sistema non condividono forma: la prima ha
+          // prezzoTotale e un eventuale codiceArticolo, la seconda solo
+          // descrizione e importo (il bollo non ha mai un codice articolo). La
+          // validazione sopra garantisce che almeno una delle due esista.
+          // Ternario su `dettaglio` per tutti e tre i campi, non `?? sistema!`:
+          // `DettaglioLinea.descrizione` è `string`, mai opzionale, quindi un
+          // `??` qui suggerirebbe una possibilità che il tipo esclude. Il
+          // ternario dice la stessa cosa senza asserzioni di non-nullità.
+          const dettaglio = righeXml.get(numeroLinea)
+          const sistema = righeSistema.get(numeroLinea)
+          const descrizione = dettaglio ? dettaglio.descrizione : sistema!.descrizione
+          const codiceArticolo = dettaglio ? dettaglio.codiceArticolo ?? null : null
+          const importoRiga = dettaglio ? dettaglio.prezzoTotale : sistema!.importo
+          // Divisa = più di una quota per QUESTA richiesta su questo
+          // numeroLinea. L'importo di una riga intera resta quello del
+          // documento (mai quello del client, che per una riga intera non
+          // serve nemmeno); l'importo di una quota è quello dichiarato, già
+          // validato contro il totale sopra.
+          //
+          // `quote.length` non è solo la forma della richiesta: grazie alla
+          // `deleteMany` più sotto, che rende la richiesta autorevole sulla
+          // riga che nomina, è ANCHE il numero di quote che restano su questa
+          // riga a scrittura conclusa — le altre vengono rimosse. Per questo
+          // `divisa` è la base giusta sia per decidere l'importo (sopra) sia
+          // per decidere se alimentare la memoria (sotto): una richiesta che
+          // nomina una sola quota di una riga già divisa non lascia la riga
+          // "ancora divisa nel frattempo", la riporta a una quota sola.
+          const divisa = quote.length > 1
+          const progressiviScritti: number[] = []
+
+          for (const [indice, riga] of quote.entries()) {
+            const progressivo = riga.progressivo ?? indice
+            const importo = divisa ? riga.importo! : importoRiga
+            progressiviScritti.push(progressivo)
+
+            await tx.invoiceLineAccount.upsert({
+              where: {
+                invoiceId_numeroLinea_progressivo: { invoiceId: id, numeroLinea, progressivo },
+              },
+              create: {
+                invoiceId: id,
+                numeroLinea,
+                progressivo,
+                descrizione,
+                codiceArticolo,
+                importo,
+                accountId: riga.accountId,
+                stato: 'confermata',
+                fonte: 'manuale',
+                confirmedById: session.user.id,
+                confirmedAt: adesso,
+              },
+              update: {
+                descrizione,
+                codiceArticolo,
+                importo,
+                accountId: riga.accountId,
+                stato: 'confermata',
+                fonte: 'manuale',
+                confirmedById: session.user.id,
+                confirmedAt: adesso,
+              },
+            })
+            righeConfermate++
+
+            // Un'imputazione manuale con fornitore noto alimenta la memoria
+            // fornitore-prodotto, riproposta in futuro per lo stesso articolo.
+            // Vale anche per bollo e arrotondamento: un fornitore che applica
+            // sempre il bollo insegna il conto anche per quello, `codiceArticolo`
+            // resta `null` come per ogni riga senza codice.
+            //
+            // Una riga DIVISA resta fuori: è specifica di questa fattura ("questi
+            // 100 € di detersivi erano 60 di detersivi e 40 di tovaglioli" non è
+            // una regola sul prodotto, è un fatto su un documento) e insegnarla
+            // produrrebbe proposte sbagliate su ogni fattura successiva dello
+            // stesso fornitore — proposte sbagliate che sembrano apprese.
+            //
+            // Qui si annota soltanto: la scrittura avviene dopo la
+            // transazione (vedi `daInsegnare`).
+            if (!divisa) {
+              daInsegnare.push({ descrizione, codiceArticolo, accountId: riga.accountId })
+            }
+          }
+
+          // La richiesta è autorevole sulla riga che nomina: ogni quota di
+          // QUESTO numeroLinea non citata in QUESTA richiesta viene rimossa.
+          // Senza questo passo, una richiesta che nomina un solo progressivo
+          // su una riga già divisa non sostituisce l'altra quota, la
+          // affianca: due imputazioni per l'intero importo della riga, in
+          // silenzio, e i pesi dell'ereditarietà pro-quota
+          // (schedule-reconciliation-service.ts) si sballano di conseguenza.
+          // Non è distruttivo per sbaglio: `InvoiceLineAccount` non è fra i
+          // `SOFT_DELETE_MODELS` (src/lib/prisma.ts), quindi qui la
+          // cancellazione vera è il comportamento giusto, e lo `scoping` sia
+          // sull'invoiceId sia sul singolo numeroLinea impedisce che tocchi le
+          // altre righe della stessa fattura.
+          await tx.invoiceLineAccount.deleteMany({
+            where: {
+              invoiceId: id,
+              numeroLinea,
+              progressivo: { notIn: progressiviScritti },
+            },
+          })
+        }
+      })
+
+      // Solo ora, a scrittura confermata: se la transazione fosse fallita non
+      // ci sarebbe nulla da imparare, e insegnarlo lo stesso produrrebbe una
+      // proposta futura fondata su un'imputazione che non esiste.
+      if (invoice.supplierId) {
+        for (const riga of daInsegnare) {
           await alimentaMemoriaFornitore({
             venueId,
             supplierId: invoice.supplierId,
-            descrizione: linea.descrizione,
-            codiceArticolo: linea.codiceArticolo ?? null,
+            descrizione: riga.descrizione,
+            codiceArticolo: riga.codiceArticolo,
             accountId: riga.accountId,
           })
         }
