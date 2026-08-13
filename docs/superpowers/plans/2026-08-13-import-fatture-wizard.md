@@ -21,6 +21,10 @@
 - **Niente UI che promette automazioni inesistenti.** Un dato mostrato dev'essere un dato che il sistema usa o conserva davvero.
 - **La build va eseguita**, non bastano `tsc` e i test: un import client→prisma rompe il bundle e nessuna revisione del diff lo vede. Mai `npm run build | tail` (l'exit code diventa quello di `tail`).
 - Test: `nvm use 22 && npm test -- --run <percorso>`. Type-check: `nvm use 22 && npx tsc --noEmit`.
+- **Una route non esporta nulla oltre ai suoi metodi HTTP.** Niente `export` di schemi, tipi o funzioni ausiliarie da un `route.ts`: `npm run build` in locale gira su Turbopack, la CI prova prima `next build --webpack`, e i due non concordano proprio su questo. Una build verde in locale non dice nulla su quella della CI. Tipi condivisi → in un modulo a parte.
+- **I test d'integrazione (`*.itest.ts`) usano l'impalcatura del progetto**, mai `vi.mock('@/lib/auth')` scritto a mano: `setupIntegrationDb()` da `@/test/integration/db`, `loginAs()` da `@/test/integration/auth-mock`, `jsonRequest()`/`callRoute()` da `@/test/integration/api`. Leggi `src/app/api/invoices/__tests__/import-idempotente.itest.ts` prima di scriverne uno.
+- **Ogni test d'integrazione si crea i dati che gli servono.** Non dare per esistente nulla che non hai inserito tu nel test: il database di test non è quello di sviluppo.
+- Le route nuove seguono lo stile di quelle vicine in `src/app/api/invoices/`: `auth()` diretto più controllo del ruolo. Il wrapper `AuthedRoute` di `api-utils.ts` non è lo standard di quest'area.
 
 ## Decisioni già prese (non ridiscuterle in esecuzione)
 
@@ -348,21 +352,49 @@ Nove documenti su 226 la portano — tutte parcelle TD06. Oggi si perde. La legg
 - Produces: `FatturaParsata.datiRitenuta?: DatiRitenuta`.
 - Produces: colonna `ElectronicInvoice.withholding Json?`.
 
-- [ ] **Step 1: Scrivere il test che fallisce**
+- [ ] **Step 0: Estrarre il generatore XML già esistente, invece di scriverne un terzo**
 
-In `src/lib/__tests__/sdi-parser.test.ts`:
+`src/app/api/invoices/__tests__/import-idempotente.itest.ts` contiene già `xmlFattura(opzioni)`: un FatturaPA parametrico e completo (numero, data, P.IVA, rate, `tipoDocumento`, `fattureCollegate`). Serve identico al Task 6 e al Task 10. Sarebbe la terza copia in giro — `src/app/api/invoices/[id]/righe-conti/__tests__/route.itest.ts` ne ha già una sua.
+
+1. Sposta `xmlFattura` e la sua `interface OpzioniXml` in `src/test/factories/fattura-xml.factory.ts` (stessa cartella e stesso stile di `closure.factory.ts`), esportandole.
+2. Aggiungi a `OpzioniXml` il campo che serve qui:
 
 ```typescript
+  /** DatiRitenuta nel documento: assente se non specificato. */
+  ritenuta?: { tipo: string; importo: string; aliquota: string; causale?: string }
+```
+
+e, dentro `DatiGeneraliDocumento`, subito dopo `ImportoTotaleDocumento`:
+
+```typescript
+  const datiRitenuta = opzioni.ritenuta
+    ? `<DatiRitenuta><TipoRitenuta>${opzioni.ritenuta.tipo}</TipoRitenuta><ImportoRitenuta>${opzioni.ritenuta.importo}</ImportoRitenuta><AliquotaRitenuta>${opzioni.ritenuta.aliquota}</AliquotaRitenuta>${opzioni.ritenuta.causale ? `<CausalePagamento>${opzioni.ritenuta.causale}</CausalePagamento>` : ''}</DatiRitenuta>`
+    : ''
+```
+
+3. In `import-idempotente.itest.ts` togli la definizione locale e importa `xmlFattura` dalla factory. Quel file deve restare verde: è la prova che l'estrazione non ha cambiato nulla.
+
+```bash
+nvm use 22 && npm test -- --run src/app/api/invoices/__tests__/import-idempotente.itest.ts
+```
+
+Atteso: PASS, stesso numero di test di prima.
+
+- [ ] **Step 1: Scrivere il test che fallisce**
+
+In `src/lib/__tests__/sdi-parser.test.ts`, usando la factory appena estratta:
+
+```typescript
+import { xmlFattura } from '@/test/factories/fattura-xml.factory'
+
 describe('estrazione della ritenuta d acconto', () => {
   it('legge tipo, importo, aliquota e causale', () => {
-    const conRitenuta = xmlNotaCredito
-      .replace('TD04', 'TD06')
-      .replace(
-        '</DatiGeneraliDocumento>',
-        '<DatiRitenuta><TipoRitenuta>RT02</TipoRitenuta><ImportoRitenuta>312.11</ImportoRitenuta><AliquotaRitenuta>20.00</AliquotaRitenuta><CausalePagamento>A</CausalePagamento></DatiRitenuta></DatiGeneraliDocumento>'
-      )
+    const xml = xmlFattura({
+      tipoDocumento: 'TD06',
+      ritenuta: { tipo: 'RT02', importo: '312.11', aliquota: '20.00', causale: 'A' },
+    })
 
-    const fattura = parseFatturaPASafe(conRitenuta, 'parcella.xml').data!
+    const fattura = parseFatturaPASafe(xml, 'parcella.xml').data!
 
     expect(fattura.datiRitenuta).toEqual({
       tipoRitenuta: 'RT02',
@@ -372,26 +404,44 @@ describe('estrazione della ritenuta d acconto', () => {
     })
   })
 
+  it('omette la causale quando il documento non la porta', () => {
+    const xml = xmlFattura({
+      tipoDocumento: 'TD06',
+      ritenuta: { tipo: 'RT01', importo: '226.00', aliquota: '20.00' },
+    })
+    const fattura = parseFatturaPASafe(xml, 'parcella.xml').data!
+
+    expect(fattura.datiRitenuta).toEqual({
+      tipoRitenuta: 'RT01',
+      importoRitenuta: 226,
+      aliquotaRitenuta: 20,
+    })
+  })
+
   it('lascia il campo assente quando la ritenuta non c è', () => {
-    const fattura = parseFatturaPASafe(xmlNotaCredito, 'fattura.xml').data!
+    const fattura = parseFatturaPASafe(xmlFattura(), 'fattura.xml').data!
     expect(fattura.datiRitenuta).toBeUndefined()
   })
 
   it('non intacca gli importi del documento', () => {
-    const conRitenuta = xmlNotaCredito
-      .replace('TD04', 'TD06')
-      .replace(
-        '</DatiGeneraliDocumento>',
-        '<DatiRitenuta><TipoRitenuta>RT02</TipoRitenuta><ImportoRitenuta>100.00</ImportoRitenuta><AliquotaRitenuta>20.00</AliquotaRitenuta></DatiRitenuta></DatiGeneraliDocumento>'
-      )
-    const importi = calcolaImporti(parseFatturaPASafe(conRitenuta, 'p.xml').data!)
+    const senza = calcolaImporti(parseFatturaPASafe(xmlFattura({ tipoDocumento: 'TD06' }), 'a.xml').data!)
+    const con = calcolaImporti(
+      parseFatturaPASafe(
+        xmlFattura({
+          tipoDocumento: 'TD06',
+          ritenuta: { tipo: 'RT02', importo: '100.00', aliquota: '20.00' },
+        }),
+        'b.xml'
+      ).data!
+    )
+
     // Il lordo resta quello del documento: la ritenuta non si sottrae qui.
-    expect(importi.totalAmount).toBe(164.33)
+    expect(con.totalAmount).toBe(senza.totalAmount)
   })
 })
 ```
 
-> Nota per chi esegue: `xmlNotaCredito` non esiste più nel Task 2 (riscritto). Crea qui la fixture condivisa `src/lib/sdi/__tests__/fixtures/fattura-minima.ts`, che esporta `XML_MINIMO` — la stessa che serviranno il Task 6 e il Task 10. Il documento è quello riportato per esteso nel **Task 6, Step 1**: copialo da lì, con `TipoDocumento` parametrizzabile via `.replace()`.
+> **Prima del test, lo Step 0 qui sotto: la fixture esiste già, va estratta.**
 
 - [ ] **Step 2: Eseguire il test e verificare che fallisca**
 
@@ -534,64 +584,107 @@ CashKing chiede la politica dei duplicati alla cieca e non mostra mai quali lo s
 
 - [ ] **Step 1: Scrivere il test che fallisce**
 
-Creare `src/app/api/fatture/verifica-duplicati/__tests__/route.itest.ts`, sullo stampo di `src/app/api/invoices/__tests__/import-idempotente.itest.ts` (leggerlo prima per riusare l'impalcatura di sessione e database):
+Creare `src/app/api/fatture/verifica-duplicati/__tests__/route.itest.ts`. **Leggi prima `src/app/api/invoices/__tests__/import-idempotente.itest.ts`**: l'impalcatura è quella, e va usata identica — `setupIntegrationDb()`, `loginAs()`, `jsonRequest()`. Niente `vi.mock('@/lib/auth')` scritto a mano, e nessun dato dato per esistente: il test si crea i propri.
 
 ```typescript
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { POST } from '../route'
+import { describe, it, expect } from 'vitest'
 import { prisma } from '@/lib/prisma'
+import { setupIntegrationDb } from '@/test/integration/db'
+import { loginAs } from '@/test/integration/auth-mock'
+import { jsonRequest } from '@/test/integration/api'
+import { venueDiTest } from '@/test/integration/fixtures/closures'
+import { POST } from '../route'
 
-vi.mock('@/lib/auth', () => ({
-  auth: vi.fn().mockResolvedValue({ user: { id: 'u1', role: 'admin' } }),
-}))
+setupIntegrationDb()
 
-function richiesta(body: unknown) {
-  return new Request('http://localhost/api/fatture/verifica-duplicati', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }) as never
+async function fatturaInArchivio(numero: string, data: string, piva: string) {
+  return prisma.electronicInvoice.create({
+    data: {
+      invoiceNumber: numero,
+      invoiceDate: new Date(`${data}T00:00:00.000Z`),
+      supplierVat: piva,
+      supplierName: 'FORNITORE DI PROVA SRL',
+      netAmount: 100,
+      vatAmount: 22,
+      totalAmount: 122,
+      venueId: await venueDiTest(),
+    },
+  })
 }
 
 describe('POST /api/fatture/verifica-duplicati', () => {
   it('segnala solo le fatture già presenti', async () => {
-    const esistente = await prisma.electronicInvoice.findFirst({ where: { deletedAt: null } })
-    expect(esistente).not.toBeNull()
+    await loginAs('admin')
+    const esistente = await fatturaInArchivio('DUP-1', '2026-06-01', '01234567890')
 
-    const res = await POST(richiesta({
-      fatture: [
-        {
-          chiave: 'gia-vista.xml',
-          numero: esistente!.invoiceNumber,
-          data: esistente!.invoiceDate.toISOString().slice(0, 10),
-          partitaIva: esistente!.supplierVat,
+    const res = await POST(
+      jsonRequest('/api/fatture/verifica-duplicati', {
+        method: 'POST',
+        body: {
+          fatture: [
+            { chiave: 'gia-vista.xml', numero: 'DUP-1', data: '2026-06-01', partitaIva: '01234567890' },
+            { chiave: 'mai-vista.xml', numero: 'MAI-9999', data: '2026-08-01', partitaIva: '01234567890' },
+          ],
         },
-        { chiave: 'mai-vista.xml', numero: 'NUOVA-9999', data: '2026-08-01', partitaIva: '01234567890' },
-      ],
-    }))
+      })
+    )
 
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.duplicati).toHaveLength(1)
     expect(body.duplicati[0].chiave).toBe('gia-vista.xml')
-    expect(body.duplicati[0].idEsistente).toBe(esistente!.id)
+    expect(body.duplicati[0].idEsistente).toBe(esistente.id)
   })
 
-  it('riconosce la P.IVA senza zeri iniziali', async () => {
-    const res = await POST(richiesta({
-      fatture: [{ chiave: 'x', numero: 'N', data: '2026-08-01', partitaIva: '0001234567890' }],
-    }))
-    expect(res.status).toBe(200)
+  it('riconosce la stessa fattura scritta con gli zeri iniziali', async () => {
+    await loginAs('admin')
+    await fatturaInArchivio('ZERI-1', '2026-06-02', '1234567890')
+
+    const res = await POST(
+      jsonRequest('/api/fatture/verifica-duplicati', {
+        method: 'POST',
+        body: {
+          fatture: [{ chiave: 'a.xml', numero: 'ZERI-1', data: '2026-06-02', partitaIva: '0001234567890' }],
+        },
+      })
+    )
+
+    expect((await res.json()).duplicati).toHaveLength(1)
+  })
+
+  it('ignora le fatture archiviate', async () => {
+    await loginAs('admin')
+    const archiviata = await fatturaInArchivio('CANC-1', '2026-06-03', '01234567890')
+    await prisma.electronicInvoice.update({
+      where: { id: archiviata.id },
+      data: { deletedAt: new Date() },
+    })
+
+    const res = await POST(
+      jsonRequest('/api/fatture/verifica-duplicati', {
+        method: 'POST',
+        body: {
+          fatture: [{ chiave: 'a.xml', numero: 'CANC-1', data: '2026-06-03', partitaIva: '01234567890' }],
+        },
+      })
+    )
+
+    expect((await res.json()).duplicati).toHaveLength(0)
   })
 
   it('nega l accesso a chi non è admin o manager', async () => {
-    const { auth } = await import('@/lib/auth')
-    vi.mocked(auth).mockResolvedValueOnce({ user: { id: 'u2', role: 'staff' } } as never)
-    const res = await POST(richiesta({ fatture: [] }))
+    await loginAs('staff')
+
+    const res = await POST(
+      jsonRequest('/api/fatture/verifica-duplicati', { method: 'POST', body: { fatture: [] } })
+    )
+
     expect(res.status).toBe(403)
   })
 })
 ```
+
+> Se `venueDiTest` non è esportata da `@/test/integration/fixtures/closures` con quella firma, apri il file e usa quella vera — l'obiettivo è una sede valida, non questo nome preciso. Il soft-delete passa dall'estensione Prisma: verifica come gli altri `.itest.ts` archiviano un record prima di copiare l'`update` qui sopra.
 
 - [ ] **Step 2: Eseguire il test e verificare che fallisca**
 
@@ -723,20 +816,21 @@ Quando la fattura porta una scadenza che implica termini diversi da quelli conco
 - [ ] **Step 1: Scrivere il test che fallisce**
 
 ```typescript
-import { describe, it, expect, vi } from 'vitest'
-import { POST } from '../route'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { prisma } from '@/lib/prisma'
+import { setupIntegrationDb } from '@/test/integration/db'
+import { loginAs } from '@/test/integration/auth-mock'
+import { jsonRequest } from '@/test/integration/api'
+import { POST } from '../route'
 
-vi.mock('@/lib/auth', () => ({
-  auth: vi.fn().mockResolvedValue({ user: { id: 'u1', role: 'admin' } }),
-}))
+setupIntegrationDb()
 
 const richiesta = (body: unknown) =>
-  new Request('http://localhost/api/fatture/conflitti-termini', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }) as never
+  jsonRequest('/api/fatture/conflitti-termini', { method: 'POST', body })
+
+beforeEach(async () => {
+  await loginAs('admin')
+})
 
 describe('POST /api/fatture/conflitti-termini', () => {
   it('segnala il fornitore i cui termini divergono dal file', async () => {
@@ -972,24 +1066,12 @@ export async function leggiFileFattura(files: File[]): Promise<EsitoLettura>
 ```typescript
 import { describe, it, expect } from 'vitest'
 import JSZip from 'jszip'
+import { xmlFattura } from '@/test/factories/fattura-xml.factory'
 import { leggiFileFattura } from '../lettura-file'
 
-const XML_MINIMO = `<?xml version="1.0" encoding="UTF-8"?>
-<p:FatturaElettronica versione="FPR12" xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2">
-  <FatturaElettronicaHeader>
-    <DatiTrasmissione><IdTrasmittente><IdPaese>IT</IdPaese><IdCodice>07945211006</IdCodice></IdTrasmittente><ProgressivoInvio>1</ProgressivoInvio><FormatoTrasmissione>FPR12</FormatoTrasmissione><CodiceDestinatario>0000000</CodiceDestinatario></DatiTrasmissione>
-    <CedentePrestatore><DatiAnagrafici><IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>07945211006</IdCodice></IdFiscaleIVA><Anagrafica><Denominazione>FORNITORE SPA</Denominazione></Anagrafica><RegimeFiscale>RF01</RegimeFiscale></DatiAnagrafici><Sede><Indirizzo>VIA ROMA 1</Indirizzo><CAP>00100</CAP><Comune>ROMA</Comune><Provincia>RM</Provincia><Nazione>IT</Nazione></Sede></CedentePrestatore>
-    <CessionarioCommittente><DatiAnagrafici><IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>01723900930</IdCodice></IdFiscaleIVA><Anagrafica><Denominazione>WEISS SRL</Denominazione></Anagrafica></DatiAnagrafici><Sede><Indirizzo>PIAZZA 15</Indirizzo><CAP>33077</CAP><Comune>SACILE</Comune><Provincia>PN</Provincia><Nazione>IT</Nazione></Sede></CessionarioCommittente>
-  </FatturaElettronicaHeader>
-  <FatturaElettronicaBody>
-    <DatiGenerali><DatiGeneraliDocumento><TipoDocumento>TD01</TipoDocumento><Divisa>EUR</Divisa><Data>2026-06-01</Data><Numero>42</Numero><ImportoTotaleDocumento>122.00</ImportoTotaleDocumento></DatiGeneraliDocumento></DatiGenerali>
-    <DatiBeniServizi>
-      <DettaglioLinee><NumeroLinea>1</NumeroLinea><Descrizione>Merce</Descrizione><PrezzoTotale>100.00</PrezzoTotale><AliquotaIVA>22.00</AliquotaIVA></DettaglioLinee>
-      <DatiRiepilogo><AliquotaIVA>22.00</AliquotaIVA><ImponibileImporto>100.00</ImponibileImporto><Imposta>22.00</Imposta></DatiRiepilogo>
-    </DatiBeniServizi>
-    <DatiPagamento><CondizioniPagamento>TP02</CondizioniPagamento><DettaglioPagamento><ModalitaPagamento>MP05</ModalitaPagamento><DataScadenzaPagamento>2026-07-01</DataScadenzaPagamento><ImportoPagamento>122.00</ImportoPagamento></DettaglioPagamento></DatiPagamento>
-  </FatturaElettronicaBody>
-</p:FatturaElettronica>`
+// Stesso generatore degli itest, estratto nel Task 3: un solo FatturaPA di
+// prova in tutto il progetto, non uno per file di test.
+const XML_MINIMO = xmlFattura({ numero: '42', data: '2026-06-01', piva: '07945211006' })
 
 function fileDaTesto(nome: string, testo: string): File {
   return new File([new Blob([testo])], nome, { type: 'application/xml' })
@@ -1005,7 +1087,7 @@ describe('leggiFileFattura', () => {
       numero: '42',
       data: '2026-06-01',
       tipoDocumento: 'TD01',
-      denominazioneFornitore: 'FORNITORE SPA',
+      denominazioneFornitore: 'Torrefazione di prova Srl',
       partitaIvaFornitore: '07945211006',
       totalAmount: 122,
       netAmount: 100,
@@ -1536,9 +1618,9 @@ const riga = (sovrascrivi: Partial<RigaAnteprima> = {}): RigaAnteprima => ({
   numero: '42',
   data: '2026-06-01',
   tipoDocumento: 'TD01',
-  denominazioneFornitore: 'FORNITORE SPA',
+  denominazioneFornitore: 'Torrefazione di prova Srl',
   partitaIvaFornitore: '07945211006',
-  denominazioneCliente: 'WEISS SRL',
+  denominazioneCliente: 'Weiss Cafe',
   netAmount: 100,
   vatAmount: 22,
   totalAmount: 122,
@@ -1796,28 +1878,25 @@ Il server deve poter **sostituire** una fattura esistente e applicare i termini 
 - [ ] **Step 1: Scrivere il test che fallisce**
 
 ```typescript
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { POST } from '../route'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { prisma } from '@/lib/prisma'
+import { setupIntegrationDb } from '@/test/integration/db'
+import { loginAs } from '@/test/integration/auth-mock'
+import { jsonRequest } from '@/test/integration/api'
+import { xmlFattura } from '@/test/factories/fattura-xml.factory'
+import { POST } from '../route'
 
-vi.mock('@/lib/auth', () => ({
-  auth: vi.fn().mockResolvedValue({ user: { id: 'u1', role: 'admin' } }),
-}))
+setupIntegrationDb()
 
-// XML_MINIMO: riusare quello di src/lib/sdi/__tests__/lettura-file.test.ts,
-// estraendolo in src/lib/sdi/__tests__/fixtures/fattura-minima.ts e importandolo
-// da entrambi i test.
-import { XML_MINIMO } from '@/lib/sdi/__tests__/fixtures/fattura-minima'
+const richiesta = (body: unknown) => jsonRequest('/api/invoices', { method: 'POST', body })
 
-const richiesta = (body: unknown) =>
-  new Request('http://localhost/api/invoices', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }) as never
+beforeEach(async () => {
+  await loginAs('admin')
+})
 
 describe('POST /api/invoices — politica duplicati', () => {
-  const base = { xmlContent: XML_MINIMO, fileName: 'f.xml', venueId: 'auto', createSupplier: true }
+  const XML = xmlFattura({ numero: 'POL-1', data: '2026-06-01', piva: '01234567890' })
+  const base = { xmlContent: XML, fileName: 'f.xml', venueId: 'auto', createSupplier: true }
 
   it('con «salta» rifiuta il duplicato con 409', async () => {
     await POST(richiesta(base))
@@ -1856,7 +1935,7 @@ describe('POST /api/invoices — politica duplicati', () => {
     await POST(richiesta({ ...base, fileName: 'agg.xml', sovrascriviAnagrafica: true }))
 
     const aggiornato = await prisma.supplier.findUnique({ where: { id: fornitore.id } })
-    expect(aggiornato?.city).toBe('ROMA')
+    expect(aggiornato?.city).toBe('Bolzano')
 
     await prisma.supplier.delete({ where: { id: fornitore.id } })
   })
@@ -1875,10 +1954,10 @@ describe('POST /api/invoices — politica duplicati', () => {
   })
 
   it('applica i giorni scelti nella finestra dei conflitti', async () => {
-    const senzaScadenza = XML_MINIMO.replace(
-      '<DataScadenzaPagamento>2026-07-01</DataScadenzaPagamento>',
-      ''
-    )
+    // Nessuna rata nel documento: la scadenza sarà stimata, ed è lì che i
+    // giorni scelti devono farsi valere.
+    const senzaScadenza = xmlFattura({ numero: 'POL-2', data: '2026-06-01', rate: [] })
+
     const res = await POST(richiesta({
       ...base,
       xmlContent: senzaScadenza,
@@ -2040,13 +2119,13 @@ const esito = (sovrascrivi: Partial<EsitoRiga>): EsitoRiga => ({
   chiave: 'a.xml',
   nomeFile: 'a.xml',
   numero: '42',
-  denominazioneFornitore: 'FORNITORE SPA',
+  denominazioneFornitore: 'Torrefazione di prova Srl',
   stato: 'importata',
   fattura: {
     chiave: 'a.xml', nomeFile: 'a.xml', xmlContent: '<x/>', daZip: null,
     numero: '42', data: '2026-06-01', tipoDocumento: 'TD01',
-    denominazioneFornitore: 'FORNITORE SPA', partitaIvaFornitore: '07945211006',
-    denominazioneCliente: 'WEISS SRL', netAmount: 100, vatAmount: 22, totalAmount: 122,
+    denominazioneFornitore: 'Torrefazione di prova Srl', partitaIvaFornitore: '07945211006',
+    denominazioneCliente: 'Weiss Cafe', netAmount: 100, vatAmount: 22, totalAmount: 122,
     aliquote: [22], primaScadenza: '2026-07-01', scadenzaStimata: false,
     giorniDalFile: 30, ritenuta: null, duplicata: false, esclusa: false,
   },
@@ -2243,7 +2322,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ImportaFattureWizard } from '../ImportaFattureWizard'
-import { XML_MINIMO } from '@/lib/sdi/__tests__/fixtures/fattura-minima'
+import { xmlFattura } from '@/test/factories/fattura-xml.factory'
+
+const XML_MINIMO = xmlFattura({ numero: '42', data: '2026-06-01', piva: '07945211006' })
 
 beforeEach(() => {
   global.fetch = vi.fn(async (url: string) => {
