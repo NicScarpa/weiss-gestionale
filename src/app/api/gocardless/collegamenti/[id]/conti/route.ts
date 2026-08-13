@@ -211,10 +211,18 @@ export const GET = withAuth<{ id: string }>(
       // Quali conti, fra quelli già legati a QUESTA connessione, sono accesi e
       // con quale data: senza, il pannello ripresenterebbe vuoto un campo che
       // l'amministratore aveva già compilato.
+      //
+      // `accountType: 'BANK'` come nelle altre due letture di questo file:
+      // `bank_accounts` contiene anche le casse, e in questa integrazione
+      // leggerla senza filtrare è già stato l'errore due volte. Oggi nessuna
+      // cassa può avere `connectionId` valorizzato — solo la PUT qui sotto lo
+      // scrive, e prima impone BANK — quindi il filtro non cambia nulla: è la
+      // rete perché non cambi nulla nemmeno se un domani qualcos'altro
+      // scrivesse quella colonna.
       const configurazioni = new Map(
         (
           await prisma.bankAccount.findMany({
-            where: { venueId, connectionId: connessione.id },
+            where: { venueId, connectionId: connessione.id, accountType: 'BANK' },
             select: { id: true, syncEnabled: true, syncCutoffDate: true },
           })
         ).map((c) => [c.id, c])
