@@ -834,6 +834,32 @@ L'indice esiste dal Task 1. Manca la traduzione della violazione in una risposta
 
 - [ ] **Step 1: Scrivi il test che fallisce**
 
+**La corsa va costruita, non evocata.** Creare la riga concorrente prima di chiamare la rotta non dimostra nulla: la fermerebbe il controllo applicativo, il test passerebbe verde e la traduzione del `P2002` resterebbe non provata. Perché la corsa sia vera, la riga deve nascere **dopo** il controllo e **prima** della `create` — e in mezzo la rotta chiama `creaAgreement`. Quello è il punto in cui infilarla.
+
+Estendi `clientFinto` con un aggancio (nello stesso file di test):
+
+```ts
+function clientFinto(opzioni: {
+  fallisceRequisition?: boolean
+  accessValidForDaysConcessi?: number
+  /**
+   * Eseguito dentro `creaAgreement`, cioè dopo che il controllo applicativo è
+   * passato e prima che la riga venga creata: è l'unico punto in cui inserire
+   * un concorrente produce una corsa vera invece di un test che si ferma
+   * prima e passa per il motivo sbagliato.
+   */
+  duranteAgreement?: () => Promise<void>
+} = {}) {
+```
+
+e dentro `creaAgreement`, subito dopo `chiamate.push('agreement')`:
+
+```ts
+      if (opzioni.duranteAgreement) await opzioni.duranteAgreement()
+```
+
+Poi il test:
+
 ```ts
   // Il controllo applicativo legge e poi scrive: due richieste concorrenti lo
   // superano entrambe. L'indice unico parziale è la rete, e la sua violazione
@@ -842,15 +868,20 @@ L'indice esiste dal Task 1. Manca la traduzione della violazione in una risposta
   it('traduce la violazione dell indice in un 409, non in un 500', async () => {
     await entraCome('admin')
     const venue = await venueDiTest()
-    const { client } = clientFinto()
-    impostaClientPerTest(client)
-
-    // Si crea la riga concorrente dopo che il controllo applicativo è passato:
-    // lo si simula inserendola direttamente prima della create della rotta,
-    // con il controllo aggirato tramite una connessione creata a mano.
-    await prisma.bankConnection.create({
-      data: { venueId: venue.id, institutionId: 'X', institutionName: 'X', requisitionId: 'req-corsa', status: 'CR' },
+    const { client } = clientFinto({
+      duranteAgreement: async () => {
+        await prisma.bankConnection.create({
+          data: {
+            venueId: venue.id,
+            institutionId: 'ALTRA_BANCA',
+            institutionName: 'Altra Banca',
+            requisitionId: 'req-corsa',
+            status: 'CR',
+          },
+        })
+      },
     })
+    impostaClientPerTest(client)
 
     const esito = await callRoute(
       creaCollegamento,
@@ -858,10 +889,11 @@ L'indice esiste dal Task 1. Manca la traduzione della violazione in una risposta
     )
 
     expect(esito.status).toBe(409)
+    expect((await esito.json()).error).toContain('collegamento')
   })
 ```
 
-> Nota per chi implementa: questo test passa già grazie al controllo applicativo, quindi **non** dimostra da solo la traduzione del `P2002`. Per provarla davvero serve che la riga concorrente nasca **dopo** il controllo: il modo più semplice è farla creare dal client finto, dentro `creaAgreement`, che la rotta invoca fra il controllo e la `create`. Scrivilo così — un test che passa per il motivo sbagliato è peggio di nessun test — e se non riesci a costruirlo, dillo nel rapporto invece di lasciarlo ambiguo.
+La `create` della rotta sta nel `try` esterno, quindi senza la traduzione il `P2002` finisce a `rispostaErroreGoCardless` e diventa un 500: è esattamente il rosso che devi vedere.
 
 - [ ] **Step 2: Lancia il test e verifica che fallisca**
 
