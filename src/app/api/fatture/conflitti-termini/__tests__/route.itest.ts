@@ -106,6 +106,25 @@ describe('POST /api/fatture/conflitti-termini', () => {
     await prisma.supplier.delete({ where: { id: fornitore.id } })
   })
 
+  it('riconosce la stessa P.IVA scritta con gli zeri iniziali', async () => {
+    // La formattazione della P.IVA fra file e anagrafica è notoriamente
+    // incoerente in questo archivio (stessa incongruenza già gestita in
+    // verifica-duplicati). Senza normalizzare qui, il lookup fallirebbe in
+    // silenzio: falso negativo, un conflitto vero non verrebbe mai segnalato.
+    const fornitore = await prisma.supplier.create({
+      data: { name: 'ZERI SRL', vatNumber: '1234567890', paymentTermsDays: 60 },
+    })
+    const res = await POST(
+      richiesta({
+        fatture: [{ chiave: 'a.xml', partitaIva: '001234567890', denominazione: 'ZERI SRL', giorniDalFile: 30 }],
+      })
+    )
+    const body = await res.json()
+    expect(body.conflitti).toHaveLength(1)
+    expect(body.conflitti[0]).toMatchObject({ giorniDalFile: 30, giorniAnagrafica: 60 })
+    await prisma.supplier.delete({ where: { id: fornitore.id } })
+  })
+
   it('nega l accesso a chi non è admin o manager', async () => {
     await loginAs('staff')
 

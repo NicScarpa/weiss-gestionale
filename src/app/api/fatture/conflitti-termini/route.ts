@@ -39,16 +39,24 @@ export async function POST(request: NextRequest) {
     const conTermini = fatture.filter((f) => f.giorniDalFile !== null)
     if (conTermini.length === 0) return NextResponse.json({ conflitti: [] })
 
-    const partiteIva = [...new Set(conTermini.map((f) => f.partitaIva))]
+    // Come in verifica-duplicati: la formattazione della P.IVA fra file e
+    // anagrafica è notoriamente incoerente (zeri iniziali). Senza normalizzare
+    // qui il confronto fallirebbe in silenzio — falso negativo, non falso
+    // positivo: un conflitto vero non verrebbe mai segnalato. Non si può
+    // filtrare la query sui valori esatti proposti dal file per lo stesso
+    // motivo, quindi si prendono tutti i fornitori con termini concordati e si
+    // confronta in memoria sulla forma normalizzata.
+    const senzaZeri = (piva: string) => piva.replace(/^0+/, '')
     const fornitori = await prisma.supplier.findMany({
-      where: { vatNumber: { in: partiteIva }, isActive: true },
+      where: { vatNumber: { not: null }, isActive: true, paymentTermsDays: { not: null } },
       select: { vatNumber: true, name: true, paymentTermsDays: true },
     })
 
     const terminiPerPiva = new Map(
-      fornitori
-        .filter((f) => f.vatNumber && f.paymentTermsDays !== null)
-        .map((f) => [f.vatNumber as string, { giorni: f.paymentTermsDays as number, nome: f.name }])
+      fornitori.map((f) => [
+        senzaZeri(f.vatNumber as string),
+        { giorni: f.paymentTermsDays as number, nome: f.name },
+      ])
     )
 
     const perPiva = new Map<
@@ -63,20 +71,28 @@ export async function POST(request: NextRequest) {
     >()
 
     for (const f of conTermini) {
-      const anagrafica = terminiPerPiva.get(f.partitaIva)
+      const piva = senzaZeri(f.partitaIva)
+      const anagrafica = terminiPerPiva.get(piva)
       if (!anagrafica) continue
       if (anagrafica.giorni === f.giorniDalFile) continue
 
-      const esistente = perPiva.get(f.partitaIva)
+      const esistente = perPiva.get(piva)
       if (esistente) {
         esistente.chiavi.push(f.chiave)
         for (const aliquota of f.aliquote) {
           if (!esistente.aliquote.includes(aliquota)) esistente.aliquote.push(aliquota)
         }
+        // `giorniDalFile` resta quello della prima fattura del gruppo: se due
+        // fatture della stessa P.IVA divergono fra loro (es. 30 e 45 giorni),
+        // qui non si distinguono. Non è un difetto: questa risposta serve solo
+        // a *mostrare* il conflitto e a far scegliere fra file e anagrafica; la
+        // scelta «usa i valori del file» viene poi applicata riga per riga, con
+        // il `giorniDalFile` della singola fattura — non con quello mostrato
+        // qui, che è indicativo e mai operativo.
         continue
       }
 
-      perPiva.set(f.partitaIva, {
+      perPiva.set(piva, {
         denominazione: anagrafica.nome || f.denominazione,
         giorniDalFile: f.giorniDalFile as number,
         giorniAnagrafica: anagrafica.giorni,
