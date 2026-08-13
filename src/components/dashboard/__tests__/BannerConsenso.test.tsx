@@ -93,6 +93,38 @@ describe('BannerConsenso', () => {
     expect(document.body.querySelector('[role="alert"]')).toBeNull()
   })
 
+  // La rotta può rispondere con un collegamento vivo ma senza scadenza nota
+  // (`scadeIl: null`): `giorniAllaScadenza` restituisce `null`, e il ramo lo
+  // tratta come «niente da dire» — non come «scade fra zero giorni», che
+  // sarebbe un avviso sbagliato mostrato a chi non deve fare nulla.
+  it('non mostra nulla per un collegamento vivo senza data di scadenza nota', async () => {
+    stubFetch([
+      [
+        '/api/gocardless/collegamenti',
+        {
+          connessione: {
+            id: 'conn-1',
+            istitutoNome: 'Banca della Marca',
+            stato: { sigla: 'LN', nome: 'Collegata', spiegazione: 'Il consenso è attivo.' },
+            scadeIl: null,
+          },
+        },
+      ],
+    ])
+
+    await montare(<BannerConsenso />)
+    await attendere()
+    // Come per il 403: nessun segnale a schermo da aspettare (il banner
+    // resta muto per costruzione), quindi si dà tempo alla query di
+    // risolversi con timer veri prima di considerare l'assenza dell'avviso
+    // una prova, non solo un «non ha ancora fatto in tempo».
+    await act(async () => {
+      await new Promise((risolvi) => setTimeout(risolvi, 20))
+    })
+
+    expect(document.body.querySelector('[role="alert"]')).toBeNull()
+  })
+
   it('avvisa quando mancano quattordici giorni o meno, dicendo quanti', async () => {
     stubFetch([['/api/gocardless/collegamenti', connessioneConScadenza(5)]])
 
@@ -101,6 +133,30 @@ describe('BannerConsenso', () => {
     await attendiChe(() => testoDellaPagina().includes('5 giorni'), "l'avviso a schermo")
 
     expect(testoDellaPagina()).toContain('5 giorni')
+  })
+
+  // Il bordo esatto: finora si provava solo 30 (nascosto) e 5 (mostrato), e
+  // chi domani cambiasse `giorni > PREAVVISO_GIORNI` in `giorni >=
+  // PREAVVISO_GIORNI` non avrebbe fatto fallire nulla. A quattordici giorni
+  // esatti il banner deve avvisare, come già fa il pannello impostazioni
+  // (`inScadenza = giorni <= PREAVVISO_GIORNI`).
+  //
+  // La data va costruita con cura: `giorniAllaScadenza` arrotonda per
+  // eccesso, e fra la costruzione dell'ISO qui e la valutazione dentro la
+  // query passano alcuni millisecondi reali. Verificato a parte (fuori da
+  // questo file, con la stessa formula): quel piccolo scarto sposta il
+  // risultato leggermente SOTTO 14 (es. 13,9999988), e `Math.ceil` lo
+  // riporta comunque a 14, mai a 13 — lo scarto è sempre positivo, mai
+  // negativo, quindi non può spingerlo a 15. Il bordo resta 14 in modo
+  // affidabile.
+  it('avvisa esattamente al bordo dei quattordici giorni', async () => {
+    stubFetch([['/api/gocardless/collegamenti', connessioneConScadenza(14)]])
+
+    await montare(<BannerConsenso />)
+    await attendere()
+    await attendiChe(() => testoDellaPagina().includes('14 giorni'), "l'avviso a schermo")
+
+    expect(testoDellaPagina()).toContain('14 giorni')
   })
 
   // Quello che si dimentica sempre: una sottrazione fra date senza un ramo
