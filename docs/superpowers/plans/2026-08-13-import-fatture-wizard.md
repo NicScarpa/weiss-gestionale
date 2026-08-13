@@ -1817,7 +1817,7 @@ describe('DialogConflitti', () => {
     const onContinua = vi.fn()
     render(<DialogConflitti aperto conflitti={conflitti} onAnnulla={vi.fn()} onContinua={onContinua} />)
 
-    fireEvent.click(screen.getByRole('button', { name: /usa l anagrafica per ROMA GIANFRANCO SRL/i }))
+    fireEvent.click(screen.getByRole('button', { name: /usa l['\u2019\s]anagrafica per ROMA GIANFRANCO SRL/i }))
     fireEvent.click(screen.getByRole('button', { name: /continua importazione/i }))
 
     expect(onContinua).toHaveBeenCalledWith({ '111': 'anagrafica', '222': 'importazione' })
@@ -1859,7 +1859,7 @@ Struttura (con `Dialog` di shadcn):
 - Tabella: Fornitore · Valori dal file · Predefiniti anagrafica · Usa.
   - «Valori dal file» porta due badge, come nella schermata di riferimento: `IVA: {aliquote.join('/')}%` e `{giorniInParole(giorniDalFile)}`. Il primo è contesto, non è in conflitto con nulla.
   - «Predefiniti anagrafica» porta il solo badge `{giorniInParole(giorniAnagrafica)}`.
-- Per riga due `Button`: quello attivo `variant="default"`, l'altro `variant="outline"`; `aria-label={`Usa l'importazione per ${c.denominazione}`}` e `aria-label={`Usa l'anagrafica per ${c.denominazione}`}`.
+- Per riga due `Button`: quello attivo `variant="default"`, l'altro `variant="outline"`; `aria-label={`Usa l'importazione per ${c.denominazione}`}` e `aria-label={`Usa l'anagrafica per ${c.denominazione}`}` — con l'apostrofo: è testo che un lettore di schermo pronuncia.
 - In fondo: `Annulla` e `Continua Importazione`.
 
 Formattazione dei giorni (i test la fissano):
