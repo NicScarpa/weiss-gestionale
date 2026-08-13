@@ -1215,7 +1215,15 @@ function riferimento(ultimoMovimento: string | null): string {
 export function RigaContoBancario({ conto, scelta, contiBancari, onCambia }: Props) {
   const etichetta = conto.ibanMascherato ?? conto.conto.providerAccountId
   const abbinato = conto.tipo === 'riconosciuto' || conto.tipo === 'gia-collegato'
-  const ignorato = conto.tipo === 'ignorato' || scelta.azione === 'ignora'
+  // `&& scelta.azione !== 'configura'` è la via d'uscita, ed è la stessa che ha
+  // il ramo del conto sconosciuto poco più sotto. Senza, una volta scelto il
+  // conto a cui riabbinarlo la riga resta bloccata sull'elenco e non mostra mai
+  // il campo della data: `dataTaglio` resta vuota per sempre e, siccome
+  // `senzaData` guarda tutte le voci in sospeso, quella riga disabilita «Salva»
+  // per l'intero pannello. Il flusso di ripresa esiste a schermo e non si
+  // completa.
+  const ignorato =
+    (conto.tipo === 'ignorato' && scelta.azione !== 'configura') || scelta.azione === 'ignora'
 
   const idConto = scelta.azione === 'configura' ? scelta.bankAccountId : abbinato ? conto.bankAccountId : ''
   const dataTaglio = scelta.azione === 'configura' ? scelta.dataTaglio : (conto.syncCutoffDate ?? '')
