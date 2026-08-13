@@ -329,6 +329,37 @@ describe('PATCH /api/invoices/[id]/righe-conti', () => {
     expect(prisma.invoiceLineAccount.upsert).not.toHaveBeenCalled()
   })
 
+  it('riga -1 (bollo) divisa in due quote: 400 esplicito, non l\'errore generico di Zod sulle quote, nessuna scrittura', async () => {
+    // Decisione Task 8 (in risposta alla revisione): le righe di sistema non
+    // si dividono. Prima di questo controllo un bollo (positivo) si sarebbe
+    // potuto dividere silenziosamente — nulla lo impediva — e solo un
+    // arrotondamento negativo sarebbe caduto sul `.positive()` delle quote,
+    // ma con un errore Zod generico invece che con una spiegazione.
+    vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
+    vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)
+    vi.mocked(parseFatturaPA).mockReturnValue({
+      dettaglioLinee: dettaglioLineeFisse,
+      datiBollo: { importoBollo: 2 },
+    } as never)
+    vi.mocked(prisma.account.findMany).mockResolvedValue([
+      { id: 'conto-1', type: 'COSTO' },
+      { id: 'conto-2', type: 'COSTO' },
+    ] as never)
+
+    const { request, context } = richiesta({
+      righe: [
+        { numeroLinea: LINEA_BOLLO, progressivo: 0, accountId: 'conto-1', importo: 1 },
+        { numeroLinea: LINEA_BOLLO, progressivo: 1, accountId: 'conto-2', importo: 1 },
+      ],
+    })
+    const response = await PATCH(request, context)
+    const data = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(data.error).toBe('Le righe di sistema (bollo, arrotondamento) non si dividono fra più conti')
+    expect(prisma.invoiceLineAccount.upsert).not.toHaveBeenCalled()
+  })
+
   it('riga confermata manualmente con fornitore: upsert della memoria fornitore-prodotto', async () => {
     vi.mocked(authDiRoute).mockResolvedValue(sessione as never)
     vi.mocked(prisma.electronicInvoice.findFirst).mockResolvedValue(fatturaEsistente as never)

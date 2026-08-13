@@ -23,7 +23,7 @@ import {
   useCostCenters,
 } from '@/components/prima-nota/shared/CostCenterSelect'
 import { useAccountsForCombobox, buildCostCenterRuleMap } from '@/hooks/useImputableAccounts'
-import { CONTO_PROPOSTO_BOLLO } from '@/lib/sdi/righe-di-sistema'
+import { CONTO_PROPOSTO_BOLLO, LINEA_BOLLO } from '@/lib/sdi/righe-di-sistema'
 
 import {
   DocumentInfoSection,
@@ -151,6 +151,26 @@ interface RigheContiPayload {
   // nessuna forma diversa serve per salvarne il conto.
   righe?: Array<{ numeroLinea: number; accountId: string }>
   confermaTutte?: boolean
+}
+
+/**
+ * Il bollo da includere in "Accetta tutte", se ha ancora bisogno di un
+ * conto. Pura e esportata per essere testata da sola (stesso schema di
+ * `groupByMastro` in `AccountCombobox.tsx`): montare l'intero `InvoiceDetail`
+ * per verificare questa sola decisione richiederebbe mock di tre fetch
+ * (fattura, conti, centri di costo) per una logica che non ne fa uso diretto.
+ *
+ * `righeSistema` può essere `undefined` (fattura ancora in caricamento, o
+ * senza XML leggibile): in quel caso non c'è nulla da proporre, non un
+ * errore da sollevare.
+ */
+export function rigaBolloDaConfermare(
+  righeSistema: ParsedInvoiceData['righeSistema'],
+  contoBolloId: string | undefined
+): Array<{ numeroLinea: number; accountId: string }> {
+  const rigaBollo = righeSistema?.find((r) => r.numeroLinea === LINEA_BOLLO)
+  if (!rigaBollo || rigaBollo.imputazioni.length > 0 || !contoBolloId) return []
+  return [{ numeroLinea: LINEA_BOLLO, accountId: contoBolloId }]
 }
 
 async function updateRigheConti(id: string, data: RigheContiPayload): Promise<unknown> {
@@ -291,10 +311,6 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     righeContiMutation.mutate({ righe: [{ numeroLinea, accountId }] })
   }
 
-  const handleConfirmAllLineAccounts = () => {
-    righeContiMutation.mutate({ confermaTutte: true })
-  }
-
   // Loading state
   if (isLoading) {
     return (
@@ -359,6 +375,20 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const defaultBolloAccountLabel = contoBollo
     ? `${contoBollo.code} - ${contoBollo.name}`
     : undefined
+
+  // Il bollo non ha mai una vera imputazione 'proposta' salvata (Task 8: solo
+  // un suggerimento in tendina, non una InvoiceLineAccount): "Accetta tutte",
+  // che sul server aggiorna solo le righe già in stato 'proposta', altrimenti
+  // non lo toccherebbe mai — l'utente dovrebbe aprire quella tendina a mano
+  // su ogni fattura col bollo. La si include qui nella stessa richiesta.
+  const bolloDaProporre = rigaBolloDaConfermare(parsedData?.righeSistema, contoBollo?.id)
+
+  const handleConfirmAllLineAccounts = () => {
+    righeContiMutation.mutate({
+      confermaTutte: true,
+      ...(bolloDaProporre.length > 0 && { righe: bolloDaProporre }),
+    })
+  }
 
   return (
     <div className="container py-6 space-y-6">

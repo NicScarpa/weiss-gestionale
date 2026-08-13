@@ -270,9 +270,38 @@ describe('LineItemsTable — righe di sistema', () => {
     expect(trigger.textContent).toContain('30.01')
     expect(trigger.textContent).toContain('Imposta di bollo')
   })
+
+  it('una fattura senza righe XML ma col bollo mostra comunque la tabella', () => {
+    // Il vecchio controllo era su dettaglioLinee.length === 0: nascondeva
+    // l'intera card anche quando c'era solo il bollo da mostrare. Il
+    // controllo giusto è sulla lista combinata (righe vere + di sistema).
+    mockFetchAccounts()
+    render(
+      conQueryClient(
+        <LineItemsTable
+          dettaglioLinee={[]}
+          righeSistema={[
+            { numeroLinea: LINEA_BOLLO, descrizione: 'Imposta di bollo', importo: 2, imputazioni: [] },
+          ]}
+          showAccountColumn
+        />
+      )
+    )
+
+    expect(screen.queryByText('Dettaglio Linee')).not.toBeNull()
+    expect(righeCorpo()).toHaveLength(1)
+  })
 })
 
 describe('LineItemsTable — contatore di copertura', () => {
+  // Fattura di riferimento, la stessa dell'ASCII dello spec (sezione 5):
+  // 1.000 di farina al 10%, 100 di detersivi al 22%, 2 di bollo.
+  // Lordo: 1.000×1,10 + 100×1,22 + 2 = 1.100 + 122 + 2 = 1.224,00 — il totale
+  // che lo spec stesso scrive ("Attribuito 1.224,00 / 1.224,00").
+  // `InvoiceLineAccount.importo` (quindi `imputazioni[].importo`) è NETTO —
+  // lo stesso `prezzoTotale`/`importo` della riga — perché così lo scrive
+  // righe-conti/route.ts; il contatore deve portarlo al lordo con l'aliquota
+  // della riga prima di sommarlo al totale documento, che è lordo.
   it('con tutte le righe imputate e confermate lo stato è «completa»', () => {
     righe({
       dettaglioLinee: [
@@ -307,12 +336,18 @@ describe('LineItemsTable — contatore di copertura', () => {
           ],
         },
       ],
-      totaleDocumento: '1102.00',
+      totaleDocumento: '1224.00',
     })
 
     const testo = normalizzaSpazi(document.body.textContent)
-    expect(testo).toContain('Attribuito 1.102,00 € / 1.102,00 €')
+    expect(testo).toContain('Attribuito 1.224,00 € / 1.224,00 €')
     expect(testo).toContain('✓ completa')
+    // È il difetto trovato in revisione: sommare il netto (1.102) al lordo
+    // (1.224) non tornava mai "completa", righeMancanti restava vuoto (ogni
+    // riga presente è coperta dal proprio netto) e il messaggio stampava
+    // letteralmente "mancano  e undefined". Con lo stato «completa» quel
+    // ramo non si raggiunge nemmeno, ma lo si verifica esplicitamente.
+    expect(testo).not.toContain('undefined')
   })
 
   it('togliendo l\'imputazione di una riga compare l\'importo mancante e il numero della riga', () => {
@@ -348,11 +383,12 @@ describe('LineItemsTable — contatore di copertura', () => {
           ],
         },
       ],
-      totaleDocumento: '1102.00',
+      totaleDocumento: '1224.00',
     })
 
-    // Attribuito: 1000 (riga 1) + 2 (bollo) = 1.002,00, non 1.102,00.
-    expect(normalizzaSpazi(document.body.textContent)).toContain('Attribuito 1.002,00 € / 1.102,00 €')
+    // Attribuito al lordo: 1.000×1,10 (riga 1) + 2 (bollo) = 1.102,00,
+    // su un totale di 1.224,00 (righa 2, 122 lordi, ancora scoperta).
+    expect(normalizzaSpazi(document.body.textContent)).toContain('Attribuito 1.102,00 € / 1.224,00 €')
     expect(document.body.textContent).toContain('manca la riga 2')
     expect(document.body.textContent).not.toContain('completa')
   })
@@ -380,7 +416,7 @@ describe('LineItemsTable — contatore di copertura', () => {
       righeSistema: [
         { numeroLinea: LINEA_BOLLO, descrizione: 'Imposta di bollo', importo: 2, imputazioni: [] },
       ],
-      totaleDocumento: '1102.00',
+      totaleDocumento: '1224.00',
     })
 
     expect(document.body.textContent).toContain('mancano la riga 1, la riga 2 e il bollo')
@@ -408,10 +444,12 @@ describe('LineItemsTable — contatore di copertura', () => {
           imputazioni: [],
         },
       ],
-      totaleDocumento: '999.99',
+      // Lordo: 1.000×1,10 (riga 1) + (-0,01) (arrotondamento, aliquota 0) = 1.099,99.
+      totaleDocumento: '1099.99',
     })
 
     expect(document.body.textContent).toContain("manca l'arrotondamento")
+    expect(document.body.textContent).not.toContain('completa')
   })
 
   it('una proposta AI non ancora confermata non conta come attribuita', () => {
@@ -432,12 +470,61 @@ describe('LineItemsTable — contatore di copertura', () => {
         },
       ],
       righeSistema: [],
-      totaleDocumento: '1000.00',
+      totaleDocumento: '1100.00',
     })
 
     const testo = normalizzaSpazi(document.body.textContent)
-    expect(testo).toContain('Attribuito 0,00 € / 1.000,00 €')
+    expect(testo).toContain('Attribuito 0,00 € / 1.100,00 €')
     expect(testo).toContain('manca la riga 1')
+  })
+
+  it('righe tutte coperte ma totale che non torna: residuo non riconducibile a una riga, non un messaggio vuoto o "undefined"', () => {
+    // Ogni riga presente è confermata per intero (righeMancanti sarebbe
+    // vuoto), ma il totale del documento è più alto — un onere di testata
+    // che oggi non diventa una riga di sistema (sconto, cassa previdenziale,
+    // ritenuta: righeDiSistema conosce solo bollo e arrotondamento). Il
+    // contatore deve dichiararlo onestamente, non stampare un ramo vuoto.
+    righe({
+      dettaglioLinee: [
+        {
+          numeroLinea: 1,
+          descrizione: 'Farina tipo 0',
+          prezzoUnitario: 20,
+          prezzoTotale: 1000,
+          aliquotaIVA: 10,
+          imputazioni: [
+            { progressivo: 0, accountId: 'conto-detersivi', importo: 1000, stato: 'confermata', fonte: 'manuale' },
+          ],
+        },
+      ],
+      righeSistema: [],
+      // Attribuito (lordo) = 1.100,00; il documento dichiara 1.150,00.
+      totaleDocumento: '1150.00',
+    })
+
+    const testo = normalizzaSpazi(document.body.textContent)
+    expect(testo).not.toContain('undefined')
+    expect(testo).not.toContain('completa')
+    expect(testo).toContain('manca 50,00 € non riconducibile a una riga')
+  })
+
+  it('un totale documento non numerico non mostra il contatore invece di stampare "/ € 0,00"', () => {
+    righe({
+      dettaglioLinee: [
+        {
+          numeroLinea: 1,
+          descrizione: 'Farina tipo 0',
+          prezzoUnitario: 20,
+          prezzoTotale: 1000,
+          aliquotaIVA: 10,
+          imputazioni: [],
+        },
+      ],
+      righeSistema: [],
+      totaleDocumento: 'non-un-numero',
+    })
+
+    expect(document.querySelector('tfoot')).toBeNull()
   })
 
   it('il contatore usa formatCurrency (formato italiano), non una formattazione propria', () => {
@@ -447,8 +534,10 @@ describe('LineItemsTable — contatore di copertura', () => {
           numeroLinea: 1,
           descrizione: 'Farina tipo 0',
           prezzoUnitario: 20,
+          // Aliquota 0: il lordo coincide col netto, il test verifica solo
+          // il formato, non l'aritmetica netto→lordo (già coperta sopra).
           prezzoTotale: 1234.5,
-          aliquotaIVA: 10,
+          aliquotaIVA: 0,
           imputazioni: [],
         },
       ],
@@ -456,10 +545,12 @@ describe('LineItemsTable — contatore di copertura', () => {
       totaleDocumento: '1234.50',
     })
 
-    // Formato it-IT con separatore delle migliaia: un toFixed(2) fatto a mano
-    // scriverebbe "1234.50", non "1.234,50".
-    expect(document.body.textContent).toContain('1.234,50')
-    expect(document.body.textContent).not.toContain('1234.50')
+    // Ristretto al piede (tfoot): la colonna Totale della riga mostra la
+    // stessa cifra, e un'asserzione su document.body sarebbe soddisfatta da
+    // quella cella anche se il contatore non usasse affatto formatCurrency.
+    const piede = normalizzaSpazi(document.querySelector('tfoot')?.textContent ?? null)
+    expect(piede).toContain('1.234,50')
+    expect(piede).not.toContain('1234.50')
   })
 })
 

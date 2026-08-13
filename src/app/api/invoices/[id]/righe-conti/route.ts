@@ -149,6 +149,20 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       for (const [numeroLinea, quote] of gruppiPerLinea) {
         if (quote.length < 2) continue
 
+        // Le righe di sistema non si dividono fra più conti (decisione
+        // Task 8): sono importi unici e piccoli — il bollo, l'arrotondamento
+        // — non l'accorpamento di voci eterogenee che giustifica la
+        // divisione di una riga vera. Senza questo controllo un bollo si
+        // sarebbe potuto dividere silenziosamente (nulla lo impediva), e un
+        // arrotondamento negativo avrebbe comunque fallito, ma con l'errore
+        // generico di Zod su `.positive()` invece che con una spiegazione.
+        if (numeroLinea === LINEA_BOLLO || numeroLinea === LINEA_ARROTONDAMENTO) {
+          return NextResponse.json(
+            { error: 'Le righe di sistema (bollo, arrotondamento) non si dividono fra più conti' },
+            { status: 400 }
+          )
+        }
+
         // Progressivi duplicati sovrascriverebbero silenziosamente una quota
         // con l'altra (stesso vincolo di unicità di riga-conto-progressivo):
         // si scarta prima di scrivere, non dopo.

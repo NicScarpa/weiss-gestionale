@@ -370,11 +370,30 @@ interface RigaVisualizzata {
  * (schedule-reconciliation-service.ts, "numeroLineeImputate"), che conta solo
  * le conferme umane per decidere se l'ereditarietà pro-quota può scattare:
  * il contatore qui deve dire «completa» esattamente quando quella guardia
- * passerebbe, non prima. */
+ * passerebbe, non prima.
+ *
+ * Attenzione: questo è un importo NETTO. `q.importo` è quello scritto da
+ * `righe-conti/route.ts`, che per una riga intera è `dettaglio.prezzoTotale`
+ * — il `PrezzoTotale` di FatturaPA, cioè l'imponibile. Chi confronta questo
+ * numero con `invoice.totalAmount` (lordo) deve prima passare da `alLordo()`.
+ */
 function importoConfermato(imputazioni: ImputazioneQuota[]): number {
   return imputazioni
     .filter((q) => q.stato === 'confermata')
     .reduce((somma, q) => somma + q.importo, 0)
+}
+
+/**
+ * Porta un importo netto di una riga al lordo, con l'aliquota della riga
+ * stessa — stesso schema di `aggregaPerConto` in
+ * `src/lib/services/allocation-service.ts` (netto + netto × aliquota/100),
+ * già rivisto e in produzione per lo stesso calcolo lato server. Le righe di
+ * sistema hanno aliquota 0 per costruzione (né il bollo né l'arrotondamento
+ * portano IVA, vedi `righeDiSistema`), quindi per loro il lordo coincide col
+ * netto senza bisogno di un ramo a parte.
+ */
+function alLordo(importoNetto: number, riga: RigaVisualizzata): number {
+  return importoNetto * (1 + (riga.aliquotaIVA ?? 0) / 100)
 }
 
 /** Riferimento leggibile a una riga mancante nel messaggio del contatore: le
@@ -386,8 +405,21 @@ function riferimentoRiga(riga: RigaVisualizzata): string {
   return `la riga ${riga.numeroLinea}`
 }
 
-/** «manca la riga 2» al singolare, «mancano la riga 2 e il bollo» al plurale. */
-function messaggioRigheMancanti(righeMancanti: RigaVisualizzata[]): string {
+/**
+ * «manca la riga 2» al singolare, «mancano la riga 2 e il bollo» al plurale.
+ *
+ * `righeMancanti` può essere vuoto anche a documento non completo: succede
+ * quando ogni riga presente è coperta per intero ma la somma non arriva
+ * comunque al totale del documento — un onere di testata che non sta in
+ * nessuna riga (sconto, cassa previdenziale, ritenuta: nessuno di questi
+ * diventa oggi una riga di sistema, vedi `righeDiSistema`). In quel caso non
+ * c'è una riga da nominare: si dichiara l'importo residuo invece di stampare
+ * un messaggio vuoto o un `undefined`.
+ */
+function messaggioRigheMancanti(righeMancanti: RigaVisualizzata[], residuo: number): string {
+  if (righeMancanti.length === 0) {
+    return `manca ${formatCurrency(Math.abs(residuo))} non riconducibile a una riga`
+  }
   const riferimenti = righeMancanti.map(riferimentoRiga)
   if (riferimenti.length === 1) return `manca ${riferimenti[0]}`
   const ultimo = riferimenti[riferimenti.length - 1]
@@ -396,7 +428,7 @@ function messaggioRigheMancanti(righeMancanti: RigaVisualizzata[]): string {
 }
 
 export function LineItemsTable({
-  dettaglioLinee,
+  dettaglioLinee = [],
   righeSistema = [],
   showAccountColumn = false,
   canEditAccounts = true,
@@ -406,10 +438,6 @@ export function LineItemsTable({
   onAccountChange,
   onConfirmAllAccounts,
 }: LineItemsTableProps) {
-  if (!dettaglioLinee || dettaglioLinee.length === 0) {
-    return null
-  }
-
   // Helper to format IVA display
   const formatIVA = (aliquota: number) => {
     if (aliquota === 0) return '0%'
@@ -439,6 +467,14 @@ export function LineItemsTable({
     })),
   ]
 
+  // Nessuna riga vera né di sistema: non c'è nulla da mostrare. Sostituisce
+  // il vecchio controllo su `dettaglioLinee.length === 0`, che nascondeva
+  // anche una fattura senza righe XML ma col bollo — un caso vero (bollo
+  // isolato, XML minimale) che perdeva l'intera card.
+  if (righe.length === 0) {
+    return null
+  }
+
   const hasProposte =
     showAccountColumn && righe.some((r) => r.imputazioni.some((q) => q.stato === 'proposta'))
 
@@ -446,16 +482,29 @@ export function LineItemsTable({
   // quanto del documento è già coperto da imputazioni confermate, righe di
   // sistema comprese. Il denominatore è il totale del DOCUMENTO — non la
   // somma delle righe qui sotto — perché deve restare vero anche prima che
-  // l'ultima riga sia stata imputata.
-  const totale =
+  // l'ultima riga sia stata imputata. `Number.isFinite` invece di un
+  // confronto con `undefined`: una stringa non parsabile darebbe `NaN`, che
+  // supererebbe quel confronto e mostrerebbe il piede con "/ € 0,00".
+  const totaleGrezzo =
     totaleDocumento === undefined
       ? undefined
       : typeof totaleDocumento === 'string'
         ? parseFloat(totaleDocumento)
         : totaleDocumento
-  const attribuito = righe.reduce((somma, r) => somma + importoConfermato(r.imputazioni), 0)
+  const totale = totaleGrezzo !== undefined && Number.isFinite(totaleGrezzo) ? totaleGrezzo : undefined
+
+  // Numeratore e confronto per riga sono al LORDO (vedi `alLordo`): `importo`
+  // e `importoConfermato` sono netti, `totale` (invoice.totalAmount) è
+  // lordo — sommarli direttamente sottostimava sempre il numeratore e "✓
+  // completa" non si raggiungeva mai su una fattura vera.
+  const attribuito = righe.reduce(
+    (somma, r) => somma + alLordo(importoConfermato(r.imputazioni), r),
+    0
+  )
   const righeMancanti = righe.filter(
-    (r) => Math.abs(r.importo - importoConfermato(r.imputazioni)) > TOLLERANZA_IMPORTI
+    (r) =>
+      Math.abs(alLordo(r.importo, r) - alLordo(importoConfermato(r.imputazioni), r)) >
+      TOLLERANZA_IMPORTI
   )
   const completa =
     totale !== undefined && Math.abs(attribuito - totale) <= TOLLERANZA_IMPORTI
@@ -566,6 +615,22 @@ export function LineItemsTable({
                     </TableCell>
                     {showAccountColumn && (
                       <TableCell>
+                        {/*
+                          Decisione: le righe di sistema NON si dividono fra
+                          più conti (Task 8, in risposta al brief). Il bollo
+                          e l'arrotondamento sono importi unici e piccoli, non
+                          l'accorpamento di voci eterogenee che giustifica la
+                          divisione di una riga vera (decisione 3 dello
+                          spec) — dividere 2 € di bollo fra due conti non
+                          serve a nessuno scenario reale, e l'arrotondamento
+                          può essere negativo, dove il vincolo `.positive()`
+                          sulle quote (righe-conti/route.ts) non potrebbe
+                          comunque reggere una divisione.
+                          La task 9 non deve mostrare il pulsante `÷` quando
+                          `riga.isSistema` è vero. Il server rifiuta già
+                          esplicitamente (righe-conti/route.ts), non con
+                          l'errore generico di Zod.
+                        */}
                         <div className="flex items-center gap-2">
                           <AccountCombobox
                             value={principale?.accountId}
@@ -606,7 +671,7 @@ export function LineItemsTable({
                       <span className="ml-2 text-green-600">✓ completa</span>
                     ) : (
                       <span className="ml-2 text-amber-600">
-                        — {messaggioRigheMancanti(righeMancanti)}
+                        — {messaggioRigheMancanti(righeMancanti, totale - attribuito)}
                       </span>
                     )}
                   </TableCell>
