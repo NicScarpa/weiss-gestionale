@@ -264,7 +264,12 @@ export function ImportaFattureWizard({ open, onOpenChange, onImportComplete }: P
   return (
     <>
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+        {/* `sm:` obbligatorio: il DialogContent di base porta `sm:max-w-lg`, e
+            tailwind-merge non fonde due classi con breakpoint diversi — le
+            tiene entrambe, e nel CSS generato la variante responsive vince.
+            Senza il prefisso la finestra resta larga 512px sopra i 640px, con
+            la tabella tagliata e i pulsanti fuori portata. */}
+        <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Importa fatture</DialogTitle>
           </DialogHeader>
@@ -302,7 +307,15 @@ export function ImportaFattureWizard({ open, onOpenChange, onImportComplete }: P
           )}
 
           {passo === 'anteprima' && (
-            <div className="space-y-4">
+            // `min-w-0`: il DialogContent è una griglia, e i suoi figli nascono
+            // con `min-width: auto`, cioè non si restringono sotto la larghezza
+            // del proprio contenuto. Con quattordici colonne questo blocco si
+            // allargava fino alla tabella (1223px contro i 1150 della finestra),
+            // portandosi fuori dal bordo destro sia le ultime colonne sia i
+            // pulsanti. Con `min-w-0` si restringe alla finestra e lo scorrimento
+            // orizzontale che `Table` ha già dentro di sé entra finalmente in
+            // funzione: scorre la tabella, non la finestra.
+            <div className="space-y-4 min-w-0">
               <PassoAnteprima
                 righe={righe}
                 onEsclusioneChange={handleEsclusioneChange}

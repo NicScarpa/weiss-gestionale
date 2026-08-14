@@ -62,7 +62,9 @@ export function PrimaNotaTabNav() {
             className={cn(
               'px-4 py-2 rounded-full text-sm font-medium transition-colors whitespace-nowrap shrink-0',
               isActive
-                ? 'bg-black text-white shadow-sm'
+                // Vedi fatture/layout.tsx: `bg-black text-white` spariva in
+                // tema scuro. I token si invertono col tema.
+                ? 'bg-foreground text-background shadow-sm'
                 : 'text-muted-foreground hover:bg-muted hover:text-foreground'
             )}
           >
