@@ -14,6 +14,7 @@ import {
 } from '@/lib/reconciliation/punteggio'
 import { trovaCombinazioni } from '@/lib/reconciliation/combinazioni'
 import { applicaUnicita } from '@/lib/reconciliation/unicita'
+import { mappaCodiciBanca } from '@/lib/reconciliation/codici-banca'
 
 /**
  * Generare un lotto di proposte.
@@ -55,16 +56,29 @@ interface CoppiaValutata {
   motivazioni: Motivazione[]
 }
 
-/** Gli alias della sede, indicizzati per testo normalizzato. */
+/**
+ * Gli alias della sede, indicizzati per testo normalizzato.
+ *
+ * **Si indicizza solo `supplierId`, e `customerId` resta deliberatamente
+ * fuori.** Non è una svista: `punteggioControparte` interroga la mappa con
+ * `scadenza.supplierId`, e dal lato scadenza non esiste altra chiave —
+ * `ScadenzaCandidata` non ha un campo cliente perché `Schedule` non ha una
+ * colonna `customerId`. Un alias indicizzato per cliente entrerebbe in mappa e
+ * nessuna chiave potrebbe interrogarlo: metà della tabella sarebbe codice
+ * irraggiungibile travestito da dato.
+ *
+ * La colonna resta sul modello — serve alla Fase A2 se e quando `Schedule`
+ * avrà un riferimento al cliente — ma finché quel lato manca il codice smette
+ * di fingere di usarla.
+ */
 async function leggiAlias(venueId: string): Promise<Map<string, string>> {
   const righe = await prisma.counterpartyAlias.findMany({
-    where: { venueId },
-    select: { testoNormalizzato: true, supplierId: true, customerId: true },
+    where: { venueId, supplierId: { not: null } },
+    select: { testoNormalizzato: true, supplierId: true },
   })
   const mappa = new Map<string, string>()
   for (const riga of righe) {
-    const identita = riga.supplierId ?? riga.customerId
-    if (identita) mappa.set(riga.testoNormalizzato, identita)
+    if (riga.supplierId) mappa.set(riga.testoNormalizzato, riga.supplierId)
   }
   return mappa
 }
@@ -131,10 +145,24 @@ export async function generaLotto(input: GeneraLottoInput): Promise<GeneraLottoE
 
   const contesto: ContestoValutazione = {
     alias,
-    // La mappa dei codici banca va ricavata leggendo i movimenti veri. Finché
-    // è vuota il fattore vale 0 per tutti e non rompe nulla.
-    mappaCodiciBanca: new Map(),
+    // Ricavata leggendo i 621 movimenti veri del Task 9, non inventata: la
+    // provenienza di ogni riga e i codici deliberatamente esclusi sono
+    // documentati in `codici-banca.ts`.
+    mappaCodiciBanca: mappaCodiciBanca(),
   }
+
+  // Le scadenze nate da una fattura elettronica: distinguono R1/R2 da R3
+  const conFattura = new Set(
+    scadenzeGrezze.filter((s) => s.invoiceId !== null).map((s) => s.id)
+  )
+
+  // Le regole chieste **restringono l'insieme dei candidati**, non solo
+  // l'etichetta. Prima il parametro finiva unicamente in `regoleUsate`:
+  // chiedere il solo R1 generava comunque proposte R2 e R3, perché `regolaDi`
+  // assegna la sigla a posteriori. Il filtro qui usa lo stesso predicato di
+  // `regolaDi`, così la sigla richiesta e quella generata non possono
+  // divergere — e `regoleUsate` documenta un'esecuzione davvero avvenuta.
+  const regoleRichieste = new Set(regole)
 
   const scadenze: ScadenzaCandidata[] = scadenzeGrezze
     .map((s) => ({
@@ -151,11 +179,7 @@ export async function generaLotto(input: GeneraLottoInput): Promise<GeneraLottoE
       metodoPagamento: s.metodoPagamento,
     }))
     .filter((s) => s.residuo > TOLLERANZA)
-
-  // Le scadenze nate da una fattura elettronica: distinguono R1/R2 da R3
-  const conFattura = new Set(
-    scadenzeGrezze.filter((s) => s.invoiceId !== null).map((s) => s.id)
-  )
+    .filter((s) => regoleRichieste.has(regolaDi(s, conFattura)))
 
   const lotto = await prisma.reconciliationBatch.create({
     data: {
@@ -304,7 +328,13 @@ export async function generaLotto(input: GeneraLottoInput): Promise<GeneraLottoE
     ...operazioni,
     prisma.reconciliationBatch.update({
       where: { id: lotto.id },
-      data: { contaProposte },
+      // Lo stato avanza qui, insieme al contatore e per la stessa ragione: un
+      // lotto nasce `in_corso` alla `create` e senza questo aggiornamento non
+      // ne uscirebbe mai, così ogni lotto concluso continuerebbe a dichiararsi
+      // in corso — anche nello storico che `GET /lotti` espone. Nella stessa
+      // transazione delle proposte perché «completato» e «le proposte ci
+      // sono» devono diventare veri insieme.
+      data: { contaProposte, stato: 'completato' },
     }),
   ])
 
@@ -312,12 +342,18 @@ export async function generaLotto(input: GeneraLottoInput): Promise<GeneraLottoE
 }
 
 /**
- * La sigla della regola.
+ * La sigla della regola: R1 = passiva con fattura, R2 = attiva con fattura,
+ * R3 = senza fattura.
  *
  * R3 è il caso senza fattura elettronica dietro — affitto, F24, ricorrenti —
- * e si distingue perché la scadenza non ha `invoiceId`. Percorre lo stesso
- * codice di R1 e R2: la sigla serve all'utente per attribuire un errore a una
- * regola precisa, non al motore per comportarsi diversamente.
+ * e si distingue perché la scadenza non ha `invoiceId`. Le tre percorrono lo
+ * stesso codice di punteggio: la sigla serve all'utente per attribuire un
+ * errore a una regola precisa, non al motore per comportarsi diversamente.
+ *
+ * **Una funzione sola per due usi, ed è il punto**: qui si etichetta la
+ * proposta, sopra si filtrano le scadenze candidate. Separare i due predicati
+ * li lascerebbe divergere, ed è come è nato il difetto che questo assetto
+ * corregge — la sigla chiesta e quella generata che non coincidono.
  */
 function regolaDi(scadenza: ScadenzaCandidata, conFattura: Set<string>): string {
   if (!conFattura.has(scadenza.id)) return 'R3'

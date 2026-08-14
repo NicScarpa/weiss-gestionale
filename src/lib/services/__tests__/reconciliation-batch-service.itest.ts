@@ -12,6 +12,12 @@ import { generaLotto } from '../reconciliation-batch-service'
  * la somma delle fasce deve fare il totale in attesa. È il difetto più visibile
  * di CashKing — "In attesa: 0" con nove abbinamenti ancora da decidere — e
  * nasce dal contare proposte in un posto e schede in un altro.
+ *
+ * Quasi tutti i casi qui chiedono `['R1','R2','R3']` e non la sola `R1`: le
+ * regole **restringono le candidate**, e una scadenza senza `invoiceId` è una
+ * R3. Chiedere `['R1']` a una fixture senza fattura la escluderebbe dal
+ * calcolo, e i test che si aspettano zero proposte passerebbero per il motivo
+ * sbagliato. Il filtro in sé ha un caso dedicato in fondo.
  */
 setupIntegrationDb()
 
@@ -49,7 +55,7 @@ describe('generaLotto', () => {
       venueId: venue.id,
       dateFrom: new Date('2026-07-01'),
       dateTo: new Date('2026-07-31'),
-      regole: ['R1'],
+      regole: ['R1', 'R2', 'R3'],
       userId: null,
     })
 
@@ -86,7 +92,7 @@ describe('generaLotto', () => {
       venueId: venue.id,
       dateFrom: new Date('2026-07-01'),
       dateTo: new Date('2026-07-31'),
-      regole: ['R1'],
+      regole: ['R1', 'R2', 'R3'],
       userId: null,
     })
 
@@ -113,7 +119,7 @@ describe('generaLotto', () => {
       venueId: venue.id,
       dateFrom: new Date('2026-07-01'),
       dateTo: new Date('2026-07-31'),
-      regole: ['R1'],
+      regole: ['R1', 'R2', 'R3'],
       userId: null,
     })
 
@@ -151,7 +157,7 @@ describe('generaLotto', () => {
       venueId: venue.id,
       dateFrom: new Date('2026-07-01'),
       dateTo: new Date('2026-07-31'),
-      regole: ['R1'],
+      regole: ['R1', 'R2', 'R3'],
       userId: null,
     })
 
@@ -186,7 +192,7 @@ describe('generaLotto', () => {
       venueId: venue.id,
       dateFrom: new Date('2026-07-01'),
       dateTo: new Date('2026-07-31'),
-      regole: ['R1'],
+      regole: ['R1', 'R2', 'R3'],
       userId: null,
     })
 
@@ -278,6 +284,97 @@ describe('generaLotto', () => {
     expect(regolaPerQuota(500)).toBe('R3')
   })
 
+  it('un lotto chiesto con la sola R1 non contiene proposte R2 o R3', async () => {
+    // Il parametro `regole` non è decorativo: restringe le candidate. Prima
+    // finiva unicamente in `regoleUsate`, e chiedere R1 generava comunque R2 e
+    // R3 perché la sigla veniva assegnata a posteriori — una casella della UI
+    // che non fa nulla, e uno storico che documenta un'esecuzione mai avvenuta.
+    const venue = await venueDiTest()
+
+    const fatturaPassiva = await creaFattura({
+      venueId: venue.id,
+      totalAmount: 300,
+      invoiceNumber: 'FT-401',
+    })
+    await creaMovimentoBancario(venue.id, {
+      importo: -300,
+      causale: 'Bonifico a ROMA UNO SRL Causale: FT401',
+      data: new Date('2026-07-10'),
+    })
+    await creaScadenza({
+      venueId: venue.id,
+      tipo: 'passiva',
+      importoTotale: 300,
+      dataScadenza: new Date('2026-07-10'),
+      numeroDocumento: 'FT401',
+      controparteNome: 'ROMA UNO SRL',
+      invoiceId: fatturaPassiva.id,
+      descrizione: 'Roma Uno SRL — fattura 401',
+    })
+
+    // Una R2: attiva con fattura
+    const fatturaAttiva = await creaFattura({
+      venueId: venue.id,
+      totalAmount: 400,
+      invoiceNumber: 'FT-402',
+    })
+    await creaMovimentoBancario(venue.id, {
+      importo: 400,
+      causale: 'Bonifico da CLIENTE DUE SRL Causale: FT402',
+      data: new Date('2026-07-11'),
+    })
+    await creaScadenza({
+      venueId: venue.id,
+      tipo: 'attiva',
+      importoTotale: 400,
+      dataScadenza: new Date('2026-07-11'),
+      numeroDocumento: 'FT402',
+      controparteNome: 'CLIENTE DUE SRL',
+      invoiceId: fatturaAttiva.id,
+      descrizione: 'Cliente Due SRL — fattura 402',
+    })
+
+    // Una R3: passiva senza fattura
+    await creaMovimentoBancario(venue.id, {
+      importo: -500,
+      causale: 'Bonifico a FORNITORE TRE SRL Causale: FT403',
+      data: new Date('2026-07-12'),
+    })
+    await creaScadenza({
+      venueId: venue.id,
+      tipo: 'passiva',
+      importoTotale: 500,
+      dataScadenza: new Date('2026-07-12'),
+      numeroDocumento: 'FT403',
+      controparteNome: 'FORNITORE TRE SRL',
+      invoiceId: null,
+      descrizione: 'Fornitore Tre SRL — fattura 403',
+    })
+
+    const esito = await generaLotto({
+      venueId: venue.id,
+      dateFrom: new Date('2026-07-01'),
+      dateTo: new Date('2026-07-31'),
+      regole: ['R1'],
+      userId: null,
+    })
+
+    const proposte = await prisma.reconciliationProposal.findMany({
+      where: { batchId: esito.batchId },
+    })
+    expect(proposte).toHaveLength(1)
+    expect(proposte.map((p) => p.regola)).toEqual(['R1'])
+    expect(esito.contaProposte).toBe(1)
+
+    // E il lotto si dichiara finito: nasce `in_corso` e senza questo
+    // aggiornamento non ne uscirebbe mai.
+    const lotto = await prisma.reconciliationBatch.findUniqueOrThrow({
+      where: { id: esito.batchId },
+    })
+    expect(lotto.stato).toBe('completato')
+    expect(lotto.regoleUsate).toEqual(['R1'])
+  })
+
   it('un pagamento cumulativo produce una proposta con tre gambe, e le quote sommano l\'importo del movimento', async () => {
     const venue = await venueDiTest()
 
@@ -306,7 +403,7 @@ describe('generaLotto', () => {
       venueId: venue.id,
       dateFrom: new Date('2026-07-01'),
       dateTo: new Date('2026-07-31'),
-      regole: ['R1'],
+      regole: ['R1', 'R2', 'R3'],
       userId: null,
     })
 
