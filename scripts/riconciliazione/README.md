@@ -134,8 +134,10 @@ CONTROPARTE (20 punti) resta a zero, e la mappa `mappaCodiciBanca` passata a
 `generaLotto` è vuota per disegno finché non viene popolata (vedi il commento
 in `reconciliation-batch-service.ts`), quindi anche CODICE_BANCA (10 punti)
 resta a zero. Il massimo raggiungibile da questi dati è importo (30) +
-riferimento (20) + data (15) + eventuale bonus di unicità (5) = 70, sotto la
-soglia Alta per costruzione. La distribuzione osservata (0 alta, 35 media, 100
+riferimento (20) + data (13 — il pagamento sintetico cade 5 giorni dopo la
+scadenza, il ramo `giorni > 0 && giorni <= 5` di `punteggioData`, non lo `0`
+che varrebbe 15) + eventuale bonus di unicità (5) = **68**, sotto la soglia
+Alta per costruzione. La distribuzione osservata (0 alta, 35 media, 100
 bassa) è quindi coerente con l'assenza deliberata di due fattori da 30 punti
 complessivi, non una misura della qualità del motore.
 

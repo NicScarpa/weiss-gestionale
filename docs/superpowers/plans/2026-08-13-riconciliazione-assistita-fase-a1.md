@@ -3109,8 +3109,16 @@ La struttura è stata verificata il 13 agosto 2026 ed è questa:
 
 Ogni movimento ha: `transactionId`, `entryReference`, `endToEndId`,
 `bookingDate`, `valueDate`, `transactionAmount`, `remittanceInformationUnstructured`,
-`proprietaryBankTransactionCode`, `internalTransactionId`. Un file di conto
-contiene 318 movimenti *booked*; i conti sono due.
+`proprietaryBankTransactionCode`, `internalTransactionId`. Ci sono due file di
+conto (i conti sono due), ognuno con qualche centinaio di movimenti *booked*.
+
+**Il conteggio grezzo per singolo file non è stabile**: se la sonda GoCardless
+viene rilanciata nel frattempo, quel numero cambia (osservato: un file passato
+da 318 a 335 movimenti fra due esecuzioni di questo stesso piano). Non è un
+segnale di rottura — il numero che conta non è il grezzo per file ma quello
+**dopo la deduplicazione** su `internalTransactionId` fatta da `leggiMovimenti`
+(621 alla misurazione del Task 9). Il controllo utile qui è la presenza delle
+chiavi, non il conteggio.
 
 Riconfermala prima di procedere, perché se qualcuno ha rilanciato la sonda nel
 frattempo il formato potrebbe essere cambiato:
@@ -3125,7 +3133,8 @@ console.log('booked:', tx.booked.length, 'pending:', tx.pending.length);
 console.log('chiavi:', Object.keys(tx.booked[0]).join(', '));
 "
 ```
-Expected: `booked: 318 pending: 0` e l'elenco di chiavi qui sopra.
+Expected: `pending: 0` e l'elenco di chiavi qui sopra — non un valore fisso per
+`booked`, per la ragione spiegata sopra.
 
 - [ ] **Step 2: Scrivi lo script**
 
