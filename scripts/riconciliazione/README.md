@@ -23,6 +23,17 @@ nvm use 22 && npx tsx scripts/riconciliazione/misura-motore.ts
 nvm use 22 && TEST_DB_SUFFIX=ric_a1 npx tsx scripts/riconciliazione/misura-lotto.ts
 ```
 
+> **Gli snapshot non sono nel repository.** `scripts/gocardless/snapshots/` è
+> gitignorato perché contiene movimenti bancari veri — importi, IBAN, ragioni
+> sociali. Da un checkout pulito questi script si fermano con un errore che
+> spiega come riottenerli, e **i numeri qui sotto non sono riproducibili in
+> locale finché non li si riscarica**. Sono dichiarati, non verificabili da
+> chiunque.
+
+> **I blocchi di output di questo documento sono trascrizioni letterali**
+> dell'esecuzione del 14 agosto 2026: incollati, non riscritti. Dove un numero
+> è commentato a parole il commento è marcato come tale.
+
 ## 1. Le causali (`misura-motore.ts`)
 
 Movimenti letti dagli snapshot, deduplicati su `internalTransactionId` (non su
@@ -30,14 +41,14 @@ Movimenti letti dagli snapshot, deduplicati su `internalTransactionId` (non su
 osservate nella Fase 0):
 
 ```
-Movimenti letti (deduplicati): 621
+Movimenti letti (deduplicati su internalTransactionId): 621
 
 USCITE    392 movimenti — con riferimento:  40 (10.2%)
 ENTRATE   229 movimenti — con riferimento:   1 (0.4%)
 TUTTI     621 movimenti — con riferimento:  41 (6.6%)
 
 Con una partita IVA nella causale:    16 (2.6%)
-Con un codice operazione della banca: 621 (100.0%)
+Con un codice operazione della banca:  621 (100.0%)
 ```
 
 ### La percentuale bassa NON è un difetto delle espressioni regolari
@@ -73,9 +84,38 @@ riferimento leggibile, contro il 10,2% aggregato su tutte le uscite. Le
 espressioni regolari funzionano; il resto del campione è commissioni, SDD e
 stipendi che una fattura non ce l'hanno mai.
 
-Questa tabella **è** la mappa `mappaCodiciBanca` in forma grezza: ogni riga
-identifica un codice e il metodo di pagamento a cui va tradotto (bonifico,
-sdd, commissione — da escludere, carta, contanti, f24).
+### Da questa tabella è nata la mappa dei codici
+
+Questa tabella è la forma grezza; la forma azionabile è
+`src/lib/reconciliation/codici-banca.ts`, che `generaLotto` passa come
+`mappaCodiciBanca`. **Sette codici su diciannove sono mappati**, e la brevità è
+il punto: quando il codice è noto ma contraddice il metodo atteso,
+`punteggioCodiceBanca` non si limita a non dare i dieci punti, aggiunge una
+motivazione *negativa*. Una mappatura sbagliata quindi penalizza abbinamenti
+corretti, ed è peggio di nessuna mappatura — un codice assente vale 0 in
+silenzio.
+
+| codice | metodi accettati | perché |
+|---|---|---|
+| `26//11` | `bonifico` | "BONIFICO TRAMITE INTERNET BANKING" |
+| `26//20` | `bonifico` | "VS DISPOSIZIONE PERMANENTE A FAVOR…": un bonifico ricorrente |
+| `31//21` | `sdd` | "SDD B2B RICHIESTA INCASSO SEPA…" |
+| `31//22` | `sdd`, `carta` | "SDD CORE … AMERICAN EXPR": lo strumento è un SDD, ma chi registra la scadenza può averla marcata «carta» guardando la spesa. Entrambe le letture sono corrette e nessuna va penalizzata |
+| `45//15` | `carta` | "CARTA DEL CREDITO COOPERATIVO…" |
+| `19//83` | `f24` | "IMPOSTE E TASSE DELEGA UNIFICATA" |
+| `52//30` | `contanti` | "PRELEVAMENTO CONTANTE ALLO SPORTEL…" |
+
+Restano fuori di proposito: **le commissioni** (`16//37`, `16//33`, `16//32`,
+`16//00`, `16//40`) e **gli interessi** (`18//00`), che non pagano una scadenza
+per costruzione; **gli emolumenti** (`39//11`, `39//00`), che non passano dallo
+scadenzario con un metodo dichiarato; **il giroconto** (`34//00`), che è materia
+della R5; e **rata mutuo** (`15//10`), **imposta di bollo** (`19//05`) e
+**utenze CBILL/PagoPA** (`11//70`), dove il metodo con cui l'operatore registra
+la scadenza non è deducibile dal codice.
+
+`riba` non compare fra i valori: nei 621 movimenti non è mai comparso un codice
+riconducibile alla Ri.Ba., e mapparne uno per simmetria sarebbe l'indovinello
+che questa scelta evita.
 
 ### Il fattore codice banca non è degenere
 
@@ -110,57 +150,82 @@ la stessa tautologia che la spec segnala per la correttezza, spostata dal
 ### I numeri
 
 ```
-Movimenti bancari caricati:              621
-Scadenze sintetiche caricate:             96
-Periodo interrogato:      2026-05-15 → 2026-08-11
-Durata generaLotto:                   ~205 ms
-Proposte totali:                         135
-  fascia alta:                             0
-  fascia media:                           35
-  fascia bassa:                          100
-Gambe totali:                            135  (nessuna proposta cumulativa: 1 gamba ciascuna)
-Cross-check fasce (ricalcolate dal DB):   coincide con esito.perFascia
-Dimensione array passato a $transaction: 136  (= 135 proposte + 1 aggiornamento del contatore)
+Movimenti bancari caricati:     621
+Scadenze sintetiche caricate:    96
+Periodo interrogato:              2026-05-15 → 2026-08-11
+Durata generaLotto:                236 ms
+Proposte totali:                   131
+  fascia alta:                      0
+  fascia media:                     31
+  fascia bassa:                    100
+Gambe totali (proposte cumulative inc.): 131
+Cross-check fasce dal DB coincide con esito.perFascia: sì
+Dimensione dell'array passato a $transaction: 132 (= 131 proposte + 1 aggiornamento del contatore)
 ```
 
-La durata (~205 ms per 621 movimenti × 96 scadenze candidate) dice che il
+La durata (236 ms per 621 movimenti × 96 scadenze candidate) dice che il
 motore gira comodamente su volumi di quest'ordine — non è quello il rischio.
+Gambe = proposte significa che nessuna proposta è cumulativa: una gamba
+ciascuna.
+
+### Cos'è cambiato dalla prima misurazione, e perché
+
+La prima esecuzione (13 agosto) dava **135 proposte, 35 in fascia media, 100 in
+fascia bassa**. Dopo l'ondata di correzione del 14 agosto sono **131, 31, 100**.
+La differenza viene da una sola modifica: `contieneRiferimento` ora **ancora la
+ricerca del numero documento sulle cifre** — il "432" della fattura non si
+trova più dentro l'identificativo operazione, né come prefisso del "4320" di
+un'altra. Il falso positivo era stato misurato all'1,63% sui numeri a tre cifre.
+
+Il conto torna così: quattro proposte hanno perso i venti punti del riferimento
+e sono scese dalla media alla bassa, e altrettante, che stavano in bassa solo
+grazie a quei venti punti, sono cadute sotto la soglia minima di 40 e non
+vengono più emesse. *(Questa attribuzione è una lettura dell'aritmetica dei
+totali, non una misura riga per riga: il bonus di unicità dipende da quante
+alternative restano sopra soglia, quindi può spostare qualcosa di ±5.)*
+
+**La mappa dei codici banca, invece, non ha spostato nulla in questa misura**, e
+va detto perché non se ne tragga la conclusione sbagliata: `punteggioCodiceBanca`
+esce subito con 0 quando la scadenza non dichiara un metodo di pagamento, e le
+scadenze sintetiche di questo script non ne dichiarano uno. Il fattore resta
+quindi a zero come prima — ma ora per assenza del dato dall'altro lato, non
+perché la mappa sia vuota.
 
 ### Fascia Alta a zero: attesa, non un allarme
 
 Con questi dati sintetici la fascia Alta (soglia 85) è **strutturalmente
 irraggiungibile**, e non per un bug: senza `controparteNome` il fattore
-CONTROPARTE (20 punti) resta a zero, e la mappa `mappaCodiciBanca` passata a
-`generaLotto` è vuota per disegno finché non viene popolata (vedi il commento
-in `reconciliation-batch-service.ts`), quindi anche CODICE_BANCA (10 punti)
-resta a zero. Il massimo raggiungibile da questi dati è importo (30) +
-riferimento (20) + data (13 — il pagamento sintetico cade 5 giorni dopo la
-scadenza, il ramo `giorni > 0 && giorni <= 5` di `punteggioData`, non lo `0`
-che varrebbe 15) + eventuale bonus di unicità (5) = **68**, sotto la soglia
-Alta per costruzione. La distribuzione osservata (0 alta, 35 media, 100
-bassa) è quindi coerente con l'assenza deliberata di due fattori da 30 punti
-complessivi, non una misura della qualità del motore.
+CONTROPARTE (20 punti) resta a zero, e senza `metodoPagamento` sulle scadenze
+sintetiche anche CODICE_BANCA (10 punti) resta a zero — `punteggioCodiceBanca`
+esce prima di consultare la mappa quando la scadenza non dichiara un metodo.
+Il massimo raggiungibile da questi dati è importo (30) + riferimento (20) +
+data (13 — il pagamento sintetico cade 5 giorni dopo la scadenza, il ramo
+`giorni > 0 && giorni <= 5` di `punteggioData`, non lo `0` che varrebbe 15) +
+eventuale bonus di unicità (5) = **68**, sotto la soglia Alta per costruzione.
+La distribuzione osservata (0 alta, 31 media, 100 bassa) è quindi coerente con
+l'assenza deliberata di due fattori da 30 punti complessivi, non una misura
+della qualità del motore.
 
 ### La riserva della revisione: dimensione della transazione
 
 **Misurata, non dedotta**: lo script intercetta l'array vero passato a
 `prisma.$transaction` dentro `generaLotto` (senza toccare il codice del
 servizio). Su 621 movimenti e 96 scadenze candidate la transazione porta
-**136 operazioni** in un'unica chiamata. È un ordine di grandezza che
+**132 operazioni** in un'unica chiamata. È un ordine di grandezza che
 PostgreSQL gestisce senza sforzo all'interno del timeout di default della
 forma array di `$transaction` — la riserva aperta dalla revisione (una
 transazione enorme che perde tutte le proposte del giro se salta in fondo) è
-quindi chiusa **per questo volume**: 136 operazioni non sono "centinaia" nel
+quindi chiusa **per questo volume**: 132 operazioni non sono "centinaia" nel
 senso preoccupante. Resta un fatto strutturale da tenere a mente quando il
 volume di movimenti o di scadenze candidate crescerà di un ordine di
 grandezza: la forma della transazione non cambia, solo la sua dimensione.
 
 ## 3. Cosa sappiamo, e cosa no
 
-**Sappiamo**: il motore gira su 621 movimenti veri in circa un quinto di
-secondo, produce un numero di proposte plausibile (135, meno dei 621 movimenti
+**Sappiamo**: il motore gira su 621 movimenti veri in poco più di due decimi di
+secondo, produce un numero di proposte plausibile (131, meno dei 621 movimenti
 perché le uscite senza codice `26//11` non hanno scadenza candidata), la
-transazione di persistenza resta piccola (136 operazioni) a questo volume, e
+transazione di persistenza resta piccola (132 operazioni) a questo volume, e
 il fattore codice banca discrimina bene (nessun codice satura il campione).
 
 **Non sappiamo**: se le proposte sono **giuste**. Le scadenze usate qui sono

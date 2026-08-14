@@ -2024,7 +2024,10 @@ model ReconciliationProposal {
   /// [{ testo, segno }] — segno è "+" o "-"
   motivazioni Json
   stato      String @default("in_attesa")
-  /// Quale approvazione ha superato questa proposta
+  /// Quale approvazione ha superato questa proposta. La FK è stata aggiunta
+  /// finché la tabella era vuota (migrazione 20260814120000): un TEXT libero
+  /// che punta a un id senza vincolo si riempie di riferimenti morti, e
+  /// ripulirli dopo costa quanto non averlo mai avuto.
   supersededByProposalId String? @map("superseded_by_proposal_id")
   /// Il movimento a sinistra. Null solo per R6 (nota di credito ↔ fattura).
   bankTransactionId String? @map("bank_transaction_id")
@@ -2039,9 +2042,14 @@ model ReconciliationProposal {
   journalEntry    JournalEntry?               @relation(fields: [journalEntryId], references: [id])
   decisoDa        User?                       @relation("ReconciliationProposalDecisoDa", fields: [decisoDaId], references: [id])
   gambe           ReconciliationProposalLeg[]
+  /// SetNull e non Cascade: se sparisce la proposta che ha superato questa,
+  /// questa resta — la sua storia è comunque accaduta, perde solo il rimando.
+  supersededBy    ReconciliationProposal?     @relation("ReconciliationProposalSuperata", fields: [supersededByProposalId], references: [id], onDelete: SetNull)
+  superate        ReconciliationProposal[]    @relation("ReconciliationProposalSuperata")
 
   @@index([batchId, stato])
   @@index([bankTransactionId])
+  @@index([supersededByProposalId])
   @@map("reconciliation_proposals")
 }
 
