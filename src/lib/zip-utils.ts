@@ -53,6 +53,8 @@ export interface ZipExtractionResult {
     skippedFiles: number
     /** Numero di file con errori */
     errorFiles: number
+    /** File di metadati AdE scartati senza segnalare errore */
+    metadataFiles: number
   }
 }
 
@@ -80,6 +82,15 @@ const DEFAULT_MAX_FILES = 500
 
 /** Estensioni file fattura supportate */
 const INVOICE_EXTENSIONS = ['.xml', '.p7m']
+
+/**
+ * Riconosce il file di metadati che l'Agenzia delle Entrate affianca a ogni
+ * fattura dentro l'archivio mensile. Non è una fattura: se lo trattiamo come
+ * tale otteniamo un errore di parsing per ogni documento dell'archivio.
+ */
+export function isFileMetadatoAdE(filename: string): boolean {
+  return /_metadato\.xml$/i.test(filename)
+}
 
 /** Magic bytes per identificare ZIP */
 const ZIP_MAGIC_BYTES = [0x50, 0x4b, 0x03, 0x04] // "PK\x03\x04"
@@ -173,6 +184,7 @@ export async function extractInvoicesFromZip(
       invoiceFiles: 0,
       skippedFiles: 0,
       errorFiles: 0,
+      metadataFiles: 0,
     },
   }
 
@@ -240,6 +252,12 @@ export async function extractInvoicesFromZip(
       return false
     }
 
+    // Riconosce e scarta i metadati AdE
+    if (isFileMetadatoAdE(fileName)) {
+      result.stats.metadataFiles++
+      return false
+    }
+
     // Verifica ZIP annidati
     if (isNestedZip(fileName)) {
       result.errors.push({
@@ -256,7 +274,7 @@ export async function extractInvoicesFromZip(
 
   // Calcola file saltati
   result.stats.skippedFiles =
-    allFiles.length - invoiceFiles.length - result.stats.errorFiles
+    allFiles.length - invoiceFiles.length - result.stats.errorFiles - result.stats.metadataFiles
 
   if (invoiceFiles.length === 0) {
     result.errors.push({

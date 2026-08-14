@@ -73,7 +73,11 @@ export default function FattureLayout({
               className={cn(
                 'px-4 py-2 rounded-full text-sm font-medium transition-colors relative whitespace-nowrap shrink-0',
                 isTabActive
-                  ? 'bg-black text-white shadow-sm'
+                  // Non `bg-black text-white`: in tema scuro la pillola attiva
+                  // diventava nera su fondo quasi nero, cioè invisibile. I due
+                  // token si invertono col tema e in chiaro danno la stessa
+                  // resa di prima.
+                  ? 'bg-foreground text-background shadow-sm'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground'
               )}
             >

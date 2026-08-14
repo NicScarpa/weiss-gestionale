@@ -13,6 +13,7 @@ import type {
   DatiPagamento,
   DettaglioPagamento,
   DatiBollo,
+  DatiRitenuta,
   DatiRiferimenti,
   DatoDDT,
   DatoRiferimento,
@@ -341,6 +342,33 @@ function parseDatiBollo(datiGeneraliDocumento: Record<string, unknown>): DatiBol
 }
 
 /**
+ * `DatiRitenuta` sta dentro `DatiGeneraliDocumento`. Nelle parcelle può essere
+ * ripetuto (ritenuta erariale e previdenziale insieme): prendiamo il primo,
+ * che è quello erariale, e ignoriamo gli altri finché il tema non si riapre.
+ */
+function estraiDatiRitenuta(datiGeneraliDocumento: unknown): DatiRitenuta | undefined {
+  const nodo = (datiGeneraliDocumento as Record<string, unknown>)?.DatiRitenuta
+  if (!nodo) return undefined
+
+  const primo = Array.isArray(nodo) ? nodo[0] : nodo
+  const r = primo as Record<string, unknown>
+
+  const importoRitenuta = parseDecimal(r.ImportoRitenuta)
+  const tipoRitenuta = getText(r.TipoRitenuta)
+
+  if (!tipoRitenuta && importoRitenuta === 0) return undefined
+
+  const causalePagamento = getText(r.CausalePagamento)
+
+  return {
+    tipoRitenuta,
+    importoRitenuta,
+    aliquotaRitenuta: parseDecimal(r.AliquotaRitenuta),
+    ...(causalePagamento ? { causalePagamento } : {}),
+  }
+}
+
+/**
  * Estrae un singolo riferimento documento (Ordine, Contratto, Convenzione, Fattura Collegata)
  */
 function parseRiferimentoDocumento(data: Record<string, unknown>): DatoRiferimento {
@@ -513,6 +541,9 @@ export function parseFatturaPA(xmlContent: string, fileName?: string): FatturaPa
     // Bollo
     datiBollo: parseDatiBollo(datiGeneraliDocumento),
 
+    // Ritenuta d'acconto
+    datiRitenuta: estraiDatiRitenuta(datiGeneraliDocumento),
+
     // Metadati
     xmlOriginale: xmlContent,
     nomeFile: fileName,
@@ -581,8 +612,24 @@ export interface OpzioniEstrazioneScadenze {
    * fattura. Il parser lavora sul solo XML e non legge il database: se il
    * chiamante conosce i termini (oggi non sono ancora anagrafati su
    * `Supplier`) li passa qui, altrimenti si applica GIORNI_PAGAMENTO_DEFAULT.
+   *
+   * Vale solo per STIMARE una scadenza che l'XML non riporta: se il
+   * documento porta una `DataScadenzaPagamento`, quella vince comunque su
+   * questo valore. Per un'imposizione che vinca anche sulla data del
+   * documento, vedi `giorniImposti`.
    */
   giorniPagamento?: number
+  /**
+   * Giorni imposti esplicitamente da chi importa (la finestra dei conflitti
+   * sui termini di pagamento, lato UI): a differenza di `giorniPagamento`,
+   * questi vincono SEMPRE, anche quando il documento riporta già una
+   * `DataScadenzaPagamento` — è la differenza fra "il fornitore ha scritto
+   * 30 giorni in fattura, ma con noi sono 60" e "il fornitore non ha scritto
+   * nulla, stimiamo coi suoi termini". Una scadenza ricalcolata così non è
+   * una stima (`dataStimata: false`, senza `notaStima`): è una decisione,
+   * non un'ipotesi del parser.
+   */
+  giorniImposti?: number
 }
 
 export interface ScadenzaEstratta {
@@ -609,6 +656,12 @@ function aggiungiGiorni(data: Date, giorni: number): Date {
   return result
 }
 
+/** Differenza in giorni interi fra due date (può essere negativa). */
+function differenzaInGiorni(a: Date, b: Date): number {
+  const MS_PER_GIORNO = 24 * 60 * 60 * 1000
+  return Math.round((a.getTime() - b.getTime()) / MS_PER_GIORNO)
+}
+
 /**
  * Estrae le scadenze di pagamento dalla fattura.
  *
@@ -616,6 +669,25 @@ function aggiungiGiorni(data: Date, giorni: number): Date {
  * e il singolo `DettaglioPagamento` privo di `DataScadenzaPagamento`. Entrambi
  * sono frequenti nelle fatture arretrate e nei fornitori che compilano l'XML al
  * minimo indispensabile.
+ *
+ * Un terzo caso non stima affatto, impone: `opzioni.giorniImposti` valorizzato
+ * ricalcola le scadenze a partire da data fattura + quei giorni, ignorando le
+ * `DataScadenzaPagamento` che il documento porta. Senza questo ramo, la
+ * finestra dei conflitti sui termini di pagamento non cambiava mai nulla: il
+ * documento quasi sempre porta la sua data, e `giorniPagamento` da solo cede
+ * il passo a quella data appena c'è.
+ *
+ * Con più rate, imporre i giorni NON le collassa tutte sullo stesso giorno:
+ * si conserva lo scaglionamento. La PRIMA rata del documento (per posizione,
+ * non per data — un ordine non cronologico nell'XML sposta quale rata fa da
+ * riferimento, non le distanze relative fra le rate) va a
+ * `dataFattura + giorniImposti`; ogni rata successiva mantiene la distanza in
+ * giorni che aveva da quella prima rata nel documento originale. 30/60/90
+ * imponendo 60 diventa 60/90/120: i venti scelti per la prima scadenza,
+ * struttura rateale del fornitore rispettata. Una rata priva di
+ * `DataScadenzaPagamento` — o l'intero documento, se è la prima rata a
+ * mancarne — non ha una distanza nota da conservare: ricade sulla stessa
+ * regola della rata singola, `dataFattura + giorniImposti`.
  */
 export function estraiScadenze(
   fattura: FatturaParsata,
@@ -633,8 +705,55 @@ export function estraiScadenze(
     notaStima: `Scadenza stimata a ${giorniPagamento} giorni dalla data fattura (${origineTermini}): l'XML non riporta la data di pagamento.`,
   })
 
-  if (!fattura.datiPagamento) {
-    // Nessun blocco DatiPagamento: una rata unica per l'intero documento
+  if (opzioni.giorniImposti !== undefined) {
+    const nuovaPrimaData = aggiungiGiorni(dataFattura, opzioni.giorniImposti)
+
+    if (!fattura.datiPagamento || fattura.datiPagamento.dettagliPagamento.length === 0) {
+      const { totalAmount } = calcolaImporti(fattura)
+      return [
+        {
+          dueDate: nuovaPrimaData,
+          amount: totalAmount,
+          paymentMethod: MODALITA_NON_SPECIFICATA,
+          dataStimata: false,
+        },
+      ]
+    }
+
+    const dettagli = fattura.datiPagamento.dettagliPagamento
+    // Riferimento per lo scaglionamento: la data che il documento assegna
+    // alla PRIMA rata (per posizione nell'XML). Assente se quella rata non
+    // porta una data — nel qual caso nessuna distanza è misurabile e ogni
+    // rata ricade sulla regola della rata singola, più sotto.
+    const primaData = dettagli[0]?.dataScadenzaPagamento
+      ? new Date(dettagli[0].dataScadenzaPagamento)
+      : null
+
+    return dettagli.map((d) => {
+      if (!d.dataScadenzaPagamento || !primaData) {
+        return {
+          dueDate: nuovaPrimaData,
+          amount: d.importoPagamento,
+          paymentMethod: d.modalitaPagamento,
+          dataStimata: false,
+        }
+      }
+
+      const distanzaGiorni = differenzaInGiorni(new Date(d.dataScadenzaPagamento), primaData)
+      return {
+        dueDate: aggiungiGiorni(nuovaPrimaData, distanzaGiorni),
+        amount: d.importoPagamento,
+        paymentMethod: d.modalitaPagamento,
+        dataStimata: false,
+      }
+    })
+  }
+
+  if (!fattura.datiPagamento || fattura.datiPagamento.dettagliPagamento.length === 0) {
+    // Blocco DatiPagamento assente, o presente senza alcun DettaglioPagamento
+    // (capita quando l'XML dichiara solo CondizioniPagamento): in entrambi i
+    // casi non c'è una rata da leggere, e si stima un'unica scadenza per
+    // l'intero documento.
     const { totalAmount } = calcolaImporti(fattura)
     return [
       {
@@ -958,6 +1077,7 @@ export function parseFatturaPASafe(xmlContent: string, fileName?: string): Parse
       datiRiepilogo: parseDatiRiepilogo(datiBeniServizi),
       datiPagamento: parseDatiPagamento(body.DatiPagamento),
       datiBollo: parseDatiBollo(datiGeneraliDocumento),
+      datiRitenuta: estraiDatiRitenuta(datiGeneraliDocumento),
       xmlOriginale: xmlContent,
       nomeFile: fileName,
     }

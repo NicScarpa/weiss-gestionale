@@ -38,17 +38,12 @@ export const TIPI_DOCUMENTO_SENZA_SCADENZA = new Set(['TD04', 'TD05', 'TD08', 'T
 
 /**
  * Sottoinsieme di `TIPI_DOCUMENTO_SENZA_SCADENZA` che RIDUCE il dovuto: le
- * note di credito (TD04, e la sua variante semplificata TD08). TD05/TD09 sono
- * note di DEBITO — aumentano il dovuto, l'opposto — e non generano comunque
- * una scadenza propria, ma per la stessa ragione opposta: si sommano al
- * pagamento successivo invece di sottrarsene.
- *
- * Esportata perché `schedule-reconciliation-service.ts` la usa per filtrare
- * quali documenti collegati entrano nella sottrazione dei pesi (Task 6): una
- * nota di debito linkata da `rettificaInvoiceId` non deve mai finire fra le
- * righe da sottrarre, o il segno del suo importo si inverte due volte.
+ * note di credito. Spostata in `@/lib/invoices/tipi-documento` perché serve
+ * anche a codice client (`lettura-file.ts`), che non può importare questo
+ * modulo: trascina `@/lib/prisma`. Ri-esportata qui per non toccare gli altri
+ * consumer (`riallineamento.ts`, `schedule-reconciliation-service.ts`).
  */
-export const TIPI_DOCUMENTO_NOTA_CREDITO = new Set(['TD04', 'TD08'])
+export { TIPI_DOCUMENTO_NOTA_CREDITO } from '@/lib/invoices/tipi-documento'
 
 /**
  * L'import legge sempre il cedente/prestatore come fornitore

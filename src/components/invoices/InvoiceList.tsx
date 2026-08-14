@@ -62,7 +62,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { DangerousDeleteDialog } from '@/components/ui/dangerous-delete-dialog'
 import { toast } from 'sonner'
-import { InvoiceImportDialog } from './InvoiceImportDialog'
+import { ImportaFattureWizard } from '@/components/fatture/importa/ImportaFattureWizard'
 import {
   getDocumentTypeAbbrev,
   getDocumentTypeColor,
@@ -380,7 +380,7 @@ export function InvoiceList() {
       </div>
 
       {/* Filtri */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center p-4 bg-slate-50 rounded-lg border">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center p-4 bg-muted/50 rounded-lg border">
         {/* Ricerca */}
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -391,7 +391,7 @@ export function InvoiceList() {
               setSearchInput(e.target.value)
               setPage(1)
             }}
-            className="pl-9 bg-white"
+            className="pl-9"
           />
         </div>
 
@@ -404,7 +404,7 @@ export function InvoiceList() {
             setPage(1)
           }}
         >
-          <SelectTrigger className="w-[140px] bg-white">
+          <SelectTrigger className="w-[140px]">
             <Calendar className="mr-2 h-4 w-4" />
             <SelectValue placeholder="Anno" />
           </SelectTrigger>
@@ -427,7 +427,7 @@ export function InvoiceList() {
           }}
           disabled={yearFilter === 'all'}
         >
-          <SelectTrigger className="w-[150px] bg-white">
+          <SelectTrigger className="w-[150px]">
             <SelectValue placeholder="Mese" />
           </SelectTrigger>
           <SelectContent>
@@ -450,7 +450,7 @@ export function InvoiceList() {
             setPage(1)
           }}
         >
-          <SelectTrigger className="w-[160px] bg-white">
+          <SelectTrigger className="w-[160px]">
             <Filter className="mr-2 h-4 w-4" />
             <SelectValue placeholder="Stato" />
           </SelectTrigger>
@@ -471,10 +471,10 @@ export function InvoiceList() {
       </div>
 
       {/* Tabella */}
-      <div className="rounded-lg border bg-white overflow-hidden">
+      <div className="rounded-lg border bg-card overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-slate-50">
+            <TableRow className="bg-muted/50">
               {session?.user?.role === 'admin' && (
                 <TableHead className="w-[50px]">
                   <Checkbox
@@ -543,7 +543,7 @@ export function InvoiceList() {
                 const canDelete = invoice.status !== 'RECORDED' && invoice.status !== 'PAID'
 
                 return (
-                  <TableRow key={invoice.id} className="hover:bg-slate-50">
+                  <TableRow key={invoice.id} className="hover:bg-muted/50">
                     {/* Checkbox selezione */}
                     {session?.user?.role === 'admin' && (
                       <TableCell>
@@ -693,10 +693,10 @@ export function InvoiceList() {
       )}
 
       {/* Dialog import */}
-      <InvoiceImportDialog
+      <ImportaFattureWizard
         open={importDialogOpen}
         onOpenChange={setImportDialogOpen}
-        onSuccess={handleImportSuccess}
+        onImportComplete={handleImportSuccess}
       />
 
       {/* Dialog conferma eliminazione */}

@@ -11,7 +11,7 @@ import { FileText, Ban, Users, Info, Loader2, UploadIcon } from 'lucide-react'
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { Skeleton } from '@/components/ui/skeleton'
-import { CaricaFattureDialog } from '@/components/fatture/CaricaFattureDialog'
+import { ImportaFattureWizard } from '@/components/fatture/importa/ImportaFattureWizard'
 
 interface MonthlyData {
   mese: string
@@ -81,7 +81,7 @@ export default function FattureSituazionePage() {
 
   return (
     <>
-      <CaricaFattureDialog
+      <ImportaFattureWizard
         open={importDialogOpen}
         onOpenChange={setImportDialogOpen}
         onImportComplete={() => refetch()}
@@ -116,7 +116,7 @@ export default function FattureSituazionePage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Imponibile Card */}
-          <Card className="border-none shadow-sm overflow-hidden bg-white">
+          <Card className="border-none shadow-sm overflow-hidden">
             <CardContent className="p-0">
               <div className="p-6 pb-2">
                 <h3 className="text-sm font-semibold text-muted-foreground mb-4">Imponibile</h3>
@@ -128,9 +128,9 @@ export default function FattureSituazionePage() {
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={stats!.monthly} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                        <XAxis dataKey="mese" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(val) => `${val / 1000}k`} />
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                        <XAxis dataKey="mese" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} />
+                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} tickFormatter={(val) => `${val / 1000}k`} />
                         <Tooltip formatter={(value: number | undefined) => formatCurrencyOrDash(value)} />
                         <Bar dataKey="ricavi" fill="#29A382" radius={[4, 4, 0, 0]} barSize={12} />
                         <Bar dataKey="costi" fill="#E55C5C" radius={[4, 4, 0, 0]} barSize={12} />
@@ -139,7 +139,7 @@ export default function FattureSituazionePage() {
                   )}
                 </div>
               </div>
-              <div className="bg-slate-50/50 border-t grid grid-cols-3 divide-x p-4">
+              <div className="bg-muted/50 border-t grid grid-cols-3 divide-x p-4">
                 <div className="px-2">
                   <p className="text-[10px] font-semibold text-muted-foreground uppercase opacity-70">Ricavi</p>
                   <p className="text-lg font-bold text-[#29A382]">{formatCurrency(stats?.totals.ricavi || 0)}</p>
@@ -159,7 +159,7 @@ export default function FattureSituazionePage() {
           </Card>
 
           {/* IVA Card */}
-          <Card className="border-none shadow-sm overflow-hidden bg-white">
+          <Card className="border-none shadow-sm overflow-hidden">
             <CardContent className="p-0">
               <div className="p-6 pb-2">
                 <div className="flex items-center gap-1.5 mb-4">
@@ -188,9 +188,9 @@ export default function FattureSituazionePage() {
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={stats!.monthly} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                        <XAxis dataKey="mese" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(val) => `${val / 100}€`} />
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                        <XAxis dataKey="mese" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} />
+                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} tickFormatter={(val) => `${val / 100}€`} />
                         <Tooltip formatter={(value: number | undefined) => formatCurrencyOrDash(value)} />
                         <Bar dataKey="aCredito" fill="#29A382" radius={[4, 4, 0, 0]} barSize={12} />
                         <Bar dataKey="aDebito" fill="#E55C5C" radius={[4, 4, 0, 0]} barSize={12} />
@@ -199,7 +199,7 @@ export default function FattureSituazionePage() {
                   )}
                 </div>
               </div>
-              <div className="bg-slate-50/50 border-t grid grid-cols-3 divide-x p-4">
+              <div className="bg-muted/50 border-t grid grid-cols-3 divide-x p-4">
                 <div className="px-2">
                   <p className="text-[10px] font-semibold text-muted-foreground uppercase opacity-70">A credito</p>
                   <p className="text-lg font-bold text-[#29A382]">{formatCurrency(stats?.totals.ivaCredito || 0)}</p>
@@ -222,7 +222,7 @@ export default function FattureSituazionePage() {
         {/* Top Clienti e Fornitori */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-12">
           {/* Clienti Table */}
-          <Card className="border-none shadow-sm bg-white">
+          <Card className="border-none shadow-sm">
             <div className="p-4 border-b">
               <h3 className="text-sm font-semibold">Clienti</h3>
             </div>
@@ -256,7 +256,7 @@ export default function FattureSituazionePage() {
           </Card>
 
           {/* Fornitori Table */}
-          <Card className="border-none shadow-sm bg-white">
+          <Card className="border-none shadow-sm">
             <div className="p-4 border-b">
               <h3 className="text-sm font-semibold">Fornitori</h3>
             </div>
