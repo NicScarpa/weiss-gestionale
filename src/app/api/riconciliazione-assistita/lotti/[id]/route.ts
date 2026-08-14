@@ -20,6 +20,15 @@ interface Parametri {
  * I contatori contano **proposte**, sempre. La somma delle tre fasce deve fare
  * il totale in attesa: è il difetto più visibile di CashKing, e nasce dal
  * contare proposte in un posto e schede in un altro.
+ *
+ * Per la stessa ragione i quattro campi `conta*` del lotto **non compaiono in
+ * questa risposta**, benché esistano sulla riga: sono un'istantanea scritta a
+ * fine generazione, mentre `contatori` è ricalcolato adesso, dopo
+ * `aggiornaFreschezza`. Metterli entrambi nello stesso payload significa che
+ * sulla richiesta stessa in cui N proposte vengono superate, il lotto direbbe
+ * `contaSuperate: 0` e i contatori direbbero `superate: N` — di nuovo due
+ * numeri discordi nella stessa schermata, la forma del difetto solo spostata.
+ * `contatori` è la fonte unica; per lo storico sintetico c'è `GET /lotti`.
  */
 export const GET = withAuth<Parametri>(
   async (_request, { venueId, params }) => {
@@ -33,10 +42,6 @@ export const GET = withAuth<Parametri>(
           regoleUsate: true,
           sogliaMinima: true,
           stato: true,
-          contaProposte: true,
-          contaApprovate: true,
-          contaScartate: true,
-          contaSuperate: true,
           aiReferto: true,
           aiRefertoAt: true,
           createdAt: true,

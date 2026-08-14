@@ -8,10 +8,38 @@ import { generaLotto } from '@/lib/services/reconciliation-batch-service'
 import { SOGLIE } from '@/lib/reconciliation/punteggio'
 
 /**
+ * # Deroga dichiarata: queste rotte non hanno ancora un consumer
+ *
+ * `src/CLAUDE.md` vieta il codice irraggiungibile — «una route senza consumer
+ * non è pronta per dopo: o si collega nella stessa sessione, o non si scrive».
+ * Le quattro rotte della riconciliazione assistita (POST e GET qui, GET e
+ * DELETE su `[id]`) hanno oggi come unico chiamante i propri test di
+ * integrazione: nella Fase A1 non esiste schermata, per una scelta a sua volta
+ * dichiarata — non si mostra una UI prima di aver misurato il motore che sta
+ * dietro.
+ *
+ * **È una deroga consapevole, non una dimenticanza.** Queste quattro rotte
+ * sono il contratto che la Fase A2 consuma: la coda di revisione si costruisce
+ * sopra questa superficie, e cambiarla dopo averla scritta costa più che
+ * scriverla ora. La deroga è scritta qui perché il costo di una regola con
+ * eccezioni tacite è che la regola smette di valere.
+ *
+ * Va anche detto per intero: il piano della Fase A1 applica la regola opposta
+ * a se stesso poche righe più in là, escludendo `raggruppaConflitti` proprio
+ * con la motivazione «sarebbe codice esportato e mai chiamato». La differenza
+ * che giustifica il diverso trattamento è che una funzione interna si può
+ * aggiungere quando serve senza rompere nulla, mentre la forma di un endpoint
+ * pubblico va decisa prima di costruirci sopra. Il debito è comunque reale, e
+ * si chiude quando la A2 collega la schermata.
+ *
+ * ---
+ *
  * Le regole implementate nella Fase A1. R1, R2 e R3 percorrono lo stesso
- * codice — la sigla distingue solo se dietro la scadenza c'è una fattura
- * elettronica. R4 (banca ↔ prima nota) e R5 (giroconto) hanno una forma
- * diversa e arrivano nella A2; R6-R8 nelle fasi C e D.
+ * codice di punteggio — la sigla distingue verso e presenza di una fattura
+ * elettronica dietro la scadenza, e **restringe le candidate**: chiedere il
+ * solo R1 non produce proposte R2 o R3. R4 (banca ↔ prima nota) e R5
+ * (giroconto) hanno una forma diversa e arrivano nella A2; R6-R8 nelle fasi C
+ * e D.
  */
 const REGOLE_NOTE = ['R1', 'R2', 'R3'] as const
 
