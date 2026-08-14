@@ -82,6 +82,30 @@ describe('contieneRiferimento', () => {
     expect(contieneRiferimento('Bonifico rif 99123', '123')).toBe(false)
     expect(contieneRiferimento('Bonifico rif AB123', '123')).toBe(true)
   })
+
+  it('trova un numero col prefisso alfabetico anche se la causale ha cifre attaccate prima', () => {
+    // Il difetto simmetrico, e più costoso: `FT/2026/432` arriva tale e quale
+    // da `invoice.invoiceNumber` — la forma col prefisso è ordinaria in Italia
+    // — e normalizzato diventa "FT2026432". Ancorare a sinistra anche su un
+    // bordo alfabetico lo faceva rifiutare ogni volta che la causale aveva una
+    // cifra attaccata prima, cioè quasi sempre: venti punti persi sul fattore
+    // più discriminante, e senza lasciare traccia, perché la proposta
+    // semplicemente non nasce.
+    const causale =
+      '*INSTANT DEL 10/08/2026 ORE 17:53 FT/2026/432 ROSSI SRL Causale: FT/2026/432'
+    expect(contieneRiferimento(causale, 'FT/2026/432')).toBe(true)
+    // Il prefisso alfabetico non annulla l'ancoraggio dell'altro lato: la
+    // fattura 43 non si trova dentro FT2026432.
+    expect(contieneRiferimento(causale, 'FT/2026/43')).toBe(false)
+  })
+
+  it('e il falso positivo a tre cifre resta escluso', () => {
+    // Il guadagno del punto 8 non si perde: i numeri a tre cifre sono numerici
+    // per definizione, quindi restano delimitati da entrambi i lati.
+    // "432" vive dentro "07084324084", circondato da cifre da entrambi i lati
+    expect(contieneRiferimento('Bonifico ID 07084324084 ROSSI SRL', '432')).toBe(false)
+    expect(contieneRiferimento(CAUSALE_INSTANT, '432')).toBe(false)
+  })
 })
 
 describe('estraiRiferimentiDocumento', () => {

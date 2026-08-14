@@ -71,14 +71,30 @@ function soloAlfanumerici(testo: string): string {
  * ("SRLFT 4320", che normalizzato diventa "SRLFT4320"), quindi pretendere un
  * confine anche a sinistra delle lettere perderebbe proprio i riferimenti che
  * il motore trova più spesso.
+ *
+ * **E si ancora un lato solo se quel bordo del riferimento è una cifra.**
+ * Applicarle sempre creava il difetto simmetrico, nella direzione opposta e
+ * più costosa: `FT/2026/432` — la forma col prefisso alfabetico, ordinaria in
+ * Italia, che arriva tale e quale da `invoice.invoiceNumber` — diventa
+ * `FT2026432`, e `(?<![0-9])` lo rifiutava ogni volta che la causale aveva una
+ * cifra appiccicata prima, cioè quasi sempre. Erano venti punti persi sul
+ * fattore più discriminante, e un falso negativo qui **non lascia traccia**:
+ * la proposta semplicemente non nasce, e non c'è sintomo da osservare dopo.
+ *
+ * Il guadagno misurato resta intero: l'1,63% di falsi positivi riguarda i
+ * numeri a tre cifre, che sono numerici per definizione e quindi ancora
+ * delimitati da entrambi i lati.
  */
 export function contieneRiferimento(causale: string, numeroDocumento: string): boolean {
   const ago = soloAlfanumerici(numeroDocumento)
   if (ago.length < LUNGHEZZA_MINIMA_RIFERIMENTO) return false
-  // `ago` è già ridotto ad A-Z0-9 da `soloAlfanumerici`: non c'è nulla da
-  // proteggere dall'interpolazione in un'espressione regolare.
-  const ancorato = new RegExp(`(?<![0-9])${ago}(?![0-9])`)
-  return ancorato.test(soloAlfanumerici(causale))
+  // Ogni lato si ancora solo se il bordo corrispondente dell'ago è una cifra:
+  // su un bordo alfabetico la lookaround non separerebbe nulla, escluderebbe
+  // e basta. `ago` è già ridotto ad A-Z0-9, quindi non c'è nulla da proteggere
+  // dall'interpolazione nell'espressione regolare.
+  const prima = /^[0-9]/.test(ago) ? '(?<![0-9])' : ''
+  const dopo = /[0-9]$/.test(ago) ? '(?![0-9])' : ''
+  return new RegExp(`${prima}${ago}${dopo}`).test(soloAlfanumerici(causale))
 }
 
 /**

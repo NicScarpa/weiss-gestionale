@@ -88,30 +88,44 @@ stipendi che una fattura non ce l'hanno mai.
 
 Questa tabella è la forma grezza; la forma azionabile è
 `src/lib/reconciliation/codici-banca.ts`, che `generaLotto` passa come
-`mappaCodiciBanca`. **Sette codici su diciannove sono mappati**, e la brevità è
-il punto: quando il codice è noto ma contraddice il metodo atteso,
-`punteggioCodiceBanca` non si limita a non dare i dieci punti, aggiunge una
-motivazione *negativa*. Una mappatura sbagliata quindi penalizza abbinamenti
-corretti, ed è peggio di nessuna mappatura — un codice assente vale 0 in
-silenzio.
+`mappaCodiciBanca`. **Sei codici su diciannove sono mappati**, e la brevità è il
+punto: si mappa solo dove la lettura è univoca, perché una riga troppo larga
+regala dieci punti a una coppia che non li merita — e quei punti spingono verso
+la fascia Alta, che si approva in blocco senza aprire le schede. Il paragrafo in
+fondo a questa sezione spiega perché il rischio sta lì e non nella riga
+mancante.
 
 | codice | metodi accettati | perché |
 |---|---|---|
 | `26//11` | `bonifico` | "BONIFICO TRAMITE INTERNET BANKING" |
 | `26//20` | `bonifico` | "VS DISPOSIZIONE PERMANENTE A FAVOR…": un bonifico ricorrente |
 | `31//21` | `sdd` | "SDD B2B RICHIESTA INCASSO SEPA…" |
-| `31//22` | `sdd`, `carta` | "SDD CORE … AMERICAN EXPR": lo strumento è un SDD, ma chi registra la scadenza può averla marcata «carta» guardando la spesa. Entrambe le letture sono corrette e nessuna va penalizzata |
+| `31//22` | `sdd`, `carta` | "SDD CORE … AMERICAN EXPR": lo strumento è un SDD, la spesa sottostante è una carta. Due letture corrette dello *stesso* fatto |
 | `45//15` | `carta` | "CARTA DEL CREDITO COOPERATIVO…" |
 | `19//83` | `f24` | "IMPOSTE E TASSE DELEGA UNIFICATA" |
-| `52//30` | `contanti` | "PRELEVAMENTO CONTANTE ALLO SPORTEL…" |
 
 Restano fuori di proposito: **le commissioni** (`16//37`, `16//33`, `16//32`,
 `16//00`, `16//40`) e **gli interessi** (`18//00`), che non pagano una scadenza
 per costruzione; **gli emolumenti** (`39//11`, `39//00`), che non passano dallo
-scadenzario con un metodo dichiarato; **il giroconto** (`34//00`), che è materia
-della R5; e **rata mutuo** (`15//10`), **imposta di bollo** (`19//05`) e
-**utenze CBILL/PagoPA** (`11//70`), dove il metodo con cui l'operatore registra
-la scadenza non è deducibile dal codice.
+scadenzario con un metodo dichiarato; **il giroconto** (`34//00`) e il
+**prelievo di contante** (`52//30`), che non pagano nessuno — spostano denaro
+fra conti propri, dalla banca alla cassa nel secondo caso, e sono materia della
+R5; e **rata mutuo** (`15//10`), **imposta di bollo** (`19//05`) e **utenze
+CBILL/PagoPA** (`11//70`), dove il metodo con cui la scadenza viene registrata
+non è deducibile dal codice.
+
+**Correzione a quanto scritto sopra nel primo giro**: la frase «una mappatura
+sbagliata penalizza attivamente» era una sovrastima.
+`punteggioCodiceBanca` restituisce **0 sia per un codice sconosciuto sia per uno
+contraddittorio** — nel secondo caso aggiunge una motivazione col segno meno, ma
+è una frase, non un punto. **La mappa può solo aggiungere punti, mai toglierne.**
+Il rischio quindi si inverte: il pericolo non è la riga mancante, è la riga
+troppo larga, che regala dieci punti verso la fascia Alta. È per questo che
+`31//21` resta il solo `sdd` anche sapendo che `Schedule.metodoPagamento`, per le
+fatture importate, non è la scelta di chi registra ma **il codice SDI dichiarato
+dal fornitore** (MP05 → `bonifico`): un fornitore incassato via SDD B2B che
+dichiara MP05 si porta dietro una frase fuorviante, e si preferisce quella a dei
+punti regalati al metodo più frequente.
 
 `riba` non compare fra i valori: nei 621 movimenti non è mai comparso un codice
 riconducibile alla Ri.Ba., e mapparne uno per simmetria sarebbe l'indovinello
@@ -190,6 +204,33 @@ esce subito con 0 quando la scadenza non dichiara un metodo di pagamento, e le
 scadenze sintetiche di questo script non ne dichiarano uno. Il fattore resta
 quindi a zero come prima — ma ora per assenza del dato dall'altro lato, non
 perché la mappa sia vuota.
+
+### La correzione del 14 agosto (secondo giro): numeri identici, e non è un buon segno
+
+L'ancoraggio del primo giro era applicato **incondizionatamente**, anche quando
+il riferimento comincia o finisce per lettera. `FT/2026/432` — la forma col
+prefisso alfabetico, ordinaria in Italia, che arriva tale e quale da
+`invoice.invoiceNumber` — diventa `FT2026432`, e `(?<![0-9])` lo rifiutava ogni
+volta che la causale aveva una cifra attaccata prima: cioè quasi sempre, perché
+queste causali sono dense di cifre. Ogni lato ora si ancora **solo se il bordo
+corrispondente del riferimento è una cifra**.
+
+Rilanciando la misurazione: **131 proposte, 0 alta, 31 media, 100 bassa, 132
+operazioni. Identici.** E l'assenza di differenza è essa stessa il risultato da
+leggere:
+
+> **questa misurazione è cieca a quella classe di difetti per costruzione.**
+> `costruisciScadenzeSintetiche` ricava `numeroDocumento` da
+> `estraiRiferimentiDocumento`, le cui espressioni regolari catturano
+> `\d[\d/\-]{1,15}` — cioè **solo riferimenti che cominciano per cifra**. Un
+> numero fattura con prefisso alfabetico non entra mai nel campione sintetico,
+> quindi nessun falso negativo di quel tipo poteva comparire nei numeri, né
+> prima né dopo.
+
+È lo stesso limite dichiarato in fondo a questo documento, in una forma nuova: i
+dati sintetici misurano ciò che li ha generati. Il difetto era reale — un test
+dedicato lo riproduce in `causale.test.ts` — ma per vederlo *in una misura*
+servono numeri fattura veri, cioè la Fase 3.
 
 ### Fascia Alta a zero: attesa, non un allarme
 

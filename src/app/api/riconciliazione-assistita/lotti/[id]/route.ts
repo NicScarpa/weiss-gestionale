@@ -11,6 +11,12 @@ interface Parametri {
 }
 
 /**
+ * Anche queste due rotte non hanno oggi un consumer di produzione: la deroga
+ * alla regola di `src/CLAUDE.md` sul codice irraggiungibile è argomentata per
+ * intero in cima a `../route.ts`, e vale per tutte e quattro.
+ */
+
+/**
  * GET — il lotto con le sue proposte.
  *
  * Prima di rispondere si ricontrolla la freschezza: una proposta la cui
