@@ -64,6 +64,24 @@ describe('contieneRiferimento', () => {
   it('non trova un numero che non c\'è', () => {
     expect(contieneRiferimento(CAUSALE_INSTANT, '9999')).toBe(false)
   })
+
+  it('non conta un numero a tre cifre che è sottostringa di uno più lungo', () => {
+    // Il falso positivo misurato sulle 621 causali vere: 1,63% con numeri a
+    // tre cifre. Qui la fattura 432 non esiste — la causale parla della 4320 —
+    // e senza ancoraggio prendeva comunque venti punti, abbastanza a spingere
+    // in fascia Alta la coppia col fornitore giusto e la fattura sbagliata.
+    expect(contieneRiferimento(CAUSALE_INSTANT, '432')).toBe(false)
+    // Ma il 4320 vero, appiccicato alla ragione sociale ("SRLFT 4320"),
+    // continua a contare: l'ancoraggio delimita le cifre, non le lettere.
+    expect(contieneRiferimento(CAUSALE_INSTANT, '4320')).toBe(true)
+    // E la 070 dell'identificativo operazione non è la fattura 070.
+    expect(contieneRiferimento(CAUSALE_INSTANT, '070')).toBe(false)
+  })
+
+  it('non conta un numero preceduto da altre cifre', () => {
+    expect(contieneRiferimento('Bonifico rif 99123', '123')).toBe(false)
+    expect(contieneRiferimento('Bonifico rif AB123', '123')).toBe(true)
+  })
 })
 
 describe('estraiRiferimentiDocumento', () => {

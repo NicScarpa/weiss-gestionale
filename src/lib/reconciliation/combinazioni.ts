@@ -3,8 +3,8 @@ import { TOLLERANZA, type ScadenzaCandidata } from './punteggio'
 /**
  * I pagamenti cumulativi: un movimento che salda più scadenze insieme.
  *
- * Modulo puro. La ricerca è deliberatamente stretta — stessa controparte,
- * al massimo quattro gambe, somma che torna al centesimo — perché senza
+ * Modulo puro. La ricerca è deliberatamente stretta — stesso verso e stessa
+ * controparte, al massimo quattro gambe, somma che torna al centesimo — senza
  * questi limiti comincia a proporre somme che quadrano per caso, e una somma
  * casuale che quadra sembra un abbinamento giusto. È il modo peggiore di
  * sbagliare.
@@ -16,11 +16,6 @@ export const MAX_GAMBE = 4
 /** Oltre questo numero di candidate si rinuncia invece di rallentare. */
 const MAX_CANDIDATE = 40
 
-export interface OpzioniCombinazioni {
-  maxGambe?: number
-  tolleranza?: number
-}
-
 /**
  * Chiave d'identità della controparte: l'id se c'è, altrimenti il nome.
  *
@@ -29,9 +24,31 @@ export interface OpzioniCombinazioni {
  * scadenze siano collegate, e l'unica cosa che le unirebbe sarebbe
  * l'aritmetica — precisamente la «somma che quadra per caso» che questo
  * modulo esiste per non produrre.
+ *
+ * **Due fornitori omonimi entrambi senza `supplierId` cadono nello stesso
+ * gruppo, e lo accettiamo.** Con la stessa ragione sociale e nessun
+ * identificativo in anagrafica sono indistinguibili *nei dati*: non esiste
+ * informazione che permetta di separarli, quindi non c'è un comportamento
+ * migliore da scegliere. Il rimedio non sta qui ma a monte — mettere il
+ * fornitore in anagrafica, così la chiave diventa l'id.
  */
 function chiaveControparte(scadenza: ScadenzaCandidata): string {
   return (scadenza.supplierId ?? scadenza.controparteNome) as string
+}
+
+/**
+ * La chiave di raggruppamento: **verso e controparte insieme**.
+ *
+ * Il `tipo` non è un dettaglio decorativo. Il servizio valuta una combinazione
+ * usando `combinazione[0]` come rappresentante, quindi il filtro sul verso in
+ * `punteggio.ts` (`importoUtile`) controlla il segno di **una sola** gamba:
+ * raggruppare per sola controparte lascerebbe che un'uscita da 1.000 € produca
+ * una proposta a due gambe di cui una è una scadenza *attiva*, cioè denaro da
+ * incassare. Basta una controparte che sia insieme cliente e fornitore con lo
+ * stesso nome — nel commercio è ordinario.
+ */
+function chiaveGruppo(scadenza: ScadenzaCandidata): string {
+  return `${scadenza.tipo}|${chiaveControparte(scadenza)}`
 }
 
 /** Vedi il commento su `chiaveControparte`: senza questi due, niente prova. */
@@ -48,25 +65,21 @@ function haControparteIdentificabile(scadenza: ScadenzaCandidata): boolean {
  */
 export function trovaCombinazioni(
   importo: number,
-  candidate: ScadenzaCandidata[],
-  opzioni: OpzioniCombinazioni = {}
+  candidate: ScadenzaCandidata[]
 ): ScadenzaCandidata[][] {
-  const maxGambe = opzioni.maxGambe ?? MAX_GAMBE
-  const tolleranza = opzioni.tolleranza ?? TOLLERANZA
-
-  const perControparte = new Map<string, ScadenzaCandidata[]>()
+  const perGruppo = new Map<string, ScadenzaCandidata[]>()
   for (const scadenza of candidate) {
-    if (scadenza.residuo <= tolleranza) continue
+    if (scadenza.residuo <= TOLLERANZA) continue
     if (!haControparteIdentificabile(scadenza)) continue
-    const chiave = chiaveControparte(scadenza)
-    const gruppo = perControparte.get(chiave)
+    const chiave = chiaveGruppo(scadenza)
+    const gruppo = perGruppo.get(chiave)
     if (gruppo) gruppo.push(scadenza)
-    else perControparte.set(chiave, [scadenza])
+    else perGruppo.set(chiave, [scadenza])
   }
 
   const risultati: ScadenzaCandidata[][] = []
 
-  for (const gruppo of perControparte.values()) {
+  for (const gruppo of perGruppo.values()) {
     if (gruppo.length < 2) continue
 
     // Le più grandi per prime, così la potatura sul residuo morde subito.
@@ -80,12 +93,12 @@ export function trovaCombinazioni(
     const corrente: ScadenzaCandidata[] = []
 
     const esplora = (da: number, somma: number) => {
-      if (somma - importo > tolleranza) return
-      if (corrente.length >= 2 && Math.abs(somma - importo) <= tolleranza) {
+      if (somma - importo > TOLLERANZA) return
+      if (corrente.length >= 2 && Math.abs(somma - importo) <= TOLLERANZA) {
         risultati.push([...corrente])
         return
       }
-      if (corrente.length >= maxGambe) return
+      if (corrente.length >= MAX_GAMBE) return
 
       for (let i = da; i < ordinate.length; i++) {
         corrente.push(ordinate[i])

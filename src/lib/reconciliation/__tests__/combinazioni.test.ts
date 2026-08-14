@@ -49,6 +49,17 @@ describe('trovaCombinazioni', () => {
     expect(combinazioni).toHaveLength(0)
   })
 
+  it('non mescola una scadenza attiva e una passiva della stessa controparte', () => {
+    // Una controparte che è insieme cliente e fornitore con lo stesso nome è
+    // ordinaria nel commercio. Senza il verso nella chiave di raggruppamento,
+    // un'uscita da 1.000 € produrrebbe una proposta a due gambe di cui una è
+    // denaro da *incassare*: il servizio valuta la combinazione dal solo
+    // rappresentante, quindi il filtro sul segno controllerebbe una gamba sola.
+    const attiva: ScadenzaCandidata = { ...scadenza('a', 500), tipo: 'attiva' }
+    const passiva = scadenza('b', 500)
+    expect(trovaCombinazioni(1000, [attiva, passiva])).toHaveLength(0)
+  })
+
   it('non supera il numero massimo di gambe', () => {
     // cinque da 200 farebbero 1000, ma sono più di MAX_GAMBE
     const cinque = [1, 2, 3, 4, 5].map((n) => scadenza(`s${n}`, 200))
