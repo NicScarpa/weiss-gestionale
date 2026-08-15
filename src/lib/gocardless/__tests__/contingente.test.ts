@@ -5,47 +5,67 @@ import {
   riapertura,
   TETTO_GIORNALIERO,
   RISERVA_RITENTATIVI,
-  CHIAMATE_PER_SINCRONIZZAZIONE,
 } from '../contingente'
 
 describe('sincronizzazioniRimaste', () => {
   it('a giornata vuota ne restano tre: la quarta è la riserva', () => {
     expect(
-      sincronizzazioniRimaste({ chiamateOggi: 0, restantiDichiarate: null, riapreAlle: null })
+      sincronizzazioniRimaste({
+        sincronizzazioniOggi: 0,
+        restantiDichiarate: null,
+        riapreAlle: null,
+      })
     ).toBe(TETTO_GIORNALIERO - RISERVA_RITENTATIVI)
   })
 
-  it('una sincronizzazione già fatta costa due chiamate', () => {
+  it('ogni sincronizzazione fatta ne toglie una', () => {
     expect(
-      sincronizzazioniRimaste({ chiamateOggi: 2, restantiDichiarate: null, riapreAlle: null })
+      sincronizzazioniRimaste({
+        sincronizzazioniOggi: 1,
+        restantiDichiarate: null,
+        riapreAlle: null,
+      })
+    ).toBe(2)
+  })
+
+  // Il contingente è **per endpoint**: una sincronizzazione spende una chiamata
+  // su `transactions` e una su `balances`, cioè una su ciascun contatore. Il
+  // `remaining` dell'header è quindi già in sincronizzazioni, e dividerlo per il
+  // numero di endpoint ne dimezzerebbe il valore per niente.
+  it("il residuo dichiarato è già in sincronizzazioni, non in chiamate totali", () => {
+    expect(
+      sincronizzazioniRimaste({ sincronizzazioniOggi: 0, restantiDichiarate: 2, riapreAlle: null })
     ).toBe(2)
   })
 
   it("i ritentativi rientrano dall'header, non dal contatore locale", () => {
-    // Il caso vero: due sincronizzazioni fatte, quindi il contatore locale
-    // crede che ne resti una oltre la riserva. Ma un ritentativo ha bruciato
-    // una chiamata in più e **solo la banca lo sa**: deve vincere lo zero.
+    // Due sincronizzazioni fatte: il contatore locale crede che ne resti una
+    // oltre la riserva. Ma un ritentativo ha bruciato una chiamata in più sullo
+    // stesso endpoint e **solo la banca lo sa**: deve vincere lo zero.
     expect(
-      sincronizzazioniRimaste({ chiamateOggi: 4, restantiDichiarate: 1, riapreAlle: null })
+      sincronizzazioniRimaste({ sincronizzazioniOggi: 2, restantiDichiarate: 0, riapreAlle: null })
     ).toBe(0)
   })
 
   it('quando la banca dichiara il residuo, vince la banca', () => {
     expect(
-      sincronizzazioniRimaste({ chiamateOggi: 0, restantiDichiarate: 1, riapreAlle: null })
-    ).toBe(0)
+      sincronizzazioniRimaste({ sincronizzazioniOggi: 0, restantiDichiarate: 1, riapreAlle: null })
+    ).toBe(1)
   })
 
   it('non scende mai sotto zero, nemmeno se il contatore locale sfora il tetto', () => {
     expect(
-      sincronizzazioniRimaste({ chiamateOggi: 99, restantiDichiarate: null, riapreAlle: null })
+      sincronizzazioniRimaste({
+        sincronizzazioniOggi: 99,
+        restantiDichiarate: null,
+        riapreAlle: null,
+      })
     ).toBe(0)
   })
 
-  it('una dichiarazione generosa non supera il tetto locale', () => {
-    // La banca dice che ne restano 4 (8 chiamate); il tetto con riserva resta 3.
+  it('una dichiarazione generosa non supera il tetto locale con la sua riserva', () => {
     expect(
-      sincronizzazioniRimaste({ chiamateOggi: 0, restantiDichiarate: 8, riapreAlle: null })
+      sincronizzazioniRimaste({ sincronizzazioniOggi: 0, restantiDichiarate: 4, riapreAlle: null })
     ).toBe(TETTO_GIORNALIERO - RISERVA_RITENTATIVI)
   })
 })
@@ -53,7 +73,7 @@ describe('sincronizzazioniRimaste', () => {
 describe('puoSincronizzare', () => {
   it('consente quando c’è margine', () => {
     const esito = puoSincronizzare({
-      chiamateOggi: 0,
+      sincronizzazioniOggi: 0,
       restantiDichiarate: null,
       riapreAlle: null,
     })
@@ -64,7 +84,7 @@ describe('puoSincronizzare', () => {
   it('rifiuta a contingente esaurito e dice quando si riapre', () => {
     const riapre = new Date('2026-08-16T00:00:00.000Z')
     const esito = puoSincronizzare({
-      chiamateOggi: 6,
+      sincronizzazioniOggi: 3,
       restantiDichiarate: 0,
       riapreAlle: riapre,
     })
@@ -75,7 +95,7 @@ describe('puoSincronizzare', () => {
 
   it('rifiuta anche senza sapere quando si riapre, e non finge di saperlo', () => {
     const esito = puoSincronizzare({
-      chiamateOggi: 6,
+      sincronizzazioniOggi: 3,
       restantiDichiarate: null,
       riapreAlle: null,
     })
@@ -97,10 +117,6 @@ describe('riapertura', () => {
 })
 
 describe('le costanti', () => {
-  it('una sincronizzazione costa due chiamate: transactions e balances', () => {
-    expect(CHIAMATE_PER_SINCRONIZZAZIONE).toBe(2)
-  })
-
   it('il tetto della banca è quattro per endpoint e per conto', () => {
     expect(TETTO_GIORNALIERO).toBe(4)
   })
