@@ -113,6 +113,11 @@ chiamata per conto: `http_x_ratelimit_account_success_limit`, `..._remaining`,
 quindi il contatore persistito serve comunque per decidere *prima* — ma quando
 l'header arriva, vince lui.
 
+**Metà del lavoro è già fatto e non va rifatto**: il client legge gli header
+(`leggiLimiti`) e li restituisce al chiamante insieme ai dati — `Risposta<T>` è
+`{ dati, limiti }`. Il contatore non deve toccare gli header HTTP: riceve `limiti`
+da ogni chiamata.
+
 I campi ci sono già su `BankSyncRun`: `rateLimitRemaining`, `rateLimitResetAt`.
 
 ### 4. La deduplica resta al database
@@ -294,8 +299,9 @@ una sola chiamata del contingente.
 - **Integrazione**: le due rotte con `withAuth` e `CRON_SECRET`, la violazione
   `P2002` contata come duplicato e non come errore, `BankSyncRun` scritto in ogni
   esito, la notifica scritta al secondo fallimento e non al primo.
-- **Con `fetch` mockato**: il progetto ne ha già bisogno da tre fasi e non l'ha
-  ancora — qui diventa obbligatorio.
+- **Con `fetch` mockato**: `creaClient` accetta `fetchImpl` e
+  `src/lib/gocardless/__tests__/client.test.ts` lo usa già. L'annotazione «saremmo
+  i primi» della spec dell'8 agosto è superata: si riusa quel modello.
 - **Sul campo, una volta**: un giro vero sul conto collegato. Costa 2 chiamate delle
   4, ed è l'unico modo di verificare la voce 3 (stabilità degli identificativi) e il
   percorso di ritorno dalla banca.
