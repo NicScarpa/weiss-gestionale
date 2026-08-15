@@ -1250,16 +1250,12 @@ interface MetadataSectionProps {
   venueName?: string
   importedAt: string
   fileName?: string
-  recordedAt?: string
-  journalEntryDescription?: string
 }
 
 export function MetadataSection({
   venueName,
   importedAt,
   fileName,
-  recordedAt,
-  journalEntryDescription,
 }: MetadataSectionProps) {
   return (
     <Card>
@@ -1288,16 +1284,6 @@ export function MetadataSection({
             </div>
           )}
         </div>
-        {recordedAt && journalEntryDescription && (
-          <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-            <p className="text-sm font-medium text-green-800">
-              Registrata in Prima Nota
-            </p>
-            <p className="text-xs text-green-600">
-              {formatDateIT(recordedAt)} - {journalEntryDescription}
-            </p>
-          </div>
-        )}
       </CardContent>
     </Card>
   )
