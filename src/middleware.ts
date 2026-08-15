@@ -19,6 +19,7 @@ const PUBLIC_PREFIXES = [
   // con il segreto CRON_SECRET nell'header Authorization.
   '/api/attendance/auto-clockout',
   '/api/promemoria-timbratura/cron',
+  '/api/banca/sincronizzazione/cron',
   // Il ritorno dalla banca a fine autenticazione PSD2. Arriva da fuori — dal
   // sito dell'istituto, e spesso dal telefono su cui si è approvato l'OTP,
   // non dal dispositivo dove la sessione è aperta. Protetta, il middleware la
