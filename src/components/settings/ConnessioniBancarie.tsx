@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { AlertCircle, RefreshCw, Wifi } from 'lucide-react'
@@ -22,6 +22,7 @@ import { formatDateShort } from '@/lib/constants'
 import { PREAVVISO_GIORNI, giorniAllaScadenza } from '@/lib/gocardless/scadenza'
 import { eDaRifare } from '@/lib/gocardless/stati'
 import { RigaContoBancario } from './RigaContoBancario'
+import { useRipristinoDaCache } from '@/lib/hooks/useRipristinoDaCache'
 import { StatoSincronizzazione } from './StatoSincronizzazione'
 import { WizardCollegamento } from './WizardCollegamento'
 
@@ -134,6 +135,17 @@ export function ConnessioniBancarie({ contiBancari }: { contiBancari: ContoBanca
       return res.json()
     },
   })
+
+  // Il collegamento porta l'utente sul portale della banca. Al ritorno col
+  // tasto Indietro il browser ripristina la pagina dalla bfcache: niente si
+  // rimonta, nessuna query si rilegge, e il pannello resta con i quattro
+  // pulsanti e nessuno che porti altrove finché non si ricarica a mano.
+  //
+  // Si rilegge **solo il collegamento**, non l'elenco dei conti: è lo stato
+  // (UA → LN) che rende inerte il pannello, mentre l'altra query azzera le
+  // scelte non salvate a ogni rilettura — vedi `refetchOnWindowFocus: false`
+  // qui sopra, messo esattamente per non farlo per sbaglio.
+  useRipristinoDaCache(useCallback(() => { void ricaricaCollegamento() }, [ricaricaCollegamento]))
 
   const conti = datiConti?.conti ?? []
 
