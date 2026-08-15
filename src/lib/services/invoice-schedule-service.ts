@@ -177,6 +177,68 @@ export interface InvoiceDeletionCheck {
   totalSchedules: number
 }
 
+function esitoEliminabile(): InvoiceDeletionCheck {
+  return { canDelete: true, schedulesWithPayments: [], totalSchedules: 0 }
+}
+
+/**
+ * Verifica su più fatture insieme quali possono essere eliminate, con una
+ * query sola.
+ *
+ * Perché esiste, invece di chiamare `checkInvoiceDeletable` in un ciclo:
+ * l'eliminazione in blocco lo faceva, dentro una `Promise.all` sulla
+ * selezione dell'utente. Con 225 fatture selezionate partivano 225 query
+ * simultanee e il pooler Supabase — interrogato in session mode, quindici
+ * client — rifiutava tutto oltre la quindicesima connessione
+ * (`EMAXCONNSESSION`), facendo fallire l'intera operazione. Il costo del
+ * controllo non deve crescere con la selezione.
+ *
+ * La mappa restituita copre SEMPRE tutti gli id richiesti: una fattura senza
+ * scadenze generate è eliminabile, e va distinta da una che non è stata
+ * interrogata affatto. Chi legge la mappa non deve mai chiedersi cosa
+ * significhi una chiave assente.
+ */
+export async function checkInvoicesDeletable(
+  invoiceIds: string[]
+): Promise<Map<string, InvoiceDeletionCheck>> {
+  const esiti = new Map<string, InvoiceDeletionCheck>(
+    invoiceIds.map((id) => [id, esitoEliminabile()])
+  )
+
+  if (invoiceIds.length === 0) return esiti
+
+  const schedules = await prisma.schedule.findMany({
+    where: { invoiceId: { in: invoiceIds } },
+    select: {
+      id: true,
+      invoiceId: true,
+      descrizione: true,
+      importoPagato: true,
+      _count: { select: { payments: true } },
+    },
+  })
+
+  for (const s of schedules) {
+    // `Schedule.invoiceId` è nullable: le scadenze inserite a mano non nascono
+    // da un documento. Il filtro `in` le ha già escluse, la guardia serve al tipo.
+    const esito = s.invoiceId ? esiti.get(s.invoiceId) : undefined
+    if (!esito) continue
+
+    esito.totalSchedules += 1
+
+    if (s._count.payments > 0 || Number(s.importoPagato) > 0) {
+      esito.canDelete = false
+      esito.schedulesWithPayments.push({
+        id: s.id,
+        descrizione: s.descrizione,
+        importoPagato: s.importoPagato.toString(),
+      })
+    }
+  }
+
+  return esiti
+}
+
 /**
  * Verifica se una fattura può essere eliminata.
  *
@@ -187,45 +249,44 @@ export interface InvoiceDeletionCheck {
 export async function checkInvoiceDeletable(
   invoiceId: string
 ): Promise<InvoiceDeletionCheck> {
-  const schedules = await prisma.schedule.findMany({
-    where: { invoiceId },
-    select: {
-      id: true,
-      descrizione: true,
-      importoPagato: true,
-      _count: { select: { payments: true } },
-    },
+  const esiti = await checkInvoicesDeletable([invoiceId])
+
+  // `checkInvoicesDeletable` garantisce una voce per ogni id richiesto; il
+  // fallback è solo per non propagare un `undefined` che non può avvenire.
+  return esiti.get(invoiceId) ?? esitoEliminabile()
+}
+
+/**
+ * Cancella logicamente le scadenze generate dalle fatture eliminate.
+ * Va invocata solo dopo `checkInvoicesDeletable`: qui non ci sono pagamenti da
+ * proteggere.
+ *
+ * Come sopra, l'aggiornamento è uno solo a prescindere da quante fatture
+ * arrivano: chiamata per ogni fattura dentro una transazione, superava il
+ * timeout di cinque secondi molto prima di finire.
+ */
+export async function softDeleteSchedulesForInvoices(
+  invoiceIds: string[],
+  userId: string | null,
+  client: Pick<typeof prisma, 'schedule'> = prisma
+): Promise<number> {
+  if (invoiceIds.length === 0) return 0
+
+  const result = await client.schedule.updateMany({
+    where: { invoiceId: { in: invoiceIds }, deletedAt: null },
+    data: { deletedAt: new Date(), deletedById: userId },
   })
 
-  const withPayments = schedules.filter(
-    (s) => s._count.payments > 0 || Number(s.importoPagato) > 0
-  )
-
-  return {
-    canDelete: withPayments.length === 0,
-    schedulesWithPayments: withPayments.map((s) => ({
-      id: s.id,
-      descrizione: s.descrizione,
-      importoPagato: s.importoPagato.toString(),
-    })),
-    totalSchedules: schedules.length,
-  }
+  return result.count
 }
 
 /**
  * Cancella logicamente le scadenze generate da una fattura eliminata.
- * Va invocata solo dopo checkInvoiceDeletable: qui non ci sono pagamenti da
- * proteggere.
  */
 export async function softDeleteSchedulesForInvoice(
   invoiceId: string,
   userId: string | null,
   client: Pick<typeof prisma, 'schedule'> = prisma
 ): Promise<number> {
-  const result = await client.schedule.updateMany({
-    where: { invoiceId, deletedAt: null },
-    data: { deletedAt: new Date(), deletedById: userId },
-  })
-
-  return result.count
+  return softDeleteSchedulesForInvoices([invoiceId], userId, client)
 }

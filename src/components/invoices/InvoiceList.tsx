@@ -163,7 +163,13 @@ async function recordInvoice(id: string): Promise<unknown> {
 async function bulkDeleteInvoices(
   ids: string[],
   password: string
-): Promise<{ deleted: number; bloccate?: string[]; scadenzeAnnullate?: number }> {
+): Promise<{
+  deleted: number
+  bloccate?: string[]
+  saltatePerStato?: number
+  scadenzeAnnullate?: number
+  message: string
+}> {
   const res = await fetch('/api/invoices/bulk-delete', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -254,12 +260,18 @@ export function InvoiceList() {
       bulkDeleteInvoices(ids, password),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] })
-      if (result.bloccate && result.bloccate.length > 0) {
-        toast.warning(
-          `${result.deleted} fatture eliminate. ${result.bloccate.length} non eliminate: hanno pagamenti registrati nello scadenzario.`
-        )
+
+      // Il messaggio arriva dal server invece di essere ricomposto qui: è lui
+      // a sapere quante fatture ha saltato e perché, e una seconda scrittura
+      // della stessa frase era già rimasta indietro — taceva le fatture
+      // scartate perché registrate o pagate.
+      const parziale =
+        (result.bloccate?.length ?? 0) > 0 || (result.saltatePerStato ?? 0) > 0
+
+      if (parziale) {
+        toast.warning(result.message)
       } else {
-        toast.success(`${result.deleted} fatture eliminate`)
+        toast.success(result.message)
       }
       setSelectedIds(new Set())
       setPasswordDialogOpen(false)

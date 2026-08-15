@@ -60,7 +60,20 @@ function createPrismaClient() {
     // TLS imposto in produzione, tranne verso un PostgreSQL sulla macchina
     // stessa: la politica, e il perché dell'eccezione, stanno in db-tls.ts.
     ssl: opzioneTls(process.env),
-    max: 20,
+    // Deve restare SOTTO il limite del pooler, non sopra: la produzione parla
+    // con Supabase attraverso il pooler in session mode (porta 5432), che
+    // ammette quindici client. Con `max: 20` il pool apriva serenamente la
+    // sedicesima connessione e si sentiva rispondere
+    // «(EMAXCONNSESSION) max clients reached in session mode» — un errore che
+    // non compare mai sotto carico normale, perché le connessioni aperte
+    // insieme sono poche, e si presenta tutto in una volta al primo pezzo di
+    // codice che interroga il database in parallelo.
+    //
+    // Dieci, non quindici: il margine serve alle migrazioni, agli script di
+    // manutenzione e a una sessione psql aperta a mano, che pescano dallo
+    // stesso contingente. Se un domani si passasse al pooler in transaction
+    // mode (porta 6543) questo tetto andrebbe riletto, non ereditato.
+    max: 10,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
   })
