@@ -9,7 +9,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useState, useEffect, useMemo } from 'react'
-import { ArrowLeft, AlertCircle } from 'lucide-react'
+import { ArrowLeft, AlertCircle, Wallet } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -23,6 +23,7 @@ import {
 } from '@/components/prima-nota/shared/CostCenterSelect'
 import { useAccountsForCombobox, buildCostCenterRuleMap } from '@/hooks/useImputableAccounts'
 import { CONTO_PROPOSTO_BOLLO, LINEA_BOLLO } from '@/lib/sdi/righe-di-sistema'
+import { SegnaComePagataDialog } from './SegnaComePagataDialog'
 
 import {
   DocumentInfoSection,
@@ -96,6 +97,8 @@ interface Invoice {
     stato: string
     importoTotale: string | number
     importoPagato: string | number
+    dataScadenza?: string
+    descrizione?: string
   }>
   // Parsed XML data from API
   parsedData?: ParsedInvoiceData
@@ -217,6 +220,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     centroToccato: false,
   }
   const [scelte, setScelte] = useState(nessunaScelta)
+  const [segnaPagataAperto, setSegnaPagataAperto] = useState(false)
   const correnti = scelte.invoiceId === invoiceId ? scelte : nessunaScelta
 
   const { data: invoice, isLoading, error } = useQuery({
@@ -379,6 +383,9 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   }
 
   const canEdit = invoice.status !== 'PAID'
+  const scadenzeAperte = (invoice.schedules ?? []).filter(
+    (s) => s.stato !== 'pagata' && s.stato !== 'annullata'
+  )
   // Il conto scelto richiede un centro di costo esplicito e non ne è stato
   // scelto uno: si segnala sotto la tendina invece di lasciar salvare in
   // silenzio un'imputazione che il piano dei conti rifiuterebbe.
@@ -441,7 +448,22 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           />
         </div>
 
+        {/* Non compare senza rate aperte: nota di credito, documento di
+            rettifica o fattura già saldata non hanno nulla da saldare. */}
+        {scadenzeAperte.length > 0 && (
+          <Button onClick={() => setSegnaPagataAperto(true)}>
+            <Wallet className="mr-2 h-4 w-4" />
+            Segna come pagata
+          </Button>
+        )}
       </div>
+
+      <SegnaComePagataDialog
+        invoiceId={invoiceId}
+        schedules={invoice.schedules ?? []}
+        open={segnaPagataAperto}
+        onOpenChange={setSegnaPagataAperto}
+      />
 
       {/* Supplier and Customer cards - side by side on desktop */}
       <div className="grid gap-6 md:grid-cols-2">

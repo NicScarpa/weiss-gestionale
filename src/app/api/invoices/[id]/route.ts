@@ -88,6 +88,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
             importoTotale: true,
             importoPagato: true,
             dataPagamento: true,
+            // Servono a «Segna come pagata» per distinguere le rate quando
+            // sono più d'una: senza la data due rate da 500 € sono identiche.
+            dataScadenza: true,
+            descrizione: true,
           },
         },
       },
