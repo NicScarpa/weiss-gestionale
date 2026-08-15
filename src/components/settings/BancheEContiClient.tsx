@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -101,6 +101,14 @@ export function BancheEContiClient() {
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
     staleTime: 0,
+    // Tiene a schermo i dati della chiave precedente mentre la nuova risolve.
+    // Senza, la **prima** volta che si accende «Mostra archiviati» la chiave
+    // `['bank-accounts', true]` non è mai stata letta: `isPending` torna vero,
+    // lo spinner sostituisce l'intero sottoalbero, `ConnessioniBancarie` si
+    // smonta e le scelte non ancora salvate si perdono. Il fix precedente
+    // (`isPending` invece di `isFetching`) copriva solo la rilettura di una
+    // chiave già in cache. Punto 6 dei rimasti dal piano della Fase 2b.
+    placeholderData: keepPreviousData,
     queryKey: ['bank-accounts', showInactive],
     queryFn: async (): Promise<{ accounts?: BankAccount[] }> => {
       const params = new URLSearchParams()
