@@ -75,15 +75,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
             code: true,
           },
         },
-        journalEntry: {
-          select: {
-            id: true,
-            date: true,
-            description: true,
-            debitAmount: true,
-            creditAmount: true,
-          },
-        },
         deadlines: {
           orderBy: { dueDate: 'asc' },
         },

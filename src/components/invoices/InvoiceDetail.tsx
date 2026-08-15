@@ -60,7 +60,6 @@ interface Invoice {
   notes?: string
   importedAt: string
   processedAt?: string
-  recordedAt?: string
   supplier?: {
     id: string
     name: string
@@ -81,12 +80,6 @@ interface Invoice {
     id: string
     name: string
     code: string
-  } | null
-  journalEntry?: {
-    id: string
-    date: string
-    description: string
-    creditAmount?: string
   } | null
   deadlines: Array<{
     id: string

@@ -592,7 +592,6 @@ model JournalEntry {
   /// un'altra operazione.
   transferId              String?                  @map("transfer_id")
   bankTransaction         BankTransaction?
-  electronicInvoice       ElectronicInvoice?
   account                 Account?                 @relation(fields: [accountId], references: [id])
   deletedAt               DateTime?                @map("deleted_at")
   deletedById             String?                  @map("deleted_by_id")
@@ -1723,8 +1722,6 @@ model ElectronicInvoice {
   fileName           String?              @map("file_name")
   importedAt         DateTime             @default(now()) @map("imported_at")
   processedAt        DateTime?            @map("processed_at")
-  recordedAt         DateTime?            @map("recorded_at")
-  journalEntryId     String?              @unique @map("journal_entry_id")
   venueId            String               @map("venue_id")
   createdBy          String?              @map("created_by")
   notes              String?
@@ -1752,7 +1749,6 @@ model ElectronicInvoice {
   deletedAt          DateTime?            @map("deleted_at")
   deletedById        String?              @map("deleted_by_id")
   account            Account?             @relation(fields: [accountId], references: [id])
-  journalEntry       JournalEntry?        @relation(fields: [journalEntryId], references: [id])
   supplier           Supplier?            @relation(fields: [supplierId], references: [id])
   venue              Venue                @relation(fields: [venueId], references: [id])
   deadlines          InvoiceDeadline[]
@@ -2694,11 +2690,16 @@ enum NotificationStatus {
   READ
 }
 
+/// Ciclo di vita di una fattura ricevuta.
+///
+/// `RECORDED` non c'è più dal 15 agosto 2026: diceva «le ho scritto un
+/// movimento di banca», e un documento fiscale non genera movimenti
+/// (spec 2026-08-15-fatture-non-generano-movimenti). `PAID` lo scrive la
+/// scadenza quando risulta saldata, non un bottone.
 enum InvoiceStatus {
   IMPORTED
   MATCHED
   CATEGORIZED
-  RECORDED
   PAID
 }
 
