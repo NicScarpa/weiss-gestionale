@@ -52,7 +52,7 @@ export type ReconcileOutcome =
   /** La quota sfora il residuo della scadenza o la capienza del movimento. */
   | { outcome: 'amount_exceeds_capacity'; motivo: string }
 
-interface ReconcileInput {
+export interface ReconcileInput {
   scheduleId: string
   journalEntryId: string
   venueId: string
@@ -744,6 +744,131 @@ export async function ereditaFetteDaFattura(
 }
 
 /**
+ * Il corpo della riconciliazione, dentro una transazione GIÀ APERTA.
+ *
+ * Esportata perché il pagamento in contanti deve creare il movimento di cassa
+ * e riconciliarlo nello stesso atto: Prisma non annida transazioni
+ * interattive, quindi chi ha già una `tx` in mano entra da qui invece che da
+ * `reconcileScheduleWithEntry`, che la transazione la apre lui.
+ *
+ * Restituisce l'esito INTERNO, che porta con sé `stato`: il seguito —
+ * ricalcolo delle stime del fornitore e log — vive in `dopoLaRiconciliazione`,
+ * perché va fatto fuori dalla transazione da entrambi i chiamanti.
+ */
+export async function riconciliaInTransazione(
+  tx: TransactionClient,
+  {
+    scheduleId,
+    journalEntryId,
+    venueId,
+    userId,
+    amount,
+    source = 'MANUAL',
+    confidence,
+  }: ReconcileInput
+) {
+  const entry = await bloccaMovimento(tx, journalEntryId, venueId)
+  if (!entry) return { outcome: 'entry_not_found' } as const
+
+  const schedule = await bloccaScadenza(tx, scheduleId, venueId)
+  if (!schedule) return { outcome: 'schedule_not_found' } as const
+
+  if (schedule.stato === 'pagata' || schedule.stato === 'annullata') {
+    return { outcome: 'schedule_closed', stato: schedule.stato } as const
+  }
+
+  const esistente = await tx.scheduleReconciliation.findFirst({
+    where: { scheduleId, journalEntryId, status: 'VERIFIED' },
+    select: { id: true },
+  })
+  if (esistente) return { outcome: 'already_reconciled' } as const
+
+  const { utile, disponibile } = await capienzaResiduaMovimento(tx, entry, schedule.tipo)
+
+  if (utile <= 0) {
+    return {
+      outcome: 'invalid_amount',
+      motivo:
+        schedule.tipo === 'attiva'
+          ? 'Il movimento non è un incasso: non può saldare una scadenza attiva'
+          : 'Il movimento non è un\'uscita: non può saldare una scadenza passiva',
+    } as const
+  }
+
+  if (disponibile <= TOLLERANZA_IMPORTI) {
+    return {
+      outcome: 'amount_exceeds_capacity',
+      motivo: `Il movimento è già interamente imputato ad altre scadenze (${formatCurrency(utile)} impegnati)`,
+    } as const
+  }
+
+  // Il residuo si ricava dai pagamenti registrati, non dal contatore sulla
+  // scadenza: se quel contatore è andato in deriva, la somma lo risana.
+  const { pagato } = await sommaPagamenti(tx, scheduleId)
+  const residuo = Number(schedule.importoTotale) - pagato
+
+  // Senza indicazione esplicita si imputa il minore fra residuo e capienza
+  // del movimento: un bonifico cumulativo copre la scadenza fino a concorrenza
+  const quota = amount ?? Math.min(residuo, disponibile)
+
+  if (quota <= 0) {
+    return { outcome: 'invalid_amount', motivo: 'La quota da imputare deve essere positiva' } as const
+  }
+  if (quota > residuo + TOLLERANZA_IMPORTI) {
+    return {
+      outcome: 'amount_exceeds_capacity',
+      motivo: `La quota supera il residuo della scadenza (${formatCurrency(residuo)})`,
+    } as const
+  }
+  if (quota > disponibile + TOLLERANZA_IMPORTI) {
+    return {
+      outcome: 'amount_exceeds_capacity',
+      motivo: `La quota supera la capienza residua del movimento (${formatCurrency(disponibile)} ancora liberi su ${formatCurrency(utile)})`,
+    } as const
+  }
+
+  const payment = await tx.schedulePayment.create({
+    data: {
+      scheduleId,
+      importo: new Prisma.Decimal(quota.toFixed(2)),
+      dataPagamento: entry.date,
+      note: `Riconciliato con il movimento: ${entry.description}`,
+    },
+  })
+
+  const reconciliation = await tx.scheduleReconciliation.create({
+    data: {
+      scheduleId,
+      journalEntryId,
+      status: 'VERIFIED',
+      source,
+      amount: new Prisma.Decimal(quota.toFixed(2)),
+      confidence: confidence !== undefined ? new Prisma.Decimal(confidence.toFixed(2)) : null,
+      paymentId: payment.id,
+      createdById: userId,
+    },
+  })
+
+  // Aggancio pro-quota (Fase 3): dentro la transazione, non best-effort.
+  if (schedule.invoiceId) {
+    await ereditaFetteDaFattura(tx, {
+      journalEntryId,
+      invoiceId: schedule.invoiceId,
+      reconciliationId: reconciliation.id,
+      quota,
+      importoUtileMovimento: utile,
+    })
+  }
+
+  const stato = await ricalcolaStatoSchedule(tx, scheduleId)
+  if (!stato) return { outcome: 'schedule_not_found' } as const
+
+  return { outcome: 'ok', reconciliationId: reconciliation.id, quota, stato } as const
+}
+
+export type EsitoInterno = Awaited<ReturnType<typeof riconciliaInTransazione>>
+
+/**
  * Collega un movimento a una scadenza e aggiorna lo stato di quest'ultima.
  *
  * Tutto in transazione, letture comprese: prima si bloccano movimento e
@@ -756,117 +881,12 @@ export async function ereditaFetteDaFattura(
  * né la capienza ancora libera del *movimento*. Senza il secondo, un bonifico
  * da 100 € poteva figurare come saldo di 500 € di scadenze diverse.
  */
-export async function reconcileScheduleWithEntry({
-  scheduleId,
-  journalEntryId,
-  venueId,
-  userId,
-  amount,
-  source = 'MANUAL',
-  confidence,
-}: ReconcileInput): Promise<ReconcileOutcome> {
-  const esegui = () =>
-    prisma.$transaction(async (tx) => {
-      const entry = await bloccaMovimento(tx, journalEntryId, venueId)
-      if (!entry) return { outcome: 'entry_not_found' } as const
+export async function reconcileScheduleWithEntry(
+  input: ReconcileInput
+): Promise<ReconcileOutcome> {
+  const esegui = () => prisma.$transaction((tx) => riconciliaInTransazione(tx, input))
 
-      const schedule = await bloccaScadenza(tx, scheduleId, venueId)
-      if (!schedule) return { outcome: 'schedule_not_found' } as const
-
-      if (schedule.stato === 'pagata' || schedule.stato === 'annullata') {
-        return { outcome: 'schedule_closed', stato: schedule.stato } as const
-      }
-
-      const esistente = await tx.scheduleReconciliation.findFirst({
-        where: { scheduleId, journalEntryId, status: 'VERIFIED' },
-        select: { id: true },
-      })
-      if (esistente) return { outcome: 'already_reconciled' } as const
-
-      const { utile, disponibile } = await capienzaResiduaMovimento(tx, entry, schedule.tipo)
-
-      if (utile <= 0) {
-        return {
-          outcome: 'invalid_amount',
-          motivo:
-            schedule.tipo === 'attiva'
-              ? 'Il movimento non è un incasso: non può saldare una scadenza attiva'
-              : 'Il movimento non è un\'uscita: non può saldare una scadenza passiva',
-        } as const
-      }
-
-      if (disponibile <= TOLLERANZA_IMPORTI) {
-        return {
-          outcome: 'amount_exceeds_capacity',
-          motivo: `Il movimento è già interamente imputato ad altre scadenze (${formatCurrency(utile)} impegnati)`,
-        } as const
-      }
-
-      // Il residuo si ricava dai pagamenti registrati, non dal contatore sulla
-      // scadenza: se quel contatore è andato in deriva, la somma lo risana.
-      const { pagato } = await sommaPagamenti(tx, scheduleId)
-      const residuo = Number(schedule.importoTotale) - pagato
-
-      // Senza indicazione esplicita si imputa il minore fra residuo e capienza
-      // del movimento: un bonifico cumulativo copre la scadenza fino a concorrenza
-      const quota = amount ?? Math.min(residuo, disponibile)
-
-      if (quota <= 0) {
-        return { outcome: 'invalid_amount', motivo: 'La quota da imputare deve essere positiva' } as const
-      }
-      if (quota > residuo + TOLLERANZA_IMPORTI) {
-        return {
-          outcome: 'amount_exceeds_capacity',
-          motivo: `La quota supera il residuo della scadenza (${formatCurrency(residuo)})`,
-        } as const
-      }
-      if (quota > disponibile + TOLLERANZA_IMPORTI) {
-        return {
-          outcome: 'amount_exceeds_capacity',
-          motivo: `La quota supera la capienza residua del movimento (${formatCurrency(disponibile)} ancora liberi su ${formatCurrency(utile)})`,
-        } as const
-      }
-
-      const payment = await tx.schedulePayment.create({
-        data: {
-          scheduleId,
-          importo: new Prisma.Decimal(quota.toFixed(2)),
-          dataPagamento: entry.date,
-          note: `Riconciliato con il movimento: ${entry.description}`,
-        },
-      })
-
-      const reconciliation = await tx.scheduleReconciliation.create({
-        data: {
-          scheduleId,
-          journalEntryId,
-          status: 'VERIFIED',
-          source,
-          amount: new Prisma.Decimal(quota.toFixed(2)),
-          confidence: confidence !== undefined ? new Prisma.Decimal(confidence.toFixed(2)) : null,
-          paymentId: payment.id,
-          createdById: userId,
-        },
-      })
-
-      // Aggancio pro-quota (Fase 3): dentro la transazione, non best-effort.
-      if (schedule.invoiceId) {
-        await ereditaFetteDaFattura(tx, {
-          journalEntryId,
-          invoiceId: schedule.invoiceId,
-          reconciliationId: reconciliation.id,
-          quota,
-          importoUtileMovimento: utile,
-        })
-      }
-
-      const stato = await ricalcolaStatoSchedule(tx, scheduleId)
-      if (!stato) return { outcome: 'schedule_not_found' } as const
-
-      return { outcome: 'ok', reconciliationId: reconciliation.id, quota, stato } as const
-    })
-
-  let risultato: Awaited<ReturnType<typeof esegui>>
+  let risultato: EsitoInterno
   try {
     risultato = await esegui()
   } catch (error) {
@@ -879,6 +899,21 @@ export async function reconcileScheduleWithEntry({
     throw error
   }
 
+  return dopoLaRiconciliazione(risultato, input)
+}
+
+/**
+ * Il seguito della riconciliazione, FUORI dalla transazione.
+ *
+ * Ricalcolo delle stime del fornitore e log: lo devono fare entrambi i
+ * chiamanti — la rotta delle riconciliazioni e quella del pagamento in
+ * contanti — e tenerlo dentro la transazione allungherebbe il blocco sulle
+ * righe per un lavoro che non ha bisogno di essere atomico con esse.
+ */
+export async function dopoLaRiconciliazione(
+  risultato: EsitoInterno,
+  { scheduleId, journalEntryId, venueId, source = 'MANUAL' }: ReconcileInput
+): Promise<ReconcileOutcome> {
   if (risultato.outcome !== 'ok') {
     return risultato
   }
