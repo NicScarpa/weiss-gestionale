@@ -22,7 +22,7 @@ const updateInvoiceSchema = z.object({
   // Note
   notes: z.string().nullable().optional(),
   // Status manuale
-  status: z.enum(['IMPORTED', 'MATCHED', 'CATEGORIZED', 'RECORDED', 'PAID']).optional(),
+  status: z.enum(['IMPORTED', 'MATCHED', 'CATEGORIZED', 'PAID']).optional(),
 })
 
 interface RouteContext {
@@ -284,10 +284,12 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Fattura non trovata' }, { status: 404 })
     }
 
-    // Non permettere modifiche a fatture già registrate in prima nota
-    if (existingInvoice.status === 'RECORDED' && !validatedData.status) {
+    // Non permettere modifiche a fatture già saldate: cambiarne conto o
+    // fornitore dopo che il pagamento è stato riconciliato scollegherebbe il
+    // documento dal movimento che lo giustifica.
+    if (existingInvoice.status === 'PAID' && !validatedData.status) {
       return NextResponse.json(
-        { error: 'Fattura già registrata in prima nota, non modificabile' },
+        { error: 'Fattura già pagata, non modificabile' },
         { status: 400 }
       )
     }
@@ -351,8 +353,8 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         newStatus = 'IMPORTED'
       }
 
-      // Non retrocedere da RECORDED o PAID
-      if (existingInvoice.status !== 'RECORDED' && existingInvoice.status !== 'PAID') {
+      // Non retrocedere da PAID
+      if (existingInvoice.status !== 'PAID') {
         updateData.status = newStatus
       }
     } else {
@@ -429,10 +431,10 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Fattura non trovata' }, { status: 404 })
     }
 
-    // Non permettere eliminazione di fatture registrate
-    if (invoice.status === 'RECORDED') {
+    // Non permettere eliminazione di fatture già saldate
+    if (invoice.status === 'PAID') {
       return NextResponse.json(
-        { error: 'Impossibile eliminare una fattura già registrata in prima nota' },
+        { error: 'Impossibile eliminare una fattura già pagata' },
         { status: 400 }
       )
     }

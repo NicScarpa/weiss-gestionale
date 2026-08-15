@@ -106,7 +106,7 @@ async function creaFatturaConRighe(
       totalAmount: new Prisma.Decimal(lordo.toFixed(2)),
       netAmount: new Prisma.Decimal(netto.toFixed(2)),
       vatAmount: new Prisma.Decimal((lordo - netto).toFixed(2)),
-      status: 'RECORDED',
+      status: 'CATEGORIZED',
       xmlContent: bollo ? xmlConBollo(bollo.importo) : null,
       ...overrides,
       lineItems: righe.map((r) => ({

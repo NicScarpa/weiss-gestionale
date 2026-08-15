@@ -3,7 +3,12 @@ import { prisma } from '@/lib/prisma'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { loginAs } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
-import { creaFattura, creaScadenza, rileggiScadenza } from '@/test/integration/fixtures/scadenzario'
+import {
+  creaFattura,
+  creaScadenza,
+  fornitoreDiTest,
+  rileggiScadenza,
+} from '@/test/integration/fixtures/scadenzario'
 import { POST as POST_pagamento } from '@/app/api/scadenzario/[id]/pagamenti/route'
 import { DELETE as DELETE_pagamento } from '@/app/api/scadenzario/[id]/pagamenti/[paymentId]/route'
 import { PATCH as PATCH_stato } from '@/app/api/scadenzario/[id]/stato/route'
@@ -164,14 +169,21 @@ describe('PATCH stato', () => {
 
 describe('annullamento della scadenza', () => {
   it('annullare la rata rimasta chiude la fattura: una rata annullata non la tiene aperta', async () => {
-    const fattura = await creaFattura({ status: 'RECORDED', totalAmount: 200 })
+    const fornitore = await fornitoreDiTest()
+    const fattura = await creaFattura({
+      status: 'MATCHED',
+      totalAmount: 200,
+      supplierId: fornitore.id,
+    })
     const rataUno = await creaScadenza({ importoTotale: 100, invoiceId: fattura.id })
     const rataDue = await creaScadenza({ importoTotale: 100, invoiceId: fattura.id })
 
     await registraPagamento(rataUno.id, 100)
     expect(
       (await prisma.electronicInvoice.findUniqueOrThrow({ where: { id: fattura.id } })).status
-    ).toBe('RECORDED')
+      // Con una sola rata pagata la fattura non è saldata: resta al gradino
+      // che i dati dimostrano, cioè MATCHED perché ha un fornitore e non un conto.
+    ).toBe('MATCHED')
 
     const esito = await callRoute(
       DELETE_scadenza,

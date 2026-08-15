@@ -101,7 +101,7 @@ describe('POST /api/invoices/bulk-delete: cosa viene riferito a chi elimina', ()
     const ids = ['inv-1', 'inv-2', 'inv-3']
     vi.mocked(prisma.electronicInvoice.findMany).mockResolvedValue([
       { id: 'inv-1', status: 'IMPORTED' },
-      { id: 'inv-2', status: 'RECORDED' },
+      { id: 'inv-2', status: 'PAID' },
       { id: 'inv-3', status: 'PAID' },
     ] as never)
     vi.mocked(prisma.electronicInvoice.updateMany).mockResolvedValue({ count: 1 } as never)
@@ -114,6 +114,23 @@ describe('POST /api/invoices/bulk-delete: cosa viene riferito a chi elimina', ()
     expect(body.saltatePerStato).toBe(2)
     expect(body.message).toContain('1 fatture eliminate')
     expect(body.message).toContain('2 non eliminate: già registrate o pagate')
+  })
+
+  it('una fattura solo categorizzata resta eliminabile', async () => {
+    vi.mocked(prisma.electronicInvoice.findMany).mockResolvedValue([
+      { id: 'inv-1', status: 'CATEGORIZED' },
+    ] as never)
+    vi.mocked(prisma.electronicInvoice.updateMany).mockResolvedValue({ count: 1 } as never)
+
+    const res = await POST(richiesta(['inv-1']))
+    const body = await res.json()
+
+    // Prima «CATEGORIZED» poteva diventare «RECORDED» e da lì bloccarsi. Ora
+    // ciò che protegge una fattura è avere pagamenti registrati sulle sue
+    // scadenze, non uno stato che diceva soltanto «le ho scritto un movimento».
+    expect(res.status).toBe(200)
+    expect(body.deleted).toBe(1)
+    expect(body.saltatePerStato).toBeUndefined()
   })
 
   it('conta come saltata una fattura che non esiste più', async () => {
@@ -150,7 +167,7 @@ describe('POST /api/invoices/bulk-delete: cosa viene riferito a chi elimina', ()
 
   it('rifiuta con 400 quando ogni fattura scelta è registrata o pagata', async () => {
     vi.mocked(prisma.electronicInvoice.findMany).mockResolvedValue([
-      { id: 'inv-1', status: 'RECORDED' },
+      { id: 'inv-1', status: 'PAID' },
     ] as never)
 
     const res = await POST(richiesta(['inv-1']))

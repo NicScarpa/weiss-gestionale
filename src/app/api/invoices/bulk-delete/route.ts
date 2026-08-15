@@ -12,10 +12,15 @@ import {
 } from '@/lib/services/invoice-schedule-service'
 
 /**
- * Stati che rendono una fattura non eliminabile: il documento è già entrato in
- * contabilità o risulta pagato.
+ * Stati che rendono una fattura non eliminabile: il documento risulta pagato.
+ *
+ * `RECORDED` non esiste più (spec 2026-08-15-fatture-non-generano-movimenti).
+ * Diceva «le ho scritto un movimento di banca», e quel movimento non nasce più
+ * dal documento. Ciò che protegge davvero una fattura dalla cancellazione è
+ * avere pagamenti registrati sulle sue scadenze, e quel controllo è
+ * `checkInvoicesDeletable`, non questa lista.
  */
-const STATI_NON_ELIMINABILI: InvoiceStatus[] = ['RECORDED', 'PAID']
+const STATI_NON_ELIMINABILI: InvoiceStatus[] = ['PAID']
 
 const bulkDeleteSchema = z.object({
   ids: z.array(z.string()).min(1, 'Seleziona almeno una fattura'),

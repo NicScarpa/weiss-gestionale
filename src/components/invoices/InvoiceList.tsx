@@ -12,7 +12,6 @@ import {
   Search,
   Filter,
   MoreVertical,
-  BookOpen,
   Trash2,
   Eye,
   ChevronUp,
@@ -83,7 +82,7 @@ interface Invoice {
   totalAmount: string
   vatAmount: string
   netAmount: string
-  status: 'IMPORTED' | 'MATCHED' | 'CATEGORIZED' | 'RECORDED' | 'PAID'
+  status: 'IMPORTED' | 'MATCHED' | 'CATEGORIZED' | 'PAID'
   supplier?: {
     id: string
     name: string
@@ -149,15 +148,6 @@ async function deleteInvoice(id: string): Promise<void> {
     const data = await res.json()
     throw new Error(data.error || 'Errore eliminazione')
   }
-}
-
-async function recordInvoice(id: string): Promise<unknown> {
-  const res = await fetch(`/api/invoices/${id}/record`, { method: 'POST' })
-  if (!res.ok) {
-    const data = await res.json()
-    throw new Error(data.error || 'Errore registrazione')
-  }
-  return res.json()
 }
 
 async function bulkDeleteInvoices(
@@ -244,17 +234,6 @@ export function InvoiceList() {
   })
 
 
-  const recordMutation = useMutation({
-    mutationFn: recordInvoice,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['invoices'] })
-      toast.success('Fattura registrata in prima nota')
-    },
-    onError: (err: Error) => {
-      toast.error(err.message)
-    },
-  })
-
   const bulkDeleteMutation = useMutation({
     mutationFn: ({ ids, password }: { ids: string[]; password: string }) =>
       bulkDeleteInvoices(ids, password),
@@ -292,7 +271,7 @@ export function InvoiceList() {
   const toggleSelectAll = useCallback(() => {
     if (!data?.data) return
     const deletableIds = data.data
-      .filter((inv) => inv.status !== 'RECORDED' && inv.status !== 'PAID')
+      .filter((inv) => inv.status !== 'PAID')
       .map((inv) => inv.id)
 
     if (selectedIds.size === deletableIds.length && deletableIds.length > 0) {
@@ -469,8 +448,8 @@ export function InvoiceList() {
           <SelectContent>
             <SelectItem value="all">Stato</SelectItem>
             <SelectItem value="all_statuses">Tutti gli stati</SelectItem>
-            <SelectItem value="RECORDED">Registrate</SelectItem>
-            <SelectItem value="not_recorded">Non registrate</SelectItem>
+            <SelectItem value="PAID">Pagate</SelectItem>
+            <SelectItem value="non_pagate">Da pagare</SelectItem>
           </SelectContent>
         </Select>
 
@@ -492,8 +471,8 @@ export function InvoiceList() {
                   <Checkbox
                     checked={
                       data?.data &&
-                      data.data.filter((inv) => inv.status !== 'RECORDED' && inv.status !== 'PAID').length > 0 &&
-                      selectedIds.size === data.data.filter((inv) => inv.status !== 'RECORDED' && inv.status !== 'PAID').length
+                      data.data.filter((inv) => inv.status !== 'PAID').length > 0 &&
+                      selectedIds.size === data.data.filter((inv) => inv.status !== 'PAID').length
                     }
                     onCheckedChange={toggleSelectAll}
                   />
@@ -552,7 +531,7 @@ export function InvoiceList() {
               data?.data.map((invoice) => {
                 const docType = invoice.documentType
                 const simpleStatus = getSimpleStatus(invoice.status)
-                const canDelete = invoice.status !== 'RECORDED' && invoice.status !== 'PAID'
+                const canDelete = invoice.status !== 'PAID'
 
                 return (
                   <TableRow key={invoice.id} className="hover:bg-muted/50">
@@ -615,17 +594,7 @@ export function InvoiceList() {
                               Visualizza
                             </Link>
                           </DropdownMenuItem>
-                          {invoice.status === 'CATEGORIZED' && (
-                            <DropdownMenuItem
-                              onClick={() => recordMutation.mutate(invoice.id)}
-                              disabled={recordMutation.isPending}
-                            >
-                              <BookOpen className="mr-2 h-4 w-4" />
-                              Registra in Prima Nota
-                            </DropdownMenuItem>
-                          )}
-                          {invoice.status !== 'RECORDED' &&
-                            invoice.status !== 'PAID' &&
+                          {invoice.status !== 'PAID' &&
                             session?.user?.role === 'admin' && (
                               <>
                                 <DropdownMenuSeparator />

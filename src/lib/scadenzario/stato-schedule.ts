@@ -231,15 +231,16 @@ export function derivaStato(base: string, pagato: number, totale: number): strin
  *
  * Lo stato precedente non è memorizzato da nessuna parte, quindi non si può
  * "ripristinare": si dichiara il massimo che i dati sanno dimostrare, scendendo
- * la scala del flusso IMPORTED → MATCHED → CATEGORIZED → RECORDED.
+ * la scala del flusso IMPORTED → MATCHED → CATEGORIZED.
+ *
+ * Il gradino `RECORDED` non c'è più: diceva «le ho scritto un movimento di
+ * banca», e dal 15 agosto 2026 un documento fiscale non genera movimenti
+ * (spec 2026-08-15-fatture-non-generano-movimenti).
  */
 function statoFatturaNonPagata(invoice: {
-  journalEntryId: string | null
-  recordedAt: Date | null
   accountId: string | null
   supplierId: string | null
-}): 'IMPORTED' | 'MATCHED' | 'CATEGORIZED' | 'RECORDED' {
-  if (invoice.journalEntryId || invoice.recordedAt) return 'RECORDED'
+}): 'IMPORTED' | 'MATCHED' | 'CATEGORIZED' {
   if (invoice.accountId) return 'CATEGORIZED'
   if (invoice.supplierId) return 'MATCHED'
   return 'IMPORTED'
@@ -257,8 +258,6 @@ async function allineaFattura(tx: TransactionClient, invoiceId: string): Promise
     select: {
       id: true,
       status: true,
-      journalEntryId: true,
-      recordedAt: true,
       accountId: true,
       supplierId: true,
     },

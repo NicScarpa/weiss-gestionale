@@ -44,7 +44,7 @@ async function creaFatturaConRighe(
       totalAmount: new Prisma.Decimal(lordo.toFixed(2)),
       netAmount: new Prisma.Decimal(netto.toFixed(2)),
       vatAmount: new Prisma.Decimal((lordo - netto).toFixed(2)),
-      status: 'RECORDED',
+      status: 'CATEGORIZED',
       ...overrides,
       lineItems: righe.map((r) => ({
         numeroLinea: r.numeroLinea,
@@ -181,7 +181,7 @@ describe('imputazioniDivergenti (Task 7, passo 1)', () => {
         totalAmount: new Prisma.Decimal('122.00'),
         netAmount: new Prisma.Decimal('100.00'),
         vatAmount: new Prisma.Decimal('22.00'),
-        status: 'RECORDED',
+        status: 'CATEGORIZED',
         lineItems: [
           { numeroLinea: 1, descrizione: 'Detersivi assortiti', prezzoUnitario: 100, prezzoTotale: 100, aliquotaIVA: 22 },
         ],

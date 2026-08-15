@@ -109,14 +109,12 @@ export async function creaMovimento(fixture: MovimentoFixture = {}) {
 }
 
 export interface FatturaFixture {
-  status?: 'IMPORTED' | 'MATCHED' | 'CATEGORIZED' | 'RECORDED' | 'PAID'
+  status?: 'IMPORTED' | 'MATCHED' | 'CATEGORIZED' | 'PAID'
   totalAmount?: number
   invoiceNumber?: string
   invoiceDate?: Date
   supplierVat?: string
   venueId?: string
-  journalEntryId?: string | null
-  recordedAt?: Date | null
   accountId?: string | null
   supplierId?: string | null
 }
@@ -135,9 +133,7 @@ export async function creaFattura(fixture: FatturaFixture = {}) {
       totalAmount: decimal(totale),
       vatAmount: decimal(0),
       netAmount: decimal(totale),
-      status: fixture.status ?? 'RECORDED',
-      journalEntryId: fixture.journalEntryId ?? null,
-      recordedAt: fixture.recordedAt ?? null,
+      status: fixture.status ?? 'CATEGORIZED',
       accountId: fixture.accountId ?? null,
       supplierId: fixture.supplierId ?? null,
     },

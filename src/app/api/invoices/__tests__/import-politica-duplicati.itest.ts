@@ -97,7 +97,7 @@ describe('POST /api/invoices — politica duplicati', () => {
 
     await prisma.electronicInvoice.update({
       where: { id: idVecchio },
-      data: { status: 'RECORDED' },
+      data: { status: 'PAID' },
     })
 
     const seconda = await POST(richiesta({ ...base, politicaDuplicati: 'sostituisci' }))

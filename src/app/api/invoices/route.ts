@@ -122,7 +122,10 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const venueId = searchParams.get('venueId')
-    const status = searchParams.get('status') as InvoiceStatus | null
+    // Letto come stringa, non come enum: il valore può essere uno stato oppure
+    // «non_pagate», che stato non è. Il cast a InvoiceStatus arriva dopo il
+    // ramo che lo traduce.
+    const status = searchParams.get('status')
     const supplierId = searchParams.get('supplierId')
     const fromDate = searchParams.get('from')
     const toDate = searchParams.get('to')
@@ -165,8 +168,14 @@ export async function GET(request: NextRequest) {
     const resolvedVenueId = await getVenueId()
     where.venueId = resolvedVenueId
 
-    if (status) {
-      where.status = status
+    // «non_pagate» non è uno stato ma il suo complemento, e va tradotto qui:
+    // finché passava dritto, Prisma riceveva un valore d'enum inesistente e
+    // rispondeva con un errore di validazione. Era il filtro «Non registrate»
+    // della lista fatture, rotto da prima di questa modifica.
+    if (status === 'non_pagate') {
+      where.status = { not: 'PAID' }
+    } else if (status) {
+      where.status = status as InvoiceStatus
     }
 
     if (supplierId) {
@@ -434,10 +443,10 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      if (existingInvoice.status === 'RECORDED') {
+      if (existingInvoice.status === 'PAID') {
         return NextResponse.json(
           {
-            error: 'Impossibile sostituire: la fattura già importata è registrata in prima nota',
+            error: 'Impossibile sostituire: la fattura già importata risulta pagata',
             existingId: existingInvoice.id,
           },
           { status: 409 }

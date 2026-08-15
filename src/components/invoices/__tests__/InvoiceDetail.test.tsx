@@ -290,7 +290,7 @@ describe('InvoiceDetail — Task 10: avviso di divergenza e Riallinea', () => {
     totalAmount: '1222.00',
     vatAmount: '122.00',
     netAmount: '1100.00',
-    status: 'RECORDED',
+    status: 'CATEGORIZED',
     importedAt: '2026-08-01T00:00:00.000Z',
     deadlines: [],
     account: null,

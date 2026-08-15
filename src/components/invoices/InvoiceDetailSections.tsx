@@ -161,7 +161,7 @@ export function DocumentInfoSection({
   documentType,
   status,
 }: DocumentInfoSectionProps) {
-  const isRegistered = status === 'RECORDED' || status === 'PAID'
+  const isPagata = status === 'PAID'
 
   return (
     <div className="flex flex-col gap-1">
@@ -172,8 +172,8 @@ export function DocumentInfoSection({
             {getDocumentTypeAbbrev(documentType)} - {getDocumentTypeLabel(documentType)}
           </Badge>
         )}
-        <Badge className={isRegistered ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-muted-foreground'}>
-          {isRegistered ? 'Registrata' : 'Non registrata'}
+        <Badge className={isPagata ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-muted-foreground'}>
+          {isPagata ? 'Pagata' : 'Da pagare'}
         </Badge>
       </div>
       <p className="text-slate-500">{formatDateIT(invoiceDate)}</p>

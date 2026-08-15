@@ -83,7 +83,7 @@ describe('InvoiceLineAccount: la riga di fattura divisibile fra più conti', () 
         totalAmount: new Prisma.Decimal(100),
         netAmount: new Prisma.Decimal(100),
         vatAmount: new Prisma.Decimal(0),
-        status: 'RECORDED',
+        status: 'CATEGORIZED',
       },
     })
   }

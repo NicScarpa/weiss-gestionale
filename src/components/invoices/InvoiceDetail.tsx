@@ -385,7 +385,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     )
   }
 
-  const canEdit = invoice.status !== 'RECORDED' && invoice.status !== 'PAID'
+  const canEdit = invoice.status !== 'PAID'
   // Il conto scelto richiede un centro di costo esplicito e non ne è stato
   // scelto uno: si segnala sotto la tendina invece di lasciar salvare in
   // silenzio un'imputazione che il piano dei conti rifiuterebbe.
