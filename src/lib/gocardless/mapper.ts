@@ -63,6 +63,19 @@ export function mappaMovimento(grezzo: Movimento): MovimentoDaSalvare {
   }
 }
 
+/**
+ * Solo i movimenti **contabilizzati**.
+ *
+ * I provvisori si scartano di proposito (decisione 1 della spec della Fase 3):
+ * quando si consolidano cambiano identificativo e spesso importo — la mancia su
+ * un pagamento con carta, l'arrotondamento del cambio — quindi tenerli
+ * richiederebbe la logica che riconosce il provvisorio diventato definitivo, su
+ * due campi che possono cambiare entrambi. È il punto in cui nascono i doppioni.
+ *
+ * Oggi la lista è comunque vuota: questa banca non manda `pending`, e per questo
+ * il campo ha `.default([])` nello schema. Il filtro vale per il giorno in cui un
+ * altro istituto li mandasse, o questo cambiasse comportamento senza dirlo.
+ */
 export function mappaMovimenti(risposta: RispostaMovimenti): MovimentoDaSalvare[] {
-  return [...risposta.transactions.booked, ...risposta.transactions.pending].map(mappaMovimento)
+  return risposta.transactions.booked.map(mappaMovimento)
 }

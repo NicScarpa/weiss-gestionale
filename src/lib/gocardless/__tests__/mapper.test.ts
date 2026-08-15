@@ -69,8 +69,31 @@ describe('mappaMovimento', () => {
 })
 
 describe('mappaMovimenti', () => {
-  it('mappa contabilizzati e in sospeso insieme', () => {
+  it('mappa tutti i contabilizzati della risposta', () => {
     const risposta = rispostaMovimentiSchema.parse(contoA)
     expect(mappaMovimenti(risposta)).toHaveLength(6)
+  })
+
+  // Questo caso costruisce i `pending` a mano invece di usare la fixture: la
+  // fixture non ne ha (la banca non li manda), quindi su di essa un test che
+  // parlasse di provvisori resterebbe verde qualunque cosa faccia la funzione.
+  it('scarta i movimenti provvisori: solo i contabilizzati entrano', () => {
+    const risposta = rispostaMovimentiSchema.parse({
+      transactions: {
+        booked: [contoA.transactions.booked[0]],
+        pending: [
+          {
+            ...contoA.transactions.booked[1],
+            transactionId: '20260811-9',
+            remittanceInformationUnstructured: 'AUTORIZZAZIONE CARTA',
+          },
+        ],
+      },
+    })
+
+    const movimenti = mappaMovimenti(risposta)
+
+    expect(movimenti).toHaveLength(1)
+    expect(movimenti[0].providerTransactionId).toBe('20260810-1')
   })
 })
