@@ -13,7 +13,10 @@
  */
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import type { Prisma } from '@prisma/client'
+// Import di valore, non `import type`: `Prisma.PrismaClientKnownRequestError`
+// serve in un `instanceof`, che a runtime non esisterebbe con un import di soli
+// tipi. Gli usi come tipo (`Prisma.XxxInput`) continuano a funzionare.
+import { Prisma } from '@prisma/client'
 
 import { withAuth } from '@/lib/api-utils'
 import { prisma } from '@/lib/prisma'
@@ -471,6 +474,24 @@ export const PUT = withAuth<{ id: string }>(
 
       return NextResponse.json({ salvati })
     } catch (errore) {
+      // `providerAccountId` è `@unique` **globale**: riassegnare un conto della
+      // banca a un altro conto del gestionale, quando il primo abbinamento è
+      // ancora scritto, viola il vincolo. Senza questa traduzione l'utente
+      // riceve un 500 opaco per un'operazione che ha solo bisogno di una
+      // spiegazione. È il punto 2 lasciato aperto dal piano della Fase 2b.
+      if (
+        errore instanceof Prisma.PrismaClientKnownRequestError &&
+        errore.code === 'P2002' &&
+        String(errore.meta?.target ?? '').includes('provider_account_id')
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              'Questo conto della banca è già abbinato a un altro conto del gestionale. Sciogli prima quell’abbinamento, poi rifai questo.',
+          },
+          { status: 409 }
+        )
+      }
       return rispostaErroreGoCardless(errore, 'PUT /api/gocardless/collegamenti/[id]/conti')
     }
   },
