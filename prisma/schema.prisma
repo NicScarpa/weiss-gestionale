@@ -2673,6 +2673,8 @@ enum NotificationType {
   COMPANY_COMMUNICATION
   STAFF_ANOMALY
   NEW_DOCUMENT
+  /// La sincronizzazione bancaria notturna è fallita. Destinatari: gli admin.
+  BANK_SYNC_FAILED
   GENERAL
 }
 
