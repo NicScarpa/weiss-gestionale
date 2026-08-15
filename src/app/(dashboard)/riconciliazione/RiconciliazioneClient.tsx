@@ -20,6 +20,7 @@ import type {
 } from '@/types/reconciliation'
 
 import { logger } from '@/lib/logger'
+import { FreschezzaMovimenti } from '@/components/banca/FreschezzaMovimenti'
 
 type StatusFilter = 'all' | ReconciliationStatus
 
@@ -176,6 +177,7 @@ export function RiconciliazioneClient() {
           <p className="text-muted-foreground">
             Importa e riconcilia i movimenti bancari con la prima nota
           </p>
+          <FreschezzaMovimenti />
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setImportOpen(true)}>

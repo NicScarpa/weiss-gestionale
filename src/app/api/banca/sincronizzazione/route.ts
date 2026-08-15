@@ -72,7 +72,11 @@ export const GET = withAuth(
       return NextResponse.json({ error: 'Errore nel recupero dello stato' }, { status: 500 })
     }
   },
-  { roles: ['admin'], venueScoped: true }
+  // Lettura aperta anche ai manager: l'indicatore di freschezza sta sulla
+  // pagina di riconciliazione, che è admin **o** manager. Con il solo admin il
+  // manager vedrebbe l'indicatore sparire senza spiegazione, che è peggio del
+  // non averlo. La sincronizzazione vera resta ad admin, sotto.
+  { roles: ['admin', 'manager'], venueScoped: true }
 )
 
 export const POST = withAuth(
