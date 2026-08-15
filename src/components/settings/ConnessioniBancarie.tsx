@@ -22,6 +22,7 @@ import { formatDateShort } from '@/lib/constants'
 import { PREAVVISO_GIORNI, giorniAllaScadenza } from '@/lib/gocardless/scadenza'
 import { eDaRifare } from '@/lib/gocardless/stati'
 import { RigaContoBancario } from './RigaContoBancario'
+import { StatoSincronizzazione } from './StatoSincronizzazione'
 import { WizardCollegamento } from './WizardCollegamento'
 
 export interface ContoBancarioDelGestionale {
@@ -476,6 +477,8 @@ export function ConnessioniBancarie({ contiBancari }: { contiBancari: ContoBanca
             Salva
           </Button>
         </div>
+
+        <StatoSincronizzazione />
       </CardContent>
     </Card>
   )
