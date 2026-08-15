@@ -279,6 +279,20 @@ export function creaClient(opzioni: OpzioniClient) {
 
     leggiRequisition: (id: string) =>
       chiama(`/requisitions/${encodeURIComponent(id)}/`, requisitionSchema),
+
+    /**
+     * L'agreement come la banca l'ha davvero concesso.
+     *
+     * Serve perché `access_valid_for_days` che chiediamo alla creazione è il
+     * **massimo dichiarato dall'istituto**, e la banca può concederne meno:
+     * ricalcolare la scadenza da quel massimo sbaglia sempre per eccesso, e
+     * l'avviso a quattordici giorni arriva tardi.
+     *
+     * Non è un endpoint **per conto**: sta fuori dal contingente di quattro
+     * chiamate al giorno, quindi leggerlo non toglie nulla ai movimenti.
+     */
+    leggiAgreement: (id: string) =>
+      chiama(`/agreements/enduser/${encodeURIComponent(id)}/`, agreementSchema),
   }
 }
 

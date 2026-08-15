@@ -198,6 +198,84 @@ describe('la scadenza si scrive quando il consenso diventa attivo, non prima', (
     expect(giorniAllaScadenza).toBeLessThanOrEqual(90)
   })
 
+  // Punto 7 dei rimasti dal piano della Fase 2b. Il massimo dichiarato
+  // dall'istituto è ciò che **avevamo chiesto**; la banca può concederne meno.
+  // Ricalcolare da quel massimo sbaglia sempre per eccesso, e l'avviso a
+  // quattordici giorni arriva tardi.
+  it('usa i giorni concessi davvero, non il massimo dichiarato dall’istituto', async () => {
+    await entraCome('admin')
+    const venue = await venueDiTest()
+    const connessione = await prisma.bankConnection.create({
+      data: {
+        venueId: venue.id,
+        institutionId: 'BANCA_FINTA_XXXX',
+        institutionName: 'Banca Finta',
+        requisitionId: 'req-concessi',
+        agreementId: 'agr-1',
+        status: 'UA',
+        accessValidUntil: null,
+      },
+    })
+    impostaClientPerTest({
+      leggiRequisition: async () => ({
+        dati: { id: 'req-concessi', status: 'LN', accounts: [], link: '' },
+        limiti: { restanti: null, ripresaFraSecondi: null },
+      }),
+      // L'istituto ne dichiara 180, la banca ne ha concessi 30.
+      istituzioni: async () => ({
+        dati: [{ id: 'BANCA_FINTA_XXXX', name: 'Banca Finta', max_access_valid_for_days: '180' }],
+        limiti: { restanti: null, ripresaFraSecondi: null },
+      }),
+      leggiAgreement: async () => ({
+        dati: { id: 'agr-1', access_valid_for_days: 30 },
+        limiti: { restanti: null, ripresaFraSecondi: null },
+      }),
+    } as unknown as ClientGoCardless)
+
+    await callRoute(leggiConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`), { id: connessione.id })
+
+    const riga = await prisma.bankConnection.findUniqueOrThrow({ where: { id: connessione.id } })
+    const giorniAllaScadenza = Math.round((riga.accessValidUntil!.getTime() - Date.now()) / 86_400_000)
+    expect(giorniAllaScadenza).toBeGreaterThanOrEqual(29)
+    expect(giorniAllaScadenza).toBeLessThanOrEqual(30)
+  })
+
+  it('se l’agreement non si legge ricade sulla stima, invece di lasciare la data vuota', async () => {
+    await entraCome('admin')
+    const venue = await venueDiTest()
+    const connessione = await prisma.bankConnection.create({
+      data: {
+        venueId: venue.id,
+        institutionId: 'BANCA_FINTA_XXXX',
+        institutionName: 'Banca Finta',
+        requisitionId: 'req-ricaduta',
+        agreementId: 'agr-rotto',
+        status: 'UA',
+        accessValidUntil: null,
+      },
+    })
+    impostaClientPerTest({
+      leggiRequisition: async () => ({
+        dati: { id: 'req-ricaduta', status: 'LN', accounts: [], link: '' },
+        limiti: { restanti: null, ripresaFraSecondi: null },
+      }),
+      istituzioni: async () => ({
+        dati: [{ id: 'BANCA_FINTA_XXXX', name: 'Banca Finta', max_access_valid_for_days: '90' }],
+        limiti: { restanti: null, ripresaFraSecondi: null },
+      }),
+      leggiAgreement: async () => {
+        throw new Error('agreement non leggibile')
+      },
+    } as unknown as ClientGoCardless)
+
+    await callRoute(leggiConti, jsonRequest(`http://localhost/api/gocardless/collegamenti/${connessione.id}/conti`), { id: connessione.id })
+
+    const riga = await prisma.bankConnection.findUniqueOrThrow({ where: { id: connessione.id } })
+    expect(riga.accessValidUntil).not.toBeNull()
+    const giorniAllaScadenza = Math.round((riga.accessValidUntil!.getTime() - Date.now()) / 86_400_000)
+    expect(giorniAllaScadenza).toBeGreaterThanOrEqual(89)
+  })
+
   // Il client finto non ha `istituzioni`: se il codice la chiamasse fuori dal
   // ramo `LN` il test esploderebbe con un errore chiaro invece di passare in
   // silenzio, dimostrando che quella chiamata resta condizionata allo stato.

@@ -149,18 +149,41 @@ export const GET = withAuth<{ id: string }>(
             // banca. Se fallisce, lo stato si scrive lo stesso e la data
             // resta indietro fino alla prossima lettura che ci riesce.
             try {
-              const elenco = await client.istituzioni('it')
-              const istituto = elenco.dati.find((i) => i.id === connessione.institutionId)
-              // Un istituto sparito dal catalogo non deve produrre una
-              // scadenza inventata: la stessa condizione, in POST /rinnovo,
-              // risponde con un 409 esplicito. Qui la conseguenza sarebbe
-              // invisibile — una data a schermo indistinguibile da una vera
-              // — quindi si tratta come «non ho l'informazione»: si lascia
-              // `accessValidUntil` com'era, non si scrivono 90 giorni per
-              // difetto.
-              if (istituto) {
-                const accesso = Math.min(giorni(istituto.max_access_valid_for_days, 90), 180)
-                aggiornamentoStato.accessValidUntil = new Date(Date.now() + accesso * 86_400_000)
+              // Prima la fonte autorevole: quanto la banca ha concesso
+              // **davvero** per questo agreement. Il massimo dichiarato
+              // dall'istituto è solo ciò che avevamo chiesto, e la banca può
+              // concederne meno: ricalcolare da lì sbaglia sempre per eccesso,
+              // e l'avviso a quattordici giorni arriva tardi — nel caso
+              // peggiore quando il consenso è già più vicino alla scadenza di
+              // quanto il pannello dica. `agreements/enduser/{id}` non è per
+              // conto: sta fuori dal contingente di quattro al giorno.
+              let concessi: number | null = null
+              if (connessione.agreementId) {
+                try {
+                  const agreement = await client.leggiAgreement(connessione.agreementId)
+                  concessi = agreement.dati.access_valid_for_days ?? null
+                } catch {
+                  // Si ricade sulla stima qui sotto, che è meglio di niente.
+                }
+              }
+
+              if (concessi === null) {
+                const elenco = await client.istituzioni('it')
+                const istituto = elenco.dati.find((i) => i.id === connessione.institutionId)
+                // Un istituto sparito dal catalogo non deve produrre una
+                // scadenza inventata: la stessa condizione, in POST /rinnovo,
+                // risponde con un 409 esplicito. Qui la conseguenza sarebbe
+                // invisibile — una data a schermo indistinguibile da una vera
+                // — quindi si tratta come «non ho l'informazione»: si lascia
+                // `accessValidUntil` com'era, non si scrivono 90 giorni per
+                // difetto.
+                if (istituto) concessi = giorni(istituto.max_access_valid_for_days, 90)
+              }
+
+              if (concessi !== null) {
+                aggiornamentoStato.accessValidUntil = new Date(
+                  Date.now() + Math.min(concessi, 180) * 86_400_000
+                )
               }
             } catch {
               // Nessuna scadenza scritta: si riprova alla prossima lettura.
