@@ -181,9 +181,9 @@ describe('annullamento della scadenza', () => {
     await registraPagamento(rataUno.id, 100)
     expect(
       (await prisma.electronicInvoice.findUniqueOrThrow({ where: { id: fattura.id } })).status
-      // Con una sola rata pagata la fattura non è saldata: resta al gradino
-      // che i dati dimostrano, cioè MATCHED perché ha un fornitore e non un conto.
-    ).toBe('MATCHED')
+      // Con una rata pagata e una ancora aperta la fattura è parzialmente
+      // pagata: non saldata, ma nemmeno intatta.
+    ).toBe('PARTIALLY_PAID')
 
     const esito = await callRoute(
       DELETE_scadenza,

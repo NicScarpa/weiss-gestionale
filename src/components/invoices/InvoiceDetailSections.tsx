@@ -36,6 +36,7 @@ import {
   getDocumentTypeColor,
   getDocumentTypeLabel,
   getPaymentMethodLabel,
+  getSimpleStatus,
   formatDateIT,
 } from '@/lib/invoice-utils'
 import { formatCurrencyOrZero as formatCurrency } from '@/lib/formatters'
@@ -161,7 +162,10 @@ export function DocumentInfoSection({
   documentType,
   status,
 }: DocumentInfoSectionProps) {
-  const isPagata = status === 'PAID'
+  // Etichetta e colore vengono da `getSimpleStatus`, unica fonte: qui prima
+  // c'era una seconda copia della stessa decisione, ed è così che due
+  // schermate finiscono per chiamare in due modi lo stesso stato.
+  const statoSemplice = getSimpleStatus(status)
 
   return (
     <div className="flex flex-col gap-1">
@@ -172,9 +176,7 @@ export function DocumentInfoSection({
             {getDocumentTypeAbbrev(documentType)} - {getDocumentTypeLabel(documentType)}
           </Badge>
         )}
-        <Badge className={isPagata ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-muted-foreground'}>
-          {isPagata ? 'Pagata' : 'Da pagare'}
-        </Badge>
+        <Badge className={statoSemplice.color}>{statoSemplice.label}</Badge>
       </div>
       <p className="text-slate-500">{formatDateIT(invoiceDate)}</p>
     </div>

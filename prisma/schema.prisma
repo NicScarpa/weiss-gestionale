@@ -2694,12 +2694,14 @@ enum NotificationStatus {
 ///
 /// `RECORDED` non c'è più dal 15 agosto 2026: diceva «le ho scritto un
 /// movimento di banca», e un documento fiscale non genera movimenti
-/// (spec 2026-08-15-fatture-non-generano-movimenti). `PAID` lo scrive la
-/// scadenza quando risulta saldata, non un bottone.
+/// (spec 2026-08-15-fatture-non-generano-movimenti). `PAID` e
+/// `PARTIALLY_PAID` li scrive la scadenza in base ai pagamenti veri, non un
+/// bottone: vedi `allineaFattura` in src/lib/scadenzario/stato-schedule.ts.
 enum InvoiceStatus {
   IMPORTED
   MATCHED
   CATEGORIZED
+  PARTIALLY_PAID
   PAID
 }
 

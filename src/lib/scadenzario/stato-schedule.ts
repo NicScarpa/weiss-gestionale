@@ -249,8 +249,18 @@ function statoFatturaNonPagata(invoice: {
 /**
  * Allinea lo stato della fattura alle sue rate, in entrambe le direzioni.
  *
- * PAID solo se almeno una rata è pagata e nessuna è ancora aperta: senza il
- * primo controllo una fattura con tutte le rate annullate risulterebbe pagata.
+ * Tre esiti, in quest'ordine:
+ *
+ * - **PAID** solo se almeno una rata è pagata e nessuna è ancora aperta: senza
+ *   il primo controllo una fattura con tutte le rate annullate risulterebbe
+ *   pagata.
+ * - **PARTIALLY_PAID** se resta qualcosa di aperto ma del denaro è già andato.
+ *   Non basta guardare le rate *chiuse*: il caso più comune è la fattura a rata
+ *   unica saldata a metà, e prima di questo ramo continuava a dichiararsi
+ *   intatta come una appena importata. Si somma quindi `importoPagato` su tutte
+ *   le rate, che è la stessa misura da cui la scadenza deriva il proprio stato.
+ * - altrimenti si **scende** la scala, ma solo se lo stato attuale afferma un
+ *   pagamento che i dati non confermano più.
  */
 async function allineaFattura(tx: TransactionClient, invoiceId: string): Promise<void> {
   const invoice = await tx.electronicInvoice.findFirst({
@@ -264,9 +274,10 @@ async function allineaFattura(tx: TransactionClient, invoiceId: string): Promise
   })
   if (!invoice) return
 
-  const [aperte, pagate] = await Promise.all([
+  const [aperte, pagate, sommaPagata] = await Promise.all([
     tx.schedule.count({ where: { invoiceId, stato: { notIn: STATI_CHIUSI } } }),
     tx.schedule.count({ where: { invoiceId, stato: 'pagata' } }),
+    tx.schedule.aggregate({ where: { invoiceId }, _sum: { importoPagato: true } }),
   ])
 
   if (aperte === 0 && pagate > 0) {
@@ -276,7 +287,18 @@ async function allineaFattura(tx: TransactionClient, invoiceId: string): Promise
     return
   }
 
-  if (invoice.status === 'PAID') {
+  if (Number(sommaPagata._sum.importoPagato ?? 0) > 0) {
+    if (invoice.status !== 'PARTIALLY_PAID') {
+      await tx.electronicInvoice.update({
+        where: { id: invoiceId },
+        data: { status: 'PARTIALLY_PAID' },
+      })
+    }
+    return
+  }
+
+  // Nessun denaro imputato: se lo stato dichiarava un pagamento, ritirarlo.
+  if (invoice.status === 'PAID' || invoice.status === 'PARTIALLY_PAID') {
     await tx.electronicInvoice.update({
       where: { id: invoiceId },
       data: { status: statoFatturaNonPagata(invoice) },

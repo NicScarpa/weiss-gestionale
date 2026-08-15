@@ -82,7 +82,7 @@ interface Invoice {
   totalAmount: string
   vatAmount: string
   netAmount: string
-  status: 'IMPORTED' | 'MATCHED' | 'CATEGORIZED' | 'PAID'
+  status: 'IMPORTED' | 'MATCHED' | 'CATEGORIZED' | 'PARTIALLY_PAID' | 'PAID'
   supplier?: {
     id: string
     name: string
@@ -449,6 +449,9 @@ export function InvoiceList() {
             <SelectItem value="all">Stato</SelectItem>
             <SelectItem value="all_statuses">Tutti gli stati</SelectItem>
             <SelectItem value="PAID">Pagate</SelectItem>
+            <SelectItem value="PARTIALLY_PAID">Parzialmente pagate</SelectItem>
+            {/* «Da pagare» comprende anche le parzialmente pagate: è il
+                complemento di «Pagate», non uno stato. */}
             <SelectItem value="non_pagate">Da pagare</SelectItem>
           </SelectContent>
         </Select>
