@@ -58,6 +58,46 @@ export interface BankTransactionWithMatch extends BankTransaction {
   }
 }
 
+export type SezioneMovimentoBancario = 'ATTIVI' | 'DELEGHE_F24' | 'CBILL_PAGOPA'
+export type StatoLegenda = 'non_abbinato' | 'parziale' | 'abbinato_manualmente' | 'riconciliato'
+
+/**
+ * La riga come la vede la lista dell'estratto conto: i campi in più li calcola
+ * il server, così legenda, filtro e conteggi dicono la stessa cosa.
+ */
+export interface RigaEstrattoConto extends BankTransactionWithMatch {
+  descrizione: string | null
+  causale: string | null
+  note: string | null
+  sezione: SezioneMovimentoBancario
+  bankTransactionCode: string | null
+  bankAccount: { id: string; name: string } | null
+  modificato: boolean
+  stato: StatoLegenda
+  residuo: number
+  deletedAt: Date | null
+}
+
+export interface TotaliEstrattoConto {
+  entrate: number
+  uscite: number
+  saldoNetto: number
+}
+
+export interface ConteggiEstrattoConto {
+  attivi: number
+  delegheF24: number
+  cbillPagopa: number
+  cestino: number
+}
+
+export interface RispostaEstrattoConto {
+  data: RigaEstrattoConto[]
+  pagination: { page: number; limit: number; total: number; totalPages: number }
+  totali: TotaliEstrattoConto
+  conteggi: ConteggiEstrattoConto
+}
+
 export interface ReconciliationSummary {
   totalTransactions: number
   matched: number

@@ -21,18 +21,6 @@ export const reconciliationStatusSchema = z.enum([
   'UNMATCHED',
 ])
 
-// Query params per lista transazioni
-export const bankTransactionFiltersSchema = z.object({
-  venueId: z.string().optional(),
-  status: reconciliationStatusSchema.optional(),
-  dateFrom: z.string().optional(), // ISO date
-  dateTo: z.string().optional(), // ISO date
-  search: z.string().optional(),
-  importBatchId: z.string().optional(),
-  page: z.coerce.number().min(1).default(1),
-  limit: z.coerce.number().min(1).max(100).default(50),
-})
-
 // Creazione manuale: la riga inserita a mano ha un conto come tutte le altre.
 // `descrizione` è il testo dell'utente e finisce anche in `description`, che
 // per le righe MANUAL non è «della banca» ma resta il testo d'origine.
@@ -97,7 +85,6 @@ export const summaryQuerySchema = z.object({
 })
 
 // Types inferiti
-export type BankTransactionFilters = z.infer<typeof bankTransactionFiltersSchema>
 export type CreateBankTransaction = z.infer<typeof createBankTransactionSchema>
 export type MatchTransaction = z.infer<typeof matchTransactionSchema>
 export type CreateEntryFromTransaction = z.infer<typeof createEntryFromTransactionSchema>
