@@ -3321,7 +3321,7 @@ export function IconaStato({ stato, residuo, proposta = false }: { stato: StatoL
       />
 ```
 
-8. `BarraSelezione` riceve già `onAzione`: il tipo `AzioneInBlocco` si estende nel Task 9 (`'categorizza'`), e la barra mostra il pulsante lì. In questo task il contenitore è pronto a riceverlo (il ramo del punto 4) e TypeScript accetta il tipo attuale.
+8. In `BarraSelezione.tsx` estendere **solo il tipo**: `export type AzioneInBlocco = 'sposta' | 'cestino' | 'ripristina' | 'categorizza'` — senza il tipo esteso il confronto `azione === 'categorizza'` del punto 4 è un errore di compilazione (TS2367, i tipi non si sovrappongono). Il pulsante «Categorizza» nella barra arriva col Task 9.
 
 - [ ] **Step 9: eseguire**
 
@@ -3430,7 +3430,8 @@ describe('CollegaFatturaDialog', () => {
     const richiesta = chiamate.find((c) => c.url.startsWith('/api/scadenzario'))!
     expect(richiesta.url).toContain('aperte=1')
     expect(richiesta.url).toContain('tipo=passiva') // la riga è un'uscita
-    expect(screen.getByText('60,00 €')).toBeInTheDocument()
+    // `formatCurrency` mette uno spazio unificatore prima di «€»: si cerca la cifra.
+    expect(screen.getByText(/60,00/)).toBeInTheDocument()
   })
 
   it('spuntare una scadenza propone la quota; la somma oltre il residuo della riga blocca il pulsante', async () => {
@@ -4028,11 +4029,10 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 - [ ] **Step 1: la barra della selezione**
 
-In `BarraSelezione.tsx`:
+In `BarraSelezione.tsx` (il tipo `AzioneInBlocco` porta già `'categorizza'` dal Task 7):
 
-1. `export type AzioneInBlocco = 'sposta' | 'cestino' | 'ripristina' | 'categorizza'`.
-2. Import da `lucide-react`: aggiungere `Tag`.
-3. Prima del `DropdownMenu` «Sposta in» (dentro `{!nelCestino && (…)}` — spezzare il blocco in due o avvolgere entrambi in un frammento):
+1. Import da `lucide-react`: aggiungere `Tag`.
+2. Prima del `DropdownMenu` «Sposta in» (dentro `{!nelCestino && (…)}` — spezzare il blocco in due o avvolgere entrambi in un frammento):
 
 ```tsx
         {!nelCestino && (
