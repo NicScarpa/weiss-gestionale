@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { UserForm } from '@/components/users/UserForm'
+import { CredentialsDialog } from '@/components/users/CredentialsDialog'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -62,6 +63,13 @@ export default function DettaglioUtentePage({ params }: { params: Promise<{ id: 
   const [isEditing, setIsEditing] = useState(searchParams.get('edit') === 'true')
   const [actionDialog, setActionDialog] = useState<'reset-password' | 'toggle-active' | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [resetCredentials, setResetCredentials] = useState<{
+    username: string
+    password: string
+    firstName: string
+    lastName: string
+    emailSentTo: string | null
+  } | null>(null)
 
   // Verifica accesso
   useEffect(() => {
@@ -133,11 +141,19 @@ export default function DettaglioUtentePage({ params }: { params: Promise<{ id: 
       const response = await fetch(`/api/users/${resolvedParams.id}/reset-password`, {
         method: 'POST',
       })
+      const data = await response.json()
       if (!response.ok) {
-        const data = await response.json()
         throw new Error(data.error || 'Errore reset password')
       }
-      toast.success('Password resettata. Comunica la nuova password temporanea all\'utente.')
+      // La password temporanea esiste solo in questa risposta: va mostrata subito,
+      // altrimenti l'utente resta senza credenziali recuperabili.
+      setResetCredentials({
+        username: data.credentials.username,
+        password: data.credentials.temporaryPassword,
+        firstName: user?.firstName ?? '',
+        lastName: user?.lastName ?? '',
+        emailSentTo: data.emailSentTo ?? null,
+      })
     } catch {
       toast.error('Errore durante il reset della password')
     } finally {
@@ -462,6 +478,15 @@ export default function DettaglioUtentePage({ params }: { params: Promise<{ id: 
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Credenziali dopo il reset: è l'unico momento in cui la password è visibile */}
+      <CredentialsDialog
+        open={!!resetCredentials}
+        onOpenChange={() => setResetCredentials(null)}
+        credentials={resetCredentials}
+        mode="reset"
+        emailSentTo={resetCredentials?.emailSentTo}
+      />
     </div>
   )
 }

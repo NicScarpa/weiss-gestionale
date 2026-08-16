@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
 import { canPerformAction, type UserRole } from '@/lib/utils/permissions'
+import { sendPortalAccessEmail, INVITE_EXPIRY_DAYS } from '@/lib/email-invitation'
+import { generaPasswordTemporanea } from '@/lib/password-temporanea'
 
 import { logger } from '@/lib/logger'
 
@@ -50,9 +52,17 @@ export async function POST(
       )
     }
 
-    // Genera password temporanea sicura
-    const temporaryPassword = crypto.randomBytes(16).toString('hex')
+    // Genera password temporanea sicura (e leggibile: va dettata all'utente)
+    const temporaryPassword = generaPasswordTemporanea()
     const passwordHash = await bcrypt.hash(temporaryPassword, 12)
+
+    // Se l'utente ha un'email gli si manda anche il link per impostarsela da
+    // solo: la password temporanea resta valida come seconda strada, per chi
+    // non ha email o non la riceve.
+    const resetToken = targetUser.email ? crypto.randomBytes(32).toString('hex') : null
+    const resetTokenExpiry = resetToken
+      ? new Date(Date.now() + INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000)
+      : null
 
     // Aggiorna password e forza cambio al prossimo login
     await prisma.user.update({
@@ -60,11 +70,31 @@ export async function POST(
       data: {
         passwordHash,
         mustChangePassword: true,
+        resetToken,
+        resetTokenExpiry,
       },
     })
 
+    // L'invio non deve far fallire il reset: la password temporanea è già
+    // valida e viene comunque mostrata a chi ha premuto il pulsante.
+    let emailSentTo: string | null = null
+    if (targetUser.email && resetToken) {
+      const inviato = await sendPortalAccessEmail({
+        email: targetUser.email,
+        token: resetToken,
+        firstName: targetUser.firstName,
+        invitedByName: null,
+      })
+      if (inviato) {
+        emailSentTo = targetUser.email
+      } else {
+        logger.error('Reset password: invio email fallito', { userId: id })
+      }
+    }
+
     return NextResponse.json({
       message: 'Password resettata con successo',
+      emailSentTo,
       credentials: {
         username: targetUser.username,
         temporaryPassword,

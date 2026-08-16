@@ -20,6 +20,8 @@ import { checkRequestRateLimit, RATE_LIMIT_CONFIGS } from '@/lib/api-utils'
 import { logger } from '@/lib/logger'
 import { getVenueId } from '@/lib/venue'
 import crypto from 'crypto'
+import { sendPortalAccessEmail, INVITE_EXPIRY_DAYS } from '@/lib/email-invitation'
+import { generaPasswordTemporanea } from '@/lib/password-temporanea'
 
 // Schema creazione utente
 const createUserSchema = z.object({
@@ -227,13 +229,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Genera password temporanea random
-    const temporaryPassword = crypto.randomBytes(16).toString('base64url')
+    // Genera password temporanea (leggibile: va dettata o trascritta all'utente)
+    const temporaryPassword = generaPasswordTemporanea()
     const passwordHash = await bcrypt.hash(temporaryPassword, 12)
+
+    // Se c'è un'email, il nuovo utente riceve anche il link per impostarsi la
+    // password da solo. Senza email resta solo la consegna a mano.
+    const resetToken = validatedData.email ? crypto.randomBytes(32).toString('hex') : null
+    const resetTokenExpiry = resetToken
+      ? new Date(Date.now() + INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000)
+      : null
 
     // Crea utente
     const newUser = await prisma.user.create({
       data: {
+        resetToken,
+        resetTokenExpiry,
         firstName: validatedData.firstName,
         lastName: validatedData.lastName,
         email: validatedData.email || null,
@@ -264,11 +275,32 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // L'invio non deve far fallire la creazione: l'utente esiste già e le
+    // credenziali sono comunque mostrate a schermo a chi lo ha creato.
+    let emailSentTo: string | null = null
+    if (validatedData.email && resetToken) {
+      const inviato = await sendPortalAccessEmail({
+        email: validatedData.email,
+        token: resetToken,
+        firstName: validatedData.firstName,
+        invitedByName: [session.user.firstName, session.user.lastName]
+          .filter(Boolean)
+          .join(' ')
+          .trim() || null,
+      })
+      if (inviato) {
+        emailSentTo = validatedData.email
+      } else {
+        logger.error('Creazione utente: invio email fallito', { userId: newUser.id })
+      }
+    }
+
     // Restituisci utente con credenziali temporanee (una tantum)
     // VULN-047: La password temporanea viene restituita una sola volta all'admin che crea l'utente
     // per comunicarla al nuovo utente. Non viene mai persistita in chiaro.
     return NextResponse.json({
       user: filterUserFields(newUser as unknown as Record<string, unknown>, userRole),
+      emailSentTo,
       credentials: {
         username,
         temporaryPassword,

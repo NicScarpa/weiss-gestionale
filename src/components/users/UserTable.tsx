@@ -95,8 +95,9 @@ export function UserTable({ users, isLoading, onResetPassword, onToggleActive }:
     setIsProcessing(true)
     try {
       if (actionDialog.type === 'reset-password') {
+        // Nessun toast: chi ci passa i dati mostra le credenziali in un dialog.
+        // Un toast qui coprirebbe l'unica occasione di leggere la password.
         await onResetPassword(actionDialog.user.id)
-        toast.success('Password resettata. Comunica la nuova password temporanea all\'utente.')
       } else if (actionDialog.type === 'toggle-active') {
         await onToggleActive(actionDialog.user.id, !actionDialog.user.isActive)
         toast.success(
