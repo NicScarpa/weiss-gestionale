@@ -11,7 +11,12 @@ import { cn } from '@/lib/utils'
 // nero, etichetta invisibile. Con l'outline il testo eredita `text-foreground`
 // e resta leggibile in entrambi i temi; la selezione si vede da bordo, anello
 // e velatura, tutti derivati da `--primary` e quindi validi in chiaro e scuro.
-const SELEZIONATO = 'border-primary bg-primary/10 ring-1 ring-primary'
+//
+// Esportata perché la usa anche il selettore delle sotto-schede del Conto
+// Bancario (`VistaBancaToggle`): due copie della stessa riga divergerebbero
+// alla prima correzione di tema, ed è proprio da una correzione di tema che
+// questa riga è nata.
+export const SELEZIONATO = 'border-primary bg-primary/10 ring-1 ring-primary'
 
 export function AccountSelectorToggle() {
   const router = useRouter()

@@ -223,7 +223,7 @@ describe('ConnessioniBancarie', () => {
 
     const testo = testoDellaPagina()
     expect(testo).not.toContain('Nessuna sincronizzazione è attiva')
-    expect(testo).toContain('nella Riconciliazione')
+    expect(testo).toContain('movimenti bancari della prima nota')
   })
 
   // `configura` esige la data di taglio anche a interruttore spento, ed è

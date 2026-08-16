@@ -3,8 +3,8 @@
 /**
  * Il dialogo a passi che porta l'amministratore fino alla banca.
  *
- * Tre passi, come `CaricaMovimentiDialog`: un `useState<Step>` dentro un
- * `Dialog`, niente rotta o storia del browser propria.
+ * Tre passi tenuti da un `useState<Step>` dentro un `Dialog`, senza rotta né
+ * storia del browser proprie.
  *
  * Il viaggio in banca azzera la memoria del browser: dopo la conferma si
  * naviga via con `window.location.href`, e al ritorno il pannello che
@@ -47,8 +47,8 @@ export function WizardCollegamento({ aperto, onChiudi }: { aperto: boolean; onCh
   const [istitutoScelto, setIstitutoScelto] = useState<Istituto | null>(null)
   const [errore, setErrore] = useState<string | null>(null)
 
-  // Come in `CaricaMovimentiDialog`: alla chiusura si azzera lo stato, non
-  // all'apertura. Il ritardo è cosmetico (non far vedere il passo 1
+  // Alla chiusura si azzera lo stato, non all'apertura: chi riapre trova il
+  // primo passo. Il ritardo è cosmetico (non far vedere il passo 1
   // "saltare fuori" mentre l'animazione di chiusura è ancora in corso) e non
   // ha nulla da fare con la richiesta alla banca, che parte solo da un clic.
   useEffect(() => {

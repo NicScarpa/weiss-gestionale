@@ -455,12 +455,12 @@ export function ConnessioniBancarie({ contiBancari }: { contiBancari: ContoBanca
               ))}
             </div>
 
-            {/* Meglio dirlo che lasciare qualcuno a cercarli nella prima nota:
-                i movimenti scaricati non diventano scritture contabili, entrano
-                nella coda della riconciliazione. */}
+            {/* Meglio dirlo che lasciare qualcuno a cercarli fra le scritture:
+                i movimenti scaricati non diventano scritture contabili, stanno
+                nell'estratto conto del Conto Bancario. */}
             <p className="text-xs text-muted-foreground">
               Qui si sceglie soltanto quali conti importare. I movimenti scaricati dalla banca si
-              trovano nella Riconciliazione, non nella prima nota.
+              trovano nei movimenti bancari della prima nota (Conto Bancario → Estratto conto).
             </p>
           </>
         )}

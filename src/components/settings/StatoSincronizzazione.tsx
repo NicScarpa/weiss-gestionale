@@ -111,15 +111,19 @@ export function StatoSincronizzazione() {
               {/* «0 movimenti nuovi» è il delta dell'ultimo giro ed è vero anche
                   quando il giro prima ne ha portati duecento: senza il totale,
                   e senza dire dove sono, chi legge conclude che non sia
-                  arrivato nulla. I movimenti non entrano nella prima nota:
-                  finiscono nella riconciliazione, ed è lì che va indirizzato. */}
+                  arrivato nulla. I movimenti non diventano scritture contabili:
+                  stanno nell'estratto conto del Conto Bancario, dentro i
+                  movimenti della prima nota, ed è lì che va indirizzato. */}
               <p className="text-xs text-muted-foreground">
                 {conto.movimentiImportati > 0 ? (
                   <>
                     {conto.movimentiImportati} movimenti importati, {conto.daRiconciliare} da
                     riconciliare.{' '}
-                    <Link href="/riconciliazione" className="underline underline-offset-2">
-                      Vai alla riconciliazione
+                    <Link
+                      href="/prima-nota/movimenti?register=BANK"
+                      className="underline underline-offset-2"
+                    >
+                      Vai ai movimenti bancari
                     </Link>
                   </>
                 ) : (
