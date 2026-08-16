@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/prisma'
 import { MATCH_THRESHOLDS, MATCH_WEIGHTS } from '@/types/reconciliation'
 import type { ReconciliationStatus, MatchCandidate, ReconcileResult } from '@/types/reconciliation'
+import { ricalcolaResiduoDocumenti } from '@/lib/banca/residuo-documenti'
 
 interface BankTx {
   id: string
@@ -288,6 +289,11 @@ export async function reconcileVenueTransactions(
         matchConfidence,
       },
     })
+
+    // L'aggancio a una scrittura esistente porta con sé il residuo dei suoi
+    // documenti sulla riga: senza, la legenda direbbe «abbinato» anche dove
+    // la scrittura copre solo una parte.
+    if (matchedEntryId) await ricalcolaResiduoDocumenti(prisma, matchedEntryId)
 
     // Aggiorna contatori
     if (newStatus === 'MATCHED') results.matched++

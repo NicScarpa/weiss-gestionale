@@ -6,6 +6,7 @@ import { parseFatturaPA } from '@/lib/sdi/parser'
 import { righeDiSistema, type RigaDiSistema } from '@/lib/sdi/righe-di-sistema'
 import { TIPI_DOCUMENTO_NOTA_CREDITO } from '@/lib/services/invoice-schedule-service'
 import { applicaStimaSuScadenza, ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
+import { ricalcolaResiduoDocumenti } from '@/lib/banca/residuo-documenti'
 import {
   bloccaMovimento,
   bloccaScadenza,
@@ -13,6 +14,7 @@ import {
   ricalcolaStatoSchedule,
   sommaPagamenti,
   TOLLERANZA_IMPORTI,
+  type EsitoRicalcolo,
 } from '@/lib/scadenzario/stato-schedule'
 import {
   aggiornaContoDominante,
@@ -863,6 +865,12 @@ export async function riconciliaInTransazione(
   const stato = await ricalcolaStatoSchedule(tx, scheduleId)
   if (!stato) return { outcome: 'schedule_not_found' } as const
 
+  // La riga di banca collegata al movimento, se c'è, porta il residuo dei
+  // documenti denormalizzato: si riallinea qui, dove la riconciliazione nasce,
+  // e non solo nella promozione — lo scadenzario riconcilia anche scritture
+  // promosse, e la lista deve dirlo.
+  await ricalcolaResiduoDocumenti(tx, journalEntryId)
+
   return { outcome: 'ok', reconciliationId: reconciliation.id, quota, stato } as const
 }
 
@@ -980,8 +988,130 @@ export async function rejectScheduleMatch({
 }
 
 /**
- * Annulla una riconciliazione: rimuove il pagamento generato e riporta la
- * scadenza allo stato che i pagamenti rimasti descrivono. Serve quando il match
+ * Il corpo dell'annullo, dentro una transazione GIÀ APERTA: come
+ * `riconciliaInTransazione`, esiste perché Prisma non annida le transazioni
+ * interattive e lo scollegamento di una riga di banca deve ritirare le
+ * riconciliazioni della scrittura promossa nello stesso atto in cui la ritira.
+ *
+ * Restituisce l'esito del ricalcolo della scadenza (per `dopoAnnulloRiconciliazione`)
+ * o `null` se la riconciliazione non c'è (più).
+ */
+export async function annullaRiconciliazioneInTransazione(
+  tx: TransactionClient,
+  reconciliationId: string
+): Promise<EsitoRicalcolo | null> {
+  const riferimento = await tx.scheduleReconciliation.findFirst({
+    where: { id: reconciliationId, status: 'VERIFIED' },
+    select: { scheduleId: true, journalEntryId: true },
+  })
+  if (!riferimento) return null
+
+  // Stesso ordine di acquisizione dei lock della riconciliazione
+  // (movimento, poi scadenza): invertirlo qui basterebbe a produrre deadlock
+  // fra un annullo e una riconciliazione concorrenti.
+  const movimento = await bloccaMovimento(tx, riferimento.journalEntryId)
+  await bloccaScadenza(tx, riferimento.scheduleId)
+
+  const reconciliation = await tx.scheduleReconciliation.findFirst({
+    where: { id: reconciliationId, status: 'VERIFIED' },
+    select: { id: true, scheduleId: true, journalEntryId: true, paymentId: true },
+  })
+  if (!reconciliation) return null
+
+  // Le fette come stanno PRIMA della cancellazione: dopo la `deleteMany` la
+  // domanda «quanta IVA dichiaravano in tutto» non è più rispondibile, e
+  // senza quella risposta non si può decidere se l'IVA di testata sia
+  // nostra da ritirare (vedi `ritiraIvaDiTestata`).
+  const fettePrima = movimento
+    ? await tx.journalEntryAllocation.findMany({
+        where: { journalEntryId: reconciliation.journalEntryId },
+        select: { iva: true, reconciliationId: true },
+      })
+    : []
+
+  // Le fette ereditate (Fase 3) vanno ritirate PRIMA di cancellare la
+  // riconciliazione: la FK JournalEntryAllocation.reconciliationId è
+  // onDelete: SetNull, quindi cancellando prima la riconciliazione il DB
+  // azzera solo il riferimento e le fette restano orfane invece di sparire.
+  const fetteRitirate = await tx.journalEntryAllocation.deleteMany({
+    where: { reconciliationId },
+  })
+
+  await tx.scheduleReconciliation.delete({ where: { id: reconciliationId } })
+
+  if (reconciliation.paymentId) {
+    await tx.schedulePayment.delete({ where: { id: reconciliation.paymentId } })
+  }
+
+  const stato = await ricalcolaStatoSchedule(tx, reconciliation.scheduleId)
+
+  // Nessuna fetta ritirata: niente è cambiato sul movimento, non si tocca
+  // (stesso principio del no-op di setEntryAllocations).
+  //
+  // Il movimento può anche non esserci più: eliminare una chiusura di cassa
+  // cancella le scritture che ha generato, riconciliate comprese. L'annullo
+  // deve comunque liberare la scadenza — altrimenti resterebbe pagata per
+  // sempre a fronte di un movimento inesistente — ma su una riga cancellata
+  // non si scrive.
+  //
+  // Il centro di costo non viene toccato: contesto interattivo, asimmetrico
+  // rispetto all'ereditarietà e di proposito. L'undo è un gesto umano
+  // deliberato, e il centro precedente non è ripristinabile perché non se ne
+  // tiene lo storico. Il movimento conserva quindi il centro che
+  // l'ereditarietà gli aveva dato, ma con la sua provenienza: se era
+  // 'supposto' resta 'supposto', quindi nessuna automazione lo promuoverà a
+  // verificato e la prossima riconciliazione lo rivaluterà da capo.
+  if (movimento && fetteRitirate.count > 0) {
+    // L'IVA di testata segue le fette anche all'indietro: se era la loro,
+    // scende a quella delle rimaste, o torna a `null` se non ne resta
+    // nessuna. Prima dell'ereditarietà con l'IVA questo passaggio non
+    // serviva, perché `vatAmount` non veniva mai scritto.
+    await ritiraIvaDiTestata(tx, {
+      journalEntryId: reconciliation.journalEntryId,
+      reconciliationId,
+      fettePrima,
+    })
+
+    const numeroFette = await aggiornaContoDominante(tx, reconciliation.journalEntryId)
+    if (numeroFette === 0) {
+      // Fette ereditate ritirate e nessuna residua: il movimento torna alla
+      // categorizzazione semplice, accountId resta l'ultimo valorizzato.
+      await tx.journalEntry.update({
+        where: { id: reconciliation.journalEntryId },
+        data: { categorizationSource: 'manual' },
+      })
+    }
+  }
+
+  // La riga di banca collegata, se c'è, deve smettere di contare questa
+  // riconciliazione nel suo residuo (vedi `riconciliaInTransazione`).
+  await ricalcolaResiduoDocumenti(tx, reconciliation.journalEntryId)
+
+  return stato
+}
+
+/**
+ * Il seguito dell'annullo, FUORI dalla transazione: la scadenza è di nuovo
+ * aperta e la storia del fornitore ha un'osservazione in meno. Lo devono fare
+ * entrambi i chiamanti — l'annullo dallo scadenzario e lo scollegamento della
+ * riga di banca — e tenerlo dentro la transazione allungherebbe i lock per un
+ * lavoro che non ha bisogno di essere atomico con essi.
+ */
+export async function dopoAnnulloRiconciliazione(esito: EsitoRicalcolo, venueId: string): Promise<void> {
+  // La scadenza è di nuovo aperta: se il fornitore ha una storia, la data
+  // attesa torna a essere stimata invece di restare secca sulla contrattuale
+  await applicaStimaSuScadenza(esito.scheduleId, venueId)
+
+  // L'undo toglie anche un'osservazione dalla storia del fornitore: le stime
+  // delle sue altre scadenze aperte non devono più incorporare il dato revocato
+  if (esito.tipo === 'passiva' && esito.supplierId) {
+    await ricalcolaStimeFornitore(esito.supplierId, venueId)
+  }
+}
+
+/**
+ * Annulla una riconciliazione: cancella il record e il pagamento generato,
+ * ricalcola lo stato della scadenza. È l'operazione inversa, per quando un match
  * si rivela sbagliato.
  *
  * Il ritorno indietro riguarda anche la fattura: prima l'undo cancellava
@@ -998,103 +1128,14 @@ export async function undoScheduleReconciliation({
 }): Promise<{ outcome: 'ok'; scheduleStato: string } | { outcome: 'not_found' }> {
   const riferimento = await prisma.scheduleReconciliation.findFirst({
     where: { id: reconciliationId, status: 'VERIFIED', schedule: { venueId } },
-    select: { id: true, scheduleId: true, journalEntryId: true },
+    select: { id: true },
   })
-
   if (!riferimento) return { outcome: 'not_found' }
 
-  const esito = await prisma.$transaction(async (tx) => {
-    // Stesso ordine di acquisizione dei lock della riconciliazione
-    // (movimento, poi scadenza): invertirlo qui basterebbe a produrre deadlock
-    // fra un annullo e una riconciliazione concorrenti.
-    const movimento = await bloccaMovimento(tx, riferimento.journalEntryId)
-    await bloccaScadenza(tx, riferimento.scheduleId)
-
-    const reconciliation = await tx.scheduleReconciliation.findFirst({
-      where: { id: reconciliationId, status: 'VERIFIED' },
-      select: { id: true, scheduleId: true, journalEntryId: true, paymentId: true },
-    })
-    if (!reconciliation) return null
-
-    // Le fette come stanno PRIMA della cancellazione: dopo la `deleteMany` la
-    // domanda «quanta IVA dichiaravano in tutto» non è più rispondibile, e
-    // senza quella risposta non si può decidere se l'IVA di testata sia
-    // nostra da ritirare (vedi `ritiraIvaDiTestata`).
-    const fettePrima = movimento
-      ? await tx.journalEntryAllocation.findMany({
-          where: { journalEntryId: reconciliation.journalEntryId },
-          select: { iva: true, reconciliationId: true },
-        })
-      : []
-
-    // Le fette ereditate (Fase 3) vanno ritirate PRIMA di cancellare la
-    // riconciliazione: la FK JournalEntryAllocation.reconciliationId è
-    // onDelete: SetNull, quindi cancellando prima la riconciliazione il DB
-    // azzera solo il riferimento e le fette restano orfane invece di sparire.
-    const fetteRitirate = await tx.journalEntryAllocation.deleteMany({
-      where: { reconciliationId },
-    })
-
-    await tx.scheduleReconciliation.delete({ where: { id: reconciliationId } })
-
-    if (reconciliation.paymentId) {
-      await tx.schedulePayment.delete({ where: { id: reconciliation.paymentId } })
-    }
-
-    const stato = await ricalcolaStatoSchedule(tx, reconciliation.scheduleId)
-
-    // Nessuna fetta ritirata: niente è cambiato sul movimento, non si tocca
-    // (stesso principio del no-op di setEntryAllocations).
-    //
-    // Il movimento può anche non esserci più: eliminare una chiusura di cassa
-    // cancella le scritture che ha generato, riconciliate comprese. L'annullo
-    // deve comunque liberare la scadenza — altrimenti resterebbe pagata per
-    // sempre a fronte di un movimento inesistente — ma su una riga cancellata
-    // non si scrive.
-    //
-    // Il centro di costo non viene toccato: contesto interattivo, asimmetrico
-    // rispetto all'ereditarietà e di proposito. L'undo è un gesto umano
-    // deliberato, e il centro precedente non è ripristinabile perché non se ne
-    // tiene lo storico. Il movimento conserva quindi il centro che
-    // l'ereditarietà gli aveva dato, ma con la sua provenienza: se era
-    // 'supposto' resta 'supposto', quindi nessuna automazione lo promuoverà a
-    // verificato e la prossima riconciliazione lo rivaluterà da capo.
-    if (movimento && fetteRitirate.count > 0) {
-      // L'IVA di testata segue le fette anche all'indietro: se era la loro,
-      // scende a quella delle rimaste, o torna a `null` se non ne resta
-      // nessuna. Prima dell'ereditarietà con l'IVA questo passaggio non
-      // serviva, perché `vatAmount` non veniva mai scritto.
-      await ritiraIvaDiTestata(tx, {
-        journalEntryId: reconciliation.journalEntryId,
-        reconciliationId,
-        fettePrima,
-      })
-
-      const numeroFette = await aggiornaContoDominante(tx, reconciliation.journalEntryId)
-      if (numeroFette === 0) {
-        // Fette ereditate ritirate e nessuna residua: il movimento torna alla
-        // categorizzazione semplice, accountId resta l'ultimo valorizzato.
-        await tx.journalEntry.update({
-          where: { id: reconciliation.journalEntryId },
-          data: { categorizationSource: 'manual' },
-        })
-      }
-    }
-
-    return stato
-  })
-
+  const esito = await prisma.$transaction((tx) => annullaRiconciliazioneInTransazione(tx, reconciliationId))
   if (!esito) return { outcome: 'not_found' }
 
-  // La scadenza è di nuovo aperta: se il fornitore ha una storia, la data
-  // attesa torna a essere stimata invece di restare secca sulla contrattuale
-  await applicaStimaSuScadenza(esito.scheduleId, venueId)
-
-  // L'undo toglie anche un'osservazione dalla storia del fornitore: le stime
-  // delle sue altre scadenze aperte non devono più incorporare il dato revocato
-  if (esito.tipo === 'passiva' && esito.supplierId) {
-    await ricalcolaStimeFornitore(esito.supplierId, venueId)
-  }
+  await dopoAnnulloRiconciliazione(esito, venueId)
 
   return { outcome: 'ok', scheduleStato: esito.stato }
 }

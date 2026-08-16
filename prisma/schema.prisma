@@ -1972,6 +1972,19 @@ model BankTransaction {
   note        String? @db.Text
   sezione     SezioneMovimentoBancario @default(ATTIVI)
 
+  /// Da quale azione la promozione ha CREATO la scrittura collegata:
+  /// `CATEGORIZZA` · `COLLEGA` · `PROPOSTA`. Nullo quando la riga è agganciata a
+  /// una scrittura che esisteva già (la R4). È l'unica cosa che lo scollegamento
+  /// deve ritirare (spec, «promuoviRigaBancaria»).
+  origineScrittura OrigineScritturaBancaria? @map("origine_scrittura")
+  /// Il residuo dei documenti, denormalizzato: |importo| − Σ riconciliazioni
+  /// VERIFIED della scrittura collegata quando ne ha almeno una; 0 quando la
+  /// riga è collegata senza documenti; NULL quando non è collegata. Lo
+  /// mantengono la promozione, lo scollegamento e chi scrive o toglie una
+  /// riconciliazione (`residuo-documenti.ts`): è ciò che permette a «Solo non
+  /// riconciliati» di prendere anche i parziali in SQL, senza sommare al volo.
+  residuoDocumenti Decimal? @map("residuo_documenti") @db.Decimal(12, 2)
+
   modifiche BankTransactionEdit[]
 
   bankAccount BankAccount? @relation(fields: [bankAccountId], references: [id])
@@ -2793,6 +2806,14 @@ enum SezioneMovimentoBancario {
   ATTIVI
   DELEGHE_F24
   CBILL_PAGOPA
+}
+
+/// Da quale azione è nata la scrittura collegata a una riga dell'estratto
+/// conto, quando l'ha creata la promozione (spec, «Modello dati»).
+enum OrigineScritturaBancaria {
+  CATEGORIZZA
+  COLLEGA
+  PROPOSTA
 }
 
 enum ExpenseFrequency {
