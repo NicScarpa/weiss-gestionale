@@ -14,7 +14,8 @@ export function SelettoreColonne({
   visibili,
   onCambia,
 }: {
-  visibili: Set<IdColonna>
+  /** Sola lettura: la nuova scelta esce da `onCambia`, non da una modifica sul posto. */
+  visibili: ReadonlySet<IdColonna>
   onCambia: (v: Set<IdColonna>) => void
 }) {
   return (

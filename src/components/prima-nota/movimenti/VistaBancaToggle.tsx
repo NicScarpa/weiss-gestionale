@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { SELEZIONATO } from '@/components/prima-nota/AccountSelectorToggle'
 import { FILTRI_DEFAULT, filtriInSearchParams } from '@/lib/banca/filtri-estratto-conto'
+import type { ConteggiEstrattoConto } from '@/types/reconciliation'
 
 /**
  * Le due sotto-schede del Conto Bancario.
@@ -42,6 +43,20 @@ export function paramsPerVista(vista: VistaBanca, correnti: URLSearchParams): UR
   if (vista === 'scritture') sp.set('vista', 'scritture')
   else sp.delete('vista')
   return sp
+}
+
+/**
+ * Quante righe ha l'estratto conto, per il numero accanto al nome.
+ *
+ * Le tre schede vive sommate — Attivi, Deleghe F24, CBILL-PagoPA — e non il
+ * `total` della lista, che conta le righe della *sola* scheda aperta: spostata
+ * una delega in «Deleghe F24», quel `total` calava, e la sotto-scheda ancora
+ * chiusa annunciava meno movimenti di quanti ne contiene. Il Cestino resta
+ * fuori: quelle righe si sono volute togliere, e rimetterle nel conteggio le
+ * farebbe cercare in un elenco dove non stanno.
+ */
+export function righeEstrattoConto(conteggi: ConteggiEstrattoConto): number {
+  return conteggi.attivi + conteggi.delegheF24 + conteggi.cbillPagopa
 }
 
 /**

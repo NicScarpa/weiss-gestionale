@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client'
 import type { FiltriEstrattoConto } from './filtri-estratto-conto'
+import { CAMPI_BADGE } from './cronologia'
 import { statoLegenda } from './stato-legenda'
 import type { RigaEstrattoConto } from '@/types/reconciliation'
 
@@ -69,8 +70,10 @@ export const SELEZIONE_RIGA = {
       },
     },
     // Il badge «Modificato» guarda solo i campi del movimento: spostare di
-    // scheda non è una modifica (spec, «La cronologia»).
-    _count: { select: { modifiche: { where: { campo: { in: ['descrizione', 'causale', 'note'] } } } } },
+    // scheda non è una modifica (spec, «La cronologia»). L'elenco è quello di
+    // `CAMPI_BADGE` e non una copia scritta qui: due liste della stessa cosa
+    // divergono al primo campo aggiunto, e il badge lo direbbe di nascosto.
+    _count: { select: { modifiche: { where: { campo: { in: [...CAMPI_BADGE] } } } } },
   },
 } satisfies Prisma.BankTransactionDefaultArgs
 

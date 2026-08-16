@@ -85,4 +85,20 @@ describe('separaCausale: i controesempi', () => {
   it('un testo vuoto resta vuoto, senza causale', () => {
     expect(separaCausale('', '48//00')).toEqual({ causale: null, descrizione: '' })
   })
+
+  // `causale` è `VarChar(120)`: senza taglio, un testo con l'asterisco oltre il
+  // 120° carattere farebbe fallire la `createMany` dell'import — e con essa
+  // tutto il lotto, non la sola riga lunga.
+  it('taglia la causale a 120 caratteri quando l’asterisco arriva più in là', () => {
+    const lunga = 'A'.repeat(200)
+    const esito = separaCausale(`${lunga} *DETTAGLIO`, null)
+
+    expect(esito.causale).toHaveLength(120)
+    expect(esito.causale).toBe('A'.repeat(120))
+    expect(esito.descrizione).toBe('DETTAGLIO')
+  })
+
+  it('una causale che ci sta non viene toccata', () => {
+    expect(separaCausale('Operazione corta *DETTAGLIO', null).causale).toBe('Operazione corta')
+  })
 })

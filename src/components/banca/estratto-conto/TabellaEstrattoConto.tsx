@@ -24,7 +24,7 @@ import { IconaStato } from './IconaStato'
 interface Props {
   righe: RigaEstrattoConto[]
   filtri: FiltriEstrattoConto
-  colonneVisibili: Set<IdColonna>
+  colonneVisibili: ReadonlySet<IdColonna>
   selezionati: Set<string>
   caricamento: boolean
   onOrdina: (campo: OrdinaPer) => void

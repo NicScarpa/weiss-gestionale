@@ -32,10 +32,12 @@ const RIEPILOGO_BASE = {
 describe('MovimentiBancariInAttesa', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('dice quanti movimenti aspettano e porta ai movimenti bancari', async () => {
+  it('dice quanti movimenti non sono riconciliati e porta ai movimenti bancari', async () => {
     montaCon(RIEPILOGO_BASE)
 
-    expect(await screen.findByText(/231 movimenti dell’estratto conto/)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/231 movimenti dell’estratto conto non sono ancora riconciliati\./)
+    ).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /movimenti bancari/i })).toHaveAttribute(
       'href',
       '/prima-nota/movimenti?register=BANK'
@@ -54,7 +56,9 @@ describe('MovimentiBancariInAttesa', () => {
   it('con un movimento solo parla al singolare', async () => {
     montaCon({ ...RIEPILOGO_BASE, pending: 1 })
 
-    expect(await screen.findByText(/1 movimento dell’estratto conto aspetta/)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/1 movimento dell’estratto conto non è ancora riconciliato\./)
+    ).toBeInTheDocument()
   })
 
   it('senza nulla in attesa non mostra niente', async () => {

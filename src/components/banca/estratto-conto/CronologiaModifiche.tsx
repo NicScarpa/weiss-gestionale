@@ -58,12 +58,11 @@ export function CronologiaModifiche({ bankTransactionId }: { bankTransactionId: 
     return <p className="py-4 text-sm text-muted-foreground">Cronologia non disponibile</p>
   }
 
+  // «Com'è arrivato dalla banca» sarebbe falso sulle righe inserite a mano, che
+  // dalla banca non sono mai arrivate: la frase dice solo ciò che questo elenco
+  // sa davvero, cioè che nessuno l'ha toccata.
   if (data.length === 0) {
-    return (
-      <p className="py-4 text-sm text-muted-foreground">
-        Nessuna modifica: il movimento è com&apos;è arrivato dalla banca
-      </p>
-    )
+    return <p className="py-4 text-sm text-muted-foreground">Nessuna modifica registrata.</p>
   }
 
   return (

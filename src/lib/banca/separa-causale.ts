@@ -20,6 +20,17 @@ export interface CausaleSeparata {
   descrizione: string
 }
 
+/**
+ * Quanto ci sta in `bank_transactions.causale` (`@db.VarChar(120)`).
+ *
+ * Serve al solo ramo dell'asterisco: le causali della tabella sono scritte qui
+ * e stanno tutte dentro, ma quello ritaglia ciò che la banca ha scritto prima
+ * del ` *`, e un testo con l'asterisco oltre il 120° carattere produrrebbe una
+ * causale troppo lunga. L'import ne scrive centinaia in una `createMany`: una
+ * riga sola fuori misura fa fallire l'intero lotto, non se stessa.
+ */
+const MAX_CAUSALE = 120
+
 /** Codice operazione → prefisso grezzo scritto dalla banca e causale pulita. */
 export const CAUSALI_PER_CODICE: Readonly<Record<string, { prefisso: string; causale: string }>> = {
   '15//10': { prefisso: 'Addebito rata mutuo', causale: 'Addebito rata mutuo' },
@@ -64,7 +75,10 @@ export function separaCausale(testoGrezzo: string, codiceBanca: string | null): 
 
   const asterisco = testo.indexOf(' *')
   if (asterisco > 0) {
-    return { causale: testo.slice(0, asterisco).trim(), descrizione: senzaSeparatore(testo.slice(asterisco + 1)) }
+    return {
+      causale: testo.slice(0, asterisco).trim().slice(0, MAX_CAUSALE).trimEnd(),
+      descrizione: senzaSeparatore(testo.slice(asterisco + 1)),
+    }
   }
 
   return { causale: null, descrizione: testo }

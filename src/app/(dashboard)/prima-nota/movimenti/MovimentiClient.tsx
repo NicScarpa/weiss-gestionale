@@ -13,6 +13,7 @@ import { RiconciliazioniMovimentoDialog } from '@/components/prima-nota/moviment
 import {
   VistaBancaToggle,
   paramsPerVista,
+  righeEstrattoConto,
   vistaDaSearchParams,
   type VistaBanca,
 } from '@/components/prima-nota/movimenti/VistaBancaToggle'
@@ -49,6 +50,7 @@ import {
   type MovimentiFiltersState,
 } from '@/lib/prima-nota-utils'
 import type { JournalEntry, RegisterType, EntryType } from '@/types/prima-nota'
+import type { ConteggiEstrattoConto } from '@/types/reconciliation'
 
 interface MovimentiClientProps {
   budgetCategories: Array<{ id: string; name: string; code: string; color?: string }>
@@ -98,6 +100,12 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
   const estrattoConto = filters.registerType === 'BANK' && vista === 'estratto'
 
   const cambiaVista = (prossima: VistaBanca) => {
+    // Ricliccare la sotto-scheda in cui si è già non è un cambio di vista.
+    // Riscrivere l'URL da qui costava i filtri dell'estratto conto —
+    // `paramsPerVista` riparte da `FILTRI_DEFAULT` e li cancella — mentre la
+    // lista, che li tiene nel proprio stato, continuava a mostrarli: l'indirizzo
+    // e ciò che si vede si dividevano, e ricaricando la pagina i filtri sparivano.
+    if (prossima === vista) return
     const params = paramsPerVista(prossima, new URLSearchParams(searchParams.toString()))
     router.replace(params.toString() ? `?${params.toString()}` : '?', { scroll: false })
   }
@@ -195,10 +203,14 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
   const total = risposta?.pagination?.total ?? 0
   const totalPages = risposta?.pagination?.totalPages ?? 0
 
-  // Il numero accanto a «Estratto conto»: della lista serve solo il totale,
-  // quindi si chiede una riga sola. La chiave condivide il prefisso
-  // `['estratto-conto']` con la lista vera, così le invalidazioni che partono
-  // di lì — spostamenti, Cestino, nuovo movimento — aggiornano anche questo.
+  // Il numero accanto a «Estratto conto»: delle righe non serve nessuna,
+  // quindi se ne chiede una sola e si guardano i `conteggi`, che la rotta
+  // calcola sempre su tutte le schede. Il `pagination.total` no: quello conta
+  // la scheda aperta — di norma Attivi — e ogni «Sposta in» faceva calare il
+  // numero della sotto-scheda come se i movimenti fossero spariti. La chiave
+  // condivide il prefisso `['estratto-conto']` con la lista vera, così le
+  // invalidazioni che partono di lì — spostamenti, Cestino, nuovo movimento —
+  // aggiornano anche questo.
   const { data: conteggioEstratto } = useQuery({
     queryKey: ['estratto-conto', 'conteggio', venueId],
     // Fuori dal Conto Bancario la sotto-scheda non c'è: non si chiede un
@@ -207,8 +219,8 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
     queryFn: async (): Promise<number> => {
       const res = await fetch('/api/bank-transactions?limit=1')
       if (!res.ok) throw new Error('Errore nel conteggio dei movimenti bancari')
-      const corpo = (await res.json()) as { pagination?: { total?: number } }
-      return corpo.pagination?.total ?? 0
+      const corpo = (await res.json()) as { conteggi?: ConteggiEstrattoConto }
+      return corpo.conteggi ? righeEstrattoConto(corpo.conteggi) : 0
     },
   })
 

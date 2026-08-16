@@ -218,6 +218,33 @@ describe('EstrattoConto', () => {
     expect(window.localStorage.getItem('weiss.estrattoConto.colonne')).not.toContain('"causale"')
   })
 
+  // Le colonne nascoste stanno nel browser, che il server non ha: leggerle
+  // durante il primo render faceva rendere sei colonne di là e quattro di qua,
+  // ed è lo scarto che React segnala all'idratazione. Ora arrivano dopo il
+  // montaggio — e devono comunque arrivare.
+  it('le colonne nascoste nel browser spariscono dopo il montaggio', async () => {
+    window.localStorage.setItem(
+      'weiss.estrattoConto.colonne',
+      JSON.stringify(['data', 'descrizione', 'conto', 'stato', 'importo'])
+    )
+    stubTutto()
+    await montare(<EstrattoConto venueId="v1" filtriIniziali={FILTRI_DEFAULT} />)
+    await attendiChe(() => testoDellaPagina().includes('DITTA 1'), 'le righe')
+
+    await attendiChe(() => !perTesto('Causale', 'th'), 'la colonna nascosta dal browser')
+    expect(perTesto('Descrizione', 'th')).toBeTruthy()
+  })
+
+  // Cestinare tutta l'ultima pagina la fa sparire: restare lì vorrebbe dire
+  // «Pagina 3 di 2» sopra un elenco vuoto, che si legge come un guasto.
+  it('una pagina oltre il fondo scende all’ultima che esiste', async () => {
+    stubTutto({ ...RISPOSTA, pagination: { page: 3, limit: 100, total: 150, totalPages: 2 } })
+    await montare(<EstrattoConto venueId="v1" filtriIniziali={{ ...FILTRI_DEFAULT, page: 3 }} />)
+
+    await attendiChe(() => richiesteLista().some((u) => u.includes('page=2')), 'la richiesta della pagina 2')
+    await attendiChe(() => testoDellaPagina().includes('Pagina 2 di 2'), 'la paginazione riallineata')
+  })
+
   it('«Successiva» chiede la pagina 2; il cambio di scheda torna alla 1 e apre il Cestino', async () => {
     stubTutto()
     await montare(<EstrattoConto venueId="v1" filtriIniziali={FILTRI_DEFAULT} />)
@@ -244,6 +271,16 @@ describe('EstrattoConto', () => {
     await cliccare(document.querySelector('tbody [role="checkbox"]'))
     await attendiChe(() => testoDellaPagina().includes('1 selezionato'), 'la barra')
     expect(perTesto(/tutte le 231/)).toBeTruthy()
+
+    // Sopra la tabella, non sotto: con cento righe a schermo una barra in fondo
+    // resta fuori dalla finestra, e si spunta una casella senza vedere nulla
+    // succedere. Il confronto parte dallo `span` del conteggio e non dal
+    // riquadro della barra: un contenitore che *avvolge* la tabella risulta
+    // ugualmente «prima» di lei, e il controllo passerebbe comunque.
+    const contatore = perTesto('1 selezionato', 'span')!
+    const tabella = document.querySelector('table')!
+    expect(contatore.contains(tabella)).toBe(false)
+    expect(contatore.compareDocumentPosition(tabella) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
     // La selezione «di tutto il filtro» è un'altra cosa dalla selezione delle
     // righe visibili, e la barra deve dirlo.

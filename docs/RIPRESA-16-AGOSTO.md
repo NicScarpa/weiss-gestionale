@@ -143,7 +143,7 @@ una sotto-scheda «Scritture» col proprio conteggio nel selettore).
 | Schede | **Attivi**, **Deleghe F24**, **CBILL-PagoPA**, **Cestino**, ciascuna col conteggio nell'etichetta |
 | Totali | **Totale Entrate / Totale Uscite / Saldo Netto** del filtro attivo, non del conto |
 | Colonne | Data, Descrizione, Causale (separata dal testo grezzo della banca da `separaCausale`, tabella di 20 codici), Conto Bancario, Stato, Importo; si nascondono dal menu «Colonne» e la scelta resta in `localStorage` al ricaricamento; l'ordine delle colonne è fisso |
-| Ordinamento | a due stati (clic/clic/reset) su Data, Descrizione, Causale, Importo |
+| Ordinamento | a due stati (crescente/decrescente, senza un terzo clic che rimette l'ordine di partenza) su Data, Descrizione, Causale, Importo |
 | Filtri | ricerca, tipo, conto, «solo non riconciliati», intervallo date — tutti nell'URL |
 | Selezione | multipla, con «Seleziona tutte le N del filtro» oltre alla pagina corrente |
 | Legenda | non abbinato, parziale, abbinato manualmente, riconciliato, col residuo quando c'è |

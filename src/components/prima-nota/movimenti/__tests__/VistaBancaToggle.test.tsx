@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 import {
   VistaBancaToggle,
   paramsPerVista,
+  righeEstrattoConto,
   vistaDaSearchParams,
 } from '../VistaBancaToggle'
 
@@ -61,6 +62,29 @@ describe('paramsPerVista', () => {
     const sp = paramsPerVista('estratto', new URLSearchParams('register=BANK&altro=1'))
 
     expect(sp.get('altro')).toBe('1')
+  })
+})
+
+describe('righeEstrattoConto', () => {
+  it('somma le tre schede vive', () => {
+    expect(righeEstrattoConto({ attivi: 200, delegheF24: 20, cbillPagopa: 11, cestino: 0 })).toBe(231)
+  })
+
+  // Il numero della sotto-scheda deve restare fermo quando una riga cambia
+  // scheda: prima veniva dal `total` della lista, che conta la sola scheda
+  // aperta, e ogni «Sposta in» faceva calare il conteggio come se il movimento
+  // fosse sparito.
+  it('non cambia spostando una riga fra le schede', () => {
+    const prima = righeEstrattoConto({ attivi: 231, delegheF24: 0, cbillPagopa: 0, cestino: 0 })
+    const dopo = righeEstrattoConto({ attivi: 230, delegheF24: 1, cbillPagopa: 0, cestino: 0 })
+
+    expect(dopo).toBe(prima)
+  })
+
+  // Cestinare invece toglie: quelle righe si sono volute togliere, e contarle
+  // manderebbe a cercare in un elenco dove non stanno.
+  it('lascia fuori il Cestino', () => {
+    expect(righeEstrattoConto({ attivi: 5, delegheF24: 0, cbillPagopa: 0, cestino: 40 })).toBe(5)
   })
 })
 

@@ -48,9 +48,12 @@ export function MovimentiBancariInAttesa({ venueId }: { venueId: string }) {
     <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
       <Landmark className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
       <p className="text-muted-foreground">
+        {/* «Aspettano di essere riconciliati» prometteva un'attesa che finisce
+            da sé: sono righe non riconciliate, e chi le riconcilia è chi legge.
+            La frase dice lo stato, non un'aspettativa. */}
         {attesa === 1
-          ? '1 movimento dell’estratto conto aspetta di essere riconciliato.'
-          : `${attesa} movimenti dell’estratto conto aspettano di essere riconciliati.`}{' '}
+          ? '1 movimento dell’estratto conto non è ancora riconciliato.'
+          : `${attesa} movimenti dell’estratto conto non sono ancora riconciliati.`}{' '}
         <Link
           href="/prima-nota/movimenti?register=BANK"
           className="font-medium text-foreground underline underline-offset-2"

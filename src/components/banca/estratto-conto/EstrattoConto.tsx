@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Upload } from 'lucide-react'
 import { toast } from 'sonner'
@@ -21,7 +21,13 @@ import { FreschezzaMovimenti } from '@/components/banca/FreschezzaMovimenti'
 // anche tabella e dialogo di abbinamento, che qui non servono.
 import { ImportDialog } from '@/components/reconciliation/ImportDialog'
 import { TransactionDetailsDialog } from '@/components/reconciliation/TransactionDetailsDialog'
-import { leggiColonneVisibili, salvaColonneVisibili, leggiRighePerPagina, type IdColonna } from './colonne'
+import {
+  COLONNE,
+  leggiColonneVisibili,
+  salvaColonneVisibili,
+  leggiRighePerPagina,
+  type IdColonna,
+} from './colonne'
 import { SchedeEstrattoConto } from './SchedeEstrattoConto'
 // Il pannello dei filtri e il tipo dei filtri portano lo stesso nome: qui
 // servono entrambi, quindi il pannello entra come `PannelloFiltri`.
@@ -51,6 +57,28 @@ async function leggiLista(filtri: Filtri): Promise<RispostaEstrattoConto> {
 }
 
 const memoria = () => (typeof window === 'undefined' ? null : window.localStorage)
+
+const TUTTE_LE_COLONNE: ReadonlySet<IdColonna> = new Set(COLONNE.map((c) => c.id))
+
+// Nessuno pubblica cambiamenti: ciò che interessa è solo lo scalino fra il
+// render del server e il primo del browser. Le tre funzioni stanno fuori dal
+// componente perché `useSyncExternalStore` le confronta per identità.
+const nessunaIscrizione = () => () => {}
+const nelBrowser = () => true
+const sulServer = () => false
+
+/**
+ * Falso mentre si rende sul server e durante l'idratazione, vero subito dopo.
+ *
+ * È il modo che React offre per dire «questo si sa solo nel browser»: rende la
+ * prima volta come ha reso il server — quindi le due marcature combaciano — e
+ * poi ridà il valore vero con un secondo render. Un `useEffect` che chiama
+ * `setState` otterrebbe lo stesso risultato ma è proprio il render a cascata
+ * che `react-hooks/set-state-in-effect` vieta.
+ */
+function useIdratato(): boolean {
+  return useSyncExternalStore(nessunaIscrizione, nelBrowser, sulServer)
+}
 
 /**
  * Ciò che restringe la lista, col valore che ha quando non restringe nulla.
@@ -117,7 +145,16 @@ export function EstrattoConto({ venueId, filtriIniziali, onFiltriChange }: Estra
     limit:
       filtriIniziali.limit !== FILTRI_DEFAULT.limit ? filtriIniziali.limit : leggiRighePerPagina(memoria()),
   }))
-  const [colonne, impostaColonne] = useState<Set<IdColonna>>(() => leggiColonneVisibili(memoria()))
+  // Le colonne nascoste vengono dal browser, che il server non ha: finché
+  // l'idratazione non è finita si rende la tabella intera, come l'ha resa lui.
+  //
+  // Leggerle direttamente nell'inizializzatore dello `useState` faceva rendere
+  // al server sei colonne e al client quelle rimaste — due marcature diverse
+  // per lo stesso render, cioè lo scarto che React segnala all'idratazione. Il
+  // prezzo è un lampo con una colonna in più; il guadagno è che React non
+  // butta via l'albero appena ricevuto per rifarlo da capo.
+  const [colonneScelte, impostaColonne] = useState<Set<IdColonna>>(() => leggiColonneVisibili(memoria()))
+  const colonne = useIdratato() ? colonneScelte : TUTTE_LE_COLONNE
   const [selezionati, impostaSelezionati] = useState<Set<string>>(new Set())
   const [tutteDelFiltro, impostaTutteDelFiltro] = useState(false)
   const [inModifica, impostaInModifica] = useState<RigaEstrattoConto | null>(null)
@@ -200,6 +237,30 @@ export function EstrattoConto({ venueId, filtriIniziali, onFiltriChange }: Estra
 
   const righe = data?.data ?? []
   const totale = data?.pagination.total ?? 0
+  const totalePagine = data?.pagination.totalPages ?? 0
+
+  // Un'azione in blocco può svuotare la pagina su cui si è: cestinare tutta la
+  // pagina 3 di 3 lascia due pagine, e restare lì significa «Pagina 3 di 2»
+  // sopra un elenco vuoto, che si legge come un guasto. Si scende all'ultima
+  // pagina che esiste. `totalePagine === 0` (nessuna riga) non si tocca: la
+  // pagina 1 è già quella giusta, e la lista lo dice col suo vuoto.
+  //
+  // Durante il render e non in un effetto: React lo prevede per riallineare
+  // uno stato a un valore che arriva da fuori, e riparte subito col valore
+  // corretto invece di far comparire per un istante la pagina impossibile.
+  // Non si avvita perché dopo l'assegnazione `filtri.page` vale `totalePagine`.
+  //
+  // Qui non si passa da `applica`: quello avvisa anche il padre, che scrive
+  // l'URL, e toccare un altro componente mentre si rende è vietato. L'URL
+  // resta a `page=3` fino alla prima mossa di chi legge — e ricaricandolo la
+  // correzione rifà se stessa, quindi non porta mai su una pagina che non c'è.
+  if (totalePagine > 0 && filtri.page > totalePagine) {
+    impostaFiltri({ ...filtri, page: totalePagine })
+    // La selezione era di righe che quella pagina non mostra più.
+    impostaSelezionati(new Set())
+    impostaTutteDelFiltro(false)
+  }
+
   // Senza questa distinzione il vuoto racconta la storia sbagliata: «non c'è
   // nulla» davanti a un filtro che nasconde tutto manda a cercare un guasto
   // che non c'è, e un Cestino vuoto invita a collegare la banca.
@@ -237,6 +298,24 @@ export function EstrattoConto({ venueId, filtriIniziali, onFiltriChange }: Estra
           }}
         />
       </div>
+      {/* Sopra la tabella, non sotto: la selezione si fa in cima all'elenco e
+          con cento righe a schermo una barra in fondo resta fuori dalla
+          finestra — si spunta una casella e non succede niente di visibile.
+          Qui è a un dito dalle caselle appena toccate. */}
+      {selezionati.size > 0 && (
+        <BarraSelezione
+          selezionati={selezionati.size}
+          totale={totale}
+          tutteDelFiltro={tutteDelFiltro}
+          nelCestino={filtri.cestino}
+          onTutteDelFiltro={() => impostaTutteDelFiltro(true)}
+          onAnnulla={() => {
+            impostaSelezionati(new Set())
+            impostaTutteDelFiltro(false)
+          }}
+          onAzione={(azione, sezione) => void azioneInBlocco(azione, sezione)}
+        />
+      )}
       {!isPending && righe.length === 0 ? (
         <StatoVuoto
           filtriAttivi={filtriAttivi}
@@ -292,24 +371,10 @@ export function EstrattoConto({ venueId, filtriIniziali, onFiltriChange }: Estra
           }
         />
       )}
-      {selezionati.size > 0 && (
-        <BarraSelezione
-          selezionati={selezionati.size}
-          totale={totale}
-          tutteDelFiltro={tutteDelFiltro}
-          nelCestino={filtri.cestino}
-          onTutteDelFiltro={() => impostaTutteDelFiltro(true)}
-          onAnnulla={() => {
-            impostaSelezionati(new Set())
-            impostaTutteDelFiltro(false)
-          }}
-          onAzione={(azione, sezione) => void azioneInBlocco(azione, sezione)}
-        />
-      )}
-      {(data?.pagination.totalPages ?? 0) > 1 && (
+      {totalePagine > 1 && (
         <PaginazioneEstrattoConto
           pagina={filtri.page}
-          totalePagine={data?.pagination.totalPages ?? 1}
+          totalePagine={totalePagine}
           righePerPagina={filtri.limit}
           onCambia={cambiaFiltri}
         />
