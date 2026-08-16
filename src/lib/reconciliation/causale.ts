@@ -49,6 +49,38 @@ function soloAlfanumerici(testo: string): string {
 }
 
 /**
+ * La causale ridotta ad A-Z0-9, con la mappa verso le posizioni originali.
+ *
+ * Serve a decidere il confine di un riferimento guardando i caratteri VERI.
+ * Togliere i separatori salda fra loro campi che nell'originale erano
+ * distinti — `Ft.N.3300/00/2026 30/05/2026` diventa `FTN330000202630052026` —
+ * e un confine giudicato sul normalizzato scambia quella cucitura per
+ * contiguità, rifiutando un riferimento che c'è.
+ */
+function normalizzaConPosizioni(testo: string): {
+  normalizzato: string
+  posizioni: number[]
+} {
+  const caratteri: string[] = []
+  const posizioni: number[] = []
+
+  for (let i = 0; i < testo.length; i++) {
+    const c = testo[i].toUpperCase()
+    if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+      caratteri.push(c)
+      posizioni.push(i)
+    }
+  }
+
+  return { normalizzato: caratteri.join(''), posizioni }
+}
+
+/** Il carattere in quella posizione dell'originale è una cifra? */
+function cifraIn(testo: string, indice: number): boolean {
+  return indice >= 0 && indice < testo.length && testo[indice] >= '0' && testo[indice] <= '9'
+}
+
+/**
  * Il numero documento compare nella causale?
  *
  * Il confronto ignora la punteggiatura da entrambi i lati, così "2026/123"
@@ -65,36 +97,70 @@ function soloAlfanumerici(testo: string): string {
  * peggiore possibile: quella fascia si approva in blocco senza aprire le
  * schede.
  *
- * Si usano le stesse lookaround di `estraiPartiteIva`, e per la stessa
- * ragione. Delimitano **solo le cifre**, non le lettere, e non è una svista:
- * nelle causali vere il numero arriva appiccicato alla ragione sociale
+ * La delimitazione riguarda **solo le cifre**, non le lettere, e non è una
+ * svista: nelle causali vere il numero arriva appiccicato alla ragione sociale
  * ("SRLFT 4320", che normalizzato diventa "SRLFT4320"), quindi pretendere un
  * confine anche a sinistra delle lettere perderebbe proprio i riferimenti che
  * il motore trova più spesso.
  *
- * **E si ancora un lato solo se quel bordo del riferimento è una cifra.**
- * Applicarle sempre creava il difetto simmetrico, nella direzione opposta e
- * più costosa: `FT/2026/432` — la forma col prefisso alfabetico, ordinaria in
+ * **E si delimita un lato solo se quel bordo del riferimento è una cifra.**
+ * Farlo sempre creava il difetto simmetrico, nella direzione opposta e più
+ * costosa: `FT/2026/432` — la forma col prefisso alfabetico, ordinaria in
  * Italia, che arriva tale e quale da `invoice.invoiceNumber` — diventa
- * `FT2026432`, e `(?<![0-9])` lo rifiutava ogni volta che la causale aveva una
- * cifra appiccicata prima, cioè quasi sempre. Erano venti punti persi sul
- * fattore più discriminante, e un falso negativo qui **non lascia traccia**:
+ * `FT2026432`, e il confine a sinistra lo rifiutava ogni volta che la causale
+ * aveva una cifra appiccicata prima, cioè quasi sempre. Erano venti punti persi
+ * sul fattore più discriminante, e un falso negativo qui **non lascia traccia**:
  * la proposta semplicemente non nasce, e non c'è sintomo da osservare dopo.
  *
  * Il guadagno misurato resta intero: l'1,63% di falsi positivi riguarda i
  * numeri a tre cifre, che sono numerici per definizione e quindi ancora
  * delimitati da entrambi i lati.
+ *
+ * **Il confine si giudica sui caratteri originali (16 agosto 2026).** Prima si
+ * usavano due lookaround sulla causale *normalizzata*, e lì stava un secondo
+ * falso negativo: togliere i separatori salda fra loro campi che nel testo
+ * della banca erano distinti. `Ft.N.3300/00/2026 30/05/2026` diventa
+ * `FTN330000202630052026`, e la data appiccicata faceva fallire il confine
+ * destro di un riferimento perfettamente delimitato nell'originale. Sui
+ * movimenti sincronizzati il 16 agosto erano **sette proposte**, sei delle
+ * quali restavano fuori dalla fascia Alta: la fascia passa da 7 a 13.
+ *
+ * Da qui il ciclo sulle occorrenze invece di una singola espressione regolare:
+ * la prima occorrenza può essere quella dentro l'identificativo operazione —
+ * dove il confine blocca, correttamente — e il riferimento vero arrivare dopo.
  */
 export function contieneRiferimento(causale: string, numeroDocumento: string): boolean {
   const ago = soloAlfanumerici(numeroDocumento)
   if (ago.length < LUNGHEZZA_MINIMA_RIFERIMENTO) return false
-  // Ogni lato si ancora solo se il bordo corrispondente dell'ago è una cifra:
-  // su un bordo alfabetico la lookaround non separerebbe nulla, escluderebbe
-  // e basta. `ago` è già ridotto ad A-Z0-9, quindi non c'è nulla da proteggere
-  // dall'interpolazione nell'espressione regolare.
-  const prima = /^[0-9]/.test(ago) ? '(?<![0-9])' : ''
-  const dopo = /[0-9]$/.test(ago) ? '(?![0-9])' : ''
-  return new RegExp(`${prima}${ago}${dopo}`).test(soloAlfanumerici(causale))
+
+  const { normalizzato, posizioni } = normalizzaConPosizioni(causale)
+
+  // Si scorrono TUTTE le occorrenze, non solo la prima: quella iniziale può
+  // essere dentro l'identificativo operazione — dove la guardia blocca, ed è
+  // giusto — e fermarsi lì perderebbe il riferimento vero più avanti.
+  let da = normalizzato.indexOf(ago)
+  while (da !== -1) {
+    const inizioOriginale = posizioni[da]
+    const fineOriginale = posizioni[da + ago.length - 1]
+
+    // Ogni lato si ancora solo se il bordo corrispondente dell'ago è una cifra:
+    // su un bordo alfabetico la delimitazione non separerebbe nulla,
+    // escluderebbe e basta — nelle causali vere il numero arriva appiccicato
+    // alla ragione sociale ("SRLFT 4320").
+    //
+    // Il confronto avviene però sui caratteri ORIGINALI, non sul normalizzato:
+    // è la correzione del 16 agosto 2026. Lì uno spazio o una barra separano
+    // davvero, mentre il normalizzato li ha fatti sparire creando adiacenze
+    // che nel testo della banca non esistono.
+    const bloccatoPrima = /^[0-9]/.test(ago) && cifraIn(causale, inizioOriginale - 1)
+    const bloccatoDopo = /[0-9]$/.test(ago) && cifraIn(causale, fineOriginale + 1)
+
+    if (!bloccatoPrima && !bloccatoDopo) return true
+
+    da = normalizzato.indexOf(ago, da + 1)
+  }
+
+  return false
 }
 
 /**

@@ -106,6 +106,45 @@ describe('contieneRiferimento', () => {
     expect(contieneRiferimento('Bonifico ID 07084324084 ROSSI SRL', '432')).toBe(false)
     expect(contieneRiferimento(CAUSALE_INSTANT, '432')).toBe(false)
   })
+
+  // I casi che seguono vengono dalle proposte vere generate il 16 agosto 2026
+  // sui movimenti sincronizzati dalla banca. Sette proposte perdevano i venti
+  // punti del riferimento pur avendolo in causale, e sei di esse restavano
+  // sotto la soglia della fascia Alta — quella che si approva in blocco.
+  describe('il numero c\'è, ma la normalizzazione gli incolla accanto un altro campo', () => {
+    it('la data che segue il numero non deve nasconderlo', () => {
+      // `Ft.N.3300/00/2026 30/05/2026` normalizzato è `FTN330000202630052026`:
+      // la data si salda al numero e la guardia scambia quella cucitura per
+      // contiguità. Nell'originale fra i due c'è uno spazio.
+      const causale =
+        'SDD Core - Richiesta Incasso SEPA Ft.N.3300/00/2026 30/05/2026 MA.IN.CART. S.R.L. IT59g070846499000000075'
+      expect(contieneRiferimento(causale, '3300/00/2026')).toBe(true)
+    })
+
+    it('vale per tutte e tre le fatture dello stesso fornitore', () => {
+      const giugno =
+        'SDD Core - Richiesta Incasso SEPA Ft.N.4450/00/2026 30/06/2026 MA.IN.CART. S.R.L. IT59g070846499000000075'
+      expect(contieneRiferimento(giugno, '4450/00/2026')).toBe(true)
+      expect(
+        contieneRiferimento(giugno.replace('4450/00/2026', '4451/00/2026'), '4451/00/2026')
+      ).toBe(true)
+    })
+
+    it('l\'anno che segue un numero corto non deve nasconderlo', () => {
+      // `SARATOGA SNC 177 2026` → `SARATOGASNC1772026`: il 2026 si incolla al
+      // 177, che è il numero vero della fattura.
+      const causale = 'Bonifico tramite Internet Banking BEN SARATOGA SNC 177 2026'
+      expect(contieneRiferimento(causale, '177')).toBe(true)
+    })
+
+    it('cerca oltre la prima occorrenza', () => {
+      // La prima può essere quella dentro l'identificativo operazione, dove la
+      // guardia giustamente blocca: fermarsi lì perderebbe quella buona più
+      // avanti nella causale.
+      const causale = 'Bonifico ID 07084324084 ROSSI SRL Causale: fattura 432 del mese'
+      expect(contieneRiferimento(causale, '432')).toBe(true)
+    })
+  })
 })
 
 describe('estraiRiferimentiDocumento', () => {
