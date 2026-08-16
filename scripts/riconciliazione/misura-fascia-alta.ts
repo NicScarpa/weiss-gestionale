@@ -143,24 +143,39 @@ async function main(): Promise<void> {
       )
     }
 
-    const movimenti = movimentiValidi()
-    console.log(`Dagli snapshot: ${movimenti.length} movimenti bancari veri\n`)
+    // Con `SENZA_SNAPSHOT` si misura su ciò che il dump già contiene: da quando
+    // la sincronizzazione gira in produzione, i movimenti veri stanno lì e
+    // caricarci sopra quelli di giugno mescolerebbe due popolazioni diverse.
+    const soloDump = process.env.SENZA_SNAPSHOT === '1'
 
-    await prisma.bankTransaction.createMany({
-      data: movimenti.map((m) => ({
-        venueId: venue.id,
-        transactionDate: m.data,
-        description: m.causale.slice(0, 500) || '(causale assente)',
-        amount: m.importo,
-        bankTransactionCode: m.snapshot.proprietaryBankTransactionCode ?? null,
-        providerTransactionId: m.snapshot.transactionId ?? null,
-        importSource: 'PSD2_GOCARDLESS',
-        status: 'PENDING',
-      })),
-      skipDuplicates: true,
+    if (!soloDump) {
+      const movimenti = movimentiValidi()
+      console.log(`Dagli snapshot: ${movimenti.length} movimenti bancari veri\n`)
+
+      await prisma.bankTransaction.createMany({
+        data: movimenti.map((m) => ({
+          venueId: venue.id,
+          transactionDate: m.data,
+          description: m.causale.slice(0, 500) || '(causale assente)',
+          amount: m.importo,
+          bankTransactionCode: m.snapshot.proprietaryBankTransactionCode ?? null,
+          providerTransactionId: m.snapshot.transactionId ?? null,
+          importSource: 'PSD2_GOCARDLESS',
+          status: 'PENDING',
+        })),
+        skipDuplicates: true,
+      })
+    }
+
+    const inDatabase = await prisma.bankTransaction.findMany({
+      select: { transactionDate: true },
     })
+    if (inDatabase.length === 0) {
+      throw new Error('Nessun movimento bancario: né dal dump né dagli snapshot.')
+    }
+    console.log(`Movimenti bancari in gioco: ${inDatabase.length}\n`)
 
-    const tempi = movimenti.map((m) => m.data.getTime())
+    const tempi = inDatabase.map((m) => m.transactionDate.getTime())
     const esito = await generaLotto({
       venueId: venue.id,
       dateFrom: new Date(Math.min(...tempi)),
@@ -184,10 +199,15 @@ async function main(): Promise<void> {
       orderBy: { punteggio: 'desc' },
     })
 
-    const alte = proposte.filter((p) => Number(p.punteggio) >= 85)
+    const da = Number(process.env.DA ?? 85)
+    const a = Number(process.env.A ?? 100)
+    const alte = proposte.filter((p) => {
+      const n = Number(p.punteggio)
+      return n >= da && n <= a
+    })
 
     console.log('='.repeat(100))
-    console.log(`FASCIA ALTA — ${alte.length} proposte da controllare a mano`)
+    console.log(`PUNTEGGIO ${da}-${a} — ${alte.length} proposte`)
     console.log('='.repeat(100))
 
     for (const [i, p] of alte.entries()) {
@@ -209,7 +229,22 @@ async function main(): Promise<void> {
             `tot ${f ? Number(f.totalAmount).toFixed(2) : '—'}`
         )
       }
-      if (p.motivazioni) console.log(`  PERCHÉ     ${p.motivazioni}`)
+      // `fattori` e `motivazioni` sono JSON strutturati, non stringhe: sono
+      // esattamente ciò che la scheda della schermata deve mostrare sotto la
+      // barra dei punteggi, quindi qui si leggono nella loro forma.
+      const fattori = p.fattori as Record<string, number> | null
+      if (fattori) {
+        console.log(
+          `  FATTORI    ` +
+            Object.entries(fattori)
+              .map(([nome, valore]) => `${nome} ${valore}`)
+              .join('  ·  ')
+        )
+      }
+      const motivazioni = p.motivazioni as Array<{ testo: string; segno: string }> | null
+      for (const m of motivazioni ?? []) {
+        console.log(`  ${m.segno === '+' ? '✓' : '✗'}          ${m.testo}`)
+      }
     }
 
     console.log(`\n${'='.repeat(100)}`)

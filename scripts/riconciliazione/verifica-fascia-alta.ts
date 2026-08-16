@@ -38,11 +38,11 @@ const { rows } = await client.query(`
   JOIN reconciliation_proposal_legs g ON g.proposal_id = p.id
   JOIN schedules s ON s.id = g.schedule_id
   LEFT JOIN electronic_invoices i ON i.id = s.invoice_id
-  WHERE p.punteggio >= 85
+  WHERE p.punteggio >= COALESCE($1::int, 85)
   ORDER BY p.punteggio DESC
-`)
+`, [process.env.SOGLIA ? Number(process.env.SOGLIA) : null])
 
-console.log(`\nProposte in fascia Alta: ${rows.length}\n`)
+console.log(`\nProposte con punteggio >= ${process.env.SOGLIA ?? 85}: ${rows.length}\n`)
 
 let ambigue = 0
 let citano = 0

@@ -386,3 +386,65 @@ costruire la coda della Fase A2, ed è soddisfatto.
 Alta risolve il 5% del lotto**. Il grosso del lavoro della schermata sarà la
 revisione delle 55 medie, non il bottone «approva tutte»: la coda va disegnata
 attorno a quel gesto.
+
+---
+
+# 5. La seconda misura, sui movimenti sincronizzati (16 agosto 2026)
+
+La sezione 4 misurava sui 621 movimenti degli **snapshot di giugno**. Il 16
+agosto la sincronizzazione bancaria è stata eseguita per la prima volta in
+produzione e ha portato **231 movimenti veri** (15 giugno – 14 agosto, 142
+uscite e 89 entrate, 2 duplicati riconosciuti e scartati). È una popolazione
+diversa, quindi la misura è stata rifatta:
+
+```bash
+SENZA_SNAPSHOT=1 DUMP=/percorso/produzione.sql DB_MISURA=misura_vera \
+  npx tsx scripts/riconciliazione/misura-fascia-alta.ts
+```
+
+| | Snapshot (sez. 4) | Sincronizzati |
+|---|---|---|
+| Movimenti | 621 | 231 |
+| Proposte | 206 | 85 |
+| Fascia Alta | 11 | 7 |
+| Numero fattura in causale | 11 su 11 | **7 su 7** |
+| Importo ambiguo | 0 | **0** |
+
+**La conclusione regge su due popolazioni indipendenti**: la soglia di 85 non
+produce falsi positivi. Non era un artefatto degli snapshot.
+
+## Il difetto trovato guardando i fattori
+
+`quanto-vale-il-riferimento.ts` cerca le proposte in cui il numero di fattura è
+presente nella causale normalizzata ma `contieneRiferimento` risponde di no.
+
+Ne trova **sette**, tutte con la stessa forma: la normalizzazione toglie i
+separatori e **incolla due campi diversi**, poi la guardia che protegge dai
+falsi positivi rifiuta il match perché dopo l'ultima cifra dell'ago ne trova
+un'altra.
+
+```
+Ft.N.3300/00/2026 30/05/2026   →   FTN[3300002026]30052026
+                                                  ↑ la data incollata
+SARATOGA SNC 177 2026          →   SARATOGASNC[177]2026
+                                                 ↑ l'anno incollato
+```
+
+Il fattore vale **20 punti su 100** — il secondo per peso dopo l'importo — e il
+commento in `causale.ts` lo dice già: «un falso negativo qui **non lascia
+traccia**: la proposta semplicemente non nasce, e non c'è sintomo da osservare
+dopo».
+
+**Sei delle sette proposte entrerebbero in fascia Alta** se il confronto le
+riconoscesse: la fascia passerebbe da 7 a 13, quasi il doppio.
+
+> **Un errore di conteggio, corretto.** La prima esecuzione dichiarava dieci
+> proposte declassate: la query univa le *gambe*, e una proposta con tre gambe
+> compariva tre volte. Le proposte distinte sono sette.
+
+## Cosa resta non misurato
+
+- **Il richiamo**: quante riconciliazioni vere il motore ha *mancato*. Richiede
+  di sapere quali dei 231 movimenti pagano davvero una delle 226 fatture, cioè
+  uno spoglio manuale che non è stato fatto.
+- **Le fasce Media e Bassa** non sono state giudicate una a una.
