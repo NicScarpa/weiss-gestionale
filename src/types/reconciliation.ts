@@ -28,6 +28,19 @@ export interface BankTransaction {
   reconciledBy: string | null
   reconciledAt: Date | null
   createdAt: Date
+  /**
+   * Campi che la riga ha sul database e che le rotte di dettaglio
+   * restituiscono con l'intero record. Facoltativi perché le liste più vecchie
+   * non li selezionano: `RigaEstrattoConto` li richiede, chi legge il
+   * dettaglio li trova, e nessuna delle due deve dichiarare un tipo tutto suo.
+   */
+  descrizione?: string | null
+  causale?: string | null
+  note?: string | null
+  /** `proprietaryBankTransactionCode` della banca, formato `NN//NN`. */
+  bankTransactionCode?: string | null
+  /** L'identificativo dato dalla banca: unico per conto, non fra conti. */
+  providerTransactionId?: string | null
 }
 
 export interface ImportBatch {

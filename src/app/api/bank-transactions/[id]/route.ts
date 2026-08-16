@@ -27,35 +27,43 @@ export async function GET(
     const { id } = await params
     const venueId = await getVenueId()
 
-    const transaction = await prisma.bankTransaction.findFirst({
-      where: { id, venueId },
-      include: {
-        venue: {
-          select: { id: true, name: true, code: true },
-        },
-        matchedEntry: {
-          select: {
-            id: true,
-            date: true,
-            description: true,
-            debitAmount: true,
-            creditAmount: true,
-            documentRef: true,
-            account: {
-              select: { id: true, code: true, name: true },
-            },
-          },
-        },
-        importBatch: {
-          select: {
-            id: true,
-            filename: true,
-            source: true,
-            importedAt: true,
+    const collegate = {
+      venue: {
+        select: { id: true, name: true, code: true },
+      },
+      matchedEntry: {
+        select: {
+          id: true,
+          date: true,
+          description: true,
+          debitAmount: true,
+          creditAmount: true,
+          documentRef: true,
+          account: {
+            select: { id: true, code: true, name: true },
           },
         },
       },
-    })
+      importBatch: {
+        select: {
+          id: true,
+          filename: true,
+          source: true,
+          importedAt: true,
+        },
+      },
+    }
+
+    // La riga cestinata l'estensione soft-delete la nasconde alla prima
+    // ricerca: senza la seconda, «Vedi dettagli» dal Cestino risponderebbe 404
+    // su un movimento che si sta guardando in elenco. Stessa doppia ricerca
+    // della rotta `cronologia`.
+    const transaction =
+      (await prisma.bankTransaction.findFirst({ where: { id, venueId }, include: collegate })) ??
+      (await prisma.bankTransaction.findFirst({
+        where: { id, venueId, deletedAt: { not: null } },
+        include: collegate,
+      }))
 
     if (!transaction) {
       return NextResponse.json(

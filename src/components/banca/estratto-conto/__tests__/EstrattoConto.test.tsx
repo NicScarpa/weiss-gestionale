@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import { act } from 'react'
+import { toast } from 'sonner'
 import { EstrattoConto } from '../EstrattoConto'
 import { FILTRI_DEFAULT } from '@/lib/banca/filtri-estratto-conto'
 import {
@@ -66,13 +67,17 @@ async function aprireMenu(el: Element | null | undefined) {
 }
 
 let chiamate: string[] = []
+/** Le stesse richieste col verbo e il corpo: le azioni si giudicano da quelli. */
+let richieste: Array<{ url: string; init?: RequestInit }> = []
 function stubFetch(risposte: Array<[string, unknown]>) {
   chiamate = []
+  richieste = []
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (url: string) => {
+    vi.fn(async (url: string, init?: RequestInit) => {
       const indirizzo = String(url)
       chiamate.push(indirizzo)
+      richieste.push({ url: indirizzo, init })
       const trovata = risposte.find(([prefisso]) => indirizzo.startsWith(prefisso))
       return new Response(JSON.stringify(trovata ? trovata[1] : {}), {
         status: 200,
@@ -134,6 +139,9 @@ const VUOTA = {
 
 function stubTutto(lista: unknown = RISPOSTA) {
   stubFetch([
+    // Prima della lista: la ricerca si ferma al primo prefisso che combacia, e
+    // «/api/bank-transactions» combacerebbe anche con questa.
+    ['/api/bank-transactions/azioni-in-blocco', { toccate: 2, saltate: 1 }],
     ['/api/bank-transactions', lista],
     // La rotta vera risponde `{ accounts: [...] }`, non `{ data: [...] }`.
     ['/api/bank-accounts', { accounts: [{ id: 'c1', name: 'Weiss' }] }],
@@ -304,6 +312,44 @@ describe('EstrattoConto', () => {
     await attendiChe(
       () => richiesteLista().some((u) => u.includes('sezione=DELEGHE_F24') && !u.includes('tipo=')),
       'la scheda conservata senza il filtro tipo'
+    )
+  })
+
+  it('il cestino sulla riga chiama la DELETE e ricarica', async () => {
+    stubTutto()
+    await montare(<EstrattoConto venueId="v1" filtriIniziali={FILTRI_DEFAULT} />)
+    await attendiChe(() => testoDellaPagina().includes('DITTA 1'), 'le righe')
+
+    const primaDelClic = richiesteLista().length
+    await cliccare(document.querySelector('tbody button[aria-label="Sposta nel Cestino"]'))
+    await attendiChe(() => chiamate.some((u) => u === '/api/bank-transactions/1'), 'la DELETE')
+
+    expect(richieste.find((r) => r.url === '/api/bank-transactions/1')?.init?.method).toBe('DELETE')
+    // Cestinata la riga, i conteggi e i totali sono altri: la lista si rilegge.
+    await attendiChe(() => richiesteLista().length > primaDelClic, 'la lista riletta')
+  })
+
+  it("l'azione in blocco su «tutte del filtro» manda il filtro, non gli id", async () => {
+    stubTutto()
+    await montare(<EstrattoConto venueId="v1" filtriIniziali={FILTRI_DEFAULT} />)
+    await attendiChe(() => testoDellaPagina().includes('DITTA 1'), 'le righe')
+
+    await cliccare(document.querySelector('tbody [role="checkbox"]'))
+    await cliccare(perTesto(/tutte le 231/))
+    // Il pulsante della barra e la scheda si chiamano tutti e due «Cestino»:
+    // il selettore prende quello che non è una linguetta.
+    await cliccare(perTesto('Cestino', 'button:not([role="tab"])'))
+    await attendiChe(() => chiamate.some((u) => u.endsWith('/azioni-in-blocco')), 'la richiesta in blocco')
+
+    const inBlocco = richieste.find((r) => r.url.endsWith('/azioni-in-blocco'))!
+    const corpo = JSON.parse(String(inBlocco.init?.body))
+    expect(corpo.azione).toBe('cestino')
+    // Le 231 righe le ricalcola il server dal filtro: mandare gli id vorrebbe
+    // dire toccare solo le due caricate in pagina.
+    expect(corpo.filtro).toBeTruthy()
+    expect(corpo.ids).toBeUndefined()
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
+      '2 movimenti nel Cestino · 1 saltato perché collegato a una scrittura'
     )
   })
 })
