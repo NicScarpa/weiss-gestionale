@@ -34,6 +34,21 @@ export const createBankTransactionSchema = z.object({
   amount: z.number().refine((n) => n !== 0, 'L\'importo non può essere zero'), // + entrata, - uscita
 })
 
+// Modifica di una riga: `strict()` perché la forma della rotta È il divieto —
+// data, importo e verso della banca non sono campi che si possono mandare.
+export const patchBankTransactionSchema = z
+  .object({
+    descrizione: z.string().max(500).nullable().optional(),
+    causale: z.string().max(120).nullable().optional(),
+    note: z.string().max(2000).nullable().optional(),
+    // Solo sulle righe MANUAL; sulle altre la rotta risponde 400 se compaiono.
+    transactionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    valueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    amount: z.number().refine((n) => n !== 0, "L'importo non può essere zero").optional(),
+  })
+  .strict()
+export const CAMPI_SOLO_MANUALI = ['transactionDate', 'valueDate', 'amount'] as const
+
 // Match manuale
 export const matchTransactionSchema = z.object({
   journalEntryId: z.string().min(1),
