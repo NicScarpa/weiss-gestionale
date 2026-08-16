@@ -206,6 +206,26 @@ describe('ConnessioniBancarie', () => {
     expect(interruttori()[0]?.getAttribute('data-state')).toBe('checked')
   })
 
+  // La frase «Nessuna sincronizzazione è attiva… i movimenti arriveranno con
+  // il passo successivo» era vera nella Fase 2b e falsa dalla Fase 3: il 16
+  // agosto stava sopra un blocco che diceva «ultima sincronizzazione riuscita»,
+  // e chi leggeva ha concluso che i movimenti non fossero arrivati da nessuna
+  // parte. Il pannello deve dire dove finiscono, non che non partono.
+  it('dice dove finiscono i movimenti scaricati, non che nessuno li scarica', async () => {
+    stubFetch([
+      ['/api/gocardless/collegamenti/conn-1/conti', CONTI],
+      ['/api/gocardless/collegamenti', COLLEGAMENTO],
+    ])
+
+    await montare(<ConnessioniBancarie contiBancari={CONTI_DEL_GESTIONALE} />)
+    await attendere()
+    await attendiChe(() => testoDellaPagina().includes('IT•• •••• 2222'), 'i conti a schermo')
+
+    const testo = testoDellaPagina()
+    expect(testo).not.toContain('Nessuna sincronizzazione è attiva')
+    expect(testo).toContain('nella Riconciliazione')
+  })
+
   // `configura` esige la data di taglio anche a interruttore spento, ed è
   // l'unica cosa che impedisce a un movimento già importato via CSV di
   // entrare una seconda volta.

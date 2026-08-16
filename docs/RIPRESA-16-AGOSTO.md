@@ -87,6 +87,43 @@ svuota anche la casella.
 | Deploy Railway | SUCCESS |
 | Prova sul campo | fatta dall'utente in produzione |
 
+### 1.5 «I movimenti bancari non sono importati da nessuna parte» (pomeriggio)
+
+**Il sintomo.** Collegamento GoCardless a posto, «Sincronizza ora» premuto,
+pannello che dice «0 movimenti nuovi»; in *Prima nota → Movimenti → Banca*
+nessun movimento. Conclusione dell'utente: la banca non ha portato nulla.
+
+**I fatti, misurati.** La sincronizzazione ha funzionato: **231 movimenti**
+PSD2 in `bank_transactions` (15/06–14/08, tutti `PENDING`), primo giro alle
+09:58 UTC (233 letti, 231 nuovi, 2 duplicati), secondo alle 10:13 (2 letti,
+2 duplicati, cioè «0 nuovi»). Sono tutti visibili in *Prima nota →
+Riconciliazione* («su 231 totali»). Confronto con lo snapshot della Fase 0 del
+12/08: **222 identificativi su 222 ritrovati identici** — la stabilità degli id,
+mai verificata prima, regge. I 2 duplicati del primo giro non sono
+identificabili a posteriori (l'indice li ha respinti senza lasciare traccia).
+
+**La causa.** Nessun guasto nel motore: i movimenti scaricati sono righe
+dell'estratto conto e stanno nella riconciliazione; la scheda Banca della prima
+nota elenca le *scritture contabili* (in produzione: zero). Ma **nessuna
+schermata lo diceva**, e tre la contraddicevano:
+
+| Dove | Cosa diceva | Ora |
+|---|---|---|
+| `ConnessioniBancarie.tsx` | «Nessuna sincronizzazione è attiva… i movimenti arriveranno con il passo successivo» (residuo della Fase 2b) | «I movimenti scaricati si trovano nella Riconciliazione, non nella prima nota» |
+| `StatoSincronizzazione.tsx` | solo il delta dell'ultimo giro («0 movimenti nuovi») | anche «231 movimenti importati, 231 da riconciliare» + link (`GET /api/banca/sincronizzazione` restituisce `movimentiImportati` e `daRiconciliare` per conto, una sola `groupBy`) |
+| Prima nota → Banca | stato vuoto senza indicazioni | `MovimentiBancariInAttesa`: «231 movimenti dell'estratto conto aspettano nella Riconciliazione» + link (legge `/api/reconciliation/summary`) |
+| `/riconciliazione` | `limit=100` senza paginazione: 131 movimenti irraggiungibili | «Pagina 1 di 3», e il cambio di scheda torna alla prima pagina |
+
+**Cosa NON si è fatto, e perché.** Far comparire le righe di banca *dentro* la
+prima nota. È l'«anello mancante» che la spec A2 (`76ca18a`, decisione 3) ha
+già deciso: *approvare promuove la riga bancaria a movimento di prima nota*.
+Costruirlo qui avrebbe duplicato quel disegno; l'A2 (task 2-7 del piano) è la
+strada.
+
+**Verifiche.** Unit 1870/1870, integrazione della rotta 11/11, `tsc` e
+`typecheck:test` puliti, cricchetto 254, entrambe le build exit 0, prova a
+occhio delle tre schermate su un DB locale con 231 movimenti finti.
+
 ---
 
 ## Parte 2 — Cosa resta

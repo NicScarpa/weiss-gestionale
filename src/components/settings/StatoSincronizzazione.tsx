@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -21,6 +22,10 @@ interface ContoSincronizzato {
   nomeConto: string
   ultimaRiuscita: string | null
   movimentiUltimaRiuscita: number | null
+  /** Tutti i movimenti che la sincronizzazione ha portato per questo conto. */
+  movimentiImportati: number
+  /** Quelli che aspettano ancora qualcuno nella riconciliazione. */
+  daRiconciliare: number
   ultimoEsito: 'OK' | 'ERRORE' | 'LIMITE' | null
   sincronizzazioniRimaste: number
   riapreAlle: string | null
@@ -102,6 +107,24 @@ export function StatoSincronizzazione() {
                       : '.')
                   : 'Mai sincronizzato.'}{' '}
                 {conto.ultimoEsito === 'ERRORE' && 'L’ultimo tentativo è fallito.'}
+              </p>
+              {/* «0 movimenti nuovi» è il delta dell'ultimo giro ed è vero anche
+                  quando il giro prima ne ha portati duecento: senza il totale,
+                  e senza dire dove sono, chi legge conclude che non sia
+                  arrivato nulla. I movimenti non entrano nella prima nota:
+                  finiscono nella riconciliazione, ed è lì che va indirizzato. */}
+              <p className="text-xs text-muted-foreground">
+                {conto.movimentiImportati > 0 ? (
+                  <>
+                    {conto.movimentiImportati} movimenti importati, {conto.daRiconciliare} da
+                    riconciliare.{' '}
+                    <Link href="/riconciliazione" className="underline underline-offset-2">
+                      Vai alla riconciliazione
+                    </Link>
+                  </>
+                ) : (
+                  'Nessun movimento importato finora.'
+                )}
               </p>
             </div>
 

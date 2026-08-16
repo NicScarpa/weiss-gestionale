@@ -11,6 +11,7 @@ import { EditContoCentroDialog } from '@/components/prima-nota/movimenti/EditCon
 import { CaricaMovimentiDialog } from '@/components/prima-nota/movimenti/CaricaMovimentiDialog'
 import { SplitEntryDialog } from '@/components/prima-nota/movimenti/SplitEntryDialog'
 import { RiconciliazioniMovimentoDialog } from '@/components/prima-nota/movimenti/RiconciliazioniMovimentoDialog'
+import { MovimentiBancariInAttesa } from '@/components/banca/MovimentiBancariInAttesa'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -383,6 +384,13 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
         filterCount={filterCount}
         onClearFilters={handleClearFilters}
       />
+
+      {/* Le righe dell'estratto conto non stanno qui ma nella riconciliazione:
+          chi apre la scheda Banca e la trova vuota deve sapere dove sono. Sulla
+          Cassa non c'entrano. */}
+      {filters.registerType !== 'CASH' && venueId && (
+        <MovimentiBancariInAttesa venueId={venueId} />
+      )}
 
       <MovimentiTable
         data={data}
