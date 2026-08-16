@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import {
@@ -172,25 +173,27 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = createBankTransactionSchema.parse(body)
 
-    // Verifica che la venue esista
-    const venue = await prisma.venue.findUnique({
-      where: { id: venueId },
+    // Il conto appartiene alla sede come ogni altro movimento: niente riga
+    // manuale orfana o intestata al conto di un'altra sede.
+    const bankAccount = await prisma.bankAccount.findFirst({
+      where: { id: data.bankAccountId, venueId, accountType: 'BANK' },
     })
-
-    if (!venue) {
-      return NextResponse.json({ error: 'Sede non trovata' }, { status: 404 })
+    if (!bankAccount) {
+      return NextResponse.json({ error: 'Conto bancario non trovato' }, { status: 404 })
     }
 
     // Crea la transazione
     const transaction = await prisma.bankTransaction.create({
       data: {
         venueId,
+        bankAccountId: data.bankAccountId,
         transactionDate: new Date(data.transactionDate),
         valueDate: data.valueDate ? new Date(data.valueDate) : null,
-        description: data.description,
+        description: data.descrizione,
+        descrizione: data.descrizione,
+        causale: data.causale?.trim() || null,
+        note: data.note?.trim() || null,
         amount: data.amount,
-        balanceAfter: data.balanceAfter || null,
-        bankReference: data.bankReference || null,
         importSource: 'MANUAL',
         status: 'PENDING',
       },
@@ -208,6 +211,12 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     logger.error('POST /api/bank-transactions error', error)
+    // Un conto mancante o un importo a zero sono errori dell'utente, non del
+    // server: senza questo controllo il parse di Zod finiva nel 500 generico
+    // e chi inserisce a mano una riga non capiva cosa correggere.
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: 'Dati non validi', details: error.issues }, { status: 400 })
+    }
     return NextResponse.json(
       { error: 'Errore nella creazione della transazione' },
       { status: 500 }

@@ -33,15 +33,17 @@ export const bankTransactionFiltersSchema = z.object({
   limit: z.coerce.number().min(1).max(100).default(50),
 })
 
-// Creazione manuale transazione
+// Creazione manuale: la riga inserita a mano ha un conto come tutte le altre.
+// `descrizione` è il testo dell'utente e finisce anche in `description`, che
+// per le righe MANUAL non è «della banca» ma resta il testo d'origine.
 export const createBankTransactionSchema = z.object({
-  venueId: z.string().min(1),
+  bankAccountId: z.string().min(1),
   transactionDate: z.string(), // ISO date
   valueDate: z.string().optional(),
-  description: z.string().min(1).max(500),
-  amount: z.number(), // + entrata, - uscita
-  balanceAfter: z.number().optional(),
-  bankReference: z.string().max(100).optional(),
+  descrizione: z.string().min(1).max(500),
+  causale: z.string().max(120).optional(),
+  note: z.string().max(2000).optional(),
+  amount: z.number().refine((n) => n !== 0, 'L\'importo non può essere zero'), // + entrata, - uscita
 })
 
 // Match manuale

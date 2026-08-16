@@ -193,6 +193,22 @@ describe('sincronizzaConti', () => {
     ).toBeGreaterThan(0)
   })
 
+  it('scrive causale e descrizione separate, e lascia il testo grezzo in description', async () => {
+    const { venueId, contoId } = await montaConto('Banca della Marca', 'acct-1')
+    impostaClientPerTest(
+      clientFinto([
+        { ...movimento('20260810-1', '2026-08-10', '-12.50'), remittanceInformationUnstructured: 'Bonifico tramite Internet Banking *SALDO FT 7 ACME SRL' },
+      ])
+    )
+
+    await sincronizzaConti({ venueId, origine: 'cron', oggi: OGGI })
+
+    const riga = await prisma.bankTransaction.findFirstOrThrow({ where: { bankAccountId: contoId } })
+    expect(riga.description).toBe('Bonifico tramite Internet Banking *SALDO FT 7 ACME SRL')
+    expect(riga.causale).toBe('Bonifico tramite internet banking')
+    expect(riga.descrizione).toBe('SALDO FT 7 ACME SRL')
+  })
+
   it('registra il residuo dichiarato dalla banca, per la decisione successiva', async () => {
     const { venueId, contoId } = await montaConto('Banca della Marca', 'acct-1')
     impostaClientPerTest(clientFinto([], { restanti: 2 }))

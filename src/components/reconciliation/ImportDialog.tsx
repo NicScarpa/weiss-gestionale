@@ -47,6 +47,19 @@ export function ImportDialog({
       })
     }
   }, [open])
+
+  const [bankAccounts, setBankAccounts] = useState<Array<{ id: string; name: string }>>([])
+  const [bankAccountId, setBankAccountId] = useState<string>('')
+
+  useEffect(() => {
+    if (open) {
+      fetch('/api/bank-accounts?type=BANK').then(r => r.json()).then(data => {
+        const accountList = data.accounts || []
+        setBankAccounts(accountList)
+        if (accountList.length === 1) setBankAccountId(accountList[0].id)
+      })
+    }
+  }, [open])
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<ImportResult | null>(null)
@@ -75,8 +88,8 @@ export function ImportDialog({
   }
 
   const handleImport = async () => {
-    if (!file || !venueId) {
-      toast.error('Seleziona sede e file')
+    if (!file || !venueId || !bankAccountId) {
+      toast.error('Seleziona sede, conto bancario e file')
       return
     }
 
@@ -88,6 +101,7 @@ export function ImportDialog({
       const formData = new FormData()
       formData.append('file', file)
       formData.append('venueId', venueId)
+      formData.append('bankAccountId', bankAccountId)
 
       const res = await fetch('/api/bank-transactions/import', {
         method: 'POST',
@@ -124,6 +138,7 @@ export function ImportDialog({
     setResult(null)
     setErrors([])
     setVenueId('')
+    setBankAccountId('')
     onOpenChange(false)
   }
 
@@ -149,6 +164,22 @@ export function ImportDialog({
                 {venues.map((venue) => (
                   <SelectItem key={venue.id} value={venue.id}>
                     {venue.name} ({venue.code})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="bankAccount">Conto bancario</Label>
+            <Select value={bankAccountId} onValueChange={setBankAccountId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Seleziona conto bancario" />
+              </SelectTrigger>
+              <SelectContent>
+                {bankAccounts.map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    {account.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -233,7 +264,7 @@ export function ImportDialog({
           <Button variant="outline" onClick={handleClose}>
             Chiudi
           </Button>
-          <Button onClick={handleImport} disabled={!file || !venueId || loading}>
+          <Button onClick={handleImport} disabled={!file || !venueId || !bankAccountId || loading}>
             {loading ? 'Importazione...' : 'Importa'}
           </Button>
         </DialogFooter>

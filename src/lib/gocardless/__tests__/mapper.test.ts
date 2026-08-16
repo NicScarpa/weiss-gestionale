@@ -66,6 +66,29 @@ describe('mappaMovimento', () => {
     expect(d).toHaveLength(LUNGHEZZA_MASSIMA_CAUSALE)
     expect(d.endsWith('…')).toBe(true)
   })
+
+  // Il testo grezzo resta in `description`; causale e descrizione nascono
+  // separate all'import, così la lista le mostra in due colonne come CashKing.
+  it('separa la causale dalla descrizione col codice della banca', () => {
+    const conAsterisco = movimentoSchema.parse({
+      ...contoA.transactions.booked[0],
+      remittanceInformationUnstructured: 'Bonifico a vs favore *ROSSI SRL SALDO FT 12',
+      proprietaryBankTransactionCode: '48//00',
+    })
+    const mappato = mappaMovimento(conAsterisco)
+    expect(mappato.description).toBe('Bonifico a vs favore *ROSSI SRL SALDO FT 12')
+    expect(mappato.causale).toBe('Bonifico a vs favore')
+    expect(mappato.descrizione).toBe('ROSSI SRL SALDO FT 12')
+  })
+
+  it('senza codice noto né asterisco lascia la causale vuota', () => {
+    const senza = movimentoSchema.parse({
+      ...contoA.transactions.booked[0],
+      remittanceInformationUnstructured: 'Testo mai visto',
+      proprietaryBankTransactionCode: '99//99',
+    })
+    expect(mappaMovimento(senza)).toMatchObject({ causale: null, descrizione: 'Testo mai visto' })
+  })
 })
 
 describe('mappaMovimenti', () => {
