@@ -28,6 +28,19 @@ export interface BankTransaction {
   reconciledBy: string | null
   reconciledAt: Date | null
   createdAt: Date
+  /**
+   * Campi che la riga ha sul database e che le rotte di dettaglio
+   * restituiscono con l'intero record. Facoltativi perché le liste più vecchie
+   * non li selezionano: `RigaEstrattoConto` li richiede, chi legge il
+   * dettaglio li trova, e nessuna delle due deve dichiarare un tipo tutto suo.
+   */
+  descrizione?: string | null
+  causale?: string | null
+  note?: string | null
+  /** `proprietaryBankTransactionCode` della banca, formato `NN//NN`. */
+  bankTransactionCode?: string | null
+  /** L'identificativo dato dalla banca: unico per conto, non fra conti. */
+  providerTransactionId?: string | null
 }
 
 export interface ImportBatch {
@@ -56,6 +69,46 @@ export interface BankTransactionWithMatch extends BankTransaction {
     name: string
     code: string
   }
+}
+
+export type SezioneMovimentoBancario = 'ATTIVI' | 'DELEGHE_F24' | 'CBILL_PAGOPA'
+export type StatoLegenda = 'non_abbinato' | 'parziale' | 'abbinato_manualmente' | 'riconciliato'
+
+/**
+ * La riga come la vede la lista dell'estratto conto: i campi in più li calcola
+ * il server, così legenda, filtro e conteggi dicono la stessa cosa.
+ */
+export interface RigaEstrattoConto extends BankTransactionWithMatch {
+  descrizione: string | null
+  causale: string | null
+  note: string | null
+  sezione: SezioneMovimentoBancario
+  bankTransactionCode: string | null
+  bankAccount: { id: string; name: string } | null
+  modificato: boolean
+  stato: StatoLegenda
+  residuo: number
+  deletedAt: Date | null
+}
+
+export interface TotaliEstrattoConto {
+  entrate: number
+  uscite: number
+  saldoNetto: number
+}
+
+export interface ConteggiEstrattoConto {
+  attivi: number
+  delegheF24: number
+  cbillPagopa: number
+  cestino: number
+}
+
+export interface RispostaEstrattoConto {
+  data: RigaEstrattoConto[]
+  pagination: { page: number; limit: number; total: number; totalPages: number }
+  totali: TotaliEstrattoConto
+  conteggi: ConteggiEstrattoConto
 }
 
 export interface ReconciliationSummary {

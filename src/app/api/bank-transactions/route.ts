@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import {
-  bankTransactionFiltersSchema,
-  createBankTransactionSchema,
-} from '@/lib/validations/reconciliation'
-import type { ReconciliationStatus } from '@/types/reconciliation'
+import { createBankTransactionSchema } from '@/lib/validations/reconciliation'
 import { getVenueId } from '@/lib/venue'
+import { filtriDaSearchParams } from '@/lib/banca/filtri-estratto-conto'
+import { costruisciWhere, costruisciOrderBy, SELEZIONE_RIGA, mappaRiga } from '@/lib/banca/query-estratto-conto'
 
 import { checkRequestRateLimit, RATE_LIMIT_CONFIGS } from '@/lib/api-utils'
 import { logger } from '@/lib/logger'
@@ -24,117 +23,44 @@ export async function GET(request: NextRequest) {
 
     const venueId = await getVenueId()
 
-    const searchParams = request.nextUrl.searchParams
-    const params = bankTransactionFiltersSchema.parse({
-      venueId,
-      status: searchParams.get('status') || undefined,
-      dateFrom: searchParams.get('dateFrom') || undefined,
-      dateTo: searchParams.get('dateTo') || undefined,
-      search: searchParams.get('search') || undefined,
-      importBatchId: searchParams.get('importBatchId') || undefined,
-      page: searchParams.get('page') || 1,
-      limit: searchParams.get('limit') || 50,
-    })
+    const filtri = filtriDaSearchParams(request.nextUrl.searchParams)
+    const where = costruisciWhere(filtri, venueId)
 
-    const { status, dateFrom, dateTo, search, importBatchId, page, limit } = params
-
-    // Costruisci where clause
-    const where: Record<string, unknown> = {}
-
-    where.venueId = venueId
-
-    if (status) {
-      where.status = status
-    }
-
-    if (importBatchId) {
-      where.importBatchId = importBatchId
-    }
-
-    if (dateFrom || dateTo) {
-      where.transactionDate = {}
-      if (dateFrom) {
-        (where.transactionDate as Record<string, Date>).gte = new Date(dateFrom)
-      }
-      if (dateTo) {
-        (where.transactionDate as Record<string, Date>).lte = new Date(dateTo)
-      }
-    }
-
-    if (search) {
-      where.OR = [
-        { description: { contains: search, mode: 'insensitive' } },
-        { bankReference: { contains: search, mode: 'insensitive' } },
-      ]
-    }
-
-    // Query con paginazione
-    const [transactions, total] = await Promise.all([
+    // Un `$transaction` a lista: una connessione sola. Sette query in
+    // `Promise.all` prenderebbero sette connessioni su un pool da dieci.
+    const [righe, totale, entrate, uscite, perSezione, cestino, perStato] = await prisma.$transaction([
       prisma.bankTransaction.findMany({
         where,
-        include: {
-          venue: {
-            select: { id: true, name: true, code: true },
-          },
-          matchedEntry: {
-            select: {
-              id: true,
-              date: true,
-              description: true,
-              debitAmount: true,
-              creditAmount: true,
-              documentRef: true,
-            },
-          },
-        },
-        orderBy: { transactionDate: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
+        ...SELEZIONE_RIGA,
+        orderBy: costruisciOrderBy(filtri),
+        skip: (filtri.page - 1) * filtri.limit,
+        take: filtri.limit,
       }),
       prisma.bankTransaction.count({ where }),
+      // `AND`, non spread: `where` può già avere un `amount` suo (filtro
+      // `tipo`), e uno spread lo sovrascriverebbe silenziosamente invece di
+      // intersecarlo — coi filtri combinati i totali di segno opposto
+      // tornerebbero somme prese da fuori il filtro attivo.
+      prisma.bankTransaction.aggregate({ where: { AND: [where, { amount: { gt: 0 } }] }, _sum: { amount: true } }),
+      prisma.bankTransaction.aggregate({ where: { AND: [where, { amount: { lt: 0 } }] }, _sum: { amount: true } }),
+      prisma.bankTransaction.groupBy({ by: ['sezione'], where: { venueId, deletedAt: null }, _count: { _all: true } }),
+      prisma.bankTransaction.count({ where: { venueId, deletedAt: { not: null } } }),
+      prisma.bankTransaction.groupBy({ by: ['status'], where: { venueId, deletedAt: null }, _count: { id: true } }),
     ])
 
-    // Calcola summary per status
-    const summary = await prisma.bankTransaction.groupBy({
-      by: ['status'],
-      where: { venueId },
-      _count: { id: true },
-    })
-
-    const summaryMap = summary.reduce(
-      (acc, item) => {
-        acc[item.status] = item._count.id
-        return acc
-      },
-      {} as Record<ReconciliationStatus, number>
-    )
+    const conta = (sezione: string) => perSezione.find((s) => s.sezione === sezione)?._count._all ?? 0
+    const sommaEntrate = Number(entrate._sum.amount ?? 0)
+    const sommaUscite = Math.abs(Number(uscite._sum.amount ?? 0))
+    const summaryMap = Object.fromEntries(perStato.map((s) => [s.status, s._count.id])) as Record<string, number>
 
     return NextResponse.json({
-      data: transactions.map((tx) => ({
-        ...tx,
-        amount: Number(tx.amount),
-        balanceAfter: tx.balanceAfter ? Number(tx.balanceAfter) : null,
-        matchConfidence: tx.matchConfidence ? Number(tx.matchConfidence) : null,
-        matchedEntry: tx.matchedEntry
-          ? {
-              ...tx.matchedEntry,
-              debitAmount: tx.matchedEntry.debitAmount
-                ? Number(tx.matchedEntry.debitAmount)
-                : null,
-              creditAmount: tx.matchedEntry.creditAmount
-                ? Number(tx.matchedEntry.creditAmount)
-                : null,
-            }
-          : null,
-      })),
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      data: righe.map(mappaRiga),
+      pagination: { page: filtri.page, limit: filtri.limit, total: totale, totalPages: Math.ceil(totale / filtri.limit) },
+      totali: { entrate: sommaEntrate, uscite: sommaUscite, saldoNetto: Math.round((sommaEntrate - sommaUscite) * 100) / 100 },
+      conteggi: { attivi: conta('ATTIVI'), delegheF24: conta('DELEGHE_F24'), cbillPagopa: conta('CBILL_PAGOPA'), cestino },
+      // Il riepilogo di prima, per la pagina /riconciliazione finché esiste.
       summary: {
-        total,
+        total: totale,
         pending: summaryMap.PENDING || 0,
         matched: summaryMap.MATCHED || 0,
         toReview: summaryMap.TO_REVIEW || 0,
@@ -172,25 +98,27 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = createBankTransactionSchema.parse(body)
 
-    // Verifica che la venue esista
-    const venue = await prisma.venue.findUnique({
-      where: { id: venueId },
+    // Il conto appartiene alla sede come ogni altro movimento: niente riga
+    // manuale orfana o intestata al conto di un'altra sede.
+    const bankAccount = await prisma.bankAccount.findFirst({
+      where: { id: data.bankAccountId, venueId, accountType: 'BANK' },
     })
-
-    if (!venue) {
-      return NextResponse.json({ error: 'Sede non trovata' }, { status: 404 })
+    if (!bankAccount) {
+      return NextResponse.json({ error: 'Conto bancario non trovato' }, { status: 404 })
     }
 
     // Crea la transazione
     const transaction = await prisma.bankTransaction.create({
       data: {
         venueId,
+        bankAccountId: data.bankAccountId,
         transactionDate: new Date(data.transactionDate),
         valueDate: data.valueDate ? new Date(data.valueDate) : null,
-        description: data.description,
+        description: data.descrizione,
+        descrizione: data.descrizione,
+        causale: data.causale?.trim() || null,
+        note: data.note?.trim() || null,
         amount: data.amount,
-        balanceAfter: data.balanceAfter || null,
-        bankReference: data.bankReference || null,
         importSource: 'MANUAL',
         status: 'PENDING',
       },
@@ -208,6 +136,12 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     logger.error('POST /api/bank-transactions error', error)
+    // Un conto mancante o un importo a zero sono errori dell'utente, non del
+    // server: senza questo controllo il parse di Zod finiva nel 500 generico
+    // e chi inserisce a mano una riga non capiva cosa correggere.
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: 'Dati non validi', details: error.issues }, { status: 400 })
+    }
     return NextResponse.json(
       { error: 'Errore nella creazione della transazione' },
       { status: 500 }

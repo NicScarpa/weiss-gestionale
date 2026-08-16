@@ -25,7 +25,6 @@ import {
   CheckCircle2,
   MoreHorizontal,
   Link2,
-  Ban,
   Undo2,
   Eye,
 } from 'lucide-react'
@@ -35,7 +34,6 @@ interface BankTransactionTableProps {
   transactions: BankTransactionWithMatch[]
   loading?: boolean
   onConfirm?: (id: string) => Promise<void>
-  onIgnore?: (id: string) => Promise<void>
   onUnmatch?: (id: string) => Promise<void>
   onMatch?: (id: string) => void
   onViewDetails?: (id: string) => void
@@ -57,7 +55,6 @@ export function BankTransactionTable({
   transactions,
   loading,
   onConfirm,
-  onIgnore,
   onUnmatch,
   onMatch,
   onViewDetails,
@@ -208,18 +205,6 @@ export function BankTransactionTable({
                           <DropdownMenuItem onClick={() => onMatch(tx.id)}>
                             <Link2 className="mr-2 h-4 w-4" />
                             Match Manuale
-                          </DropdownMenuItem>
-                        )}
-
-                      {tx.status !== 'IGNORED' &&
-                        tx.status !== 'MATCHED' &&
-                        tx.status !== 'MANUAL' &&
-                        onIgnore && (
-                          <DropdownMenuItem
-                            onClick={() => handleAction(tx.id, () => onIgnore(tx.id))}
-                          >
-                            <Ban className="mr-2 h-4 w-4" />
-                            Ignora
                           </DropdownMenuItem>
                         )}
 

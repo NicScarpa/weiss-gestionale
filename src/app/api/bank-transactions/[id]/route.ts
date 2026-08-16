@@ -3,6 +3,10 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { findMatchCandidates } from '@/lib/reconciliation'
 import { getVenueId } from '@/lib/venue'
+import { withAuth } from '@/lib/api-utils'
+import { patchBankTransactionSchema, CAMPI_SOLO_MANUALI } from '@/lib/validations/reconciliation'
+import { differenze, registraModifiche } from '@/lib/banca/cronologia'
+import { SELEZIONE_RIGA, mappaRiga } from '@/lib/banca/query-estratto-conto'
 
 import { logger } from '@/lib/logger'
 // GET /api/bank-transactions/[id] - Dettaglio transazione con candidati match
@@ -23,35 +27,43 @@ export async function GET(
     const { id } = await params
     const venueId = await getVenueId()
 
-    const transaction = await prisma.bankTransaction.findFirst({
-      where: { id, venueId },
-      include: {
-        venue: {
-          select: { id: true, name: true, code: true },
-        },
-        matchedEntry: {
-          select: {
-            id: true,
-            date: true,
-            description: true,
-            debitAmount: true,
-            creditAmount: true,
-            documentRef: true,
-            account: {
-              select: { id: true, code: true, name: true },
-            },
-          },
-        },
-        importBatch: {
-          select: {
-            id: true,
-            filename: true,
-            source: true,
-            importedAt: true,
+    const collegate = {
+      venue: {
+        select: { id: true, name: true, code: true },
+      },
+      matchedEntry: {
+        select: {
+          id: true,
+          date: true,
+          description: true,
+          debitAmount: true,
+          creditAmount: true,
+          documentRef: true,
+          account: {
+            select: { id: true, code: true, name: true },
           },
         },
       },
-    })
+      importBatch: {
+        select: {
+          id: true,
+          filename: true,
+          source: true,
+          importedAt: true,
+        },
+      },
+    }
+
+    // La riga cestinata l'estensione soft-delete la nasconde alla prima
+    // ricerca: senza la seconda, «Vedi dettagli» dal Cestino risponderebbe 404
+    // su un movimento che si sta guardando in elenco. Stessa doppia ricerca
+    // della rotta `cronologia`.
+    const transaction =
+      (await prisma.bankTransaction.findFirst({ where: { id, venueId }, include: collegate })) ??
+      (await prisma.bankTransaction.findFirst({
+        where: { id, venueId, deletedAt: { not: null } },
+        include: collegate,
+      }))
 
     if (!transaction) {
       return NextResponse.json(
@@ -139,18 +151,19 @@ export async function DELETE(
       )
     }
 
-    // Non permettere eliminazione di transazioni già riconciliate
-    if (transaction.status === 'MATCHED' || transaction.status === 'MANUAL') {
+    // Una riga con una scrittura collegata non si cestina: prima si scollega,
+    // altrimenti la scrittura resterebbe appesa a un movimento invisibile.
+    if (transaction.matchedEntryId) {
       return NextResponse.json(
-        { error: 'Non è possibile eliminare una transazione già riconciliata' },
-        { status: 400 }
+        { error: 'Il movimento ha una scrittura collegata: prima scollegala, poi spostalo nel Cestino' },
+        { status: 409 }
       )
     }
 
     // Cancellazione logica (tracciabilità dei movimenti bancari)
     await prisma.bankTransaction.update({
       where: { id },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: new Date(), deletedById: session.user.id },
     })
 
     return NextResponse.json({ success: true })
@@ -162,3 +175,64 @@ export async function DELETE(
     )
   }
 }
+
+// PATCH /api/bank-transactions/[id] - Modifica descrizione, causale e note
+// (anche data/importo/verso sulle sole righe MANUAL), con la cronologia.
+export const PATCH = withAuth<{ id: string }>(
+  async (request, { venueId, user, params }) => {
+    let corpo: unknown
+    try {
+      corpo = await request.json()
+    } catch {
+      return NextResponse.json({ error: 'Corpo non valido' }, { status: 400 })
+    }
+    const parsed = patchBankTransactionSchema.safeParse(corpo)
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Dati non validi', details: parsed.error.issues }, { status: 400 })
+    }
+    const dati = parsed.data
+
+    const riga = await prisma.bankTransaction.findFirst({ where: { id: params.id, venueId } })
+    if (!riga) return NextResponse.json({ error: 'Movimento non trovato' }, { status: 404 })
+
+    // Data, importo e verso vengono dalla banca: non è un permesso, è la forma
+    // del dato (spec, decisione 2). Solo la riga inserita a mano li cambia.
+    const toccaCampiDellaBanca = CAMPI_SOLO_MANUALI.some((c) => dati[c] !== undefined)
+    if (toccaCampiDellaBanca && riga.importSource !== 'MANUAL') {
+      return NextResponse.json(
+        { error: 'Data e importo vengono dalla banca e non si modificano' },
+        { status: 400 }
+      )
+    }
+
+    const pulisci = (v: string | null | undefined) => (v === undefined ? undefined : v?.trim() || null)
+    const dopo = {
+      ...(dati.descrizione !== undefined ? { descrizione: pulisci(dati.descrizione) ?? null } : {}),
+      ...(dati.causale !== undefined ? { causale: pulisci(dati.causale) ?? null } : {}),
+      ...(dati.note !== undefined ? { note: pulisci(dati.note) ?? null } : {}),
+    }
+    const modifiche = differenze(
+      { descrizione: riga.descrizione, causale: riga.causale, note: riga.note, sezione: riga.sezione },
+      dopo
+    )
+
+    const aggiornata = await prisma.$transaction(async (tx) => {
+      await tx.bankTransaction.update({
+        where: { id: riga.id },
+        data: {
+          ...dopo,
+          ...(dati.transactionDate ? { transactionDate: new Date(`${dati.transactionDate}T00:00:00.000Z`) } : {}),
+          ...(dati.valueDate !== undefined
+            ? { valueDate: dati.valueDate ? new Date(`${dati.valueDate}T00:00:00.000Z`) : null }
+            : {}),
+          ...(dati.amount !== undefined ? { amount: dati.amount } : {}),
+        },
+      })
+      await registraModifiche(tx, { bankTransactionId: riga.id, userId: user.id ?? null, modifiche })
+      return tx.bankTransaction.findUniqueOrThrow({ where: { id: riga.id }, ...SELEZIONE_RIGA })
+    })
+
+    return NextResponse.json(mappaRiga(aggiornata))
+  },
+  { roles: ['admin', 'manager'], venueScoped: true }
+)

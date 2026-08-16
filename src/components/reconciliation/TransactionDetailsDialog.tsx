@@ -24,9 +24,12 @@ import {
   Loader2,
   ArrowDownLeft,
   ArrowUpRight,
-  Hash,
+  Download,
+  Fingerprint,
+  Tag,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { CronologiaModifiche } from '@/components/banca/estratto-conto/CronologiaModifiche'
 import type { BankTransactionWithMatch, ReconciliationStatus, ImportSource } from '@/types/reconciliation'
 
 import { logger } from '@/lib/logger'
@@ -161,7 +164,11 @@ export function TransactionDetailsDialog({
             {/* Description */}
             <div className="p-3 rounded-lg border bg-card">
               <div className="text-sm text-muted-foreground mb-1">Descrizione</div>
-              <div className="text-sm leading-relaxed">{transaction.description}</div>
+              {/* Quella che si legge e si modifica; il testo grezzo della banca
+                  sta più sotto, alla voce «Testo della banca». */}
+              <div className="text-sm leading-relaxed">
+                {transaction.descrizione || transaction.description}
+              </div>
             </div>
 
             {/* Transaction Details */}
@@ -177,14 +184,6 @@ export function TransactionDetailsDialog({
                   icon={<Calendar className="h-4 w-4" />}
                   label="Data Valuta"
                   value={formatDateShort(transaction.valueDate)}
-                />
-              )}
-
-              {transaction.bankReference && (
-                <DetailRow
-                  icon={<Hash className="h-4 w-4" />}
-                  label="Riferimento Banca"
-                  value={<code className="text-xs bg-muted px-2 py-1 rounded">{transaction.bankReference}</code>}
                 />
               )}
 
@@ -214,6 +213,48 @@ export function TransactionDetailsDialog({
                   }
                 />
               )}
+
+              {/* Da qui in giù ciò che dice da dove viene la riga: serve quando
+                  un movimento non torna e bisogna risalire all'originale
+                  presso la banca. */}
+              <DetailRow
+                icon={<FileText className="h-4 w-4" />}
+                label="Testo della banca"
+                value={<span className="text-sm font-normal">{transaction.description}</span>}
+              />
+
+              <DetailRow
+                icon={<Tag className="h-4 w-4" />}
+                label="Codice operazione"
+                value={
+                  <code className="text-xs bg-muted px-2 py-1 rounded">
+                    {transaction.bankTransactionCode ?? '—'}
+                  </code>
+                }
+              />
+
+              <DetailRow
+                icon={<Fingerprint className="h-4 w-4" />}
+                label="Identificativo banca"
+                value={
+                  <code className="text-xs bg-muted px-2 py-1 rounded">
+                    {transaction.providerTransactionId ?? transaction.bankReference ?? '—'}
+                  </code>
+                }
+              />
+
+              <DetailRow
+                icon={<Download className="h-4 w-4" />}
+                label="Origine"
+                value={
+                  <span>
+                    {importSourceLabels[transaction.importSource]}
+                    {transaction.importBatchId && (
+                      <span className="text-xs text-muted-foreground"> (lotto {transaction.importBatchId})</span>
+                    )}
+                  </span>
+                }
+              />
             </div>
 
             {/* Matched Entry */}
@@ -262,7 +303,8 @@ export function TransactionDetailsDialog({
                   <FileText className="h-3 w-3" />
                   Importazione
                 </div>
-                <div>{importSourceLabels[transaction.importSource]}</div>
+                {/* Da dove viene la riga lo dice «Origine» qui sopra: qui
+                    resta il quando, che è l'altra metà. */}
                 <div className="text-xs text-muted-foreground">
                   {formatDateShort(transaction.importedAt)}
                 </div>
@@ -279,6 +321,17 @@ export function TransactionDetailsDialog({
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* Chi ha toccato la riga, e quando: la stessa scheda del dialogo
+                di modifica, qui in coda perché il dettaglio è di sola lettura. */}
+            <Separator />
+            <div>
+              <div className="mb-1 flex items-center gap-1 text-sm text-muted-foreground">
+                <Clock className="h-3 w-3" />
+                Cronologia modifiche
+              </div>
+              <CronologiaModifiche bankTransactionId={transaction.id} />
             </div>
 
             {/* ID for debugging */}

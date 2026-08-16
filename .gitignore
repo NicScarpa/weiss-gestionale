@@ -141,3 +141,7 @@ Piano dei conti/
 # confronto con CashKing gira su questi 226 file), ma nella storia del
 # repository non devono entrare: da li' non si tolgono piu'.
 /docs/fatture/
+
+# Cartella di lavoro dello sviluppo guidato da subagent (ledger, brief, pacchetti di revisione):
+# appunti di sessione, non storia del progetto.
+/.superpowers/

@@ -7,12 +7,11 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   ReconciliationSummaryCards,
   BankTransactionTable,
-  ImportDialog,
   MatchDialog,
   TransactionDetailsDialog,
 } from '@/components/reconciliation'
 import { toast } from 'sonner'
-import { Upload, RefreshCw, Play } from 'lucide-react'
+import { RefreshCw, Play } from 'lucide-react'
 import type {
   ReconciliationSummary,
   BankTransactionWithMatch,
@@ -20,7 +19,6 @@ import type {
 } from '@/types/reconciliation'
 
 import { logger } from '@/lib/logger'
-import { FreschezzaMovimenti } from '@/components/banca/FreschezzaMovimenti'
 
 type StatusFilter = 'all' | ReconciliationStatus
 
@@ -50,7 +48,6 @@ export function RiconciliazioneClient() {
   // la pagina mostrava le prime 100 righe e basta: dei 231 movimenti della
   // prima sincronizzazione, 131 non si potevano raggiungere da nessuna parte.
   const [page, setPage] = useState(1)
-  const [importOpen, setImportOpen] = useState(false)
   const [matchTransactionId, setMatchTransactionId] = useState<string | null>(null)
   const [detailsTransactionId, setDetailsTransactionId] = useState<string | null>(null)
   const [reconciling, setReconciling] = useState(false)
@@ -162,18 +159,6 @@ export function RiconciliazioneClient() {
     refetch()
   }
 
-  const handleIgnore = async (id: string) => {
-    const res = await fetch(`/api/bank-transactions/${id}/ignore`, {
-      method: 'POST',
-    })
-    if (!res.ok) {
-      const data = await res.json()
-      throw new Error(data.error || 'Errore nell\'ignorare')
-    }
-    toast.success('Transazione ignorata')
-    refetch()
-  }
-
   const handleUnmatch = async (id: string) => {
     const res = await fetch(`/api/bank-transactions/${id}/unmatch`, {
       method: 'POST',
@@ -194,16 +179,14 @@ export function RiconciliazioneClient() {
           <h1 className="text-2xl font-bold tracking-tight">
             Riconciliazione Bancaria
           </h1>
+          {/* Importare un CSV e sapere quanto sono freschi i movimenti sono
+              gesti dell'estratto conto, che ora vive nella prima nota: qui
+              restano solo l'abbinamento e la sua verifica. */}
           <p className="text-muted-foreground">
-            Importa e riconcilia i movimenti bancari con la prima nota
+            Riconcilia i movimenti bancari con la prima nota
           </p>
-          <FreschezzaMovimenti />
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
-            <Upload className="mr-2 h-4 w-4" />
-            Importa CSV
-          </Button>
           <Button
             onClick={handleReconcile}
             disabled={reconciling || !venueId}
@@ -277,7 +260,6 @@ export function RiconciliazioneClient() {
         transactions={transactions}
         loading={loading}
         onConfirm={handleConfirm}
-        onIgnore={handleIgnore}
         onUnmatch={handleUnmatch}
         onMatch={(id) => setMatchTransactionId(id)}
         onViewDetails={(id) => setDetailsTransactionId(id)}
@@ -312,12 +294,6 @@ export function RiconciliazioneClient() {
       )}
 
       {/* Dialogs */}
-      <ImportDialog
-        open={importOpen}
-        onOpenChange={setImportOpen}
-        onSuccess={() => refetch()}
-      />
-
       <MatchDialog
         open={matchTransactionId !== null}
         onOpenChange={(open) => !open && setMatchTransactionId(null)}

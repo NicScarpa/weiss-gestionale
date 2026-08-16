@@ -5,6 +5,7 @@
  * le decisioni discutibili di questa integrazione passano di qui, e qui si
  * possono verificare in millisecondi.
  */
+import { separaCausale } from '@/lib/banca/separa-causale'
 import type { Movimento, RispostaMovimenti } from './types'
 
 /** `BankTransaction.description` è `VarChar(500)`. */
@@ -21,7 +22,11 @@ export interface MovimentoDaSalvare {
   providerTransactionId: string
   transactionDate: Date
   valueDate: Date | null
+  /** Il testo grezzo della banca, com'è arrivato: non si modifica mai. */
   description: string
+  /** Tipo di operazione e dettagli, separati con `separaCausale`. */
+  causale: string | null
+  descrizione: string
   /** Stringa fino a PostgreSQL: vedi la nota su `importoSchema`. */
   amount: string
   bankTransactionCode: string | null
@@ -38,7 +43,7 @@ function dataDaGiorno(giorno: string): Date {
   return new Date(`${giorno}T00:00:00.000Z`)
 }
 
-function causale(m: Movimento): string {
+function testoGrezzo(m: Movimento): string {
   const testo =
     m.remittanceInformationUnstructured?.trim() ||
     m.remittanceInformationUnstructuredArray?.join(' ').trim() ||
@@ -53,13 +58,18 @@ function causale(m: Movimento): string {
 }
 
 export function mappaMovimento(grezzo: Movimento): MovimentoDaSalvare {
+  const description = testoGrezzo(grezzo)
+  const codice = grezzo.proprietaryBankTransactionCode ?? null
+  const separata = separaCausale(description, codice)
   return {
     providerTransactionId: grezzo.transactionId,
     transactionDate: dataDaGiorno(grezzo.bookingDate),
     valueDate: grezzo.valueDate ? dataDaGiorno(grezzo.valueDate) : null,
-    description: causale(grezzo),
+    description,
+    causale: separata.causale,
+    descrizione: separata.descrizione,
     amount: grezzo.transactionAmount.amount,
-    bankTransactionCode: grezzo.proprietaryBankTransactionCode ?? null,
+    bankTransactionCode: codice,
   }
 }
 

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { setupIntegrationDb } from '@/test/integration/db'
@@ -40,9 +40,12 @@ function csv(...righe: string[]): string {
   return [INTESTAZIONE, ...righe].join('\n')
 }
 
-async function importa(contenuto: string, nomeFile = 'estratto.csv') {
+async function importa(contenuto: string, nomeFile = 'estratto.csv', bankAccountId: string | null = null) {
   const formData = new FormData()
   formData.append('file', new File([contenuto], nomeFile, { type: 'text/csv' }))
+  if (bankAccountId !== null) {
+    formData.append('bankAccountId', bankAccountId)
+  }
 
   const request = new NextRequest('http://localhost:3000/api/bank-transactions/import', {
     method: 'POST',
@@ -56,6 +59,22 @@ async function movimenti() {
   return prisma.bankTransaction.findMany({ orderBy: { description: 'asc' } })
 }
 
+/** Un conto BANK per la sede unica del seed, da passare a `importa()`. */
+async function contoDiProva() {
+  const venue = await prisma.venue.findFirstOrThrow()
+  return prisma.bankAccount.create({ data: { venueId: venue.id, name: 'Conto prova', accountType: 'BANK' } })
+}
+
+// I test esistenti importavano senza indicare un conto: ora è obbligatorio, e
+// questo `beforeEach` ne crea uno fresco (il DB è già stato svuotato dal
+// `beforeEach` di `setupIntegrationDb()`, registrato sopra e quindi eseguito
+// prima) così ogni test lo trova pronto senza doverlo chiedere da solo.
+let contoId: string
+
+beforeEach(async () => {
+  contoId = (await contoDiProva()).id
+})
+
 describe('POST /api/bank-transactions/import — movimenti legittimi identici', () => {
   it('importa entrambe le commissioni identiche dello stesso giorno', async () => {
     await loginAs('admin')
@@ -64,7 +83,9 @@ describe('POST /api/bank-transactions/import — movimenti legittimi identici', 
       csv(
         riga('05/01/26', '-2,50', 'COMMISSIONI SU BONIFICO'),
         riga('05/01/26', '-2,50', 'COMMISSIONI SU BONIFICO')
-      )
+      ),
+      'estratto.csv',
+      contoId
     )
 
     expect(risposta.status).toBe(200)
@@ -81,7 +102,9 @@ describe('POST /api/bank-transactions/import — movimenti legittimi identici', 
       csv(
         riga('07/01/26', '100,00', `${prefisso} numero 1`),
         riga('07/01/26', '100,00', `${prefisso} numero 2`)
-      )
+      ),
+      'estratto.csv',
+      contoId
     )
 
     expect(risposta.status).toBe(200)
@@ -103,8 +126,8 @@ describe('POST /api/bank-transactions/import — re-import dello stesso file', (
       riga('06/01/26', '1.250,00', 'ACCREDITO POS')
     )
 
-    await importa(file)
-    const secondo = await importa(file)
+    await importa(file, 'estratto.csv', contoId)
+    const secondo = await importa(file, 'estratto.csv', contoId)
 
     expect(secondo.status).toBe(200)
     expect(secondo.body.recordsImported).toBe(0)
@@ -129,7 +152,7 @@ describe('POST /api/bank-transactions/import — re-import dello stesso file', (
       },
     })
 
-    const risposta = await importa(csv(riga('05/01/26', '-2,50', 'COMMISSIONI SU BONIFICO')))
+    const risposta = await importa(csv(riga('05/01/26', '-2,50', 'COMMISSIONI SU BONIFICO')), 'estratto.csv', contoId)
 
     expect(risposta.body.recordsImported).toBe(0)
     expect(risposta.body.duplicatesSkipped).toBe(1)
@@ -139,14 +162,16 @@ describe('POST /api/bank-transactions/import — re-import dello stesso file', (
   it('importa solo le righe nuove di un file che ne aggiunge alcune', async () => {
     await loginAs('admin')
 
-    await importa(csv(riga('05/01/26', '-2,50', 'COMMISSIONI SU BONIFICO')))
+    await importa(csv(riga('05/01/26', '-2,50', 'COMMISSIONI SU BONIFICO')), 'estratto.csv', contoId)
 
     const secondo = await importa(
       csv(
         riga('05/01/26', '-2,50', 'COMMISSIONI SU BONIFICO'),
         riga('05/01/26', '-2,50', 'COMMISSIONI SU BONIFICO'),
         riga('08/01/26', '-45,00', 'ADDEBITO SDD ENERGIA')
-      )
+      ),
+      'estratto.csv',
+      contoId
     )
 
     expect(secondo.body.recordsImported).toBe(2)
@@ -169,7 +194,9 @@ describe('POST /api/bank-transactions/import — atomicità', () => {
       csv(
         riga('05/01/26', '-2,50', 'COMMISSIONI SU BONIFICO'),
         riga('06/01/26', '-10,00', descrizioneFuoriMisura)
-      )
+      ),
+      'estratto.csv',
+      contoId
     )
 
     expect(risposta.status).toBe(500)
@@ -184,7 +211,9 @@ describe('POST /api/bank-transactions/import — atomicità', () => {
       csv(
         riga('05/01/26', '-2,50', 'COMMISSIONI SU BONIFICO'),
         riga('06/01/26', '1.250,00', 'ACCREDITO POS')
-      )
+      ),
+      'estratto.csv',
+      contoId
     )
 
     const batch = await prisma.importBatch.findUniqueOrThrow({
@@ -194,5 +223,26 @@ describe('POST /api/bank-transactions/import — atomicità', () => {
     expect(batch.recordCount).toBe(2)
     expect(batch.duplicatesSkipped).toBe(0)
     expect(await prisma.bankTransaction.count({ where: { importBatchId: batch.id } })).toBe(2)
+  })
+})
+
+describe('POST /api/bank-transactions/import — conto, causale e descrizione', () => {
+  it('rifiuta l\'import senza conto bancario', async () => {
+    await loginAs('admin')
+    const r = await importa(csv(riga('15/07/2026', '-10,00', 'Commissioni')), 'estratto.csv', null)
+    expect(r.status).toBe(400)
+  })
+
+  it('scrive il conto sulle righe e separa la causale dalla descrizione', async () => {
+    await loginAs('admin')
+    const conto = await contoDiProva()
+    await importa(csv(riga('15/07/2026', '-100,00', 'Bonifico a vs favore *ROSSI SRL')), 'estratto.csv', conto.id)
+    const [r] = await movimenti()
+    expect(r.bankAccountId).toBe(conto.id)
+    expect(r.description).toBe('Bonifico a vs favore *ROSSI SRL')
+    expect(r.causale).toBe('Bonifico a vs favore')
+    expect(r.descrizione).toBe('ROSSI SRL')
+    // L'import non crea più scritture: la promozione è un'azione dell'utente (spec, decisione 6).
+    expect(await prisma.journalEntry.count()).toBe(0)
   })
 })

@@ -26,19 +26,21 @@ const RIEPILOGO_BASE = {
 }
 
 // Il 16 agosto la scheda Banca della prima nota era vuota mentre 231 movimenti
-// dell'estratto conto stavano nella riconciliazione: chi la guardava ha
-// concluso che la banca non avesse portato nulla. La prima nota deve indicare
-// dove sono, perché è qui che si viene a cercarli.
+// dell'estratto conto stavano altrove: chi la guardava ha concluso che la banca
+// non avesse portato nulla. Ora l'estratto conto è una sotto-scheda del Conto
+// Bancario, e da «Tutti» questo cartello dice quanti sono e ci porta.
 describe('MovimentiBancariInAttesa', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('dice quanti movimenti aspettano nella riconciliazione e porta lì', async () => {
+  it('dice quanti movimenti non sono riconciliati e porta ai movimenti bancari', async () => {
     montaCon(RIEPILOGO_BASE)
 
-    expect(await screen.findByText(/231 movimenti dell’estratto conto/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /riconciliazione/i })).toHaveAttribute(
+    expect(
+      await screen.findByText(/231 movimenti dell’estratto conto non sono ancora riconciliati\./)
+    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /movimenti bancari/i })).toHaveAttribute(
       'href',
-      '/riconciliazione'
+      '/prima-nota/movimenti?register=BANK'
     )
   })
 
@@ -54,7 +56,9 @@ describe('MovimentiBancariInAttesa', () => {
   it('con un movimento solo parla al singolare', async () => {
     montaCon({ ...RIEPILOGO_BASE, pending: 1 })
 
-    expect(await screen.findByText(/1 movimento dell’estratto conto aspetta/)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/1 movimento dell’estratto conto non è ancora riconciliato\./)
+    ).toBeInTheDocument()
   })
 
   it('senza nulla in attesa non mostra niente', async () => {

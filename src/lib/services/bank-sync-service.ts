@@ -171,6 +171,8 @@ async function sincronizzaConto(
             transactionDate: m.transactionDate,
             valueDate: m.valueDate,
             description: m.description,
+            causale: m.causale,
+            descrizione: m.descrizione,
             amount: m.amount,
             bankTransactionCode: m.bankTransactionCode,
             importSource: 'PSD2_GOCARDLESS',

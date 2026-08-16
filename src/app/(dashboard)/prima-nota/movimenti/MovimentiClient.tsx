@@ -8,10 +8,17 @@ import { MovimentiFilters } from '@/components/prima-nota/movimenti/MovimentiFil
 import { MovimentiTable } from '@/components/prima-nota/movimenti/MovimentiTable'
 import { MovimentoFormDialog } from '@/components/prima-nota/movimenti/MovimentoFormDialog'
 import { EditContoCentroDialog } from '@/components/prima-nota/movimenti/EditContoCentroDialog'
-import { CaricaMovimentiDialog } from '@/components/prima-nota/movimenti/CaricaMovimentiDialog'
 import { SplitEntryDialog } from '@/components/prima-nota/movimenti/SplitEntryDialog'
 import { RiconciliazioniMovimentoDialog } from '@/components/prima-nota/movimenti/RiconciliazioniMovimentoDialog'
+import {
+  VistaBancaToggle,
+  paramsPerVista,
+  righeEstrattoConto,
+  vistaDaSearchParams,
+  type VistaBanca,
+} from '@/components/prima-nota/movimenti/VistaBancaToggle'
 import { MovimentiBancariInAttesa } from '@/components/banca/MovimentiBancariInAttesa'
+import { EstrattoContoInPrimaNota } from '@/components/banca/estratto-conto/EstrattoContoInPrimaNota'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -19,7 +26,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { PlusIcon, PenLineIcon, UploadIcon, DownloadIcon } from 'lucide-react'
+import { PlusIcon, PenLineIcon, DownloadIcon } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -43,6 +50,7 @@ import {
   type MovimentiFiltersState,
 } from '@/lib/prima-nota-utils'
 import type { JournalEntry, RegisterType, EntryType } from '@/types/prima-nota'
+import type { ConteggiEstrattoConto } from '@/types/reconciliation'
 
 interface MovimentiClientProps {
   budgetCategories: Array<{ id: string; name: string; code: string; color?: string }>
@@ -81,6 +89,27 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
     [filtriScelti, registerFromUrl]
   )
 
+  // Sul Conto Bancario la pagina ha due sotto-schede: l'estratto conto — ciò
+  // che la banca ha portato — e le scritture contabili. L'estratto conto è
+  // quella che si apre per prima, perché è quello che si viene a cercare dopo
+  // una sincronizzazione: fino al 16 agosto qui c'erano solo le scritture, e
+  // una scheda Banca vuota accanto a 231 movimenti arrivati ha fatto concludere
+  // che la banca non avesse portato nulla. Su «Tutti» e sulla Cassa non c'è
+  // nessuna sotto-scheda: l'estratto conto è del solo registro Banca.
+  const vista = vistaDaSearchParams(new URLSearchParams(searchParams.toString()))
+  const estrattoConto = filters.registerType === 'BANK' && vista === 'estratto'
+
+  const cambiaVista = (prossima: VistaBanca) => {
+    // Ricliccare la sotto-scheda in cui si è già non è un cambio di vista.
+    // Riscrivere l'URL da qui costava i filtri dell'estratto conto —
+    // `paramsPerVista` riparte da `FILTRI_DEFAULT` e li cancella — mentre la
+    // lista, che li tiene nel proprio stato, continuava a mostrarli: l'indirizzo
+    // e ciò che si vede si dividevano, e ricaricando la pagina i filtri sparivano.
+    if (prossima === vista) return
+    const params = paramsPerVista(prossima, new URLSearchParams(searchParams.toString()))
+    router.replace(params.toString() ? `?${params.toString()}` : '?', { scroll: false })
+  }
+
   // Usato dal pulsante "Cancella filtri" di MovimentiFilters e per decidere
   // quando mostrarlo.
   const filterCount = countActiveMovimentiFilters(filters)
@@ -100,7 +129,6 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
@@ -174,6 +202,27 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
   )
   const total = risposta?.pagination?.total ?? 0
   const totalPages = risposta?.pagination?.totalPages ?? 0
+
+  // Il numero accanto a «Estratto conto»: delle righe non serve nessuna,
+  // quindi se ne chiede una sola e si guardano i `conteggi`, che la rotta
+  // calcola sempre su tutte le schede. Il `pagination.total` no: quello conta
+  // la scheda aperta — di norma Attivi — e ogni «Sposta in» faceva calare il
+  // numero della sotto-scheda come se i movimenti fossero spariti. La chiave
+  // condivide il prefisso `['estratto-conto']` con la lista vera, così le
+  // invalidazioni che partono di lì — spostamenti, Cestino, nuovo movimento —
+  // aggiornano anche questo.
+  const { data: conteggioEstratto } = useQuery({
+    queryKey: ['estratto-conto', 'conteggio', venueId],
+    // Fuori dal Conto Bancario la sotto-scheda non c'è: non si chiede un
+    // numero che nessuno mostra.
+    enabled: filters.registerType === 'BANK',
+    queryFn: async (): Promise<number> => {
+      const res = await fetch('/api/bank-transactions?limit=1')
+      if (!res.ok) throw new Error('Errore nel conteggio dei movimenti bancari')
+      const corpo = (await res.json()) as { conteggi?: ConteggiEstrattoConto }
+      return corpo.conteggi ? righeEstrattoConto(corpo.conteggi) : 0
+    },
+  })
 
   // --- Handlers ---
 
@@ -323,121 +372,140 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
           dello schermo, e a scorrere lateralmente è la pagina intera */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold">Movimenti</h1>
-        <div className="flex flex-wrap gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline">
-                <DownloadIcon aria-hidden="true" className="h-4 w-4 mr-2" />
-                Esporta
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuItem onClick={() => handleExport('pdf')}>PDF</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleExport('xlsx')}>Excel</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleExport('csv')}>CSV</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button>
-                <PlusIcon aria-hidden="true" className="h-4 w-4 mr-2" />
-                Nuovo
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem onClick={handleNewMovimento}>
-                <PenLineIcon className="h-4 w-4 mr-2" />
-                Crea movimento
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setImportDialogOpen(true)}>
-                <UploadIcon className="h-4 w-4 mr-2" />
-                Carica movimenti
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        {/* Esporta e Nuovo agiscono sulle scritture contabili: sull'estratto
+            conto non hanno un significato, e la lista porta già le sue azioni. */}
+        {!estrattoConto && (
+          <div className="flex flex-wrap gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  <DownloadIcon aria-hidden="true" className="h-4 w-4 mr-2" />
+                  Esporta
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuItem onClick={() => handleExport('pdf')}>PDF</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport('xlsx')}>Excel</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport('csv')}>CSV</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button>
+                  <PlusIcon aria-hidden="true" className="h-4 w-4 mr-2" />
+                  Nuovo
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={handleNewMovimento}>
+                  <PenLineIcon className="h-4 w-4 mr-2" />
+                  Crea movimento
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
       </div>
 
-      <MovimentiFilters
-        registerType={filters.registerType}
-        onRegisterTypeChange={(v) => setFilters(f => ({ ...f, registerType: v }))}
-        dateFrom={filters.dateFrom}
-        dateTo={filters.dateTo}
-        // Svuotare la selezione emette `undefined`: azzera entrambe le date
-        // invece di lasciare il filtro precedente in vigore.
-        onDateRangeChange={(range) =>
-          setFilters(f => ({ ...f, dateFrom: range?.from, dateTo: range?.to }))
-        }
-        entryType={filters.entryType}
-        onEntryTypeChange={(v) => setFilters(f => ({ ...f, entryType: v }))}
-        accountId={filters.accountId}
-        onAccountIdChange={(v) => setFilters(f => ({ ...f, accountId: v }))}
-        costCenterId={filters.costCenterId}
-        onCostCenterIdChange={(v) => setFilters(f => ({ ...f, costCenterId: v }))}
-        budgetCategoryId={filters.budgetCategoryId}
-        onBudgetCategoryIdChange={(v) => setFilters(f => ({ ...f, budgetCategoryId: v }))}
-        verified={filters.verified}
-        onVerifiedChange={(v) => setFilters(f => ({ ...f, verified: v }))}
-        search={filters.search}
-        onSearchChange={(v) => setFilters(f => ({ ...f, search: v }))}
-        budgetCategoryOptions={budgetCategories}
-        filterCount={filterCount}
-        onClearFilters={handleClearFilters}
-      />
-
-      {/* Le righe dell'estratto conto non stanno qui ma nella riconciliazione:
-          chi apre la scheda Banca e la trova vuota deve sapere dove sono. Sulla
-          Cassa non c'entrano. */}
-      {filters.registerType !== 'CASH' && venueId && (
-        <MovimentiBancariInAttesa venueId={venueId} />
+      {filters.registerType === 'BANK' && (
+        <VistaBancaToggle
+          vista={vista}
+          conteggioEstratto={conteggioEstratto}
+          // Il totale grezzo, non il `total` con lo zero di ripiego: finché la
+          // prima lettura non torna l'etichetta non deve dire «(0)», che è un
+          // conteggio vero e qui sarebbe falso.
+          conteggioScritture={risposta?.pagination?.total}
+          onCambia={cambiaVista}
+        />
       )}
 
-      <MovimentiTable
-        data={data}
-        sortDirection={sortOrder}
-        onSort={(_field, direction) => setSortOrder(direction)}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-        onVerify={handleVerify}
-        onHide={handleHide}
-        onCategorize={(entry) => {
-          setCategorizeEntry(entry)
-          setCategorizeCategoryId(entry.budgetCategoryId || '')
-        }}
-        onSplit={(entry) => setSplitEntry(entry)}
-        onRiconciliazioni={(entry) => setRiconciliazioniEntry(entry)}
-        isAdmin={isAdmin}
-        isLoading={isLoading}
-      />
+      {estrattoConto ? (
+        <EstrattoContoInPrimaNota venueId={venueId} />
+      ) : (
+        <>
+          <MovimentiFilters
+            registerType={filters.registerType}
+            onRegisterTypeChange={(v) => setFilters(f => ({ ...f, registerType: v }))}
+            dateFrom={filters.dateFrom}
+            dateTo={filters.dateTo}
+            // Svuotare la selezione emette `undefined`: azzera entrambe le date
+            // invece di lasciare il filtro precedente in vigore.
+            onDateRangeChange={(range) =>
+              setFilters(f => ({ ...f, dateFrom: range?.from, dateTo: range?.to }))
+            }
+            entryType={filters.entryType}
+            onEntryTypeChange={(v) => setFilters(f => ({ ...f, entryType: v }))}
+            accountId={filters.accountId}
+            onAccountIdChange={(v) => setFilters(f => ({ ...f, accountId: v }))}
+            costCenterId={filters.costCenterId}
+            onCostCenterIdChange={(v) => setFilters(f => ({ ...f, costCenterId: v }))}
+            budgetCategoryId={filters.budgetCategoryId}
+            onBudgetCategoryIdChange={(v) => setFilters(f => ({ ...f, budgetCategoryId: v }))}
+            verified={filters.verified}
+            onVerifiedChange={(v) => setFilters(f => ({ ...f, verified: v }))}
+            search={filters.search}
+            onSearchChange={(v) => setFilters(f => ({ ...f, search: v }))}
+            budgetCategoryOptions={budgetCategories}
+            filterCount={filterCount}
+            onClearFilters={handleClearFilters}
+          />
 
-      {/* Paginazione */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>
-            {total} movimenti totali
-          </span>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => setPage(p => p - 1)}
-            >
-              Precedente
-            </Button>
-            <span className="flex items-center px-2">
-              Pagina {page} di {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage(p => p + 1)}
-            >
-              Successiva
-            </Button>
-          </div>
-        </div>
+          {/* Solo sulla scheda «Tutti»: sul Conto Bancario l'estratto conto è
+              lì accanto, nella sua sotto-scheda, e un cartello che indica una
+              scheda visibile a un dito di distanza è rumore. Sulla Cassa i
+              movimenti bancari non c'entrano. */}
+          {!filters.registerType && venueId && (
+            <MovimentiBancariInAttesa venueId={venueId} />
+          )}
+
+          <MovimentiTable
+            data={data}
+            sortDirection={sortOrder}
+            onSort={(_field, direction) => setSortOrder(direction)}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            onVerify={handleVerify}
+            onHide={handleHide}
+            onCategorize={(entry) => {
+              setCategorizeEntry(entry)
+              setCategorizeCategoryId(entry.budgetCategoryId || '')
+            }}
+            onSplit={(entry) => setSplitEntry(entry)}
+            onRiconciliazioni={(entry) => setRiconciliazioniEntry(entry)}
+            isAdmin={isAdmin}
+            isLoading={isLoading}
+          />
+
+          {/* Paginazione */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
+              <span>
+                {total} movimenti totali
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage(p => p - 1)}
+                >
+                  Precedente
+                </Button>
+                <span className="flex items-center px-2">
+                  Pagina {page} di {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage(p => p + 1)}
+                >
+                  Successiva
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       <MovimentoFormDialog
@@ -480,12 +548,6 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
           setReclassifyEntry(null)
           refetch()
         }}
-      />
-
-      <CaricaMovimentiDialog
-        open={importDialogOpen}
-        onOpenChange={setImportDialogOpen}
-        onImportComplete={() => refetch()}
       />
 
       <DangerousDeleteDialog

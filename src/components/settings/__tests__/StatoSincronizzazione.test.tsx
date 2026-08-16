@@ -41,15 +41,15 @@ describe('StatoSincronizzazione', () => {
 
   // Il 16 agosto il pannello diceva «0 movimenti nuovi» — vero per il secondo
   // giro — e chi leggeva ha concluso che la banca non avesse portato nulla:
-  // i 231 movimenti del primo giro stavano nella riconciliazione, e nessuna
-  // riga lo diceva. Il totale e la strada per arrivarci vanno scritti.
+  // i 231 movimenti del primo giro stavano altrove, e nessuna riga lo diceva.
+  // Il totale e la strada per arrivarci vanno scritti.
   it('dice quanti movimenti sono stati importati in tutto e dove trovarli', async () => {
     montaCon({ conti: [{ ...CONTO_BASE, movimentiUltimaRiuscita: 0 }], mailConfigurata: true })
 
     expect(await screen.findByText(/231 movimenti importati/)).toBeInTheDocument()
     expect(screen.getByText(/231 da riconciliare/)).toBeInTheDocument()
-    const link = screen.getByRole('link', { name: /riconciliazione/i })
-    expect(link).toHaveAttribute('href', '/riconciliazione')
+    const link = screen.getByRole('link', { name: /movimenti bancari/i })
+    expect(link).toHaveAttribute('href', '/prima-nota/movimenti?register=BANK')
   })
 
   it('se non è ancora arrivato nulla lo dice, senza offrire un link verso il vuoto', async () => {
@@ -59,7 +59,7 @@ describe('StatoSincronizzazione', () => {
     })
 
     expect(await screen.findByText(/Nessun movimento importato finora/)).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: /riconciliazione/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /movimenti bancari/i })).not.toBeInTheDocument()
   })
 
   it('se non è mai stata fatta lo dice, invece di mostrare un vuoto', async () => {

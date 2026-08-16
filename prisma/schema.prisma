@@ -1963,6 +1963,17 @@ model BankTransaction {
   /// movimenti: è il segnale di categorizzazione più forte di cui disponiamo.
   bankTransactionCode   String? @map("bank_transaction_code") @db.VarChar(20)
 
+  /// Il tipo di operazione (`Bonifico a vs favore`, `SDD Core - Richiesta
+  /// incasso SEPA`…), separato dal testo grezzo con `separaCausale` all'import
+  /// e poi modificabile. `description` resta il testo della banca, intoccato.
+  causale     String? @db.VarChar(120)
+  /// Il testo che si legge e si modifica; `description` è l'originale.
+  descrizione String? @db.VarChar(500)
+  note        String? @db.Text
+  sezione     SezioneMovimentoBancario @default(ATTIVI)
+
+  modifiche BankTransactionEdit[]
+
   bankAccount BankAccount? @relation(fields: [bankAccountId], references: [id])
 
   reconciliationProposals ReconciliationProposal[]
@@ -1977,6 +1988,25 @@ model BankTransaction {
   @@index([importBatchId])
   @@index([bankAccountId, transactionDate])
   @@map("bank_transactions")
+}
+
+/// Una riga per ogni campo cambiato su un movimento bancario: prima/dopo/chi.
+/// Alimenta il badge «Modificato» e la scheda «Cronologia modifiche». `userId`
+/// non ha relazione: il nome si legge a parte, e la riga sopravvive all'utente.
+model BankTransactionEdit {
+  id                String   @id @default(cuid())
+  bankTransactionId String   @map("bank_transaction_id")
+  /// `descrizione` · `causale` · `note` · `sezione`
+  campo             String   @db.VarChar(20)
+  prima             String?  @db.Text
+  dopo              String?  @db.Text
+  userId            String?  @map("user_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  bankTransaction BankTransaction @relation(fields: [bankTransactionId], references: [id], onDelete: Cascade)
+
+  @@index([bankTransactionId, createdAt])
+  @@map("bank_transaction_edits")
 }
 
 /// Un'esecuzione dell'analisi di riconciliazione assistita su un periodo.
@@ -2755,6 +2785,14 @@ enum ReconciliationStatus {
   MANUAL
   IGNORED
   UNMATCHED
+}
+
+/// La scheda in cui una riga dell'estratto conto si vede: Attivi, Deleghe F24,
+/// CBILL-PagoPA. Cambiarla non tocca la contabilità (spec, decisione 5).
+enum SezioneMovimentoBancario {
+  ATTIVI
+  DELEGHE_F24
+  CBILL_PAGOPA
 }
 
 enum ExpenseFrequency {
