@@ -81,6 +81,10 @@ describe('residuoDocumenti segue le riconciliazioni della scrittura collegata', 
 
     const dopo = await prisma.bankTransaction.findUniqueOrThrow({ where: { id: riga.id } })
     expect(dopo.matchedEntryId).toBe(movimento.id)
+    // La colonna deve essere stata SCRITTA dall'aggancio, non lasciata nulla:
+    // `Number(null)` vale 0 in JS, quindi il solo confronto sotto passerebbe
+    // anche senza che l'aggancio abbia mai toccato la riga.
+    expect(dopo.residuoDocumenti).not.toBeNull()
     expect(Number(dopo.residuoDocumenti)).toBe(0)
   })
 })
