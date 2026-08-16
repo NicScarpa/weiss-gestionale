@@ -124,6 +124,68 @@ strada.
 `typecheck:test` puliti, cricchetto 254, entrambe le build exit 0, prova a
 occhio delle tre schermate su un DB locale con 231 movimenti finti.
 
+### 1.6 Consegna A dell'estratto conto
+
+Consegna A della spec
+`docs/superpowers/specs/2026-08-16-movimenti-bancari-in-prima-nota-design.md`
+(piano `docs/superpowers/plans/2026-08-16-estratto-conto-in-prima-nota-consegna-a.md`,
+10 task di implementazione + questa verifica). Costruisce l'anello che la
+1.5 di oggi pomeriggio aveva rimandato di proposito: le righe scaricate dalla
+banca ora si vedono e si lavorano **dentro** la prima nota, non solo nella
+Riconciliazione.
+
+**Cosa c'è ora.** *Prima nota → Conto Bancario* si apre di default
+sull'**Estratto conto** (le scritture contabili restano raggiungibili, in
+una sotto-scheda «Scritture» col proprio conteggio nel selettore).
+
+| Cosa | Dettaglio |
+|---|---|
+| Schede | **Attivi**, **Deleghe F24**, **CBILL-PagoPA**, **Cestino**, ciascuna col conteggio nell'etichetta |
+| Totali | **Totale Entrate / Totale Uscite / Saldo Netto** del filtro attivo, non del conto |
+| Colonne | Data, Descrizione, Causale (separata dal testo grezzo della banca da `separaCausale`, tabella di 20 codici), Conto Bancario, Stato, Importo; si nascondono dal menu «Colonne» e la scelta resta in `localStorage` al ricaricamento; l'ordine delle colonne è fisso |
+| Ordinamento | a due stati (clic/clic/reset) su Data, Descrizione, Causale, Importo |
+| Filtri | ricerca, tipo, conto, «solo non riconciliati», intervallo date — tutti nell'URL |
+| Selezione | multipla, con «Seleziona tutte le N del filtro» oltre alla pagina corrente |
+| Legenda | non abbinato, parziale, abbinato manualmente, riconciliato, col residuo quando c'è |
+| Modifica | dialogo «Movimento» / «Cronologia modifiche»: data, data valuta, tipo e importo sono `readOnly` («dalla banca») su tutte le righe tranne quelle manuali; descrizione, causale e note si modificano sempre; la PATCH manda solo i campi cambiati; ogni modifica finisce nella cronologia con data/ora, utente e valore prima/dopo |
+| Vedi dettagli | il dialogo mostra anche testo grezzo della banca, codice operazione, identificativo banca, origine (col lotto) e la cronologia in coda |
+| Sposta in | Deleghe F24 / CBILL-PagoPA, riga per riga o in blocco |
+| Cestino / Ripristina | il `DELETE` risponde **409** (non più 400) se la riga ha una scrittura collegata («ha una scrittura collegata: prima scollegala») |
+| Nuovo movimento | crea una riga manuale: conto, data, tipo, importo, descrizione, causale, note |
+| Importa CSV | col conto obbligatorio (Task 3), dentro l'Estratto conto |
+| Azioni in blocco | per gli id selezionati o per l'intero filtro (rilegge l'URL lato server: «tutte le N» non dipende da cosa il client crede di avere in memoria); risposta `{ toccate, saltate }` |
+| Via «Ignora» | rotta, funzione, pulsante e icona rimossi ovunque; il valore `IGNORED` resta intatto nell'enum e nel filtro di Riconciliazione |
+| Via «Carica movimenti» | rotta `/api/prima-nota/import` e dialogo cancellati; anche `/riconciliazione` ha perso «Importa CSV» e il pannello di freschezza (sottotitolo nuovo: «Riconcilia i movimenti bancari con la prima nota») |
+| Le tre frasi del pannello | `ConnessioniBancarie`, `StatoSincronizzazione`, `MovimentiBancariInAttesa` (il cartello ora solo sulla scheda «Tutti») puntano tutte a `/prima-nota/movimenti?register=BANK` con il link «Vai ai movimenti bancari» |
+
+Fuori da questa consegna, di proposito: colonna Categoria, Collega/Scollega
+fattura, Riconcilia, `promuoviRigaBancaria` — è la consegna B.
+
+**Le verifiche di oggi (sessione di sera, sull'intero branch).**
+
+| Controllo | Esito |
+|---|---|
+| Test unit | 153 file, **1941 / 1941** verdi |
+| Test di integrazione | 83 file, **647 / 647** verdi, nessun rosso da indagare |
+| `tsc --noEmit` + `typecheck:test` | puliti |
+| `npm run lint` | 0 errori, 62 warning preesistenti (nessuno nuovo) |
+| `npm run knip` | invariato rispetto alla baseline (163 export inutilizzati, 4 duplicati) |
+| Cricchetto (`scripts/check-route-auth.mjs`) | **254 → 252** (due handler inline spariti con questa consegna: `/ignore`, `/api/prima-nota/import`) |
+| `npm run build` (Turbopack) e `next build --webpack` | entrambe exit 0 |
+
+**Dopo il deploy, due passi.**
+
+1. `npx tsx --env-file=.env scripts/banca/ricalcola-causali.ts --dry-run`,
+   poi senza `--dry-run`, **contro la produzione**: confrontare i conteggi
+   per codice con la tabella della spec (§ `separaCausale`, colonne «Codice |
+   Prefisso grezzo… | Causale pulita | Esempio di descrizione risultante»).
+2. Aprire `?register=BANK` in produzione e guardare le 231 righe vere, con
+   gli stessi controlli della prova a occhio locale (schede, totali, colonne,
+   Modifica, Sposta in, Cestino/Ripristina, selezione «tutte le 231»).
+
+La consegna B (colonna Categoria, Collega fattura, Riconcilia) è il prossimo
+piano.
+
 ---
 
 ## Parte 2 — Cosa resta
