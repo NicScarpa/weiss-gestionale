@@ -6,7 +6,7 @@ e quanto costa produrle. Un motore che non trova niente e un motore che
 funziona superano gli stessi test finché l'ingresso è vuoto — per questo si
 misura su dati veri, non sintetici, il più a lungo possibile.
 
-## I tre script
+## I cinque script
 
 - **`snapshot.ts`** — legge gli snapshot GoCardless (`scripts/gocardless/snapshots/*transactions*.json`)
   e restituisce i movimenti deduplicati. Condiviso dai due script sotto.
@@ -17,10 +17,21 @@ misura su dati veri, non sintetici, il più a lungo possibile.
   esegue `generaLotto`. Misura i fatti meccanici: durata, proposte, fasce,
   dimensione della transazione di persistenza. Richiede
   `TEST_DB_SUFFIX=<qualcosa>`; senza, si rifiuta di partire.
+- **`misura-fascia-alta.ts`** — la misura che chiudeva la riserva vera: mette
+  i movimenti degli snapshot accanto alle **fatture di produzione** ripristinate
+  da un dump, esegue `generaLotto` e stampa le proposte in fascia Alta con
+  quanto serve a giudicarle a mano.
+- **`verifica-fascia-alta.ts`** — controlla se ciascuna proposta alta poggia su
+  un importo **univoco** o se il motore ha scelto fra candidati indistinguibili.
 
 ```bash
 nvm use 22 && npx tsx scripts/riconciliazione/misura-motore.ts
 nvm use 22 && TEST_DB_SUFFIX=ric_a1 npx tsx scripts/riconciliazione/misura-lotto.ts
+
+# I due lati veri insieme (serve un dump di produzione):
+DUMP=/percorso/produzione.sql DB_MISURA=misura_alta \
+  nvm use 22 && npx tsx scripts/riconciliazione/misura-fascia-alta.ts
+DB_MISURA=misura_alta nvm use 22 && npx tsx scripts/riconciliazione/verifica-fascia-alta.ts
 ```
 
 > **Gli snapshot non sono nel repository.** `scripts/gocardless/snapshots/` è
@@ -284,3 +295,94 @@ diventa possibile **dopo la Fase 3** dell'open banking, quando i movimenti
 sincronizzati si troveranno accanto alle fatture già importate. È lì che va
 fatta, prima di costruire la coda della Fase A2 sopra una soglia di 85 non
 ancora verificata sul vero.
+
+---
+
+# 4. La misura che mancava: la fascia Alta è corretta? (16 agosto 2026)
+
+La sezione 3 chiudeva dicendo che il criterio della spec — «la fascia Alta
+dev'essere corretta quasi al 100% su un campione controllato a mano» — restava
+**non misurato**, perché servivano i due lati veri insieme e «le 226 fatture
+vere stanno nel database di produzione, non come file».
+
+Quel presupposto era aggirabile: un dump di produzione **è** un file. I due lati
+si sono incontrati in un database usa-e-getta, senza chiamare GoCardless e senza
+scrivere una riga sulla produzione.
+
+## Come
+
+- **Lato fatture**: dump di produzione del 16 agosto (226 fatture vive, 230
+  scadenze) ripristinato in un database locale, poi `prisma migrate deploy` per
+  allineare lo schema.
+- **Lato banca**: i 621 movimenti veri degli snapshot GoCardless della Fase 0,
+  caricati come `BankTransaction`.
+- `generaLotto` sull'intero periodo, regole R1-R3.
+
+## I numeri
+
+```
+Dal dump: 226 fatture, 230 scadenze, sede "Weiss Cafè"
+Dagli snapshot: 621 movimenti bancari veri
+
+Lotto generato: 11 alte, 55 medie, 140 basse
+```
+
+206 proposte su 621 movimenti.
+
+## Il giudizio sulla fascia Alta
+
+Undici proposte, tutte controllate. Il risultato:
+
+```
+  numero di fattura citato nella causale: 11 su 11
+  abbinamenti su importo NON univoco:     0
+
+  Nessuna proposta poggia su un importo ambiguo.
+```
+
+**Tutte e undici sono corrette.** Ognuna ha importo del movimento identico
+all'importo della scadenza, il fornitore della scadenza coincide con la
+controparte nominata nella causale, e — il fatto che chiude la questione — **il
+numero di fattura compare letteralmente nella causale in tutti e undici i casi**:
+
+```
+SDD B2B  ... FATTURA N. EE00874136/2026 ...  Segnoverde S.p.A.
+SDD Core ... CINV/F2618801626 ...            Wind Tre S.p.A.
+SDD Core ... DOC. 4417/U01 D.M.C. SRL ...    D.M.C. srl
+```
+
+### Perché il controllo di ambiguità era necessario
+
+«Importo identico» non prova nulla da solo: se lo stesso importo compare su più
+scadenze aperte, il motore ha scelto fra candidati indistinguibili e potrebbe
+aver preso il primo. `verifica-fascia-alta.ts` conta, per ogni proposta, quante
+scadenze vive condividono quell'importo.
+
+Nove proposte su undici hanno importo **unico** in tutto lo scadenzario. Le due
+che non ce l'hanno — le due Wind Tre da 38,60 e 104,28 — portano il numero di
+fattura nella causale, quindi la scelta non poggiava sull'importo.
+
+## La conclusione
+
+**La soglia di 85 regge sul vero.** La fascia Alta si può approvare in blocco
+senza aprire le schede: è il vincolo che il piano della Fase A1 poneva prima di
+costruire la coda della Fase A2, ed è soddisfatto.
+
+## Cosa questa misura NON dice
+
+- **Le fasce Media e Bassa non sono state giudicate.** Il criterio della spec le
+  riguarda: si aprono a una a una, ed è lì che va il lavoro umano.
+- **Non misura il richiamo**, cioè quante riconciliazioni vere il motore ha
+  *mancato*. Direbbe quanto lavoro resta a mano, e richiede di sapere quali dei
+  621 movimenti pagano davvero una delle 226 fatture — un lavoro di
+  spoglio manuale che questa misura non ha fatto.
+- **I movimenti vengono dagli snapshot di Fase 0**, non da una sincronizzazione
+  vera: al 16 agosto 2026 la sincronizzazione bancaria non è mai stata eseguita
+  in produzione, e `bank_transactions` è vuota.
+
+## Un dato di progettazione, non di correttezza
+
+11 proposte alte su 206 significa che **l'approvazione in blocco della fascia
+Alta risolve il 5% del lotto**. Il grosso del lavoro della schermata sarà la
+revisione delle 55 medie, non il bottone «approva tutte»: la coda va disegnata
+attorno a quel gesto.
