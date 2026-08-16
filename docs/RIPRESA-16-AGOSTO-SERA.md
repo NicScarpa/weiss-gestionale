@@ -10,17 +10,19 @@ sezioni 1.1-1.6) restano valide e non vengono ripetute qui.
 ## 1. Dove siamo, in tre righe
 
 1. **PR #27 «l'estratto conto nella prima nota, consegna A» è MERGIATA** su `main`
-   (`1d4a108`, ore 22:49) e il deploy Railway `94accf57-3fc8-4001-a87c-7ced603afc1a`
-   era **in BUILDING** al momento dello spegnimento. **Nessuno ha ancora verificato che
-   sia andato SUCCESS, né che le migrazioni siano passate.** È la prima cosa da fare.
-2. **Il ricalcolo delle causali in produzione NON è stato lanciato**: le 231 righe di
-   banca in produzione hanno `descrizione`/`causale` a NULL finché non gira
-   `scripts/banca/ricalcola-causali.ts` (la lista funziona lo stesso: mostra il testo
-   grezzo come ripiego). È la seconda cosa da fare.
+   (`1d4a108`, ore 22:49), deploy Railway `94accf57-3fc8-4001-a87c-7ced603afc1a`
+   **SUCCESS** (22:56), migrazione `20260816180000_estratto_conto_in_prima_nota`
+   applicata in produzione (20:52 UTC), tabella `bank_transaction_edits` presente.
+2. **Il ricalcolo delle causali in produzione È STATO FATTO** (22:55): dry-run con i
+   conteggi per codice identici alla distribuzione reale, poi esecuzione (231 esaminate,
+   231 aggiornate), poi di nuovo dry-run → 0. Verificato a schermo:
+   `https://gestionale.weisscafe.com/prima-nota/movimenti?register=BANK` mostra
+   «Estratto conto (231)», le quattro schede, i totali (138.680,90 / 126.293,72 /
+   12.387,18), causale e descrizione separate, «Pagina 1 di 3», la legenda.
 3. **L'utente ha detto «vai pure avanti»** al doppio quesito «merge? e partire col piano
-   B?»: quindi dopo i due punti sopra si passa a **scrivere il piano della consegna B**
-   (le azioni contabili) dalla spec già approvata, e a eseguirlo con lo stesso metodo
-   della A (subagent-driven-development).
+   B?»: merge fatto; il prossimo passo è **scrivere il piano della consegna B** (le
+   azioni contabili) dalla spec già approvata e **eseguirlo con lo stesso metodo della A**
+   (subagent-driven-development). Prima ancora: mergiare la PR #28 (questo documento).
 
 ---
 
@@ -104,29 +106,25 @@ con 231 righe grezze (tutte le azioni), CI verde 5/5.
 ## 5. I primi passi al riavvio (in quest'ordine)
 
 ```bash
-# 0. Base: partire da main aggiornato (NON dal branch conti/cash-flow-prospetto, 260+ commit indietro)
-cd /Users/nicolascarpa/Desktop/accounting && git fetch origin && git rev-list --left-right --count origin/main...HEAD
+# 0. Base: partire da main aggiornato (NON dal branch conti/cash-flow-prospetto, 260+ commit indietro).
+#    Il worktree della consegna A (~/Desktop/accounting/.claude/worktrees/banca+movimenti-dopo-sync)
+#    ha node_modules installati e .env in symlink: si può riusare (EnterWorktree con `path`),
+#    creando da lì un branch nuovo da origin/main per la consegna B.
+cd /Users/nicolascarpa/Desktop/accounting && git fetch origin && git log --oneline -3 origin/main
 
-# 1. Il deploy di #27 è SUCCESS? (sola lettura)
-railway deployment list --service weiss-gestionale | head -3
-# se FAILED/CRASHED: railway logs --service weiss-gestionale (guardare la pre-deploy: prisma migrate deploy + rls:enable)
+# 1. Mergiare la PR #28 (questo documento): gh pr checks 28 → gh pr merge 28 --merge
 
-# 2. Il ricalcolo delle causali in produzione (il .env del repo PUNTA ALLA PRODUZIONE: prima il dry-run)
-PATH="$HOME/.nvm/versions/node/v22.22.0/bin:$PATH" npx tsx --env-file=.env scripts/banca/ricalcola-causali.ts --dry-run
-#   atteso: esaminate 231, aggiornate 231, con i conteggi per codice (48//00 70, 16//37 41, 26//11 25, 31//22 21, 79//00 13, 16//33 11, 26//20 9, 31//21 8, 16//32 8, 39//11 6, 19//83 5, 78//50 3, 34//00 3, 16//00 2, 52//30 2, 15//10 2, 19//05 1, 78//10 1)
-PATH="$HOME/.nvm/versions/node/v22.22.0/bin:$PATH" npx tsx --env-file=.env scripts/banca/ricalcola-causali.ts
-#   poi di nuovo con --dry-run: atteso esaminate 0
+# 2. Guardare (facoltativo, già fatto la sera del 16) la produzione:
+#    https://gestionale.weisscafe.com/prima-nota/movimenti?register=BANK
+#    e provare «seleziona tutte le 231 → Sposta in → Attivi» guardando i tempi (le azioni in
+#    blocco sono in tre query, non in un ciclo). Login admin: admin@weisscafe.it.
 
-# 3. Guardare la produzione: https://gestionale.weisscafe.com/prima-nota/movimenti?register=BANK
-#    (231 righe, causale e descrizione separate, «tutte le 231 → Sposta in → Attivi» e i tempi)
-#    Login admin: username admin@weisscafe.it (memoria weiss-production-setup)
-
-# 4. Aprire una PR con questo documento (branch docs/ripresa-16-agosto-sera, già pushato — vedi §8) e mergiarla.
+# 3. Piano della consegna B: superpowers:writing-plans sulla spec, poi subagent-driven-development.
 ```
 
-Nota: se il ricalcolo in produzione dà conteggi diversi dalla tabella della spec
-(§ «separaCausale») fermarsi e guardare le righe con codice non in tabella: nessuna
-riga viene toccata due volte, quindi si può indagare con calma.
+Il ricalcolo delle causali (`scripts/banca/ricalcola-causali.ts`) è **già stato lanciato**
+in produzione ed è idempotente: rilanciarlo con `--dry-run` deve dare «esaminate 0».
+Le prossime righe arrivano dalla banca già separate (mapper) — nessun altro passo.
 
 ---
 
