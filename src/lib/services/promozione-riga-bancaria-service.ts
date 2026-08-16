@@ -2,7 +2,11 @@ import { Prisma } from '@prisma/client'
 import { prisma, type TransactionClient } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { toDebitCredit } from '@/lib/prima-nota-utils'
-import { risolviCentroDiCosto } from '@/lib/services/cost-center-service'
+import {
+  risolviCentroDiCosto,
+  centroDaRiproporre,
+  trovaCentroStrutturale,
+} from '@/lib/services/cost-center-service'
 import { TOLLERANZA_IMPORTI, type EsitoRicalcolo } from '@/lib/scadenzario/stato-schedule'
 import {
   riconciliaInTransazione,
@@ -111,6 +115,24 @@ function motivoRifiuto(esito: EsitoInterno): string {
   }
 }
 
+/**
+ * La violazione di unicità riguarda il legame riga → scrittura
+ * (`bank_transactions.matched_entry_id`)?
+ *
+ * `meta.target` è un array di colonne con l'adapter pg, ma la libreria lo
+ * documenta anche come stringa: si accettano entrambe le forme, e quando non
+ * si capisce si risponde di no. Sotto questa transazione ci sono altri vincoli
+ * di unicità — la coppia già riconciliata dello scadenzario, per dirne uno — e
+ * tradurli tutti in «la scrittura è già collegata a un'altra riga» direbbe a
+ * chi legge una cosa falsa.
+ */
+function violaLegameConLaScrittura(error: Prisma.PrismaClientKnownRequestError): boolean {
+  const target = error.meta?.target
+  if (Array.isArray(target)) return target.some((colonna) => String(colonna).includes('matched_entry_id'))
+  if (typeof target === 'string') return target.includes('matched_entry_id')
+  return false
+}
+
 /** Il conto dell'imputazione deve esistere ed essere attivo: un id sbagliato è un 400, non una FK violata. */
 async function esigiConto(tx: TransactionClient, accountId: string): Promise<void> {
   const conto = await tx.account.findFirst({ where: { id: accountId, isActive: true }, select: { id: true } })
@@ -129,7 +151,12 @@ async function esigiConto(tx: TransactionClient, accountId: string): Promise<voi
 async function aggiornaImputazione(tx: TransactionClient, journalEntryId: string, imputazione: Imputazione): Promise<void> {
   const scrittura = await tx.journalEntry.findFirst({
     where: { id: journalEntryId },
-    select: { id: true, _count: { select: { allocations: true } } },
+    select: {
+      id: true,
+      costCenterId: true,
+      costCenterSource: true,
+      _count: { select: { allocations: true } },
+    },
   })
   if (!scrittura) throw new PromozioneRifiutata({ outcome: 'scrittura_non_trovata' })
   if (scrittura._count.allocations > 0) {
@@ -139,9 +166,20 @@ async function aggiornaImputazione(tx: TransactionClient, journalEntryId: string
     })
   }
   await esigiConto(tx, imputazione.accountId)
+  // Il conto cambia, il centro non per forza: se qualcuno l'aveva scelto, si
+  // ripropone e vince: una scelta umana non si riscrive mai. È la stessa
+  // regola del batch di ricategorizzazione e dell'ereditarietà delle fette
+  // (`centroDaRiproporre`). Senza, ricategorizzare senza ripassare il centro
+  // faceva scendere un WEISS scelto a mano allo STR dettato dalla regola del
+  // conto nuovo, e la provenienza da 'scelto' a 'piano'.
+  const strutturale = await trovaCentroStrutturale(tx)
   const centro = await risolviCentroDiCosto(
     tx,
-    { accountId: imputazione.accountId, costCenterId: imputazione.costCenterId ?? null },
+    {
+      accountId: imputazione.accountId,
+      costCenterId:
+        imputazione.costCenterId ?? centroDaRiproporre(scrittura, strutturale?.id ?? null),
+    },
     'interattivo'
   )
   if (centro.outcome === 'invalid') {
@@ -314,11 +352,16 @@ export async function promuoviRigaBancariaInTransazione(
     })
   }
 
-  // La somma delle riconciliazioni non supera l'importo della riga: si
+  // La somma delle riconciliazioni non supera l'importo della RIGA: si
   // controlla prima di scriverne una, così l'eccedenza torna come esito col
-  // residuo e non come rifiuto della seconda gamba. `riconciliaInTransazione`
-  // rifà il controllo sulla capienza del movimento: è la stessa cifra, e va
-  // bene che ci sia due volte.
+  // residuo e non come rifiuto della seconda gamba.
+  //
+  // `riconciliaInTransazione` misura invece la capienza della SCRITTURA. Le
+  // due cifre coincidono quando la scrittura nasce dalla riga — è l'importo
+  // della riga, copiato — ma non nella R4, dove la scrittura esisteva già e
+  // può valere altro: là il tetto più stretto lo mette lei, e l'eccedenza
+  // esce da questo ciclo come `riconciliazione_rifiutata` con il motivo che
+  // la riconciliazione stessa formula.
   const reconciliationIds: string[] = []
   const seguiti: PromozioneInTransazione['seguiti'] = []
   if (scadenze.length > 0) {
@@ -329,7 +372,11 @@ export async function promuoviRigaBancariaInTransazione(
     const capienza = arrotonda(importo - Number(gia._sum.amount ?? 0))
     const richiesto = arrotonda(scadenze.reduce((somma, s) => somma + s.amount, 0))
     if (richiesto > capienza + TOLLERANZA_IMPORTI) {
-      throw new PromozioneRifiutata({ outcome: 'importo_eccedente', residuo: capienza })
+      // Nella R4 la scrittura può già portare riconciliazioni per più
+      // dell'importo della riga, e la capienza viene negativa: quello che
+      // resta da coprire, però, è zero — un residuo sotto zero non significa
+      // niente per chi legge l'esito.
+      throw new PromozioneRifiutata({ outcome: 'importo_eccedente', residuo: Math.max(0, capienza) })
     }
     for (const s of scadenze) {
       const ingresso: ReconcileInput = {
@@ -373,8 +420,13 @@ export async function promuoviRigaBancaria(input: InputPromozione): Promise<Esit
     if (error instanceof PromozioneRifiutata) return error.esito
     // La corsa sull'unicità di `matchedEntryId`: due righe che si legano alla
     // stessa scrittura nello stesso istante; la perdente esce come esito e non
-    // come guasto del server.
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+    // come guasto del server. Solo quel vincolo, però: ogni altra P2002 è un
+    // guasto vero e deve salire.
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002' &&
+      violaLegameConLaScrittura(error)
+    ) {
       return { outcome: 'scrittura_gia_collegata_ad_altra_riga' }
     }
     throw error

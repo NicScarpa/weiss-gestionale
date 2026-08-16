@@ -34,8 +34,8 @@ async function rigaBanca(venueId: string, contoId: string, importo: number, extr
 /** La scrittura come sta sul database, cancellata compresa: il client la filtrerebbe. */
 async function scritturaGrezza(id: string) {
   const righe = await prisma.$queryRaw<
-    Array<{ deleted_at: Date | null; account_id: string | null; cost_center_id: string; verified: boolean; debit_amount: unknown; credit_amount: unknown; description: string; date: Date; entry_type: string | null; register_type: string; counterpart_name: string | null; document_ref: string | null }>
-  >`SELECT deleted_at, account_id, cost_center_id, verified, debit_amount, credit_amount, description, date, entry_type, register_type, counterpart_name, document_ref FROM journal_entries WHERE id = ${id}`
+    Array<{ deleted_at: Date | null; account_id: string | null; cost_center_id: string; cost_center_source: string | null; verified: boolean; debit_amount: unknown; credit_amount: unknown; description: string; date: Date; entry_type: string | null; register_type: string; counterpart_name: string | null; document_ref: string | null }>
+  >`SELECT deleted_at, account_id, cost_center_id, cost_center_source, verified, debit_amount, credit_amount, description, date, entry_type, register_type, counterpart_name, document_ref FROM journal_entries WHERE id = ${id}`
   return righe[0] ?? null
 }
 
@@ -95,6 +95,32 @@ describe('promuoviRigaBancaria', () => {
     expect(secondo.journalEntryId).toBe(esito.journalEntryId)
     expect((await scritturaGrezza(esito.journalEntryId))?.account_id).toBe(altroConto.id)
     expect(await prisma.journalEntry.count({ where: { venueId, registerType: 'BANK' } })).toBe(1)
+  })
+
+  it('una seconda categorizzazione senza centro conserva il centro scelto la prima volta', async () => {
+    const { venueId, contoId, contoCostoId } = await contesto()
+    const centro = await centroDiCosto('WEISS')
+    const riga = await rigaBanca(venueId, contoId, -50)
+
+    const primo = await promuoviRigaBancaria({
+      bankTransactionId: riga.id, venueId, userId: null, origine: 'categorizza',
+      imputazione: { accountId: contoCostoId, costCenterId: centro },
+    })
+    if (primo.outcome !== 'ok') throw new Error(primo.outcome)
+    expect((await scritturaGrezza(primo.journalEntryId))?.cost_center_source).toBe('scelto')
+
+    // Il conto cambia, il centro no: la regola del conto nuovo (DEFAULT_STR →
+    // STR) non può disfare una scelta umana.
+    const altroConto = await prisma.account.findFirstOrThrow({ where: { type: 'COSTO', isActive: true, costCenterRule: 'DEFAULT_STR', id: { not: contoCostoId } } })
+    const secondo = await promuoviRigaBancaria({
+      bankTransactionId: riga.id, venueId, userId: null, origine: 'categorizza', imputazione: { accountId: altroConto.id },
+    })
+    if (secondo.outcome !== 'ok') throw new Error(secondo.outcome)
+
+    const scrittura = await scritturaGrezza(secondo.journalEntryId)
+    expect(scrittura?.account_id).toBe(altroConto.id)
+    expect(scrittura?.cost_center_id).toBe(centro)
+    expect(scrittura?.cost_center_source).toBe('scelto')
   })
 
   it('senza descrizione letta la scrittura prende il testo grezzo della banca', async () => {
@@ -212,6 +238,49 @@ describe('promuoviRigaBancaria', () => {
     expect(dopo.origineScrittura).toBeNull()
     expect(dopo.status).toBe('MANUAL')
     expect(await prisma.journalEntry.count({ where: { venueId, registerType: 'BANK' } })).toBe(1)
+  })
+
+  it('la R4 lega anche una scrittura di importo diverso, e il residuo lo dicono i documenti', async () => {
+    const { venueId, contoId } = await contesto()
+    // Il piano lo dice: la R4 accosta una scrittura che esiste già, e non
+    // pretende che valga quanto la riga. Quanto resta scoperto lo dicono i
+    // documenti riconciliati, non la differenza fra i due importi.
+    const esistente = await creaMovimento({ uscita: 80 })
+    const riga = await rigaBanca(venueId, contoId, -100)
+
+    const esito = await promuoviRigaBancaria({ bankTransactionId: riga.id, venueId, userId: null, origine: 'collega', scritturaEsistenteId: esistente.id })
+    if (esito.outcome !== 'ok') throw new Error(esito.outcome)
+    expect(esito.creata).toBe(false)
+    expect(esito.journalEntryId).toBe(esistente.id)
+    expect(esito.residuo).toBe(0)
+
+    const dopo = await rigaDopo(riga.id)
+    expect(dopo.matchedEntryId).toBe(esistente.id)
+    expect(Number(dopo.residuoDocumenti)).toBe(0)
+  })
+
+  it('Categorizza su una riga promossa con le fette si rifiuta', async () => {
+    const { venueId, contoId, contoCostoId } = await contesto()
+    const riga = await rigaBanca(venueId, contoId, -100)
+    const primo = await promuoviRigaBancaria({
+      bankTransactionId: riga.id, venueId, userId: null, origine: 'categorizza', imputazione: { accountId: contoCostoId },
+    })
+    if (primo.outcome !== 'ok') throw new Error(primo.outcome)
+
+    // Con le fette il conto lo governa la suddivisione: riscriverlo da qui
+    // darebbe un conto che nessuna fetta sostiene.
+    await prisma.journalEntryAllocation.create({
+      data: { journalEntryId: primo.journalEntryId, accountId: contoCostoId, importo: 10, origine: 'manuale' },
+    })
+
+    const altroConto = await prisma.account.findFirstOrThrow({ where: { type: 'COSTO', isActive: true, costCenterRule: 'DEFAULT_STR', id: { not: contoCostoId } } })
+    const secondo = await promuoviRigaBancaria({
+      bankTransactionId: riga.id, venueId, userId: null, origine: 'categorizza', imputazione: { accountId: altroConto.id },
+    })
+    expect(secondo.outcome).toBe('imputazione_non_valida')
+    if (secondo.outcome !== 'imputazione_non_valida') throw new Error('impossibile')
+    expect(secondo.motivo).toContain('ripartita')
+    expect((await scritturaGrezza(primo.journalEntryId))?.account_id).toBe(contoCostoId)
   })
 
   it('una scrittura del verso opposto non si lega', async () => {
