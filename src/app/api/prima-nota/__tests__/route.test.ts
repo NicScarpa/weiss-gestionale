@@ -152,6 +152,7 @@ describe('GET /api/prima-nota - costCenterId nel payload (regressione)', () => {
       closure: null,
       createdBy: null,
       allocations: [],
+      scheduleReconciliations: [],
       ...overrides,
     }
   }

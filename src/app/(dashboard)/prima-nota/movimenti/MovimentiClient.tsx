@@ -10,6 +10,7 @@ import { MovimentoFormDialog } from '@/components/prima-nota/movimenti/Movimento
 import { EditContoCentroDialog } from '@/components/prima-nota/movimenti/EditContoCentroDialog'
 import { CaricaMovimentiDialog } from '@/components/prima-nota/movimenti/CaricaMovimentiDialog'
 import { SplitEntryDialog } from '@/components/prima-nota/movimenti/SplitEntryDialog'
+import { RiconciliazioniMovimentoDialog } from '@/components/prima-nota/movimenti/RiconciliazioniMovimentoDialog'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -109,6 +110,7 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
   const [categorizeEntry, setCategorizeEntry] = useState<JournalEntry | null>(null)
   const [categorizeCategoryId, setCategorizeCategoryId] = useState<string>('')
   const [splitEntry, setSplitEntry] = useState<JournalEntry | null>(null)
+  const [riconciliazioniEntry, setRiconciliazioniEntry] = useState<JournalEntry | null>(null)
 
   // Query string della richiesta: cambia esattamente quando cambia ciò che si chiede all'API
   const queryParams = new URLSearchParams()
@@ -198,6 +200,17 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
     const res = await fetch(`/api/prima-nota/${deleteTargetId}`, { method: 'DELETE' })
     if (!res.ok) {
       const err = await res.json()
+      // Riconciliato: non è un errore da leggere e basta, è un passo mancante.
+      // Il dialog delle scadenze collegate è il posto dove compierlo, quindi si
+      // apre al posto del messaggio invece di lasciare l'utente davanti a
+      // un'istruzione che non ha modo di eseguire.
+      if (res.status === 409 && Array.isArray(err.scadenze) && err.scadenze.length > 0) {
+        const bloccato = data.find((e) => e.id === deleteTargetId) ?? null
+        setDeleteTargetId(null)
+        if (bloccato) setRiconciliazioniEntry(bloccato)
+        toast.error(err.error || 'Movimento riconciliato')
+        return
+      }
       throw new Error(err.error || 'Errore eliminazione')
     }
     toast.success('Movimento eliminato')
@@ -384,6 +397,7 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
           setCategorizeCategoryId(entry.budgetCategoryId || '')
         }}
         onSplit={(entry) => setSplitEntry(entry)}
+        onRiconciliazioni={(entry) => setRiconciliazioniEntry(entry)}
         isAdmin={isAdmin}
         isLoading={isLoading}
       />
@@ -473,6 +487,12 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
         description="Stai per eliminare questo movimento. Questa azione è irreversibile."
         confirmLabel="Elimina Movimento"
         onConfirm={confirmDeleteMovimento}
+      />
+
+      <RiconciliazioniMovimentoDialog
+        entry={riconciliazioniEntry}
+        onOpenChange={(open) => { if (!open) setRiconciliazioniEntry(null) }}
+        onAnnullata={() => refetch()}
       />
 
       {/* Dialog categorizzazione */}
