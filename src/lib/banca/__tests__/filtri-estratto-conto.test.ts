@@ -32,4 +32,11 @@ describe('filtriInSearchParams', () => {
     const f = { ...FILTRI_DEFAULT, cestino: true, search: 'worldline', dateFrom: '2026-07-01', bankAccountId: 'c1' }
     expect(filtriDaSearchParams(filtriInSearchParams(f))).toEqual(f)
   })
+
+  it('«movimento» va e torna dall\'URL', () => {
+    const f = filtriDaSearchParams(new URLSearchParams('movimento=abc123'))
+    expect(f.movimento).toBe('abc123')
+    expect(filtriInSearchParams(f).get('movimento')).toBe('abc123')
+    expect(filtriInSearchParams({ ...f, movimento: undefined }).has('movimento')).toBe(false)
+  })
 })

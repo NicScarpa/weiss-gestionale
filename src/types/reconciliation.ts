@@ -74,6 +74,25 @@ export interface BankTransactionWithMatch extends BankTransaction {
 export type SezioneMovimentoBancario = 'ATTIVI' | 'DELEGHE_F24' | 'CBILL_PAGOPA'
 export type StatoLegenda = 'non_abbinato' | 'parziale' | 'abbinato_manualmente' | 'riconciliato'
 
+export type OrigineScritturaBancaria = 'CATEGORIZZA' | 'COLLEGA' | 'PROPOSTA'
+
+/**
+ * La scrittura collegata come la vede la lista: quanto basta alla colonna
+ * Categoria e ai dialoghi. `fette` conta le ripartizioni: con fette, Categorizza
+ * non riscrive il conto (lo governa la suddivisione).
+ */
+export interface ScritturaCollegata {
+  id: string
+  date: Date
+  description: string
+  debitAmount: number | null
+  creditAmount: number | null
+  documentRef: string | null
+  account: { id: string; code: string; name: string } | null
+  costCenter: { id: string; code: string; name: string } | null
+  fette: number
+}
+
 /**
  * La riga come la vede la lista dell'estratto conto: i campi in più li calcola
  * il server, così legenda, filtro e conteggi dicono la stessa cosa.
@@ -89,6 +108,13 @@ export interface RigaEstrattoConto extends BankTransactionWithMatch {
   stato: StatoLegenda
   residuo: number
   deletedAt: Date | null
+  matchedEntry: ScritturaCollegata | null
+  /** Da quale azione la promozione ha creato la scrittura; nullo se esisteva già (R4) o se non è collegata. */
+  origineScrittura: OrigineScritturaBancaria | null
+  /** Il residuo dei documenti denormalizzato; nullo se la riga non è collegata. */
+  residuoDocumenti: number | null
+  /** C'è una proposta del motore da rivedere (`status = TO_REVIEW`). */
+  proposta: boolean
 }
 
 export interface TotaliEstrattoConto {

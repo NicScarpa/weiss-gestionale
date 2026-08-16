@@ -1,29 +1,52 @@
 import { describe, it, expect } from 'vitest'
 import { statoLegenda } from '../stato-legenda'
 
-describe('statoLegenda', () => {
-  it('senza scrittura è Non abbinato, e il residuo è l\'intero importo', () => {
-    expect(statoLegenda({ matchedEntryId: null, status: 'PENDING', amount: -120, importiRiconciliati: [] }))
-      .toEqual({ stato: 'non_abbinato', residuo: 120 })
+describe('statoLegenda — la legenda di CashKing sul nostro modello, letta dalla colonna', () => {
+  it('senza scrittura è «Non abbinato», col residuo pari all\'importo', () => {
+    expect(statoLegenda({ matchedEntryId: null, status: 'PENDING', amount: -68.93, residuoDocumenti: null })).toEqual({
+      stato: 'non_abbinato',
+      residuo: 68.93,
+      proposta: false,
+    })
   })
 
-  // Una commissione categorizzata ha una scrittura e nessun documento: è chiusa.
-  it('con scrittura dell\'utente e senza documenti è Abbinato manualmente, residuo zero', () => {
-    expect(statoLegenda({ matchedEntryId: 'je1', status: 'MANUAL', amount: -0.75, importiRiconciliati: [] }))
-      .toEqual({ stato: 'abbinato_manualmente', residuo: 0 })
+  // Il vecchio motore scrive matchedEntryId anche sulle proposte da rivedere:
+  // una proposta non è un abbinamento, e si segnala col puntino.
+  it('una proposta da rivedere è «Non abbinato» col puntino, anche se porta una scrittura', () => {
+    expect(statoLegenda({ matchedEntryId: 'e1', status: 'TO_REVIEW', amount: 100, residuoDocumenti: 0 })).toEqual({
+      stato: 'non_abbinato',
+      residuo: 100,
+      proposta: true,
+    })
   })
 
-  it('con scrittura del motore e documenti che coprono tutto è Riconciliato', () => {
-    expect(statoLegenda({ matchedEntryId: 'je1', status: 'MATCHED', amount: -100, importiRiconciliati: [60, 40] }))
-      .toEqual({ stato: 'riconciliato', residuo: 0 })
+  it('collegata con documenti che non coprono tutto è «Parzialmente abbinato» col residuo', () => {
+    expect(statoLegenda({ matchedEntryId: 'e1', status: 'MANUAL', amount: -100, residuoDocumenti: 40 })).toEqual({
+      stato: 'parziale',
+      residuo: 40,
+      proposta: false,
+    })
   })
 
-  it('con documenti che coprono solo una parte è Parzialmente abbinato, col residuo', () => {
-    expect(statoLegenda({ matchedEntryId: 'je1', status: 'MANUAL', amount: -100, importiRiconciliati: [30.5] }))
-      .toEqual({ stato: 'parziale', residuo: 69.5 })
+  it('collegata dall\'utente, senza residuo, è «Abbinato manualmente»', () => {
+    expect(statoLegenda({ matchedEntryId: 'e1', status: 'MANUAL', amount: -0.75, residuoDocumenti: 0 })).toEqual({
+      stato: 'abbinato_manualmente',
+      residuo: 0,
+      proposta: false,
+    })
   })
 
-  it('un centesimo di troppo dai documenti non manda il residuo sotto zero', () => {
-    expect(statoLegenda({ matchedEntryId: 'je1', status: 'MATCHED', amount: 100, importiRiconciliati: [100.01] }).residuo).toBe(0)
+  it('collegata dal motore o da una proposta approvata, senza residuo, è «Riconciliato»', () => {
+    expect(statoLegenda({ matchedEntryId: 'e1', status: 'MATCHED', amount: 907.9, residuoDocumenti: 0 })).toEqual({
+      stato: 'riconciliato',
+      residuo: 0,
+      proposta: false,
+    })
+  })
+
+  // Le righe agganciate prima della colonna, o dal vecchio motore senza
+  // ricalcolo, hanno la colonna nulla: collegate senza documenti.
+  it('una colonna nulla su una riga collegata vale zero', () => {
+    expect(statoLegenda({ matchedEntryId: 'e1', status: 'MATCHED', amount: 10, residuoDocumenti: null }).stato).toBe('riconciliato')
   })
 })
