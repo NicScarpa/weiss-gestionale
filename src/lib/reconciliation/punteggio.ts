@@ -284,7 +284,24 @@ function punteggioCodiceBanca(
 export function valutaCoppia(
   movimento: MovimentoBanca,
   scadenza: ScadenzaCandidata,
-  contesto: ContestoValutazione
+  contesto: ContestoValutazione,
+  /**
+   * I documenti che la proposta afferma di saldare, per le proposte
+   * **cumulative**: un movimento, più scadenze.
+   *
+   * Serve perché il fattore riferimento vale per la proposta intera, mentre le
+   * gambe si scelgono per importo. Il 16 agosto 2026 un bonifico da 459,80 €
+   * che nominava la fattura 177 ha prodotto due proposte da 88 punti: una con
+   * le tre rate della 177, l'altra con due rate della 177 più una della 237,
+   * che vale lo stesso importo. Bastava che la scadenza «rappresentante»
+   * fosse nominata perché tutte le gambe ereditassero i venti punti, e la
+   * proposta sbagliata finiva in fascia Alta — dove si approva in blocco senza
+   * aprire le schede.
+   *
+   * Assente per le proposte a gamba singola, che sono la stragrande
+   * maggioranza e non cambiano comportamento.
+   */
+  documentiDellaProposta?: Array<string | null>
 ): Valutazione | null {
   const importo = importoUtile(movimento, scadenza.tipo)
   if (importo <= 0) return null
@@ -301,9 +318,33 @@ export function valutaCoppia(
     unicita: 0,
   }
 
-  if (scadenza.numeroDocumento && contieneRiferimento(movimento.causale, scadenza.numeroDocumento)) {
+  // Il riferimento premia la proposta, non una delle sue gambe: una cumulativa
+  // lo prende solo se la causale nomina OGNI documento che dice di saldare.
+  // Tutto-o-niente e non proporzionale, perché questi venti punti decidono
+  // l'ingresso nella fascia che si approva senza aprire le schede: là un
+  // parziale è una mezza certezza spacciata per certezza.
+  const documenti = documentiDellaProposta ?? [scadenza.numeroDocumento]
+  const nominati = documenti.filter(
+    (numero): numero is string => !!numero && contieneRiferimento(movimento.causale, numero)
+  )
+
+  if (documenti.length > 0 && nominati.length === documenti.length) {
     fattori.riferimento = PESI.RIFERIMENTO
-    motivazioni.push({ testo: 'Riferimento della fattura presente nella causale', segno: '+' })
+    motivazioni.push({
+      testo:
+        documenti.length > 1
+          ? 'La causale nomina tutte le fatture di questo pagamento cumulativo'
+          : 'Riferimento della fattura presente nella causale',
+      segno: '+',
+    })
+  } else if (documentiDellaProposta && nominati.length > 0) {
+    // Silenziare la differenza sarebbe il modo migliore per non accorgersene:
+    // la proposta gemella, quella con le gambe giuste, prende i venti punti e
+    // vince — ma solo se questa dichiara perché li ha persi.
+    motivazioni.push({
+      testo: `La causale non nomina ${documenti.length - nominati.length} delle ${documenti.length} scadenze di questo pagamento cumulativo`,
+      segno: '-',
+    })
   }
 
   // daysDifference torna il valore assoluto: il verso lo ricaviamo qui, e ci

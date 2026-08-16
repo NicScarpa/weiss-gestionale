@@ -238,9 +238,15 @@ export async function generaLotto(input: GeneraLottoInput): Promise<GeneraLottoE
     // quindi il primo elemento di ogni combinazione è la più grossa del
     // gruppo, mai la più vicina per data né quella citata nella causale. Per
     // controparte e codice banca è irrilevante — la combinazione è già
-    // ristretta alla stessa controparte. Per riferimento e data è
+    // ristretta alla stessa controparte. Per la **data** resta
     // un'approssimazione consapevole: si valuta la fattura dominante, non
     // necessariamente quella più pertinente.
+    //
+    // Per il **riferimento** non più: dal 16 agosto 2026 si passano i numeri di
+    // tutte le gambe, e il fattore scatta solo se la causale le nomina tutte.
+    // Prima bastava il rappresentante, e una gamba sulla fattura sbagliata —
+    // scelta perché il residuo coincideva — entrava in fascia Alta con venti
+    // punti che non aveva meritato.
     const importoAssoluto = Math.abs(movimento.importo)
     for (const combinazione of trovaCombinazioni(importoAssoluto, nellaFinestra)) {
       const sommaResidui = combinazione.reduce((totale, s) => totale + s.residuo, 0)
@@ -248,7 +254,12 @@ export async function generaLotto(input: GeneraLottoInput): Promise<GeneraLottoE
       const esito = valutaCoppia(
         movimento,
         { ...rappresentante, residuo: sommaResidui },
-        contesto
+        contesto,
+        // I documenti di TUTTE le gambe: il riferimento vale per la proposta
+        // intera, e senza questo elenco bastava che il rappresentante fosse
+        // nominato perché anche una gamba sulla fattura sbagliata — scelta per
+        // importo identico — ereditasse i venti punti.
+        combinazione.map((s) => s.numeroDocumento)
       )
       if (!esito) continue
       valutate.push({

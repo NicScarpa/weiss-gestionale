@@ -299,3 +299,50 @@ describe('il totale e le fasce', () => {
     expect(fascia(SOGLIE.MINIMA)).toBe('bassa')
   })
 })
+
+describe('il riferimento di una proposta cumulativa vale per tutte le sue gambe', () => {
+  // Il caso vero, misurato il 16 agosto 2026 sui movimenti sincronizzati.
+  // Un bonifico da 459,80 € che in causale nomina la fattura 177 riceveva DUE
+  // proposte cumulative da 88 punti: una con le tre rate della 177, l'altra
+  // con due rate della 177 più una della 237 — che vale lo stesso importo.
+  // Entrambe prendevano i venti punti del riferimento, perché il fattore
+  // guardava solo la scadenza «rappresentante» della combinazione, e il codice
+  // lo dichiarava: «un'approssimazione consapevole».
+  const CAUSALE_177 =
+    'Bonifico tramite Internet Banking *INSTANT DEL 02/07/2026 ORE 11:55 ID. 0708400041162812486499064990IT BEN SARATOGA SNC177/2026'
+
+  function cumulativa(documenti: Array<string | null>) {
+    return valutaCoppia(
+      movimento({ causale: CAUSALE_177, importo: -459.8 }),
+      scadenza({ numeroDocumento: '177', residuo: 459.8, controparteNome: 'SARATOGA SNC' }),
+      CONTESTO_VUOTO,
+      documenti
+    )
+  }
+
+  it('prende i venti punti quando la causale nomina ogni documento saldato', () => {
+    expect(cumulativa(['177', '177', '177'])?.fattori.riferimento).toBeGreaterThan(0)
+  })
+
+  it('non li prende se una gamba salda un documento che la causale non nomina', () => {
+    // È la proposta sbagliata: la rata della 237 vale lo stesso importo di
+    // quella della 177, e senza questo controllo entrava in fascia Alta —
+    // dove si approva in blocco senza aprire le schede.
+    expect(cumulativa(['177', '237', '177'])?.fattori.riferimento).toBe(0)
+  })
+
+  it('lo dice, invece di limitarsi a togliere i punti', () => {
+    const esito = cumulativa(['177', '237', '177'])
+    expect(esito?.motivazioni.some((m) => m.segno === '-' && /non nomina/i.test(m.testo))).toBe(true)
+  })
+
+  it('senza elenco di gambe si comporta come prima', () => {
+    // Le proposte a gamba singola non cambiano: sono la stragrande maggioranza.
+    const esito = valutaCoppia(
+      movimento({ causale: CAUSALE_177, importo: -459.8 }),
+      scadenza({ numeroDocumento: '177', residuo: 459.8, controparteNome: 'SARATOGA SNC' }),
+      CONTESTO_VUOTO
+    )
+    expect(esito?.fattori.riferimento).toBeGreaterThan(0)
+  })
+})
