@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { venueDiTest, centroDiCosto } from '@/test/integration/fixtures/closures'
 import { creaMovimento, creaScadenza, fornitoreDiTest, rileggiScadenza } from '@/test/integration/fixtures/scadenzario'
-import { promuoviRigaBancaria } from '../promozione-riga-bancaria-service'
+import { promuoviRigaBancaria, scollegaRigaBancaria } from '../promozione-riga-bancaria-service'
 
 setupIntegrationDb()
 
@@ -345,5 +345,80 @@ describe('promuoviRigaBancaria', () => {
     const riga = await rigaBanca(venueId, contoId, -10)
     const esito = await promuoviRigaBancaria({ bankTransactionId: riga.id, venueId, userId: null, origine: 'categorizza', imputazione: { accountId: 'non-esiste' } })
     expect(esito.outcome).toBe('imputazione_non_valida')
+  })
+})
+
+describe('scollegaRigaBancaria', () => {
+  it('su una riga promossa con documenti ritira riconciliazioni, pagamenti e scrittura; la scadenza torna aperta', async () => {
+    const { venueId, contoId } = await contesto()
+    const scadenza = await creaScadenza({ importoTotale: 100 })
+    const riga = await rigaBanca(venueId, contoId, -100)
+    const promossa = await promuoviRigaBancaria({
+      bankTransactionId: riga.id, venueId, userId: null, origine: 'collega',
+      scadenze: [{ scheduleId: scadenza.id, amount: 100 }],
+    })
+    if (promossa.outcome !== 'ok') throw new Error(promossa.outcome)
+    expect((await rileggiScadenza(scadenza.id)).stato).toBe('pagata')
+
+    const esito = await scollegaRigaBancaria({ bankTransactionId: riga.id, venueId, userId: null })
+    expect(esito).toEqual({ outcome: 'ok', scritturaRitirata: true, riconciliazioniAnnullate: 1 })
+
+    expect(await prisma.scheduleReconciliation.count({ where: { journalEntryId: promossa.journalEntryId } })).toBe(0)
+    expect(await prisma.schedulePayment.count({ where: { scheduleId: scadenza.id } })).toBe(0)
+    const dopoScadenza = await rileggiScadenza(scadenza.id)
+    expect(dopoScadenza.stato).toBe('aperta')
+    expect(dopoScadenza.importoPagatoNum).toBe(0)
+    // Ritirata, non cancellata: la riga esiste ancora, con deleted_at.
+    expect((await scritturaGrezza(promossa.journalEntryId))?.deleted_at).not.toBeNull()
+
+    const dopo = await rigaDopo(riga.id)
+    expect(dopo.matchedEntryId).toBeNull()
+    expect(dopo.origineScrittura).toBeNull()
+    expect(dopo.status).toBe('PENDING')
+    expect(dopo.residuoDocumenti).toBeNull()
+    expect(dopo.reconciledAt).toBeNull()
+  })
+
+  it('su una R4 slega e basta: la scrittura resta in prima nota con le sue riconciliazioni', async () => {
+    const { venueId, contoId } = await contesto()
+    const scadenza = await creaScadenza({ importoTotale: 100 })
+    const esistente = await creaMovimento({ uscita: 100 })
+    // La scrittura era già riconciliata dallo scadenzario, prima del legame.
+    const { reconcileScheduleWithEntry } = await import('@/lib/services/schedule-reconciliation-service')
+    const ric = await reconcileScheduleWithEntry({ scheduleId: scadenza.id, journalEntryId: esistente.id, venueId, userId: null })
+    expect(ric.outcome).toBe('ok')
+    const riga = await rigaBanca(venueId, contoId, -100)
+    await promuoviRigaBancaria({ bankTransactionId: riga.id, venueId, userId: null, origine: 'collega', scritturaEsistenteId: esistente.id })
+    expect(Number((await rigaDopo(riga.id)).residuoDocumenti)).toBe(0)
+
+    const esito = await scollegaRigaBancaria({ bankTransactionId: riga.id, venueId, userId: null })
+    expect(esito).toEqual({ outcome: 'ok', scritturaRitirata: false, riconciliazioniAnnullate: 0 })
+    expect((await scritturaGrezza(esistente.id))?.deleted_at).toBeNull()
+    expect(await prisma.scheduleReconciliation.count({ where: { journalEntryId: esistente.id } })).toBe(1)
+    expect((await rigaDopo(riga.id)).matchedEntryId).toBeNull()
+  })
+
+  it('su una riga categorizzata ritira la scrittura, senza riconciliazioni da annullare', async () => {
+    const { venueId, contoId, contoCostoId } = await contesto()
+    const riga = await rigaBanca(venueId, contoId, -0.75)
+    const promossa = await promuoviRigaBancaria({ bankTransactionId: riga.id, venueId, userId: null, origine: 'categorizza', imputazione: { accountId: contoCostoId } })
+    if (promossa.outcome !== 'ok') throw new Error(promossa.outcome)
+    const esito = await scollegaRigaBancaria({ bankTransactionId: riga.id, venueId, userId: null })
+    expect(esito).toEqual({ outcome: 'ok', scritturaRitirata: true, riconciliazioniAnnullate: 0 })
+    expect((await scritturaGrezza(promossa.journalEntryId))?.deleted_at).not.toBeNull()
+    // Dopo lo scollegamento la riga si può promuovere di nuovo, e nasce una scrittura nuova.
+    const di_nuovo = await promuoviRigaBancaria({ bankTransactionId: riga.id, venueId, userId: null, origine: 'categorizza', imputazione: { accountId: contoCostoId } })
+    if (di_nuovo.outcome !== 'ok') throw new Error(di_nuovo.outcome)
+    expect(di_nuovo.creata).toBe(true)
+    expect(di_nuovo.journalEntryId).not.toBe(promossa.journalEntryId)
+  })
+
+  it('su una riga non collegata riporta lo stato a PENDING senza errore; su una riga inesistente risponde riga_non_trovata', async () => {
+    const { venueId, contoId } = await contesto()
+    const riga = await rigaBanca(venueId, contoId, -10)
+    await prisma.bankTransaction.update({ where: { id: riga.id }, data: { status: 'MATCHED' } })
+    expect(await scollegaRigaBancaria({ bankTransactionId: riga.id, venueId, userId: null })).toEqual({ outcome: 'ok', scritturaRitirata: false, riconciliazioniAnnullate: 0 })
+    expect((await rigaDopo(riga.id)).status).toBe('PENDING')
+    expect(await scollegaRigaBancaria({ bankTransactionId: 'non-esiste', venueId, userId: null })).toEqual({ outcome: 'riga_non_trovata' })
   })
 })
