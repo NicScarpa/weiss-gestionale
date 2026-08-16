@@ -176,9 +176,12 @@ Una riga per ogni campo cambiato: `bankTransactionId`, `campo`
 descrizione, causale o note (lo spostamento di scheda non è una modifica del
 movimento); «Manuale» se `importSource = MANUAL`.
 
-La tabella **nasce con RLS attiva, forzata e con la policy `service_role_all`
-nella stessa migrazione**: `migrate deploy` non la applica da solo e ogni
-tabella nuova nascerebbe scoperta.
+La RLS sulla tabella nuova la mette `npm run db:migrate:deploy`, che dopo
+`prisma migrate deploy` lancia `rls:enable` su **tutte** le tabelle (cicla su
+`pg_tables`): è il comando che Railway esegue prima di ogni deploy
+(`railway.json`, `preDeployCommand`). Una migrazione da sola lascerebbe la
+tabella scoperta; il comando di deploy no. Dopo il rilascio si verifica con
+la query di controllo (tabelle senza RLS o senza policy = 0).
 
 ### `separaCausale`: dal testo grezzo a causale + descrizione
 
@@ -248,7 +251,11 @@ scrittura collegata (`matchedEntry`); vale zero anche quando la scrittura non
 ha documenti (una commissione categorizzata è chiusa). «Solo non
 riconciliati» = Non abbinato + Parzialmente abbinato: è l'elenco di ciò che
 resta da fare. Lo stato lo calcola il server e viaggia nella risposta della
-lista, così la legenda, il filtro e i conteggi dicono la stessa cosa.
+lista, così la legenda, il filtro e i conteggi dicono la stessa cosa. Nella
+consegna A il filtro prende le sole «Non abbinato» (senza scrittura); i
+parziali entrano nella consegna B, che denormalizza sulla riga il residuo dei
+documenti (`residuoDocumenti`, aggiornato dalla promozione e dallo
+scollegamento) così da filtrare e ordinare in SQL senza sommare al volo.
 
 **Un caso già in produzione (zero righe, ma il codice c'è).** La rotta
 `POST /api/prima-nota/import`, chiamata da «Carica movimenti» della prima
@@ -345,7 +352,7 @@ italiano). Ogni rotta nuova passa da `withAuth` con ruoli `admin` e `manager`
 | `POST /api/bank-transactions/azioni-in-blocco` | `{ azione: sposta · cestino · ripristina, sezione?, ids? \| filtro? }`; risponde con quante righe ha toccato |
 | `DELETE /api/bank-transactions/[id]` *(esiste)* | resta il Cestino; il rifiuto passa da «già riconciliata» a «ha una scrittura collegata» (409) |
 | `POST /api/bank-transactions` *(esiste, oggi senza consumatori)* | `bankAccountId` diventa obbligatorio, arrivano `causale` e `note`; «Nuovo movimento» ne è il primo consumatore |
-| `POST /api/bank-transactions/import` *(esiste)* | scrive `causale` e `descrizione` con `separaCausale` (il CSV porta il codice quando c'è; senza codice vale il caso 2 o 3) |
+| `POST /api/bank-transactions/import` *(esiste)* | riceve `bankAccountId` (obbligatorio: il dialogo chiede il conto) e lo scrive sulle righe; scrive `causale` e `descrizione` con `separaCausale` (il CSV non porta il codice: vale il caso 2 o 3) |
 | `POST /api/bank-transactions/[id]/ignore` | **rimossa** con i suoi consumatori |
 | `POST /api/prima-nota/import` | **rimossa** con «Carica movimenti» (vedi «Cosa succede alle pagine di oggi») |
 
