@@ -46,6 +46,10 @@ export function RiconciliazioneClient() {
   const venueId = (venues.find(v => v.isActive !== false) ?? venues[0])?.id ?? ''
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  // Pagina corrente: totale e numero di pagine arrivano dalla risposta. Senza,
+  // la pagina mostrava le prime 100 righe e basta: dei 231 movimenti della
+  // prima sincronizzazione, 131 non si potevano raggiungere da nessuna parte.
+  const [page, setPage] = useState(1)
   const [importOpen, setImportOpen] = useState(false)
   const [matchTransactionId, setMatchTransactionId] = useState<string | null>(null)
   const [detailsTransactionId, setDetailsTransactionId] = useState<string | null>(null)
@@ -62,18 +66,19 @@ export function RiconciliazioneClient() {
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
     staleTime: 0,
-    queryKey: ['riconciliazione', venueId, statusFilter],
+    queryKey: ['riconciliazione', venueId, statusFilter, page],
     enabled: !!venueId,
     queryFn: async (): Promise<{
       summary: ReconciliationSummary
       transactions: BankTransactionWithMatch[]
+      pagination: { total: number; totalPages: number }
     }> => {
       // Load summary and transactions in parallel
       const [summaryRes, transactionsRes] = await Promise.all([
         fetch(`/api/reconciliation/summary?venueId=${venueId}`),
         fetch(
           `/api/bank-transactions?venueId=${venueId}${statusFilter !== 'all' ? `&status=${statusFilter}` : ''
-          }&limit=100`
+          }&limit=100&page=${page}`
         ),
       ])
 
@@ -86,8 +91,14 @@ export function RiconciliazioneClient() {
         transactionsRes.json(),
       ])
 
-      return { summary: summaryData, transactions: transactionsData.data || [] }
+      return {
+        summary: summaryData,
+        transactions: transactionsData.data || [],
+        pagination: transactionsData.pagination ?? { total: 0, totalPages: 0 },
+      }
     },
+    // Il conteggio resta visibile mentre si carica la pagina successiva
+    placeholderData: (precedente) => precedente,
   })
 
   useEffect(() => {
@@ -99,8 +110,17 @@ export function RiconciliazioneClient() {
 
   const summary = dati?.summary ?? null
   const transactions = dati?.transactions ?? []
+  const total = dati?.pagination?.total ?? 0
+  const totalPages = dati?.pagination?.totalPages ?? 0
   // Finché la sede non è nota la query resta ferma: la pagina deve restare in caricamento
   const loading = isPending || isFetching
+
+  // Cambiare scheda cambia l'insieme: la pagina 3 di «Tutti» non esiste in
+  // «Riconciliati», e restarci mostrerebbe il vuoto di una pagina che non c'è.
+  const cambiaFiltro = (v: StatusFilter) => {
+    setStatusFilter(v)
+    setPage(1)
+  }
 
   const handleReconcile = async () => {
     if (!venueId) return
@@ -202,7 +222,7 @@ export function RiconciliazioneClient() {
       <div className="flex flex-col sm:flex-row gap-4">
         <Tabs
           value={statusFilter}
-          onValueChange={(v) => setStatusFilter(v as StatusFilter)}
+          onValueChange={(v) => cambiaFiltro(v as StatusFilter)}
           className="w-full sm:w-auto"
         >
           <TabsList className="flex gap-1 p-1 bg-muted/50 rounded-lg h-auto w-fit border-none">
@@ -262,6 +282,34 @@ export function RiconciliazioneClient() {
         onMatch={(id) => setMatchTransactionId(id)}
         onViewDetails={(id) => setDetailsTransactionId(id)}
       />
+
+      {/* Paginazione: stessa forma di quella dei movimenti di prima nota */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <span>{total} movimenti totali</span>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+            >
+              Precedente
+            </Button>
+            <span className="flex items-center px-2">
+              Pagina {page} di {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Successiva
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Dialogs */}
       <ImportDialog

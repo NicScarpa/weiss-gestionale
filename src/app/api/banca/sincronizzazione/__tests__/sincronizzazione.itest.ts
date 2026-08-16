@@ -185,4 +185,44 @@ describe('lo stato della sincronizzazione', () => {
     // «mail inviata: no» come se fosse un esito normale.
     expect(r.body.mailConfigurata).toBe(false)
   })
+
+  // «0 movimenti nuovi» dopo il secondo giro è vero e insieme fuorviante: chi
+  // legge non sa che il primo giro ne ha portati 231, né dove sono finiti. Il
+  // pannello deve poter dire il totale e quanto resta da fare, non solo il delta.
+  it('conta i movimenti importati per conto e quelli ancora da riconciliare', async () => {
+    const conto = await montaConto()
+    await entraCome('admin')
+
+    const base = {
+      venueId: conto.venueId,
+      bankAccountId: conto.id,
+      description: 'PAGAMENTO POS',
+      amount: -12.5,
+      importSource: 'PSD2_GOCARDLESS' as const,
+    }
+    await prisma.bankTransaction.createMany({
+      data: [
+        { ...base, providerTransactionId: 't1', transactionDate: new Date('2026-08-10'), status: 'PENDING' },
+        { ...base, providerTransactionId: 't2', transactionDate: new Date('2026-08-11'), status: 'TO_REVIEW' },
+        { ...base, providerTransactionId: 't3', transactionDate: new Date('2026-08-12'), status: 'IGNORED' },
+        // Cancellato: non esiste più per nessuno dei due conteggi.
+        {
+          ...base,
+          providerTransactionId: 't4',
+          transactionDate: new Date('2026-08-13'),
+          status: 'PENDING',
+          deletedAt: new Date(),
+        },
+      ],
+    })
+
+    const r = await callRoute<{
+      conti: Array<{ bankAccountId: string; movimentiImportati: number; daRiconciliare: number }>
+    }>(statoGET, jsonRequest('http://localhost/api/banca/sincronizzazione'))
+
+    expect(r.status).toBe(200)
+    const stato = r.body.conti.find((c) => c.bankAccountId === conto.id)
+    expect(stato?.movimentiImportati).toBe(3)
+    expect(stato?.daRiconciliare).toBe(2)
+  })
 })
