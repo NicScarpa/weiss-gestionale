@@ -34,7 +34,7 @@ function verificaSegretoCron(request: NextRequest): NextResponse | null {
   return null
 }
 
-export async function GET(request: NextRequest) {
+async function esegui(request: NextRequest) {
   const rifiuto = verificaSegretoCron(request)
   if (rifiuto) return rifiuto
 
@@ -62,4 +62,16 @@ export async function GET(request: NextRequest) {
     logger.error('[SyncBancaria] Giro notturno fallito', { errore })
     return NextResponse.json({ error: 'Sincronizzazione fallita' }, { status: 500 })
   }
+}
+
+// Il servizio cron di Railway invoca in POST, come gli altri due job del
+// progetto; il GET c'è per poter lanciare il giro a mano da un browser.
+// Esporne uno solo significherebbe un 405 ogni notte, scoperto solo guardando
+// i log del servizio cron — che nessuno guarda finché non manca qualcosa.
+export async function GET(request: NextRequest) {
+  return esegui(request)
+}
+
+export async function POST(request: NextRequest) {
+  return esegui(request)
 }

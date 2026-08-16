@@ -6,7 +6,7 @@ import { callRoute, jsonRequest } from '@/test/integration/api'
 import { impostaClientPerTest } from '@/lib/gocardless/servizio'
 import type { ClientGoCardless } from '@/lib/gocardless/client'
 import { GET as statoGET, POST as sincronizzaPOST } from '../route'
-import { GET as cronGET } from '../cron/route'
+import { GET as cronGET, POST as cronPOST } from '../cron/route'
 
 setupIntegrationDb()
 
@@ -93,6 +93,33 @@ describe('il cron della sincronizzazione', () => {
 
     expect(r.status).toBe(200)
     expect(await prisma.bankTransaction.count({ where: { bankAccountId: conto.id } })).toBe(1)
+  })
+
+  // Il servizio cron di Railway invoca in POST. Esporre il solo GET
+  // significherebbe un 405 ogni notte, visibile solo nei log del servizio cron
+  // — che nessuno guarda finché non manca qualcosa.
+  it('risponde anche in POST, che è il verbo del cron di Railway', async () => {
+    const conto = await montaConto()
+    impostaClientPerTest(clientFinto())
+
+    const r = await callRoute(
+      cronPOST,
+      jsonRequest('http://localhost/api/banca/sincronizzazione/cron', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${SEGRETO}` },
+      })
+    )
+
+    expect(r.status).toBe(200)
+    expect(await prisma.bankTransaction.count({ where: { bankAccountId: conto.id } })).toBe(1)
+  })
+
+  it('il POST senza segreto risponde 401', async () => {
+    const r = await callRoute(
+      cronPOST,
+      jsonRequest('http://localhost/api/banca/sincronizzazione/cron', { method: 'POST' })
+    )
+    expect(r.status).toBe(401)
   })
 })
 
