@@ -448,3 +448,72 @@ riconoscesse: la fascia passerebbe da 7 a 13, quasi il doppio.
   di sapere quali dei 231 movimenti pagano davvero una delle 226 fatture, cioè
   uno spoglio manuale che non è stato fatto.
 - **Le fasce Media e Bassa** non sono state giudicate una a una.
+
+---
+
+# 6. Il Task 2 si è fermato, e ha trovato di più (16 agosto 2026)
+
+Il piano `2026-08-16-riconciliazione-a2-primo-taglio.md` poneva al Task 2 una
+condizione d'arresto: *«se compare anche un solo abbinamento su importo ambiguo
+dentro la fascia Alta, il piano si ferma»*. È scattata.
+
+## Le tre misure
+
+| | Fascia Alta | Su importo ambiguo |
+|---|---|---|
+| Prima di tutto | 7 | 0 |
+| Dopo la correzione del confine (Task 1) | 12 | **1** ← arresto |
+| Dopo il riferimento per proposta | **11** | **0** |
+
+## Cosa ha rivelato l'arresto
+
+Un bonifico da **459,80 €** che in causale nomina la fattura **177** riceveva
+**due** proposte cumulative da 88 punti:
+
+```
+proposta A            proposta B
+163,35  doc «177»     163,35  doc «177»
+151,25  doc «237»  ←  151,25  doc «177»
+145,20  doc «177»     145,20  doc «177»
+```
+
+Le tre rate della 177 sommano esattamente 459,80: la B è quella giusta. La A ha
+una gamba sulla **rata 1/5 della fattura 237**, che vale anch'essa 151,25.
+
+Entrambe prendevano i venti punti del riferimento, perché il fattore guardava
+solo la scadenza «rappresentante» della combinazione — e il codice lo
+dichiarava: «per riferimento e data è un'approssimazione consapevole». Le gambe
+però si scelgono per **importo**, quindi una può attaccarsi alla scadenza
+sbagliata mentre la proposta nel complesso sembra sicurissima.
+
+La correzione del Task 1 non ha creato il difetto: l'ha **promosso**. Senza i
+venti punti quelle proposte stavano a 68, fuori dalla fascia Alta; con essi
+arrivavano a 88, dentro la fascia che si approva in blocco senza aprire le
+schede — dove un errore non lo vede nessuno.
+
+## La correzione
+
+`valutaCoppia` riceve ora i numeri di documento di **tutte** le gambe, e concede
+i venti punti solo se la causale li nomina tutti. Tutto-o-niente e non
+proporzionale: quei punti decidono l'ingresso nella fascia che si approva alla
+cieca, e là un parziale è una mezza certezza spacciata per certezza.
+
+Quando li perde lo **dichiara**, con una motivazione negativa che la scheda
+mostrerà: *«La causale non nomina 1 delle 3 scadenze di questo pagamento
+cumulativo»*. Le due gemelle restano entrambe in coda, e senza quella frase
+l'utente vedrebbe 88 contro 68 senza sapere perché.
+
+Le proposte a gamba singola — la stragrande maggioranza — non cambiano.
+
+## Il risultato
+
+```
+  numero di fattura citato nella causale: 13 su 13
+  abbinamenti su importo NON univoco:     0
+```
+
+Tredici righe perché la cumulativa della 177 ha tre gambe e la verifica le conta
+separatamente: le **proposte** distinte in fascia Alta sono **11**.
+
+**Da 7 a 11 approvabili in blocco, +57%, e zero ambigue.** La soglia di 85 non è
+stata toccata: era ed è tarata bene.
