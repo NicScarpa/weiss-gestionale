@@ -106,6 +106,10 @@ export interface JournalEntry {
   paymentId?: string
   // Fette di suddivisione manuale (Allocation, Fase 1)
   allocations?: JournalEntryAllocation[]
+  // Scadenze saldate da questo movimento: solo gli identificativi, quanto basta
+  // alla lista per sapere che il movimento è agganciato. Il dettaglio si legge
+  // da /api/prima-nota/[id]/riconciliazioni.
+  riconciliazioni?: Array<{ id: string; scheduleId: string }>
   // Relations (populated)
   venue?: {
     id: string
