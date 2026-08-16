@@ -7,6 +7,7 @@ import {
   montare,
   smontare,
   cliccare,
+  scrivere,
   perTesto,
   testoDellaPagina,
 } from '@/components/scadenzario/__tests__/render-helpers'
@@ -24,9 +25,13 @@ afterEach(async () => {
   window.localStorage.clear()
 })
 
-/** Attende una condizione con timer veri: qui le query si accendono a catena. */
-async function attendiChe(condizione: () => boolean, cosa: string) {
-  for (let i = 0; i < 50; i++) {
+/**
+ * Attende una condizione con timer veri: qui le query si accendono a catena.
+ * `tentativi` si alza quando in mezzo c'è un'attesa dichiarata, come i 300 ms
+ * del debounce della ricerca.
+ */
+async function attendiChe(condizione: () => boolean, cosa: string, tentativi = 50) {
+  for (let i = 0; i < tentativi; i++) {
     if (condizione()) return
     await act(async () => {
       await new Promise((r) => setTimeout(r, 5))
@@ -34,6 +39,8 @@ async function attendiChe(condizione: () => boolean, cosa: string) {
   }
   throw new Error(`Atteso invano: ${cosa}`)
 }
+
+const campoRicerca = () => document.querySelector<HTMLInputElement>('input[aria-label="Cerca fra i movimenti"]')
 
 /** Le schede Radix si attivano su `mousedown` (bottone sinistro), non su `click`. */
 async function premereScheda(el: Element | null | undefined) {
@@ -117,9 +124,17 @@ const RISPOSTA = {
   summary: { total: 231, pending: 231, matched: 0, toReview: 0, manual: 0, ignored: 0, unmatched: 0 },
 }
 
-function stubTutto() {
+const VUOTA = {
+  data: [],
+  pagination: { page: 1, limit: 100, total: 0, totalPages: 0 },
+  totali: { entrate: 0, uscite: 0, saldoNetto: 0 },
+  conteggi: { attivi: 12, delegheF24: 0, cbillPagopa: 0, cestino: 0 },
+  summary: { total: 0, pending: 0, matched: 0, toReview: 0, manual: 0, ignored: 0, unmatched: 0 },
+}
+
+function stubTutto(lista: unknown = RISPOSTA) {
   stubFetch([
-    ['/api/bank-transactions', RISPOSTA],
+    ['/api/bank-transactions', lista],
     // La rotta vera risponde `{ accounts: [...] }`, non `{ data: [...] }`.
     ['/api/bank-accounts', { accounts: [{ id: 'c1', name: 'Weiss' }] }],
     ['/api/banca/sincronizzazione', { conti: [] }],
@@ -221,5 +236,74 @@ describe('EstrattoConto', () => {
     await cliccare(document.querySelector('tbody [role="checkbox"]'))
     await attendiChe(() => testoDellaPagina().includes('1 selezionato'), 'la barra')
     expect(perTesto(/tutte le 231/)).toBeTruthy()
+
+    // La selezione «di tutto il filtro» è un'altra cosa dalla selezione delle
+    // righe visibili, e la barra deve dirlo.
+    await cliccare(perTesto(/tutte le 231/))
+    await attendiChe(
+      () => testoDellaPagina().includes('Tutte le 231 righe del filtro sono selezionate'),
+      'la selezione estesa a tutto il filtro'
+    )
+
+    // Cambiata la scheda, quelle 231 righe non sono più le stesse: la barra
+    // sparisce invece di restare a promettere un'azione sul vecchio insieme.
+    await premereScheda(perTesto('Cestino', '[role="tab"]'))
+    await attendiChe(
+      () =>
+        !testoDellaPagina().includes('righe del filtro sono selezionate') &&
+        !testoDellaPagina().includes('selezionato'),
+      'la barra sparita'
+    )
+  })
+
+  // Il caso vero: si digita «banca » e si continua a scrivere. La casella
+  // mandava al padre il testo ripulito e poi si riallineava a quello,
+  // riscrivendosi da sé e mangiando la lettera appena battuta («bancadella»).
+  it('uno spazio finale non fa riscrivere la casella di ricerca', async () => {
+    stubTutto()
+    await montare(<EstrattoConto venueId="v1" filtriIniziali={FILTRI_DEFAULT} />)
+    await attendiChe(() => testoDellaPagina().includes('DITTA 1'), 'le righe')
+
+    await scrivere(campoRicerca(), 'banca ')
+    await attendiChe(
+      () => richiesteLista().some((u) => u.includes('search=banca') && !u.includes('search=banca+')),
+      'la ricerca ripulita al server',
+      200
+    )
+
+    expect(campoRicerca()?.value).toBe('banca ')
+  })
+
+  it('una scheda vuota senza filtri dice come si riempie, non parla di filtri', async () => {
+    stubTutto(VUOTA)
+    await montare(
+      <EstrattoConto venueId="v1" filtriIniziali={{ ...FILTRI_DEFAULT, sezione: 'DELEGHE_F24' }} />
+    )
+    await attendiChe(
+      () => testoDellaPagina().includes('Nessun movimento in questa scheda'),
+      'lo stato vuoto della scheda'
+    )
+
+    const testo = testoDellaPagina()
+    expect(testo).toContain('menu azioni di una riga')
+    expect(testo).not.toContain('corrisponde ai filtri')
+    expect(testo).not.toContain('Collega la banca')
+  })
+
+  it('«Cancella filtri» pulisce i filtri e lascia la scheda dov\'è', async () => {
+    stubTutto(VUOTA)
+    await montare(
+      <EstrattoConto
+        venueId="v1"
+        filtriIniziali={{ ...FILTRI_DEFAULT, sezione: 'DELEGHE_F24', tipo: 'uscite' }}
+      />
+    )
+    await attendiChe(() => testoDellaPagina().includes('corrisponde ai filtri'), 'il vuoto filtrato')
+
+    await cliccare(perTesto('Cancella filtri'))
+    await attendiChe(
+      () => richiesteLista().some((u) => u.includes('sezione=DELEGHE_F24') && !u.includes('tipo=')),
+      'la scheda conservata senza il filtro tipo'
+    )
   })
 })

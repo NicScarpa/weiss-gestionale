@@ -40,6 +40,33 @@ async function leggiLista(filtri: Filtri): Promise<RispostaEstrattoConto> {
 
 const memoria = () => (typeof window === 'undefined' ? null : window.localStorage)
 
+/**
+ * Ciò che restringe la lista, col valore che ha quando non restringe nulla.
+ *
+ * Non ci sono `sezione` e `cestino`: la scheda non è un filtro ma il posto in
+ * cui si sta, e «Cancella filtri» non deve spostare chi legge da un'altra
+ * parte. Fuori restano anche ordinamento, pagina e righe per pagina, che non
+ * nascondono nessuna riga.
+ *
+ * L'elenco è uno solo perché le due domande — «ci sono filtri?» e «togli i
+ * filtri» — devono rispondere sulle stesse voci: tenute separate, prima o poi
+ * una delle due si dimentica di un campo.
+ */
+const FILTRI_PULITI = {
+  search: undefined,
+  tipo: FILTRI_DEFAULT.tipo,
+  bankAccountId: undefined,
+  soloNonRiconciliati: FILTRI_DEFAULT.soloNonRiconciliati,
+  dateFrom: undefined,
+  dateTo: undefined,
+  status: undefined,
+} satisfies Partial<Filtri>
+
+function ciSonoFiltri(filtri: Filtri): boolean {
+  const campi = Object.keys(FILTRI_PULITI) as Array<keyof typeof FILTRI_PULITI>
+  return campi.some((campo) => filtri[campo] !== FILTRI_PULITI[campo])
+}
+
 export function EstrattoConto({ venueId, filtriIniziali, onFiltriChange }: EstrattoContoProps) {
   // Le righe per pagina vengono dal browser al primo montaggio, se l'URL non le dice.
   const [filtri, impostaFiltri] = useState<Filtri>(() => ({
@@ -61,10 +88,11 @@ export function EstrattoConto({ venueId, filtriIniziali, onFiltriChange }: Estra
 
   const cambiaFiltri = (parziali: Partial<Filtri>) => applica({ ...filtri, ...parziali })
 
-  // Azzerare è sostituire, non fondere: i campi facoltativi (ricerca, date,
-  // conto) non esistono come chiavi in `FILTRI_DEFAULT`, quindi uno spread
-  // sopra i filtri correnti li lascerebbe dov'erano.
-  const azzeraFiltri = () => applica({ ...FILTRI_DEFAULT, limit: filtri.limit })
+  // I campi facoltativi (ricerca, date, conto) non esistono come chiavi in
+  // `FILTRI_DEFAULT` — zod omette gli `optional` assenti — quindi uno spread di
+  // quello non li cancellerebbe: vanno nominati, ed è ciò che fa `FILTRI_PULITI`.
+  // La scheda, l'ordinamento e le righe per pagina restano dove sono.
+  const azzeraFiltri = () => applica({ ...filtri, ...FILTRI_PULITI, page: 1 })
 
   const { data, isPending, isFetching, isError } = useQuery({
     queryKey: [...CHIAVE_QUERY_ESTRATTO, venueId, filtri],
@@ -84,15 +112,10 @@ export function EstrattoConto({ venueId, filtriIniziali, onFiltriChange }: Estra
 
   const righe = data?.data ?? []
   const totale = data?.pagination.total ?? 0
-  // Un filtro «attivo» è qualunque scostamento dai default che restringe la
-  // lista: l'ordinamento e le righe per pagina non lo sono, e senza toglierli
-  // il vuoto racconterebbe la storia sbagliata.
-  const filtriAttivi = useMemo(
-    () =>
-      JSON.stringify({ ...filtri, page: 1, limit: 0, ordina: 0, verso: 0 }) !==
-      JSON.stringify({ ...FILTRI_DEFAULT, page: 1, limit: 0, ordina: 0, verso: 0 }),
-    [filtri]
-  )
+  // Senza questa distinzione il vuoto racconta la storia sbagliata: «non c'è
+  // nulla» davanti a un filtro che nasconde tutto manda a cercare un guasto
+  // che non c'è, e un Cestino vuoto invita a collegare la banca.
+  const filtriAttivi = useMemo(() => ciSonoFiltri(filtri), [filtri])
 
   return (
     <div className="space-y-4">
@@ -117,7 +140,12 @@ export function EstrattoConto({ venueId, filtriIniziali, onFiltriChange }: Estra
         />
       </div>
       {!isPending && righe.length === 0 ? (
-        <StatoVuoto filtriAttivi={filtriAttivi} onCancellaFiltri={azzeraFiltri} />
+        <StatoVuoto
+          filtriAttivi={filtriAttivi}
+          sezione={filtri.sezione}
+          nelCestino={filtri.cestino}
+          onCancellaFiltri={azzeraFiltri}
+        />
       ) : (
         <TabellaEstrattoConto
           righe={righe}

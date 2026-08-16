@@ -51,13 +51,17 @@ export function FiltriEstrattoConto({ filtri, onCambia, onCancellaFiltri }: Prop
   const ricercaDifferita = useDebounce(ricerca, 300)
   // Ultimo testo consegnato al padre: distingue «l'ho scritto io» da «i filtri
   // sono cambiati da fuori», che è ciò che rende innocua la sincronizzazione
-  // nei due versi.
-  const ultimaInviata = useRef(filtri.search ?? '')
+  // nei due versi. Ci si scrive il testo **ripulito**, lo stesso che va nei
+  // filtri: segnandoci quello grezzo, uno spazio finale bastava a far credere
+  // che il cambiamento venisse da fuori, e la casella si riscriveva da sé
+  // mangiando la lettera appena digitata.
+  const ultimaInviata = useRef((filtri.search ?? '').trim())
 
   useEffect(() => {
-    if (ricercaDifferita === ultimaInviata.current) return
-    ultimaInviata.current = ricercaDifferita
-    onCambia({ search: ricercaDifferita.trim() || undefined, page: 1 })
+    const ripulita = ricercaDifferita.trim()
+    if (ripulita === ultimaInviata.current) return
+    ultimaInviata.current = ripulita
+    onCambia({ search: ripulita || undefined, page: 1 })
     // `filtri` e `onCambia` cambiano identità a ogni render del padre: metterli
     // fra le dipendenze rifarebbe partire il timer a ogni giro.
     // eslint-disable-next-line react-hooks/exhaustive-deps
