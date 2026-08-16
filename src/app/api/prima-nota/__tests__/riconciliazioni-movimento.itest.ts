@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { randomUUID } from 'crypto'
 import { prisma } from '@/lib/prisma'
 import { setupIntegrationDb } from '@/test/integration/db'
-import { loginAs } from '@/test/integration/auth-mock'
+import { entraCome } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
 import { creaMovimento, creaScadenza } from '@/test/integration/fixtures/scadenzario'
 import { GET as GET_riconciliazioni } from '@/app/api/prima-nota/[id]/riconciliazioni/route'
@@ -21,7 +21,9 @@ import { DELETE as DELETE_riconciliazione } from '@/app/api/scadenzario/[id]/ric
 setupIntegrationDb()
 
 beforeEach(async () => {
-  await loginAs('admin')
+  // `entraCome` e non `loginAs`: gli utenti del seed nascono con
+  // mustChangePassword, e withAuth risponde 403 finché il flag è alzato.
+  await entraCome('admin')
 })
 
 interface RigaRiconciliazione {
@@ -33,7 +35,9 @@ interface RigaRiconciliazione {
 }
 
 function elenca(journalEntryId: string) {
-  return callRoute<{ riconciliazioni: RigaRiconciliazione[] }>(
+  // Due parametri di tipo: chi scrive il tipo del corpo deve dichiarare anche
+  // quello dei params, o `P` cade sul default vuoto (vedi callRoute).
+  return callRoute<{ riconciliazioni: RigaRiconciliazione[] }, { id: string }>(
     GET_riconciliazioni,
     jsonRequest(`/api/prima-nota/${journalEntryId}/riconciliazioni`),
     { id: journalEntryId }
@@ -41,7 +45,7 @@ function elenca(journalEntryId: string) {
 }
 
 function riconcilia(scheduleId: string, journalEntryId: string) {
-  return callRoute<{ id: string }>(
+  return callRoute<{ id: string }, { id: string }>(
     POST_riconciliazione,
     jsonRequest(`/api/scadenzario/${scheduleId}/riconciliazioni`, {
       method: 'POST',
@@ -128,7 +132,7 @@ describe('GET /api/prima-nota/[id]/riconciliazioni', () => {
 
   it('nega l\'elenco a chi non è admin o manager', async () => {
     const movimento = await creaMovimento({ uscita: 100 })
-    await loginAs('staff')
+    await entraCome('staff')
 
     const esito = await elenca(movimento.id)
 
