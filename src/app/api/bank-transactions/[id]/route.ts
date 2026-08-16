@@ -143,18 +143,19 @@ export async function DELETE(
       )
     }
 
-    // Non permettere eliminazione di transazioni già riconciliate
-    if (transaction.status === 'MATCHED' || transaction.status === 'MANUAL') {
+    // Una riga con una scrittura collegata non si cestina: prima si scollega,
+    // altrimenti la scrittura resterebbe appesa a un movimento invisibile.
+    if (transaction.matchedEntryId) {
       return NextResponse.json(
-        { error: 'Non è possibile eliminare una transazione già riconciliata' },
-        { status: 400 }
+        { error: 'Il movimento ha una scrittura collegata: prima scollegala, poi spostalo nel Cestino' },
+        { status: 409 }
       )
     }
 
     // Cancellazione logica (tracciabilità dei movimenti bancari)
     await prisma.bankTransaction.update({
       where: { id },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: new Date(), deletedById: session.user.id },
     })
 
     return NextResponse.json({ success: true })

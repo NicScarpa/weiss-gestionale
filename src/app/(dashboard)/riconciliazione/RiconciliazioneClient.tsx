@@ -162,18 +162,6 @@ export function RiconciliazioneClient() {
     refetch()
   }
 
-  const handleIgnore = async (id: string) => {
-    const res = await fetch(`/api/bank-transactions/${id}/ignore`, {
-      method: 'POST',
-    })
-    if (!res.ok) {
-      const data = await res.json()
-      throw new Error(data.error || 'Errore nell\'ignorare')
-    }
-    toast.success('Transazione ignorata')
-    refetch()
-  }
-
   const handleUnmatch = async (id: string) => {
     const res = await fetch(`/api/bank-transactions/${id}/unmatch`, {
       method: 'POST',
@@ -277,7 +265,6 @@ export function RiconciliazioneClient() {
         transactions={transactions}
         loading={loading}
         onConfirm={handleConfirm}
-        onIgnore={handleIgnore}
         onUnmatch={handleUnmatch}
         onMatch={(id) => setMatchTransactionId(id)}
         onViewDetails={(id) => setDetailsTransactionId(id)}

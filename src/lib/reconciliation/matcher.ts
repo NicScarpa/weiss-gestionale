@@ -398,35 +398,11 @@ export async function manualMatch(
 }
 
 /**
- * Ignora una transazione (non richiede match).
+ * Annulla un match (torna a PENDING).
  *
  * Restituisce `false` se la transazione non esiste più: l'aggiornamento è
  * condizionato, così una transazione cancellata non viene toccata e il
  * chiamante può rispondere "non trovata" invece di un guasto del server.
- */
-export async function ignoreTransaction(
-  transactionId: string,
-  userId: string
-): Promise<boolean> {
-  const aggiornate = await prisma.bankTransaction.updateMany({
-    where: { id: transactionId },
-    data: {
-      status: 'IGNORED',
-      matchedEntryId: null,
-      matchConfidence: null,
-      reconciledBy: userId,
-      reconciledAt: new Date(),
-    },
-  })
-
-  return aggiornate.count > 0
-}
-
-/**
- * Annulla un match (torna a PENDING).
- *
- * Vale la stessa nota di `ignoreTransaction`: `false` quando la transazione non
- * c'è più.
  */
 export async function unmatch(transactionId: string): Promise<boolean> {
   const aggiornate = await prisma.bankTransaction.updateMany({

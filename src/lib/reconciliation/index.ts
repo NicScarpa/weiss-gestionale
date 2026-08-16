@@ -5,7 +5,6 @@ export {
   reconcileVenueTransactions,
   confirmMatch,
   manualMatch,
-  ignoreTransaction,
   unmatch,
 } from './matcher'
 

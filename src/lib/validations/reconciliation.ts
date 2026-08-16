@@ -54,6 +54,23 @@ export const matchTransactionSchema = z.object({
   journalEntryId: z.string().min(1),
 })
 
+// Sposta in: la scheda in cui la riga si vede (spec, decisione 5).
+export const sezioneMovimentoSchema = z.enum(['ATTIVI', 'DELEGHE_F24', 'CBILL_PAGOPA'])
+export const spostaSezioneSchema = z.object({ sezione: sezioneMovimentoSchema })
+
+// Le azioni in blocco viaggiano per elenco di id **o** per filtro (le stesse
+// chiavi dell'URL della lista): «seleziona tutte le 231 del filtro» non deve
+// dipendere da cosa il client credeva di aver selezionato.
+export const azioniInBloccoSchema = z
+  .object({
+    azione: z.enum(['sposta', 'cestino', 'ripristina']),
+    sezione: sezioneMovimentoSchema.optional(),
+    ids: z.array(z.string().min(1)).min(1).max(1000).optional(),
+    filtro: z.record(z.string(), z.string()).optional(),
+  })
+  .refine((v) => !!v.ids !== !!v.filtro, { message: 'Indica ids oppure filtro, non entrambi' })
+  .refine((v) => v.azione !== 'sposta' || !!v.sezione, { message: 'Per spostare serve la sezione' })
+
 // Creazione movimento dalla transazione
 export const createEntryFromTransactionSchema = z.object({
   accountId: z.string().min(1),
