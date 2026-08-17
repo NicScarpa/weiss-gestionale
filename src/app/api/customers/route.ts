@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 
 import { logger } from '@/lib/logger'
+import { lookupHash } from '@/lib/encryption'
 
 // Schema validazione
 const customerSchema = z.object({
@@ -17,7 +18,9 @@ const customerSchema = z.object({
   provincia: z.string().optional().nullable(),
   email: z.string().email('Email non valida').optional().nullable(),
   telefono: z.string().optional().nullable(),
+  paese: z.string().optional().nullable(),
   iban: z.string().optional().nullable(),
+  paymentTermsDays: z.number().int().min(0).max(365).optional().nullable(),
   note: z.string().optional().nullable(),
   defaultAccountId: z.string().optional().nullable(),
   attivo: z.boolean().default(true),
@@ -51,10 +54,14 @@ export async function GET(request: NextRequest) {
     }
 
     if (query) {
+      // Il codice fiscale è cifrato: cercarlo con `contains` significa cercare
+      // dentro il testo cifrato, cioè non trovarlo mai — ed era proprio quello
+      // che faceva questa rotta, senza dirlo a nessuno. Sull'hash di lookup la
+      // ricerca è per uguaglianza, quindi vale solo per il codice intero.
       where.OR = [
         { denominazione: { contains: query, mode: 'insensitive' } },
         { partitaIva: { contains: query, mode: 'insensitive' } },
-        { codiceFiscale: { contains: query, mode: 'insensitive' } },
+        { codiceFiscaleHash: lookupHash(query.trim().toUpperCase()) },
       ]
     }
 
@@ -70,9 +77,11 @@ export async function GET(request: NextRequest) {
           citta: true,
           cap: true,
           provincia: true,
+          paese: true,
           email: true,
           telefono: true,
           iban: true,
+          paymentTermsDays: true,
           note: true,
           defaultAccountId: true,
           defaultAccount: {
@@ -131,9 +140,11 @@ export async function POST(request: NextRequest) {
       orConditions.push({ partitaIva: validatedData.partitaIva })
     }
 
-    // Se il Codice Fiscale è fornito, deve essere unico
+    // Se il Codice Fiscale è fornito, deve essere unico. Il confronto passa
+    // dall'hash: sul campo cifrato l'uguaglianza non combacia mai, e lo stesso
+    // soggetto poteva entrare in anagrafica quante volte si voleva.
     if (validatedData.codiceFiscale) {
-      orConditions.push({ codiceFiscale: validatedData.codiceFiscale })
+      orConditions.push({ codiceFiscaleHash: lookupHash(validatedData.codiceFiscale) })
     }
 
     // Controlliamo la combinazione Denominazione + (Indirizzo o Città)
@@ -180,9 +191,11 @@ export async function POST(request: NextRequest) {
         citta: validatedData.citta,
         cap: validatedData.cap,
         provincia: validatedData.provincia,
+        paese: validatedData.paese ?? 'IT',
         email: validatedData.email,
         telefono: validatedData.telefono,
         iban: validatedData.iban,
+        paymentTermsDays: validatedData.paymentTermsDays,
         note: validatedData.note,
         defaultAccountId: validatedData.defaultAccountId,
         attivo: validatedData.attivo,
@@ -254,9 +267,13 @@ export async function PUT(request: NextRequest) {
         ...(validatedData.citta !== undefined && { citta: validatedData.citta }),
         ...(validatedData.cap !== undefined && { cap: validatedData.cap }),
         ...(validatedData.provincia !== undefined && { provincia: validatedData.provincia }),
+        ...(validatedData.paese !== undefined && { paese: validatedData.paese }),
         ...(validatedData.email !== undefined && { email: validatedData.email }),
         ...(validatedData.telefono !== undefined && { telefono: validatedData.telefono }),
         ...(validatedData.iban !== undefined && { iban: validatedData.iban }),
+        ...(validatedData.paymentTermsDays !== undefined && {
+          paymentTermsDays: validatedData.paymentTermsDays,
+        }),
         ...(validatedData.note !== undefined && { note: validatedData.note }),
         ...(validatedData.defaultAccountId !== undefined && { defaultAccountId: validatedData.defaultAccountId }),
         ...(validatedData.attivo !== undefined && { attivo: validatedData.attivo }),

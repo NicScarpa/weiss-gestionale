@@ -22,6 +22,7 @@ const SENSITIVE_FIELDS: Record<string, string[]> = {
  */
 const HASH_FIELDS: Record<string, Record<string, string>> = {
   Supplier: { fiscalCode: 'fiscalCodeHash' },
+  Customer: { codiceFiscale: 'codiceFiscaleHash' },
   BankAccount: { iban: 'ibanHash' },
 }
 
