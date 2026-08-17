@@ -9,7 +9,8 @@ import {
   rileggiScadenza,
 } from '@/test/integration/fixtures/scadenzario'
 import { saldiAlGiorno } from '@/lib/saldi'
-import { approvaProposta } from '../reconciliation-decision-service'
+import { approvaProposta, scartaProposta } from '../reconciliation-decision-service'
+import { generaLotto } from '../reconciliation-batch-service'
 
 /**
  * L'approvazione di una proposta, su database vero.
@@ -431,6 +432,181 @@ describe('approvaProposta', () => {
       proposalId: proposta.id,
       venueId: 'sede-di-qualcun-altro',
       userId: utente.id,
+    })
+
+    expect(esito).toEqual({ outcome: 'proposta_non_trovata' })
+    expect((await rileggiProposta(proposta.id)).stato).toBe('in_attesa')
+  })
+})
+
+/**
+ * Lo scarto di una proposta, su database vero.
+ *
+ * Spec: docs/superpowers/specs/2026-08-13-riconciliazione-assistita-design.md,
+ * «Lo scarto ha due porte». *Salta per ora* segna la proposta e basta; *non
+ * propormelo mai più* scrive anche la coppia in `ReconciliationExclusion`, che
+ * è ciò che impedisce a un lotto rigenerato di riproporre lo stesso falso
+ * positivo.
+ */
+describe('scartaProposta', () => {
+  it('«salta per ora» marca la proposta scartata e non scrive esclusioni', async () => {
+    const { venue, lotto, proposta } = await lottoConUnaProposta()
+    const utente = await utenteDiTest()
+    const prima = Date.now()
+
+    const esito = await scartaProposta({
+      proposalId: proposta.id,
+      venueId: venue.id,
+      userId: utente.id,
+      perSempre: false,
+    })
+
+    expect(esito).toEqual({ outcome: 'ok' })
+
+    const dopo = await rileggiProposta(proposta.id)
+    expect(dopo.stato).toBe('scartata')
+    expect(dopo.decisoDaId).toBe(utente.id)
+    expect(dopo.decisoAt).not.toBeNull()
+    expect(dopo.decisoAt!.getTime()).toBeGreaterThanOrEqual(prima - 1000)
+
+    const lottoDopo = await prisma.reconciliationBatch.findUniqueOrThrow({ where: { id: lotto.id } })
+    expect(lottoDopo.contaScartate).toBe(1)
+
+    // «Salta per ora»: non è la seconda porta, e non deve lasciare traccia in
+    // ReconciliationExclusion.
+    expect(await prisma.reconciliationExclusion.count({ where: { venueId: venue.id } })).toBe(0)
+  })
+
+  it('«non propormelo mai più» scrive anche la coppia in ReconciliationExclusion', async () => {
+    const { venue, movimento, scadenza, proposta } = await lottoConUnaProposta()
+    const utente = await utenteDiTest()
+
+    const esito = await scartaProposta({
+      proposalId: proposta.id,
+      venueId: venue.id,
+      userId: utente.id,
+      perSempre: true,
+      motivo: 'Non è mai questo fornitore su questo conto',
+    })
+
+    expect(esito).toEqual({ outcome: 'ok' })
+
+    const dopo = await rileggiProposta(proposta.id)
+    expect(dopo.stato).toBe('scartata')
+
+    const esclusioni = await prisma.reconciliationExclusion.findMany({ where: { venueId: venue.id } })
+    expect(esclusioni).toHaveLength(1)
+    expect(esclusioni[0].bankTransactionId).toBe(movimento.id)
+    expect(esclusioni[0].scheduleId).toBe(scadenza.id)
+    expect(esclusioni[0].motivo).toBe('Non è mai questo fornitore su questo conto')
+    expect(esclusioni[0].createdById).toBe(utente.id)
+  })
+
+  it('la coppia esclusa non ricompare in un lotto rigenerato', async () => {
+    // Senza questo, ogni rilancio ripropone gli stessi falsi positivi ed è il
+    // motivo per cui la seconda porta esiste. A differenza degli altri test di
+    // questo file, qui la proposta nasce da `generaLotto` per davvero — è
+    // l'unico modo di provare che il motore la rilegge, non solo che
+    // `scartaProposta` scrive la riga giusta.
+    const venue = await venueDiTest()
+    const fornitore = await fornitoreDiTest()
+    const conto = await contoBancario(venue.id)
+    const movimento = await rigaBanca(venue.id, conto.id, 120)
+    await creaScadenza({
+      venueId: venue.id,
+      tipo: 'passiva',
+      importoTotale: 120,
+      supplierId: fornitore.id,
+      numeroDocumento: 'FT 12',
+      controparteNome: 'ROSSI SRL',
+      dataScadenza: new Date('2026-08-09'),
+    })
+    const utente = await utenteDiTest()
+    const periodo = { dateFrom: new Date('2026-08-01'), dateTo: new Date('2026-08-31') }
+
+    const primoLotto = await generaLotto({ venueId: venue.id, regole: ['R1', 'R2', 'R3'], userId: null, ...periodo })
+    expect(primoLotto.contaProposte).toBe(1)
+    const [propostaGenerata] = await prisma.reconciliationProposal.findMany({
+      where: { batchId: primoLotto.batchId },
+    })
+
+    const esito = await scartaProposta({
+      proposalId: propostaGenerata.id,
+      venueId: venue.id,
+      userId: utente.id,
+      perSempre: true,
+    })
+    expect(esito).toEqual({ outcome: 'ok' })
+
+    const secondoLotto = await generaLotto({ venueId: venue.id, regole: ['R1', 'R2', 'R3'], userId: null, ...periodo })
+
+    expect(secondoLotto.contaProposte).toBe(0)
+    expect(
+      await prisma.reconciliationProposal.count({
+        where: { batchId: secondoLotto.batchId, bankTransactionId: movimento.id },
+      })
+    ).toBe(0)
+  })
+
+  it('un\'esclusione identica già scritta non fa fallire lo scarto, e non duplica la riga', async () => {
+    // Non esiste un vincolo di unicità su `reconciliation_exclusions`
+    // (schema, `@@index` non `@@unique`): l'idempotenza la garantisce il
+    // servizio, verificando prima di scrivere.
+    const { venue, movimento, scadenza, proposta } = await lottoConUnaProposta()
+    const utente = await utenteDiTest()
+    await prisma.reconciliationExclusion.create({
+      data: { venueId: venue.id, bankTransactionId: movimento.id, scheduleId: scadenza.id, createdById: utente.id },
+    })
+
+    const esito = await scartaProposta({
+      proposalId: proposta.id,
+      venueId: venue.id,
+      userId: utente.id,
+      perSempre: true,
+    })
+
+    expect(esito).toEqual({ outcome: 'ok' })
+    expect(
+      await prisma.reconciliationExclusion.count({
+        where: { venueId: venue.id, bankTransactionId: movimento.id, scheduleId: scadenza.id },
+      })
+    ).toBe(1)
+  })
+
+  it('una proposta già decisa non si scarta due volte', async () => {
+    const { venue, proposta } = await lottoConUnaProposta()
+    const utente = await utenteDiTest()
+
+    const primo = await scartaProposta({
+      proposalId: proposta.id,
+      venueId: venue.id,
+      userId: utente.id,
+      perSempre: false,
+    })
+    expect(primo).toEqual({ outcome: 'ok' })
+
+    const secondo = await scartaProposta({
+      proposalId: proposta.id,
+      venueId: venue.id,
+      userId: utente.id,
+      perSempre: false,
+    })
+    expect(secondo).toEqual({ outcome: 'gia_decisa', stato: 'scartata' })
+
+    const lottoDopo = await prisma.reconciliationBatch.findUniqueOrThrow({ where: { id: (await rileggiProposta(proposta.id)).batchId } })
+    // La seconda chiamata non deve incrementare di nuovo il contatore.
+    expect(lottoDopo.contaScartate).toBe(1)
+  })
+
+  it('una proposta di un\'altra sede non si trova', async () => {
+    const { proposta } = await lottoConUnaProposta()
+    const utente = await utenteDiTest()
+
+    const esito = await scartaProposta({
+      proposalId: proposta.id,
+      venueId: 'sede-di-qualcun-altro',
+      userId: utente.id,
+      perSempre: false,
     })
 
     expect(esito).toEqual({ outcome: 'proposta_non_trovata' })
