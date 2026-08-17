@@ -24,6 +24,9 @@ const userFormSchema = z.object({
   venueId: z.string().optional(),
   isFixedStaff: z.boolean(),
   isActive: z.boolean(),
+  // Presente solo quando chi crea l'utente ha corretto la proposta; il server
+  // lo valida e, se manca, lo genera.
+  username: z.string().optional(),
 })
 
 type UserFormData = z.infer<typeof userFormSchema>
@@ -81,7 +84,6 @@ export function UserForm({ mode, initialData, onSubmit, onCancel }: UserFormProp
   const lastName = useWatch({ control, name: 'lastName' })
   const selectedRole = useWatch({ control, name: 'role' })
   const isFixedStaff = useWatch({ control, name: 'isFixedStaff' })
-  const email = useWatch({ control, name: 'email' })
   const venueId = useWatch({ control, name: 'venueId' })
   const isActive = useWatch({ control, name: 'isActive' })
 
@@ -111,23 +113,29 @@ export function UserForm({ mode, initialData, onSubmit, onCancel }: UserFormProp
     fetchData()
   }, [])
 
-  // Anteprima dello username: dipende solo da ciò che c'è nel form, quindi si
-  // calcola qui invece di tenerla in uno stato riallineato da un effetto.
-  const previewUsername = (() => {
-    if (mode !== 'create') return ''
-    if (selectedRole === 'staff' && firstName && lastName) {
-      return generateUsername(firstName, lastName)
-    }
-    if (selectedRole === 'admin' || selectedRole === 'manager') {
-      return email || ''
-    }
-    return ''
-  })()
+  // Lo username proposto: dipende solo da ciò che c'è nel form, quindi si
+  // calcola qui invece di tenerlo in uno stato riallineato da un effetto. Vale
+  // per **tutti** i ruoli: fino al 17 agosto 2026 admin e manager prendevano
+  // l'email, ed era una seconda regola per la stessa cosa.
+  const usernameProposto =
+    mode === 'create' && firstName && lastName ? generateUsername(firstName, lastName) : ''
+
+  // `null` finché nessuno tocca il campo: è ciò che distingue «segue nome e
+  // cognome» da «l'ha scelto una persona». Senza questa distinzione, correggere
+  // il cognome dopo aver scelto lo username cancellerebbe la scelta senza
+  // dirlo — o, all'opposto, il campo resterebbe fermo sul primo nome digitato.
+  const [usernameScelto, setUsernameScelto] = useState<string | null>(null)
+  const usernameEffettivo = usernameScelto ?? usernameProposto
 
   const handleFormSubmit = async (data: UserFormData) => {
     setIsSubmitting(true)
     try {
-      await onSubmit(data)
+      // Lo username viaggia solo alla creazione, e solo se è stato scelto a
+      // mano: lasciandolo fuori, è il server a generarlo — così la regola vive
+      // in un posto solo invece di essere ricopiata qui.
+      await onSubmit(
+        mode === 'create' && usernameScelto ? { ...data, username: usernameScelto } : data
+      )
     } catch (error) {
       if (error instanceof Error) {
         setError('root', { message: error.message })
@@ -238,14 +246,22 @@ export function UserForm({ mode, initialData, onSubmit, onCancel }: UserFormProp
               </div>
             </div>
 
-            {/* Anteprima username (solo creazione) */}
-            {mode === 'create' && previewUsername && (
-              <div className="p-3 bg-muted rounded-md">
+            {/* Username (solo creazione): proposto, ma correggibile — nei casi
+                veri chi conosce le persone sceglie meglio di una regola. */}
+            {mode === 'create' && (
+              <div className="space-y-2">
+                <Label htmlFor="username">Username</Label>
+                <Input
+                  id="username"
+                  value={usernameEffettivo}
+                  onChange={(e) => setUsernameScelto(e.target.value)}
+                  placeholder="cognome.nome"
+                  className="font-mono"
+                />
                 <p className="text-sm text-muted-foreground">
-                  Username che verrà generato:{' '}
-                  <code className="font-mono bg-background px-1.5 py-0.5 rounded">
-                    {previewUsername}
-                  </code>
+                  Si compila da sé da nome e cognome. Si può correggere: lettere e cifre
+                  minuscole separate da punti. È il nome con cui la persona accede — insieme
+                  alla sua email.
                 </p>
               </div>
             )}

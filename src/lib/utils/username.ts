@@ -121,6 +121,38 @@ export async function generateUniqueUsername(
   return `${baseUsername}${suffix}`
 }
 
+/** Lunghezze ammesse per uno username scelto a mano. */
+const USERNAME_MIN = 3
+const USERNAME_MAX = 40
+
+/**
+ * Ripulisce quello che arriva dal campo: spazi ai bordi e minuscolo, niente
+ * altro.
+ *
+ * Normalizzare più di così — togliere gli spazi interni, sostituire i caratteri
+ * strani — consegnerebbe all'utente uno username **diverso** da quello che ha
+ * scritto senza dirglielo, e la chiave d'accesso è l'ultimo posto dove fare
+ * correzioni silenziose. Quello che resta sbagliato viene rifiutato da
+ * `usernameValido`, e chi lo ha scritto lo corregge.
+ */
+export function normalizzaUsernameScelto(input: string): string {
+  return input.trim().toLowerCase()
+}
+
+/**
+ * Uno username scritto a mano è accettabile se si può dettare a voce e non
+ * assomiglia a un percorso o a un indirizzo: solo lettere e cifre minuscole,
+ * separate al più da punti singoli, mai in apertura o chiusura.
+ *
+ * I due account di sistema (`admin@weisscafe.it`) non passerebbero questo
+ * controllo, ed è voluto: esistono da prima e non si creano più così.
+ */
+export function usernameValido(username: string): boolean {
+  if (username.length < USERNAME_MIN || username.length > USERNAME_MAX) return false
+
+  return /^[a-z0-9]+(\.[a-z0-9]+)*$/.test(username)
+}
+
 /** Una riga del piano di migrazione: o si rinomina, o si salta con un motivo. */
 export type RigaMigrazioneUsername =
   | { id: string; azione: 'rinomina'; da: string; a: string }
@@ -195,16 +227,3 @@ export function pianificaMigrazioneUsername(
   })
 }
 
-/**
- * Genera username per admin/manager (usa email)
- */
-export function generateAdminUsername(email: string): string {
-  return email.toLowerCase()
-}
-
-/**
- * Determina se un utente deve usare email o username generato
- */
-export function shouldUseEmailAsUsername(role: string): boolean {
-  return role === 'admin' || role === 'manager'
-}
