@@ -203,18 +203,27 @@ export function UserForm({ mode, initialData, onSubmit, onCancel }: UserFormProp
               {/* Email */}
               <div className="space-y-2">
                 <Label htmlFor="email">
-                  Email {selectedRole !== 'staff' && '*'}
+                  {selectedRole === 'staff' ? 'Email personale' : 'Email aziendale *'}
                 </Label>
                 <Input
                   id="email"
                   type="email"
                   {...register('email')}
                   disabled={isSubmitting}
-                  placeholder="mario.rossi@email.com"
+                  placeholder={
+                    selectedRole === 'staff'
+                      ? 'mario.rossi@gmail.com'
+                      : 'mario.rossi@weisscafe.com'
+                  }
                 />
                 {errors.email && (
                   <p className="text-sm text-destructive">{errors.email.message}</p>
                 )}
+                <p className="text-xs text-muted-foreground">
+                  {selectedRole === 'staff'
+                    ? 'Serve a ricevere le credenziali e a recuperare la password. Indica un indirizzo che la persona legge davvero: senza email potrà essere sbloccata solo da un amministratore.'
+                    : 'Deve corrispondere a una casella esistente, altrimenti il recupero password non arriva.'}
+                </p>
               </div>
 
               {/* Telefono */}
