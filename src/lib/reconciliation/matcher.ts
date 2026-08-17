@@ -77,9 +77,15 @@ export function daysDifference(date1: Date, date2: Date): number {
 }
 
 /**
- * Calcola il confidence score per un match tra transazione bancaria e movimento prima nota
+ * Calcola il confidence score per un match tra transazione bancaria e movimento
+ * prima nota.
+ *
+ * Da qui in giù — punteggio, ricerca dei candidati, soglia di stato — è tutto
+ * materiale interno di `reconcileVenueTransactions`: non è più esportato perché
+ * dopo la coda assistita nessuno fuori di qui ha ragione di chiamarlo, e un
+ * export senza chiamanti è un invito a costruirci sopra.
  */
-export function calculateMatchScore(bankTx: BankTx, entry: JournalEntry): number {
+function calculateMatchScore(bankTx: BankTx, entry: JournalEntry): number {
   let score = 0
 
   // 1. Match importo (40% peso)
@@ -135,7 +141,7 @@ export function calculateMatchScore(bankTx: BankTx, entry: JournalEntry): number
 /**
  * Trova i migliori candidati per il match di una transazione bancaria
  */
-export async function findMatchCandidates(
+async function findMatchCandidates(
   bankTransaction: BankTx,
   venueId: string,
   limit: number = 5
@@ -205,7 +211,7 @@ export async function findMatchCandidates(
 /**
  * Determina lo status di riconciliazione basato sul confidence score
  */
-export function getReconciliationStatus(confidence: number): ReconciliationStatus {
+function getReconciliationStatus(confidence: number): ReconciliationStatus {
   if (confidence >= MATCH_THRESHOLDS.AUTO_MATCH) {
     return 'MATCHED'
   } else if (confidence >= MATCH_THRESHOLDS.REVIEW) {
@@ -311,36 +317,4 @@ export async function reconcileVenueTransactions(
   return results
 }
 
-/**
- * Conferma un match suggerito (cambia status da TO_REVIEW a MATCHED)
- */
-export async function confirmMatch(
-  transactionId: string,
-  userId: string
-): Promise<void> {
-  const tx = await prisma.bankTransaction.findUnique({
-    where: { id: transactionId },
-  })
-
-  if (!tx) {
-    throw new Error('Transazione non trovata')
-  }
-
-  if (tx.status !== 'TO_REVIEW' && tx.status !== 'PENDING') {
-    throw new Error('Solo transazioni in revisione possono essere confermate')
-  }
-
-  if (!tx.matchedEntryId) {
-    throw new Error('Nessun match da confermare')
-  }
-
-  await prisma.bankTransaction.update({
-    where: { id: transactionId },
-    data: {
-      status: 'MATCHED',
-      reconciledBy: userId,
-      reconciledAt: new Date(),
-    },
-  })
-}
 

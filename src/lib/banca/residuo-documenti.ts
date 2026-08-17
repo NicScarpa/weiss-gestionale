@@ -41,9 +41,13 @@ export async function bloccaRigaBancaria(tx: TransactionClient, journalEntryId: 
  * (promozione, `riconciliaInTransazione`, `annullaRiconciliazioneInTransazione`)
  * se l'è già preso (`bloccaRigaBancaria` qui sopra, in testa alla riconciliazione
  * e all'annullo; la promozione blocca la riga per id ancora prima di leggerla).
- * Ma il vecchio auto-match (`src/lib/reconciliation/matcher.ts`) la chiama col
- * client normale, fuori transazione: lì l'`UPDATE` in autocommit tiene un lock
- * solo e lo rilascia subito, nessun incrocio possibile.
+ * Ma il vecchio auto-match (`reconcileVenueTransactions` in
+ * `src/lib/reconciliation/matcher.ts`) la chiama col client normale, fuori
+ * transazione: lì l'`UPDATE` in autocommit tiene un lock solo e lo rilascia
+ * subito, nessun incrocio possibile. Quella strada non ha più un ingresso
+ * dall'applicazione — la coda assistita ha preso il posto della
+ * riconciliazione automatica e la rotta `POST /api/reconciliation` è stata
+ * tolta — ma la funzione resta, e con lei questo caso.
  *
  * Restituisce il residuo scritto, `null` se nessuna riga viva è collegata (una
  * riga nel Cestino non può esserlo: il Cestino rifiuta le righe collegate).

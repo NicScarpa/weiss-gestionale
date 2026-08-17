@@ -22,6 +22,15 @@ export default defineConfig({
       exclude: [
         'src/lib/**/*.test.ts',
         'src/lib/**/*.spec.ts',
+        // I test d'integrazione girano con un'altra configurazione
+        // (`vitest.integration.config.ts`), quindi qui non vengono mai
+        // eseguiti: senza questa riga entravano nel denominatore con lo 0 %
+        // e ogni itest scritto *abbassava* la copertura. Sono 26 file e 6757
+        // righe, cioè abbastanza da far fallire il gate della CI per il solo
+        // fatto di aver aggiunto delle prove — che è l'incentivo rovesciato.
+        // `.test.ts` e `.spec.ts` erano già esclusi per la stessa ragione:
+        // `.itest.ts` è la grafia che era rimasta fuori.
+        'src/lib/**/*.itest.ts',
         'src/lib/prisma.ts',
       ],
       // Le soglie stavano scritte a mano nello script `test:coverage:ci`, in
