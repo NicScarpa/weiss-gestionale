@@ -57,18 +57,44 @@ async function rigaBanca(venueId: string, bankAccountId: string, importo: number
 }
 
 /**
+ * Tre scadenze già pagate dello stesso fornitore, con dieci giorni di ritardo
+ * ciascuna: è il campione minimo che `stimaRitardoFornitore` pretende
+ * (`STIMA_MIN_CAMPIONE = 3`) perché una stima esista. Senza, il ricalcolo
+ * girerebbe a vuoto e non lascerebbe traccia da osservare.
+ */
+async function storiaDiPagamenti(venueId: string, supplierId: string) {
+  for (const mese of ['04', '05', '06']) {
+    await creaScadenza({
+      venueId,
+      supplierId,
+      tipo: 'passiva',
+      stato: 'pagata',
+      importoTotale: 50,
+      importoPagato: 50,
+      dataScadenza: new Date(`2026-${mese}-01`),
+      dataPagamento: new Date(`2026-${mese}-11`),
+    })
+  }
+}
+
+/**
  * Un lotto con una proposta R1 pronta da approvare.
  *
  * Le righe si scrivono a mano perché non esiste una fixture: `generaLotto`
  * produrrebbe proposte solo se il motore trovasse davvero l'abbinamento, e
  * legare questi test al punteggio significherebbe vederli rossi al primo
  * ritocco dei pesi.
+ *
+ * Il fornitore porta una storia di pagamenti e una seconda scadenza aperta
+ * («sorella»): servono a rendere osservabile ciò che accade **fuori** dalla
+ * transazione, cioè `dopoLaRiconciliazione`.
  */
 async function lottoConUnaProposta(importo = 120) {
   const venue = await venueDiTest()
   const fornitore = await fornitoreDiTest()
   const conto = await contoBancario(venue.id)
   const movimento = await rigaBanca(venue.id, conto.id, importo)
+  await storiaDiPagamenti(venue.id, fornitore.id)
   const scadenza = await creaScadenza({
     venueId: venue.id,
     tipo: 'passiva',
@@ -77,6 +103,15 @@ async function lottoConUnaProposta(importo = 120) {
     numeroDocumento: 'FT 12',
     controparteNome: 'ROSSI SRL',
     dataScadenza: new Date('2026-08-09'),
+  })
+  // Aperta, dello stesso fornitore, senza alcuna data attesa: è la scadenza su
+  // cui si vedrà passare il ricalcolo delle stime.
+  const sorella = await creaScadenza({
+    venueId: venue.id,
+    tipo: 'passiva',
+    importoTotale: 90,
+    supplierId: fornitore.id,
+    dataScadenza: new Date('2026-09-30'),
   })
   const lotto = await prisma.reconciliationBatch.create({
     data: {
@@ -99,7 +134,7 @@ async function lottoConUnaProposta(importo = 120) {
     },
   })
 
-  return { venue, movimento, scadenza, lotto, proposta, importo }
+  return { venue, fornitore, movimento, scadenza, sorella, lotto, proposta, importo }
 }
 
 async function rileggiProposta(id: string) {
@@ -149,9 +184,30 @@ describe('approvaProposta', () => {
     })
     expect(riconciliazione.source).toBe('PROPOSAL')
     expect(riconciliazione.journalEntryId).toBe(esito.journalEntryId)
-    // `dopoLaRiconciliazione` gira fuori dalla transazione: il pagamento c'è
-    // solo se il servizio ha davvero eseguito le code.
+    // La riconciliazione ha generato il pagamento della scadenza (lo scrive
+    // `riconciliaInTransazione`, dentro la transazione).
     expect(riconciliazione.paymentId).not.toBeNull()
+  })
+
+  it('esegue le code fuori dalla transazione: le stime del fornitore si aggiornano', async () => {
+    const { venue, proposta, sorella } = await lottoConUnaProposta()
+    const utente = await utenteDiTest()
+
+    // Prima: nessuna data attesa, quindi il previsionale usa la contrattuale.
+    const prima = await rileggiScadenza(sorella.id)
+    expect(prima.dataAttesa).toBeNull()
+    expect(prima.dataAttesaSource).toBeNull()
+
+    await approvaProposta({ proposalId: proposta.id, venueId: venue.id, userId: utente.id })
+
+    // Dopo: il fornitore ha appena saldato un'altra fattura, e le sue scadenze
+    // ancora aperte portano la stima del ritardo tipico (dieci giorni, dalla
+    // storia costruita nel fixture). A scriverla è `ricalcolaStimeFornitore`,
+    // che gira **solo** dentro `dopoLaRiconciliazione`: se il ciclo dei
+    // `seguiti` sparisse, questa asserzione sarebbe l'unica ad accorgersene.
+    const dopo = await rileggiScadenza(sorella.id)
+    expect(dopo.dataAttesaSource).toBe('stima')
+    expect(dopo.dataAttesa?.toISOString().slice(0, 10)).toBe('2026-10-10')
   })
 
   it('la proposta passa a «approvata» e porta chi e quando', async () => {
@@ -259,6 +315,49 @@ describe('approvaProposta', () => {
 
     const lottoDopo = await prisma.reconciliationBatch.findUniqueOrThrow({ where: { id: lotto.id } })
     expect(lottoDopo.contaSuperate).toBe(1)
+  })
+
+  it('se la promozione rifiuta, la transazione cade per intero', async () => {
+    const { venue, movimento, fornitore, lotto } = await lottoConUnaProposta()
+    const utente = await utenteDiTest()
+    // Gamba da 200 su una riga bancaria da 120: la freschezza non ha nulla da
+    // ridire (il residuo della scadenza copre la gamba), è la promozione a
+    // fermarsi sul tetto dell'importo della riga.
+    const troppoGrande = await creaScadenza({
+      venueId: venue.id,
+      tipo: 'passiva',
+      importoTotale: 200,
+      supplierId: fornitore.id,
+    })
+    const proposta = await prisma.reconciliationProposal.create({
+      data: {
+        batchId: lotto.id,
+        regola: 'R1',
+        punteggio: 71,
+        fattori: {},
+        motivazioni: [],
+        bankTransactionId: movimento.id,
+        gambe: { create: [{ scheduleId: troppoGrande.id, importo: 200 }] },
+      },
+    })
+
+    const esito = await approvaProposta({ proposalId: proposta.id, venueId: venue.id, userId: utente.id })
+
+    expect(esito.outcome).toBe('riconciliazione_rifiutata')
+    if (esito.outcome !== 'riconciliazione_rifiutata') throw new Error(esito.outcome)
+    expect(esito.motivo).toContain('superano il residuo')
+
+    // L'invariante dichiarata in cima al modulo: mai una proposta segnata
+    // approvata sopra una scrittura che non esiste. Qui non esiste nulla.
+    expect((await rileggiProposta(proposta.id)).stato).toBe('in_attesa')
+    expect(await prisma.journalEntry.count({ where: { venueId: venue.id } })).toBe(0)
+    expect(await prisma.scheduleReconciliation.count()).toBe(0)
+    const riga = await rileggiRiga(movimento.id)
+    expect(riga.status).toBe('PENDING')
+    expect(riga.matchedEntryId).toBeNull()
+    const lottoDopo = await prisma.reconciliationBatch.findUniqueOrThrow({ where: { id: lotto.id } })
+    expect(lottoDopo.contaApprovate).toBe(0)
+    expect(lottoDopo.contaSuperate).toBe(0)
   })
 
   it('una proposta R4 conferma la scrittura che indica, senza crearne un\'altra', async () => {

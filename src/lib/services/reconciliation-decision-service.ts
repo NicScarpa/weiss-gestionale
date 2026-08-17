@@ -54,14 +54,38 @@ export async function approvaProposta(input: InputApprovazione): Promise<EsitoAp
   let interno: ApprovazioneInTransazione
   try {
     interno = await prisma.$transaction(async (tx): Promise<ApprovazioneInTransazione> => {
-      // Il lock serializza due approvazioni della stessa proposta: la seconda
-      // entra quando la prima ha già scritto `approvata` e si ferma su
-      // `gia_decisa`, invece di promuovere la riga una seconda volta.
+      // Prima lettura, senza lock: serve solo a sapere QUALE riga bancaria
+      // bloccare. La sede sta sul lotto: una proposta di un'altra sede non
+      // esiste, per chi chiede.
+      const daBloccare = await tx.reconciliationProposal.findFirst({
+        where: { id: proposalId, batch: { venueId } },
+        select: { bankTransactionId: true },
+      })
+      if (!daBloccare) return { esito: { outcome: 'proposta_non_trovata' }, seguiti: [] }
+
+      // **Prima la riga di banca, poi la proposta.** La riga è il punto di
+      // serializzazione naturale: ogni approvazione la tocca, e prenderla per
+      // prima rende impossibile l'incrocio fra due approvazioni di proposte
+      // *diverse* sulla stessa riga — con l'ordine inverso una teneva la
+      // propria proposta più la riga e chiedeva la rivale, mentre l'altra
+      // teneva la rivale e aspettava la riga: deadlock vero (40P01), che
+      // l'utente vedrebbe come un 500.
+      //
+      // `promuoviRigaBancariaInTransazione` riprende lo stesso lock della riga
+      // più sotto: è lecito, siamo nella stessa transazione e un lock già
+      // posseduto si riprende senza attese.
+      if (daBloccare.bankTransactionId) {
+        await tx.$queryRaw`SELECT id FROM bank_transactions WHERE id = ${daBloccare.bankTransactionId} FOR UPDATE`
+      }
+      // Il lock della proposta serializza due approvazioni della *stessa*
+      // proposta: la seconda entra quando la prima ha già scritto `approvata`
+      // e si ferma su `gia_decisa`, invece di promuovere la riga due volte.
       await tx.$queryRaw`SELECT id FROM reconciliation_proposals WHERE id = ${proposalId} FOR UPDATE`
 
+      // Rilettura **sotto lock**: fra la prima lettura e i due lock la
+      // proposta può essere stata decisa, e le sue due parti possono essere
+      // cambiate. Tutto ciò che decide da qui in giù viene da questa lettura.
       const proposta = await tx.reconciliationProposal.findFirst({
-        // La sede sta sul lotto: una proposta di un'altra sede non esiste, per
-        // chi chiede.
         where: { id: proposalId, batch: { venueId } },
         select: {
           id: true,
@@ -122,7 +146,7 @@ export async function approvaProposta(input: InputApprovazione): Promise<EsitoAp
         origine: 'proposta',
         // Il punteggio è 0-100, la confidenza 0-1: la stessa cifra, due scale.
         confidence: proposta.punteggio / 100,
-        ...partiDaPromuovere(proposta, proposta.gambe),
+        ...partiDaPromuovere(proposta),
       })
 
       await tx.reconciliationProposal.update({
@@ -200,7 +224,7 @@ export async function approvaProposta(input: InputApprovazione): Promise<EsitoAp
 interface PropostaLetta {
   bankTransactionId: string | null
   journalEntryId: string | null
-  gambe: Array<{ scheduleId: string | null }>
+  gambe: Array<{ scheduleId: string | null; importo: Prisma.Decimal }>
 }
 
 /**
@@ -240,16 +264,15 @@ function motivoInapprovabile(proposta: PropostaLetta): string | null {
  * quella che la proposta stessa indica — due movimenti per un solo bonifico.
  */
 function partiDaPromuovere(
-  proposta: PropostaLetta,
-  gambe: Array<{ scheduleId: string | null; importo: Prisma.Decimal }>
+  proposta: PropostaLetta
 ): Pick<InputPromozione, 'scadenze' | 'scritturaEsistenteId'> {
   const scritturaEsistenteId = proposta.journalEntryId ?? undefined
-  if (gambe.length === 0) {
+  if (proposta.gambe.length === 0) {
     return { scritturaEsistenteId }
   }
   return {
     scritturaEsistenteId,
-    scadenze: gambe.map((gamba) => ({
+    scadenze: proposta.gambe.map((gamba) => ({
       // Le gambe senza scadenza (R5) sono già state fermate da
       // `motivoInapprovabile`: qui `scheduleId` c'è per costruzione.
       scheduleId: gamba.scheduleId!,
