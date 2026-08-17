@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { withAuth, forbidden } from '@/lib/api-utils'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { ClosurePdfDocument } from '@/lib/pdf/ClosurePdfTemplate'
+import { calcolaDeltaCaffe } from '@/lib/pdf/closure-pdf-data'
 import { format } from 'date-fns'
 
 import { logger } from '@/lib/logger'
@@ -135,6 +136,33 @@ export const GET = withAuth<{ id: string }>(
       } : null,
     }))
 
+    // Il primo parziale della giornata si misura sull'ultimo contatore letto
+    // nella chiusura precedente, altrimenti resterebbe senza riferimento.
+    const chiusuraPrecedente = await prisma.dailyClosure.findFirst({
+      where: {
+        venueId,
+        date: { lt: closure.date },
+        status: { in: ['VALIDATED', 'SUBMITTED', 'DRAFT'] },
+      },
+      orderBy: { date: 'desc' },
+      include: {
+        partials: {
+          where: { coffeeCounter: { not: null } },
+          orderBy: { timeSlot: 'desc' },
+          take: 1,
+        },
+      },
+    })
+    const contatoreCaffePrecedente =
+      chiusuraPrecedente?.partials[0]?.coffeeCounter ?? null
+
+    // Il campo coffeeDelta a database non viene mai popolato dal form (il
+    // calcolo lì vive solo a schermo): il valore buono si ricava qui.
+    const deltaCaffe = calcolaDeltaCaffe(
+      closure.partials.map((p) => p.coffeeCounter),
+      contatoreCaffePrecedente
+    )
+
     const totalCash = stations.reduce((sum, s) => sum + s.cashAmount, 0)
     const totalPos = stations.reduce((sum, s) => sum + s.posAmount, 0)
     const totalExpenses = closure.expenses.reduce((sum, e) => sum + Number(e.amount), 0)
@@ -169,13 +197,14 @@ export const GET = withAuth<{ id: string }>(
         paidBy: e.paidBy,
         amount: Number(e.amount),
       })),
-      partials: closure.partials.map((p) => ({
+      partials: closure.partials.map((p, idx) => ({
         timeSlot: p.timeSlot,
+        // receiptProgressive è il TOTALE del parziale e posProgressive ne è la
+        // quota: sommarli conterebbe il POS due volte.
         receiptProgressive: Number(p.receiptProgressive),
         posProgressive: Number(p.posProgressive),
-        total: Number(p.receiptProgressive) + Number(p.posProgressive),
         coffeeCounter: p.coffeeCounter,
-        coffeeDelta: p.coffeeDelta,
+        coffeeDelta: deltaCaffe[idx],
         weather: p.weather ?? getWeatherForTimeSlot(
           p.timeSlot,
           closure.weatherMorning,
