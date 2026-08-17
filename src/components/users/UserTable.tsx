@@ -213,7 +213,7 @@ export function UserTable({ users, isLoading, onResetPassword, onToggleActive }:
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem asChild>
-                      <Link href={`/impostazioni/utenti/${user.id}`}>
+                      <Link href={`/anagrafiche/utenti/${user.id}`}>
                         <Eye className="mr-2 h-4 w-4" />
                         Visualizza
                       </Link>
@@ -221,7 +221,7 @@ export function UserTable({ users, isLoading, onResetPassword, onToggleActive }:
 
                     {canEditUser(user.role.name) && (
                       <DropdownMenuItem asChild>
-                        <Link href={`/impostazioni/utenti/${user.id}?edit=true`}>
+                        <Link href={`/anagrafiche/utenti/${user.id}?edit=true`}>
                           <Pencil className="mr-2 h-4 w-4" />
                           Modifica
                         </Link>

@@ -270,8 +270,10 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
 
   const handleVerify = async (id: string, verified: boolean) => {
     try {
+      // La rotta espone PATCH: con POST Next risponde 405 e la verifica non
+      // avveniva mai, con il solo toast «Impossibile verificare» a dirlo.
       const res = await fetch(`/api/prima-nota/${id}/verify`, {
-        method: 'POST',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ verified }),
       })
@@ -285,8 +287,9 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
 
   const handleHide = async (id: string, currentlyHidden: boolean) => {
     try {
+      // Come per `verify`: la rotta espone PATCH, non POST.
       const res = await fetch(`/api/prima-nota/${id}/hide`, {
-        method: 'POST',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hidden: !currentlyHidden }),
       })
