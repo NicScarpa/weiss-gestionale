@@ -149,7 +149,7 @@ export default function UtentiPage() {
           </p>
         </div>
         <Button asChild>
-          <Link href="/impostazioni/utenti/nuovo">
+          <Link href="/anagrafiche/utenti/nuovo">
             <Plus className="mr-2 h-4 w-4" />
             Nuovo utente
           </Link>

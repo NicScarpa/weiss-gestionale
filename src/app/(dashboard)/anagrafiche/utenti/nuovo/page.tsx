@@ -65,12 +65,12 @@ export default function NuovoUtentePage() {
   }
 
   const handleCancel = () => {
-    router.push('/impostazioni/utenti')
+    router.push('/anagrafiche/utenti')
   }
 
   const handleCredentialsDialogClose = () => {
     setCreatedCredentials(null)
-    router.push('/impostazioni/utenti')
+    router.push('/anagrafiche/utenti')
   }
 
   if (status === 'loading' || !session?.user) {
@@ -86,7 +86,7 @@ export default function NuovoUtentePage() {
       {/* Header */}
       <div className="mb-6">
         <Button variant="ghost" size="sm" asChild className="mb-4">
-          <Link href="/impostazioni/utenti">
+          <Link href="/anagrafiche/utenti">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Torna alla lista
           </Link>

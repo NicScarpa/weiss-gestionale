@@ -81,7 +81,7 @@ export default function DettaglioUtentePage({ params }: { params: Promise<{ id: 
         if (!response.ok) {
           if (response.status === 404) {
             toast.error('Utente non trovato')
-            router.push('/impostazioni/utenti')
+            router.push('/anagrafiche/utenti')
             return
           }
           throw new Error('Errore caricamento')
@@ -259,7 +259,7 @@ export default function DettaglioUtentePage({ params }: { params: Promise<{ id: 
       {/* Header */}
       <div className="mb-6">
         <Button variant="ghost" size="sm" asChild className="mb-4">
-          <Link href="/impostazioni/utenti">
+          <Link href="/anagrafiche/utenti">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Torna alla lista
           </Link>
