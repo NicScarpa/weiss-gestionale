@@ -1,20 +1,19 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { prisma } from '@/lib/prisma'
 import { setupIntegrationDb } from '@/test/integration/db'
-import { loginAs } from '@/test/integration/auth-mock'
+import { entraCome } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
 import { venueDiTest } from '@/test/integration/fixtures/closures'
-import { POST as ignora } from '@/app/api/bank-transactions/[id]/ignore/route'
-import { POST as annullaMatch } from '@/app/api/bank-transactions/[id]/unmatch/route'
+import { POST as scollegaRiga } from '@/app/api/bank-transactions/[id]/scollega/route'
 
 /**
  * Che cosa risponde la riconciliazione bancaria su una transazione cancellata.
  *
- * `ignoreTransaction` e `unmatch` scrivevano senza prima guardare se la riga
+ * `scollega` (come prima `unmatch`) scriveva senza prima guardare se la riga
  * ci fosse ancora: su una transazione cancellata l'aggiornamento passava
  * liscio. Ora il client non la trova più, e la domanda diventa che cosa deve
- * vedere l'utente — una transazione che non esiste è un 404, non un guasto del
- * server.
+ * vedere l'utente — una transazione che non esiste è un 404, non un guasto
+ * del server.
  */
 setupIntegrationDb()
 
@@ -47,39 +46,10 @@ async function statoGrezzo(id: string) {
 }
 
 beforeEach(async () => {
-  await loginAs('admin')
+  await entraCome('admin')
 })
 
-describe('POST /api/bank-transactions/[id]/ignore', () => {
-  it('su una transazione cancellata risponde 404 senza toccarla', async () => {
-    const transazione = await creaTransazione()
-    await cancella(transazione.id)
-
-    const risposta = await callRoute<{ error?: string }, { id: string }>(
-      ignora,
-      jsonRequest(`/api/bank-transactions/${transazione.id}/ignore`, { method: 'POST' }),
-      { id: transazione.id }
-    )
-
-    expect(risposta.status).toBe(404)
-    expect(await statoGrezzo(transazione.id)).toBe('PENDING')
-  })
-
-  it('continua a ignorare le transazioni vive', async () => {
-    const transazione = await creaTransazione()
-
-    const risposta = await callRoute(
-      ignora,
-      jsonRequest(`/api/bank-transactions/${transazione.id}/ignore`, { method: 'POST' }),
-      { id: transazione.id }
-    )
-
-    expect(risposta.status).toBe(200)
-    expect(await statoGrezzo(transazione.id)).toBe('IGNORED')
-  })
-})
-
-describe('POST /api/bank-transactions/[id]/unmatch', () => {
+describe('POST /api/bank-transactions/[id]/scollega', () => {
   it('su una transazione cancellata risponde 404 senza toccarla', async () => {
     const transazione = await creaTransazione()
     await prisma.bankTransaction.update({
@@ -89,8 +59,8 @@ describe('POST /api/bank-transactions/[id]/unmatch', () => {
     await cancella(transazione.id)
 
     const risposta = await callRoute<{ error?: string }, { id: string }>(
-      annullaMatch,
-      jsonRequest(`/api/bank-transactions/${transazione.id}/unmatch`, { method: 'POST' }),
+      scollegaRiga,
+      jsonRequest(`/api/bank-transactions/${transazione.id}/scollega`, { method: 'POST' }),
       { id: transazione.id }
     )
 
@@ -106,8 +76,8 @@ describe('POST /api/bank-transactions/[id]/unmatch', () => {
     })
 
     const risposta = await callRoute(
-      annullaMatch,
-      jsonRequest(`/api/bank-transactions/${transazione.id}/unmatch`, { method: 'POST' }),
+      scollegaRiga,
+      jsonRequest(`/api/bank-transactions/${transazione.id}/scollega`, { method: 'POST' }),
       { id: transazione.id }
     )
 

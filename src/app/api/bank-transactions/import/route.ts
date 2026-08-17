@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { parseCSV, parseXLS, parseCBIXML, parseCBITXT, RELAXBANKING_CONFIG } from '@/lib/reconciliation'
 import { importBatchSchema } from '@/lib/validations/reconciliation'
+import { separaCausale } from '@/lib/banca/separa-causale'
 import type { ImportResult, CSVParserConfig, ImportSource } from '@/types/reconciliation'
 import { getVenueId } from '@/lib/venue'
 
@@ -188,12 +189,30 @@ export async function POST(request: NextRequest) {
     const file = formData.get('file') as File | null
     const venueId = await getVenueId()
     const configJson = formData.get('config') as string | null
+    const bankAccountIdRaw = formData.get('bankAccountId')
 
     if (!file) {
       return NextResponse.json(
         { error: 'Nessun file caricato' },
         { status: 400 }
       )
+    }
+
+    // Ogni riga dell'estratto conto appartiene a un conto: senza, non si
+    // potrebbe sapere su quale bilancio incidono i movimenti importati.
+    if (typeof bankAccountIdRaw !== 'string' || bankAccountIdRaw === '') {
+      return NextResponse.json(
+        { error: 'Indica il conto bancario a cui appartiene l\'estratto conto' },
+        { status: 400 }
+      )
+    }
+    const bankAccountId = bankAccountIdRaw
+
+    const bankAccount = await prisma.bankAccount.findFirst({
+      where: { id: bankAccountId, venueId, accountType: 'BANK' },
+    })
+    if (!bankAccount) {
+      return NextResponse.json({ error: 'Conto bancario non trovato' }, { status: 404 })
     }
 
     // Determina tipo file
@@ -304,9 +323,12 @@ export async function POST(request: NextRequest) {
           await tx.bankTransaction.createMany({
             data: daImportare.map(({ riga, bankReference }) => ({
               venueId,
+              bankAccountId,
               transactionDate: riga.transactionDate,
               valueDate: riga.valueDate,
               description: riga.description,
+              // Il CSV non porta il codice operazione: vale la regola dell'asterisco.
+              ...separaCausale(riga.description, null),
               amount: riga.amount,
               balanceAfter: riga.balance,
               bankReference,

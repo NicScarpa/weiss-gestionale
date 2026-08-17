@@ -15,7 +15,9 @@ import { prisma } from '@/lib/prisma'
 import {
   generateSchedulesFromInvoice,
   checkInvoiceDeletable,
+  checkInvoicesDeletable,
   softDeleteSchedulesForInvoice,
+  softDeleteSchedulesForInvoices,
 } from '../invoice-schedule-service'
 
 const baseInvoice = {
@@ -258,12 +260,27 @@ describe('generateSchedulesFromInvoice', () => {
   })
 })
 
+function scadenza(
+  id: string,
+  invoiceId: string,
+  importoPagato: number,
+  payments = 0
+) {
+  return {
+    id,
+    invoiceId,
+    descrizione: `rata ${id}`,
+    importoPagato: new Prisma.Decimal(importoPagato),
+    _count: { payments },
+  }
+}
+
 describe('checkInvoiceDeletable', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('consente la cancellazione quando nessuna scadenza ha pagamenti', async () => {
     vi.mocked(prisma.schedule.findMany).mockResolvedValue([
-      { id: 's1', descrizione: 'rata 1', importoPagato: new Prisma.Decimal(0), _count: { payments: 0 } },
+      scadenza('s1', 'inv-1', 0),
     ] as never)
 
     const result = await checkInvoiceDeletable('inv-1')
@@ -274,8 +291,8 @@ describe('checkInvoiceDeletable', () => {
 
   it('blocca quando una scadenza ha pagamenti registrati', async () => {
     vi.mocked(prisma.schedule.findMany).mockResolvedValue([
-      { id: 's1', descrizione: 'rata 1', importoPagato: new Prisma.Decimal(500), _count: { payments: 1 } },
-      { id: 's2', descrizione: 'rata 2', importoPagato: new Prisma.Decimal(0), _count: { payments: 0 } },
+      scadenza('s1', 'inv-1', 500, 1),
+      scadenza('s2', 'inv-1', 0),
     ] as never)
 
     const result = await checkInvoiceDeletable('inv-1')
@@ -287,7 +304,7 @@ describe('checkInvoiceDeletable', () => {
 
   it('blocca anche se l\'importo pagato è valorizzato senza righe di pagamento', async () => {
     vi.mocked(prisma.schedule.findMany).mockResolvedValue([
-      { id: 's1', descrizione: 'rata 1', importoPagato: new Prisma.Decimal(250), _count: { payments: 0 } },
+      scadenza('s1', 'inv-1', 250),
     ] as never)
 
     const result = await checkInvoiceDeletable('inv-1')
@@ -305,6 +322,76 @@ describe('checkInvoiceDeletable', () => {
   })
 })
 
+describe('checkInvoicesDeletable', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('interroga il database una volta sola qualunque sia il numero di fatture', async () => {
+    vi.mocked(prisma.schedule.findMany).mockResolvedValue([] as never)
+
+    const ids = Array.from({ length: 225 }, (_, i) => `inv-${i}`)
+    await checkInvoicesDeletable(ids)
+
+    // È il punto dell'intera correzione: una query per 225 fatture, non 225.
+    // Con una query per fattura il pooler rifiutava le connessioni oltre la
+    // quindicesima e l'eliminazione in blocco falliva del tutto.
+    expect(prisma.schedule.findMany).toHaveBeenCalledTimes(1)
+    expect(prisma.schedule.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { invoiceId: { in: ids } } })
+    )
+  })
+
+  it('attribuisce ogni scadenza alla propria fattura', async () => {
+    vi.mocked(prisma.schedule.findMany).mockResolvedValue([
+      scadenza('s1', 'inv-1', 0),
+      scadenza('s2', 'inv-2', 300, 1),
+      scadenza('s3', 'inv-2', 0),
+    ] as never)
+
+    const esiti = await checkInvoicesDeletable(['inv-1', 'inv-2'])
+
+    expect(esiti.get('inv-1')?.canDelete).toBe(true)
+    expect(esiti.get('inv-1')?.totalSchedules).toBe(1)
+    expect(esiti.get('inv-2')?.canDelete).toBe(false)
+    expect(esiti.get('inv-2')?.totalSchedules).toBe(2)
+    expect(esiti.get('inv-2')?.schedulesWithPayments.map((s) => s.id)).toEqual(['s2'])
+  })
+
+  it('restituisce eliminabili le fatture senza alcuna scadenza generata', async () => {
+    vi.mocked(prisma.schedule.findMany).mockResolvedValue([
+      scadenza('s1', 'inv-1', 0),
+    ] as never)
+
+    const esiti = await checkInvoicesDeletable(['inv-1', 'inv-senza-scadenze'])
+
+    // La mappa deve coprire tutti gli id richiesti: una chiave assente
+    // costringerebbe il chiamante a indovinare se «non trovata» significhi
+    // «eliminabile» o «non interrogata».
+    expect(esiti.has('inv-senza-scadenze')).toBe(true)
+    expect(esiti.get('inv-senza-scadenze')).toEqual({
+      canDelete: true,
+      schedulesWithPayments: [],
+      totalSchedules: 0,
+    })
+  })
+
+  it('non interroga il database con una lista vuota', async () => {
+    const esiti = await checkInvoicesDeletable([])
+
+    expect(esiti.size).toBe(0)
+    expect(prisma.schedule.findMany).not.toHaveBeenCalled()
+  })
+
+  it('ignora le scadenze senza fattura di origine', async () => {
+    vi.mocked(prisma.schedule.findMany).mockResolvedValue([
+      { ...scadenza('s1', 'inv-1', 0), invoiceId: null },
+    ] as never)
+
+    const esiti = await checkInvoicesDeletable(['inv-1'])
+
+    expect(esiti.get('inv-1')?.totalSchedules).toBe(0)
+  })
+})
+
 describe('softDeleteSchedulesForInvoice', () => {
   beforeEach(() => vi.clearAllMocks())
 
@@ -315,8 +402,32 @@ describe('softDeleteSchedulesForInvoice', () => {
 
     expect(count).toBe(2)
     expect(prisma.schedule.updateMany).toHaveBeenCalledWith({
-      where: { invoiceId: 'inv-1', deletedAt: null },
+      where: { invoiceId: { in: ['inv-1'] }, deletedAt: null },
       data: { deletedAt: expect.any(Date), deletedById: 'user-1' },
     })
+  })
+})
+
+describe('softDeleteSchedulesForInvoices', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('annulla in un solo aggiornamento le scadenze di tutte le fatture', async () => {
+    vi.mocked(prisma.schedule.updateMany).mockResolvedValue({ count: 7 } as never)
+
+    const count = await softDeleteSchedulesForInvoices(['inv-1', 'inv-2'], 'user-1')
+
+    expect(count).toBe(7)
+    expect(prisma.schedule.updateMany).toHaveBeenCalledTimes(1)
+    expect(prisma.schedule.updateMany).toHaveBeenCalledWith({
+      where: { invoiceId: { in: ['inv-1', 'inv-2'] }, deletedAt: null },
+      data: { deletedAt: expect.any(Date), deletedById: 'user-1' },
+    })
+  })
+
+  it('non tocca il database con una lista vuota', async () => {
+    const count = await softDeleteSchedulesForInvoices([], 'user-1')
+
+    expect(count).toBe(0)
+    expect(prisma.schedule.updateMany).not.toHaveBeenCalled()
   })
 })

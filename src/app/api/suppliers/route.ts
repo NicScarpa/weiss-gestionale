@@ -7,15 +7,22 @@ import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { getVenueId } from '@/lib/venue'
 import { ritardiPerFornitore } from '@/lib/scadenzario/stima-data-attesa'
+import { lookupHash } from '@/lib/encryption'
 // Schema validazione
 const supplierSchema = z.object({
   name: z.string().min(1, 'Nome obbligatorio'),
   vatNumber: z.string().optional().nullable(),
+  // Esisteva nel database — cifrato, con il suo hash — ma nessuna schermata né
+  // questa rotta potevano scriverlo: arrivava solo dall'import delle fatture.
+  fiscalCode: z.string().optional().nullable(),
   address: z.string().optional().nullable(),
   city: z.string().optional().nullable(),
   province: z.string().optional().nullable(),
   postalCode: z.string().optional().nullable(),
+  country: z.string().optional().nullable(),
   email: z.string().email('Email non valida').optional().nullable(),
+  phone: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
   iban: z.string().optional().nullable(),
   defaultAccountId: z.string().optional().nullable(),
   /** Giorni di dilazione concordati, usati per stimare le scadenze delle fatture */
@@ -57,9 +64,12 @@ export async function GET(request: NextRequest) {
     }
 
     if (query) {
+      // Il codice fiscale è cifrato: si cerca sull'hash di lookup, quindi per
+      // uguaglianza e solo sul codice intero.
       where.OR = [
         { name: { contains: query, mode: 'insensitive' } },
         { vatNumber: { contains: query, mode: 'insensitive' } },
+        { fiscalCodeHash: lookupHash(query.trim().toUpperCase()) },
       ]
     }
 
@@ -70,11 +80,15 @@ export async function GET(request: NextRequest) {
         name: true,
         vatNumber: true,
         ...(full && {
+          fiscalCode: true,
           address: true,
           city: true,
           province: true,
           postalCode: true,
+          country: true,
           email: true,
+          phone: true,
+          notes: true,
           iban: true,
           defaultAccountId: true,
           paymentTermsDays: true,
@@ -179,11 +193,15 @@ export async function POST(request: NextRequest) {
       data: {
         name: validatedData.name,
         vatNumber: validatedData.vatNumber,
+        fiscalCode: validatedData.fiscalCode,
         address: validatedData.address,
         city: validatedData.city,
         province: validatedData.province,
         postalCode: validatedData.postalCode,
+        country: validatedData.country ?? 'IT',
         email: validatedData.email,
+        phone: validatedData.phone,
+        notes: validatedData.notes,
         iban: validatedData.iban,
         defaultAccountId: validatedData.defaultAccountId,
         paymentTermsDays: validatedData.paymentTermsDays,
@@ -251,11 +269,15 @@ export async function PUT(request: NextRequest) {
       data: {
         ...(validatedData.name && { name: validatedData.name }),
         ...(validatedData.vatNumber !== undefined && { vatNumber: validatedData.vatNumber }),
+        ...(validatedData.fiscalCode !== undefined && { fiscalCode: validatedData.fiscalCode }),
         ...(validatedData.address !== undefined && { address: validatedData.address }),
         ...(validatedData.city !== undefined && { city: validatedData.city }),
         ...(validatedData.province !== undefined && { province: validatedData.province }),
         ...(validatedData.postalCode !== undefined && { postalCode: validatedData.postalCode }),
+        ...(validatedData.country !== undefined && { country: validatedData.country }),
         ...(validatedData.email !== undefined && { email: validatedData.email }),
+        ...(validatedData.phone !== undefined && { phone: validatedData.phone }),
+        ...(validatedData.notes !== undefined && { notes: validatedData.notes }),
         ...(validatedData.iban !== undefined && { iban: validatedData.iban }),
         ...(validatedData.defaultAccountId !== undefined && { defaultAccountId: validatedData.defaultAccountId }),
         ...(validatedData.paymentTermsDays !== undefined && { paymentTermsDays: validatedData.paymentTermsDays }),

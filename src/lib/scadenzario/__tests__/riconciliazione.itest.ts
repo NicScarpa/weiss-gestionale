@@ -7,6 +7,7 @@ import {
   creaFattura,
   creaMovimento,
   creaScadenza,
+  fornitoreDiTest,
   rileggiScadenza,
 } from '@/test/integration/fixtures/scadenzario'
 import { POST as POST_riconciliazione } from '@/app/api/scadenzario/[id]/riconciliazioni/route'
@@ -141,12 +142,11 @@ describe('riconciliazioni concorrenti', () => {
 
 describe('annullo della riconciliazione', () => {
   it("annullare l'ultima rata riporta indietro la fattura da PAID", async () => {
-    const movimentoFattura = await creaMovimento({ uscita: 200, description: 'Registrazione fattura' })
+    const fornitore = await fornitoreDiTest()
     const fattura = await creaFattura({
-      status: 'RECORDED',
+      status: 'MATCHED',
       totalAmount: 200,
-      journalEntryId: movimentoFattura.id,
-      recordedAt: new Date('2026-07-02'),
+      supplierId: fornitore.id,
     })
     const rataUno = await creaScadenza({ importoTotale: 100, invoiceId: fattura.id })
     const rataDue = await creaScadenza({ importoTotale: 100, invoiceId: fattura.id })
@@ -172,8 +172,10 @@ describe('annullo della riconciliazione', () => {
 
     const dopo = await prisma.electronicInvoice.findUniqueOrThrow({ where: { id: fattura.id } })
     expect(dopo.status).not.toBe('PAID')
-    // La fattura ha un movimento di prima nota: la registrazione resta un fatto
-    expect(dopo.status).toBe('RECORDED')
+    // La prima rata resta saldata, quindi la fattura è PARZIALMENTE pagata.
+    // Fino al 15 ago 2026 qui si leggeva 'MATCHED': la fattura dichiarava di
+    // non aver ricevuto un euro mentre metà del suo valore era stato pagato.
+    expect(dopo.status).toBe('PARTIALLY_PAID')
 
     const rata = await rileggiScadenza(rataDue.id)
     expect(rata.stato).toBe('aperta')
@@ -204,7 +206,12 @@ describe('annullo della riconciliazione', () => {
   })
 
   it('con una rata ancora aperta la fattura non diventa mai PAID', async () => {
-    const fattura = await creaFattura({ status: 'RECORDED', totalAmount: 200 })
+    const fornitore = await fornitoreDiTest()
+    const fattura = await creaFattura({
+      status: 'MATCHED',
+      totalAmount: 200,
+      supplierId: fornitore.id,
+    })
     const rataUno = await creaScadenza({ importoTotale: 100, invoiceId: fattura.id })
     await creaScadenza({ importoTotale: 100, invoiceId: fattura.id })
 
@@ -213,7 +220,7 @@ describe('annullo della riconciliazione', () => {
 
     expect(
       (await prisma.electronicInvoice.findUniqueOrThrow({ where: { id: fattura.id } })).status
-    ).toBe('RECORDED')
+    ).toBe('PARTIALLY_PAID')
   })
 })
 

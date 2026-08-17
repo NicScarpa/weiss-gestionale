@@ -6,7 +6,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ScheduleStatus, ScheduleType, SchedulePriority, ScheduleSource, SCHEDULE_STATUS_LABELS, SCHEDULE_TYPE_LABELS, SCHEDULE_PRIORITY_LABELS, SCHEDULE_SOURCE_LABELS } from '@/types/schedule'
 import { CalendarIcon, Filter, X } from 'lucide-react'
 import { format } from 'date-fns'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useDebounce } from '@/hooks/useDebounce'
 
 interface ScheduleFiltersProps {
   filtri: {
@@ -34,14 +35,48 @@ export function ScheduleFilters({
 }: ScheduleFiltersProps) {
   const [calendarOpen, setCalendarOpen] = useState(false)
 
+  // La casella di ricerca tiene il proprio testo e filtra quando la digitazione
+  // si ferma. Prima ogni tasto faceva ripartire la query, e la query metteva
+  // l'input in `disabled`: il browser toglie il focus a un campo disabilitato,
+  // quindi si riusciva a scrivere una lettera per volta. Il `disabled` qui
+  // sotto non va rimesso.
+  const [ricerca, setRicerca] = useState(filtri.search ?? '')
+  const ricercaDifferita = useDebounce(ricerca, 300)
+  // Ultimo testo consegnato al padre: distingue "l'ho scritto io" da "i filtri
+  // sono cambiati da fuori", che è ciò che rende innocua la sincronizzazione
+  // nei due versi.
+  const ultimaInviata = useRef(filtri.search ?? '')
+
+  useEffect(() => {
+    if (ricercaDifferita === ultimaInviata.current) return
+    ultimaInviata.current = ricercaDifferita
+    onFiltriChange({ ...filtri, search: ricercaDifferita || undefined })
+    // `filtri` e `onFiltriChange` cambiano identità a ogni render del padre:
+    // metterli fra le dipendenze rifarebbe partire il timer a ogni giro.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ricercaDifferita])
+
+  // Verso opposto: se i filtri vengono azzerati altrove, la casella si svuota.
+  useEffect(() => {
+    const esterna = filtri.search ?? ''
+    if (esterna === ultimaInviata.current) return
+    ultimaInviata.current = esterna
+    setRicerca(esterna)
+  }, [filtri.search])
+
   const haFiltriAttivi = () => {
     return !!filtri.stato || !!filtri.tipo || !!filtri.priorita || !!filtri.source ||
-           !!filtri.search || !!filtri.dataInizio || !!filtri.dataFine ||
+           // `ricerca` è il testo ancora nella casella, non ancora inviato:
+           // conta come filtro attivo (da main). `pagateSenzaMovimento` è il
+           // filtro nuovo dell'onda 1. Servono entrambi, non uno dei due.
+           !!filtri.search || !!ricerca || !!filtri.dataInizio || !!filtri.dataFine ||
            filtri.isRicorrente !== undefined || filtri.verificata !== undefined ||
            !!filtri.pagateSenzaMovimento
   }
 
   const handleReset = () => {
+    ultimaInviata.current = ''
+    setRicerca('')
     onFiltriChange({})
     onReset()
   }
@@ -53,10 +88,9 @@ export function ScheduleFilters({
         <Filter className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground opacity-50" />
         <Input
           placeholder="Cerca scadenze..."
-          value={filtri.search || ''}
-          onChange={(e) => onFiltriChange({ ...filtri, search: e.target.value || undefined })}
+          value={ricerca}
+          onChange={(e) => setRicerca(e.target.value)}
           className="pl-8"
-          disabled={isLoading}
         />
       </div>
 

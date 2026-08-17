@@ -24,9 +24,23 @@ interface CredentialsDialogProps {
     firstName: string
     lastName: string
   } | null
+  /**
+   * 'create' dopo la creazione di un utente, 'reset' dopo il reset della
+   * password. Cambia solo i testi: la password mostrata è temporanea in
+   * entrambi i casi e va cambiata al primo accesso.
+   */
+  mode?: 'create' | 'reset'
+  /** Esito dell'invio email, se il percorso chiamante lo tenta. */
+  emailSentTo?: string | null
 }
 
-export function CredentialsDialog({ open, onOpenChange, credentials }: CredentialsDialogProps) {
+export function CredentialsDialog({
+  open,
+  onOpenChange,
+  credentials,
+  mode = 'create',
+  emailSentTo,
+}: CredentialsDialogProps) {
   const [copiedField, setCopiedField] = useState<'username' | 'password' | 'both' | null>(null)
 
   const copyToClipboard = async (text: string, field: 'username' | 'password' | 'both') => {
@@ -52,13 +66,23 @@ export function CredentialsDialog({ open, onOpenChange, credentials }: Credentia
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Utente creato con successo</DialogTitle>
+          <DialogTitle>
+            {mode === 'reset' ? 'Password reimpostata' : 'Utente creato con successo'}
+          </DialogTitle>
           <DialogDescription>
             Credenziali di accesso per <strong>{credentials.firstName} {credentials.lastName}</strong>.
             <br />
-            Comunica queste credenziali all&apos;utente. La password dovrà essere cambiata al primo accesso.
+            {mode === 'reset'
+              ? 'La password precedente non è più valida. Comunica queste credenziali all\'utente: dovrà cambiarle al primo accesso.'
+              : 'Comunica queste credenziali all\'utente. La password dovrà essere cambiata al primo accesso.'}
           </DialogDescription>
         </DialogHeader>
+
+        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          {emailSentTo
+            ? `Le credenziali sono state inviate anche a ${emailSentTo}. Copiale comunque: questa è l'unica volta che compaiono a schermo.`
+            : 'Copia le credenziali adesso: questa è l\'unica volta che compaiono a schermo. Se le perdi, va rigenerata la password.'}
+        </p>
 
         <div className="space-y-4 py-4">
           {/* Username */}
@@ -88,7 +112,9 @@ export function CredentialsDialog({ open, onOpenChange, credentials }: Credentia
 
           {/* Password */}
           <div className="space-y-2">
-            <Label htmlFor="password">Password iniziale</Label>
+            <Label htmlFor="password">
+              {mode === 'reset' ? 'Nuova password temporanea' : 'Password iniziale'}
+            </Label>
             <div className="flex gap-2">
               <Input
                 id="password"

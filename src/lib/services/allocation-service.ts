@@ -92,15 +92,170 @@ export function calcolaPesiDaRighe(
     .map(([accountId, importo]) => ({ accountId, importo }))
 }
 
+/** Un conto con quanto gli spetta al lordo e quanta IVA c'è dentro. */
+export interface PesoConIva {
+  accountId: string
+  importo: number
+  /** `null` quando l'aliquota di almeno una riga non era leggibile. */
+  iva: number | null
+}
+
 /**
- * Il client dentro `prisma.$transaction`: con il client esteso dall'adapter
- * il tipo `Prisma.TransactionClient` di libreria non combacia, quindi lo si
- * ricava da quello reale (stesso pattern di src/lib/attendance/manual-punch.ts).
+ * Aggrega le righe fattura per conto tenendo separata l'IVA di ciascuna.
+ *
+ * Perché serve: i pesi sono imponibili, la quota da ripartire è un pagamento,
+ * cioè lordo. Applicare proporzioni calcolate sul netto a un importo lordo
+ * sbaglia ogni volta che le aliquote non sono uniformi — ed è la fattura
+ * normale di un fornitore di ristorazione, alimentari al 10% e detersivi al
+ * 22%. Portando l'IVA di ogni riga fino in fondo, la fetta non ha più bisogno
+ * di essere stimata da nessuno.
+ *
+ * Tutto-o-niente sull'IVA: se anche una sola riga non ha un'aliquota
+ * leggibile, l'IVA di TUTTE le fette è `null`. Un insieme misto di fette
+ * esatte e fette stimate produrrebbe un totale che non quadra con nessuna
+ * delle due logiche, e nessun controllo se ne accorgerebbe.
+ *
+ * **Il tutto-o-niente NON si estende al conto scartato**, ed è una scelta
+ * misurata, non una dimenticanza. Il filtro qui sotto butta via i conti il cui
+ * totale non è positivo: succede con una riga di sconto o di reso a
+ * `PrezzoTotale` negativo, che il parser non normalizza (sdi/parser.ts:276) e
+ * che l'imputazione per riga accetta come ogni altra. Quel conto se ne va con
+ * la propria IVA, i conti rimasti si dividono comunque l'intera quota pagata,
+ * e la loro IVA viene riscalata verso l'alto: dichiarata esatta, ma non più
+ * quella del documento.
+ *
+ * Reagire azzerandola peggiora i numeri invece di migliorarli, e di parecchio.
+ * Su alimentari 1.000 al 10% con uno sconto di 100 al 22% — documento 978
+ * lordi, 78 di IVA — tenere le fette «esatte» dichiara 88,91 di IVA, cioè
+ * 10,91 di troppo. Azzerarle ne fa dichiarare zero: da quando la
+ * riconciliazione scrive l'IVA di testata solo se le fette la dichiarano, una
+ * fetta a `null` su un movimento nato dall'import (che di suo non ha IVA)
+ * significa che il ripiego pro-quota divide zero, e il blocco IVA del
+ * prospetto perde tutti e 78. Sette volte l'errore che si voleva evitare, e
+ * sulla stessa famiglia. La fase B (Task 6) ha dato un segno proprio alle
+ * righe negative delle NOTE DI CREDITO — un documento a parte, sottratto ai
+ * pesi con le sue guardie dedicate — ma non a una riga di sconto dentro la
+ * STESSA fattura, che resta questo caso: finché anche quella non entrerà nei
+ * pesi col proprio segno, l'approssimazione minore è questa — ma non resta
+ * invisibile: chi chiama avvisa quando un conto sparisce (vedi
+ * `ereditaFetteDaFattura`).
  */
-export type TransactionClient = Omit<
-  typeof prisma,
-  '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
->
+export function calcolaPesiConIva(righe: RigaDaImputare[]): PesoConIva[] {
+  const ivaNota = righe.every((r) => r.aliquota !== undefined)
+
+  return [...aggregaPerConto(righe).entries()]
+    .filter(([, v]) => v.importo > 0)
+    .sort((a, b) => b[1].importo - a[1].importo)
+    .map(([accountId, v]) => ({
+      accountId,
+      importo: Math.round(v.importo * 100) / 100,
+      iva: ivaNota ? Math.round(v.iva * 100) / 100 : null,
+    }))
+}
+
+/** Una riga fattura pronta per i pesi: imponibile e aliquota, per conto. */
+export interface RigaDaImputare {
+  accountId: string
+  imponibile: number
+  /** In punti percentuali. `undefined` = non leggibile dallo snapshot. */
+  aliquota: number | undefined
+}
+
+/**
+ * Il lordo e l'IVA di ciascun conto.
+ *
+ * La formula — netto + netto × aliquota/100 — è duplicata in `alLordo`, dentro
+ * `src/components/invoices/InvoiceDetailSections.tsx`, e la duplicazione è
+ * voluta: quel componente è `'use client'` e importare questo modulo, che
+ * porta `@prisma/client`, romperebbe il bundle in un modo che nessuna
+ * revisione del diff vede (lo stesso motivo per cui `TOLLERANZA_IMPORTI` è
+ * ricopiata in `riga-fattura-condivisa.ts`). Chi cambia il calcolo qui deve
+ * cambiarlo anche là.
+ *
+ * Il contatore di copertura della stessa tabella non usa più questa formula
+ * per il totale: raggruppa per aliquota e arrotonda l'imposta una volta per
+ * gruppo, perché lì il confronto è con `ImportoTotaleDocumento`, che
+ * l'emittente scrive proprio così (vedi `attribuitoAlLordo`).
+ */
+function aggregaPerConto(righe: RigaDaImputare[]): Map<string, { importo: number; iva: number }> {
+  const totali = new Map<string, { importo: number; iva: number }>()
+  for (const riga of righe) {
+    const aliquota = riga.aliquota ?? 0
+    const iva = riga.imponibile * (aliquota / 100)
+    const corrente = totali.get(riga.accountId) ?? { importo: 0, iva: 0 }
+    totali.set(riga.accountId, {
+      importo: corrente.importo + riga.imponibile + iva,
+      iva: corrente.iva + iva,
+    })
+  }
+  return totali
+}
+
+/**
+ * Quanti conti `calcolaPesiConIva` scarta **portandosi via qualcosa**.
+ *
+ * Serve a chi vuole avvisare che le fette non quadreranno più con il
+ * documento. Non basta contare i conti mancanti: il filtro scarta anche il
+ * totale esattamente zero — la riga in omaggio, o la riga e il suo storno
+ * sullo stesso conto — dove però non si perde né importo né IVA. Un avviso
+ * che grida quando non è successo niente insegna a ignorarlo, e il primo caso
+ * vero passerebbe inosservato.
+ *
+ * Mezzo centesimo di soglia perché il totale passa da moltiplicazioni in
+ * virgola mobile: uno zero può presentarsi come 1e-14.
+ */
+export function contiScartatiConPeso(righe: RigaDaImputare[]): number {
+  return [...aggregaPerConto(righe).values()].filter(
+    (v) => v.importo <= 0 && (Math.abs(v.importo) >= 0.005 || Math.abs(v.iva) >= 0.005)
+  ).length
+}
+
+/**
+ * Come `ripartisciProQuota`, ma l'IVA scende insieme all'importo.
+ *
+ * Su un pagamento parziale ogni fetta si riduce con la propria IVA — metà
+ * fattura dà 550 con dentro 50 e 61 con dentro 11 — invece di ereditare una
+ * media che non corrisponde a nessuna delle aliquote pagate.
+ *
+ * Anche qui un peso può sparire: `ripartisciProQuota` scarta la fetta il cui
+ * cumulato non avanza di un centesimo, e la sua IVA se ne va con lei mentre le
+ * rimaste si riscalano. L'IVA resta comunque dichiarata, perché lo scarto è
+ * limitato per costruzione: una fetta si perde solo se vale meno di un
+ * centesimo della quota, quindi l'IVA che porta via è al massimo l'aliquota di
+ * un centesimo — frazioni di millesimo di euro. Rinunciare all'esattezza di
+ * tutta la fattura per un errore così sarebbe uno scambio in perdita, per la
+ * stessa ragione spiegata in `calcolaPesiConIva`.
+ */
+export function ripartisciProQuotaConIva(
+  pesi: PesoConIva[],
+  quota: number
+): Array<{ accountId: string; importo: number; iva: number | null }> {
+  const fette = ripartisciProQuota(
+    pesi.map(({ accountId, importo }) => ({ accountId, importo })),
+    quota
+  )
+  const perConto = new Map(pesi.map((p) => [p.accountId, p]))
+
+  return fette.map((fetta) => {
+    const peso = perConto.get(fetta.accountId)
+    if (!peso || peso.iva === null || peso.importo <= 0) {
+      return { ...fetta, iva: null }
+    }
+    return {
+      ...fetta,
+      iva: Math.round(peso.iva * (fetta.importo / peso.importo) * 100) / 100,
+    }
+  })
+}
+
+/**
+ * Il client dentro `prisma.$transaction`. La definizione sta in
+ * `@/lib/prisma`, dove il tipo appartiene: è un fatto sul client, non
+ * sull'allocazione. Si ri-esporta di qui perché diversi moduli lo importano
+ * già da questo file.
+ */
+import type { TransactionClient } from '@/lib/prisma'
+export type { TransactionClient }
 
 /**
  * Rivaluta il centro del movimento dopo che le fette gli hanno riscritto il

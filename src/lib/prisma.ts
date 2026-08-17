@@ -22,6 +22,7 @@ export const SOFT_DELETE_MODELS = [
   'JournalEntry',
   'DailyClosure',
   'BankTransaction',
+  'BankConnection',
   'ElectronicInvoice',
   'Payment',
   'CashFlowForecast',
@@ -63,7 +64,20 @@ function createPrismaClient() {
     // TLS imposto in produzione, tranne verso un PostgreSQL sulla macchina
     // stessa: la politica, e il perché dell'eccezione, stanno in db-tls.ts.
     ssl: opzioneTls(process.env),
-    max: 20,
+    // Deve restare SOTTO il limite del pooler, non sopra: la produzione parla
+    // con Supabase attraverso il pooler in session mode (porta 5432), che
+    // ammette quindici client. Con `max: 20` il pool apriva serenamente la
+    // sedicesima connessione e si sentiva rispondere
+    // «(EMAXCONNSESSION) max clients reached in session mode» — un errore che
+    // non compare mai sotto carico normale, perché le connessioni aperte
+    // insieme sono poche, e si presenta tutto in una volta al primo pezzo di
+    // codice che interroga il database in parallelo.
+    //
+    // Dieci, non quindici: il margine serve alle migrazioni, agli script di
+    // manutenzione e a una sessione psql aperta a mano, che pescano dallo
+    // stesso contingente. Se un domani si passasse al pooler in transaction
+    // mode (porta 6543) questo tetto andrebbe riletto, non ereditato.
+    max: 10,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
   })
@@ -108,6 +122,32 @@ function createPrismaClient() {
 }
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient()
+
+/**
+ * Il client che si riceve dentro `prisma.$transaction`, e più in generale il
+ * tipo da scrivere quando una funzione accetta «un client, dentro o fuori
+ * transazione».
+ *
+ * Non è `Prisma.TransactionClient` di libreria: quello descrive il client
+ * *nudo*, mentre qui il client è esteso — adapter più `$extends` per i
+ * cancellati logici e i campi cifrati — e i due tipi non combaciano. Il
+ * risultato è un errore che sembra assurdo, «manca `$on`», su una riga che
+ * passa semplicemente `prisma`.
+ *
+ * Si ricava perciò dal client reale, togliendo i metodi che dentro una
+ * transazione non esistono. `typeof prisma` è assegnabile a questo tipo,
+ * quindi la stessa funzione accetta sia il client globale sia quello della
+ * transazione — che è esattamente ciò che serve a chi la scrive.
+ *
+ * Viveva duplicato, identico, in `attendance/manual-punch.ts` e in
+ * `services/allocation-service.ts`, e mancava dove sarebbe servito
+ * altrettanto (`gocardless/dedup.ts`, che infatti non compilava sotto
+ * `typecheck:test`). Sta qui perché è un fatto sul client, non su un dominio.
+ */
+export type TransactionClient = Omit<
+  typeof prisma,
+  '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
+>
 
 if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma

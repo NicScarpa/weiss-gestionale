@@ -229,9 +229,22 @@ interface RouteContext<TParams> {
   params: Promise<TParams>
 }
 
+/**
+ * Il secondo parametro **non è opzionale**, e la ragione sta fuori da questo
+ * file. Next genera per ogni route un controllo di tipo su ciò che esporta, e
+ * sotto webpack pretende esattamente `RouteContext`: con `routeContext?` il
+ * tipo diventa `RouteContext<T> | undefined`, che non lo soddisfa. Erano 78
+ * errori `TS2344` — uno per ogni handler passato da `withAuth` — invisibili
+ * perché il job che li avrebbe visti restava saltato dietro due job rossi.
+ *
+ * A runtime non cambia nulla: l'App Router il secondo argomento lo passa
+ * sempre, anche alle route statiche (con `params` vuoto). `withAuth` continua
+ * comunque a leggerlo in modo difensivo, perché nei test un handler può essere
+ * invocato a mano.
+ */
 type AuthedRoute<TParams> = (
   request: NextRequest,
-  routeContext?: RouteContext<TParams>
+  routeContext: RouteContext<TParams>
 ) => Promise<Response>
 
 type AuthHandler<TParams> = (

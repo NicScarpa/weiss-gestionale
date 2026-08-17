@@ -12,14 +12,16 @@ import {
 } from '@/lib/utils/permissions'
 import {
   generateUniqueUsername,
-  generateAdminUsername,
-  shouldUseEmailAsUsername,
+  normalizzaUsernameScelto,
+  usernameValido,
 } from '@/lib/utils/username'
 
 import { checkRequestRateLimit, RATE_LIMIT_CONFIGS } from '@/lib/api-utils'
 import { logger } from '@/lib/logger'
 import { getVenueId } from '@/lib/venue'
 import crypto from 'crypto'
+import { sendPortalAccessEmail, INVITE_EXPIRY_DAYS } from '@/lib/email-invitation'
+import { generaPasswordTemporanea } from '@/lib/password-temporanea'
 
 // Schema creazione utente
 const createUserSchema = z.object({
@@ -46,6 +48,10 @@ const createUserSchema = z.object({
   fiscalCode: z.string().optional().nullable(),
   vatNumber: z.string().optional().nullable(),
   skills: z.array(z.string()).optional(),
+  // Lo username proposto si può correggere: nei casi veri chi conosce le
+  // persone sceglie meglio di una regola, e `rossi.mario2` non si detta
+  // volentieri a voce. Assente, lo genera il sistema.
+  username: z.string().optional().nullable(),
   canWorkAlone: z.boolean().optional(),
   canHandleCash: z.boolean().optional(),
 })
@@ -215,10 +221,33 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Genera username
+    // Lo username: quello scelto a mano se c'è, altrimenti `cognome.nome`.
+    //
+    // La regola vale per tutti i ruoli. Fino al 17 agosto 2026 admin e manager
+    // prendevano l'**email** come username (`shouldUseEmailAsUsername`): due
+    // regole per la stessa cosa, e nemmeno applicate in modo uniforme, visto che
+    // l'altro percorso di creazione non la conosceva.
     let username: string
-    if (shouldUseEmailAsUsername(validatedData.role)) {
-      username = generateAdminUsername(validatedData.email!)
+    if (validatedData.username) {
+      username = normalizzaUsernameScelto(validatedData.username)
+
+      if (!usernameValido(username)) {
+        return NextResponse.json(
+          {
+            error:
+              'Username non valido: sono ammesse solo lettere e cifre minuscole separate da punti singoli, da 3 a 40 caratteri.',
+          },
+          { status: 400 }
+        )
+      }
+
+      const occupato = await prisma.user.findUnique({ where: { username }, select: { id: true } })
+      if (occupato) {
+        return NextResponse.json(
+          { error: `Username «${username}» già in uso: scegline un altro.` },
+          { status: 409 }
+        )
+      }
     } else {
       username = await generateUniqueUsername(
         prisma,
@@ -227,13 +256,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Genera password temporanea random
-    const temporaryPassword = crypto.randomBytes(16).toString('base64url')
+    // Genera password temporanea (leggibile: va dettata o trascritta all'utente)
+    const temporaryPassword = generaPasswordTemporanea()
     const passwordHash = await bcrypt.hash(temporaryPassword, 12)
+
+    // Se c'è un'email, il nuovo utente riceve anche il link per impostarsi la
+    // password da solo. Senza email resta solo la consegna a mano.
+    const resetToken = validatedData.email ? crypto.randomBytes(32).toString('hex') : null
+    const resetTokenExpiry = resetToken
+      ? new Date(Date.now() + INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000)
+      : null
 
     // Crea utente
     const newUser = await prisma.user.create({
       data: {
+        resetToken,
+        resetTokenExpiry,
         firstName: validatedData.firstName,
         lastName: validatedData.lastName,
         email: validatedData.email || null,
@@ -264,11 +302,32 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // L'invio non deve far fallire la creazione: l'utente esiste già e le
+    // credenziali sono comunque mostrate a schermo a chi lo ha creato.
+    let emailSentTo: string | null = null
+    if (validatedData.email && resetToken) {
+      const inviato = await sendPortalAccessEmail({
+        email: validatedData.email,
+        token: resetToken,
+        firstName: validatedData.firstName,
+        invitedByName: [session.user.firstName, session.user.lastName]
+          .filter(Boolean)
+          .join(' ')
+          .trim() || null,
+      })
+      if (inviato) {
+        emailSentTo = validatedData.email
+      } else {
+        logger.error('Creazione utente: invio email fallito', { userId: newUser.id })
+      }
+    }
+
     // Restituisci utente con credenziali temporanee (una tantum)
     // VULN-047: La password temporanea viene restituita una sola volta all'admin che crea l'utente
     // per comunicarla al nuovo utente. Non viene mai persistita in chiaro.
     return NextResponse.json({
       user: filterUserFields(newUser as unknown as Record<string, unknown>, userRole),
+      emailSentTo,
       credentials: {
         username,
         temporaryPassword,

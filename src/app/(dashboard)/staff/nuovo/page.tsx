@@ -104,7 +104,11 @@ export default function NuovoDipendentePage() {
   })
 
   const venues: Venue[] = venuesData?.venues || []
-  const roles: Role[] = rolesData?.roles || []
+  // `GET /api/roles` risponde `{ data: [...] }`, non `{ roles: [...] }`: letta
+  // con la chiave sbagliata la lista restava vuota, la tendina si apriva senza
+  // voci e il salvataggio si fermava su «Campi obbligatori mancanti: Ruolo»,
+  // senza modo di rimediare dalla schermata.
+  const roles: Role[] = rolesData?.data || []
 
   // Toggle giorno disponibilità
   const toggleDay = (dayValue: number) => {

@@ -102,6 +102,7 @@ export async function GET(request: NextRequest) {
 
     // Filtri
     const stato = searchParams.get('stato')
+    const aperte = searchParams.get('aperte') === '1'
     const tipo = searchParams.get('tipo')
     const priorita = searchParams.get('priorita')
     // Origine: valore fuori enum ignorato, altrimenti la query non tornerebbe
@@ -146,9 +147,12 @@ export async function GET(request: NextRequest) {
 
     const where: Prisma.ScheduleWhereInput = { venueId }
 
-    // Filro per stato
+    // Filtro per stato: uno solo, oppure «aperte» = i tre stati ancora
+    // saldabili (il dialogo «Collega fattura» dell'estratto conto chiede questi).
     if (stato) {
       where.stato = stato as ScheduleStatus
+    } else if (aperte) {
+      where.stato = { in: ['aperta', 'parzialmente_pagata', 'scaduta'] }
     }
 
     // Filro per tipo

@@ -1,0 +1,9 @@
+{
+  "account": {
+    "resourceId": "0000000000",
+    "iban": "IT00X0000000000000000000000",
+    "currency": "EUR",
+    "product": "Conto corrente",
+    "cashAccountType": "CACC"
+  }
+}

@@ -1,12 +1,15 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 import {
   ArrowLeftRightIcon,
   ArrowUpDownIcon,
   CalendarIcon,
+  Landmark,
+  Link2,
 } from 'lucide-react'
 import { MovimentoRowActions } from './MovimentoRowActions'
 import { JournalEntryBadge } from '../shared/JournalEntryBadge'
@@ -35,6 +38,7 @@ interface MovimentiTableProps {
   onHide?: (id: string, hidden: boolean) => void
   onCategorize?: (entry: JournalEntry) => void
   onSplit?: (entry: JournalEntry) => void
+  onRiconciliazioni?: (entry: JournalEntry) => void
   /** Admin: può riclassificare i movimenti da chiusura (Task 15). */
   isAdmin?: boolean
   isLoading?: boolean
@@ -51,6 +55,7 @@ export function MovimentiTable({
   onHide,
   onCategorize,
   onSplit,
+  onRiconciliazioni,
   isAdmin = false,
   isLoading = false,
 }: MovimentiTableProps) {
@@ -196,6 +201,18 @@ export function MovimentiTable({
                           </span>
                         </div>
                       )}
+                      {/* La scrittura nata da una riga della banca (o legata a
+                          mano) lo dice, e ci porta: è l'estratto conto la sua
+                          origine, e lì si scollega. */}
+                      {entry.bankTransactionId && (
+                        <Link
+                          href={`/prima-nota/movimenti?register=BANK&movimento=${entry.bankTransactionId}`}
+                          className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          <Landmark className="h-3 w-3 shrink-0" aria-hidden />
+                          dalla banca
+                        </Link>
+                      )}
                     </td>
 
                     {/* Documento */}
@@ -211,6 +228,20 @@ export function MovimentiTable({
                         </div>
                       ) : (
                         <span className="text-muted-foreground">-</span>
+                      )}
+                      {/* L'aggancio a una scadenza decide se il movimento è
+                          cancellabile: mostrarlo qui evita di scoprirlo dal
+                          rifiuto. Cliccabile perché lo sgancio parte da qui. */}
+                      {(entry.riconciliazioni?.length ?? 0) > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => onRiconciliazioni?.(entry)}
+                          className="mt-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground"
+                          title="Scadenze saldate da questo movimento"
+                        >
+                          <Link2 className="h-3 w-3" />
+                          Riconciliato ({entry.riconciliazioni!.length})
+                        </button>
                       )}
                     </td>
 
@@ -310,6 +341,8 @@ export function MovimentiTable({
                         onHide={() => onHide?.(entry.id, !!entry.hiddenAt)}
                         onCategorize={categorizzabile ? () => onCategorize?.(entry) : undefined}
                         onSplit={() => onSplit?.(entry)}
+                        onRiconciliazioni={() => onRiconciliazioni?.(entry)}
+                        riconciliazioniCount={entry.riconciliazioni?.length ?? 0}
                       />
                     </td>
                   </tr>

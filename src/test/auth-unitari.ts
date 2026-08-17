@@ -24,3 +24,22 @@ import { auth } from '@/lib/auth'
  * database è vero: vedi `src/test/integration/auth-mock.ts`.
  */
 export const authDiRoute: () => Promise<Session | null> = auth
+
+/**
+ * Il secondo argomento che l'App Router passa a ogni route handler.
+ *
+ * Va passato anche nei test unitari: `withAuth` lo dichiara obbligatorio
+ * perché il controllo di tipo che Next genera sotto webpack rifiuta un
+ * parametro opzionale (vedi il commento su `AuthedRoute` in
+ * `src/lib/api-utils.ts`). Ometterlo, oltre a non compilare più, significava
+ * provare una chiamata che in produzione non avviene mai: Next il contesto lo
+ * passa sempre, anche alle route statiche, con `params` vuoto.
+ *
+ * Per le route dinamiche si passano i parametri veri:
+ * `contestoRotta({ id: 'abc' })`.
+ */
+export function contestoRotta<TParams extends object = Record<string, never>>(
+  params: TParams = {} as TParams
+): { params: Promise<TParams> } {
+  return { params: Promise.resolve(params) }
+}

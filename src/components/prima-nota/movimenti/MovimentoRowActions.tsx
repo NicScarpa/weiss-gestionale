@@ -9,6 +9,7 @@ import {
   EyeOff,
   Tag,
   SplitSquareHorizontal,
+  Link2,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -29,6 +30,9 @@ interface MovimentoRowActionsProps {
   onHide?: () => void
   onCategorize?: () => void
   onSplit?: () => void
+  /** Mostrato solo se il movimento salda almeno una scadenza */
+  onRiconciliazioni?: () => void
+  riconciliazioniCount?: number
 }
 
 export function MovimentoRowActions({
@@ -41,6 +45,8 @@ export function MovimentoRowActions({
   onHide,
   onCategorize,
   onSplit,
+  onRiconciliazioni,
+  riconciliazioniCount = 0,
 }: MovimentoRowActionsProps) {
   return (
     <div className="flex items-center gap-1">
@@ -92,6 +98,15 @@ export function MovimentoRowActions({
             >
               <Verified className="mr-2 h-4 w-4" />
               {verified ? 'Già verificato' : 'Verifica'}
+            </DropdownMenuItem>
+          )}
+
+          {/* La voce compare solo dove c'è qualcosa da sganciare: è la strada
+              che il rifiuto della cancellazione chiede di percorrere. */}
+          {onRiconciliazioni && riconciliazioniCount > 0 && (
+            <DropdownMenuItem onClick={onRiconciliazioni}>
+              <Link2 className="mr-2 h-4 w-4" />
+              Scadenze collegate ({riconciliazioniCount})
             </DropdownMenuItem>
           )}
 

@@ -462,12 +462,11 @@ export async function findClosureJournalLinks(
     reasons.push(`${payments} pagamenti collegati`)
   }
 
-  const invoices = await client.electronicInvoice.count({
-    where: { journalEntryId: { in: ids } },
-  })
-  if (invoices > 0) {
-    reasons.push(`${invoices} fatture elettroniche collegate`)
-  }
+  // Le fatture elettroniche non compaiono più fra i motivi: dal 15 agosto 2026
+  // non puntano a un movimento (spec 2026-08-15-fatture-non-generano-movimenti).
+  // Il legame fra una fattura e il denaro che la salda passa da
+  // `ScheduleReconciliation`, e quel movimento non nasce da una chiusura di
+  // cassa — quindi non entra in questo controllo.
 
   return reasons
 }

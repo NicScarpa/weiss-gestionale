@@ -29,6 +29,14 @@ export interface ScadenzaFixture {
   venueId?: string
   recurrenceId?: string | null
   ricorrenzaParentId?: string | null
+  /** Riferimento del documento (es. numero fattura), cercato nella causale. */
+  numeroDocumento?: string | null
+  /** Ragione sociale della controparte, cercata nella causale. */
+  controparteNome?: string | null
+  /** IBAN della controparte, cercato nella causale. */
+  controparteIban?: string | null
+  /** 'bonifico', 'riba', 'sdd', 'carta', 'contanti', 'f24', 'altro' */
+  metodoPagamento?: string | null
 }
 
 export async function creaScadenza(fixture: ScadenzaFixture = {}) {
@@ -49,6 +57,10 @@ export async function creaScadenza(fixture: ScadenzaFixture = {}) {
       invoiceId: fixture.invoiceId ?? null,
       recurrenceId: fixture.recurrenceId ?? null,
       ricorrenzaParentId: fixture.ricorrenzaParentId ?? null,
+      numeroDocumento: fixture.numeroDocumento ?? null,
+      controparteNome: fixture.controparteNome ?? null,
+      controparteIban: fixture.controparteIban ?? null,
+      metodoPagamento: fixture.metodoPagamento ?? null,
     },
   })
 }
@@ -58,6 +70,13 @@ export interface MovimentoFixture {
   entrata?: number
   /** Uscita (creditAmount): salda le scadenze passive. */
   uscita?: number
+  /**
+   * IVA dichiarata sulla testata. Assente = `null`, che è come nascono i
+   * movimenti dei tre percorsi automatici (import bancario, motore delle
+   * regole, esecuzione di un pagamento): serve poterla lasciare vuota tanto
+   * quanto serve poterla valorizzare.
+   */
+  iva?: number
   date?: Date
   description?: string
   venueId?: string
@@ -84,6 +103,7 @@ export async function creaMovimento(fixture: MovimentoFixture = {}) {
       description: fixture.description ?? 'Bonifico fornitore',
       debitAmount: fixture.entrata !== undefined ? decimal(fixture.entrata) : null,
       creditAmount: fixture.uscita !== undefined ? decimal(fixture.uscita) : null,
+      vatAmount: fixture.iva !== undefined ? decimal(fixture.iva) : null,
       closureId: fixture.closureId ?? null,
       costCenterId,
     },
@@ -91,14 +111,12 @@ export async function creaMovimento(fixture: MovimentoFixture = {}) {
 }
 
 export interface FatturaFixture {
-  status?: 'IMPORTED' | 'MATCHED' | 'CATEGORIZED' | 'RECORDED' | 'PAID'
+  status?: 'IMPORTED' | 'MATCHED' | 'CATEGORIZED' | 'PAID'
   totalAmount?: number
   invoiceNumber?: string
   invoiceDate?: Date
   supplierVat?: string
   venueId?: string
-  journalEntryId?: string | null
-  recordedAt?: Date | null
   accountId?: string | null
   supplierId?: string | null
 }
@@ -117,9 +135,7 @@ export async function creaFattura(fixture: FatturaFixture = {}) {
       totalAmount: decimal(totale),
       vatAmount: decimal(0),
       netAmount: decimal(totale),
-      status: fixture.status ?? 'RECORDED',
-      journalEntryId: fixture.journalEntryId ?? null,
-      recordedAt: fixture.recordedAt ?? null,
+      status: fixture.status ?? 'CATEGORIZED',
       accountId: fixture.accountId ?? null,
       supplierId: fixture.supplierId ?? null,
     },

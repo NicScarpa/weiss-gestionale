@@ -1,6 +1,6 @@
 // Tipi per la riconciliazione bancaria
 
-export type ImportSource = 'CSV' | 'XLSX' | 'CBI_XML' | 'CBI_TXT' | 'PSD2_FABRICK' | 'PSD2_TINK' | 'MANUAL'
+export type ImportSource = 'CSV' | 'XLSX' | 'CBI_XML' | 'CBI_TXT' | 'PSD2_FABRICK' | 'PSD2_TINK' | 'PSD2_GOCARDLESS' | 'MANUAL'
 
 export type ReconciliationStatus =
   | 'PENDING'
@@ -28,6 +28,19 @@ export interface BankTransaction {
   reconciledBy: string | null
   reconciledAt: Date | null
   createdAt: Date
+  /**
+   * Campi che la riga ha sul database e che le rotte di dettaglio
+   * restituiscono con l'intero record. Facoltativi perché le liste più vecchie
+   * non li selezionano: `RigaEstrattoConto` li richiede, chi legge il
+   * dettaglio li trova, e nessuna delle due deve dichiarare un tipo tutto suo.
+   */
+  descrizione?: string | null
+  causale?: string | null
+  note?: string | null
+  /** `proprietaryBankTransactionCode` della banca, formato `NN//NN`. */
+  bankTransactionCode?: string | null
+  /** L'identificativo dato dalla banca: unico per conto, non fra conti. */
+  providerTransactionId?: string | null
 }
 
 export interface ImportBatch {
@@ -56,6 +69,72 @@ export interface BankTransactionWithMatch extends BankTransaction {
     name: string
     code: string
   }
+}
+
+export type SezioneMovimentoBancario = 'ATTIVI' | 'DELEGHE_F24' | 'CBILL_PAGOPA'
+export type StatoLegenda = 'non_abbinato' | 'parziale' | 'abbinato_manualmente' | 'riconciliato'
+
+export type OrigineScritturaBancaria = 'CATEGORIZZA' | 'COLLEGA' | 'PROPOSTA'
+
+/**
+ * La scrittura collegata come la vede la lista: quanto basta alla colonna
+ * Categoria e ai dialoghi. `fette` conta le ripartizioni: con fette, Categorizza
+ * non riscrive il conto (lo governa la suddivisione).
+ */
+export interface ScritturaCollegata {
+  id: string
+  date: Date
+  description: string
+  debitAmount: number | null
+  creditAmount: number | null
+  documentRef: string | null
+  account: { id: string; code: string; name: string } | null
+  costCenter: { id: string; code: string; name: string } | null
+  fette: number
+}
+
+/**
+ * La riga come la vede la lista dell'estratto conto: i campi in più li calcola
+ * il server, così legenda, filtro e conteggi dicono la stessa cosa.
+ */
+export interface RigaEstrattoConto extends BankTransactionWithMatch {
+  descrizione: string | null
+  causale: string | null
+  note: string | null
+  sezione: SezioneMovimentoBancario
+  bankTransactionCode: string | null
+  bankAccount: { id: string; name: string } | null
+  modificato: boolean
+  stato: StatoLegenda
+  residuo: number
+  deletedAt: Date | null
+  matchedEntry: ScritturaCollegata | null
+  /** Da quale azione la promozione ha creato la scrittura; nullo se esisteva già (R4) o se non è collegata. */
+  origineScrittura: OrigineScritturaBancaria | null
+  /** Il residuo dei documenti denormalizzato; nullo se la riga non è collegata. */
+  residuoDocumenti: number | null
+  /** C'è una proposta del motore da rivedere (`status = TO_REVIEW`). */
+  proposta: boolean
+}
+
+export interface TotaliEstrattoConto {
+  entrate: number
+  uscite: number
+  saldoNetto: number
+}
+
+export interface ConteggiEstrattoConto {
+  attivi: number
+  delegheF24: number
+  cbillPagopa: number
+  cestino: number
+}
+
+export interface RispostaEstrattoConto {
+  data: RigaEstrattoConto[]
+  pagination: { page: number; limit: number; total: number; totalPages: number }
+  totali: TotaliEstrattoConto
+  conteggi: ConteggiEstrattoConto
 }
 
 export interface ReconciliationSummary {

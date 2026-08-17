@@ -5,6 +5,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { lookupHash } from '@/lib/encryption'
+import { normalizzaPartitaIva } from '@/lib/invoices/partita-iva'
 import type { Supplier } from '@prisma/client'
 import type { FatturaParsata } from './types'
 
@@ -69,7 +70,7 @@ export async function findSupplierByVat(
   // Cerca per P.IVA con varianti (con/senza zeri iniziali)
   if (normalizedVat) {
     // Genera varianti P.IVA per retrocompatibilità
-    const vatWithoutLeadingZeros = normalizedVat.replace(/^0+/, '')
+    const vatWithoutLeadingZeros = normalizzaPartitaIva(normalizedVat)
     const vatVariants = [normalizedVat]
 
     // Aggiungi variante senza zeri iniziali solo se diversa

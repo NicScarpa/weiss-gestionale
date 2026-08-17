@@ -9,12 +9,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useState, useEffect, useMemo } from 'react'
-import { ArrowLeft, BookOpen, Loader2, AlertCircle } from 'lucide-react'
+import { ArrowLeft, AlertCircle, Wallet } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
 import {
@@ -23,6 +22,8 @@ import {
   useCostCenters,
 } from '@/components/prima-nota/shared/CostCenterSelect'
 import { useAccountsForCombobox, buildCostCenterRuleMap } from '@/hooks/useImputableAccounts'
+import { CONTO_PROPOSTO_BOLLO, LINEA_BOLLO } from '@/lib/sdi/righe-di-sistema'
+import { SegnaComePagataDialog } from './SegnaComePagataDialog'
 
 import {
   DocumentInfoSection,
@@ -36,7 +37,9 @@ import {
   PaymentSection,
   TransmissionDataSection,
   MetadataSection,
+  AvvisoRiallineamento,
   type ParsedInvoiceData,
+  type DivergenzaFattura,
 } from './InvoiceDetailSections'
 
 interface InvoiceDetailProps {
@@ -58,7 +61,6 @@ interface Invoice {
   notes?: string
   importedAt: string
   processedAt?: string
-  recordedAt?: string
   supplier?: {
     id: string
     name: string
@@ -80,12 +82,6 @@ interface Invoice {
     name: string
     code: string
   } | null
-  journalEntry?: {
-    id: string
-    date: string
-    description: string
-    creditAmount?: string
-  } | null
   deadlines: Array<{
     id: string
     dueDate: string
@@ -101,9 +97,13 @@ interface Invoice {
     stato: string
     importoTotale: string | number
     importoPagato: string | number
+    dataScadenza?: string
+    descrizione?: string
   }>
   // Parsed XML data from API
   parsedData?: ParsedInvoiceData
+  /** Task 10: movimenti collegati le cui fette raccontano un'imputazione superata (spec sez. 2). */
+  divergenze?: DivergenzaFattura[]
 }
 
 async function fetchInvoice(id: string): Promise<Invoice> {
@@ -128,24 +128,37 @@ async function updateInvoice(id: string, data: Record<string, unknown>): Promise
   return res.json()
 }
 
-async function recordInvoice(id: string, costCenterId?: string): Promise<unknown> {
-  const res = await fetch(`/api/invoices/${id}/record`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    // costCenterId assente/undefined -> null esplicito: nessun centro
-    // scelto qui, il server decide (default o errore se il conto lo richiede).
-    body: JSON.stringify({ costCenterId: costCenterId ?? null }),
-  })
-  if (!res.ok) {
-    const data = await res.json()
-    throw new Error(data.error || 'Errore registrazione')
-  }
-  return res.json()
+interface RigheContiPayload {
+  // numeroLinea accetta anche i numeri riservati delle righe di sistema
+  // (LINEA_BOLLO = -1, LINEA_ARROTONDAMENTO = -2, in
+  // src/lib/sdi/righe-di-sistema.ts): sono `number` come le righe vere,
+  // nessuna forma diversa serve per salvarne il conto.
+  // `progressivo` e `importo` sono opzionali: assenti per una riga a quota
+  // singola (il server ricava tutto dal documento), presenti insieme per
+  // ogni quota di una riga divisa (Task 9) — vedi RigaDivisibile.onSalva,
+  // che li valorizza sempre entrambi o nessuno dei due.
+  righe?: Array<{ numeroLinea: number; accountId: string; progressivo?: number; importo?: number }>
+  confermaTutte?: boolean
 }
 
-interface RigheContiPayload {
-  righe?: Array<{ numeroLinea: number; accountId: string }>
-  confermaTutte?: boolean
+/**
+ * Il bollo da includere in "Accetta tutte", se ha ancora bisogno di un
+ * conto. Pura e esportata per essere testata da sola (stesso schema di
+ * `groupByMastro` in `AccountCombobox.tsx`): montare l'intero `InvoiceDetail`
+ * per verificare questa sola decisione richiederebbe mock di tre fetch
+ * (fattura, conti, centri di costo) per una logica che non ne fa uso diretto.
+ *
+ * `righeSistema` può essere `undefined` (fattura ancora in caricamento, o
+ * senza XML leggibile): in quel caso non c'è nulla da proporre, non un
+ * errore da sollevare.
+ */
+export function rigaBolloDaConfermare(
+  righeSistema: ParsedInvoiceData['righeSistema'],
+  contoBolloId: string | undefined
+): Array<{ numeroLinea: number; accountId: string }> {
+  const rigaBollo = righeSistema?.find((r) => r.numeroLinea === LINEA_BOLLO)
+  if (!rigaBollo || rigaBollo.imputazioni.length > 0 || !contoBolloId) return []
+  return [{ numeroLinea: LINEA_BOLLO, accountId: contoBolloId }]
 }
 
 async function updateRigheConti(id: string, data: RigheContiPayload): Promise<unknown> {
@@ -159,6 +172,24 @@ async function updateRigheConti(id: string, data: RigheContiPayload): Promise<un
     throw new Error(errBody.error || "Errore nell'imputazione della riga")
   }
   return res.json()
+}
+
+/**
+ * Task 10: chiama la rotta di riallineamento (Task 7) sul MOVIMENTO
+ * divergente, non sulla fattura — `journalEntryId` viene da `divergenze`,
+ * calcolato dal server in `/api/invoices/[id]`. Il 409 (già allineato, o
+ * mai coperto per intero) e il 422 (fattura non rigenerabile: righe non
+ * confermate, capienza superata, nota di credito non imputata per intero)
+ * arrivano qui con lo stesso messaggio che la rotta scrive per l'utente:
+ * non si riscrive un testo diverso, si inoltra il suo.
+ */
+async function riallineaMovimento(journalEntryId: string): Promise<{ fette: number; message: string }> {
+  const res = await fetch(`/api/prima-nota/${journalEntryId}/riallinea`, { method: 'POST' })
+  const data = await res.json()
+  if (!res.ok) {
+    throw new Error(data.error || 'Errore nel riallineamento delle fette')
+  }
+  return data
 }
 
 export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
@@ -189,6 +220,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     centroToccato: false,
   }
   const [scelte, setScelte] = useState(nessunaScelta)
+  const [segnaPagataAperto, setSegnaPagataAperto] = useState(false)
   const correnti = scelte.invoiceId === invoiceId ? scelte : nessunaScelta
 
   const { data: invoice, isLoading, error } = useQuery({
@@ -206,7 +238,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       const dati = query.state.data as Invoice | undefined
       const righe = dati?.parsedData?.dettaglioLinee
       if (!righe?.length) return false
-      if (righe.some((r) => r.imputazione)) return false
+      if (righe.some((r) => r.imputazioni.length > 0)) return false
       if (query.state.dataUpdateCount > 20) return false
       return 3000
     },
@@ -256,21 +288,31 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     },
   })
 
-  const recordMutation = useMutation({
-    mutationFn: () => recordInvoice(invoiceId, costCenterId),
+  const righeContiMutation = useMutation({
+    mutationFn: (data: RigheContiPayload) => updateRigheConti(invoiceId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoice', invoiceId] })
-      toast.success('Fattura registrata in prima nota')
     },
     onError: (err: Error) => {
       toast.error(err.message)
     },
   })
 
-  const righeContiMutation = useMutation({
-    mutationFn: (data: RigheContiPayload) => updateRigheConti(invoiceId, data),
-    onSuccess: () => {
+  // Task 10: invalidare la fattura dopo un riallineamento riuscito rilegge
+  // `divergenze` dal server — che con le fette appena rigenerate torna vuoto
+  // per quel movimento — ed è così che l'avviso sparisce, non con uno stato
+  // locale da tenere sincronizzato a mano.
+  const riallineaMutation = useMutation({
+    mutationFn: riallineaMovimento,
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['invoice', invoiceId] })
+      // "sul movimento", non "di questa fattura": il riallineamento è per
+      // MOVIMENTO (Task 7). Su un bonifico cumulativo che salda anche
+      // un'altra fattura divergente, `data.fette` conta anche le sue —
+      // dire "di questa fattura" qui affermerebbe un ambito che il numero
+      // non rispetta.
+      const fetteLabel = data.fette === 1 ? '1 fetta rigenerata' : `${data.fette} fette rigenerate`
+      toast.success(`${data.message} — ${fetteLabel} sul movimento`)
     },
     onError: (err: Error) => {
       toast.error(err.message)
@@ -286,8 +328,25 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     righeContiMutation.mutate({ righe: [{ numeroLinea, accountId }] })
   }
 
-  const handleConfirmAllLineAccounts = () => {
-    righeContiMutation.mutate({ confermaTutte: true })
+  // Task 9: RigaDivisibile passa SEMPRE l'insieme completo delle quote della
+  // riga divisa (mai una alla volta) — è la stessa mutation di
+  // handleLineAccountChange, il server distingue una riga a quota singola da
+  // una divisa dal numero di elementi con lo stesso numeroLinea nella
+  // richiesta (righe-conti/route.ts). Un rifiuto (400: somma che non
+  // quadra) arriva qui come in ogni altro uso della mutation: onError già
+  // lo mostra con toast.error, nessuna gestione dedicata da aggiungere.
+  const handleSplitSave = (
+    numeroLinea: number,
+    quote: Array<{ progressivo: number; accountId: string; importo: number }>
+  ) => {
+    righeContiMutation.mutate({
+      righe: quote.map((q) => ({
+        numeroLinea,
+        progressivo: q.progressivo,
+        accountId: q.accountId,
+        importo: q.importo,
+      })),
+    })
   }
 
   // Loading state
@@ -323,12 +382,13 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     )
   }
 
-  const canEdit = invoice.status !== 'RECORDED' && invoice.status !== 'PAID'
-  const isCategorizedWithAccount = invoice.status === 'CATEGORIZED' && !!invoice.account
+  const canEdit = invoice.status !== 'PAID'
+  const scadenzeAperte = (invoice.schedules ?? []).filter(
+    (s) => s.stato !== 'pagata' && s.stato !== 'annullata'
+  )
   // Il conto scelto richiede un centro di costo esplicito e non ne è stato
-  // scelto uno: il bottone Registra resta visibile ma disabilitato, con un
-  // tooltip che spiega perché (non lo si nasconde: l'utente deve capire cosa
-  // manca, non chiedersi perché è sparito).
+  // scelto uno: si segnala sotto la tendina invece di lasciar salvare in
+  // silenzio un'imputazione che il piano dei conti rifiuterebbe.
   const costCenterMissingButRequired = isCostCenterRequired && !costCenterId
   const parsedData = invoice.parsedData
 
@@ -345,6 +405,29 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const defaultAccountLabel = defaultAccount
     ? `${defaultAccount.code} - ${defaultAccount.name}`
     : undefined
+
+  // Stesso principio per il bollo: CONTO_PROPOSTO_BOLLO è un codice
+  // (30.01), il conto stesso serve per mostrare "codice - nome" in
+  // tendina. È di tipo COSTO (piano v4, famiglia E), quindi già dentro la
+  // lista sopra: nessuna fetch dedicata.
+  const contoBollo = accounts?.find((a) => a.code === CONTO_PROPOSTO_BOLLO)
+  const defaultBolloAccountLabel = contoBollo
+    ? `${contoBollo.code} - ${contoBollo.name}`
+    : undefined
+
+  // Il bollo non ha mai una vera imputazione 'proposta' salvata (Task 8: solo
+  // un suggerimento in tendina, non una InvoiceLineAccount): "Accetta tutte",
+  // che sul server aggiorna solo le righe già in stato 'proposta', altrimenti
+  // non lo toccherebbe mai — l'utente dovrebbe aprire quella tendina a mano
+  // su ogni fattura col bollo. La si include qui nella stessa richiesta.
+  const bolloDaProporre = rigaBolloDaConfermare(parsedData?.righeSistema, contoBollo?.id)
+
+  const handleConfirmAllLineAccounts = () => {
+    righeContiMutation.mutate({
+      confermaTutte: true,
+      ...(bolloDaProporre.length > 0 && { righe: bolloDaProporre }),
+    })
+  }
 
   return (
     <div className="container py-6 space-y-6">
@@ -365,41 +448,22 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           />
         </div>
 
-        {isCategorizedWithAccount && (
-          costCenterMissingButRequired ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-block">
-                  <Button disabled>
-                    <BookOpen className="mr-2 h-4 w-4" />
-                    Registra in Prima Nota
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                Il conto di spesa selezionato richiede un centro di costo: assegnalo prima di registrare.
-              </TooltipContent>
-            </Tooltip>
-          ) : (
-            <Button
-              onClick={() => recordMutation.mutate()}
-              disabled={recordMutation.isPending}
-            >
-              {recordMutation.isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Registrazione...
-                </>
-              ) : (
-                <>
-                  <BookOpen className="mr-2 h-4 w-4" />
-                  Registra in Prima Nota
-                </>
-              )}
-            </Button>
-          )
+        {/* Non compare senza rate aperte: nota di credito, documento di
+            rettifica o fattura già saldata non hanno nulla da saldare. */}
+        {scadenzeAperte.length > 0 && (
+          <Button onClick={() => setSegnaPagataAperto(true)}>
+            <Wallet className="mr-2 h-4 w-4" />
+            Segna come pagata
+          </Button>
         )}
       </div>
+
+      <SegnaComePagataDialog
+        invoiceId={invoiceId}
+        schedules={invoice.schedules ?? []}
+        open={segnaPagataAperto}
+        onOpenChange={setSegnaPagataAperto}
+      />
 
       {/* Supplier and Customer cards - side by side on desktop */}
       <div className="grid gap-6 md:grid-cols-2">
@@ -419,14 +483,26 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       {/* Causale (if present) */}
       <CausaleSection causale={parsedData?.causale} />
 
+      {/* Task 10: avviso di divergenza e pulsante Riallinea, sopra la tabella
+          che ha causato l'imputazione superata */}
+      <AvvisoRiallineamento
+        divergenze={invoice.divergenze ?? []}
+        onRiallinea={(journalEntryId) => riallineaMutation.mutate(journalEntryId)}
+        journalEntryIdInCorso={riallineaMutation.isPending ? riallineaMutation.variables : null}
+      />
+
       {/* Line items table */}
       <LineItemsTable
         dettaglioLinee={parsedData?.dettaglioLinee}
+        righeSistema={parsedData?.righeSistema}
         showAccountColumn={isPassiva}
         canEditAccounts={canEdit && !righeContiMutation.isPending}
         defaultAccountLabel={defaultAccountLabel}
+        defaultBolloAccountLabel={defaultBolloAccountLabel}
+        totaleDocumento={invoice.totalAmount}
         onAccountChange={handleLineAccountChange}
         onConfirmAllAccounts={handleConfirmAllLineAccounts}
+        onSplitSave={handleSplitSave}
       />
 
       {/* VAT Summary and Totals - side by side */}
@@ -489,21 +565,11 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
             </div>
             {costCenterMissingButRequired && (
               <p className="text-xs text-destructive">
-                Il conto selezionato richiede un centro di costo per poter registrare la fattura.
+                Il conto selezionato richiede un centro di costo: assegnalo per completare l&apos;imputazione.
               </p>
             )}
           </div>
 
-          {invoice.journalEntry && (
-            <div className="p-3 bg-green-50 border border-green-200 rounded-lg max-w-md">
-              <p className="text-sm font-medium text-green-800">
-                ✓ Registrata in Prima Nota
-              </p>
-              <p className="text-xs text-green-600">
-                {invoice.journalEntry.description}
-              </p>
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -520,8 +586,6 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         venueName={invoice.venue?.name}
         importedAt={invoice.importedAt}
         fileName={invoice.fileName}
-        recordedAt={invoice.recordedAt}
-        journalEntryDescription={invoice.journalEntry?.description}
       />
     </div>
   )

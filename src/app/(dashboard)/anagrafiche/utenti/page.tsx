@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { UserFilters, type UserFiltersValue } from '@/components/users/UserFilters'
 import { UserTable, type UserData } from '@/components/users/UserTable'
+import { CredentialsDialog } from '@/components/users/CredentialsDialog'
 import { Plus, Users, Shield } from 'lucide-react'
 import { toast } from 'sonner'
 import { canAccessUserManagement, type UserRole } from '@/lib/utils/permissions'
@@ -23,6 +24,13 @@ export default function UtentiPage() {
     role: 'all',
     status: 'all',
   })
+  const [resetCredentials, setResetCredentials] = useState<{
+    username: string
+    password: string
+    firstName: string
+    lastName: string
+    emailSentTo: string | null
+  } | null>(null)
 
   // Verifica accesso
   useEffect(() => {
@@ -96,10 +104,20 @@ export default function UtentiPage() {
     const response = await fetch(`/api/users/${userId}/reset-password`, {
       method: 'POST',
     })
+    const data = await response.json()
     if (!response.ok) {
-      const data = await response.json()
       throw new Error(data.error || 'Errore reset password')
     }
+    // La password temporanea vive solo in questa risposta: mostrarla subito,
+    // altrimenti l'utente resta senza credenziali recuperabili.
+    const target = users.find((u) => u.id === userId)
+    setResetCredentials({
+      username: data.credentials.username,
+      password: data.credentials.temporaryPassword,
+      firstName: target?.firstName ?? '',
+      lastName: target?.lastName ?? '',
+      emailSentTo: data.emailSentTo ?? null,
+    })
     await fetchUsers()
   }
 
@@ -149,7 +167,7 @@ export default function UtentiPage() {
           </p>
         </div>
         <Button asChild>
-          <Link href="/impostazioni/utenti/nuovo">
+          <Link href="/anagrafiche/utenti/nuovo">
             <Plus className="mr-2 h-4 w-4" />
             Nuovo utente
           </Link>
@@ -214,6 +232,15 @@ export default function UtentiPage() {
           />
         </CardContent>
       </Card>
+
+      {/* Credenziali dopo il reset: è l'unico momento in cui la password è visibile */}
+      <CredentialsDialog
+        open={!!resetCredentials}
+        onOpenChange={() => setResetCredentials(null)}
+        credentials={resetCredentials}
+        mode="reset"
+        emailSentTo={resetCredentials?.emailSentTo}
+      />
     </div>
   )
 }

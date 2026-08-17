@@ -12,7 +12,6 @@ import {
   Search,
   Filter,
   MoreVertical,
-  BookOpen,
   Trash2,
   Eye,
   ChevronUp,
@@ -62,7 +61,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { DangerousDeleteDialog } from '@/components/ui/dangerous-delete-dialog'
 import { toast } from 'sonner'
-import { InvoiceImportDialog } from './InvoiceImportDialog'
+import { ImportaFattureWizard } from '@/components/fatture/importa/ImportaFattureWizard'
 import {
   getDocumentTypeAbbrev,
   getDocumentTypeColor,
@@ -83,7 +82,7 @@ interface Invoice {
   totalAmount: string
   vatAmount: string
   netAmount: string
-  status: 'IMPORTED' | 'MATCHED' | 'CATEGORIZED' | 'RECORDED' | 'PAID'
+  status: 'IMPORTED' | 'MATCHED' | 'CATEGORIZED' | 'PARTIALLY_PAID' | 'PAID'
   supplier?: {
     id: string
     name: string
@@ -151,19 +150,16 @@ async function deleteInvoice(id: string): Promise<void> {
   }
 }
 
-async function recordInvoice(id: string): Promise<unknown> {
-  const res = await fetch(`/api/invoices/${id}/record`, { method: 'POST' })
-  if (!res.ok) {
-    const data = await res.json()
-    throw new Error(data.error || 'Errore registrazione')
-  }
-  return res.json()
-}
-
 async function bulkDeleteInvoices(
   ids: string[],
   password: string
-): Promise<{ deleted: number; bloccate?: string[]; scadenzeAnnullate?: number }> {
+): Promise<{
+  deleted: number
+  bloccate?: string[]
+  saltatePerStato?: number
+  scadenzeAnnullate?: number
+  message: string
+}> {
   const res = await fetch('/api/invoices/bulk-delete', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -238,28 +234,23 @@ export function InvoiceList() {
   })
 
 
-  const recordMutation = useMutation({
-    mutationFn: recordInvoice,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['invoices'] })
-      toast.success('Fattura registrata in prima nota')
-    },
-    onError: (err: Error) => {
-      toast.error(err.message)
-    },
-  })
-
   const bulkDeleteMutation = useMutation({
     mutationFn: ({ ids, password }: { ids: string[]; password: string }) =>
       bulkDeleteInvoices(ids, password),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] })
-      if (result.bloccate && result.bloccate.length > 0) {
-        toast.warning(
-          `${result.deleted} fatture eliminate. ${result.bloccate.length} non eliminate: hanno pagamenti registrati nello scadenzario.`
-        )
+
+      // Il messaggio arriva dal server invece di essere ricomposto qui: è lui
+      // a sapere quante fatture ha saltato e perché, e una seconda scrittura
+      // della stessa frase era già rimasta indietro — taceva le fatture
+      // scartate perché registrate o pagate.
+      const parziale =
+        (result.bloccate?.length ?? 0) > 0 || (result.saltatePerStato ?? 0) > 0
+
+      if (parziale) {
+        toast.warning(result.message)
       } else {
-        toast.success(`${result.deleted} fatture eliminate`)
+        toast.success(result.message)
       }
       setSelectedIds(new Set())
       setPasswordDialogOpen(false)
@@ -280,7 +271,7 @@ export function InvoiceList() {
   const toggleSelectAll = useCallback(() => {
     if (!data?.data) return
     const deletableIds = data.data
-      .filter((inv) => inv.status !== 'RECORDED' && inv.status !== 'PAID')
+      .filter((inv) => inv.status !== 'PAID')
       .map((inv) => inv.id)
 
     if (selectedIds.size === deletableIds.length && deletableIds.length > 0) {
@@ -380,7 +371,7 @@ export function InvoiceList() {
       </div>
 
       {/* Filtri */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center p-4 bg-slate-50 rounded-lg border">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center p-4 bg-muted/50 rounded-lg border">
         {/* Ricerca */}
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -391,7 +382,7 @@ export function InvoiceList() {
               setSearchInput(e.target.value)
               setPage(1)
             }}
-            className="pl-9 bg-white"
+            className="pl-9"
           />
         </div>
 
@@ -404,7 +395,7 @@ export function InvoiceList() {
             setPage(1)
           }}
         >
-          <SelectTrigger className="w-[140px] bg-white">
+          <SelectTrigger className="w-[140px]">
             <Calendar className="mr-2 h-4 w-4" />
             <SelectValue placeholder="Anno" />
           </SelectTrigger>
@@ -427,7 +418,7 @@ export function InvoiceList() {
           }}
           disabled={yearFilter === 'all'}
         >
-          <SelectTrigger className="w-[150px] bg-white">
+          <SelectTrigger className="w-[150px]">
             <SelectValue placeholder="Mese" />
           </SelectTrigger>
           <SelectContent>
@@ -450,15 +441,18 @@ export function InvoiceList() {
             setPage(1)
           }}
         >
-          <SelectTrigger className="w-[160px] bg-white">
+          <SelectTrigger className="w-[160px]">
             <Filter className="mr-2 h-4 w-4" />
             <SelectValue placeholder="Stato" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Stato</SelectItem>
             <SelectItem value="all_statuses">Tutti gli stati</SelectItem>
-            <SelectItem value="RECORDED">Registrate</SelectItem>
-            <SelectItem value="not_recorded">Non registrate</SelectItem>
+            <SelectItem value="PAID">Pagate</SelectItem>
+            <SelectItem value="PARTIALLY_PAID">Parzialmente pagate</SelectItem>
+            {/* «Da pagare» comprende anche le parzialmente pagate: è il
+                complemento di «Pagate», non uno stato. */}
+            <SelectItem value="non_pagate">Da pagare</SelectItem>
           </SelectContent>
         </Select>
 
@@ -471,17 +465,17 @@ export function InvoiceList() {
       </div>
 
       {/* Tabella */}
-      <div className="rounded-lg border bg-white overflow-hidden">
+      <div className="rounded-lg border bg-card overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-slate-50">
+            <TableRow className="bg-muted/50">
               {session?.user?.role === 'admin' && (
                 <TableHead className="w-[50px]">
                   <Checkbox
                     checked={
                       data?.data &&
-                      data.data.filter((inv) => inv.status !== 'RECORDED' && inv.status !== 'PAID').length > 0 &&
-                      selectedIds.size === data.data.filter((inv) => inv.status !== 'RECORDED' && inv.status !== 'PAID').length
+                      data.data.filter((inv) => inv.status !== 'PAID').length > 0 &&
+                      selectedIds.size === data.data.filter((inv) => inv.status !== 'PAID').length
                     }
                     onCheckedChange={toggleSelectAll}
                   />
@@ -540,10 +534,10 @@ export function InvoiceList() {
               data?.data.map((invoice) => {
                 const docType = invoice.documentType
                 const simpleStatus = getSimpleStatus(invoice.status)
-                const canDelete = invoice.status !== 'RECORDED' && invoice.status !== 'PAID'
+                const canDelete = invoice.status !== 'PAID'
 
                 return (
-                  <TableRow key={invoice.id} className="hover:bg-slate-50">
+                  <TableRow key={invoice.id} className="hover:bg-muted/50">
                     {/* Checkbox selezione */}
                     {session?.user?.role === 'admin' && (
                       <TableCell>
@@ -603,17 +597,7 @@ export function InvoiceList() {
                               Visualizza
                             </Link>
                           </DropdownMenuItem>
-                          {invoice.status === 'CATEGORIZED' && (
-                            <DropdownMenuItem
-                              onClick={() => recordMutation.mutate(invoice.id)}
-                              disabled={recordMutation.isPending}
-                            >
-                              <BookOpen className="mr-2 h-4 w-4" />
-                              Registra in Prima Nota
-                            </DropdownMenuItem>
-                          )}
-                          {invoice.status !== 'RECORDED' &&
-                            invoice.status !== 'PAID' &&
+                          {invoice.status !== 'PAID' &&
                             session?.user?.role === 'admin' && (
                               <>
                                 <DropdownMenuSeparator />
@@ -693,10 +677,10 @@ export function InvoiceList() {
       )}
 
       {/* Dialog import */}
-      <InvoiceImportDialog
+      <ImportaFattureWizard
         open={importDialogOpen}
         onOpenChange={setImportDialogOpen}
-        onSuccess={handleImportSuccess}
+        onImportComplete={handleImportSuccess}
       />
 
       {/* Dialog conferma eliminazione */}

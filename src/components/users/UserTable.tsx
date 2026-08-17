@@ -95,8 +95,9 @@ export function UserTable({ users, isLoading, onResetPassword, onToggleActive }:
     setIsProcessing(true)
     try {
       if (actionDialog.type === 'reset-password') {
+        // Nessun toast: chi ci passa i dati mostra le credenziali in un dialog.
+        // Un toast qui coprirebbe l'unica occasione di leggere la password.
         await onResetPassword(actionDialog.user.id)
-        toast.success('Password resettata. Comunica la nuova password temporanea all\'utente.')
       } else if (actionDialog.type === 'toggle-active') {
         await onToggleActive(actionDialog.user.id, !actionDialog.user.isActive)
         toast.success(
@@ -212,7 +213,7 @@ export function UserTable({ users, isLoading, onResetPassword, onToggleActive }:
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem asChild>
-                      <Link href={`/impostazioni/utenti/${user.id}`}>
+                      <Link href={`/anagrafiche/utenti/${user.id}`}>
                         <Eye className="mr-2 h-4 w-4" />
                         Visualizza
                       </Link>
@@ -220,7 +221,7 @@ export function UserTable({ users, isLoading, onResetPassword, onToggleActive }:
 
                     {canEditUser(user.role.name) && (
                       <DropdownMenuItem asChild>
-                        <Link href={`/impostazioni/utenti/${user.id}?edit=true`}>
+                        <Link href={`/anagrafiche/utenti/${user.id}?edit=true`}>
                           <Pencil className="mr-2 h-4 w-4" />
                           Modifica
                         </Link>

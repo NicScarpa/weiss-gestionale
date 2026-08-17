@@ -289,7 +289,7 @@ function stampa(risultati) {
 /**
  * Handler ancora da convertire tollerati. Solo verso il basso: vedi l'intestazione.
  */
-const BASELINE = 255
+const BASELINE = 248
 
 const risultati = analizza()
 const daConvertire = stampa(risultati)

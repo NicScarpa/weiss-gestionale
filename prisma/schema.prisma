@@ -7,99 +7,101 @@ datasource db {
 }
 
 model User {
-  id                      String                       @id @default(cuid())
-  email                   String?                      @unique
-  passwordHash            String                       @map("password_hash")
-  firstName               String                       @map("first_name")
-  lastName                String                       @map("last_name")
-  roleId                  String                       @map("role_id")
-  venueId                 String?                      @map("venue_id")
-  hourlyRate              Decimal?                     @map("hourly_rate") @db.Decimal(10, 2)
-  isFixedStaff            Boolean                      @default(false) @map("is_fixed_staff")
-  isActive                Boolean                      @default(true) @map("is_active")
-  createdAt               DateTime                     @default(now()) @map("created_at")
-  updatedAt               DateTime                     @updatedAt @map("updated_at")
-  defaultShift            Shift?                       @map("default_shift")
-  appToken                String?                      @map("app_token")
-  canHandleCash           Boolean                      @default(true) @map("can_handle_cash")
-  canWorkAlone            Boolean                      @default(false) @map("can_work_alone")
-  contractHoursWeek       Decimal?                     @map("contract_hours_week") @db.Decimal(4, 1)
-  contractType            ContractType?                @map("contract_type")
-  hireDate                DateTime?                    @map("hire_date") @db.Date
-  hourlyRateBase          Decimal?                     @map("hourly_rate_base") @db.Decimal(10, 2)
-  hourlyRateExtra         Decimal?                     @map("hourly_rate_extra") @db.Decimal(10, 2)
-  hourlyRateHoliday       Decimal?                     @map("hourly_rate_holiday") @db.Decimal(10, 2)
-  hourlyRateNight         Decimal?                     @map("hourly_rate_night") @db.Decimal(10, 2)
-  notifyEmail             Boolean                      @default(true) @map("notify_email")
-  notifyPush              Boolean                      @default(true) @map("notify_push")
-  notifyWhatsapp          Boolean                      @default(false) @map("notify_whatsapp")
-  portalEnabled           Boolean                      @default(false) @map("portal_enabled")
-  portalPin               String?                      @map("portal_pin")
-  skills                  String[]                     @default([])
-  terminationDate         DateTime?                    @map("termination_date") @db.Date
-  whatsappNumber          String?                      @map("whatsapp_number")
-  availableDays           Int[]                        @default([]) @map("available_days")
-  availableHolidays       Boolean                      @default(false) @map("available_holidays")
-  fiscalCode              String?                      @map("fiscal_code")
-  phoneNumber             String?                      @map("phone_number")
-  vatNumber               String?                      @map("vat_number")
-  workDaysPerWeek         Int?                         @map("work_days_per_week")
-  address                 String?
-  birthDate               DateTime?                    @map("birth_date") @db.Date
-  gender                  String?
-  birthPlace              String?                      @map("birth_place")
-  birthProvince           String?                      @map("birth_province")
-  zipCode                 String?                      @map("zip_code")
-  city                    String?
-  province                String?
-  createdById             String?                      @map("created_by_id")
-  lastLoginAt             DateTime?                    @map("last_login_at")
-  mustChangePassword      Boolean                      @default(true) @map("must_change_password")
-  username                String                       @unique
-  resetToken              String?                      @unique @map("reset_token")
-  resetTokenExpiry        DateTime?                    @map("reset_token_expiry")
-  attendanceAnomalies     AttendanceAnomaly[]
-  attendancePunches       AttendanceRecord[]
-  correctionRequests      AttendanceCorrectionRequest[] @relation("CorrectionRequestedBy")
-  reviewedCorrections     AttendanceCorrectionRequest[] @relation("CorrectionReviewedBy")
-  clockReminders          ClockReminderRecipient[]
-  communicationsCreated   Communication[]              @relation("CommunicationsCreated")
-  communicationReads      CommunicationRead[]          @relation("CommunicationReads")
+  id                           String                        @id @default(cuid())
+  email                        String?                       @unique
+  passwordHash                 String                        @map("password_hash")
+  firstName                    String                        @map("first_name")
+  lastName                     String                        @map("last_name")
+  roleId                       String                        @map("role_id")
+  venueId                      String?                       @map("venue_id")
+  hourlyRate                   Decimal?                      @map("hourly_rate") @db.Decimal(10, 2)
+  isFixedStaff                 Boolean                       @default(false) @map("is_fixed_staff")
+  isActive                     Boolean                       @default(true) @map("is_active")
+  createdAt                    DateTime                      @default(now()) @map("created_at")
+  updatedAt                    DateTime                      @updatedAt @map("updated_at")
+  defaultShift                 Shift?                        @map("default_shift")
+  appToken                     String?                       @map("app_token")
+  canHandleCash                Boolean                       @default(true) @map("can_handle_cash")
+  canWorkAlone                 Boolean                       @default(false) @map("can_work_alone")
+  contractHoursWeek            Decimal?                      @map("contract_hours_week") @db.Decimal(4, 1)
+  contractType                 ContractType?                 @map("contract_type")
+  hireDate                     DateTime?                     @map("hire_date") @db.Date
+  hourlyRateBase               Decimal?                      @map("hourly_rate_base") @db.Decimal(10, 2)
+  hourlyRateExtra              Decimal?                      @map("hourly_rate_extra") @db.Decimal(10, 2)
+  hourlyRateHoliday            Decimal?                      @map("hourly_rate_holiday") @db.Decimal(10, 2)
+  hourlyRateNight              Decimal?                      @map("hourly_rate_night") @db.Decimal(10, 2)
+  notifyEmail                  Boolean                       @default(true) @map("notify_email")
+  notifyPush                   Boolean                       @default(true) @map("notify_push")
+  notifyWhatsapp               Boolean                       @default(false) @map("notify_whatsapp")
+  portalEnabled                Boolean                       @default(false) @map("portal_enabled")
+  portalPin                    String?                       @map("portal_pin")
+  skills                       String[]                      @default([])
+  terminationDate              DateTime?                     @map("termination_date") @db.Date
+  whatsappNumber               String?                       @map("whatsapp_number")
+  availableDays                Int[]                         @default([]) @map("available_days")
+  availableHolidays            Boolean                       @default(false) @map("available_holidays")
+  fiscalCode                   String?                       @map("fiscal_code")
+  phoneNumber                  String?                       @map("phone_number")
+  vatNumber                    String?                       @map("vat_number")
+  workDaysPerWeek              Int?                          @map("work_days_per_week")
+  address                      String?
+  birthDate                    DateTime?                     @map("birth_date") @db.Date
+  gender                       String?
+  birthPlace                   String?                       @map("birth_place")
+  birthProvince                String?                       @map("birth_province")
+  zipCode                      String?                       @map("zip_code")
+  city                         String?
+  province                     String?
+  createdById                  String?                       @map("created_by_id")
+  lastLoginAt                  DateTime?                     @map("last_login_at")
+  mustChangePassword           Boolean                       @default(true) @map("must_change_password")
+  username                     String                        @unique
+  resetToken                   String?                       @unique @map("reset_token")
+  resetTokenExpiry             DateTime?                     @map("reset_token_expiry")
+  attendanceAnomalies          AttendanceAnomaly[]
+  attendancePunches            AttendanceRecord[]
+  correctionRequests           AttendanceCorrectionRequest[] @relation("CorrectionRequestedBy")
+  reviewedCorrections          AttendanceCorrectionRequest[] @relation("CorrectionReviewedBy")
+  clockReminders               ClockReminderRecipient[]
+  communicationsCreated        Communication[]               @relation("CommunicationsCreated")
+  communicationReads           CommunicationRead[]           @relation("CommunicationReads")
   /// Regola oraria del dipendente: vale se il luogo non ne impone una propria.
-  timekeepingPolicyId     String?                      @map("timekeeping_policy_id")
-  timekeepingPolicy       TimekeepingPolicy?           @relation(fields: [timekeepingPolicyId], references: [id])
-  workLocations           WorkLocationAssignment[]
-  budgetsCreated          Budget[]
-  cashFlowForecasts       CashFlowForecast[]
-  certifications          Certification[]
-  attendanceRecords       DailyAttendance[]
-  submittedClosures       DailyClosure[]               @relation("SubmittedBy")
-  validatedClosures       DailyClosure[]               @relation("ValidatedBy")
-  constraints             EmployeeConstraint[]
-  journalEntries          JournalEntry[]
-  leaveBalances           LeaveBalance[]
-  approvedLeaveRequests   LeaveRequest[]               @relation("ApprovedBy")
-  leaveRequests           LeaveRequest[]
-  notificationPreferences NotificationPreference?
-  payments                Payment[]
-  relationshipConstraints RelationshipConstraintUser[]
-  shiftAssignments        ShiftAssignment[]
-  createdBy               User?                        @relation("CreatedByUser", fields: [createdById], references: [id])
-  createdUsers            User[]                       @relation("CreatedByUser")
-  schedulesCreated        Schedule[]                   @relation("ScheduleCreatedBy")
-  scheduleReconciliations ScheduleReconciliation[]     @relation("ScheduleReconciliationCreatedBy")
-  scheduleAttachments     ScheduleAttachment[]         @relation("ScheduleAttachmentUploader")
-  recurrencesCreated      Recurrence[]                 @relation("RecurrenceCreatedBy")
-  scheduleRulesCreated    ScheduleRule[]               @relation("ScheduleRuleCreatedBy")
-  role                    Role                         @relation(fields: [roleId], references: [id])
-  venue                   Venue?                       @relation(fields: [venueId], references: [id])
-  sentInvitations         InvitationToken[]            @relation("InvitedByUser")
-  createdByInvitation     InvitationToken?             @relation("CreatedByInvitation")
-  auditLogs               AuditLog[]
-  documents               EmployeeDocument[]           @relation("EmployeeDocuments")
-  uploadedDocuments       EmployeeDocument[]           @relation("DocumentUploader")
-  journalEntryAllocations JournalEntryAllocation[]     @relation("JournalEntryAllocationCreatedBy")
-  invoiceLineAccountsConfirmed InvoiceLineAccount[]    @relation("InvoiceLineAccountConfirmedBy")
+  timekeepingPolicyId          String?                       @map("timekeeping_policy_id")
+  timekeepingPolicy            TimekeepingPolicy?            @relation(fields: [timekeepingPolicyId], references: [id])
+  workLocations                WorkLocationAssignment[]
+  budgetsCreated               Budget[]
+  cashFlowForecasts            CashFlowForecast[]
+  certifications               Certification[]
+  attendanceRecords            DailyAttendance[]
+  submittedClosures            DailyClosure[]                @relation("SubmittedBy")
+  validatedClosures            DailyClosure[]                @relation("ValidatedBy")
+  constraints                  EmployeeConstraint[]
+  journalEntries               JournalEntry[]
+  leaveBalances                LeaveBalance[]
+  approvedLeaveRequests        LeaveRequest[]                @relation("ApprovedBy")
+  leaveRequests                LeaveRequest[]
+  notificationPreferences      NotificationPreference?
+  payments                     Payment[]
+  relationshipConstraints      RelationshipConstraintUser[]
+  shiftAssignments             ShiftAssignment[]
+  createdBy                    User?                         @relation("CreatedByUser", fields: [createdById], references: [id])
+  createdUsers                 User[]                        @relation("CreatedByUser")
+  schedulesCreated             Schedule[]                    @relation("ScheduleCreatedBy")
+  scheduleReconciliations      ScheduleReconciliation[]      @relation("ScheduleReconciliationCreatedBy")
+  scheduleAttachments          ScheduleAttachment[]          @relation("ScheduleAttachmentUploader")
+  recurrencesCreated           Recurrence[]                  @relation("RecurrenceCreatedBy")
+  scheduleRulesCreated         ScheduleRule[]                @relation("ScheduleRuleCreatedBy")
+  role                         Role                          @relation(fields: [roleId], references: [id])
+  venue                        Venue?                        @relation(fields: [venueId], references: [id])
+  sentInvitations              InvitationToken[]             @relation("InvitedByUser")
+  createdByInvitation          InvitationToken?              @relation("CreatedByInvitation")
+  auditLogs                    AuditLog[]
+  documents                    EmployeeDocument[]            @relation("EmployeeDocuments")
+  uploadedDocuments            EmployeeDocument[]            @relation("DocumentUploader")
+  journalEntryAllocations      JournalEntryAllocation[]      @relation("JournalEntryAllocationCreatedBy")
+  invoiceLineAccountsConfirmed InvoiceLineAccount[]          @relation("InvoiceLineAccountConfirmedBy")
+  reconciliationBatchesCreated ReconciliationBatch[]         @relation("ReconciliationBatchCreatedBy")
+  reconciliationProposalsDecise ReconciliationProposal[]     @relation("ReconciliationProposalDecisoDa")
 
   @@map("users")
 }
@@ -137,17 +139,17 @@ model RolePermission {
 }
 
 model Venue {
-  id                      String                   @id @default(cuid())
+  id                      String                        @id @default(cuid())
   name                    String
-  code                    String                   @unique
+  code                    String                        @unique
   address                 String?
-  defaultFloat            Decimal                  @default(114.00) @map("default_float") @db.Decimal(10, 2)
-  vatRate                 Decimal                  @default(10.00) @map("vat_rate") @db.Decimal(5, 2)
-  isActive                Boolean                  @default(true) @map("is_active")
-  createdAt               DateTime                 @default(now()) @map("created_at")
-  updatedAt               DateTime                 @updatedAt @map("updated_at")
-  latitude                Decimal?                 @db.Decimal(10, 8)
-  longitude               Decimal?                 @db.Decimal(11, 8)
+  defaultFloat            Decimal                       @default(114.00) @map("default_float") @db.Decimal(10, 2)
+  vatRate                 Decimal                       @default(10.00) @map("vat_rate") @db.Decimal(5, 2)
+  isActive                Boolean                       @default(true) @map("is_active")
+  createdAt               DateTime                      @default(now()) @map("created_at")
+  updatedAt               DateTime                      @updatedAt @map("updated_at")
+  latitude                Decimal?                      @db.Decimal(10, 8)
+  longitude               Decimal?                      @db.Decimal(11, 8)
   attendanceAnomalies     AttendanceAnomaly[]
   attendancePolicy        AttendancePolicy?
   attendanceRecords       AttendanceRecord[]
@@ -178,6 +180,8 @@ model Venue {
   recurrences             Recurrence[]
   scheduleRules           ScheduleRule[]
   bankAccounts            BankAccount[]
+  bankConnections         BankConnection[]
+  bankSyncRuns            BankSyncRun[]
   auditLogs               AuditLog[]
   timekeepingPolicies     TimekeepingPolicy[]
   workLocations           WorkLocation[]
@@ -185,8 +189,86 @@ model Venue {
   clockReminders          ClockReminder[]
   communications          Communication[]
   supplierProductAccounts SupplierProductAccount[]
+  reconciliationBatches   ReconciliationBatch[]
+  counterpartyAliases     CounterpartyAlias[]
+  reconciliationExclusions ReconciliationExclusion[]
 
   @@map("venues")
+}
+
+/// Un consenso PSD2 verso un istituto. Copre TUTTI i conti dell'home banking
+/// con cui è stata fatta l'autenticazione: quali di quei conti si importano
+/// davvero lo decide `BankAccount.syncEnabled`, non questo record.
+model BankConnection {
+  id                String    @id @default(cuid())
+  venueId           String    @map("venue_id")
+  provider          String    @default("gocardless")
+  institutionId     String    @map("institution_id")
+  institutionName   String    @map("institution_name")
+  requisitionId     String    @unique @map("requisition_id")
+  agreementId       String?   @map("agreement_id")
+  /// Stato della requisition come lo riporta GoCardless: CR, GC, UA, RJ, SA, GA, LN, EX.
+  status            String
+  accessValidUntil  DateTime? @map("access_valid_until")
+  maxHistoricalDays Int?      @map("max_historical_days")
+  /// Identificativi GoCardless dei conti che il consenso copre ma che
+  /// l'amministratore ha scelto di non importare — tipicamente un conto
+  /// personale che vive nello stesso home banking dell'azienda. Stanno qui e
+  /// non su `BankAccount` perché un conto ignorato non ha, e non deve avere,
+  /// una riga in anagrafica: crearne una disattivata metterebbe comunque quel
+  /// conto fra i conti aziendali.
+  contiIgnorati     String[]  @default([]) @map("conti_ignorati")
+  /// I conti che il consenso copre, come li ha restituiti la banca l'ultima
+  /// volta che glieli abbiamo chiesti. Si conservano perché rileggerli costa
+  /// una chiamata per conto su un contingente di quattro al giorno: senza
+  /// memoria, quattro aperture del pannello lo esaurirebbero e la quinta non
+  /// mostrerebbe nulla, nemmeno ciò che è già salvato qui.
+  ///
+  /// **Non contiene IBAN.** `BankAccount.iban` è cifrato dal middleware, e una
+  /// colonna JSON lo scavalcherebbe: si conservano l'impronta, che serve
+  /// all'abbinamento, e la forma mascherata, che serve a mostrarlo. Il valore
+  /// non serve a nessuno dei due.
+  contiLetti        Json?     @map("conti_letti")
+  contiLettiIl      DateTime? @map("conti_letti_il")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  deletedAt         DateTime? @map("deleted_at")
+
+  venue        Venue         @relation(fields: [venueId], references: [id])
+  bankAccounts BankAccount[]
+  syncRuns     BankSyncRun[]
+
+  @@index([venueId])
+  @@map("bank_connections")
+}
+
+/// Una lettura verso la banca. Serve a due cose: capire perché un giorno non
+/// sono arrivati movimenti, e riallineare il contatore anti-rate-limit sugli
+/// header che la banca restituisce.
+model BankSyncRun {
+  id                 String    @id @default(cuid())
+  venueId            String    @map("venue_id")
+  connectionId       String    @map("connection_id")
+  bankAccountId      String?   @map("bank_account_id")
+  startedAt          DateTime  @default(now()) @map("started_at")
+  finishedAt         DateTime? @map("finished_at")
+  /// OK | ERRORE | LIMITE
+  esito              String
+  httpStatus         Int?      @map("http_status")
+  movimentiLetti     Int       @default(0) @map("movimenti_letti")
+  movimentiNuovi     Int       @default(0) @map("movimenti_nuovi")
+  movimentiDuplicati Int       @default(0) @map("movimenti_duplicati")
+  rateLimitRemaining Int?      @map("rate_limit_remaining")
+  rateLimitResetAt   DateTime? @map("rate_limit_reset_at")
+  errore             String?
+
+  venue       Venue          @relation(fields: [venueId], references: [id])
+  connection  BankConnection @relation(fields: [connectionId], references: [id])
+  bankAccount BankAccount?   @relation(fields: [bankAccountId], references: [id])
+
+  @@index([venueId, startedAt])
+  @@index([bankAccountId, startedAt])
+  @@map("bank_sync_runs")
 }
 
 model BankAccount {
@@ -209,7 +291,24 @@ model BankAccount {
   updatedAt        DateTime     @updatedAt @map("updated_at")
   venue            Venue        @relation(fields: [venueId], references: [id])
 
-  scheduleRules    ScheduleRule[] @relation("ScheduleRuleBankAccount")
+  scheduleRules ScheduleRule[] @relation("ScheduleRuleBankAccount")
+
+  connectionId      String?   @map("connection_id")
+  /// L'id del conto presso GoCardless (UUID). Unico globalmente: è lui a
+  /// distinguere due conti, non l'IBAN, che a database è cifrato.
+  providerAccountId String?   @unique @map("provider_account_id")
+  /// L'INTERRUTTORE. Default `false`: un conto che compare per la prima volta
+  /// non viene letto finché qualcuno non lo accende dalle impostazioni.
+  /// Spento significa che la chiamata non parte, non che il conto è nascosto.
+  syncEnabled       Boolean   @default(false) @map("sync_enabled")
+  /// Data di taglio: non si importa nulla di antecedente. Evita di duplicare
+  /// in prima nota ciò che è già entrato da CSV.
+  syncCutoffDate    DateTime? @map("sync_cutoff_date") @db.Date
+  lastSyncAt        DateTime? @map("last_sync_at")
+
+  connection       BankConnection?   @relation(fields: [connectionId], references: [id])
+  syncRuns         BankSyncRun[]
+  bankTransactions BankTransaction[]
 
   @@unique([venueId, iban])
   @@index([venueId, accountType])
@@ -380,40 +479,40 @@ model DailyAttendance {
 }
 
 model Account {
-  id                  String                @id @default(cuid())
-  code                String                @unique
-  name                String
-  type                AccountType
-  category            String?
-  parentId            String?               @map("parent_id")
-  isActive            Boolean               @default(true) @map("is_active")
-  createdAt           DateTime              @default(now()) @map("created_at")
+  id                      String                   @id @default(cuid())
+  code                    String                   @unique
+  name                    String
+  type                    AccountType
+  category                String?
+  parentId                String?                  @map("parent_id")
+  isActive                Boolean                  @default(true) @map("is_active")
+  createdAt               DateTime                 @default(now()) @map("created_at")
   /// Mastro/gruppo del piano dei conti v4, denormalizzati sul conto
   /// imputabile: accounts contiene solo voci imputabili, non righe per
   /// mastri/gruppi. Null sui conti patrimoniali e sui conti legacy.
-  mastroCode          String?               @map("mastro_code")
-  mastroNome          String?               @map("mastro_nome")
-  gruppoCode          String?               @map("gruppo_code")
-  gruppoNome          String?               @map("gruppo_nome")
+  mastroCode              String?                  @map("mastro_code")
+  mastroNome              String?                  @map("mastro_nome")
+  gruppoCode              String?                  @map("gruppo_code")
+  gruppoNome              String?                  @map("gruppo_nome")
   /// Regola di applicazione del centro di costo quando si registra su questo conto.
-  costCenterRule      CostCenterRule        @default(DEFAULT_STR) @map("cost_center_rule")
+  costCenterRule          CostCenterRule           @default(DEFAULT_STR) @map("cost_center_rule")
   /// Chiave stabile dei conti "di sistema" (es. banca), indipendente dal code.
-  systemKey           String?               @unique @map("system_key")
-  budgetMapping       AccountBudgetMapping?
-  parent              Account?              @relation("AccountHierarchy", fields: [parentId], references: [id])
-  children            Account[]             @relation("AccountHierarchy")
-  budgetLines         BudgetLine[]
-  categorizationRules CategorizationRule[]
-  expenses            DailyExpense[]
-  electronicInvoices  ElectronicInvoice[]
-  journalEntries      JournalEntry[]
-  counterpartEntries  JournalEntry[]        @relation("Counterpart")
-  recurringExpenses   RecurringExpense[]
-  suppliers           Supplier[]
-  customers           Customer[]
-  scheduleRules       ScheduleRule[]
-  allocations         JournalEntryAllocation[]
-  invoiceLineAccounts InvoiceLineAccount[]
+  systemKey               String?                  @unique @map("system_key")
+  budgetMapping           AccountBudgetMapping?
+  parent                  Account?                 @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children                Account[]                @relation("AccountHierarchy")
+  budgetLines             BudgetLine[]
+  categorizationRules     CategorizationRule[]
+  expenses                DailyExpense[]
+  electronicInvoices      ElectronicInvoice[]
+  journalEntries          JournalEntry[]
+  counterpartEntries      JournalEntry[]           @relation("Counterpart")
+  recurringExpenses       RecurringExpense[]
+  suppliers               Supplier[]
+  customers               Customer[]
+  scheduleRules           ScheduleRule[]
+  allocations             JournalEntryAllocation[]
+  invoiceLineAccounts     InvoiceLineAccount[]
   supplierProductAccounts SupplierProductAccount[]
 
   @@index([parentId])
@@ -422,40 +521,40 @@ model Account {
 }
 
 model JournalEntry {
-  id                   String              @id @default(cuid())
-  venueId              String              @map("venue_id")
-  date                 DateTime            @db.Date
-  registerType         RegisterType        @map("register_type")
+  id                      String                   @id @default(cuid())
+  venueId                 String                   @map("venue_id")
+  date                    DateTime                 @db.Date
+  registerType            RegisterType             @map("register_type")
   /// Che operazione è, secondo chi l'ha inserita. Nullo sui movimenti creati
   /// dai percorsi che non lo dichiarano ancora (import, pagamenti, fatture,
   /// regole di scadenza): là la presentazione ripiega sulla deduzione, che per
   /// un movimento a riga singola è corretta. Non si riempie a posteriori —
   /// dedurlo è proprio ciò che questa colonna elimina.
-  entryType            EntryType?          @map("entry_type")
-  documentRef          String?             @map("document_ref")
-  documentType         String?             @map("document_type")
-  description          String
-  debitAmount          Decimal?            @map("debit_amount") @db.Decimal(10, 2)
-  creditAmount         Decimal?            @map("credit_amount") @db.Decimal(10, 2)
-  vatAmount            Decimal?            @map("vat_amount") @db.Decimal(10, 2)
-  accountId            String?             @map("account_id")
-  counterpartId        String?             @map("counterpart_id")
-  closureId            String?             @map("closure_id")
-  runningBalance       Decimal?            @map("running_balance") @db.Decimal(12, 2)
-  createdById          String?             @map("created_by")
-  createdAt            DateTime            @default(now()) @map("created_at")
-  updatedAt            DateTime            @updatedAt @map("updated_at")
-  appliedRuleId        String?             @map("applied_rule_id")
+  entryType               EntryType?               @map("entry_type")
+  documentRef             String?                  @map("document_ref")
+  documentType            String?                  @map("document_type")
+  description             String
+  debitAmount             Decimal?                 @map("debit_amount") @db.Decimal(10, 2)
+  creditAmount            Decimal?                 @map("credit_amount") @db.Decimal(10, 2)
+  vatAmount               Decimal?                 @map("vat_amount") @db.Decimal(10, 2)
+  accountId               String?                  @map("account_id")
+  counterpartId           String?                  @map("counterpart_id")
+  closureId               String?                  @map("closure_id")
+  runningBalance          Decimal?                 @map("running_balance") @db.Decimal(12, 2)
+  createdById             String?                  @map("created_by")
+  createdAt               DateTime                 @default(now()) @map("created_at")
+  updatedAt               DateTime                 @updatedAt @map("updated_at")
+  appliedRuleId           String?                  @map("applied_rule_id")
   /// @deprecated Asse in pensione graduale: si deriva dal conto via
   /// AccountBudgetMapping (spec 2026-08-05-allocation-design.md, Fase 0).
   /// Rimozione decisa nella fase report.
-  budgetCategoryId     String?             @map("budget_category_id")
-  categorizationSource String?             @map("categorization_source")
-  counterpartName      String?             @map("counterpart_name")
-  hiddenAt             DateTime?           @map("hidden_at")
-  notes                String?
-  verified             Boolean             @default(false)
-  paymentId            String?             @unique @map("payment_id")
+  budgetCategoryId        String?                  @map("budget_category_id")
+  categorizationSource    String?                  @map("categorization_source")
+  counterpartName         String?                  @map("counterpart_name")
+  hiddenAt                DateTime?                @map("hidden_at")
+  notes                   String?
+  verified                Boolean                  @default(false)
+  paymentId               String?                  @unique @map("payment_id")
   /// Centro di costo del movimento. NOT NULL dal 12 ago 2026: ogni movimento
   /// nasce imputato a un centro, senza eccezioni. È ciò che rende sommabile la
   /// prima nota per centro — un report che ignora le righe senza centro non
@@ -466,7 +565,7 @@ model JournalEntry {
   /// un centro, o dichiara `invalid` e chi la chiama traduce in un 400, o
   /// lancia se l'anagrafica dei centri non è configurata. Nessun percorso può
   /// più ripiegare su null.
-  costCenterId         String              @map("cost_center_id")
+  costCenterId            String                   @map("cost_center_id")
   /// Provenienza di costCenterId: 'scelto' (da un umano, nel form o in una
   /// regola che ha configurato), 'piano' (dettata dalla regola del conto —
   /// DEFAULT_STR → STR), 'supposto' (indovinata dal sistema su un percorso
@@ -477,8 +576,8 @@ model JournalEntry {
   /// indovinato all'import è indistinguibile da un WEISS scelto a mano, e il
   /// batch di ricategorizzazione lo verificherebbe senza che nessuno lo abbia
   /// guardato.
-  costCenterSource     String?             @map("cost_center_source")
-  azienda              String              @default("WEISS S.r.l.")
+  costCenterSource        String?                  @map("cost_center_source")
+  azienda                 String                   @default("WEISS S.r.l.")
   /// Lega fra loro le due righe di un trasferimento — versamento, prelievo,
   /// giroconto — che sono una scrittura sola: il denaro esce da un registro ed
   /// entra nell'altro, e la liquidità totale non cambia. Senza questo legame
@@ -491,22 +590,22 @@ model JournalEntry {
   /// per data e importo, e due versamenti dello stesso giorno per la stessa
   /// cifra sono indistinguibili — un'ipotesi sbagliata cancellerebbe la riga di
   /// un'altra operazione.
-  transferId           String?             @map("transfer_id")
-  bankTransaction      BankTransaction?
-  electronicInvoice    ElectronicInvoice?
-  account              Account?            @relation(fields: [accountId], references: [id])
-  deletedAt            DateTime?           @map("deleted_at")
-  deletedById          String?             @map("deleted_by_id")
-  appliedRule          CategorizationRule? @relation(fields: [appliedRuleId], references: [id])
-  budgetCategory       BudgetCategory?     @relation(fields: [budgetCategoryId], references: [id])
-  closure              DailyClosure?       @relation(fields: [closureId], references: [id], onDelete: SetNull)
-  costCenter           CostCenter          @relation(fields: [costCenterId], references: [id], onDelete: Restrict)
-  counterpart          Account?            @relation("Counterpart", fields: [counterpartId], references: [id])
-  createdBy            User?               @relation(fields: [createdById], references: [id])
-  venue                Venue               @relation(fields: [venueId], references: [id])
-  payment              Payment?
+  transferId              String?                  @map("transfer_id")
+  bankTransaction         BankTransaction?
+  account                 Account?                 @relation(fields: [accountId], references: [id])
+  deletedAt               DateTime?                @map("deleted_at")
+  deletedById             String?                  @map("deleted_by_id")
+  appliedRule             CategorizationRule?      @relation(fields: [appliedRuleId], references: [id])
+  budgetCategory          BudgetCategory?          @relation(fields: [budgetCategoryId], references: [id])
+  closure                 DailyClosure?            @relation(fields: [closureId], references: [id], onDelete: SetNull)
+  costCenter              CostCenter               @relation(fields: [costCenterId], references: [id], onDelete: Restrict)
+  counterpart             Account?                 @relation("Counterpart", fields: [counterpartId], references: [id])
+  createdBy               User?                    @relation(fields: [createdById], references: [id])
+  venue                   Venue                    @relation(fields: [venueId], references: [id])
+  payment                 Payment?
   scheduleReconciliations ScheduleReconciliation[]
-  allocations          JournalEntryAllocation[]
+  allocations             JournalEntryAllocation[]
+  reconciliationProposals ReconciliationProposal[]
 
   @@index([venueId, date])
   @@index([venueId, registerType, date])
@@ -529,6 +628,13 @@ model JournalEntryAllocation {
   journalEntryId   String   @map("journal_entry_id")
   accountId        String   @map("account_id")
   importo          Decimal  @db.Decimal(10, 2)
+  /// Quanta IVA contiene questa fetta. `null` = non nota: il consumatore
+  /// ricade sulla ripartizione pro-quota dell'IVA di testata. Diverso da
+  /// `0`, che significa "IVA assente" — la spesa senza diritto di
+  /// detrazione, dove l'IVA è già dentro l'imponibile.
+  /// Chi divide a mano scrive `null`, non `0`: non sta dichiarando
+  /// un'assenza, sta dicendo che non lo sa.
+  iva              Decimal? @db.Decimal(10, 2)
   /// 'manuale' (editor split) | 'ereditata' (pro-quota dalla riconciliazione, Fase 3)
   origine          String
   /// Riconciliazione che ha generato la fetta ereditata: chiave dell'undo (Fase 3)
@@ -550,32 +656,35 @@ model JournalEntryAllocation {
 }
 
 model Supplier {
-  id                 String              @id @default(cuid())
+  id                 String                   @id @default(cuid())
   name               String
-  vatNumber          String?             @map("vat_number")
+  vatNumber          String?                  @map("vat_number")
   address            String?
-  defaultAccountId   String?             @map("default_account_id")
-  isActive           Boolean             @default(true) @map("is_active")
-  createdAt          DateTime            @default(now()) @map("created_at")
+  defaultAccountId   String?                  @map("default_account_id")
+  isActive           Boolean                  @default(true) @map("is_active")
+  createdAt          DateTime                 @default(now()) @map("created_at")
   city               String?
-  fiscalCode         String?             @map("fiscal_code")
-  fiscalCodeHash     String?             @map("fiscal_code_hash")
+  fiscalCode         String?                  @map("fiscal_code")
+  fiscalCodeHash     String?                  @map("fiscal_code_hash")
   /// Giorni di dilazione concordati. Usati per stimare la scadenza quando la
   /// fattura non riporta la data di pagamento; senza, si applica il termine
   /// ordinario di 30 giorni.
-  paymentTermsDays   Int?                @map("payment_terms_days")
-  postalCode         String?             @map("postal_code")
+  paymentTermsDays   Int?                     @map("payment_terms_days")
+  postalCode         String?                  @map("postal_code")
   province           String?
-  updatedAt          DateTime            @default(now()) @updatedAt @map("updated_at")
-  country            String?             @default("IT")
+  updatedAt          DateTime                 @default(now()) @updatedAt @map("updated_at")
+  country            String?                  @default("IT")
   email              String?
+  phone              String?
+  notes              String?
   iban               String?
   electronicInvoices ElectronicInvoice[]
   priceAlerts        PriceAlert[]
   priceHistory       PriceHistory[]
-  defaultAccount     Account?            @relation(fields: [defaultAccountId], references: [id])
-  schedules          Schedule[]          @relation("ScheduleSupplier")
+  defaultAccount     Account?                 @relation(fields: [defaultAccountId], references: [id])
+  schedules          Schedule[]               @relation("ScheduleSupplier")
   productAccounts    SupplierProductAccount[]
+  counterpartyAliases CounterpartyAlias[]      @relation("CounterpartyAliasSupplier")
 
   @@index([fiscalCodeHash])
   @@map("suppliers")
@@ -586,86 +695,97 @@ model Customer {
   denominazione    String
   partitaIva       String?  @map("partita_iva")
   codiceFiscale    String?  @map("codice_fiscale")
+  /// Hash di lookup del codice fiscale: il campo sopra è cifrato, e senza
+  /// questo la ricerca gli passerebbe accanto senza trovarlo mai.
+  codiceFiscaleHash String? @map("codice_fiscale_hash")
   indirizzo        String?
   citta            String?
   cap              String?
   provincia        String?
+  paese            String?  @default("IT")
   email            String?
   telefono         String?
   iban             String?
+  /// Giorni di dilazione concordati, come per il fornitore: servono a stimare
+  /// la scadenza quando il documento non la riporta.
+  paymentTermsDays Int?     @map("payment_terms_days")
   note             String?
   defaultAccountId String?  @map("default_account_id")
   attivo           Boolean  @default(true)
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
   defaultAccount   Account? @relation(fields: [defaultAccountId], references: [id])
+  counterpartyAliases CounterpartyAlias[] @relation("CounterpartyAliasCustomer")
 
+  @@index([codiceFiscaleHash])
   @@map("customers")
 }
 
 // Modello Scadenzario - Scadenze attive e passive
 model Schedule {
-  id                      String                      @id @default(cuid())
-  venueId                 String                      @map("venue_id")
-  tipo                    String                      // 'attiva' (da incassare) o 'passiva' (da pagare)
-  stato                   String                      @default("aperta") // 'aperta', 'parzialmente_pagata', 'pagata', 'scaduta', 'annullata'
+  id                            String                   @id @default(cuid())
+  venueId                       String                   @map("venue_id")
+  tipo                          String // 'attiva' (da incassare) o 'passiva' (da pagare)
+  stato                         String                   @default("aperta") // 'aperta', 'parzialmente_pagata', 'pagata', 'scaduta', 'annullata'
   /// "Un umano ha guardato": asse ortogonale a pagamento e riconciliazione,
   /// come il verificationStatus di Sibill. Speculare a JournalEntry.verified.
-  verificata              Boolean                     @default(false)
-  descrizione             String
-  importoTotale           Decimal                     @map("importo_totale") @db.Decimal(10, 2)
-  importoPagato           Decimal                     @default(0) @map("importo_pagato") @db.Decimal(10, 2)
-  dataScadenza            DateTime                    @map("data_scadenza") @db.Date
+  verificata                    Boolean                  @default(false)
+  descrizione                   String
+  importoTotale                 Decimal                  @map("importo_totale") @db.Decimal(10, 2)
+  importoPagato                 Decimal                  @default(0) @map("importo_pagato") @db.Decimal(10, 2)
+  dataScadenza                  DateTime                 @map("data_scadenza") @db.Date
   /// Data attesa di cassa (l'expectedPaymentDate di Sibill). Null significa
   /// "coincide con dataScadenza": si valorizza solo quando diverge davvero,
   /// cioè al riallineamento sulla data del movimento quando la riconciliazione
   /// salda la scadenza. Il previsionale legge sempre dataAttesa ?? dataScadenza.
-  dataAttesa              DateTime?                   @map("data_attesa") @db.Date
+  dataAttesa                    DateTime?                @map("data_attesa") @db.Date
   /// Provenienza di dataAttesa: 'stima' (ritardo storico del fornitore),
   /// 'manuale' (impostata dall'utente), 'riconciliazione' (riallineata alla
   /// data del movimento che ha saldato). Null se e solo se dataAttesa è null.
-  dataAttesaSource        String?                     @map("data_attesa_source")
-  dataEmissione           DateTime?                   @map("data_emissione") @db.Date
-  dataPagamento           DateTime?                   @map("data_pagamento") @db.Date
-  tipoDocumento           String?                     @map("tipo_documento")
-  numeroDocumento         String?                     @map("numero_documento")
-  riferimentoDocumento   String?                     @map("riferimento_documento")
-  controparteNome         String?                     @map("controparte_nome")
-  controparteIban         String?                     @map("controparte_iban")
-  supplierId              String?                     @map("supplier_id")
-  priorita               String                      @default("normale") // 'bassa', 'normale', 'alta', 'urgente'
-  metodoPagamento         String?                     @map("metodo_pagamento") // 'bonifico', 'riba', 'sdd', 'carta', 'contanti', 'f24', 'altro'
-  isRicorrente            Boolean                     @default(false) @map("is_ricorrente")
-  ricorrenzaTipo          String?                     @map("ricorrenza_tipo") // 'settimanale', 'mensile', 'bimestrale', 'trimestrale', 'semestrale', 'annuale'
-  ricorrenzaFine          DateTime?                   @map("ricorrenza_fine") @db.Date
-  ricorrenzaProssimaGenerazione DateTime?             @map("ricorrenza_prossima_generazione")
-  ricorrenzaAttiva        Boolean                     @default(true) @map("ricorrenza_attiva")
-  ricorrenzaParentId      String?                     @map("ricorrenza_parent_id")
-  recurrenceId            String?                     @map("recurrence_id")
-  note                    String?
-  source                  String                      @default("manuale") // 'manuale', 'import_csv', 'import_fatture_sdi', 'ricorrenza_auto'
+  dataAttesaSource              String?                  @map("data_attesa_source")
+  dataEmissione                 DateTime?                @map("data_emissione") @db.Date
+  dataPagamento                 DateTime?                @map("data_pagamento") @db.Date
+  tipoDocumento                 String?                  @map("tipo_documento")
+  numeroDocumento               String?                  @map("numero_documento")
+  riferimentoDocumento          String?                  @map("riferimento_documento")
+  controparteNome               String?                  @map("controparte_nome")
+  controparteIban               String?                  @map("controparte_iban")
+  supplierId                    String?                  @map("supplier_id")
+  priorita                      String                   @default("normale") // 'bassa', 'normale', 'alta', 'urgente'
+  metodoPagamento               String?                  @map("metodo_pagamento") // 'bonifico', 'riba', 'sdd', 'carta', 'contanti', 'f24', 'altro'
+  isRicorrente                  Boolean                  @default(false) @map("is_ricorrente")
+  ricorrenzaTipo                String?                  @map("ricorrenza_tipo") // 'settimanale', 'mensile', 'bimestrale', 'trimestrale', 'semestrale', 'annuale'
+  ricorrenzaFine                DateTime?                @map("ricorrenza_fine") @db.Date
+  ricorrenzaProssimaGenerazione DateTime?                @map("ricorrenza_prossima_generazione")
+  ricorrenzaAttiva              Boolean                  @default(true) @map("ricorrenza_attiva")
+  ricorrenzaParentId            String?                  @map("ricorrenza_parent_id")
+  recurrenceId                  String?                  @map("recurrence_id")
+  note                          String?
+  source                        String                   @default("manuale") // 'manuale', 'import_csv', 'import_fatture_sdi', 'ricorrenza_auto'
   // Origine della scadenza quando nasce da una fattura elettronica importata.
   // invoiceDeadlineId è unique: una rata della fattura genera al massimo una
   // scadenza, anche se l'import venisse rieseguito.
-  invoiceId               String?                     @map("invoice_id")
-  invoiceDeadlineId       String?                     @unique @map("invoice_deadline_id")
-  createdById             String?                     @map("created_by")
-  deletedAt              DateTime?                   @map("deleted_at")
-  deletedById            String?                     @map("deleted_by_id")
-  createdAt              DateTime                    @default(now()) @map("created_at")
-  updatedAt              DateTime                    @updatedAt @map("updated_at")
-  payments                SchedulePayment[]
-  reconciliations         ScheduleReconciliation[]
-  attachments             ScheduleAttachment[]
-  reminders               ScheduleReminder[]
-  ricorrenzaFigli         Schedule[]                  @relation("ScheduleRecurrence")
-  ricorrenzaParent        Schedule?                   @relation("ScheduleRecurrence", fields: [ricorrenzaParentId], references: [id])
-  supplier                Supplier?                   @relation("ScheduleSupplier", fields: [supplierId], references: [id])
-  invoice                 ElectronicInvoice?          @relation("ScheduleFromInvoice", fields: [invoiceId], references: [id])
-  invoiceDeadline         InvoiceDeadline?            @relation("ScheduleFromDeadline", fields: [invoiceDeadlineId], references: [id])
-  recurrence              Recurrence?                 @relation("ScheduleFromRecurrence", fields: [recurrenceId], references: [id])
-  createdBy               User?                       @relation("ScheduleCreatedBy", fields: [createdById], references: [id])
-  venue                   Venue                       @relation(fields: [venueId], references: [id])
+  invoiceId                     String?                  @map("invoice_id")
+  invoiceDeadlineId             String?                  @unique @map("invoice_deadline_id")
+  createdById                   String?                  @map("created_by")
+  deletedAt                     DateTime?                @map("deleted_at")
+  deletedById                   String?                  @map("deleted_by_id")
+  createdAt                     DateTime                 @default(now()) @map("created_at")
+  updatedAt                     DateTime                 @updatedAt @map("updated_at")
+  payments                      SchedulePayment[]
+  reconciliations               ScheduleReconciliation[]
+  attachments                   ScheduleAttachment[]
+  reminders                     ScheduleReminder[]
+  ricorrenzaFigli               Schedule[]               @relation("ScheduleRecurrence")
+  ricorrenzaParent              Schedule?                @relation("ScheduleRecurrence", fields: [ricorrenzaParentId], references: [id])
+  supplier                      Supplier?                @relation("ScheduleSupplier", fields: [supplierId], references: [id])
+  invoice                       ElectronicInvoice?       @relation("ScheduleFromInvoice", fields: [invoiceId], references: [id])
+  invoiceDeadline               InvoiceDeadline?         @relation("ScheduleFromDeadline", fields: [invoiceDeadlineId], references: [id])
+  recurrence                    Recurrence?              @relation("ScheduleFromRecurrence", fields: [recurrenceId], references: [id])
+  createdBy                     User?                    @relation("ScheduleCreatedBy", fields: [createdById], references: [id])
+  venue                         Venue                    @relation(fields: [venueId], references: [id])
+  proposalLegs                  ReconciliationProposalLeg[]
+  reconciliationExclusions      ReconciliationExclusion[] @relation("ExclusionSchedule")
 
   @@index([venueId, dataScadenza])
   // Il previsionale ordina per dataAttesa ?? dataScadenza: senza questo indice
@@ -702,10 +822,10 @@ model ScheduleReconciliation {
   createdById    String?                      @map("created_by")
   createdAt      DateTime                     @default(now()) @map("created_at")
 
-  schedule     Schedule         @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
-  journalEntry JournalEntry     @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
-  payment      SchedulePayment? @relation(fields: [paymentId], references: [id])
-  createdBy    User?            @relation("ScheduleReconciliationCreatedBy", fields: [createdById], references: [id])
+  schedule     Schedule                 @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
+  journalEntry JournalEntry             @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+  payment      SchedulePayment?         @relation(fields: [paymentId], references: [id])
+  createdBy    User?                    @relation("ScheduleReconciliationCreatedBy", fields: [createdById], references: [id])
   allocations  JournalEntryAllocation[]
 
   @@index([scheduleId, status])
@@ -714,15 +834,15 @@ model ScheduleReconciliation {
 }
 
 model SchedulePayment {
-  id             String    @id @default(cuid())
-  scheduleId     String    @map("schedule_id")
-  importo        Decimal   @db.Decimal(10, 2)
-  dataPagamento  DateTime  @map("data_pagamento") @db.Date
-  metodo         String?   // 'bonifico', 'riba', 'sdd', 'carta', 'contanti', 'f24', 'altro'
+  id             String                  @id @default(cuid())
+  scheduleId     String                  @map("schedule_id")
+  importo        Decimal                 @db.Decimal(10, 2)
+  dataPagamento  DateTime                @map("data_pagamento") @db.Date
+  metodo         String? // 'bonifico', 'riba', 'sdd', 'carta', 'contanti', 'f24', 'altro'
   riferimento    String?
   note           String?
-  createdAt      DateTime  @default(now()) @map("created_at")
-  schedule       Schedule  @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
+  createdAt      DateTime                @default(now()) @map("created_at")
+  schedule       Schedule                @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
   reconciliation ScheduleReconciliation?
 
   @@index([scheduleId])
@@ -732,16 +852,16 @@ model SchedulePayment {
 
 // Allegati associati a una scadenza
 model ScheduleAttachment {
-  id               String    @id @default(cuid())
-  scheduleId       String    @map("schedule_id")
-  filename         String    // nome file su storage
-  originalFilename String    @map("original_filename") // nome file originale
-  contentType      String    @map("content_type")
-  fileSize         Int       @map("file_size") // dimensione in bytes
-  uploadedByUserId String?   @map("uploaded_by_user_id")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  schedule         Schedule  @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
-  uploadedBy       User?     @relation("ScheduleAttachmentUploader", fields: [uploadedByUserId], references: [id])
+  id               String   @id @default(cuid())
+  scheduleId       String   @map("schedule_id")
+  filename         String // nome file su storage
+  originalFilename String   @map("original_filename") // nome file originale
+  contentType      String   @map("content_type")
+  fileSize         Int      @map("file_size") // dimensione in bytes
+  uploadedByUserId String?  @map("uploaded_by_user_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  schedule         Schedule @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
+  uploadedBy       User?    @relation("ScheduleAttachmentUploader", fields: [uploadedByUserId], references: [id])
 
   @@index([scheduleId])
   @@map("schedule_attachments")
@@ -766,25 +886,25 @@ model ScheduleReminder {
 
 // Modello Ricorrenze - Template che generano Schedule periodicamente
 model Recurrence {
-  id                  String          @id @default(cuid())
-  venueId             String          @map("venue_id")
-  tipo                String          // 'attiva' (incasso) o 'passiva' (pagamento)
+  id                  String    @id @default(cuid())
+  venueId             String    @map("venue_id")
+  tipo                String // 'attiva' (incasso) o 'passiva' (pagamento)
   descrizione         String
-  importo             Decimal         @db.Decimal(10, 2)
-  categoriaId         String?         @map("categoria_id")
-  contoDiPagamentoId  String?         @map("conto_di_pagamento_id")
-  metodoPagamento     String?         @map("metodo_pagamento")
-  frequenza           String          // settimanale, bisettimanale, mensile, bimestrale, trimestrale, semestrale, annuale
-  giornoDelMese       Int?            @map("giorno_del_mese")
-  giornoDellSettimana Int?            @map("giorno_della_settimana") // 0=lun..6=dom
-  dataInizio          DateTime        @map("data_inizio") @db.Date
-  dataFine            DateTime?       @map("data_fine") @db.Date
-  isActive            Boolean         @default(true) @map("is_active")
-  prossimaGenerazione DateTime?       @map("prossima_generazione") @db.Date
+  importo             Decimal   @db.Decimal(10, 2)
+  categoriaId         String?   @map("categoria_id")
+  contoDiPagamentoId  String?   @map("conto_di_pagamento_id")
+  metodoPagamento     String?   @map("metodo_pagamento")
+  frequenza           String // settimanale, bisettimanale, mensile, bimestrale, trimestrale, semestrale, annuale
+  giornoDelMese       Int?      @map("giorno_del_mese")
+  giornoDellSettimana Int?      @map("giorno_della_settimana") // 0=lun..6=dom
+  dataInizio          DateTime  @map("data_inizio") @db.Date
+  dataFine            DateTime? @map("data_fine") @db.Date
+  isActive            Boolean   @default(true) @map("is_active")
+  prossimaGenerazione DateTime? @map("prossima_generazione") @db.Date
   note                String?
-  createdById         String?         @map("created_by")
-  createdAt           DateTime        @default(now()) @map("created_at")
-  updatedAt           DateTime        @updatedAt @map("updated_at")
+  createdById         String?   @map("created_by")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
 
   venue              Venue           @relation(fields: [venueId], references: [id])
   categoria          BudgetCategory? @relation(fields: [categoriaId], references: [id])
@@ -1152,36 +1272,36 @@ model LeaveBalance {
 }
 
 model AttendanceRecord {
-  id                String              @id @default(cuid())
-  userId            String              @map("user_id")
-  venueId           String              @map("venue_id")
-  assignmentId      String?             @map("assignment_id")
+  id                  String                       @id @default(cuid())
+  userId              String                       @map("user_id")
+  venueId             String                       @map("venue_id")
+  assignmentId        String?                      @map("assignment_id")
   /// Luogo in cui si è timbrato. Null per le timbrature precedenti ai luoghi.
-  workLocationId    String?             @map("work_location_id")
-  punchType         PunchType           @map("punch_type")
-  punchMethod       PunchMethod         @default(APP) @map("punch_method")
-  punchedAt         DateTime            @default(now()) @map("punched_at")
-  latitude          Decimal?            @db.Decimal(9, 6)
-  longitude         Decimal?            @db.Decimal(9, 6)
-  accuracy          Decimal?            @db.Decimal(6, 2)
-  distanceFromVenue Decimal?            @map("distance_from_venue") @db.Decimal(8, 2)
-  isWithinRadius    Boolean             @default(true) @map("is_within_radius")
-  deviceInfo        String?             @map("device_info")
-  ipAddress         String?             @map("ip_address")
-  notes             String?
-  isManual          Boolean             @default(false) @map("is_manual")
-  manualEntryBy     String?             @map("manual_entry_by")
-  manualEntryReason String?             @map("manual_entry_reason")
+  workLocationId      String?                      @map("work_location_id")
+  punchType           PunchType                    @map("punch_type")
+  punchMethod         PunchMethod                  @default(APP) @map("punch_method")
+  punchedAt           DateTime                     @default(now()) @map("punched_at")
+  latitude            Decimal?                     @db.Decimal(9, 6)
+  longitude           Decimal?                     @db.Decimal(9, 6)
+  accuracy            Decimal?                     @db.Decimal(6, 2)
+  distanceFromVenue   Decimal?                     @map("distance_from_venue") @db.Decimal(8, 2)
+  isWithinRadius      Boolean                      @default(true) @map("is_within_radius")
+  deviceInfo          String?                      @map("device_info")
+  ipAddress           String?                      @map("ip_address")
+  notes               String?
+  isManual            Boolean                      @default(false) @map("is_manual")
+  manualEntryBy       String?                      @map("manual_entry_by")
+  manualEntryReason   String?                      @map("manual_entry_reason")
   /// Richiesta di correzione approvata da cui questa timbratura è nata.
-  correctionRequestId String?           @map("correction_request_id")
-  createdAt         DateTime            @default(now()) @map("created_at")
-  updatedAt         DateTime            @updatedAt @map("updated_at")
-  anomalies         AttendanceAnomaly[]
-  assignment        ShiftAssignment?    @relation(fields: [assignmentId], references: [id])
-  user              User                @relation(fields: [userId], references: [id])
-  venue             Venue               @relation(fields: [venueId], references: [id])
-  workLocation      WorkLocation?       @relation(fields: [workLocationId], references: [id])
-  correctionRequest AttendanceCorrectionRequest? @relation(fields: [correctionRequestId], references: [id])
+  correctionRequestId String?                      @map("correction_request_id")
+  createdAt           DateTime                     @default(now()) @map("created_at")
+  updatedAt           DateTime                     @updatedAt @map("updated_at")
+  anomalies           AttendanceAnomaly[]
+  assignment          ShiftAssignment?             @relation(fields: [assignmentId], references: [id])
+  user                User                         @relation(fields: [userId], references: [id])
+  venue               Venue                        @relation(fields: [venueId], references: [id])
+  workLocation        WorkLocation?                @relation(fields: [workLocationId], references: [id])
+  correctionRequest   AttendanceCorrectionRequest? @relation(fields: [correctionRequestId], references: [id])
 
   @@index([userId, punchedAt])
   @@index([venueId, punchedAt])
@@ -1227,39 +1347,39 @@ model AttendancePolicy {
 /// giornata è minore o uguale all'inizio, la giornata scavalca la mezzanotte:
 /// è il caso dei turni Weiss 06:00-03:00.
 model TimekeepingPolicy {
-  id                          String                   @id @default(cuid())
-  venueId                     String                   @map("venue_id")
+  id                          String                     @id @default(cuid())
+  venueId                     String                     @map("venue_id")
   name                        String
-  isDefault                   Boolean                  @default(false) @map("is_default")
-  isActive                    Boolean                  @default(true) @map("is_active")
-  dayStartMinutes             Int                      @map("day_start_minutes")
-  dayEndMinutes               Int                      @map("day_end_minutes")
-  lunchStartMinutes           Int?                     @map("lunch_start_minutes")
-  lunchEndMinutes             Int?                     @map("lunch_end_minutes")
+  isDefault                   Boolean                    @default(false) @map("is_default")
+  isActive                    Boolean                    @default(true) @map("is_active")
+  dayStartMinutes             Int                        @map("day_start_minutes")
+  dayEndMinutes               Int                        @map("day_end_minutes")
+  lunchStartMinutes           Int?                       @map("lunch_start_minutes")
+  lunchEndMinutes             Int?                       @map("lunch_end_minutes")
   /// La giornata segue il turno pianificato invece della finestra fissa:
   /// l'anticipo non conta, il ritardo si arrotonda dall'inizio del turno,
   /// e le ore oltre la fine passano da una revisione umana.
-  useShiftAsWindow            Boolean                  @default(false) @map("use_shift_as_window")
+  useShiftAsWindow            Boolean                    @default(false) @map("use_shift_as_window")
   /// Margine entro cui l'arrivo anticipato o l'uscita posticipata contano come lavoro.
-  flexMinutes                 Int                      @default(0) @map("flex_minutes")
+  flexMinutes                 Int                        @default(0) @map("flex_minutes")
   /// Intervallo di arrotondamento dell'entrata, in minuti. 1 = nessun arrotondamento.
-  roundingMinutes             Int                      @default(1) @map("rounding_minutes")
+  roundingMinutes             Int                        @default(1) @map("rounding_minutes")
   /// Entro questi minuti dal confine dell'intervallo l'orario resta esatto.
-  roundingToleranceMinutes    Int                      @default(0) @map("rounding_tolerance_minutes")
+  roundingToleranceMinutes    Int                        @default(0) @map("rounding_tolerance_minutes")
   /// Intervallo e tolleranza dell'uscita. Null = si usano quelli dell'entrata.
-  roundingOutMinutes          Int?                     @map("rounding_out_minutes")
-  roundingOutToleranceMinutes Int?                     @map("rounding_out_tolerance_minutes")
+  roundingOutMinutes          Int?                       @map("rounding_out_minutes")
+  roundingOutToleranceMinutes Int?                       @map("rounding_out_tolerance_minutes")
   /// Tetto giornaliero: le ore oltre non entrano nel conteggio.
-  maxDailyMinutes             Int?                     @map("max_daily_minutes")
+  maxDailyMinutes             Int?                       @map("max_daily_minutes")
   /// Ore settimanali da contratto, per il confronto con le ore lavorate.
-  contractWeeklyHours         Decimal?                 @map("contract_weekly_hours") @db.Decimal(4, 1)
-  saturdayAsOvertime          Boolean                  @default(false) @map("saturday_as_overtime")
-  blockSunday                 Boolean                  @default(false) @map("block_sunday")
+  contractWeeklyHours         Decimal?                   @map("contract_weekly_hours") @db.Decimal(4, 1)
+  saturdayAsOvertime          Boolean                    @default(false) @map("saturday_as_overtime")
+  blockSunday                 Boolean                    @default(false) @map("block_sunday")
   /// Si timbra una volta sola e la giornata vale le ore riconosciute.
-  singlePunchMode             Boolean                  @default(false) @map("single_punch_mode")
-  createdAt                   DateTime                 @default(now()) @map("created_at")
-  updatedAt                   DateTime                 @updatedAt @map("updated_at")
-  venue                       Venue                    @relation(fields: [venueId], references: [id])
+  singlePunchMode             Boolean                    @default(false) @map("single_punch_mode")
+  createdAt                   DateTime                   @default(now()) @map("created_at")
+  updatedAt                   DateTime                   @updatedAt @map("updated_at")
+  venue                       Venue                      @relation(fields: [venueId], references: [id])
   extraBreaks                 TimekeepingPolicyBreak[]
   users                       User[]
   workLocations               WorkLocation[]
@@ -1313,21 +1433,21 @@ model TimekeepingPolicyVersion {
 /// coordinate e il proprio raggio. È il modo per distinguere dove ha lavorato
 /// una persona senza toccare l'isolamento dei dati contabili.
 model WorkLocation {
-  id                   String                   @id @default(cuid())
-  venueId              String                   @map("venue_id")
+  id                   String                        @id @default(cuid())
+  venueId              String                        @map("venue_id")
   name                 String
   address              String?
-  latitude             Decimal?                 @db.Decimal(10, 8)
-  longitude            Decimal?                 @db.Decimal(11, 8)
+  latitude             Decimal?                      @db.Decimal(10, 8)
+  longitude            Decimal?                      @db.Decimal(11, 8)
   /// Raggio entro cui la timbratura è considerata in sede.
-  geofenceRadiusMeters Int                      @default(100) @map("geofence_radius_meters")
-  isActive             Boolean                  @default(true) @map("is_active")
+  geofenceRadiusMeters Int                           @default(100) @map("geofence_radius_meters")
+  isActive             Boolean                       @default(true) @map("is_active")
   /// Regola oraria del luogo: se presente prevale su quella del dipendente.
-  timekeepingPolicyId  String?                  @map("timekeeping_policy_id")
-  createdAt            DateTime                 @default(now()) @map("created_at")
-  updatedAt            DateTime                 @updatedAt @map("updated_at")
-  venue                Venue                    @relation(fields: [venueId], references: [id])
-  timekeepingPolicy    TimekeepingPolicy?       @relation(fields: [timekeepingPolicyId], references: [id])
+  timekeepingPolicyId  String?                       @map("timekeeping_policy_id")
+  createdAt            DateTime                      @default(now()) @map("created_at")
+  updatedAt            DateTime                      @updatedAt @map("updated_at")
+  venue                Venue                         @relation(fields: [venueId], references: [id])
+  timekeepingPolicy    TimekeepingPolicy?            @relation(fields: [timekeepingPolicyId], references: [id])
   assignments          WorkLocationAssignment[]
   attendanceRecords    AttendanceRecord[]
   correctionRequests   AttendanceCorrectionRequest[]
@@ -1375,29 +1495,29 @@ model TimekeepingPolicyBreak {
 }
 
 model AttendanceAnomaly {
-  id                String            @id @default(cuid())
-  userId            String            @map("user_id")
-  venueId           String            @map("venue_id")
-  recordId          String?           @map("record_id")
-  assignmentId      String?           @map("assignment_id")
-  anomalyType       AnomalyType       @map("anomaly_type")
-  status            AnomalyStatus     @default(PENDING)
-  date              DateTime          @db.Date
-  description       String?
-  expectedValue     String?           @map("expected_value")
-  actualValue       String?           @map("actual_value")
-  differenceMinutes Int?              @map("difference_minutes")
-  resolvedBy        String?           @map("resolved_by")
-  resolvedAt        DateTime?         @map("resolved_at")
-  resolutionNotes   String?           @map("resolution_notes")
-  hoursAffected     Decimal?          @map("hours_affected") @db.Decimal(4, 2)
-  costImpact        Decimal?          @map("cost_impact") @db.Decimal(10, 2)
-  createdAt         DateTime          @default(now()) @map("created_at")
-  updatedAt         DateTime          @updatedAt @map("updated_at")
-  assignment        ShiftAssignment?  @relation(fields: [assignmentId], references: [id])
-  record            AttendanceRecord? @relation(fields: [recordId], references: [id])
-  user              User              @relation(fields: [userId], references: [id])
-  venue             Venue             @relation(fields: [venueId], references: [id])
+  id                 String                        @id @default(cuid())
+  userId             String                        @map("user_id")
+  venueId            String                        @map("venue_id")
+  recordId           String?                       @map("record_id")
+  assignmentId       String?                       @map("assignment_id")
+  anomalyType        AnomalyType                   @map("anomaly_type")
+  status             AnomalyStatus                 @default(PENDING)
+  date               DateTime                      @db.Date
+  description        String?
+  expectedValue      String?                       @map("expected_value")
+  actualValue        String?                       @map("actual_value")
+  differenceMinutes  Int?                          @map("difference_minutes")
+  resolvedBy         String?                       @map("resolved_by")
+  resolvedAt         DateTime?                     @map("resolved_at")
+  resolutionNotes    String?                       @map("resolution_notes")
+  hoursAffected      Decimal?                      @map("hours_affected") @db.Decimal(4, 2)
+  costImpact         Decimal?                      @map("cost_impact") @db.Decimal(10, 2)
+  createdAt          DateTime                      @default(now()) @map("created_at")
+  updatedAt          DateTime                      @updatedAt @map("updated_at")
+  assignment         ShiftAssignment?              @relation(fields: [assignmentId], references: [id])
+  record             AttendanceRecord?             @relation(fields: [recordId], references: [id])
+  user               User                          @relation(fields: [userId], references: [id])
+  venue              Venue                         @relation(fields: [venueId], references: [id])
   correctionRequests AttendanceCorrectionRequest[]
 
   @@index([userId, date])
@@ -1596,48 +1716,72 @@ model PushSubscription {
 }
 
 model ElectronicInvoice {
-  id             String            @id @default(cuid())
-  sdiId          String?           @unique @map("sdi_id")
-  invoiceNumber  String            @map("invoice_number")
-  invoiceDate    DateTime          @map("invoice_date") @db.Date
-  supplierId     String?           @map("supplier_id")
-  supplierVat    String            @map("supplier_vat")
-  supplierName   String            @map("supplier_name")
-  totalAmount    Decimal           @map("total_amount") @db.Decimal(10, 2)
-  vatAmount      Decimal           @map("vat_amount") @db.Decimal(10, 2)
-  netAmount      Decimal           @map("net_amount") @db.Decimal(10, 2)
-  status         InvoiceStatus     @default(IMPORTED)
-  accountId      String?           @map("account_id")
-  xmlContent     String?           @map("xml_content")
-  fileName       String?           @map("file_name")
-  importedAt     DateTime          @default(now()) @map("imported_at")
-  processedAt    DateTime?         @map("processed_at")
-  recordedAt     DateTime?         @map("recorded_at")
-  journalEntryId String?           @unique @map("journal_entry_id")
-  venueId        String            @map("venue_id")
-  createdBy      String?           @map("created_by")
-  notes          String?
-  causale        String?           @map("causale")
-  documentType   String?           @default("TD01") @map("document_type")
-  lineItems      Json?             @map("line_items")
-  references     Json?             @map("references")
-  vatSummary     Json?             @map("vat_summary")
-  deletedAt      DateTime?         @map("deleted_at")
-  deletedById    String?           @map("deleted_by_id")
-  account        Account?          @relation(fields: [accountId], references: [id])
-  journalEntry   JournalEntry?     @relation(fields: [journalEntryId], references: [id])
-  supplier       Supplier?         @relation(fields: [supplierId], references: [id])
-  venue          Venue             @relation(fields: [venueId], references: [id])
-  deadlines      InvoiceDeadline[]
+  id                 String               @id @default(cuid())
+  sdiId              String?              @unique @map("sdi_id")
+  invoiceNumber      String               @map("invoice_number")
+  invoiceDate        DateTime             @map("invoice_date") @db.Date
+  supplierId         String?              @map("supplier_id")
+  supplierVat        String               @map("supplier_vat")
+  supplierName       String               @map("supplier_name")
+  totalAmount        Decimal              @map("total_amount") @db.Decimal(10, 2)
+  vatAmount          Decimal              @map("vat_amount") @db.Decimal(10, 2)
+  netAmount          Decimal              @map("net_amount") @db.Decimal(10, 2)
+  status             InvoiceStatus        @default(IMPORTED)
+  accountId          String?              @map("account_id")
+  xmlContent         String?              @map("xml_content")
+  fileName           String?              @map("file_name")
+  importedAt         DateTime             @default(now()) @map("imported_at")
+  processedAt        DateTime?            @map("processed_at")
+  venueId            String               @map("venue_id")
+  createdBy          String?              @map("created_by")
+  notes              String?
+  causale            String?              @map("causale")
+  documentType       String?              @default("TD01") @map("document_type")
+  lineItems          Json?                @map("line_items")
+  references         Json?                @map("references")
+  vatSummary         Json?                @map("vat_summary")
+  /// Ritenuta d'acconto letta dall'XML (DatiRitenuta). Conservata, mai imputata:
+  /// il trattamento contabile è sospeso.
+  withholding        Json?                @map("withholding")
+  /// Documento di rettifica → fattura che rettifica (Task 6, fase B). Vale
+  /// per TUTTI E QUATTRO i tipi di `TIPI_DOCUMENTO_SENZA_SCADENZA`: le note
+  /// di CREDITO TD04/TD08, che riducono il dovuto, e le note di DEBITO
+  /// TD05/TD09, che lo aumentano (src/app/api/invoices/route.ts non
+  /// distingue: scrive il collegamento per tutte e quattro). Il campo dice
+  /// «questo documento rettifica quella fattura», non in quale verso.
+  /// Risolto una sola volta, all'import, leggendo
+  /// `references.datiFattureCollegate`: persistito invece di ricalcolato a
+  /// ogni lettura, perché il calcolo dei pesi alla riconciliazione lo
+  /// interroga una volta per fattura.
+  /// `null` finché non risolto, o se la fattura rettificata non è (ancora)
+  /// stata importata — non è un errore.
+  rettificaInvoiceId String?              @map("rettifica_invoice_id")
+  deletedAt          DateTime?            @map("deleted_at")
+  deletedById        String?              @map("deleted_by_id")
+  account            Account?             @relation(fields: [accountId], references: [id])
+  supplier           Supplier?            @relation(fields: [supplierId], references: [id])
+  venue              Venue                @relation(fields: [venueId], references: [id])
+  deadlines          InvoiceDeadline[]
   /// Scadenze generate nello scadenzario da questa fattura
-  schedules      Schedule[]          @relation("ScheduleFromInvoice")
-  lineAccounts   InvoiceLineAccount[]
+  schedules          Schedule[]           @relation("ScheduleFromInvoice")
+  lineAccounts       InvoiceLineAccount[]
+  /// La fattura rettificata da questo documento di rettifica (lato "molti" →
+  /// "uno"). Vedi `rettificaInvoiceId`: TD04/TD08 o TD05/TD09, indistinti.
+  rettificaInvoice   ElectronicInvoice?   @relation("RettificaFattura", fields: [rettificaInvoiceId], references: [id])
+  /// I documenti che rettificano QUESTA fattura (lato opposto).
+  /// COMPRENDE LE NOTE DI DEBITO (TD05/TD09), che rettificano nel verso
+  /// opposto: chi sottrae deve filtrare su `TIPI_DOCUMENTO_NOTA_CREDITO`, mai
+  /// usare questa relazione così com'è. Sottrarre una nota di debito inverte
+  /// il segno due volte — il difetto chiuso dal commit 040a492, che
+  /// `righeDaSottrarreNote` evita filtrando nella query.
+  rettifiche         ElectronicInvoice[]  @relation("RettificaFattura")
 
   @@index([invoiceDate])
   @@index([supplierId])
   @@index([status])
   @@index([venueId])
   @@index([documentType])
+  @@index([rettificaInvoiceId])
   @@map("electronic_invoices")
 }
 
@@ -1651,6 +1795,10 @@ model InvoiceLineAccount {
   id             String    @id @default(cuid())
   invoiceId      String    @map("invoice_id")
   numeroLinea    Int       @map("numero_linea")
+  /// Progressivo della quota dentro la stessa riga di fattura: 0 quando la
+  /// riga va tutta su un conto solo, 0..n quando il fornitore ha accorpato
+  /// voci diverse in una riga e vanno separate.
+  progressivo    Int       @default(0)
   descrizione    String
   codiceArticolo String?   @map("codice_articolo")
   importo        Decimal   @db.Decimal(10, 2)
@@ -1668,7 +1816,7 @@ model InvoiceLineAccount {
   account     Account           @relation(fields: [accountId], references: [id], onDelete: Restrict)
   confirmedBy User?             @relation("InvoiceLineAccountConfirmedBy", fields: [confirmedById], references: [id])
 
-  @@unique([invoiceId, numeroLinea])
+  @@unique([invoiceId, numeroLinea, progressivo])
   @@index([invoiceId])
   @@map("invoice_line_accounts")
 }
@@ -1813,13 +1961,215 @@ model BankTransaction {
   matchedEntry    JournalEntry?        @relation(fields: [matchedEntryId], references: [id])
   venue           Venue                @relation(fields: [venueId], references: [id])
 
+  bankAccountId         String? @map("bank_account_id")
+  /// L'identificativo dato dalla banca. Unico per conto, NON fra conti: la
+  /// deduplicazione va fatta su `(bankAccountId, providerTransactionId)`.
+  /// L'indice UNIQUE parziale che lo impone è dichiarato in
+  /// `prisma/sql/constraints.sql` e replicato nel migration.sql della
+  /// migrazione `20260812120000_open_banking_fase_1`, perché Prisma non sa
+  /// rappresentare gli indici parziali. Vedi `ux_bank_transactions_conto_provider`.
+  providerTransactionId String? @map("provider_transaction_id") @db.VarChar(100)
+  /// `proprietaryBankTransactionCode`, formato `NN//NN`. Presente sul 100% dei
+  /// movimenti: è il segnale di categorizzazione più forte di cui disponiamo.
+  bankTransactionCode   String? @map("bank_transaction_code") @db.VarChar(20)
+
+  /// Il tipo di operazione (`Bonifico a vs favore`, `SDD Core - Richiesta
+  /// incasso SEPA`…), separato dal testo grezzo con `separaCausale` all'import
+  /// e poi modificabile. `description` resta il testo della banca, intoccato.
+  causale     String? @db.VarChar(120)
+  /// Il testo che si legge e si modifica; `description` è l'originale.
+  descrizione String? @db.VarChar(500)
+  note        String? @db.Text
+  sezione     SezioneMovimentoBancario @default(ATTIVI)
+
+  /// Da quale azione la promozione ha CREATO la scrittura collegata:
+  /// `CATEGORIZZA` · `COLLEGA` · `PROPOSTA`. Nullo quando la riga è agganciata a
+  /// una scrittura che esisteva già (la R4). È l'unica cosa che lo scollegamento
+  /// deve ritirare (spec, «promuoviRigaBancaria»).
+  origineScrittura OrigineScritturaBancaria? @map("origine_scrittura")
+  /// Il residuo dei documenti, denormalizzato: |importo| − Σ riconciliazioni
+  /// VERIFIED della scrittura collegata quando ne ha almeno una; 0 quando la
+  /// riga è collegata senza documenti; NULL quando non è collegata. Lo
+  /// mantengono la promozione, lo scollegamento e chi scrive o toglie una
+  /// riconciliazione (`residuo-documenti.ts`): è ciò che permette a «Solo non
+  /// riconciliati» di prendere anche i parziali in SQL, senza sommare al volo.
+  residuoDocumenti Decimal? @map("residuo_documenti") @db.Decimal(12, 2)
+
+  modifiche BankTransactionEdit[]
+
+  bankAccount BankAccount? @relation(fields: [bankAccountId], references: [id])
+
+  reconciliationProposals ReconciliationProposal[]
+  proposalLegsAsPeer      ReconciliationProposalLeg[] @relation("ProposalLegPeer")
+  reconciliationExclusions ReconciliationExclusion[]  @relation("ExclusionBankTransaction")
+
   // Unicità di (venueId, bankReference) come indice PARZIALE in
   // prisma/migrations/post-push/constraints.sql: vedi DailyClosure.
   @@index([venueId, bankReference])
   @@index([venueId, status])
   @@index([transactionDate])
   @@index([importBatchId])
+  @@index([bankAccountId, transactionDate])
   @@map("bank_transactions")
+}
+
+/// Una riga per ogni campo cambiato su un movimento bancario: prima/dopo/chi.
+/// Alimenta il badge «Modificato» e la scheda «Cronologia modifiche». `userId`
+/// non ha relazione: il nome si legge a parte, e la riga sopravvive all'utente.
+model BankTransactionEdit {
+  id                String   @id @default(cuid())
+  bankTransactionId String   @map("bank_transaction_id")
+  /// `descrizione` · `causale` · `note` · `sezione`
+  campo             String   @db.VarChar(20)
+  prima             String?  @db.Text
+  dopo              String?  @db.Text
+  userId            String?  @map("user_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  bankTransaction BankTransaction @relation(fields: [bankTransactionId], references: [id], onDelete: Cascade)
+
+  @@index([bankTransactionId, createdAt])
+  @@map("bank_transaction_edits")
+}
+
+/// Un'esecuzione dell'analisi di riconciliazione assistita su un periodo.
+/// Le proposte si conservano — servono lo storico, il "Riprendi" e il referto
+/// dell'AI — ma alla rilettura ognuna viene ricontrollata per freschezza.
+model ReconciliationBatch {
+  id            String   @id @default(cuid())
+  venueId       String   @map("venue_id")
+  dateFrom      DateTime @map("date_from") @db.Date
+  dateTo        DateTime @map("date_to") @db.Date
+  /// Le sigle usate in questa esecuzione: ["R1","R2","R3","R4","R5"]
+  regoleUsate   String[] @map("regole_usate")
+  /// Sotto questo punteggio non si emettono proposte
+  sogliaMinima  Int      @default(40) @map("soglia_minima")
+  stato         String   @default("in_corso")
+  contaProposte Int      @default(0) @map("conta_proposte")
+  contaApprovate Int     @default(0) @map("conta_approvate")
+  contaScartate Int      @default(0) @map("conta_scartate")
+  contaSuperate Int      @default(0) @map("conta_superate")
+  /// Quando l'AI ha riletto il lotto. Null = mai.
+  aiRefertoAt   DateTime? @map("ai_referto_at")
+  aiReferto     Json?     @map("ai_referto")
+  createdById   String?   @map("created_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  venue     Venue                    @relation(fields: [venueId], references: [id])
+  createdBy User?                    @relation("ReconciliationBatchCreatedBy", fields: [createdById], references: [id])
+  proposte  ReconciliationProposal[]
+
+  @@index([venueId, createdAt])
+  @@map("reconciliation_batches")
+}
+
+/// Una proposta di abbinamento. Il punteggio è la somma dei sei fattori, che
+/// restano separati perché la barra segmentata e le motivazioni li mostrano.
+model ReconciliationProposal {
+  id         String @id @default(cuid())
+  batchId    String @map("batch_id")
+  /// R1..R8, vedi la spec
+  regola     String
+  punteggio  Int
+  /// { importo, riferimento, controparte, data, codiceBanca, unicita }
+  fattori    Json
+  /// [{ testo, segno }] — segno è "+" o "-"
+  motivazioni Json
+  stato      String @default("in_attesa")
+  /// Quale approvazione ha superato questa proposta. La FK è stata aggiunta
+  /// finché la tabella era vuota (migrazione 20260814120000): un TEXT libero
+  /// che punta a un id senza vincolo si riempie di riferimenti morti, e
+  /// ripulirli dopo costa quanto non averlo mai avuto.
+  supersededByProposalId String? @map("superseded_by_proposal_id")
+  /// Il movimento a sinistra. Null solo per R6 (nota di credito ↔ fattura).
+  bankTransactionId String? @map("bank_transaction_id")
+  /// Usato dalla R4, dove il movimento contabile esiste già e non c'è documento
+  journalEntryId    String? @map("journal_entry_id")
+  decisoDaId String?   @map("deciso_da")
+  decisoAt   DateTime? @map("deciso_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  batch           ReconciliationBatch         @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  bankTransaction BankTransaction?            @relation(fields: [bankTransactionId], references: [id])
+  journalEntry    JournalEntry?               @relation(fields: [journalEntryId], references: [id])
+  decisoDa        User?                       @relation("ReconciliationProposalDecisoDa", fields: [decisoDaId], references: [id])
+  gambe           ReconciliationProposalLeg[]
+  /// SetNull e non Cascade: se sparisce la proposta che ha superato questa,
+  /// questa resta — la sua storia è comunque accaduta, perde solo il rimando.
+  supersededBy    ReconciliationProposal?     @relation("ReconciliationProposalSuperata", fields: [supersededByProposalId], references: [id], onDelete: SetNull)
+  superate        ReconciliationProposal[]    @relation("ReconciliationProposalSuperata")
+
+  @@index([batchId, stato])
+  @@index([bankTransactionId])
+  @@index([supersededByProposalId])
+  @@map("reconciliation_proposals")
+}
+
+/// Il lato destro di una proposta. Più righe = pagamento cumulativo; una riga
+/// con importo minore del residuo = acconto.
+model ReconciliationProposalLeg {
+  id         String  @id @default(cuid())
+  proposalId String  @map("proposal_id")
+  /// La scadenza saldata. Alternativo a peerBankTransactionId.
+  scheduleId String? @map("schedule_id")
+  /// L'altra riga bancaria, per i giroconti (R5)
+  peerBankTransactionId String? @map("peer_bank_transaction_id")
+  /// Quota imputata a questa gamba
+  importo    Decimal @db.Decimal(10, 2)
+
+  proposal ReconciliationProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  schedule Schedule?              @relation(fields: [scheduleId], references: [id])
+  peer     BankTransaction?       @relation("ProposalLegPeer", fields: [peerBankTransactionId], references: [id])
+
+  @@index([proposalId])
+  @@index([scheduleId])
+  @@map("reconciliation_proposal_legs")
+}
+
+/// La memoria delle controparti: "nella causale compare X → è il fornitore Y".
+/// Risolve il buco lasciato da GoCardless, che non manda il beneficiario.
+/// Si consulta prima del punteggio e si riempie dalle correzioni manuali.
+model CounterpartyAlias {
+  id                String   @id @default(cuid())
+  venueId           String   @map("venue_id")
+  /// Maiuscolo, senza punteggiatura, spazi normalizzati
+  testoNormalizzato String   @map("testo_normalizzato")
+  supplierId        String?  @map("supplier_id")
+  customerId        String?  @map("customer_id")
+  /// 'manuale' | 'ai' | 'import'
+  origine           String
+  confermeConta     Int      @default(1) @map("conferme_conta")
+  ultimaConferma    DateTime @default(now()) @map("ultima_conferma")
+  createdById       String?  @map("created_by")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  venue    Venue     @relation(fields: [venueId], references: [id])
+  supplier Supplier? @relation("CounterpartyAliasSupplier", fields: [supplierId], references: [id])
+  customer Customer? @relation("CounterpartyAliasCustomer", fields: [customerId], references: [id])
+
+  @@unique([venueId, testoNormalizzato])
+  @@index([venueId, supplierId])
+  @@map("counterparty_aliases")
+}
+
+/// Coppie scartate per sempre. Consultate PRIMA di generare: senza questa
+/// tabella ogni rilancio ripropone gli stessi falsi positivi, e il motore
+/// diventa più caro a ogni giro invece che meno.
+model ReconciliationExclusion {
+  id                String   @id @default(cuid())
+  venueId           String   @map("venue_id")
+  bankTransactionId String?  @map("bank_transaction_id")
+  scheduleId        String?  @map("schedule_id")
+  motivo            String?
+  createdById       String?  @map("created_by")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  venue           Venue            @relation(fields: [venueId], references: [id])
+  bankTransaction BankTransaction? @relation("ExclusionBankTransaction", fields: [bankTransactionId], references: [id])
+  schedule        Schedule?        @relation("ExclusionSchedule", fields: [scheduleId], references: [id])
+
+  @@index([venueId, bankTransactionId])
+  @@map("reconciliation_exclusions")
 }
 
 model ImportBatch {
@@ -2029,7 +2379,7 @@ model CashFlowAlert {
 model ScheduleRule {
   id            String   @id @default(cuid())
   venueId       String   @map("venue_id")
-  direzione     String   // 'emessi' o 'ricevuti'
+  direzione     String // 'emessi' o 'ricevuti'
   tipoDocumento String?  @map("tipo_documento")
   tipoPagamento String?  @map("tipo_pagamento")
   azione        String   @default("crea_riconcilia_movimento")
@@ -2051,7 +2401,7 @@ model ScheduleRule {
   venue       Venue        @relation(fields: [venueId], references: [id])
   conto       Account?     @relation(fields: [contoId], references: [id])
   bankAccount BankAccount? @relation("ScheduleRuleBankAccount", fields: [bankAccountId], references: [id])
-  createdBy User?    @relation("ScheduleRuleCreatedBy", fields: [createdById], references: [id])
+  createdBy   User?        @relation("ScheduleRuleCreatedBy", fields: [createdById], references: [id])
   costCenter  CostCenter?  @relation(fields: [costCenterId], references: [id], onDelete: Restrict)
 
   @@index([venueId, direzione, ordine])
@@ -2073,8 +2423,8 @@ model InvitationToken {
   createdAt     DateTime  @default(now()) @map("created_at")
   isActive      Boolean   @default(true) @map("is_active")
 
-  invitedBy     User      @relation("InvitedByUser", fields: [invitedById], references: [id])
-  createdUser   User?     @relation("CreatedByInvitation", fields: [createdUserId], references: [id])
+  invitedBy   User  @relation("InvitedByUser", fields: [invitedById], references: [id])
+  createdUser User? @relation("CreatedByInvitation", fields: [createdUserId], references: [id])
 
   @@index([token])
   @@index([email])
@@ -2100,10 +2450,10 @@ model EmployeeDocument {
   /// split del PDF bulk. Finché è true il documento è intestato all'admin che ha
   /// caricato il file (userId non è nullable) e va escluso dal portale dipendente:
   /// diventa un cedolino normale solo dopo PATCH /api/documents/[id]/assign.
-  needsAssignment  Boolean          @default(false) @map("needs_assignment")
+  needsAssignment Boolean @default(false) @map("needs_assignment")
   /// Estratto del testo delle pagine non riconosciute, mostrato all'admin per
   /// capire di chi è il cedolino.
-  unmatchedText    String?          @map("unmatched_text")
+  unmatchedText   String? @map("unmatched_text")
 
   user       User @relation("EmployeeDocuments", fields: [userId], references: [id], onDelete: Cascade)
   uploadedBy User @relation("DocumentUploader", fields: [uploadedByUserId], references: [id])
@@ -2115,19 +2465,19 @@ model EmployeeDocument {
 }
 
 model AuditLog {
-  id          String   @id @default(cuid())
-  timestamp   DateTime @default(now())
-  userId      String?  @map("user_id")
-  action      String   // CREATE, UPDATE, DELETE, LOGIN, PASSWORD_CHANGE
-  entityType  String   @map("entity_type")
-  entityId    String?  @map("entity_id")
-  venueId     String?  @map("venue_id")
-  oldValues   Json?    @map("old_values")
-  newValues   Json?    @map("new_values")
-  ipAddress   String?  @map("ip_address")
-  userAgent   String?  @map("user_agent")
-  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  venue       Venue?   @relation(fields: [venueId], references: [id], onDelete: SetNull)
+  id         String   @id @default(cuid())
+  timestamp  DateTime @default(now())
+  userId     String?  @map("user_id")
+  action     String // CREATE, UPDATE, DELETE, LOGIN, PASSWORD_CHANGE
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  venueId    String?  @map("venue_id")
+  oldValues  Json?    @map("old_values")
+  newValues  Json?    @map("new_values")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  venue      Venue?   @relation(fields: [venueId], references: [id], onDelete: SetNull)
 
   @@index([entityType, entityId])
   @@index([userId])
@@ -2376,6 +2726,8 @@ enum NotificationType {
   COMPANY_COMMUNICATION
   STAFF_ANOMALY
   NEW_DOCUMENT
+  /// La sincronizzazione bancaria notturna è fallita. Destinatari: gli admin.
+  BANK_SYNC_FAILED
   GENERAL
 }
 
@@ -2393,11 +2745,18 @@ enum NotificationStatus {
   READ
 }
 
+/// Ciclo di vita di una fattura ricevuta.
+///
+/// `RECORDED` non c'è più dal 15 agosto 2026: diceva «le ho scritto un
+/// movimento di banca», e un documento fiscale non genera movimenti
+/// (spec 2026-08-15-fatture-non-generano-movimenti). `PAID` e
+/// `PARTIALLY_PAID` li scrive la scadenza in base ai pagamenti veri, non un
+/// bottone: vedi `allineaFattura` in src/lib/scadenzario/stato-schedule.ts.
 enum InvoiceStatus {
   IMPORTED
   MATCHED
   CATEGORIZED
-  RECORDED
+  PARTIALLY_PAID
   PAID
 }
 
@@ -2420,6 +2779,7 @@ enum ImportSource {
   XLSX
   PSD2_FABRICK
   PSD2_TINK
+  PSD2_GOCARDLESS
   MANUAL
   CBI_XML
   CBI_TXT
@@ -2448,6 +2808,22 @@ enum ReconciliationStatus {
   MANUAL
   IGNORED
   UNMATCHED
+}
+
+/// La scheda in cui una riga dell'estratto conto si vede: Attivi, Deleghe F24,
+/// CBILL-PagoPA. Cambiarla non tocca la contabilità (spec, decisione 5).
+enum SezioneMovimentoBancario {
+  ATTIVI
+  DELEGHE_F24
+  CBILL_PAGOPA
+}
+
+/// Da quale azione è nata la scrittura collegata a una riga dell'estratto
+/// conto, quando l'ha creata la promozione (spec, «Modello dati»).
+enum OrigineScritturaBancaria {
+  CATEGORIZZA
+  COLLEGA
+  PROPOSTA
 }
 
 enum ExpenseFrequency {

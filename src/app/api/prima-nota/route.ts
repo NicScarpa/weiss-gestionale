@@ -136,6 +136,7 @@ export async function GET(request: NextRequest) {
     const direction = searchParams.get('direction') as 'inflow' | 'outflow' | null
     const uncategorized = searchParams.get('uncategorized') === 'true'
     const hidden = searchParams.get('hidden') !== 'true' // exclude hidden by default
+    const senzaRigaBancaria = searchParams.get('senzaRigaBancaria') === 'true'
 
     // Costruisci where clause
     const where: Prisma.JournalEntryWhereInput = {}
@@ -218,6 +219,12 @@ export async function GET(request: NextRequest) {
       where.hiddenAt = null
     }
 
+    // «Scrittura esistente» nel dialogo Collega fattura: le scritture BANK che
+    // nessuna riga della banca ha ancora agganciato (la R4).
+    if (senzaRigaBancaria) {
+      where.bankTransaction = null
+    }
+
     // Query con paginazione
     const [entries, total] = await Promise.all([
       prisma.journalEntry.findMany({
@@ -287,6 +294,16 @@ export async function GET(request: NextRequest) {
               note: true,
             },
           },
+          // Scadenze saldate da questo movimento: la lista le usa per dire che
+          // il movimento è riconciliato e per offrire lo sgancio. Senza, l'unico
+          // modo di accorgersene era provare a cancellarlo e leggere il rifiuto.
+          scheduleReconciliations: {
+            where: { status: 'VERIFIED' },
+            select: { id: true, scheduleId: true },
+          },
+          // La riga dell'estratto conto da cui la scrittura è nata (o a cui è
+          // legata): la lista mostra «dalla banca» e ci porta.
+          bankTransaction: { select: { id: true } },
         },
         orderBy: [{ date: sortOrder }, { createdAt: sortOrder }],
         skip: (filters.page - 1) * filters.limit,
@@ -334,6 +351,7 @@ export async function GET(request: NextRequest) {
       // lati di una sola operazione, e la metà in uscita si presenta come una
       // spesa qualunque.
       transferId: entry.transferId,
+      bankTransactionId: entry.bankTransaction?.id ?? null,
       runningBalance: entry.runningBalance ? Number(entry.runningBalance) : null,
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt,
@@ -359,6 +377,12 @@ export async function GET(request: NextRequest) {
         importo: Number(a.importo),
         origine: a.origine as 'manuale' | 'ereditata',
         note: a.note ?? undefined,
+      })),
+      // Solo gli identificativi: il dettaglio delle scadenze si legge, quando
+      // serve davvero, da /api/prima-nota/[id]/riconciliazioni.
+      riconciliazioni: entry.scheduleReconciliations.map((r) => ({
+        id: r.id,
+        scheduleId: r.scheduleId,
       })),
     }))
 

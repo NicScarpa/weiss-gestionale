@@ -70,13 +70,21 @@ export function getDocumentTypeLabel(tipoDocumento: string | null | undefined): 
   return DOCUMENT_TYPE_MAP[tipoDocumento]?.label || tipoDocumento
 }
 
-// Helper per stato semplificato (registrata/non registrata)
+// Helper per stato semplificato (pagata / da pagare).
+//
+// Prima diceva «registrata», cioè «le è stato scritto un movimento di banca».
+// Dal 15 agosto 2026 quel movimento non nasce dal documento: una fattura è
+// pagata quando il denaro si è mosso davvero e la sua scadenza è saldata.
 export function getSimpleStatus(status: string): { label: string; color: string } {
-  const isRegistered = status === 'RECORDED' || status === 'PAID'
-  return {
-    label: isRegistered ? 'Registrata' : 'Non registrata',
-    color: isRegistered ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600',
+  if (status === 'PAID') {
+    return { label: 'Pagata', color: 'bg-green-100 text-green-700' }
   }
+  // Ambra e non verde: del denaro è uscito, ma il debito non è chiuso. Dirlo
+  // «Pagata» sarebbe falso, dirlo «Da pagare» nasconde ciò che è già avvenuto.
+  if (status === 'PARTIALLY_PAID') {
+    return { label: 'Parzialmente pagata', color: 'bg-amber-100 text-amber-700' }
+  }
+  return { label: 'Da pagare', color: 'bg-slate-100 text-slate-600' }
 }
 
 // Helper per ottenere la descrizione della modalità di pagamento

@@ -11,6 +11,7 @@
  * distinzione va fatta nella query, non dopo.
  */
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 import { money, type Money, type MoneyInput } from '@/lib/money'
 import { movimentiChePesano } from '@/lib/saldi'
 import { toDateOnlyUtc } from '@/lib/timezone'
@@ -36,12 +37,18 @@ export interface MovimentoAggregato {
  * scelta, e stesso motivo, di `MovimentoContoEconomico` in report/conto-economico.ts.
  */
 export interface MovimentoPrimaNota {
+  /**
+   * Facoltativo perché all'aggregazione non serve: lo porta il solo avviso di
+   * `aggregaMovimenti`, che senza un identificativo direbbe a chi legge i log
+   * che «un movimento» non quadra, lasciandogli l'anno da spulciare.
+   */
+  id?: string
   accountId: string | null
   date: Date
   debitAmount: MoneyInput
   creditAmount: MoneyInput
   vatAmount: MoneyInput
-  allocations: readonly { accountId: string; importo: MoneyInput }[]
+  allocations: readonly { accountId: string; importo: MoneyInput; iva: MoneyInput | null }[]
 }
 
 /**
@@ -56,6 +63,16 @@ export function nettoDiIva(m: MovimentoAggregato): Money {
 export function lordo(m: MovimentoAggregato): Money {
   return m.dare.minus(m.avere)
 }
+
+/**
+ * Sotto questa soglia lo sforamento dell'IVA delle fette non è un disaccordo,
+ * è l'ultima cifra di una divisione: il ripiego pro-quota divide con venti
+ * cifre significative e la somma delle quote può superare l'IVA di testata di
+ * un infinitesimo. Mezzo centesimo è la stessa soglia con cui `money.ts`
+ * considera chiusa una posizione. Serve solo a decidere se avvisare: il tetto
+ * si applica comunque, e su uno scarto simile non sposta nemmeno un centesimo.
+ */
+const TOLLERANZA_IVA = money('0.005')
 
 /**
  * Come si ripartisce l'IVA di una riga fra dare e avere: segue il verso del
@@ -89,6 +106,20 @@ interface Contributo {
   ivaAvere: Money
 }
 
+/**
+ * Il contributo di una fetta, messo dal lato che il verso della riga impone.
+ * Importo e IVA passano di qui insieme, così non possono finire su lati
+ * diversi: sarebbe un movimento che paga da una parte e detrae dall'altra.
+ */
+function contributo(inDare: boolean, importo: Money, iva: Money): Contributo {
+  return {
+    dare: inDare ? importo : money(0),
+    avere: inDare ? money(0) : importo,
+    ivaDare: inDare ? iva : money(0),
+    ivaAvere: inDare ? money(0) : iva,
+  }
+}
+
 function negato(c: Contributo): Contributo {
   return {
     dare: c.dare.negated(),
@@ -101,7 +132,9 @@ function negato(c: Contributo): Contributo {
 /**
  * Aggrega le righe di prima nota per conto e mese, rispettando le suddivisioni.
  *
- * Pura: nessun database, così le suddivisioni si testano senza scriverle.
+ * Nessun database, così le suddivisioni si testano senza scriverle. L'unico
+ * effetto fuori dal valore di ritorno è l'avviso sul tetto dell'IVA, in coda
+ * al ciclo di ogni riga: non cambia un solo numero del risultato.
  *
  * **Le suddivisioni spostano l'importo sui conti delle fette.** La regola è
  * quella già stabilita da `movimentiPerContoEMese` in saldi.ts (righe 385-448,
@@ -117,41 +150,72 @@ function negato(c: Contributo): Contributo {
  * voluto dire riscrivere la query degli actual di budget, che è in produzione.
  * Se si tocca la semantica qui, va guardato anche lì.
  *
- * C'è una terza copia, in report/conto-economico.ts (righe ~272-296), e lì la
- * regola NON è la stessa: quando un movimento ha fette, quella funzione
- * ignora del tutto il conto di testata invece di lasciargli il resto —
- * un'uscita da 1.000 € suddivisa 700/200 mostra 900 € "persi" invece di
- * restare sul conto di testata. Su una suddivisione parziale questo prospetto
- * e il conto economico raccontano quindi due numeri diversi per lo stesso
- * movimento. Quale dei due comportamenti sia quello giusto è una domanda per
- * chi possiede quel report, non qualcosa da uniformare qui di riflesso.
+ * C'è una terza copia, in report/conto-economico.ts (righe 272-322): dal 12
+ * agosto 2026 applica la stessa regola. La testata tiene il resto, in tutti e
+ * tre i moduli — non solo qui e in saldi.ts. Prima di quella data
+ * `aggregaContoEconomico` ignorava del tutto il conto di testata quando un
+ * movimento aveva fette, e un'uscita da 1.000 € suddivisa 700/200 mostrava
+ * 900 € "persi" invece di restare sul conto di testata: stesso movimento, due
+ * numeri diversi fra questo prospetto e il conto economico.
  *
- * **L'IVA di una riga suddivisa si ripartisce pro-quota** sull'importo lordo
- * delle fette. L'alternativa — lasciarla tutta in testata — farebbe comparire
- * la famiglia del conto di testata con un secco −IVA e le famiglie delle fette
- * al lordo: cioè proprio i margini sbagliati che questo prospetto esiste per
- * mostrare giusti. Il pro-quota è anche la regola che la riconciliazione già
- * usa per le fette ereditate (`allocation-service.ts`).
+ * **L'IVA di una riga suddivisa viene dalla fetta stessa, quando la
+ * dichiara.** `JournalEntryAllocation.iva` porta l'IVA della fetta: se è
+ * valorizzato si usa quello, altrimenti si ricade sul pro-quota sull'importo
+ * lordo — la stessa ripartizione di prima. Chi scrive cosa, dal 12 agosto
+ * 2026: l'ereditarietà dalla fattura scrive l'IVA esatta di ogni aliquota
+ * (`ereditaFetteDaFattura` in schedule-reconciliation-service.ts), mentre la
+ * suddivisione manuale di un movimento lascia `null` di proposito — chi
+ * divide a mano non sta dichiarando un'IVA, sta dicendo che non la conosce.
+ * Il ripiego pro-quota non è quindi codice morto: regge le fette manuali e
+ * le fatture le cui righe non riportano un'aliquota leggibile.
  *
- * **Dove il pro-quota è esatto, e dove no.** È esatto per il caso che il
- * prodotto genera: le fette sono quote del lordo di un pagamento unico, e su
+ * **Cosa il pro-quota da solo sbaglia, e cosa evita una fetta che dichiara
+ * la propria IVA.** Il pro-quota è esatto per il caso che il prodotto
+ * genera: le fette sono quote del lordo di un pagamento unico, e su
  * un'aliquota uniforme la ripartizione è quella vera. L'errore compare con
  * aliquote miste, e le aliquote miste non sono un caso raro: la fattura che
  * mette insieme alimentari al 10% e detersivi al 22% è la normalità per un
- * fornitore di ristorazione (vedi il commento su `aliquoteDelloSnapshot` in
- * schedule-reconciliation-service.ts:170-177). Esempio: 1.000 € di alimentari
+ * fornitore di ristorazione (vedi il commento sui pesi al lordo in
+ * schedule-reconciliation-service.ts:245-252). Esempio: 1.000 € di alimentari
  * e 100 € di detersivi danno fette lorde di 1.100 e 122, con 122 € di IVA in
- * tutto; il pro-quota assegna 109,82 € e 12,18 € invece dei veri 100 e 22 —
- * quasi 10 € spostati dalla famiglia piccola a quella grande. Il totale resta
- * esatto (è tolto alla testata per differenza, non ricalcolato), la singola
- * famiglia no.
+ * tutto; il pro-quota da solo assegnerebbe 109,82 € e 12,18 € invece dei veri
+ * 100 e 22 — quasi 10 € spostati dalla famiglia piccola a quella grande. Una
+ * fetta che dichiara la propria IVA evita questo scostamento; una che non la
+ * dichiara lo subisce ancora, come prima. Il totale resta comunque esatto
+ * (è tolto alla testata per differenza, non ricalcolato): è la singola
+ * famiglia a poterne risentire.
  *
  * L'aliquota non è un dato ignoto: sta nello snapshot `invoice.lineItems` di
- * ogni riga fattura, e `schedule-reconciliation-service.ts:178` la legge già
- * per l'ereditarietà pro-quota delle fette. Quello che manca è che la fetta,
- * una volta creata su `JournalEntryAllocation`, non la porta con sé — il
- * modello non ha un campo aliquota. Il limite sta nel dato persistito, non in
- * un dato che non esiste.
+ * ogni riga fattura, e `schedule-reconciliation-service.ts:253` la legge per
+ * l'ereditarietà delle fette. Dal 12 agosto 2026 quella lettura non si ferma
+ * più al calcolo dei pesi: l'IVA arriva fino alla fetta e ci resta scritta.
+ *
+ * **La testata non cede alle fette più IVA di quanta ne dichiari.** È il
+ * tetto sul totale, non sulla singola fetta: le fette tengono la propria IVA
+ * esatta, la testata scende al più fino a zero. Serve perché fino al 12
+ * agosto 2026 nessun percorso automatico valorizzava `vatAmount` — l'import
+ * bancario, il motore delle regole e l'esecuzione di un pagamento creano il
+ * movimento senza IVA — e la testata finiva a −122 di IVA su una fattura
+ * mista da 1.222. Non un numero grande, ma un numero che in questo dominio
+ * non esiste: e siccome dopo la riconciliazione il conto di testata È quello
+ * della fetta dominante, quel negativo si sommava proprio alla famiglia più
+ * grossa (alimentari −1.122 invece di −1.000, con pulizia giusta: la piccola
+ * guariva esattamente di quanto la grande si ammalava). Nessuno dei quattro
+ * controlli di quadratura poteva accorgersene — due contano i conti, uno
+ * guarda il lordo, e il quarto quadra per identità algebrica qualunque sia la
+ * distribuzione dell'IVA fra i conti.
+ *
+ * **Conseguenza voluta del tetto:** quando le fette dichiarano più IVA della
+ * testata, la somma dell'IVA sui conti supera quella dichiarata dal
+ * movimento. È la scelta giusta perché la fattura è la fonte autorevole e un
+ * `vatAmount` a `null` significa «non dichiarata», non «zero». Il lordo non
+ * ne risente: il controllo di quadratura guarda `dare − avere`, che non
+ * cambia comunque si distribuisca l'IVA. Quando il tetto scatta davvero c'è
+ * un `logger.warn`: vuol dire che il movimento e le sue fette raccontano due
+ * storie diverse, e la cosa va guardata da un essere umano. Dalla stessa data
+ * la riconciliazione scrive l'IVA sulla testata, quindi su quel percorso il
+ * tetto è normalmente inerte: resta per i movimenti che l'IVA non ce l'hanno
+ * per altre ragioni.
  */
 export function aggregaMovimenti(
   righe: readonly MovimentoPrimaNota[]
@@ -198,22 +262,55 @@ export function aggregaMovimenti(
     // quello della sua IVA non possono divergere.
     const inDare = !dare.isZero()
     const lordoRiga = dare.plus(avere)
+    const ivaTestata = ivaDare.plus(ivaAvere)
+
+    // Quanta IVA la testata ha ancora da cedere, e quanta le fette hanno
+    // dichiarato senza poterla prendere da lei.
+    let ivaCedibile = ivaTestata
+    let ivaOltreLaTestata = money(0)
 
     for (const fetta of riga.allocations) {
       const quota = money(fetta.importo)
-      const frazione = lordoRiga.isZero() ? money(0) : quota.div(lordoRiga)
 
-      const spostamento: Contributo = {
-        dare: inDare ? quota : money(0),
-        avere: inDare ? money(0) : quota,
-        ivaDare: ivaDare.times(frazione),
-        ivaAvere: ivaAvere.times(frazione),
-      }
+      // L'IVA della fetta: quella dichiarata se c'è, altrimenti la quota
+      // pro-quota dell'IVA di testata. Il ripiego resta perché una fetta
+      // creata a mano non dichiara un'aliquota, e perché una fattura le cui
+      // righe non riportano l'aliquota non può produrne una esatta.
+      //
+      // `== null` e non `===`: `MoneyInput` ammette già `undefined`, quindi
+      // una fetta priva del campo supera il typecheck; con `===` cadrebbe nel
+      // ramo "dichiarata", dove `money(undefined)` vale 0, e un «non lo so»
+      // diventerebbe in silenzio un «niente IVA».
+      const ivaFetta =
+        fetta.iva == null
+          ? lordoRiga.isZero()
+            ? money(0)
+            : ivaTestata.times(quota.div(lordoRiga))
+          : money(fetta.iva)
+
+      // Il tetto: dalla testata si toglie l'importo pieno della fetta, ma solo
+      // l'IVA che le resta da cedere. Sul ripiego pro-quota è inerte per
+      // costruzione — la somma delle fette non supera l'importo utile del
+      // movimento, quindi la somma delle loro quote di IVA non supera quella
+      // di testata.
+      const ivaCeduta = ivaFetta.greaterThan(ivaCedibile) ? ivaCedibile : ivaFetta
+      ivaCedibile = ivaCedibile.minus(ivaCeduta)
+      ivaOltreLaTestata = ivaOltreLaTestata.plus(ivaFetta.minus(ivaCeduta))
 
       // Via dal conto di testata…
-      aggiungi(riga.accountId, mese, negato(spostamento))
-      // …e sul conto della fetta.
-      aggiungi(fetta.accountId, mese, spostamento)
+      aggiungi(riga.accountId, mese, negato(contributo(inDare, quota, ivaCeduta)))
+      // …e sul conto della fetta, con la sua IVA intera.
+      aggiungi(fetta.accountId, mese, contributo(inDare, quota, ivaFetta))
+    }
+
+    if (ivaOltreLaTestata.greaterThan(TOLLERANZA_IVA)) {
+      logger.warn('Le fette dichiarano più IVA della testata: il prospetto tiene quella delle fette', {
+        journalEntryId: riga.id,
+        accountId: riga.accountId,
+        data: riga.date.toISOString().slice(0, 10),
+        ivaTestata: ivaTestata.toFixed(2),
+        ivaOltreLaTestata: ivaOltreLaTestata.toFixed(2),
+      })
     }
   }
 
@@ -233,6 +330,7 @@ export async function movimentiCashFlow(
       },
     },
     select: {
+      id: true,
       accountId: true,
       date: true,
       debitAmount: true,
@@ -241,7 +339,7 @@ export async function movimentiCashFlow(
       // Le fette in join e non in una seconda query: sono già ristrette ai
       // movimenti che pesano dal filtro qui sopra, e il commento sul perché
       // di quel filtro resta uno solo.
-      allocations: { select: { accountId: true, importo: true } },
+      allocations: { select: { accountId: true, importo: true, iva: true } },
     },
   })
 

@@ -5,6 +5,7 @@
  * Displays all XML parsed data: causale, linee, riepilogo IVA, pagamenti, trasmissione SDI
  */
 
+import { Fragment, useState } from 'react'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,6 +13,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -25,17 +27,29 @@ import {
   Calculator,
   Banknote,
   Info,
+  Cog,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react'
 import {
   getDocumentTypeAbbrev,
   getDocumentTypeColor,
   getDocumentTypeLabel,
   getPaymentMethodLabel,
+  getSimpleStatus,
   formatDateIT,
 } from '@/lib/invoice-utils'
 import { formatCurrencyOrZero as formatCurrency } from '@/lib/formatters'
 import { NATURA_OPERAZIONE } from '@/lib/sdi/types'
 import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
+import { LINEA_BOLLO, LINEA_ARROTONDAMENTO } from '@/lib/sdi/righe-di-sistema'
+import { RigaDivisibile } from './RigaDivisibile'
+// Tipi e utilità condivisi con RigaDivisibile.tsx: vivono in un terzo modulo
+// (non qui) apposta, per non fare importare a RigaDivisibile.tsx questo
+// stesso file — che a sua volta lo importa per il componente. Era un ciclo
+// (revisione team lead, round 1, minor): funzionava perché ogni uso reale
+// era dentro funzioni, mai a livello di modulo, ma restava fragile.
+import { TOLLERANZA_IMPORTI, pallino, type ImputazioneQuota, type RigaVisualizzata } from './riga-fattura-condivisa'
 
 // Type definitions for parsed data from API
 interface CedentePrestatore {
@@ -64,15 +78,6 @@ interface CessionarioCommittente {
   }
 }
 
-/** Imputazione per conto salvata sulla riga (Task 9-10). */
-interface ImputazioneLinea {
-  accountId: string
-  stato: 'proposta' | 'confermata'
-  fonte: string
-  confidence?: number | string | null
-  motivazioneAi?: string | null
-}
-
 interface DettaglioLinea {
   numeroLinea: number
   descrizione: string
@@ -81,7 +86,20 @@ interface DettaglioLinea {
   prezzoUnitario: number
   prezzoTotale: number
   aliquotaIVA: number
-  imputazione?: ImputazioneLinea | null
+  imputazioni: ImputazioneQuota[]
+}
+
+/**
+ * Bollo virtuale e arrotondamento: righe imputabili come le altre ma fuori
+ * da `dettaglioLinee` (vedi `righeDiSistema` in `src/lib/sdi/righe-di-sistema.ts`,
+ * unica fonte del calcolo — qui si mostra solo quello che il server
+ * restituisce già pronto, non si ricalcola nulla).
+ */
+interface RigaDiSistema {
+  numeroLinea: number
+  descrizione: string
+  importo: number
+  imputazioni: ImputazioneQuota[]
 }
 
 interface DatiRiepilogo {
@@ -116,6 +134,7 @@ export interface ParsedInvoiceData {
   cedentePrestatore?: CedentePrestatore
   cessionarioCommittente?: CessionarioCommittente
   dettaglioLinee?: DettaglioLinea[]
+  righeSistema?: RigaDiSistema[]
   datiRiepilogo?: DatiRiepilogo[]
   datiPagamento?: DatiPagamento
   datiBollo?: DatiBollo
@@ -143,7 +162,10 @@ export function DocumentInfoSection({
   documentType,
   status,
 }: DocumentInfoSectionProps) {
-  const isRegistered = status === 'RECORDED' || status === 'PAID'
+  // Etichetta e colore vengono da `getSimpleStatus`, unica fonte: qui prima
+  // c'era una seconda copia della stessa decisione, ed è così che due
+  // schermate finiscono per chiamare in due modi lo stesso stato.
+  const statoSemplice = getSimpleStatus(status)
 
   return (
     <div className="flex flex-col gap-1">
@@ -154,9 +176,7 @@ export function DocumentInfoSection({
             {getDocumentTypeAbbrev(documentType)} - {getDocumentTypeLabel(documentType)}
           </Badge>
         )}
-        <Badge className={isRegistered ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-muted-foreground'}>
-          {isRegistered ? 'Registrata' : 'Non registrata'}
-        </Badge>
+        <Badge className={statoSemplice.color}>{statoSemplice.label}</Badge>
       </div>
       <p className="text-slate-500">{formatDateIT(invoiceDate)}</p>
     </div>
@@ -304,27 +324,241 @@ export function CausaleSection({ causale }: CausaleSectionProps) {
 // ==========================================
 interface LineItemsTableProps {
   dettaglioLinee?: DettaglioLinea[]
+  /** Bollo e arrotondamento: righe imputabili come le altre, già pronte con le loro imputazioni (righeDiSistema lato server). */
+  righeSistema?: RigaDiSistema[]
   /** Mostra la colonna "Conto": solo per fatture passive/ricevute, decide il genitore. */
   showAccountColumn?: boolean
   /** false quando la fattura non è più modificabile (registrata/pagata) o durante una PATCH in corso. */
   canEditAccounts?: boolean
   /** Suggerimento non salvato (conto di default del fornitore) per le righe senza imputazione. */
   defaultAccountLabel?: string
+  /** Suggerimento per la riga del bollo quando non ha ancora un'imputazione: es. "30.01 - Imposta di bollo" (CONTO_PROPOSTO_BOLLO). */
+  defaultBolloAccountLabel?: string
+  /** Totale del documento, righe di sistema comprese: denominatore del contatore di copertura. */
+  totaleDocumento?: string | number
   onAccountChange?: (numeroLinea: number, accountId: string) => void
   onConfirmAllAccounts?: () => void
+  /**
+   * Salva l'intera divisione di una riga (Task 9): TUTTE le quote della riga
+   * in una volta, mai una per volta. Il server tratta la richiesta come
+   * autorevole sulla riga che nomina (righe-conti/route.ts) — cancella ogni
+   * quota di quel numeroLinea non citata — quindi una chiamata con una sola
+   * quota su una riga divisa ne cancellerebbe silenziosamente l'altra.
+   * `RigaDivisibile` costruisce sempre l'insieme completo prima di chiamarla.
+   */
+  onSplitSave?: (
+    numeroLinea: number,
+    quote: Array<{ progressivo: number; accountId: string; importo: number }>
+  ) => void
+}
+
+/** Quanto di una riga è coperto da imputazioni CONFERMATE — non le proposte
+ * AI, ancora da rivedere. Specchia la guardia sul back end
+ * (schedule-reconciliation-service.ts, "numeroLineeImputate"), che conta solo
+ * le conferme umane per decidere se l'ereditarietà pro-quota può scattare:
+ * il contatore qui deve dire «completa» esattamente quando quella guardia
+ * passerebbe, non prima.
+ *
+ * Attenzione: questo è un importo NETTO. `q.importo` è quello scritto da
+ * `righe-conti/route.ts`, che per una riga intera è `dettaglio.prezzoTotale`
+ * — il `PrezzoTotale` di FatturaPA, cioè l'imponibile. Chi confronta questo
+ * numero con `invoice.totalAmount` (lordo) deve prima passare da `alLordo()`.
+ */
+function importoConfermato(imputazioni: ImputazioneQuota[]): number {
+  return imputazioni
+    .filter((q) => q.stato === 'confermata')
+    .reduce((somma, q) => somma + q.importo, 0)
+}
+
+/**
+ * Porta un importo netto di una riga al lordo, con l'aliquota della riga
+ * stessa — stesso schema di `aggregaPerConto` in
+ * `src/lib/services/allocation-service.ts` (netto + netto × aliquota/100),
+ * già rivisto e in produzione per lo stesso calcolo lato server.
+ *
+ * Copiata e non importata per la stessa ragione di `TOLLERANZA_IMPORTI`
+ * (vedi `riga-fattura-condivisa.ts`): quel modulo porta `@prisma/client`, e
+ * un import così dentro un componente `'use client'` rompe il bundle in un
+ * modo che nessuna revisione del diff vede — bisogna lanciare `npm run build`
+ * per accorgersene.
+ *
+ * Serve al confronto RIGA PER RIGA (`righeMancanti`), dove il fattore
+ * (1 + aliquota/100) sta da entrambe le parti della differenza e non c'è
+ * nessun arrotondamento dell'emittente da rispettare. Il totale attribuito
+ * NON si calcola sommando questi lordi: vedi `attribuitoAlLordo`.
+ *
+ * Le righe di sistema hanno aliquota 0 per costruzione (né il bollo né
+ * l'arrotondamento portano IVA, vedi `righeDiSistema`), quindi per loro il
+ * lordo coincide col netto senza bisogno di un ramo a parte.
+ */
+function alLordo(importoNetto: number, riga: RigaVisualizzata): number {
+  return importoNetto * (1 + (riga.aliquotaIVA ?? 0) / 100)
+}
+
+/**
+ * Il totale attribuito al lordo, con l'imposta arrotondata UNA VOLTA per
+ * aliquota: l'algoritmo dell'emittente, non la somma dei lordi di riga.
+ *
+ * Il denominatore del contatore è `ImportoTotaleDocumento`, un numero scritto
+ * dal fornitore. FatturaPA gli fa dichiarare un `DatiRiepilogo` per ogni
+ * aliquota, con l'imposta già arrotondata al centesimo una volta per gruppo,
+ * e il totale del documento è la somma di quelle imposte. Sommare invece i
+ * lordi di riga non arrotondati diverge fino a mezzo centesimo per aliquota:
+ * con due aliquote supera già la tolleranza di 0,005 e il piede dichiarava
+ * «manca 0,01 € non riconducibile a una riga» su una fattura interamente
+ * attribuita — 100,05 al 10% (imposta 10,005, l'emittente scrive 10,01) più
+ * 50,25 al 22% (11,055 → 11,06) fanno 171,37 sul documento e davano 171,36
+ * qui. È esattamente la fattura mista per cui questo lavoro esiste.
+ *
+ * Allargare la tolleranza avrebbe nascosto anche gli scarti veri; replicare
+ * l'arrotondamento dell'emittente no.
+ *
+ * Le righe di sistema non portano aliquota e finiscono nel gruppo a zero:
+ * imposta zero, lordo uguale al netto, senza bisogno di un ramo a parte.
+ */
+function attribuitoAlLordo(righe: RigaVisualizzata[]): number {
+  const imponibilePerAliquota = new Map<number, number>()
+  for (const riga of righe) {
+    const aliquota = riga.aliquotaIVA ?? 0
+    imponibilePerAliquota.set(
+      aliquota,
+      (imponibilePerAliquota.get(aliquota) ?? 0) + importoConfermato(riga.imputazioni)
+    )
+  }
+
+  let totale = 0
+  for (const [aliquota, imponibile] of imponibilePerAliquota) {
+    // `imponibile × aliquota` è l'imposta in centesimi, perché l'aliquota è
+    // in punti percentuali: l'arrotondamento va fatto lì, una volta per
+    // gruppo, com'è scritto nel DatiRiepilogo da cui nasce il totale.
+    totale += imponibile + Math.round(imponibile * aliquota) / 100
+  }
+  return totale
+}
+
+/** Riferimento leggibile a una riga mancante nel messaggio del contatore: le
+ * righe di sistema usano il loro numero riservato (LINEA_BOLLO/LINEA_ARROTONDAMENTO),
+ * che non ha senso mostrare all'utente com'è ("riga -1"). */
+function riferimentoRiga(riga: RigaVisualizzata): string {
+  if (riga.numeroLinea === LINEA_BOLLO) return 'il bollo'
+  if (riga.numeroLinea === LINEA_ARROTONDAMENTO) return "l'arrotondamento"
+  return `la riga ${riga.numeroLinea}`
+}
+
+/**
+ * «manca la riga 2» al singolare, «mancano la riga 2 e il bollo» al plurale.
+ *
+ * `righeMancanti` può essere vuoto anche a documento non completo: succede
+ * quando ogni riga presente è coperta per intero ma la somma non arriva
+ * comunque al totale del documento — un onere di testata che non sta in
+ * nessuna riga (sconto, cassa previdenziale, ritenuta: nessuno di questi
+ * diventa oggi una riga di sistema, vedi `righeDiSistema`). In quel caso non
+ * c'è una riga da nominare: si dichiara l'importo residuo invece di stampare
+ * un messaggio vuoto o un `undefined`.
+ *
+ * Il residuo si legge col segno, non in valore assoluto: la ritenuta
+ * d'acconto si detrae da `ImportoTotaleDocumento`, quindi le righe attribuite
+ * valgono più del documento e il residuo è negativo. Con `Math.abs` l'utente
+ * leggeva «manca 200,00 €» mentre di euro ce n'erano 200 di troppo — il
+ * contrario di quel che era successo. Stesse parole che il server usa già per
+ * lo stesso scarto (`righe-conti/route.ts`).
+ */
+function messaggioRigheMancanti(righeMancanti: RigaVisualizzata[], residuo: number): string {
+  if (righeMancanti.length === 0) {
+    return residuo >= 0
+      ? `manca ${formatCurrency(residuo)} non riconducibile a una riga`
+      : `ci sono ${formatCurrency(-residuo)} di troppo, non riconducibili a una riga`
+  }
+  const riferimenti = righeMancanti.map(riferimentoRiga)
+  if (riferimenti.length === 1) return `manca ${riferimenti[0]}`
+  const ultimo = riferimenti[riferimenti.length - 1]
+  const resto = riferimenti.slice(0, -1)
+  return `mancano ${resto.join(', ')} e ${ultimo}`
+}
+
+/** Un movimento le cui fette ereditate raccontano ancora un'imputazione superata. */
+export interface DivergenzaFattura {
+  journalEntryId: string
+  /** Data del movimento (ISO), non della modifica: è quella che identifica il movimento all'utente. */
+  movimentoData: string
+}
+
+interface AvvisoRiallineamentoProps {
+  divergenze: DivergenzaFattura[]
+  onRiallinea: (journalEntryId: string) => void
+  /** `journalEntryId` del riallineamento in corso, se ce n'è uno: disabilita solo il suo bottone. */
+  journalEntryIdInCorso?: string | null
+}
+
+/**
+ * L'avviso di divergenza fra le fette e la fattura (Task 7 rileva, Task 10
+ * collega — spec sez. 2 «Le fette sono una fotografia, e la fotografia
+ * parla»). Vive sul dettaglio fattura, non sul movimento: `imputazioniDivergenti`
+ * lavora per movimento e la fattura è già quella sotto gli occhi, quindi
+ * il testo non la rinomina — dice solo QUALE movimento è rimasto indietro.
+ */
+export function AvvisoRiallineamento({
+  divergenze,
+  onRiallinea,
+  journalEntryIdInCorso,
+}: AvvisoRiallineamentoProps) {
+  if (divergenze.length === 0) return null
+
+  return (
+    <div className="space-y-2">
+      {divergenze.map((d) => (
+        <div
+          key={d.journalEntryId}
+          className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm dark:border-amber-800 dark:bg-amber-950/20"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="flex-1">
+            <p className="font-medium text-amber-800 dark:text-amber-200">
+              Questa fattura è stata reimputata dopo il pagamento
+            </p>
+            <p className="mt-1 text-amber-700 dark:text-amber-300">
+              Il movimento del {formatDateIT(d.movimentoData)} usa ancora l&apos;imputazione precedente.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 border-amber-300 text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/40"
+            onClick={() => onRiallinea(d.journalEntryId)}
+            disabled={journalEntryIdInCorso === d.journalEntryId}
+          >
+            {journalEntryIdInCorso === d.journalEntryId ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              'Riallinea'
+            )}
+          </Button>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 export function LineItemsTable({
-  dettaglioLinee,
+  dettaglioLinee = [],
+  righeSistema = [],
   showAccountColumn = false,
   canEditAccounts = true,
   defaultAccountLabel,
+  defaultBolloAccountLabel,
+  totaleDocumento,
   onAccountChange,
   onConfirmAllAccounts,
+  onSplitSave,
 }: LineItemsTableProps) {
-  if (!dettaglioLinee || dettaglioLinee.length === 0) {
-    return null
-  }
+  // Righe con una divisione APERTA ma non ancora salvata sul server (l'utente
+  // ha premuto ÷ su una riga a quota singola). Una riga con già 2+ quote sul
+  // server è "divisa" a prescindere da questo set — non serve tenerla qui —
+  // e ci resta ANCHE dopo un salvataggio riuscito o rifiutato: rimuoverla al
+  // click su "Salva" farebbe sparire l'editor (e i valori digitati) proprio
+  // nel caso in cui il server rifiuta e l'utente deve correggere e riprovare
+  // (passo 3). Solo "Annulla" la rimuove, esplicitamente.
+  const [righeAperte, setRigheAperte] = useState<Set<number>>(new Set())
 
   // Helper to format IVA display
   const formatIVA = (aliquota: number) => {
@@ -332,8 +566,70 @@ export function LineItemsTable({
     return `${aliquota}%`
   }
 
+  // Un'unica lista, righe vere e di sistema mescolate nell'ordine in cui si
+  // mostrano: stessa tabella, stesso rendering, nessuna riga "di serie B".
+  const righe: RigaVisualizzata[] = [
+    ...dettaglioLinee.map((linea) => ({
+      numeroLinea: linea.numeroLinea,
+      descrizione: linea.descrizione,
+      isSistema: false,
+      quantita: linea.quantita,
+      unitaMisura: linea.unitaMisura,
+      prezzoUnitario: linea.prezzoUnitario,
+      aliquotaIVA: linea.aliquotaIVA,
+      importo: linea.prezzoTotale,
+      imputazioni: linea.imputazioni,
+    })),
+    ...righeSistema.map((riga) => ({
+      numeroLinea: riga.numeroLinea,
+      descrizione: riga.descrizione,
+      isSistema: true,
+      importo: riga.importo,
+      imputazioni: riga.imputazioni,
+    })),
+  ]
+
+  // Nessuna riga vera né di sistema: non c'è nulla da mostrare. Sostituisce
+  // il vecchio controllo su `dettaglioLinee.length === 0`, che nascondeva
+  // anche una fattura senza righe XML ma col bollo — un caso vero (bollo
+  // isolato, XML minimale) che perdeva l'intera card.
+  if (righe.length === 0) {
+    return null
+  }
+
   const hasProposte =
-    showAccountColumn && dettaglioLinee.some((l) => l.imputazione?.stato === 'proposta')
+    showAccountColumn && righe.some((r) => r.imputazioni.some((q) => q.stato === 'proposta'))
+
+  // Contatore di copertura (decisione 5, "attribuzione totale obbligatoria"):
+  // quanto del documento è già coperto da imputazioni confermate, righe di
+  // sistema comprese. Il denominatore è il totale del DOCUMENTO — non la
+  // somma delle righe qui sotto — perché deve restare vero anche prima che
+  // l'ultima riga sia stata imputata. `Number.isFinite` invece di un
+  // confronto con `undefined`: una stringa non parsabile darebbe `NaN`, che
+  // supererebbe quel confronto e mostrerebbe il piede con "/ € 0,00".
+  const totaleGrezzo =
+    totaleDocumento === undefined
+      ? undefined
+      : typeof totaleDocumento === 'string'
+        ? parseFloat(totaleDocumento)
+        : totaleDocumento
+  const totale = totaleGrezzo !== undefined && Number.isFinite(totaleGrezzo) ? totaleGrezzo : undefined
+
+  // Numeratore e confronto per riga sono al LORDO: `importo` e
+  // `importoConfermato` sono netti, `totale` (invoice.totalAmount) è lordo —
+  // sommarli direttamente sottostimava sempre il numeratore e "✓ completa"
+  // non si raggiungeva mai su una fattura vera. Il numeratore raggruppa per
+  // aliquota e arrotonda l'imposta una volta per gruppo (`attribuitoAlLordo`),
+  // il confronto riga per riga no (`alLordo`): sono due usi diversi, il
+  // perché sta nei due docblock.
+  const attribuito = attribuitoAlLordo(righe)
+  const righeMancanti = righe.filter(
+    (r) =>
+      Math.abs(alLordo(r.importo, r) - alLordo(importoConfermato(r.imputazioni), r)) >
+      TOLLERANZA_IMPORTI
+  )
+  const completa =
+    totale !== undefined && Math.abs(attribuito - totale) <= TOLLERANZA_IMPORTI
 
   return (
     <Card>
@@ -370,81 +666,210 @@ export function LineItemsTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {dettaglioLinee.map((linea) => {
-                const imputazione = linea.imputazione
-                const dotClass =
-                  imputazione?.stato === 'confermata'
-                    ? 'bg-green-500'
-                    : imputazione?.stato === 'proposta'
-                      ? 'bg-amber-500'
-                      : undefined
-                const dotTitle =
-                  imputazione?.stato === 'confermata'
-                    ? 'Imputazione confermata'
-                    : imputazione?.stato === 'proposta'
-                      ? `Imputazione proposta automaticamente${imputazione.motivazioneAi ? ` — ${imputazione.motivazioneAi}` : ''}`
-                      : undefined
+              {righe.map((riga) => {
+                // Divisa sul server: 2+ quote già salvate (Task 9, decisione
+                // 3 dello spec). Aperta localmente: l'utente ha premuto ÷ su
+                // una riga ancora a quota singola e non ha ancora salvato.
+                // In entrambi i casi si mostrano le righe figlie al posto
+                // della tendina — l'unica differenza è se resta un modo per
+                // tornare indietro (vedi RigaDivisibile, prop onAnnulla).
+                const divisa = !riga.isSistema && riga.imputazioni.length >= 2
+                const inModifica = righeAperte.has(riga.numeroLinea)
+                const mostraFigli = divisa || inModifica
+
+                // Una riga a importo zero o negativo (sconto, reso: FatturaPA
+                // li ammette come righe vere) non è divisibile per
+                // costruzione: le quote di RigaDivisibile devono essere
+                // positive E sommare all'importo della riga, e non esistono
+                // due positivi la cui somma sia zero o negativa. Il pulsante
+                // resta visibile ma spento, con un titolo che lo spiega — non
+                // sparisce, sullo stesso principio del bottone "Registra" di
+                // InvoiceDetail quando manca il centro di costo: l'utente
+                // deve capire perché è spento, non chiedersi dove sia finito
+                // (revisione team lead, round 1, minor).
+                const divisibile = riga.importo > 0
+
+                // imputazioni[0]: la quota col progressivo più basso (il
+                // server le ordina già così), cioè "la" imputazione
+                // principale finché la riga non è divisa fra più conti.
+                // Rilevante solo quando NON si mostrano le righe figlie: una
+                // riga divisa non ha più un'imputazione "principale" unica,
+                // ogni quota mostra il proprio pallino (vedi `pallino` sopra).
+                const principale = riga.imputazioni[0]
+                const stato = pallino(principale)
+
+                // Il bollo nasce proposto su CONTO_PROPOSTO_BOLLO (30.01):
+                // solo un suggerimento in tendina finché nessuno lo sceglie
+                // davvero, esattamente come il conto di default del
+                // fornitore per le righe vere — non una proposta persistita,
+                // altrimenti "Accetta tutte" dovrebbe saperla confermare
+                // anche quando in database non esiste ancora nulla da
+                // confermare.
+                const suggerimento =
+                  principale
+                    ? undefined
+                    : riga.numeroLinea === LINEA_BOLLO
+                      ? defaultBolloAccountLabel
+                      : !riga.isSistema
+                        ? defaultAccountLabel
+                        : undefined
 
                 return (
-                  <TableRow key={linea.numeroLinea}>
-                    <TableCell className="font-mono text-slate-500">
-                      {linea.numeroLinea}
-                    </TableCell>
-                    <TableCell className="max-w-xs truncate" title={linea.descrizione}>
-                      {linea.descrizione}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {linea.quantita !== undefined ? (
-                        <>
-                          {linea.quantita.toLocaleString('it-IT', { useGrouping: true })}
-                          {linea.unitaMisura && (
-                            <span className="text-xs text-slate-500 ml-1">
-                              {linea.unitaMisura}
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        '-'
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {formatCurrency(linea.prezzoUnitario)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {formatIVA(linea.aliquotaIVA)}
-                    </TableCell>
-                    <TableCell className="text-right font-mono font-medium">
-                      {formatCurrency(linea.prezzoTotale)}
-                    </TableCell>
-                    {showAccountColumn && (
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <AccountCombobox
-                            value={imputazione?.accountId}
-                            onChange={(accountId) => {
-                              if (accountId) onAccountChange?.(linea.numeroLinea, accountId)
-                            }}
-                            disabled={!canEditAccounts}
-                            types={['COSTO']}
-                            placeholder={
-                              !imputazione && defaultAccountLabel
-                                ? `Suggerito: ${defaultAccountLabel}`
-                                : 'Seleziona conto'
-                            }
-                          />
-                          {dotClass && (
-                            <span
-                              className={`h-2.5 w-2.5 rounded-full shrink-0 ${dotClass}`}
-                              title={dotTitle}
-                            />
-                          )}
-                        </div>
+                  <Fragment key={riga.numeroLinea}>
+                    <TableRow>
+                      <TableCell className="font-mono text-slate-500">
+                        {riga.isSistema ? (
+                          <Cog className="h-3.5 w-3.5" aria-label="Riga di sistema" />
+                        ) : (
+                          riga.numeroLinea
+                        )}
                       </TableCell>
+                      <TableCell className="max-w-xs truncate" title={riga.descrizione}>
+                        {riga.descrizione}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {riga.quantita !== undefined ? (
+                          <>
+                            {riga.quantita.toLocaleString('it-IT', { useGrouping: true })}
+                            {riga.unitaMisura && (
+                              <span className="text-xs text-slate-500 ml-1">
+                                {riga.unitaMisura}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          '—'
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {riga.prezzoUnitario !== undefined ? formatCurrency(riga.prezzoUnitario) : '—'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {riga.aliquotaIVA !== undefined ? formatIVA(riga.aliquotaIVA) : '—'}
+                      </TableCell>
+                      <TableCell className="text-right font-mono font-medium">
+                        {formatCurrency(riga.importo)}
+                      </TableCell>
+                      {showAccountColumn && (
+                        <TableCell>
+                          {mostraFigli ? (
+                            // Riga divisa (salvata o in bozza): niente tendina
+                            // qui, ogni quota mostra il proprio conto e il
+                            // proprio pallino nelle righe figlie sotto (vedi
+                            // RigaDivisibile) — mai un conto solo per l'intera
+                            // riga, che non esiste più una volta divisa.
+                            <span className="text-sm text-muted-foreground">—</span>
+                          ) : (
+                            <>
+                              {/*
+                                Decisione: le righe di sistema NON si dividono fra
+                                più conti (Task 8, in risposta al brief). Il bollo
+                                e l'arrotondamento sono importi unici e piccoli, non
+                                l'accorpamento di voci eterogenee che giustifica la
+                                divisione di una riga vera (decisione 3 dello
+                                spec) — dividere 2 € di bollo fra due conti non
+                                serve a nessuno scenario reale, e l'arrotondamento
+                                può essere negativo, dove il vincolo `.positive()`
+                                sulle quote (righe-conti/route.ts) non potrebbe
+                                comunque reggere una divisione.
+                                Qui (Task 9) il pulsante `÷` non compare quando
+                                `riga.isSistema` è vero, per lo stesso motivo. Il
+                                server rifiuta già esplicitamente
+                                (righe-conti/route.ts), non con l'errore generico
+                                di Zod.
+                              */}
+                              <div className="flex items-center gap-2">
+                                <AccountCombobox
+                                  value={principale?.accountId}
+                                  onChange={(accountId) => {
+                                    if (accountId) onAccountChange?.(riga.numeroLinea, accountId)
+                                  }}
+                                  disabled={!canEditAccounts}
+                                  // Un conto PATRIMONIALE è ammesso quanto uno di
+                                  // COSTO: un frigorifero in fattura è un cespite,
+                                  // non un costo, e prima non era imputabile
+                                  // (Task 8, punto d). RICAVO resta escluso: lo
+                                  // scarta già il server (righe-conti/route.ts),
+                                  // qui evita solo di proporlo inutilmente.
+                                  types={['COSTO', 'PATRIMONIALE']}
+                                  placeholder={suggerimento ? `Suggerito: ${suggerimento}` : 'Seleziona conto'}
+                                />
+                                {stato && (
+                                  <span
+                                    className={`h-2.5 w-2.5 rounded-full shrink-0 ${stato.className}`}
+                                    title={stato.title}
+                                  />
+                                )}
+                                {!riga.isSistema && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 shrink-0 font-mono"
+                                    disabled={!canEditAccounts || !divisibile}
+                                    onClick={() =>
+                                      setRigheAperte((prev) => new Set(prev).add(riga.numeroLinea))
+                                    }
+                                    title={
+                                      divisibile
+                                        ? 'Dividi la riga fra più conti'
+                                        : 'Una riga con importo zero o negativo non può essere divisa: le quote devono essere positive'
+                                    }
+                                    aria-label="Dividi la riga fra più conti"
+                                  >
+                                    ÷
+                                  </Button>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </TableCell>
+                      )}
+                    </TableRow>
+                    {showAccountColumn && mostraFigli && (
+                      <RigaDivisibile
+                        riga={riga}
+                        canEditAccounts={canEditAccounts}
+                        // Niente "Annulla" per una riga già divisa sul
+                        // server: non c'è una riga a quota singola a cui
+                        // tornare (decisione Task 9, vedi il report). Per una
+                        // bozza ancora non salvata, Annulla la toglie da
+                        // `righeAperte` e la riga torna alla tendina normale.
+                        onAnnulla={
+                          divisa
+                            ? undefined
+                            : () =>
+                                setRigheAperte((prev) => {
+                                  const next = new Set(prev)
+                                  next.delete(riga.numeroLinea)
+                                  return next
+                                })
+                        }
+                        onSalva={(quote) => onSplitSave?.(riga.numeroLinea, quote)}
+                      />
                     )}
-                  </TableRow>
+                  </Fragment>
                 )
               })}
             </TableBody>
+            {showAccountColumn && totale !== undefined && (
+              <TableFooter>
+                <TableRow>
+                  <TableCell colSpan={7} className="text-sm">
+                    <span className="font-medium">
+                      Attribuito {formatCurrency(attribuito)} / {formatCurrency(totale)}
+                    </span>
+                    {completa ? (
+                      <span className="ml-2 text-green-600">✓ completa</span>
+                    ) : (
+                      <span className="ml-2 text-amber-600">
+                        — {messaggioRigheMancanti(righeMancanti, totale - attribuito)}
+                      </span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              </TableFooter>
+            )}
           </Table>
         </div>
       </CardContent>
@@ -827,16 +1252,12 @@ interface MetadataSectionProps {
   venueName?: string
   importedAt: string
   fileName?: string
-  recordedAt?: string
-  journalEntryDescription?: string
 }
 
 export function MetadataSection({
   venueName,
   importedAt,
   fileName,
-  recordedAt,
-  journalEntryDescription,
 }: MetadataSectionProps) {
   return (
     <Card>
@@ -865,16 +1286,6 @@ export function MetadataSection({
             </div>
           )}
         </div>
-        {recordedAt && journalEntryDescription && (
-          <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-            <p className="text-sm font-medium text-green-800">
-              Registrata in Prima Nota
-            </p>
-            <p className="text-xs text-green-600">
-              {formatDateIT(recordedAt)} - {journalEntryDescription}
-            </p>
-          </div>
-        )}
       </CardContent>
     </Card>
   )

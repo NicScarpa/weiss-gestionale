@@ -38,7 +38,7 @@ Il commento in `schedule-reconciliation-service.ts:170-177` descrive il problema
 
 1. **I movimenti senza fattura elettronica restano divisibili per importo.** Sono scontrini o spese senza diritto di detrazione: l'IVA è un costo aggregato all'imponibile e non c'è nulla da ripartire. Là la divisione per importi non è un ripiego, è la cosa giusta.
 
-2. **Bollo virtuale e arrotondamento diventano righe di sistema, imputabili come le altre.** Stanno fuori da `lineItems` (`parseDatiBollo`, `arrotondamento` nel parser), quindi senza di loro la somma non torna mai al totale del documento e il vincolo «tutto o niente» sarebbe insoddisfacibile. Il bollo nasce proposto su `30.01`.
+2. **Bollo virtuale e arrotondamento diventano righe di sistema, imputabili come le altre.** Stanno fuori da `lineItems` (`parseDatiBollo`, `arrotondamento` nel parser), quindi senza di loro la somma non torna mai al totale del documento e il vincolo «tutto o niente» sarebbe insoddisfacibile. Il bollo nasce proposto su `30.01 — Imposta di bollo` (famiglia E, sottogruppo E8 della riclassificazione).
 
 3. **Una singola riga può essere divisa fra più conti, per importo.** Copre il fornitore che accorpa voci diverse in una riga sola. Non costa precisione: dentro una riga l'aliquota è unica, quindi la proporzione la rispetta esattamente.
 
@@ -167,13 +167,13 @@ La tabella esiste. Si aggiungono tre cose.
   Attribuito   1.224,00 / 1.224,00   ✓ completa
 ```
 
-**a. Righe di sistema.** Bollo e arrotondamento compaiono nella stessa tabella, distinti da un'icona, non modificabili nell'importo e imputabili come le altre. Il bollo nasce proposto su `30.01`.
+**a. Righe di sistema.** Bollo e arrotondamento compaiono nella stessa tabella, distinti da un'icona, non modificabili nell'importo e imputabili come le altre. Il bollo nasce proposto su `30.01 — Imposta di bollo` (famiglia E, sottogruppo E8 della riclassificazione).
 
 **b. Contatore di copertura.** Una riga in chiusura: quanto è attribuito sul totale del documento. Quando manca qualcosa lo dice e indica dove — `Attribuito 1.102,00 / 1.224,00 — manca la riga 2`. È il volto visibile della decisione 5; il controllo corrispondente nel back end è la guardia di riga 161, che va estesa alle righe di sistema.
 
 **c. Divisione di una riga.** Il pulsante `÷` apre la riga in righe figlie, sul posto. La somma delle figlie deve fare l'importo della riga madre, e il vincolo si vede mentre si compila. Restare dentro la tabella conta: si decide guardando le altre righe della fattura, non una finestra che le copre.
 
-**d. Il filtro dei tipi di conto.** `LineItemsTable` passa `types={['COSTO']}` alla tendina. Col piano v4 questo esclude i conti patrimoniali: un frigorifero in fattura è un cespite, non un costo, e oggi non è imputabile. Il filtro va allargato ai tipi che possono ricevere una riga d'acquisto.
+**d. Il filtro dei tipi di conto.** `LineItemsTable` passa `types={['COSTO']}` alla tendina (`InvoiceDetailSections.tsx:427`). Col piano v4 questo esclude i conti patrimoniali: un frigorifero in fattura è un cespite, non un costo, e oggi non è imputabile. Il filtro diventa `['COSTO', 'PATRIMONIALE']` — i due tipi che una riga di fattura d'acquisto può ricevere. `RICAVO`, `ATTIVO` e `PASSIVO` restano esclusi.
 
 ---
 
