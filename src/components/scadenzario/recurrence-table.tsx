@@ -21,6 +21,9 @@ interface RecurrenceTableProps {
   onGenerate: (id: string) => void
   onToggleActive: (id: string, isActive: boolean) => void
   onDelete: (id: string) => void
+  /** Vero quando la lista è vuota per effetto della ricerca, non perché non
+   *  esistano ricorrenze: cambia cosa insegna lo stato vuoto. */
+  filtroAttivo: boolean
 }
 
 export function RecurrenceTable({
@@ -30,6 +33,7 @@ export function RecurrenceTable({
   onGenerate,
   onToggleActive,
   onDelete,
+  filtroAttivo,
 }: RecurrenceTableProps) {
   if (isLoading) {
     return (
@@ -75,8 +79,17 @@ export function RecurrenceTable({
             <TableCell colSpan={7} className="text-center py-12">
               <div className="flex flex-col items-center gap-2 text-muted-foreground">
                 <Repeat className="h-10 w-10 opacity-30" />
-                <p className="font-medium">Nessun risultato</p>
-                <p className="text-sm">Crea la tua prima ricorrenza per automatizzare le scadenze</p>
+                {filtroAttivo ? (
+                  <p className="font-medium">Nessun risultato</p>
+                ) : (
+                  <>
+                    <p className="font-medium">Nessuna ricorrenza</p>
+                    <p className="text-sm">
+                      Una ricorrenza genera automaticamente le scadenze future. Creane
+                      una dal pulsante qui sopra.
+                    </p>
+                  </>
+                )}
               </div>
             </TableCell>
           </TableRow>

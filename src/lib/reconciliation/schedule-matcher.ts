@@ -1,30 +1,18 @@
 import { prisma } from '@/lib/prisma'
 import { stringSimilarity, daysDifference } from './matcher'
+import { SCHEDULE_MATCH_WEIGHTS, SCHEDULE_MATCH_THRESHOLDS } from './schedule-match-costanti'
 
 /**
  * Matching fra movimenti di prima nota e scadenze.
  *
  * È il ponte che mancava: la scadenza dice cosa va pagato, il movimento porta
  * l'imputazione contabile. Riconciliarli chiude il ciclo.
- *
- * I pesi differiscono da quelli del matching bancario (`matcher.ts`, dove la
- * descrizione conta il 30%): sui dati reali di Sibill l'importo coincide al
- * centesimo in tutti i match automatici osservati, mentre la controparte
- * diverge in un caso su cinque — un bonifico intestato a "ESTENERGY" può
- * saldare una fattura "HERA". Qui l'importo pesa di più e la descrizione meno.
  */
-export const SCHEDULE_MATCH_WEIGHTS = {
-  AMOUNT: 0.55,
-  DATE: 0.25,
-  DESCRIPTION: 0.2,
-} as const
 
-export const SCHEDULE_MATCH_THRESHOLDS = {
-  /** Sopra questa soglia il match è proposto come attendibile */
-  SUGGESTED: 0.75,
-  /** Sotto questa soglia il candidato non viene nemmeno mostrato */
-  MINIMUM: 0.45,
-} as const
+// Ri-esportate per compatibilità: i consumatori esistenti le importano da qui
+// e non devono accorgersi che ora vivono in un modulo puro a parte. Vedi
+// schedule-match-costanti.ts per il perché della divisione.
+export { SCHEDULE_MATCH_WEIGHTS, SCHEDULE_MATCH_THRESHOLDS }
 
 /** Movimento di prima nota, lato "denaro che si è mosso". */
 export interface MatchableEntry {
@@ -56,6 +44,8 @@ export interface ScheduleMatchCandidate {
   residuo: number
   descrizione: string
   dataScadenza: Date
+  /** Le ragioni del punteggio, mostrate accanto al badge di affinità */
+  motivazioni: string[]
 }
 
 /** Importo del movimento nel verso che interessa la scadenza. */
@@ -66,36 +56,49 @@ function importoMovimento(entry: MatchableEntry, tipo: string): number {
   return tipo === 'attiva' ? entrata : uscita
 }
 
+export interface EsitoMatch {
+  score: number
+  /** Le ragioni del punteggio, in italiano, nell'ordine in cui contribuiscono. */
+  motivazioni: string[]
+}
+
 /**
- * Punteggio di affinità fra un movimento e una scadenza, da 0 a 1.
+ * Punteggio di affinità fra un movimento e una scadenza, da 0 a 1, e le
+ * motivazioni che lo giustificano — l'utente non deve fidarsi di un numero:
+ * legge "importo identico, stessa data" e decide in un secondo.
  * Funzione pura: nessun accesso al database.
  */
 export function calculateScheduleMatchScore(
   entry: MatchableEntry,
   schedule: MatchableSchedule
-): number {
+): EsitoMatch {
   const importoEntry = importoMovimento(entry, schedule.tipo)
 
   // Un movimento nel verso sbagliato non salda la scadenza
-  if (importoEntry <= 0) return 0
+  if (importoEntry <= 0) return { score: 0, motivazioni: [] }
 
   const residuo = schedule.importoTotale - schedule.importoPagato
-  if (residuo <= 0) return 0
+  if (residuo <= 0) return { score: 0, motivazioni: [] }
 
   let score = 0
+  const motivazioni: string[] = []
 
   // Importo: l'indizio più forte
   const diff = Math.abs(importoEntry - residuo)
   if (diff < 0.01) {
     score += SCHEDULE_MATCH_WEIGHTS.AMOUNT
+    motivazioni.push('Importo identico')
   } else if (diff <= 1) {
     score += SCHEDULE_MATCH_WEIGHTS.AMOUNT * 0.9
+    motivazioni.push('Importo quasi identico')
   } else if (importoEntry < residuo) {
     // Acconto: plausibile ma meno certo, tanto meno quanto più è piccolo
     score += SCHEDULE_MATCH_WEIGHTS.AMOUNT * 0.5 * (importoEntry / residuo)
+    motivazioni.push('Acconto parziale')
   } else {
     // Il movimento eccede la scadenza: può coprirne altre, ma qui è debole
     score += SCHEDULE_MATCH_WEIGHTS.AMOUNT * 0.2
+    motivazioni.push('Importo superiore al residuo')
   }
 
   // Data: i pagamenti arrivano spesso in ritardo, la finestra è ampia e
@@ -103,14 +106,19 @@ export function calculateScheduleMatchScore(
   const giorni = daysDifference(entry.date, schedule.dataScadenza)
   if (giorni === 0) {
     score += SCHEDULE_MATCH_WEIGHTS.DATE
+    motivazioni.push('Stessa data')
   } else if (giorni <= 3) {
     score += SCHEDULE_MATCH_WEIGHTS.DATE * 0.9
+    motivazioni.push('Entro tre giorni dalla scadenza')
   } else if (giorni <= 10) {
     score += SCHEDULE_MATCH_WEIGHTS.DATE * 0.7
+    motivazioni.push('Entro dieci giorni dalla scadenza')
   } else if (giorni <= 30) {
     score += SCHEDULE_MATCH_WEIGHTS.DATE * 0.4
+    motivazioni.push('Entro trenta giorni dalla scadenza')
   } else if (giorni <= 60) {
     score += SCHEDULE_MATCH_WEIGHTS.DATE * 0.15
+    motivazioni.push('Entro sessanta giorni dalla scadenza')
   }
 
   // Descrizione e controparte: rafforzativi, mai determinanti
@@ -120,18 +128,21 @@ export function calculateScheduleMatchScore(
   const testoMovimento = [entry.description, entry.counterpartName]
     .filter(Boolean)
     .join(' ')
-  score += SCHEDULE_MATCH_WEIGHTS.DESCRIPTION * stringSimilarity(testoMovimento, testoScadenza)
+  const somiglianza = stringSimilarity(testoMovimento, testoScadenza)
+  score += SCHEDULE_MATCH_WEIGHTS.DESCRIPTION * somiglianza
+  if (somiglianza >= 0.6) motivazioni.push('Controparte compatibile')
 
   // Il numero documento nella causale è quasi una firma
   if (schedule.numeroDocumento) {
     const numero = schedule.numeroDocumento.toLowerCase().replace(/[^a-z0-9]/gi, '')
     const causale = entry.description.toLowerCase().replace(/[^a-z0-9]/gi, '')
     if (numero.length >= 3 && causale.includes(numero)) {
-      score = Math.min(1, score + 0.15)
+      score = Math.min(1, score + SCHEDULE_MATCH_WEIGHTS.DOCUMENTO)
+      motivazioni.push('Numero documento nella causale')
     }
   }
 
-  return Math.round(score * 100) / 100
+  return { score: Math.round(score * 100) / 100, motivazioni }
 }
 
 /**
@@ -189,24 +200,36 @@ export async function findScheduleCandidates(
     creditAmount: entry.creditAmount ? Number(entry.creditAmount) : null,
   }
 
-  return schedules
+  const candidati = schedules
     .map((s) => {
       const schedule: MatchableSchedule = {
         ...s,
         importoTotale: Number(s.importoTotale),
         importoPagato: Number(s.importoPagato),
       }
+      const esito = calculateScheduleMatchScore(matchable, schedule)
       return {
         scheduleId: s.id,
-        confidence: calculateScheduleMatchScore(matchable, schedule),
+        confidence: esito.score,
+        motivazioni: esito.motivazioni,
         residuo: schedule.importoTotale - schedule.importoPagato,
         descrizione: s.descrizione,
         dataScadenza: s.dataScadenza,
       }
     })
     .filter((c) => c.confidence >= SCHEDULE_MATCH_THRESHOLDS.MINIMUM)
-    .sort((a, b) => b.confidence - a.confidence)
-    .slice(0, limit)
+
+  // «Unico match possibile» non si può calcolare nella funzione pura: dipende
+  // dall'insieme dei candidati, non dalla singola coppia.
+  if (candidati.length === 1) {
+    candidati[0].motivazioni.push('Unico match possibile')
+  } else if (candidati.length > 1) {
+    for (const c of candidati) {
+      c.motivazioni.push(`${candidati.length} alternative`)
+    }
+  }
+
+  return candidati.sort((a, b) => b.confidence - a.confidence).slice(0, limit)
 }
 
 /**
@@ -217,7 +240,16 @@ export async function findEntryCandidates(
   scheduleId: string,
   venueId: string,
   limit = 5
-): Promise<Array<{ journalEntryId: string; confidence: number; description: string; date: Date; amount: number }>> {
+): Promise<
+  Array<{
+    journalEntryId: string
+    confidence: number
+    description: string
+    date: Date
+    amount: number
+    motivazioni: string[]
+  }>
+> {
   const schedule = await prisma.schedule.findFirst({
     where: { id: scheduleId, venueId },
     select: {
@@ -267,22 +299,34 @@ export async function findEntryCandidates(
     importoPagato: Number(schedule.importoPagato),
   }
 
-  return entries
+  const candidati = entries
     .map((e) => {
       const entry: MatchableEntry = {
         ...e,
         debitAmount: e.debitAmount ? Number(e.debitAmount) : null,
         creditAmount: e.creditAmount ? Number(e.creditAmount) : null,
       }
+      const esito = calculateScheduleMatchScore(entry, matchableSchedule)
       return {
         journalEntryId: e.id,
-        confidence: calculateScheduleMatchScore(entry, matchableSchedule),
+        confidence: esito.score,
+        motivazioni: esito.motivazioni,
         description: e.description,
         date: e.date,
         amount: importoMovimento(entry, schedule.tipo),
       }
     })
     .filter((c) => c.confidence >= SCHEDULE_MATCH_THRESHOLDS.MINIMUM)
-    .sort((a, b) => b.confidence - a.confidence)
-    .slice(0, limit)
+
+  // «Unico match possibile» non si può calcolare nella funzione pura: dipende
+  // dall'insieme dei candidati, non dalla singola coppia.
+  if (candidati.length === 1) {
+    candidati[0].motivazioni.push('Unico match possibile')
+  } else if (candidati.length > 1) {
+    for (const c of candidati) {
+      c.motivazioni.push(`${candidati.length} alternative`)
+    }
+  }
+
+  return candidati.sort((a, b) => b.confidence - a.confidence).slice(0, limit)
 }

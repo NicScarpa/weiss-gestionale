@@ -20,6 +20,7 @@ interface ScheduleFiltersProps {
     dataFine?: Date
     isRicorrente?: boolean
     verificata?: boolean
+    pagateSenzaMovimento?: boolean
   }
   onFiltriChange: (filtri: ScheduleFiltersProps['filtri']) => void
   onReset: () => void
@@ -65,8 +66,12 @@ export function ScheduleFilters({
 
   const haFiltriAttivi = () => {
     return !!filtri.stato || !!filtri.tipo || !!filtri.priorita || !!filtri.source ||
+           // `ricerca` è il testo ancora nella casella, non ancora inviato:
+           // conta come filtro attivo (da main). `pagateSenzaMovimento` è il
+           // filtro nuovo dell'onda 1. Servono entrambi, non uno dei due.
            !!filtri.search || !!ricerca || !!filtri.dataInizio || !!filtri.dataFine ||
-           filtri.isRicorrente !== undefined || filtri.verificata !== undefined
+           filtri.isRicorrente !== undefined || filtri.verificata !== undefined ||
+           !!filtri.pagateSenzaMovimento
   }
 
   const handleReset = () => {

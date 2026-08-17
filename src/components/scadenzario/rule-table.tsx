@@ -81,6 +81,14 @@ export function RuleTable({
                 <Scale className="h-10 w-10 opacity-30" />
                 <p className="font-medium">Nessuna regola configurata</p>
                 <p className="text-sm">Aggiungi una regola per automatizzare la riconciliazione</p>
+                <p className="text-sm max-w-sm">
+                  L&apos;ordine conta: vince la prima regola che corrisponde, anche se è
+                  meno specifica di quelle sotto di lei.
+                </p>
+                <p className="text-sm italic max-w-sm">
+                  Esempio: una regola generica per «Utenza» messa sopra una più specifica
+                  per «Utenza» pagata con SDD vince sempre — quella sotto non scatterà mai.
+                </p>
               </div>
             </TableCell>
           </TableRow>

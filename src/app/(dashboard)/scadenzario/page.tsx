@@ -24,6 +24,7 @@ import { it } from 'date-fns/locale'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/formatters'
+import { romeDateKey, toDateOnlyUtc } from '@/lib/timezone'
 
 /**
  * Il messaggio che il server ha dato, o un ripiego leggibile. Serve a farlo
@@ -44,6 +45,31 @@ function SortIcon({ column, sortBy, sortOrder }: { column: string; sortBy: strin
   return sortOrder === 'asc'
     ? <ArrowUp className="h-3 w-3 ml-1" />
     : <ArrowDown className="h-3 w-3 ml-1" />
+}
+
+function giorniDiRitardo(scadenza: Schedule, oggi: Date): number | undefined {
+  // Escludi gli stati chiusi, come fa isScaduta
+  if (scadenza.stato === 'pagata' || scadenza.stato === 'annullata') {
+    return undefined
+  }
+
+  // Chiave data della scadenza (primi 10 caratteri dell'ISO). Una @db.Date
+  // è serializzata come mezzanotte UTC di quel giorno civile.
+  const scadenzaKey = new Date(scadenza.dataAttesa ?? scadenza.dataScadenza)
+    .toISOString()
+    .slice(0, 10)
+
+  // Chiave data di oggi in fuso italiano
+  const oggiKey = romeDateKey(oggi)
+
+  // Se la scadenza non è ancora arrivata, nessun ritardo
+  if (scadenzaKey >= oggiKey) return undefined
+
+  // Confronto fra date civili in UTC: mezzanotte UTC del giorno civile
+  const scadenzaMezzanotte = toDateOnlyUtc(scadenzaKey).getTime()
+  const oggiMezzanotte = toDateOnlyUtc(oggiKey).getTime()
+
+  return Math.floor((oggiMezzanotte - scadenzaMezzanotte) / 86_400_000)
 }
 
 export default function ScadenzarioPage() {
@@ -92,6 +118,7 @@ export default function ScadenzarioPage() {
         if (filtri.dataFine) params.append('dataFine', format(filtri.dataFine, 'yyyy-MM-dd'))
         if (filtri.isRicorrente !== undefined) params.append('isRicorrente', String(filtri.isRicorrente))
         if (filtri.verificata !== undefined) params.append('verificata', String(filtri.verificata))
+        if (filtri.pagateSenzaMovimento) params.append('pagateSenzaMovimento', 'true')
         params.append('page', String(page))
         params.append('sortBy', sortBy)
         params.append('sortOrder', sortOrder)
@@ -290,7 +317,16 @@ export default function ScadenzarioPage() {
       </div>
 
       {/* Summary Cards */}
-      {summary && !showSaldoScalare && <ScheduleSummaryCards summary={summary} isLoading={isLoading} />}
+      {summary && !showSaldoScalare && (
+        <ScheduleSummaryCards
+          summary={summary}
+          isLoading={isLoading}
+          onPagateSenzaMovimentoClick={() => {
+            setFiltri({ pagateSenzaMovimento: true })
+            setPage(1)
+          }}
+        />
+      )}
 
       {/* Saldo Scalare Panel */}
       <SaldoScalarePanel visible={showSaldoScalare} />
@@ -410,7 +446,7 @@ export default function ScadenzarioPage() {
                           onClick={() => router.push(`/scadenzario/${schedule.id}`)}
                         >
                           <TableCell>
-                            <ScheduleStatusBadge stato={schedule.stato} />
+                            <ScheduleStatusBadge stato={schedule.stato} giorniRitardo={giorniDiRitardo(schedule, new Date())} />
                           </TableCell>
                           <TableCell>
                             <div className="flex flex-col">

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { toast } from 'sonner'
 import { MovimentiFilters } from '@/components/prima-nota/movimenti/MovimentiFilters'
 import { MovimentiTable } from '@/components/prima-nota/movimenti/MovimentiTable'
@@ -20,6 +21,7 @@ import {
 import { MovimentiBancariInAttesa } from '@/components/banca/MovimentiBancariInAttesa'
 import { EstrattoContoInPrimaNota } from '@/components/banca/estratto-conto/EstrattoContoInPrimaNota'
 import { Button } from '@/components/ui/button'
+import { Progress } from '@/components/ui/progress'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -190,6 +192,22 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
       toast.error('Impossibile caricare i movimenti')
     }
   }, [isError, error])
+
+  // Tasso di categorizzazione: finestra fissa di 60 giorni, indipendente dai
+  // filtri della lista (vedi la rotta). L'obiettivo è dichiarato da Agicap
+  // (95%): sopra quella soglia la barra non è più un invito, è rumore.
+  const OBIETTIVO = 95
+  const { data: cat } = useQuery({
+    queryKey: ['prima-nota', 'categorizzazione'],
+    queryFn: async () => {
+      const r = await fetch('/api/prima-nota/categorizzazione')
+      if (!r.ok) throw new Error('Errore nel calcolo del tasso di categorizzazione')
+      return r.json() as Promise<{
+        periodoGiorni: number
+        percentuale: number
+      }>
+    },
+  })
 
   // Derive entryType for each entry (not stored in DB)
   const data = useMemo(
@@ -460,6 +478,30 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
             filterCount={filterCount}
             onClearFilters={handleClearFilters}
           />
+
+          {/* Il tasso di categorizzazione vive con l'elenco delle scritture, non
+              con l'estratto conto: là le righe della banca non sono ancora
+              scritture, e una percentuale calcolata su di esse non vorrebbe
+              dire niente. Compare solo sotto l'obiettivo — sopra, sarebbe un
+              cartello che si loda da solo. */}
+          {cat && cat.percentuale < OBIETTIVO && (
+            <div className="rounded-lg border p-3 mb-4 flex items-center gap-4">
+              <div className="flex-1">
+                <div className="flex items-baseline justify-between mb-1">
+                  <span className="text-sm font-medium">
+                    {cat.percentuale}% dei movimenti categorizzati
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    ultimi {cat.periodoGiorni} giorni · obiettivo {OBIETTIVO}%
+                  </span>
+                </div>
+                <Progress value={cat.percentuale} />
+              </div>
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/prima-nota/regole">Rivedi le regole suggerite</Link>
+              </Button>
+            </div>
+          )}
 
           {/* Solo sulla scheda «Tutti»: sul Conto Bancario l'estratto conto è
               lì accanto, nella sua sotto-scheda, e un cartello che indica una

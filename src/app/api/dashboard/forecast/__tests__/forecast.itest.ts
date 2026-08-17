@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { addDays } from 'date-fns'
 import { prisma } from '@/lib/prisma'
 import { toDateOnlyUtc } from '@/lib/timezone'
 import { giornoCorrente, giornoIndietro } from '@/lib/saldi'
@@ -6,6 +7,7 @@ import { setupIntegrationDb } from '@/test/integration/db'
 import { entraCome } from '@/test/integration/auth-mock'
 import { jsonRequest, callRoute } from '@/test/integration/api'
 import { venueDiTest, centroDiCostoDiDefault } from '@/test/integration/fixtures/closures'
+import { creaScadenza } from '@/test/integration/fixtures/scadenzario'
 import { GET as getForecast } from '../route'
 import { GET as getSummary } from '@/app/api/cashflow/summary/route'
 import { GET as getSaldiPrimaNota } from '@/app/api/prima-nota/saldi/route'
@@ -29,9 +31,10 @@ interface RispostaForecast {
   forecast: Array<{
     date: string
     expectedExpenses: number
+    projectedBalance: number
     expenses: Array<{ name: string; amount: number }>
   }>
-  summary: { totalExpectedExpenses: number }
+  summary: { totalExpectedExpenses: number; totalExpectedIncome: number }
 }
 
 async function movimento(
@@ -283,5 +286,64 @@ describe('GET /api/dashboard/forecast', () => {
     })
 
     expect((await previsione()).summary.totalExpectedExpenses).toBe(0)
+  })
+
+  // `CashFlowSourcePanel` mostra questa somma a schermo come una catena di
+  // quattro numeri affiancati: «Liquidità di oggi + Incassi attesi − Spese
+  // ricorrenti = Saldo previsto». Da quando `projectedBalance` viene dalla
+  // serie unificata (scadenze e ricorrenze comprese, non più solo la stima
+  // storica e le spese ricorrenti), l'identità regge solo se anche
+  // `totalExpectedIncome`/`totalExpectedExpenses` vengono dalla stessa serie.
+  // Se un domani qualcuno restringe di nuovo uno dei due termini alla vecchia
+  // fonte (solo stima, solo `RecurringExpense`), questo test si rompe in
+  // rosso invece che a schermo.
+  it("l'identità mostrata dal pannello regge: apertura + incassi attesi − spese attese = saldo finale previsto", async () => {
+    await entraCome('admin')
+    const venue = await venueDiTest()
+    const autore = await prisma.user.findFirstOrThrow({ where: { role: { name: 'admin' } } })
+
+    await prisma.initialBalance.create({
+      data: {
+        venueId: venue.id,
+        year: Number(OGGI.slice(0, 4)),
+        cashBalance: 500,
+        bankBalance: 2000,
+      },
+    })
+
+    // Una spesa ricorrente (fonte `ricorrente`)...
+    await prisma.recurringExpense.create({
+      data: {
+        venueId: venue.id,
+        name: 'Canone',
+        amount: 150,
+        frequency: 'DAILY',
+        createdBy: autore.id,
+      },
+    })
+
+    // ...e una scadenza reale (fonte `scadenza`), nella finestra: prima del
+    // fix, solo la prima pesava su `expectedIncome`/`expectedExpenses`.
+    await creaScadenza({
+      venueId: venue.id,
+      importoTotale: 400,
+      tipo: 'attiva',
+      dataScadenza: addDays(toDateOnlyUtc(OGGI), 10),
+    })
+
+    const dati = await previsione(30)
+
+    // L'identità è vera per costruzione qualunque sia il valore dei termini:
+    // resterebbe verde anche se né la scadenza né la spesa entrassero nella
+    // finestra, cioè proprio nel caso in cui non garantisce più nulla. Senza
+    // queste due righe il test non accorgerebbe una regressione che azzera
+    // silenziosamente uno dei due termini.
+    expect(dati.summary.totalExpectedExpenses).toBeGreaterThan(0)
+    expect(dati.summary.totalExpectedIncome).toBeGreaterThan(0)
+
+    const atteso =
+      dati.currentBalance.total + dati.summary.totalExpectedIncome - dati.summary.totalExpectedExpenses
+
+    expect(dati.forecast.at(-1)!.projectedBalance).toBeCloseTo(atteso, 2)
   })
 })

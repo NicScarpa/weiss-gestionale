@@ -406,7 +406,7 @@ export function DashboardClient({ userName }: { userName?: string }) {
         )}
 
         {/* Pending Closures */}
-        {!isLoading && data?.closures?.pendingCount && data.closures.pendingCount > 0 && (
+        {!isLoading && data && data.closures.pendingCount > 0 && (
           <Card className="border-blue-200 bg-blue-50">
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2 text-blue-800">

@@ -10,9 +10,23 @@ vi.mock('@/lib/venue', () => ({
   getVenueId: vi.fn().mockResolvedValue('venue-test-123'),
 }))
 
+// La rotta ora proietta da `serieProiettata` (Task 4): oltre alle due query
+// dirette della rotta (`schedulesInRange`, `overdueSchedules`, usate solo per
+// i totali di pagamenti/incassi/scaduto), `leggiFlussi` interroga a sua volta
+// `schedule`, `journalEntry`, `recurringExpense` e `recurrence`, e
+// `saldiAlGiorno` interroga `initialBalance` e `journalEntry.groupBy`. Tutti i
+// modelli vanno mockati, o le chiamate non previste esplicitamente da un test
+// restituiscono `undefined` invece di un array vuoto.
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    schedule: { findMany: vi.fn() },
+    schedule: { findMany: vi.fn().mockResolvedValue([]) },
+    journalEntry: {
+      findMany: vi.fn().mockResolvedValue([]),
+      groupBy: vi.fn().mockResolvedValue([]),
+    },
+    recurringExpense: { findMany: vi.fn().mockResolvedValue([]) },
+    recurrence: { findMany: vi.fn().mockResolvedValue([]) },
+    initialBalance: { findFirst: vi.fn().mockResolvedValue(null) },
   },
 }))
 
@@ -34,6 +48,7 @@ function scadenza(overrides: Record<string, unknown> = {}) {
     dataScadenza: new Date('2026-08-10'),
     dataAttesa: null,
     isRicorrente: false,
+    recurrenceId: null,
     stato: 'aperta',
     ...overrides,
   }
@@ -51,12 +66,18 @@ afterEach(() => {
 })
 
 describe('GET /api/scadenzario/saldo-scalare - il previsionale lavora sulla data attesa', () => {
+  // `chartData` viene da `serieProiettata` (Task 4), che a sua volta legge le
+  // scadenze con una query propria — la terza chiamata a
+  // `schedule.findMany` nella rotta, dopo `schedulesInRange` e
+  // `overdueSchedules`: quelle due alimentano solo i totali di
+  // pagamenti/incassi/scaduto, non più il grafico.
   it('colloca la scadenza sul giorno di dataAttesa quando diverge da dataScadenza', async () => {
     vi.mocked(prisma.schedule.findMany)
+      .mockResolvedValueOnce([] as never) // schedulesInRange
+      .mockResolvedValueOnce([] as never) // overdueSchedules
       .mockResolvedValueOnce([
         scadenza({ dataAttesa: new Date('2026-08-20') }),
-      ] as never)
-      .mockResolvedValueOnce([] as never)
+      ] as never) // leggiScadenze, dentro serieProiettata
 
     const request = new NextRequest('http://localhost:3000/api/scadenzario/saldo-scalare?range=30')
     const response = await GET(request)
@@ -71,8 +92,9 @@ describe('GET /api/scadenzario/saldo-scalare - il previsionale lavora sulla data
 
   it('senza dataAttesa la scadenza resta sulla data contrattuale', async () => {
     vi.mocked(prisma.schedule.findMany)
-      .mockResolvedValueOnce([scadenza()] as never)
-      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce([] as never) // schedulesInRange
+      .mockResolvedValueOnce([] as never) // overdueSchedules
+      .mockResolvedValueOnce([scadenza()] as never) // leggiScadenze
 
     const request = new NextRequest('http://localhost:3000/api/scadenzario/saldo-scalare?range=30')
     const data = await (await GET(request)).json()
@@ -83,8 +105,9 @@ describe('GET /api/scadenzario/saldo-scalare - il previsionale lavora sulla data
 
   it('filtra in SQL sulla data attesa con fallback sulla contrattuale', async () => {
     vi.mocked(prisma.schedule.findMany)
-      .mockResolvedValueOnce([] as never)
-      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce([] as never) // schedulesInRange
+      .mockResolvedValueOnce([] as never) // overdueSchedules
+      .mockResolvedValueOnce([] as never) // leggiScadenze
 
     const request = new NextRequest('http://localhost:3000/api/scadenzario/saldo-scalare?range=30')
     await GET(request)

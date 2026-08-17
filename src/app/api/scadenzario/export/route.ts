@@ -5,6 +5,8 @@ import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { ScheduleStatus, ScheduleType, SchedulePriority, ScheduleSource, SCHEDULE_SOURCE_LABELS } from '@/types/schedule'
 import { getVenueId } from '@/lib/venue'
+import { formatNumeroCsv } from '@/lib/formatters'
+import { sumMoney, toApi } from '@/lib/money'
 
 // GET /api/scadenzario/export - Export CSV scadenze
 export async function GET(request: NextRequest) {
@@ -65,9 +67,9 @@ export async function GET(request: NextRequest) {
       s.tipo === 'attiva' ? 'Da incassare' : 'Da pagare',
       escapeCsv(s.descrizione),
       escapeCsv(s.controparteNome || s.supplier?.name || ''),
-      Number(s.importoTotale).toFixed(2),
-      Number(s.importoPagato).toFixed(2),
-      (Number(s.importoTotale) - Number(s.importoPagato)).toFixed(2),
+      formatNumeroCsv(Number(s.importoTotale)),
+      formatNumeroCsv(Number(s.importoPagato)),
+      formatNumeroCsv(Number(s.importoTotale) - Number(s.importoPagato)),
       s.stato,
       s.priorita,
       s.dataScadenza ? new Date(s.dataScadenza).toLocaleDateString('it-IT') : '',
@@ -78,9 +80,28 @@ export async function GET(request: NextRequest) {
       SCHEDULE_SOURCE_LABELS[s.source as ScheduleSource] || s.source || '',
     ])
 
+    // L'export vale quanto la schermata, non meno: chi lo apre deve trovarci
+    // anche gli aggregati che la pagina mostra in testata. È un'aggregazione
+    // su più righe, quindi aritmetica intermedia: si somma in `Money`
+    // (`sumMoney`) e si converte a `number` una sola volta, con `toApi`,
+    // solo dove il valore entra in `formatNumeroCsv`.
+    const totaleImporto = sumMoney(schedules.map(s => s.importoTotale))
+    const totalePagato = sumMoney(schedules.map(s => s.importoPagato))
+    const totaleResiduo = totaleImporto.minus(totalePagato)
+
+    const rigaTotali = [
+      `TOTALE (${schedules.length} scadenze)`,
+      '', '',
+      formatNumeroCsv(toApi(totaleImporto)),
+      formatNumeroCsv(toApi(totalePagato)),
+      formatNumeroCsv(toApi(totaleResiduo)),
+      '', '', '', '', '', '', '', '',
+    ]
+
     const csv = [
       headers.join(';'),
       ...rows.map(r => r.join(';')),
+      rigaTotali.join(';'),
     ].join('\n')
 
     // BOM for Excel compatibility

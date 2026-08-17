@@ -349,6 +349,7 @@ export function CategorizationRulesManager({
         onReorder={handleReorder}
         onCreate={handleNewRule}
         isLoading={isLoading}
+        filtroAttivo={Boolean(searchQuery.trim()) || Boolean(categoryFilter)}
       />
 
       {/* Dialog creazione/modifica regola */}

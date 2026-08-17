@@ -223,4 +223,5 @@ export const MATCH_WEIGHTS = {
   AMOUNT: 0.4, // 40% peso importo
   DATE: 0.3, // 30% peso data
   DESCRIPTION: 0.3, // 30% peso descrizione
+  DOCUMENTO: 0.1, // bonus se il documentRef compare nella causale banca
 } as const

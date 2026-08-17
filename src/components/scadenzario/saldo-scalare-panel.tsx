@@ -1,11 +1,11 @@
 "use client"
 
 import { useState } from 'react'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SaldoScalareChart } from './saldo-scalare-chart'
 import { formatCurrency } from '@/lib/formatters'
 import { format, parseISO, addDays } from 'date-fns'
@@ -34,19 +34,54 @@ interface SaldoScalarePanelProps {
   visible: boolean
 }
 
-const RANGE_OPTIONS = [
-  { value: '30', label: '30 giorni' },
-  { value: '60', label: '60 giorni' },
-  { value: '90', label: '90 giorni' },
-  { value: '120', label: '120 giorni' },
-  { value: '180', label: '180 giorni' },
-  { value: '365', label: '1 anno' },
+/** Quanto storico mostrare prima di oggi: 0 = solo futuro, come prima. */
+const ANCORE = [
+  { valore: 0, etichetta: 'Oggi' },
+  { valore: -15, etichetta: '−15 giorni' },
+  { valore: -30, etichetta: '−30 giorni' },
+  { valore: -60, etichetta: '−60 giorni' },
 ]
 
+/**
+ * Quanto futuro proiettare oltre oggi. Il Task 14 l'aveva ridotta a
+ * [7, 14, 30, 60, 90]: una regressione, perché prima dell'onda l'interfaccia
+ * offriva fino a 180/365 giorni. Il tetto di `range` sulla rotta resta
+ * (senza, `?range=100000` sarebbe una scansione aperta), ma va tenuto
+ * allineato alla durata più lunga qui sotto.
+ */
+const DURATE = [7, 14, 30, 60, 90, 180, 365]
+
+/**
+ * Legge un intero da un parametro URL, ricadendo sul predefinito se assente
+ * o non numerico: uno `?da=abc` scritto a mano non deve produrre `NaN` nello
+ * stato del componente.
+ */
+function interoDaUrl(valore: string | null, predefinito: number): number {
+  if (valore === null) return predefinito
+  const n = Number(valore)
+  return Number.isFinite(n) ? Math.trunc(n) : predefinito
+}
+
 export function SaldoScalarePanel({ visible }: SaldoScalarePanelProps) {
-  const [range, setRange] = useState('90')
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  const [ancora, setAncora] = useState(() => interoDaUrl(searchParams.get('da'), 0))
+  const [durata, setDurata] = useState(() => interoDaUrl(searchParams.get('range'), 90))
   const [showZeroLine, setShowZeroLine] = useState(false)
   const [showOverdue, setShowOverdue] = useState(false)
+
+  // Persiste la finestra nell'URL: la vista sopravvive a un aggiornamento di
+  // pagina ed è condivisibile.
+  function impostaFinestra(nuovaAncora: number, nuovaDurata: number) {
+    setAncora(nuovaAncora)
+    setDurata(nuovaDurata)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('da', String(nuovaAncora))
+    params.set('range', String(nuovaDurata))
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }
 
   const { data, isPending, isFetching } = useQuery({
     // Come prima: interroga l'API solo a pannello visibile e ricarica a ogni
@@ -54,10 +89,11 @@ export function SaldoScalarePanel({ visible }: SaldoScalarePanelProps) {
     enabled: visible,
     refetchOnMount: 'always',
     staleTime: 0,
-    queryKey: ['saldo-scalare', range, showOverdue],
+    queryKey: ['saldo-scalare', durata, ancora, showOverdue],
     queryFn: async (): Promise<SaldoScalareData> => {
       const params = new URLSearchParams({
-        range,
+        range: String(durata),
+        da: String(ancora),
         includiScaduto: String(showOverdue),
       })
       const resp = await fetch(`/api/scadenzario/saldo-scalare?${params}`)
@@ -70,27 +106,50 @@ export function SaldoScalarePanel({ visible }: SaldoScalarePanelProps) {
 
   if (!visible) return null
 
-  const today = new Date()
-  const endDate = addDays(today, parseInt(range))
-  const dateRangeLabel = `${format(today, 'd MMM', { locale: it })} - ${format(endDate, 'd MMM', { locale: it })}`
+  // Finestra calcolata localmente come stima per la prima resa, prima che la
+  // risposta arrivi: la fonte di verità resta `data.range`, quella che la
+  // rotta ha davvero usato.
+  const oggi = new Date()
+  const dal = data?.range.from ?? format(addDays(oggi, ancora), 'yyyy-MM-dd')
+  const al = data?.range.to ?? format(addDays(oggi, durata), 'yyyy-MM-dd')
+  const dateRangeLabel = `${format(parseISO(dal), 'd MMM', { locale: it })} - ${format(parseISO(al), 'd MMM', { locale: it })}`
 
   return (
     <div className="space-y-4">
       {/* Filter bar */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <Select value={range} onValueChange={setRange}>
-          <SelectTrigger className="w-[140px] h-8 text-sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {RANGE_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs uppercase text-muted-foreground w-24">Parte da</span>
+          {ANCORE.map((a) => (
+            <Button
+              key={a.valore}
+              size="sm"
+              variant={ancora === a.valore ? 'default' : 'outline'}
+              onClick={() => impostaFinestra(a.valore, durata)}
+            >
+              {a.etichetta}
+            </Button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs uppercase text-muted-foreground w-24">Durata</span>
+          {DURATE.map((d) => (
+            <Button
+              key={d}
+              size="sm"
+              variant={durata === d ? 'default' : 'outline'}
+              onClick={() => impostaFinestra(ancora, d)}
+            >
+              {d} gg
+            </Button>
+          ))}
+          <Button size="sm" variant="secondary" onClick={() => impostaFinestra(-30, 90)}>
+            Storico 30gg + Prev. 90gg
+          </Button>
+        </div>
+      </div>
 
+      <div className="flex items-center gap-3 flex-wrap">
         <span className="text-sm text-muted-foreground">{dateRangeLabel}</span>
 
         <div className="flex items-center gap-2 ml-auto">
@@ -187,7 +246,7 @@ export function SaldoScalarePanel({ visible }: SaldoScalarePanelProps) {
                 <div className="flex items-center gap-1.5 mb-1">
                   <span className="text-xs font-medium text-muted-foreground">Saldo finale</span>
                   <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-normal">
-                    al {format(endDate, 'd MMM', { locale: it })}
+                    al {format(parseISO(data.range.to), 'd MMM', { locale: it })}
                   </Badge>
                 </div>
                 <p className={cn(

@@ -8,6 +8,7 @@ import { renderToBuffer } from '@react-pdf/renderer'
 import { PrimaNotaPdfDocument } from '@/lib/pdf/PrimaNotaPdfTemplate'
 import ExcelJS from 'exceljs'
 import { getVenueId } from '@/lib/venue'
+import { formatNumeroCsv } from '@/lib/formatters'
 
 import { logger } from '@/lib/logger'
 const exportFiltersSchema = z.object({
@@ -272,9 +273,9 @@ function generateCSV(entries: Entry[]): string {
       entry.venue?.code || '',
       escapeCSV(entry.description),
       entry.documentRef || '',
-      formatNumber(debit),
-      formatNumber(credit),
-      formatNumber(vat),
+      formatNumeroCsv(debit),
+      formatNumeroCsv(credit),
+      formatNumeroCsv(vat),
       entry.account ? `${entry.account.code} - ${entry.account.name}` : '',
       entry.closure ? 'Sì' : 'No',
       format(new Date(entry.createdAt), 'dd/MM/yyyy HH:mm'),
@@ -296,14 +297,4 @@ function escapeCSV(value: string): string {
     return `"${value.replace(/"/g, '""')}"`
   }
   return value
-}
-
-function formatNumber(value: number | string): string {
-  if (value === '' || value === null || value === undefined) return ''
-  const num = typeof value === 'string' ? parseFloat(value) : value
-  // Formato italiano con virgola
-  return num.toLocaleString('it-IT', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
 }

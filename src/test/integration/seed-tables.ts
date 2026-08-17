@@ -25,9 +25,13 @@ export const SEED_TABLES = [
   'roles',
   'permissions',
   'accounts',
-  // Nessuna foreign key verso le altre tabelle del seed (né loro verso di
-  // lei): sta qui perché è anagrafica dello stesso tipo di `accounts`, non
-  // per un vincolo di dipendenza.
+  // I centri di costo li crea il seed ma non erano fra le tabelle congelate:
+  // i cloni per worker nascevano senza, e ogni percorso che passa da
+  // `risolviCentroDiCosto` falliva con «Nessun centro di costo di default
+  // configurato» — un rosso che non dipendeva dal codice in prova.
+  // Sulla posizione: nessuna foreign key verso le altre tabelle del seed (né
+  // loro verso di lei), sta qui perché è anagrafica dello stesso tipo di
+  // `accounts`, non per un vincolo di dipendenza.
   'cost_centers',
   'users',
   'suppliers',

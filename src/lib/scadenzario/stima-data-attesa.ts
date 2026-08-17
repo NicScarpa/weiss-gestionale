@@ -13,12 +13,24 @@
 import { prisma } from '@/lib/prisma'
 import { addDays, differenceInCalendarDays, subDays } from 'date-fns'
 import { logger } from '@/lib/logger'
+import { STIMA_MIN_CAMPIONE, STIMA_SOGLIA_GIORNI, STIMA_FINESTRA_GIORNI } from './stima-costanti'
 
-export const STIMA_MIN_CAMPIONE = 3
-export const STIMA_SOGLIA_GIORNI = 2
-export const STIMA_FINESTRA_GIORNI = 365
+// Ri-esportate per compatibilità: i consumatori esistenti (previsionale,
+// test) le importano da qui e non devono accorgersi che ora vivono in un
+// modulo pure a parte. Vedi stima-costanti.ts per il perché della divisione.
+export { STIMA_MIN_CAMPIONE, STIMA_SOGLIA_GIORNI, STIMA_FINESTRA_GIORNI }
 
-export function calcolaRitardoTipico(ritardiGiorni: number[]): number | null {
+/**
+ * La mediana dei ritardi osservati, arrotondata. `null` solo quando il campione
+ * è troppo piccolo per dire alcunché.
+ *
+ * Sta separata da `calcolaRitardoTipico` perché le due domande sono diverse: il
+ * previsionale vuole sapere se correggere la data (e non corregge né senza dati
+ * né per uno scarto di un giorno), la scheda fornitore vuole sapere *come paga
+ * questo fornitore* — e «puntuale» è una risposta, mentre «non lo so» è
+ * un'altra. Fuse in un unico `null`, erano indistinguibili.
+ */
+export function medianaRitardi(ritardiGiorni: number[]): number | null {
   if (ritardiGiorni.length < STIMA_MIN_CAMPIONE) return null
 
   const ordinati = [...ritardiGiorni].sort((a, b) => a - b)
@@ -26,7 +38,14 @@ export function calcolaRitardoTipico(ritardiGiorni: number[]): number | null {
   const mediana =
     ordinati.length % 2 === 0 ? (ordinati[mid - 1] + ordinati[mid]) / 2 : ordinati[mid]
 
-  const giorni = Math.round(mediana)
+  return Math.round(mediana)
+}
+
+export function calcolaRitardoTipico(ritardiGiorni: number[]): number | null {
+  const giorni = medianaRitardi(ritardiGiorni)
+  if (giorni === null) return null
+  // Sotto la soglia la correzione non si applica: meglio la data contrattuale
+  // del rumore.
   if (Math.abs(giorni) < STIMA_SOGLIA_GIORNI) return null
   return giorni
 }
@@ -51,6 +70,47 @@ export async function stimaRitardoFornitore(
     .map((s) => differenceInCalendarDays(s.dataPagamento, s.dataScadenza))
 
   return calcolaRitardoTipico(ritardi)
+}
+
+/**
+ * Ritardo tipico e numerosità del campione per più fornitori in una sola
+ * interrogazione. La lista fornitori li vuole tutti insieme: una query per
+ * fornitore sarebbe un N+1 su una pagina che si apre di frequente.
+ *
+ * I fornitori senza scadenze pagate nella finestra non compaiono nella mappa —
+ * chi legge tratta l'assenza come campione zero.
+ */
+export async function ritardiPerFornitore(
+  venueId: string,
+  supplierIds: string[]
+): Promise<Map<string, { mediana: number | null; campione: number }>> {
+  if (supplierIds.length === 0) return new Map()
+
+  const pagate = await prisma.schedule.findMany({
+    where: {
+      venueId,
+      supplierId: { in: supplierIds },
+      tipo: 'passiva',
+      stato: 'pagata',
+      dataPagamento: { not: null, gte: subDays(new Date(), STIMA_FINESTRA_GIORNI) },
+    },
+    select: { supplierId: true, dataScadenza: true, dataPagamento: true },
+  })
+
+  const perFornitore = new Map<string, number[]>()
+  for (const s of pagate) {
+    if (!s.supplierId || s.dataPagamento === null) continue
+    const ritardo = differenceInCalendarDays(s.dataPagamento, s.dataScadenza)
+    const elenco = perFornitore.get(s.supplierId)
+    if (elenco) elenco.push(ritardo)
+    else perFornitore.set(s.supplierId, [ritardo])
+  }
+
+  const esito = new Map<string, { mediana: number | null; campione: number }>()
+  for (const [supplierId, ritardi] of perFornitore) {
+    esito.set(supplierId, { mediana: medianaRitardi(ritardi), campione: ritardi.length })
+  }
+  return esito
 }
 
 const STATI_APERTI = ['aperta', 'parzialmente_pagata', 'scaduta']

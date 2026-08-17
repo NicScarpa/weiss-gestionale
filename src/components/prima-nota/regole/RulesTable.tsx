@@ -57,6 +57,9 @@ interface RulesTableProps {
   onReorder: (reorderedRules: CategorizationRule[]) => void
   onCreate: () => void
   isLoading: boolean
+  /** Vero quando la lista è vuota per effetto di ricerca o filtro categoria,
+   *  non perché non esistano regole: cambia cosa insegna lo stato vuoto. */
+  filtroAttivo: boolean
 }
 
 function SortableRow({
@@ -192,6 +195,7 @@ export function RulesTable({
   onReorder,
   onCreate,
   isLoading,
+  filtroAttivo,
 }: RulesTableProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -246,10 +250,26 @@ export function RulesTable({
   }
 
   if (rules.length === 0) {
+    if (filtroAttivo) {
+      return (
+        <div className="rounded-md border bg-card p-12 text-center">
+          <p className="text-muted-foreground">
+            Nessuna regola corrisponde ai filtri.
+          </p>
+        </div>
+      )
+    }
+
     return (
       <div className="rounded-md border bg-card p-12 text-center">
-        <p className="text-muted-foreground mb-4">
-          Nessuna regola configurata per questa direzione.
+        <p className="text-muted-foreground mb-2">
+          Le regole assegnano il conto ai movimenti importati. L&apos;ordine conta: la
+          prima regola che corrisponde vince, quindi la più specifica va sopra la più
+          generica.
+        </p>
+        <p className="text-muted-foreground italic mb-4">
+          Esempio: se «Enel Energia» sta sopra «Enel», un movimento «ENEL ENERGIA SPA»
+          prende il conto della prima. Invertendole, lo prenderebbe dalla seconda.
         </p>
         <Button variant="outline" onClick={onCreate}>
           <Plus className="h-4 w-4 mr-2" />

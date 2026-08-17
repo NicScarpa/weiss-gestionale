@@ -28,6 +28,7 @@ export const GET = withAuth(
         direction: 'INFLOW' | 'OUTFLOW'
         count: number
         matchingEntryIds: string[]
+        sampleDescriptions: string[]
       }>()
 
       for (const entry of uncategorized) {
@@ -42,12 +43,23 @@ export const GET = withAuth(
         if (existing) {
           existing.count++
           existing.matchingEntryIds.push(entry.id)
+          // Solo distinte: quando il gruppo è chiuso sulla descrizione (nessuna
+          // controparte) le righe hanno tutte la stessa causale, e tre copie
+          // della stessa stringa non insegnano niente.
+          if (
+            existing.sampleDescriptions.length < 3 &&
+            entry.description &&
+            !existing.sampleDescriptions.includes(entry.description)
+          ) {
+            existing.sampleDescriptions.push(entry.description)
+          }
         } else {
           groups.set(groupKey, {
             keyword,
             direction,
             count: 1,
             matchingEntryIds: [entry.id],
+            sampleDescriptions: entry.description ? [entry.description] : [],
           })
         }
       }

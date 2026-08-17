@@ -48,6 +48,17 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // Il webpack di Next risolve 'server-only' con la condizione degli
+      // `exports` 'react-server' (un no-op), diversa da quella che usa nel
+      // bundle client (che lancia). Vite non conosce quella condizione e non
+      // trova affatto il pacchetto — non esiste in node_modules di primo
+      // livello, solo vendorizzato dentro next/dist/compiled. I test girano
+      // lato server come il bundle server di Next, quindi puntano allo
+      // stesso no-op, senza installare nulla di nuovo.
+      'server-only': path.resolve(
+        __dirname,
+        'node_modules/next/dist/compiled/server-only/empty.js'
+      ),
     },
   },
 })

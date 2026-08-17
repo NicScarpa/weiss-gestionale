@@ -5,6 +5,8 @@ import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 
 import { logger } from '@/lib/logger'
+import { getVenueId } from '@/lib/venue'
+import { ritardiPerFornitore } from '@/lib/scadenzario/stima-data-attesa'
 import { lookupHash } from '@/lib/encryption'
 // Schema validazione
 const supplierSchema = z.object({
@@ -106,6 +108,24 @@ export async function GET(request: NextRequest) {
       },
       ...(full ? {} : { take: 50 }),
     })
+
+    // Il ritardo di pagamento è un dato finanziario: si aggiunge solo per chi
+    // può vedere dati finanziari, e solo quando la vista è "full". Per gli
+    // altri il campo non compare affatto — un null direbbe "nessun dato", che
+    // sarebbe falso.
+    const puoVedereIRitardi = ['admin', 'manager'].includes(session.user.role || '')
+    if (full && puoVedereIRitardi) {
+      const venueId = await getVenueId()
+      const mappaRitardi = await ritardiPerFornitore(
+        venueId,
+        suppliers.map((s) => s.id)
+      )
+      const suppliersConRitardo = suppliers.map((s) => ({
+        ...s,
+        ritardo: mappaRitardi.get(s.id) ?? { mediana: null, campione: 0 },
+      }))
+      return NextResponse.json({ suppliers: suppliersConRitardo })
+    }
 
     return NextResponse.json({ suppliers })
   } catch (error) {

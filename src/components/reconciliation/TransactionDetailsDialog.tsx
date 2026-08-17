@@ -270,12 +270,12 @@ export function TransactionDetailsDialog({
                     <div className="font-medium">{transaction.matchedEntry.description}</div>
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
                       <span>Data: {formatDateShort(transaction.matchedEntry.date)}</span>
-                      {transaction.matchedEntry.debitAmount && (
+                      {!!transaction.matchedEntry.debitAmount && (
                         <span className="font-mono text-red-600">
                           Dare: {formatCurrency(transaction.matchedEntry.debitAmount)}
                         </span>
                       )}
-                      {transaction.matchedEntry.creditAmount && (
+                      {!!transaction.matchedEntry.creditAmount && (
                         <span className="font-mono text-green-600">
                           Avere: {formatCurrency(transaction.matchedEntry.creditAmount)}
                         </span>

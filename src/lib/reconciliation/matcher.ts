@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { MATCH_THRESHOLDS, MATCH_WEIGHTS } from '@/types/reconciliation'
 import type { ReconciliationStatus, MatchCandidate, ReconcileResult } from '@/types/reconciliation'
 import { ricalcolaResiduoDocumenti } from '@/lib/banca/residuo-documenti'
+import { numeroDistintaNellaCausale } from './numero-distinta'
 
 interface BankTx {
   id: string
@@ -125,14 +126,14 @@ function calculateMatchScore(bankTx: BankTx, entry: JournalEntry): number {
   const descSimilarity = stringSimilarity(bankTx.description, entry.description)
   score += MATCH_WEIGHTS.DESCRIPTION * descSimilarity
 
-  // Bonus: se il documento di riferimento è presente nella descrizione banca
-  if (entry.documentRef) {
-    const refInDesc = bankTx.description.toLowerCase().includes(
-      entry.documentRef.toLowerCase().replace(/[^a-z0-9]/gi, '')
-    )
-    if (refInDesc) {
-      score = Math.min(1, score + 0.1) // Bonus 10%
-    }
+  // Bonus: se il documento di riferimento è presente nella descrizione banca.
+  // Entrambi i lati si normalizzano togliendo la punteggiatura (uno '88-4213'
+  // deve trovare '88-4213' anche se la causale scrive '884213' o viceversa),
+  // e la guardia sulla lunghezza evita che un documentRef di una cifra
+  // matcherebbe quasi ogni causale — vedi lo stesso schema in
+  // schedule-matcher.ts.
+  if (numeroDistintaNellaCausale(entry.documentRef, bankTx.description)) {
+    score = Math.min(1, score + MATCH_WEIGHTS.DOCUMENTO)
   }
 
   return Math.round(score * 100) / 100 // Arrotonda a 2 decimali

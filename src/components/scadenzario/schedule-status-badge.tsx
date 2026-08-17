@@ -5,12 +5,19 @@ interface ScheduleStatusBadgeProps {
   stato: ScheduleStatus
   showLabel?: boolean
   size?: 'sm' | 'default' | 'lg'
+  /**
+   * Giorni di ritardo, mostrati come suffisso. Portare l'anzianità dentro il
+   * badge rende la lista scorribile per urgenza senza doverla ordinare, e
+   * costa uno sguardo invece di un cambio di pagina.
+   */
+  giorniRitardo?: number
 }
 
 export function ScheduleStatusBadge({
   stato,
   showLabel = true,
   size: _size = 'default',
+  giorniRitardo,
 }: ScheduleStatusBadgeProps) {
   if (!showLabel) {
     return (
@@ -23,9 +30,14 @@ export function ScheduleStatusBadge({
     )
   }
 
+  const etichetta =
+    giorniRitardo && giorniRitardo > 0
+      ? `${SCHEDULE_STATUS_LABELS[stato]} +${giorniRitardo}g`
+      : SCHEDULE_STATUS_LABELS[stato]
+
   return (
     <Badge className={SCHEDULE_STATUS_COLORS[stato]} variant="outline">
-      {SCHEDULE_STATUS_LABELS[stato]}
+      {etichetta}
     </Badge>
   )
 }

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { addDays, startOfDay, format } from 'date-fns'
 import { getVenueId } from '@/lib/venue'
+import { serieProiettata } from '@/lib/previsionale/leggi'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function residuo(s: { importoTotale: any; importoPagato: any }) {
@@ -23,13 +24,34 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const rangeGiorni = parseInt(searchParams.get('range') || '90')
+
+    /**
+     * Giorni di storico (≤ 0) e di previsione (> 0) intorno a oggi.
+     *
+     * La finestra si esprime come «quanto passato» + «quanto futuro» invece
+     * che con due date assolute, perché è il modo in cui si ragiona in
+     * tesoreria e perché resta valida il giorno dopo senza reimpostarla.
+     *
+     * Entrambi i valori sono limitati: la serie si costruisce giorno per
+     * giorno, quindi una finestra arbitrariamente lunga arrivata dalla query
+     * string diventa un ciclo arbitrariamente lungo.
+     */
+    function intero(valore: string | null, predefinito: number, min: number, max: number): number {
+      const n = Number(valore)
+      if (valore === null || valore.trim() === '' || !Number.isFinite(n)) return predefinito
+      return Math.min(max, Math.max(min, Math.trunc(n)))
+    }
+
+    const rangeGiorni = intero(searchParams.get('range'), 90, 1, 365)
+    const ancoraGiorni = intero(searchParams.get('da'), 0, -365, 0)
     const includiScaduto = searchParams.get('includiScaduto') === 'true'
 
     const today = startOfDay(new Date())
+    const startDate = addDays(today, ancoraGiorni)
     const endDate = addDays(today, rangeGiorni)
 
-    const venueFilter = { venueId: await getVenueId() }
+    const venueId = await getVenueId()
+    const venueFilter = { venueId }
 
     const selectFields = {
       id: true,
@@ -39,8 +61,14 @@ export async function GET(request: NextRequest) {
       dataScadenza: true,
       dataAttesa: true,
       isRicorrente: true,
+      recurrenceId: true,
       stato: true,
     } as const
+
+    /** Marcata come ricorrente esplicitamente, o generata da una `Recurrence`. */
+    function eRicorrente(s: { isRicorrente: boolean; recurrenceId: string | null }) {
+      return s.isRicorrente || Boolean(s.recurrenceId)
+    }
 
     // Il previsionale lavora sulla data attesa di cassa, non su quella
     // contrattuale (modello Sibill). dataAttesa null = coincide con
@@ -103,7 +131,15 @@ export async function GET(request: NextRequest) {
     // Saldo oggi: net position considering overdue + future
     const saldoOggi = incassiTotale + scadutoDaIncassare - pagamentiTotale - scadutoDaPagare
 
-    // Group schedules by date for chart
+    // Il grafico viene dal previsionale unico (Task 4): parte dal saldo reale
+    // di cassa e banca, non da `saldoOggi`, che è un netto sintetico usato
+    // solo per il pannello "scaduto" qui sotto. Le due grandezze rispondono a
+    // domande diverse e non vanno confuse.
+    const dal = format(startDate, 'yyyy-MM-dd')
+    const al = format(endDate, 'yyyy-MM-dd')
+    const serie = await serieProiettata(venueId, dal, al)
+
+    // Group schedules by date, per la quota "ricorrenti" del grafico
     const schedulesByDate = new Map<string, typeof schedulesInRange>()
     for (const s of schedulesInRange) {
       const dateKey = format(new Date(s.dataAttesa ?? s.dataScadenza), 'yyyy-MM-dd')
@@ -113,60 +149,38 @@ export async function GET(request: NextRequest) {
       schedulesByDate.get(dateKey)!.push(s)
     }
 
-    // Build chart: start from saldoOggi, then apply daily changes
-    const chartData: Array<{
-      date: string
-      saldo: number
-      uscite: number
-      entrate: number
-      usciteRicorrenti: number
-      entrateRicorrenti: number
-    }> = []
+    const chartData = serie.map((punto) => {
+      const daySchedules = schedulesByDate.get(punto.giorno) ?? []
 
-    let balance = saldoOggi
+      // La quota "ricorrenti" del giorno risponde alla stessa domanda di
+      // sempre — quanto di questo previsto è un impegno che si ripete — non
+      // a quella di `perFonte` (da quale fonte viene il numero). Una
+      // scadenza nata da una ricorrenza *è* un impegno che si ripete anche
+      // se `proietta` la classifica come `scadenza`, quindi conta qui come
+      // prima: dalle scadenze marcate `isRicorrente` o con `recurrenceId`
+      // valorizzato. Ci si somma la quota di fonte `ricorrente` — spese
+      // ricorrenti e ricorrenze non ancora diventate una scadenza reale —
+      // perché anche quella è un impegno che si ripete, solo non ancora
+      // scadenzato.
+      const usciteRicorrentiDaScadenze = daySchedules
+        .filter((s) => s.tipo === 'passiva' && eRicorrente(s))
+        .reduce((sum, s) => sum + residuo(s), 0)
+      const entrateRicorrentiDaScadenze = daySchedules
+        .filter((s) => s.tipo === 'attiva' && eRicorrente(s))
+        .reduce((sum, s) => sum + residuo(s), 0)
 
-    // Initial point (today)
-    chartData.push({
-      date: format(today, 'yyyy-MM-dd'),
-      saldo: Math.round(balance * 100) / 100,
-      uscite: 0,
-      entrate: 0,
-      usciteRicorrenti: 0,
-      entrateRicorrenti: 0,
+      const usciteRicorrentiDaFonte = punto.perFonte.ricorrente < 0 ? Math.abs(punto.perFonte.ricorrente) : 0
+      const entrateRicorrentiDaFonte = punto.perFonte.ricorrente > 0 ? punto.perFonte.ricorrente : 0
+
+      return {
+        date: punto.giorno,
+        saldo: punto.saldo,
+        uscite: punto.uscite,
+        entrate: punto.entrate,
+        usciteRicorrenti: Math.round((usciteRicorrentiDaScadenze + usciteRicorrentiDaFonte) * 100) / 100,
+        entrateRicorrenti: Math.round((entrateRicorrentiDaScadenze + entrateRicorrentiDaFonte) * 100) / 100,
+      }
     })
-
-    for (let d = 1; d <= rangeGiorni; d++) {
-      const dayDate = addDays(today, d)
-      const dateKey = format(dayDate, 'yyyy-MM-dd')
-      const daySchedules = schedulesByDate.get(dateKey) || []
-
-      const dayUscite = daySchedules
-        .filter(s => s.tipo === 'passiva')
-        .reduce((sum, s) => sum + residuo(s), 0)
-
-      const dayEntrate = daySchedules
-        .filter(s => s.tipo === 'attiva')
-        .reduce((sum, s) => sum + residuo(s), 0)
-
-      const dayUsciteRicorrenti = daySchedules
-        .filter(s => s.tipo === 'passiva' && s.isRicorrente)
-        .reduce((sum, s) => sum + residuo(s), 0)
-
-      const dayEntrateRicorrenti = daySchedules
-        .filter(s => s.tipo === 'attiva' && s.isRicorrente)
-        .reduce((sum, s) => sum + residuo(s), 0)
-
-      balance = balance + dayEntrate - dayUscite
-
-      chartData.push({
-        date: dateKey,
-        saldo: Math.round(balance * 100) / 100,
-        uscite: Math.round(dayUscite * 100) / 100,
-        entrate: Math.round(dayEntrate * 100) / 100,
-        usciteRicorrenti: Math.round(dayUsciteRicorrenti * 100) / 100,
-        entrateRicorrenti: Math.round(dayEntrateRicorrenti * 100) / 100,
-      })
-    }
 
     const saldoFinale = chartData.length > 0 ? chartData[chartData.length - 1].saldo : saldoOggi
 
@@ -188,7 +202,7 @@ export async function GET(request: NextRequest) {
       },
       chartData,
       range: {
-        from: format(today, 'yyyy-MM-dd'),
+        from: dal,
         to: format(endDate, 'yyyy-MM-dd'),
       },
     })

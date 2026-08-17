@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { ScheduleStatus, ScheduleType } from '@/types/schedule'
 import { getVenueId } from '@/lib/venue'
+import { whereScadenzePagateSenzaMovimento } from '@/lib/scadenzario/pagate-senza-movimento'
 
 // GET /api/scadenzario/summary - Statistiche per badge e dashboard
 export async function GET(request: NextRequest) {
@@ -36,22 +37,29 @@ export async function GET(request: NextRequest) {
       ],
     }
 
-    // Totale attive (da incassare) - somma importi
-    const attiveAggregate = await prisma.schedule.aggregate({
+    // Attive non ancora saldate (da incassare) - conteggio e residuo.
+    // "Non saldata" è lo stesso criterio della card "Scadute": stato fuori
+    // da pagata/annullata, non "aperta" in senso stretto (include parziali,
+    // solleciti, contestate, ecc.)
+    const attiveAperteAggregate = await prisma.schedule.aggregate({
       where: {
         ...where,
         tipo: 'attiva',
+        stato: { notIn: ['pagata', 'annullata'] },
       },
-      _sum: { importoTotale: true },
+      _sum: { importoTotale: true, importoPagato: true },
+      _count: true,
     })
 
-    // Totale passive (da pagare) - somma importi
-    const passiveAggregate = await prisma.schedule.aggregate({
+    // Passive non ancora saldate (da pagare) - conteggio e residuo
+    const passiveAperteAggregate = await prisma.schedule.aggregate({
       where: {
         ...where,
         tipo: 'passiva',
+        stato: { notIn: ['pagata', 'annullata'] },
       },
-      _sum: { importoTotale: true },
+      _sum: { importoTotale: true, importoPagato: true },
+      _count: true,
     })
 
     // Scadute (oggi e non pagate). Lo scaduto si giudica sulla data attesa di
@@ -93,39 +101,40 @@ export async function GET(request: NextRequest) {
       _count: true,
     })
 
-    // Aperte per stato
-    const aperteAggregate = await prisma.schedule.groupBy({
+    // Scadenze su cui è stato registrato un pagamento senza che alcun movimento
+    // di prima nota esista: il denaro risulta uscito dallo scadenzario e non è
+    // mai entrato nel consuntivo. Sono spesso legittime (contanti, addebiti
+    // registrati altrove), ma vanno viste — altrimenti il previsionale e il
+    // saldo raccontano due storie diverse in silenzio.
+    const senzaMovimento = await prisma.schedule.aggregate({
       where: {
         ...where,
-        stato: 'aperta',
+        ...whereScadenzePagateSenzaMovimento(),
       },
-      by: ['stato'],
-      _count: { stato: true },
+      _count: true,
+      _sum: { importoPagato: true },
     })
 
-    const aperteCount = aperteAggregate.length > 0 ? (aperteAggregate[0]._count.stato as number) : 0
-
-    // Pagate
-    const pagateAggregate = await prisma.schedule.groupBy({
-      where: {
-        ...where,
-        stato: 'pagata',
-      },
-      by: ['stato'],
-      _count: { stato: true },
-    })
-
-    const pagateCount = pagateAggregate.length > 0 ? (pagateAggregate[0]._count.stato as number) : 0
+    // Residuo = importo totale - importo già pagato: quello che manca
+    // davvero da incassare/pagare, non il totale della scadenza
+    const aperteAttiveImporto =
+      Number(attiveAperteAggregate._sum.importoTotale || 0) -
+      Number(attiveAperteAggregate._sum.importoPagato || 0)
+    const apertePassiveImporto =
+      Number(passiveAperteAggregate._sum.importoTotale || 0) -
+      Number(passiveAperteAggregate._sum.importoPagato || 0)
 
     return NextResponse.json({
-      totaleAttive: Number(attiveAggregate._sum.importoTotale || 0),
-      totalePassive: Number(passiveAggregate._sum.importoTotale || 0),
+      aperteAttiveCount: attiveAperteAggregate._count || 0,
+      aperteAttiveImporto,
+      apertePassiveCount: passiveAperteAggregate._count || 0,
+      apertePassiveImporto,
       totaleScadute: scaduteAggregate._count || 0,
       totaleScaduteImporto: Number(scaduteAggregate._sum.importoTotale || 0),
       totaleInScadenza7Giorni: inScadenzaAggregate._count || 0,
       totaleInScadenza7GiorniImporto: Number(inScadenzaAggregate._sum.importoTotale || 0),
-      totaleAperte: aperteCount,
-      totalePagate: pagateCount,
+      pagateSenzaMovimento: senzaMovimento._count || 0,
+      pagateSenzaMovimentoImporto: Number(senzaMovimento._sum.importoPagato || 0),
     })
   } catch (error) {
     logger.error('Errore GET /api/scadenzario/summary', error)

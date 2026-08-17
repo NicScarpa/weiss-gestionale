@@ -180,6 +180,15 @@ export function MovimentoFormDialog({
   const trasferimento = isTrasferimento(entryType)
   const isEntrata = entryType === 'INCASSO'
 
+  // Su un versamento questo campo è il numero della distinta: è ciò che
+  // permette di riconoscere il movimento sull'estratto conto, e fa scattare
+  // il bonus di `calculateMatchScore` (src/lib/reconciliation/matcher.ts).
+  // Etichettarlo «Riferimento Doc. — es. Fattura #123» lo rendeva invisibile
+  // proprio a chi ne aveva bisogno.
+  const versamentoInBanca =
+    entryType === 'VERSAMENTO' ||
+    (entryType === 'GIROCONTO' && counterRegisterType === 'BANK')
+
   /** Direzione già decisa dal tipo: al versamento e al prelievo non si chiede. */
   const direzioneImplicita =
     entryType === 'VERSAMENTO' || entryType === 'PRELIEVO'
@@ -491,11 +500,16 @@ export function MovimentoFormDialog({
                 name="documentRef"
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
-                    <FormLabel>Riferimento Doc.</FormLabel>
+                    <FormLabel>{versamentoInBanca ? 'Numero distinta' : 'Riferimento Doc.'}</FormLabel>
                     <Input
-                      placeholder="es. Fattura #123"
+                      placeholder={versamentoInBanca ? 'es. 884213' : 'es. Fattura #123'}
                       {...form.register('documentRef')}
                     />
+                    {versamentoInBanca && (
+                      <FormDescription>
+                        Se lo ritrovi sull&apos;estratto conto, l&apos;abbinamento automatico è più sicuro.
+                      </FormDescription>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}
