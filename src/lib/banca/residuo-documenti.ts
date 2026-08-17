@@ -37,10 +37,13 @@ export async function bloccaRigaBancaria(tx: TransactionClient, journalEntryId: 
  * dica sempre ciò che dicono le riconciliazioni — la promozione non è l'unica
  * a scriverle, lo fa anche lo scadenzario su una scrittura promossa.
  *
- * Il lock della riga se l'è già preso chi chiama (`bloccaRigaBancaria` qui
- * sopra, in testa alla riconciliazione e all'annullo; la promozione blocca la
- * riga per id ancora prima di leggerla): questa `UPDATE` non ne apre uno nuovo
- * fuori ordine.
+ * Il lock della riga è un'ipotesi sulla chiamata: chi entra da una transazione
+ * (promozione, `riconciliaInTransazione`, `annullaRiconciliazioneInTransazione`)
+ * se l'è già preso (`bloccaRigaBancaria` qui sopra, in testa alla riconciliazione
+ * e all'annullo; la promozione blocca la riga per id ancora prima di leggerla).
+ * Ma il vecchio auto-match (`src/lib/reconciliation/matcher.ts`) la chiama col
+ * client normale, fuori transazione: lì l'`UPDATE` in autocommit tiene un lock
+ * solo e lo rilascia subito, nessun incrocio possibile.
  *
  * Restituisce il residuo scritto, `null` se nessuna riga viva è collegata (una
  * riga nel Cestino non può esserlo: il Cestino rifiuta le righe collegate).

@@ -4,7 +4,7 @@ import { CAMPI_BADGE } from './cronologia'
 import { statoLegenda } from './stato-legenda'
 import type { RigaEstrattoConto } from '@/types/reconciliation'
 
-/** Il `where` della lista. `deletedAt` è sempre esplicito: è ciò che apre o chiude il Cestino. */
+/** Il `where` della lista. `deletedAt` è esplicito — è ciò che apre o chiude il Cestino — salvo col collegamento profondo a una riga (`movimento`), che la mostra dovunque sia. */
 export function costruisciWhere(f: FiltriEstrattoConto, venueId: string): Prisma.BankTransactionWhereInput {
   const where: Prisma.BankTransactionWhereInput = { venueId }
   // Il collegamento profondo a una riga sola (`?movimento=`) arriva dalla

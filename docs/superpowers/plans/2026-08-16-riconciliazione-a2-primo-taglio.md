@@ -325,6 +325,8 @@ Fuori dalla transazione: per ogni voce di `seguiti`, `dopoLaRiconciliazione(voce
 
 Lo scarto di una proposta approvata (se un giorno servirà «annulla approvazione») passa da `scollegaRigaBancaria` dello stesso modulo: ritira solo ciò che la promozione ha creato.
 
+**Nota (17 ago, dopo la consegna B).** Una riga con `status = TO_REVIEW` porta un `matchedEntryId` scritto dal vecchio motore che **non** è un legame: `promuoviRigaBancariaInTransazione` la tratta come libera (ramo di creazione, o rilegame se arriva `scritturaEsistenteId`). Quindi il controllo di freschezza del punto 2 va scritto così: «la riga bancaria ha già `matchedEntryId` **e** `status !== 'TO_REVIEW'`» ⇒ superata; e per una proposta R4 si passa sempre `scritturaEsistenteId: proposta.journalEntryId`, altrimenti l'approvazione crea una scrittura nuova invece di confermare quella indicata.
+
 - [ ] **Step 4: Scrivere la rotta**
 
 `POST /api/riconciliazione-assistita/proposte/[id]/approva`, ruolo `admin` o `manager`, `getVenueId()`, traduzione degli esiti: `proposta_non_trovata` → 404, `gia_decisa` → 409, `superata` → 409 col motivo, `riconciliazione_rifiutata` → 422, `ok` → 200 con `createAuditLog`.
