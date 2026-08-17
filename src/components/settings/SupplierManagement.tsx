@@ -10,13 +10,12 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
 import { DeleteSupplierDialog } from './DeleteSupplierDialog'
 import { BulkDeleteSuppliersDialog } from './BulkDeleteSuppliersDialog'
-import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
+import { AnagraficaForm } from '@/components/anagrafiche/AnagraficaForm'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -34,30 +33,20 @@ interface Supplier {
   id: string
   name: string
   vatNumber: string | null
+  fiscalCode: string | null
   address: string | null
   city: string | null
   province: string | null
   postalCode: string | null
+  country: string | null
   email: string | null
+  phone: string | null
+  notes: string | null
   iban: string | null
   defaultAccountId: string | null
   defaultAccount: Account | null
   paymentTermsDays: number | null
   isActive: boolean
-}
-
-const initialFormData = {
-  name: '',
-  vatNumber: '',
-  address: '',
-  city: '',
-  province: '',
-  postalCode: '',
-  email: '',
-  iban: '',
-  defaultAccountId: 'none',
-  paymentTermsDays: '',
-  isActive: true,
 }
 
 export function SupplierManagement() {
@@ -68,7 +57,6 @@ export function SupplierManagement() {
   const [saving, setSaving] = useState(false)
   const [showInactive, setShowInactive] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [formData, setFormData] = useState(initialFormData)
   const [selectedSuppliers, setSelectedSuppliers] = useState<Set<string>>(new Set())
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false)
 
@@ -142,29 +130,12 @@ export function SupplierManagement() {
   // Apri dialog per nuovo fornitore
   const handleNew = () => {
     setEditingSupplier(null)
-    setFormData(initialFormData)
     setIsDialogOpen(true)
   }
 
-  // Apri dialog modifica
+  // Apri dialog modifica: il modulo si riempie da sé leggendo il record.
   const handleEdit = (supplier: Supplier) => {
     setEditingSupplier(supplier)
-    setFormData({
-      name: supplier.name,
-      vatNumber: supplier.vatNumber || '',
-      address: supplier.address || '',
-      city: supplier.city || '',
-      province: supplier.province || '',
-      postalCode: supplier.postalCode || '',
-      email: supplier.email || '',
-      iban: supplier.iban || '',
-      defaultAccountId: supplier.defaultAccountId || 'none',
-      paymentTermsDays:
-        supplier.paymentTermsDays !== null && supplier.paymentTermsDays !== undefined
-          ? String(supplier.paymentTermsDays)
-          : '',
-      isActive: supplier.isActive,
-    })
     setIsDialogOpen(true)
   }
 
@@ -174,31 +145,15 @@ export function SupplierManagement() {
     setIsDeleteDialogOpen(true)
   }
 
-  // Salva fornitore
-  const handleSave = async () => {
-    if (!formData.name.trim()) {
-      toast.error('Nome obbligatorio')
-      return
-    }
-
+  // Salva fornitore. Il corpo arriva già tradotto nelle colonne del fornitore
+  // dal modulo condiviso: qui resta solo l'identificativo, in modifica.
+  const handleSave = async (corpo: Record<string, unknown>) => {
     try {
       setSaving(true)
 
       const payload = {
         ...(editingSupplier && { id: editingSupplier.id }),
-        name: formData.name.trim(),
-        vatNumber: formData.vatNumber.trim() || null,
-        address: formData.address.trim() || null,
-        city: formData.city.trim() || null,
-        province: formData.province.trim() || null,
-        postalCode: formData.postalCode.trim() || null,
-        email: formData.email.trim() || null,
-        iban: formData.iban.trim() || null,
-        defaultAccountId: formData.defaultAccountId === 'none' ? null : formData.defaultAccountId,
-        paymentTermsDays: formData.paymentTermsDays.trim()
-          ? Number(formData.paymentTermsDays)
-          : null,
-        isActive: formData.isActive,
+        ...corpo,
       }
 
       const res = await fetch('/api/suppliers', {
@@ -421,199 +376,17 @@ export function SupplierManagement() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid grid-cols-2 gap-4 py-4">
-            {/* Nome */}
-            <div className="col-span-2 space-y-2">
-              <Label htmlFor="supplier-name">Nome *</Label>
-              <Input
-                id="supplier-name"
-                value={formData.name}
-                onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
-                placeholder="es. Metro Italia"
-              />
-            </div>
-
-            {/* P.IVA */}
-            <div className="space-y-2">
-              <Label htmlFor="vatNumber">Partita IVA</Label>
-              <Input
-                id="vatNumber"
-                value={formData.vatNumber}
-                onChange={(e) =>
-                  setFormData({ ...formData, vatNumber: e.target.value })
-                }
-                placeholder="es. 12345678901"
-                className="font-mono"
-              />
-            </div>
-
-            {/* Email */}
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={formData.email}
-                onChange={(e) =>
-                  setFormData({ ...formData, email: e.target.value })
-                }
-                placeholder="amministrazione@fornitore.it"
-              />
-            </div>
-
-            {/* IBAN */}
-            <div className="col-span-2 space-y-2">
-              <Label htmlFor="iban">IBAN</Label>
-              <Input
-                id="iban"
-                value={formData.iban}
-                onChange={(e) =>
-                  setFormData({ ...formData, iban: e.target.value })
-                }
-                placeholder="IT00 X000 0000 0000 0000 0000 000"
-                className="font-mono uppercase"
-              />
-            </div>
-
-            <div className="col-span-2 border-t my-2" />
-
-            {/* Indirizzo - Via */}
-            <div className="col-span-2 space-y-2">
-              <Label htmlFor="supplier-address">Indirizzo (Via e Civico)</Label>
-              <Input
-                id="supplier-address"
-                value={formData.address}
-                onChange={(e) =>
-                  setFormData({ ...formData, address: e.target.value })
-                }
-                placeholder="Via Roma 1"
-              />
-            </div>
-
-            {/* Città */}
-            <div className="space-y-2">
-              <Label htmlFor="city">Città</Label>
-              <Input
-                id="city"
-                value={formData.city}
-                onChange={(e) =>
-                  setFormData({ ...formData, city: e.target.value })
-                }
-                placeholder="Milano"
-              />
-            </div>
-
-            {/* CAP e Provincia */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="postalCode">CAP</Label>
-                <Input
-                  id="postalCode"
-                  value={formData.postalCode}
-                  onChange={(e) =>
-                    setFormData({ ...formData, postalCode: e.target.value })
-                  }
-                  placeholder="20100"
-                  className="font-mono"
-                  maxLength={5}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="province">Provincia</Label>
-                <Input
-                  id="province"
-                  value={formData.province}
-                  onChange={(e) =>
-                    setFormData({ ...formData, province: e.target.value })
-                  }
-                  placeholder="MI"
-                  className="uppercase"
-                  maxLength={2}
-                />
-              </div>
-            </div>
-
-            <div className="col-span-2 border-t my-2" />
-
-            {/* Conto Default */}
-            <div className="col-span-2 space-y-2">
-              <Label>Conto di Costo Default</Label>
-              {/* formData.defaultAccountId resta 'none' come sentinella
-                  interna (usata anche nel submit e nel caricamento del
-                  fornitore in modifica): qui si traduce solo al bordo con
-                  AccountCombobox, che lavora con undefined. */}
-              <AccountCombobox
-                types={['COSTO']}
-                allowNone
-                value={formData.defaultAccountId === 'none' ? undefined : formData.defaultAccountId}
-                onChange={(value) =>
-                  setFormData({ ...formData, defaultAccountId: value ?? 'none' })
-                }
-                placeholder="Seleziona conto..."
-              />
-              <p className="text-xs text-muted-foreground">
-                Conto utilizzato automaticamente nelle uscite
-              </p>
-            </div>
-
-            {/* Termini di pagamento */}
-            <div className="col-span-2 space-y-2">
-              <Label htmlFor="paymentTermsDays">Termini di pagamento (giorni)</Label>
-              <Input
-                id="paymentTermsDays"
-                type="number"
-                min={0}
-                max={365}
-                placeholder="30"
-                value={formData.paymentTermsDays}
-                onChange={(e) =>
-                  setFormData({ ...formData, paymentTermsDays: e.target.value })
-                }
-              />
-              <p className="text-xs text-muted-foreground">
-                Usati per stimare la scadenza quando la fattura non riporta la data di
-                pagamento. Se vuoto si applica il termine ordinario di 30 giorni.
-              </p>
-            </div>
-
-            {/* Stato Attivo */}
-            <div className="col-span-2 flex items-center justify-between pt-2">
-              <div className="space-y-0.5">
-                <Label>Stato</Label>
-                <p className="text-sm text-muted-foreground">
-                  {formData.isActive ? 'Attivo' : 'Inattivo'}
-                </p>
-              </div>
-              <Switch
-                checked={formData.isActive}
-                onCheckedChange={(checked) =>
-                  setFormData({ ...formData, isActive: checked })
-                }
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsDialogOpen(false)}
-              disabled={saving}
-            >
-              Annulla
-            </Button>
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Salvataggio...
-                </>
-              ) : (
-                'Salva'
-              )}
-            </Button>
-          </DialogFooter>
+          {/* Il modulo tiene i propri valori in uno stato interno: senza una
+              chiave diversa, passare da «nuovo» a «modifica» — o da un
+              fornitore all'altro — lascerebbe dentro i valori di prima. */}
+          <AnagraficaForm
+            key={editingSupplier?.id ?? 'nuovo'}
+            variante="fornitore"
+            valoriIniziali={editingSupplier ? { ...editingSupplier } : undefined}
+            onSalva={handleSave}
+            onAnnulla={() => setIsDialogOpen(false)}
+            inCorso={saving}
+          />
         </DialogContent>
       </Dialog>
 

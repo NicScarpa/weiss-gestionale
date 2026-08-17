@@ -675,6 +675,8 @@ model Supplier {
   updatedAt          DateTime                 @default(now()) @updatedAt @map("updated_at")
   country            String?                  @default("IT")
   email              String?
+  phone              String?
+  notes              String?
   iban               String?
   electronicInvoices ElectronicInvoice[]
   priceAlerts        PriceAlert[]
@@ -693,13 +695,20 @@ model Customer {
   denominazione    String
   partitaIva       String?  @map("partita_iva")
   codiceFiscale    String?  @map("codice_fiscale")
+  /// Hash di lookup del codice fiscale: il campo sopra è cifrato, e senza
+  /// questo la ricerca gli passerebbe accanto senza trovarlo mai.
+  codiceFiscaleHash String? @map("codice_fiscale_hash")
   indirizzo        String?
   citta            String?
   cap              String?
   provincia        String?
+  paese            String?  @default("IT")
   email            String?
   telefono         String?
   iban             String?
+  /// Giorni di dilazione concordati, come per il fornitore: servono a stimare
+  /// la scadenza quando il documento non la riporta.
+  paymentTermsDays Int?     @map("payment_terms_days")
   note             String?
   defaultAccountId String?  @map("default_account_id")
   attivo           Boolean  @default(true)
@@ -708,6 +717,7 @@ model Customer {
   defaultAccount   Account? @relation(fields: [defaultAccountId], references: [id])
   counterpartyAliases CounterpartyAlias[] @relation("CounterpartyAliasCustomer")
 
+  @@index([codiceFiscaleHash])
   @@map("customers")
 }
 
