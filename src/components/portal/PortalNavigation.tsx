@@ -42,8 +42,9 @@ const navItems = [
     icon: FileText,
   },
   {
-    // La chiusura cassa vive nella dashboard: è l'unica sezione fuori dal
-    // portale a cui lo staff ha accesso (vedi src/app/(dashboard)/layout.tsx)
+    // La chiusura cassa è l'unica sezione del gestionale fuori dal portale a
+    // cui lo staff ha accesso: sta nel gruppo `(chiusura)` proprio per questo
+    // (vedi src/app/(chiusura)/layout.tsx)
     href: '/chiusura-cassa',
     label: 'Chiusura',
     icon: Receipt,

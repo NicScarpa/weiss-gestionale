@@ -3,163 +3,29 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import {
-  LayoutDashboard,
-  Receipt,
-  BookOpen,
-  FileText,
-  BarChart3,
-  Settings,
-  Users,
-  CreditCard,
-  RefreshCw,
-  CalendarClock,
-  ListChecks,
-  Megaphone,
-} from 'lucide-react'
 import { useState, useEffect, useMemo } from 'react'
-import { useSession } from 'next-auth/react'
 
 import { motion, AnimatePresence } from 'framer-motion'
+import { navigazionePerRuolo, VOCE_IN_FONDO } from './navigation'
 
-// Navigazione principale (Rail)
-const navigationItems = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-  {
-    name: 'Prima Nota',
-    href: '/prima-nota/movimenti',
-    icon: BookOpen,
-    sections: [
-      {
-        title: 'Contabilità',
-        items: [
-          { name: 'Movimenti', href: '/prima-nota/movimenti', icon: BookOpen },
-          { name: 'Pagamenti', href: '/prima-nota/pagamenti', icon: CreditCard },
-          { name: 'Regole', href: '/prima-nota/regole', icon: ListChecks },
-          { name: 'Riconciliazione', href: '/riconciliazione', icon: RefreshCw },
-          { name: 'Chiusure Cassa', href: '/chiusura-cassa', icon: Receipt },
-        ],
-      },
-    ],
-  },
-  {
-    name: 'Fatturazione',
-    href: '/fatture',
-    icon: FileText,
-    sections: [
-      {
-        title: 'Documenti',
-        items: [
-          { name: 'Fatture', href: '/fatture' },
-          { name: 'Prodotti', href: '/prodotti' },
-        ],
-      },
-      {
-        title: 'Configurazione',
-        items: [
-          { name: 'Fornitori', href: '/anagrafiche/fornitori' },
-          { name: 'Clienti', href: '/anagrafiche/clienti' }
-        ]
-      }
-    ],
-  },
-  {
-    name: 'Budget',
-    href: '/budget',
-    icon: BarChart3,
-    sections: [
-      {
-        title: 'Analisi',
-        items: [
-          { name: 'Situazione', href: '/budget' },
-          { name: 'Cash Flow', href: '/cash-flow' },
-          { name: 'Prospetto', href: '/cash-flow/prospetto' },
-          { name: 'Report', href: '/report' },
-        ],
-      },
-      {
-        title: 'Configurazione',
-        items: [
-          // Le spese ricorrenti alimentano la previsione di cassa: senza una
-          // voce di menu il loro CRUD è rimasto per mesi irraggiungibile.
-          { name: 'Spese Ricorrenti', href: '/spese-ricorrenti' },
-          { name: 'Settings Budget', href: '/impostazioni/budget' },
-        ]
-      }
-    ],
-  },
-  {
-    name: 'Personale',
-    icon: Users,
-    sections: [
-      {
-        title: 'Anagrafiche',
-        items: [
-          { name: 'Dipendenti', href: '/anagrafiche/personale' },
-          { name: 'Livelli di Accesso', href: '/anagrafiche/utenti' },
-        ],
-      },
-      {
-        title: 'Gestione',
-        items: [
-          { name: 'Turni', href: '/turni' },
-          { name: 'Ferie/Permessi', href: '/ferie-permessi' },
-          { name: 'Presenze', href: '/presenze' },
-          { name: 'Documenti', href: '/documenti-dipendenti' },
-          { name: 'Comunicazioni', href: '/comunicazioni', icon: Megaphone },
-        ],
-      },
-    ],
-  },
-  {
-    name: 'Scadenzario',
-    href: '/scadenzario',
-    icon: CalendarClock,
-  },
-  {
-    name: 'Impostazioni',
-    href: '/impostazioni/generali',
-    icon: Settings,
-    sections: [
-      {
-        title: 'Configurazione',
-        items: [
-          { name: 'Generali', href: '/impostazioni/generali' },
-          { name: 'Piano dei conti', href: '/impostazioni/conti' },
-          { name: 'Banche e Conti', href: '/impostazioni/banche-e-conti' },
-          { name: 'Budget', href: '/impostazioni/budget' },
-        ],
-      },
-      {
-        title: 'Anagrafiche',
-        items: [
-          { name: 'Anagrafiche', href: '/anagrafiche' },
-        ],
-      },
-    ],
-  },
-]
+interface SidebarProps {
+  /** Ruolo dell'utente, letto dal server nel layout. */
+  role: string
+}
 
-/**
- * Voci visibili allo staff: può compilare la chiusura cassa, ma non ha
- * accesso al resto della dashboard (le API finanziarie gli rispondono 403).
- */
-const STAFF_NAV = [
-  { name: 'Chiusure Cassa', href: '/chiusura-cassa', icon: Receipt },
-  { name: 'Portale', href: '/portale', icon: Users },
-]
-
-export function Sidebar() {
-  const { data: session } = useSession()
-  const isStaff = session?.user?.role === 'staff'
-  const navItems = isStaff ? STAFF_NAV : navigationItems
+export function Sidebar({ role }: SidebarProps) {
+  const navItems = useMemo(() => navigazionePerRuolo(role), [role])
+  const isStaff = role === 'staff'
   const pathname = usePathname()
   const [hoveredItem, setHoveredItem] = useState<string | null>(null)
   const [isSidebarHovered, setIsSidebarHovered] = useState(false)
   const [scaduteCount, setScaduteCount] = useState(0)
 
-  // Fetch scadenze scadute per badge
+  // Fetch scadenze scadute per badge. Lo staff non ha la voce Scadenzario e
+  // l'API gli risponde 403: la chiamata sarebbe solo rumore nei log.
   useEffect(() => {
+    if (isStaff) return
+
     const fetchScadute = async () => {
       try {
         const resp = await fetch('/api/scadenzario/summary')
@@ -172,11 +38,14 @@ export function Sidebar() {
       }
     }
     fetchScadute()
-  }, [pathname]) // Ricarica quando cambia pagina
+  }, [pathname, isStaff]) // Ricarica quando cambia pagina
 
-  // Determina quale voce principale è attiva basandosi sul pathname
+  // Determina quale voce principale è attiva basandosi sul pathname.
+  // Si guarda `navItems`, cioè il menu del ruolo: leggendo la lista completa,
+  // per lo staff sulla chiusura cassa risultava attiva «Prima Nota» e il
+  // pannello a comparsa ne mostrava tutte le sottovoci.
   const activeItem = useMemo(() => {
-    for (const item of navigationItems) {
+    for (const item of navItems) {
       if (item.href === pathname) return item.name
       if (item.sections) {
         for (const section of item.sections) {
@@ -187,15 +56,19 @@ export function Sidebar() {
       }
     }
     return null
-  }, [pathname])
+  }, [pathname, navItems])
 
   const currentDisplayItem = hoveredItem || activeItem
-  const activeNavigation = navigationItems.find(item => item.name === currentDisplayItem)
+  const activeNavigation = navItems.find(item => item.name === currentDisplayItem)
   const hasSubSections = activeNavigation?.sections && activeNavigation.sections.length > 0
 
   return (
+    // Da telefono la barra non c'è: rail (64px) e pannello a comparsa (256px)
+    // sono elementi di un flex row, quindi rubavano fino a 320 dei 390px dello
+    // schermo al contenuto, che finiva incolonnato una parola per riga. Su
+    // mobile la navigazione sta nel cassetto dell'header (`MobileNav`).
     <div
-      className="flex h-full relative"
+      className="hidden md:flex h-full relative"
       onMouseEnter={() => setIsSidebarHovered(true)}
       onMouseLeave={() => { setIsSidebarHovered(false); setHoveredItem(null) }}
     >
@@ -211,7 +84,7 @@ export function Sidebar() {
 
         <nav className="flex-1 w-full flex flex-col px-2">
           <div className="space-y-2">
-            {navItems.filter(item => item.name !== 'Impostazioni').map((item) => {
+            {navItems.filter(item => item.name !== VOCE_IN_FONDO).map((item) => {
               const isActive = activeItem === item.name
               const isHovered = hoveredItem === item.name
               const showBadge = item.name === 'Scadenzario' && scaduteCount > 0
@@ -280,7 +153,7 @@ export function Sidebar() {
 
           {/* Impostazioni - ancorato in basso */}
           <div className="mt-auto pb-2">
-            {navItems.filter(item => item.name === 'Impostazioni').map((item) => {
+            {navItems.filter(item => item.name === VOCE_IN_FONDO).map((item) => {
               const isActive = activeItem === item.name
               const isHovered = hoveredItem === item.name
 

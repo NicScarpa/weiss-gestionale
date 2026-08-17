@@ -78,8 +78,11 @@ export function middleware(request: NextRequest) {
   }
 
   // Il percorso richiesto non è leggibile dai Server Component: lo passiamo
-  // come header così i layout possono decidere in base alla rotta
-  // (es. il layout dashboard consente allo staff la sola chiusura cassa)
+  // come header così i layout possono decidere in base alla rotta (lo usa
+  // `src/app/(auth)/layout.tsx`). Attenzione: NON è un appiglio buono per
+  // l'autorizzazione, perché su navigazione lato client i layout condivisi non
+  // vengono rieseguiti — le sezioni riservate si separano per gruppo di rotte,
+  // vedi il commento in `src/app/(dashboard)/layout.tsx`.
   const requestHeaders = new Headers(request.headers)
   requestHeaders.set('x-pathname', pathname)
 

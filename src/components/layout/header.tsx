@@ -17,8 +17,14 @@ import { Badge } from '@/components/ui/badge'
 import { OfflineIndicator } from '@/components/OfflineIndicator'
 import { NotificationBell } from '@/components/notifications/NotificationBell'
 import { ThemeToggle } from '@/components/theme/theme-toggle'
+import { MobileNav } from './mobile-nav'
 
-export function Header() {
+interface HeaderProps {
+  /** Ruolo dell'utente, letto dal server nel layout: decide le voci del menu. */
+  role: string
+}
+
+export function Header({ role }: HeaderProps) {
   const { data: session } = useSession()
 
   const initials = session?.user
@@ -29,18 +35,26 @@ export function Header() {
     signOut({ callbackUrl: '/login' })
   }
 
+  // Lo staff vede questo header sulla chiusura cassa, ma `/profilo` sta nella
+  // dashboard e per lui finisce in un rimando al portale: il suo profilo è
+  // quello del portale.
+  const profiloHref = role === 'staff' ? '/portale/profilo' : '/profilo'
+
   return (
-    <header className="h-16 border-b bg-card flex items-center justify-between px-6">
-      <div className="flex items-center gap-4">
+    <header className="h-16 border-b bg-card flex items-center justify-between gap-2 px-3 md:px-6">
+      <div className="flex min-w-0 items-center gap-2 md:gap-4">
+        <MobileNav role={role} />
         {session?.user?.venueName && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Building2 className="h-4 w-4" />
-            <span>{session.user.venueName}</span>
+          <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+            <Building2 className="h-4 w-4 shrink-0" />
+            {/* Da telefono il nome sede compete con cinque controlli sulla
+                stessa riga: tronca invece di spingerli fuori dallo schermo. */}
+            <span className="truncate">{session.user.venueName}</span>
           </div>
         )}
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex shrink-0 items-center gap-1 md:gap-4">
         <OfflineIndicator />
         <ThemeToggle />
         <NotificationBell />
@@ -70,7 +84,7 @@ export function Header() {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild className="cursor-pointer">
-              <Link href="/profilo">
+              <Link href={profiloHref}>
                 <User className="mr-2 h-4 w-4" />
                 <span>Profilo</span>
               </Link>

@@ -1,17 +1,27 @@
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
-import { headers } from 'next/headers'
-import { Sidebar } from '@/components/layout/sidebar'
-import { Header } from '@/components/layout/header'
+import { AppShell } from '@/components/layout/app-shell'
 
 /**
- * Sezioni della dashboard accessibili anche allo staff.
- * La chiusura cassa la compila chi lavora in sala a fine turno: è il flusso
- * previsto dal prodotto. La validazione, che genera le scritture contabili,
- * resta riservata ad admin e manager (vedi /api/chiusure/[id]/validate).
+ * La dashboard è riservata ad admin e manager: allo staff non serve nessun
+ * elenco di eccezioni, va al portale e basta.
+ *
+ * Prima qui c'era un elenco (`STAFF_ALLOWED_PATHS = ['/chiusura-cassa']`)
+ * confrontato con l'header `x-pathname`, e non teneva: per la *partial
+ * rendering* di Next un layout non viene rieseguito quando si naviga fra due
+ * rotte che lo condividono (vedi «Layouts and auth checks» nella guida
+ * all'autenticazione di Next 16). Dalla chiusura cassa — che stava dentro
+ * questo gruppo — un tocco sul menu portava lo staff su `/prima-nota/movimenti`
+ * senza che questo controllo venisse mai eseguito: la pagina si apriva davvero,
+ * con i dati caricati dal server.
+ *
+ * Ora la chiusura cassa vive nel gruppo `(chiusura)`, che ha il suo layout:
+ * lo staff non ha mai questo layout nell'albero del router, quindi qualunque
+ * navigazione verso la dashboard lo monta da zero e il controllo scatta. Se
+ * domani una sezione dovrà essere aperta allo staff, va aggiunta a
+ * `(chiusura)`, non qui — il test in `src/app/__tests__/accesso-staff.test.ts`
+ * lo verifica.
  */
-const STAFF_ALLOWED_PATHS = ['/chiusura-cassa']
-
 export default async function DashboardLayout({
   children,
 }: {
@@ -25,24 +35,8 @@ export default async function DashboardLayout({
   }
 
   if (session.user.role === 'staff') {
-    const pathname = (await headers()).get('x-pathname') ?? ''
-    const allowed = STAFF_ALLOWED_PATHS.some(
-      (p) => pathname === p || pathname.startsWith(`${p}/`)
-    )
-    if (!allowed) {
-      redirect('/portale')
-    }
+    redirect('/portale')
   }
 
-  return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header />
-        <main className="flex-1 overflow-auto bg-background p-6">
-          {children}
-        </main>
-      </div>
-    </div>
-  )
+  return <AppShell role={session.user.role}>{children}</AppShell>
 }

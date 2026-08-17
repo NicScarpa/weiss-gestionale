@@ -21,6 +21,15 @@ export default async function PrimaNotaLayout({
     redirect('/login')
   }
 
+  // Doppia difesa: qui sotto si leggono i saldi di cassa e banca, cioè gli
+  // stessi dati che le API di prima nota concedono solo ad admin e manager. Il
+  // gruppo `(dashboard)` allontana già lo staff, ma il controllo sta anche
+  // accanto ai dati — un layout non è un cancello affidabile da solo, perché
+  // non viene rieseguito quando si naviga fra rotte che lo condividono.
+  if (session.user.role !== 'admin' && session.user.role !== 'manager') {
+    redirect('/portale')
+  }
+
   const venueId = await getVenueId()
   const isAdmin = session.user.role === 'admin'
 
