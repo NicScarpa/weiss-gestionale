@@ -35,6 +35,8 @@ import { FiltriEstrattoConto as PannelloFiltri } from './FiltriEstrattoConto'
 import { SelettoreColonne } from './SelettoreColonne'
 import { TabellaEstrattoConto } from './TabellaEstrattoConto'
 import { CategorizzaDialog, type BersaglioCategorizza } from './CategorizzaDialog'
+import { CollegaFatturaDialog } from './CollegaFatturaDialog'
+import { ScollegaDialog } from './ScollegaDialog'
 import { BarraSelezione, type AzioneInBlocco } from './BarraSelezione'
 import { PaginazioneEstrattoConto } from './PaginazioneEstrattoConto'
 import { LegendaStati } from './LegendaStati'
@@ -164,6 +166,8 @@ export function EstrattoConto({ venueId, filtriIniziali, onFiltriChange }: Estra
   const [nuovoAperto, impostaNuovoAperto] = useState(false)
   const [importaAperto, impostaImportaAperto] = useState(false)
   const [daCategorizzare, impostaDaCategorizzare] = useState<BersaglioCategorizza | null>(null)
+  const [daCollegare, impostaDaCollegare] = useState<RigaEstrattoConto | null>(null)
+  const [daScollegare, impostaDaScollegare] = useState<RigaEstrattoConto | null>(null)
 
   const queryClient = useQueryClient()
   /** Dopo ogni azione la lista si rilegge: i conteggi e i totali cambiano con lei. */
@@ -391,6 +395,8 @@ export function EstrattoConto({ venueId, filtriIniziali, onFiltriChange }: Estra
             )
           }
           onCategorizza={(riga) => impostaDaCategorizzare({ tipo: 'riga', riga })}
+          onCollega={(riga) => impostaDaCollegare(riga)}
+          onScollega={(riga) => impostaDaScollegare(riga)}
         />
       )}
       {totalePagine > 1 && (
@@ -425,6 +431,18 @@ export function EstrattoConto({ venueId, filtriIniziali, onFiltriChange }: Estra
           impostaTutteDelFiltro(false)
           ricarica()
         }}
+      />
+      <CollegaFatturaDialog
+        riga={daCollegare}
+        open={!!daCollegare}
+        onOpenChange={(aperto) => !aperto && impostaDaCollegare(null)}
+        onFatto={ricarica}
+      />
+      <ScollegaDialog
+        riga={daScollegare}
+        open={!!daScollegare}
+        onOpenChange={(aperto) => !aperto && impostaDaScollegare(null)}
+        onFatto={ricarica}
       />
     </div>
   )

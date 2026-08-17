@@ -449,4 +449,27 @@ describe('EstrattoConto', () => {
     await cliccare(perTesto('Categorizza', 'button'))
     await attendiChe(() => testoDellaPagina().includes('Categorizza 1 movimento'), 'il dialogo')
   })
+
+  it('Collega fattura sulla riga libera, Scollega su quella collegata, «Collega altra fattura» sulla parziale', async () => {
+    const collegata = riga('3', { matchedEntryId: 'e1', status: 'MANUAL', stato: 'abbinato_manualmente', residuo: 0, residuoDocumenti: 0, origineScrittura: 'COLLEGA',
+      matchedEntry: { id: 'e1', date: '2026-08-14', description: 'x', debitAmount: 907.9, creditAmount: null, documentRef: null, account: null, costCenter: null, fette: 0 } })
+    const parziale = riga('4', { amount: -100, matchedEntryId: 'e2', status: 'MANUAL', stato: 'parziale', residuo: 40, residuoDocumenti: 40, origineScrittura: 'COLLEGA',
+      matchedEntry: { id: 'e2', date: '2026-08-14', description: 'y', debitAmount: null, creditAmount: 100, documentRef: null, account: null, costCenter: null, fette: 0 } })
+    stubTutto({ ...RISPOSTA, data: [riga('1'), collegata, parziale] })
+    await montare(<EstrattoConto venueId="v1" filtriIniziali={FILTRI_DEFAULT} />)
+    await attendiChe(() => testoDellaPagina().includes('DITTA 1'), 'le righe')
+
+    expect(document.querySelectorAll('button[aria-label="Collega fattura"]')).toHaveLength(1)
+    expect(document.querySelectorAll('button[aria-label="Scollega"]')).toHaveLength(2)
+    expect(testoDellaPagina()).toContain('40,00') // il residuo accanto allo stato parziale
+
+    await cliccare(document.querySelector('button[aria-label="Collega fattura"]'))
+    await attendiChe(() => testoDellaPagina().includes('Collega fattura') && testoDellaPagina().includes('Fattura / scadenza'), 'il dialogo Collega')
+
+    // Scollega chiede conferma e poi chiama la rotta.
+    await cliccare(document.querySelectorAll('button[aria-label="Scollega"]')[0])
+    await attendiChe(() => testoDellaPagina().includes('Scollegare il movimento?'), 'la conferma')
+    await cliccare(perTesto('Scollega', '[role="alertdialog"] button'))
+    await attendiChe(() => richieste.some((r) => r.url === '/api/bank-transactions/3/scollega' && r.init?.method === 'POST'), 'la rotta di scollegamento')
+  })
 })

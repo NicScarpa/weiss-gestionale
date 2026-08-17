@@ -1,7 +1,7 @@
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 import Link from 'next/link'
-import { ArrowDownLeft, ArrowUpRight, Pencil, Trash2, RotateCcw, MoreHorizontal, Tag, ArrowLeftRight } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Pencil, Trash2, RotateCcw, MoreHorizontal, Tag, ArrowLeftRight, Link2, Unlink } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -37,6 +37,8 @@ interface Props {
   onCestino: (riga: RigaEstrattoConto) => void
   onRipristina: (riga: RigaEstrattoConto) => void
   onCategorizza: (riga: RigaEstrattoConto) => void
+  onCollega: (riga: RigaEstrattoConto) => void
+  onScollega: (riga: RigaEstrattoConto) => void
 }
 
 const SEZIONI: Array<{ valore: SezioneMovimentoBancario; etichetta: string }> = [
@@ -96,7 +98,19 @@ export function TabellaEstrattoConto(p: Props) {
                 <Button variant="ghost" size="icon" aria-label="Modifica" onClick={() => p.onModifica(r)}>
                   <Pencil className="h-4 w-4" aria-hidden />
                 </Button>
-                {/* Qui, fra Modifica e il menu, il Task 8 mette Collega fattura / Scollega. */}
+                {/* Collega fattura / Scollega: l'icona cambia con lo stato del
+                    legame (spec, «Le azioni»); una proposta da rivedere non è un
+                    legame. Nel Cestino non si tocca la contabilità. */}
+                {!p.filtri.cestino &&
+                  (r.matchedEntryId && !r.proposta ? (
+                    <Button variant="ghost" size="icon" aria-label="Scollega" onClick={() => p.onScollega(r)}>
+                      <Unlink className="h-4 w-4" aria-hidden />
+                    </Button>
+                  ) : (
+                    <Button variant="ghost" size="icon" aria-label="Collega fattura" onClick={() => p.onCollega(r)}>
+                      <Link2 className="h-4 w-4" aria-hidden />
+                    </Button>
+                  ))}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="icon" aria-label="Altre azioni">
@@ -110,6 +124,14 @@ export function TabellaEstrattoConto(p: Props) {
                           <Tag className="mr-2 h-4 w-4" aria-hidden />
                           Categorizza
                         </DropdownMenuItem>
+                        {/* Un bonifico che copre più fatture si può completare senza
+                            scollegare: la promozione riusa la scrittura. */}
+                        {r.stato === 'parziale' && (
+                          <DropdownMenuItem onClick={() => p.onCollega(r)}>
+                            <Link2 className="mr-2 h-4 w-4" aria-hidden />
+                            Collega altra fattura
+                          </DropdownMenuItem>
+                        )}
                         {/* Riconcilia porta allo strumento, filtrato su questa
                             riga: oggi la pagina di riconciliazione, domani la
                             coda delle proposte allo stesso indirizzo. Solo
