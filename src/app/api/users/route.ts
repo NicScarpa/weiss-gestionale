@@ -12,8 +12,8 @@ import {
 } from '@/lib/utils/permissions'
 import {
   generateUniqueUsername,
-  generateAdminUsername,
-  shouldUseEmailAsUsername,
+  normalizzaUsernameScelto,
+  usernameValido,
 } from '@/lib/utils/username'
 
 import { checkRequestRateLimit, RATE_LIMIT_CONFIGS } from '@/lib/api-utils'
@@ -48,6 +48,10 @@ const createUserSchema = z.object({
   fiscalCode: z.string().optional().nullable(),
   vatNumber: z.string().optional().nullable(),
   skills: z.array(z.string()).optional(),
+  // Lo username proposto si può correggere: nei casi veri chi conosce le
+  // persone sceglie meglio di una regola, e `rossi.mario2` non si detta
+  // volentieri a voce. Assente, lo genera il sistema.
+  username: z.string().optional().nullable(),
   canWorkAlone: z.boolean().optional(),
   canHandleCash: z.boolean().optional(),
 })
@@ -217,10 +221,33 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Genera username
+    // Lo username: quello scelto a mano se c'è, altrimenti `cognome.nome`.
+    //
+    // La regola vale per tutti i ruoli. Fino al 17 agosto 2026 admin e manager
+    // prendevano l'**email** come username (`shouldUseEmailAsUsername`): due
+    // regole per la stessa cosa, e nemmeno applicate in modo uniforme, visto che
+    // l'altro percorso di creazione non la conosceva.
     let username: string
-    if (shouldUseEmailAsUsername(validatedData.role)) {
-      username = generateAdminUsername(validatedData.email!)
+    if (validatedData.username) {
+      username = normalizzaUsernameScelto(validatedData.username)
+
+      if (!usernameValido(username)) {
+        return NextResponse.json(
+          {
+            error:
+              'Username non valido: sono ammesse solo lettere e cifre minuscole separate da punti singoli, da 3 a 40 caratteri.',
+          },
+          { status: 400 }
+        )
+      }
+
+      const occupato = await prisma.user.findUnique({ where: { username }, select: { id: true } })
+      if (occupato) {
+        return NextResponse.json(
+          { error: `Username «${username}» già in uso: scegline un altro.` },
+          { status: 409 }
+        )
+      }
     } else {
       username = await generateUniqueUsername(
         prisma,

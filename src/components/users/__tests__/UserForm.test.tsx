@@ -64,6 +64,71 @@ function vociAperte(): string[] {
   )
 }
 
+/** Il campo dello username, che in creazione è precompilato ma modificabile. */
+function campoUsername(): HTMLInputElement {
+  const input = document.querySelector<HTMLInputElement>('#username')
+  if (!input) throw new Error('Campo username non trovato')
+  return input
+}
+
+function scrivi(campo: HTMLElement, valore: string) {
+  fireEvent.change(campo, { target: { value: valore } })
+}
+
+describe('UserForm - lo username', () => {
+  async function monta(onSubmit: (dati: Record<string, unknown>) => Promise<void> = async () => {}) {
+    await act(async () => {
+      render(
+        <UserForm
+          mode="create"
+          onSubmit={onSubmit as never}
+          onCancel={() => {}}
+        />
+      )
+    })
+  }
+
+  it('si compila da sé mentre si scrivono nome e cognome', async () => {
+    await monta()
+
+    await act(async () => {
+      scrivi(document.querySelector('#firstName')!, 'Ludovica')
+      scrivi(document.querySelector('#lastName')!, 'Sartorel')
+    })
+
+    expect(campoUsername().value).toBe('sartorel.ludovica')
+  })
+
+  it('si può correggere a mano', async () => {
+    // È la ragione per cui il campo esiste: nei casi veri chi conosce le persone
+    // sceglie meglio di una regola, e `rossi.mario2` non si detta volentieri.
+    await monta()
+
+    await act(async () => {
+      scrivi(document.querySelector('#firstName')!, 'Ludovica')
+      scrivi(document.querySelector('#lastName')!, 'Sartorel')
+      scrivi(campoUsername(), 'ludo.sala')
+    })
+
+    expect(campoUsername().value).toBe('ludo.sala')
+  })
+
+  it('una volta corretto non si fa sovrascrivere dai campi nome', async () => {
+    // Senza questo, bastava correggere il cognome dopo aver scelto lo username
+    // per ritrovarsi la scelta cancellata senza un avviso.
+    await monta()
+
+    await act(async () => {
+      scrivi(document.querySelector('#firstName')!, 'Ludovica')
+      scrivi(document.querySelector('#lastName')!, 'Sartorel')
+      scrivi(campoUsername(), 'ludo.sala')
+      scrivi(document.querySelector('#lastName')!, 'Trevisan')
+    })
+
+    expect(campoUsername().value).toBe('ludo.sala')
+  })
+})
+
 describe('UserForm - tendina Sede', () => {
   it('elenca le sedi restituite da /api/venues', async () => {
     await act(async () => {
