@@ -7,12 +7,23 @@ vi.mock('@/lib/auth', () => ({ auth: vi.fn() }))
 vi.mock('@/lib/audit', () => ({ createAuditLog: vi.fn() }))
 vi.mock('@/lib/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 vi.mock('@/lib/scadenzario/stima-data-attesa', () => ({ ricalcolaStimeFornitore: vi.fn() }))
+// Il centro di costo si risolve prima di scrivere: qui risponde sempre bene,
+// il caso in cui rifiuta è coperto dal test d'integrazione sul database vero.
+vi.mock('@/lib/services/cost-center-service', () => ({
+  risolviCentroDiCosto: vi.fn(async () => ({
+    outcome: 'ok',
+    costCenterId: 'centro-1',
+    origine: 'piano',
+  })),
+}))
 // `$queryRaw` copre il SELECT ... FOR UPDATE con cui la route blocca la
 // scadenza; `$transaction` esegue la callback passandole il mock stesso.
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     schedule: { findFirst: vi.fn(), update: vi.fn(), count: vi.fn() },
     schedulePayment: { create: vi.fn(), aggregate: vi.fn() },
+    journalEntry: { create: vi.fn(async () => ({ id: 'mov-1' })) },
+    scheduleReconciliation: { create: vi.fn() },
     electronicInvoice: { update: vi.fn(), findFirst: vi.fn() },
     $queryRaw: vi.fn(),
     $transaction: vi.fn(),
@@ -29,7 +40,9 @@ const sessione = { user: { id: 'user-1', role: 'admin' } } as unknown as Session
 function pagamento(importo: number) {
   const request = new NextRequest('http://localhost:3000/api/scadenzario/sched-1/pagamenti', {
     method: 'POST',
-    body: JSON.stringify({ importo, dataPagamento: '2026-08-01' }),
+    // `accountId` è obbligatorio da quando il pagamento genera anche la
+    // scrittura di prima nota: senza, la route rifiuta con 400.
+    body: JSON.stringify({ importo, dataPagamento: '2026-08-01', accountId: 'conto-1' }),
   })
   return { request, context: { params: Promise.resolve({ id: 'sched-1' }) } }
 }

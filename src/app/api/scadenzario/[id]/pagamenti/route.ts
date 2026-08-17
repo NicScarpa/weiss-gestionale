@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { risolviCentroDiCosto } from '@/lib/services/cost-center-service'
+import { toDebitCredit } from '@/lib/prima-nota-utils'
+import type { EntryType, RegisterType } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { createAuditLog } from '@/lib/audit'
 import { formatCurrency } from '@/lib/formatters'
@@ -19,7 +23,16 @@ const createPaymentSchema = z.object({
   metodo: z.enum(['bonifico', 'riba', 'sdd', 'carta', 'contanti', 'f24', 'assegno', 'bollettino', 'credito_fiscale', 'senza_incasso', 'altro']).optional(),
   riferimento: z.string().optional(),
   note: z.string().optional(),
+  /// Obbligatorio: il pagamento nasce anche come scrittura di prima nota, e la
+  /// scadenza non porta con sé un conto su cui imputarla.
+  accountId: z.string().min(1, 'Conto obbligatorio'),
+  costCenterId: z.string().optional().nullable(),
 })
+
+/** Solo i contanti passano dalla cassa; ogni altro strumento muove la banca. */
+function registroDelMetodo(metodo: string | undefined): RegisterType {
+  return metodo === 'contanti' ? 'CASH' : 'BANK'
+}
 
 // GET /api/scadenzario/[id]/pagamenti - Lista pagamenti di una scadenza
 export async function GET(
@@ -112,6 +125,18 @@ export async function POST(
         } as const
       }
 
+      // Il centro di costo si risolve PRIMA di scrivere qualunque cosa: se non
+      // si risolve, la transazione non deve lasciare la scadenza pagata e i
+      // libri all'oscuro. O entrano insieme, o non entra nulla.
+      const centro = await risolviCentroDiCosto(
+        tx,
+        { accountId: validatedData.accountId, costCenterId: validatedData.costCenterId },
+        'interattivo'
+      )
+      if (centro.outcome === 'invalid') {
+        return { errore: 'imputazione', messaggio: centro.motivo } as const
+      }
+
       const payment = await tx.schedulePayment.create({
         data: {
           scheduleId: id,
@@ -123,13 +148,68 @@ export async function POST(
         },
       })
 
+      // La scrittura di prima nota, e il ponte che la lega alla scadenza: sono
+      // gli stessi due oggetti che produce la riconciliazione partendo dal
+      // movimento bancario. Le due direzioni devono lasciare la stessa
+      // struttura dietro di sé, non due modi diversi di dire la stessa cosa.
+      const registerType = registroDelMetodo(validatedData.metodo)
+      // La scadenza attiva è denaro che entra, la passiva denaro che esce.
+      const entryType: EntryType = schedule.tipo === 'attiva' ? 'INCASSO' : 'USCITA'
+      const { debitAmount, creditAmount } = toDebitCredit(
+        registerType,
+        entryType,
+        new Prisma.Decimal(validatedData.importo.toFixed(2))
+      )
+
+      const scrittura = await tx.journalEntry.create({
+        data: {
+          venueId: schedule.venueId,
+          date: dataPagamento,
+          registerType,
+          entryType,
+          description: schedule.descrizione,
+          documentRef: validatedData.riferimento ?? schedule.numeroDocumento ?? null,
+          counterpartName: schedule.controparteNome ?? null,
+          debitAmount,
+          creditAmount,
+          accountId: validatedData.accountId,
+          costCenterId: centro.costCenterId,
+          costCenterSource: centro.origine,
+          categorizationSource: 'manual',
+          createdById: session.user.id,
+          notes: validatedData.note ?? null,
+        },
+      })
+
+      await tx.scheduleReconciliation.create({
+        data: {
+          scheduleId: id,
+          journalEntryId: scrittura.id,
+          amount: new Prisma.Decimal(validatedData.importo.toFixed(2)),
+          status: 'VERIFIED',
+          source: 'MANUAL',
+          paymentId: payment.id,
+          createdById: session.user.id,
+        },
+      })
+
       const stato = await ricalcolaStatoSchedule(tx, id)
-      return { payment, stato: stato! } as const
+      return { payment, scrittura, stato: stato! } as const
     })
 
     if ('errore' in esito) {
       if (esito.errore === 'not_found') {
         return NextResponse.json({ error: 'Scadenza non trovata' }, { status: 404 })
+      }
+      if (esito.errore === 'imputazione') {
+        return NextResponse.json(
+          {
+            error:
+              `${esito.messaggio} Il pagamento non è stato registrato: la scadenza ` +
+              `e la prima nota devono muoversi insieme.`,
+          },
+          { status: 422 }
+        )
       }
       // 422 e non 400: la richiesta è ben formata, è l'importo a non stare in
       // piedi rispetto a quanto resta da pagare

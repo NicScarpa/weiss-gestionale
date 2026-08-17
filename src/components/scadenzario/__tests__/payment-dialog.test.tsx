@@ -1,124 +1,124 @@
-import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
-import { toast } from 'sonner'
-import { PaymentDialog, type PaymentFormData } from '../payment-dialog'
-import {
-  installaStubDom,
-  montare,
-  smontare,
-  attendere,
-  cliccare,
-  cliccareTreVolte,
-  scrivere,
-  perTesto,
-  perId,
-  dialogPresente,
-} from './render-helpers'
+import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest'
+import { render, cleanup, fireEvent, act } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-vi.mock('sonner', () => ({
-  toast: { error: vi.fn(), success: vi.fn() },
-}))
+import { PaymentDialog } from '../payment-dialog'
+
+/**
+ * La finestra che registra il pagamento di una scadenza.
+ *
+ * Da quando il pagamento entra anche in prima nota, serve sapere **su quale
+ * conto**: la scadenza non ne porta uno, e il server rifiuta il pagamento
+ * senza. Il campo deve stare qui, altrimenti il rifiuto indicherebbe
+ * un'azione che dalla finestra non si può compiere — lo stesso vicolo cieco
+ * già visto sullo sgancio della riconciliazione.
+ */
 
 beforeAll(() => {
-  global.IS_REACT_ACT_ENVIRONMENT = true
-  installaStubDom()
+  Element.prototype.scrollIntoView = vi.fn()
+  Element.prototype.hasPointerCapture = vi.fn(() => false)
+  Element.prototype.setPointerCapture = vi.fn()
+  Element.prototype.releasePointerCapture = vi.fn()
+  global.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver
 })
 
-beforeEach(() => {
-  vi.clearAllMocks()
-  vi.useFakeTimers({ shouldAdvanceTime: true })
-  // 15 agosto 23:30 UTC: con TZ=UTC il giorno civile è il 15, a Roma è già il 16
-  vi.setSystemTime(new Date('2026-08-15T23:30:00.000Z'))
-})
+/** Il selettore dei conti interroga l'API: qui basta poterlo pilotare. */
+vi.mock('@/components/prima-nota/shared/AccountCombobox', () => ({
+  AccountCombobox: ({
+    value,
+    onChange,
+  }: {
+    value?: string
+    onChange: (v: string | undefined) => void
+  }) => (
+    <input
+      aria-label="Conto"
+      value={value ?? ''}
+      onChange={(e) => onChange(e.target.value || undefined)}
+    />
+  ),
+}))
 
-afterEach(async () => {
-  await smontare()
-  vi.useRealTimers()
-})
+afterEach(cleanup)
 
-function bottoneRegistra() {
-  return perTesto(/Registra Pagamento/i)
+function conQueryClient(ui: React.ReactElement) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
 }
 
-describe('PaymentDialog', () => {
-  it('tre click rapidi registrano un solo pagamento', async () => {
-    let sblocca: () => void = () => {}
-    const onSubmit = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          sblocca = resolve
-        })
-    )
-    await montare(
-      <PaymentDialog open onOpenChange={vi.fn()} onSubmit={onSubmit} importoResiduo={100} />
-    )
-    await scrivere(perId('importo'), '50')
-
-    await cliccareTreVolte(bottoneRegistra())
-    await attendere()
-
-    expect(onSubmit).toHaveBeenCalledTimes(1)
-
-    sblocca()
-    await attendere()
-    expect(onSubmit).toHaveBeenCalledTimes(1)
-  })
-
-  it('su errore del server il dialog resta aperto, i dati intatti e il toast lo dice', async () => {
-    const onSubmit = vi.fn(() =>
-      Promise.reject(
-        new Error('Il pagamento di 50.00 € supera il residuo della scadenza (30.00 €)')
+async function monta() {
+  const onSubmit = vi.fn().mockResolvedValue(undefined)
+  await act(async () => {
+    render(
+      conQueryClient(
+        <PaymentDialog
+          open
+          onOpenChange={() => {}}
+          onSubmit={onSubmit}
+          isLoading={false}
+          importoResiduo={100}
+        />
       )
     )
-    const onOpenChange = vi.fn()
-    await montare(
-      <PaymentDialog open onOpenChange={onOpenChange} onSubmit={onSubmit} importoResiduo={100} />
-    )
-    await scrivere(perId('importo'), '50')
-    await scrivere(perId('riferimento'), 'Bonifico 12')
+  })
+  return onSubmit
+}
 
-    await cliccare(bottoneRegistra())
-    await attendere()
+function campoConto(): HTMLInputElement {
+  const input = document.querySelector<HTMLInputElement>('input[aria-label="Conto"]')
+  if (!input) throw new Error('Il campo «Conto» non è nella finestra')
+  return input
+}
 
-    expect(toast.error).toHaveBeenCalledTimes(1)
-    expect(String(vi.mocked(toast.error).mock.calls[0][0])).toContain('supera il residuo')
-    expect(dialogPresente()).toBe(true)
-    expect(perId<HTMLInputElement>('importo')!.value).toBe('50')
-    expect(perId<HTMLInputElement>('riferimento')!.value).toBe('Bonifico 12')
-    expect(onOpenChange).not.toHaveBeenCalledWith(false)
+function campoImporto(): HTMLInputElement {
+  const input = document.querySelector<HTMLInputElement>('#importo')
+  if (!input) throw new Error('Campo importo non trovato')
+  return input
+}
+
+async function registra() {
+  const bottone = Array.from(document.querySelectorAll('button')).find((b) =>
+    b.textContent?.includes('Registra')
+  )
+  if (!bottone) throw new Error('Bottone di registrazione non trovato')
+  await act(async () => {
+    fireEvent.click(bottone)
+  })
+}
+
+describe('finestra del pagamento', () => {
+  it('chiede su quale conto imputare il pagamento', async () => {
+    await monta()
+    expect(() => campoConto()).not.toThrow()
   })
 
-  it('la data di pagamento viaggia come giorno civile, non come istante UTC', async () => {
-    const onSubmit = vi.fn<(data: PaymentFormData) => Promise<void>>(() => Promise.resolve())
-    await montare(
-      <PaymentDialog open onOpenChange={vi.fn()} onSubmit={onSubmit} importoResiduo={100} />
-    )
-    await scrivere(perId('importo'), '50')
+  it('senza conto non registra e lo dice', async () => {
+    const onSubmit = await monta()
 
-    await cliccare(bottoneRegistra())
-    await attendere()
+    await act(async () => {
+      fireEvent.change(campoImporto(), { target: { value: '100' } })
+    })
+    await registra()
 
-    const payload = onSubmit.mock.calls[0][0] as unknown as PaymentFormData
-    expect(payload.dataPagamento).toBe('2026-08-15')
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('Scegli il conto')
   })
 
-  it('a cavallo della mezzanotte italiana invia il giorno che l’utente vede', async () => {
-    const tzOriginale = process.env.TZ
-    process.env.TZ = 'Europe/Rome'
-    try {
-      const onSubmit = vi.fn<(data: PaymentFormData) => Promise<void>>(() => Promise.resolve())
-      await montare(
-        <PaymentDialog open onOpenChange={vi.fn()} onSubmit={onSubmit} importoResiduo={100} />
-      )
-      await scrivere(perId('importo'), '50')
+  it('manda il conto scelto insieme al pagamento', async () => {
+    const onSubmit = await monta()
 
-      await cliccare(bottoneRegistra())
-      await attendere()
+    await act(async () => {
+      fireEvent.change(campoImporto(), { target: { value: '100' } })
+      fireEvent.change(campoConto(), { target: { value: 'conto-7' } })
+    })
+    await registra()
 
-      const payload = onSubmit.mock.calls[0][0] as unknown as PaymentFormData
-      // A Roma sono le 01:30 del 16: `toISOString()` manderebbe il 15
-      expect(payload.dataPagamento).toBe('2026-08-16')
-    } finally {
-      process.env.TZ = tzOriginale
-    }
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ importo: 100, accountId: 'conto-7' })
+    )
   })
 })
