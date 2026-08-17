@@ -2,8 +2,25 @@
 
 import * as React from 'react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { formatCurrency } from '@/lib/formatters'
 import { SOGLIE, fascia, type Fascia } from '@/lib/reconciliation/scala'
-import type { ContatoriLotto, PropostaDiRiconciliazione } from '@/types/riconciliazione-assistita'
+import {
+  importoNumerico,
+  type ContatoriLotto,
+  type PropostaDiRiconciliazione,
+} from '@/types/riconciliazione-assistita'
 import { SchedaProposta } from './SchedaProposta'
 
 /**
@@ -34,6 +51,12 @@ interface Props {
   onScarta: (id: string, opzioni: { perSempre: boolean; motivo?: string }) => Promise<void>
   /** Con un id, la coda mostra solo le proposte di quella riga bancaria. */
   movimento?: string | null
+  /**
+   * Senza questa, la coda funziona esattamente come prima e non mostra alcuna
+   * casella: la selezione è una capacità in più, non un cambio di
+   * funzionamento.
+   */
+  onApprovaInBlocco?: (ids: string[]) => Promise<void>
 }
 
 const ETICHETTE: Array<{ valore: FiltroFascia; testo: string }> = [
@@ -59,6 +82,7 @@ export function CodaProposte({
   onApprova,
   onScarta,
   movimento,
+  onApprovaInBlocco,
 }: Props) {
   const inAttesa = React.useMemo(() => {
     const daDecidere = proposte.filter((p) => p.stato === 'in_attesa')
@@ -90,6 +114,46 @@ export function CodaProposte({
   const visibili =
     fasciaScelta === 'tutte' ? inAttesa : inAttesa.filter((p) => fascia(p.punteggio) === fasciaScelta)
 
+  const [selezionate, setSelezionate] = React.useState<ReadonlySet<string>>(new Set())
+  const [chiedeConferma, setChiedeConferma] = React.useState(false)
+  const [inCorso, setInCorso] = React.useState(false)
+
+  // La selezione vive sugli id, non sugli indici, e si restringe da sé a ciò
+  // che è ancora visibile: cambiando fascia o dopo un'approvazione, una
+  // selezione che sopravvive a schermate diverse farebbe partire un'azione su
+  // proposte che chi guarda non ha più davanti.
+  const scelte = React.useMemo(
+    () => visibili.filter((p) => selezionate.has(p.id)),
+    [visibili, selezionate]
+  )
+
+  const totale = scelte.reduce((somma, p) => somma + Math.abs(importoNumerico(p.bankTransaction?.amount)), 0)
+
+  const commuta = (id: string) =>
+    setSelezionate((prima) => {
+      const dopo = new Set(prima)
+      if (dopo.has(id)) dopo.delete(id)
+      else dopo.add(id)
+      return dopo
+    })
+
+  const tutteVisibiliScelte = visibili.length > 0 && scelte.length === visibili.length
+
+  const commutaTutte = () =>
+    setSelezionate(tutteVisibiliScelte ? new Set() : new Set(visibili.map((p) => p.id)))
+
+  const approvaScelte = async () => {
+    if (!onApprovaInBlocco) return
+    setInCorso(true)
+    try {
+      await onApprovaInBlocco(scelte.map((p) => p.id))
+      setSelezionate(new Set())
+      setChiedeConferma(false)
+    } finally {
+      setInCorso(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -117,6 +181,35 @@ export function CodaProposte({
         </Tabs>
       </div>
 
+      {onApprovaInBlocco && visibili.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/50 px-3 py-2">
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox
+              data-seleziona-tutte=""
+              checked={tutteVisibiliScelte}
+              onCheckedChange={commutaTutte}
+              aria-label={`Seleziona tutte le proposte in questa fascia (${visibili.length})`}
+            />
+            Seleziona tutte ({visibili.length})
+          </label>
+
+          {scelte.length > 0 && (
+            <>
+              <span className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground tabular-nums">{scelte.length}</span>{' '}
+                selezionate ·{' '}
+                <span className="font-medium text-foreground tabular-nums">
+                  {formatCurrency(totale)}
+                </span>
+              </span>
+              <Button size="sm" className="ml-auto" onClick={() => setChiedeConferma(true)}>
+                Approva selezionate
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+
       {visibili.length === 0 ? (
         <p className="rounded-lg border bg-card p-6 text-center text-sm text-muted-foreground">
           {movimento
@@ -126,18 +219,63 @@ export function CodaProposte({
       ) : (
         <div className="space-y-4">
           {visibili.map((proposta, indice) => (
-            <SchedaProposta
-              key={proposta.id}
-              proposta={proposta}
-              onApprova={onApprova}
-              onScarta={onScarta}
-              // La prima è quella su cui si sta decidendo: la coda è a scheda
-              // singola nel senso che l'attenzione va in un posto solo.
-              inEvidenza={indice === 0}
-            />
+            <div key={proposta.id} className="flex items-start gap-3">
+              {onApprovaInBlocco && (
+                <Checkbox
+                  data-selezione-proposta=""
+                  className="mt-6"
+                  checked={selezionate.has(proposta.id)}
+                  onCheckedChange={() => commuta(proposta.id)}
+                  aria-label={`Seleziona la proposta da ${formatCurrency(
+                    Math.abs(importoNumerico(proposta.bankTransaction?.amount))
+                  )}`}
+                />
+              )}
+              <div className="min-w-0 flex-1">
+                <SchedaProposta
+                  proposta={proposta}
+                  onApprova={onApprova}
+                  onScarta={onScarta}
+                  // La prima è quella su cui si sta decidendo: la coda è a scheda
+                  // singola nel senso che l'attenzione va in un posto solo.
+                  inEvidenza={indice === 0}
+                />
+              </div>
+            </div>
           ))}
         </div>
       )}
+
+      <AlertDialog open={chiedeConferma} onOpenChange={setChiedeConferma}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Approvare {scelte.length} {scelte.length === 1 ? 'proposta' : 'proposte'}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Nascono {scelte.length === 1 ? 'un movimento' : `${scelte.length} movimenti`} di prima
+              nota per <strong>{formatCurrency(totale)}</strong> e le scadenze abbinate risultano
+              pagate. Se due proposte scelte riguardano la stessa riga bancaria, vale quella col
+              punteggio più alto e l&apos;altra viene segnata come superata.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={inCorso}>Annulla</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                // Il dialogo non si chiude da sé: resta aperto finché il server
+                // non ha risposto, così un blocco lungo non sembra finito
+                // mentre sta ancora scrivendo in prima nota.
+                e.preventDefault()
+                void approvaScelte()
+              }}
+              disabled={inCorso}
+            >
+              {inCorso ? 'Approvo…' : 'Approva'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
