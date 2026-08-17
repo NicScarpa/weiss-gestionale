@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { RiconciliazioneClient } from './RiconciliazioneClient'
 
 export const metadata = {
@@ -6,5 +7,9 @@ export const metadata = {
 }
 
 export default function RiconciliazionePage() {
-  return <RiconciliazioneClient />
+  return (
+    <Suspense fallback={null}>
+      <RiconciliazioneClient />
+    </Suspense>
+  )
 }

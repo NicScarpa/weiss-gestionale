@@ -13,6 +13,13 @@ import {
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }))
 
+// Nessuna di queste prove passa da `?movimento=`: l'URL vuoto basta, e il
+// componente smette di lanciare «invariant expected app router to be mounted».
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}))
+
 beforeAll(() => {
   global.IS_REACT_ACT_ENVIRONMENT = true
   installaStubDom()
