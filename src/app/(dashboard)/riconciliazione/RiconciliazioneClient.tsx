@@ -175,7 +175,10 @@ export function RiconciliazioneClient() {
       const data = await res.json()
       throw new Error(data.error || 'Errore nell\'annullamento')
     }
-    toast.success('Movimento scollegato')
+    // Sulle righe da verificare la voce si chiama «Scarta proposta»: il
+    // messaggio dice la stessa cosa dell'estratto conto.
+    const stato = transactions.find((t) => t.id === id)?.status
+    toast.success(stato === 'TO_REVIEW' ? 'Proposta scartata' : 'Movimento scollegato')
     refetch()
   }
 
