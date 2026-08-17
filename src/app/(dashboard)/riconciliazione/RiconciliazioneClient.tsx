@@ -164,6 +164,46 @@ export function RiconciliazioneClient() {
     await aggiornaLotto()
   }
 
+  const approvaInBlocco = async (ids: string[]) => {
+    const risposta = await fetch('/api/riconciliazione-assistita/proposte/approva-in-blocco', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ proposalIds: ids }),
+    })
+    const corpo = await leggiJson(risposta)
+    if (!risposta.ok) throw new Error(messaggioDi(corpo, 'Approvazione in blocco non riuscita'))
+
+    // Il riepilogo si legge per intero: in un blocco è normale che qualcuna non
+    // passi, e dire solo «fatto» nasconderebbe proprio le righe da guardare.
+    const { approvate = 0, superate = 0, giaDecise = 0, rifiutate = 0 } = corpo as {
+      approvate?: number
+      superate?: number
+      giaDecise?: number
+      rifiutate?: number
+    }
+    const scartate = superate + giaDecise + rifiutate
+
+    if (approvate === 0) {
+      toast.error(
+        scartate === 1
+          ? 'Nessuna approvata: la proposta non era più valida'
+          : `Nessuna approvata: ${scartate} proposte non erano più valide`
+      )
+    } else {
+      const coda =
+        scartate > 0
+          ? ` · ${scartate} non ${scartate === 1 ? 'è passata' : 'sono passate'}${
+              superate > 0 ? ` (${superate} superate da altre del gruppo)` : ''
+            }`
+          : ''
+      toast.success(
+        `${approvate} ${approvate === 1 ? 'approvata' : 'approvate'}: le scritture sono in prima nota${coda}`
+      )
+    }
+
+    await aggiornaLotto()
+  }
+
   const scarta = async (id: string, opzioni: { perSempre: boolean; motivo?: string }) => {
     const risposta = await fetch(`/api/riconciliazione-assistita/proposte/${id}/scarta`, {
       method: 'POST',
@@ -333,6 +373,7 @@ export function RiconciliazioneClient() {
             onFascia={setFasciaScelta}
             onApprova={approva}
             onScarta={scarta}
+            onApprovaInBlocco={approvaInBlocco}
             movimento={movimento}
           />
         </div>
