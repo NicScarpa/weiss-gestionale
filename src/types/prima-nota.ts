@@ -110,6 +110,9 @@ export interface JournalEntry {
   // alla lista per sapere che il movimento è agganciato. Il dettaglio si legge
   // da /api/prima-nota/[id]/riconciliazioni.
   riconciliazioni?: Array<{ id: string; scheduleId: string }>
+  // La riga dell'estratto conto collegata: presente sulle scritture promosse
+  // dalla banca (o legate a mano); la lista mostra «dalla banca» e ci porta.
+  bankTransactionId?: string | null
   // Relations (populated)
   venue?: {
     id: string

@@ -127,6 +127,7 @@ export async function PUT(
         accountId: true,
         costCenterId: true,
         _count: { select: { allocations: true } },
+        bankTransaction: { select: { id: true, transactionDate: true } },
       },
     })
 
@@ -211,6 +212,23 @@ export async function PUT(
       })
 
       return NextResponse.json(riclassificato)
+    }
+
+    // La scrittura nata da una riga della banca ha la data della banca (spec
+    // estratto conto, decisione 2): si cambia scollegando, non da qui. La
+    // stessa data va bene — il form rispedisce tutti i campi.
+    if (
+      existingEntry.bankTransaction &&
+      validatedData.date &&
+      validatedData.date.toISOString().slice(0, 10) !== existingEntry.bankTransaction.transactionDate.toISOString().slice(0, 10)
+    ) {
+      return NextResponse.json(
+        {
+          error: 'La data di questa scrittura viene dalla banca: si modifica dall\'estratto conto, scollegando la riga',
+          code: 'DATA_DALLA_BANCA',
+        },
+        { status: 409 }
+      )
     }
 
     // Cambiare conto o centro rimette in discussione la regola del centro di
