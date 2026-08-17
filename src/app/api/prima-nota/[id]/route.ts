@@ -401,7 +401,7 @@ function motivoDelBlocco(riga: RigaConLegami, gemella: boolean): Blocco | null {
         // L'azione esiste e ha un nome: dire «sgancia l'abbinamento» senza
         // dire dove lasciava davanti a un'istruzione non eseguibile.
         error:
-          `Il movimento${dove} è abbinato a una riga dell'estratto conto: usa Scollega ` +
+          `Il movimento${dove} è abbinato a una riga bancaria dell'estratto conto: usa Scollega ` +
           'nell\'estratto conto, poi elimina il movimento',
       },
     }
