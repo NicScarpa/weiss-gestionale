@@ -160,14 +160,14 @@ export function RiconciliazioneClient() {
   }
 
   const handleUnmatch = async (id: string) => {
-    const res = await fetch(`/api/bank-transactions/${id}/unmatch`, {
+    const res = await fetch(`/api/bank-transactions/${id}/scollega`, {
       method: 'POST',
     })
     if (!res.ok) {
       const data = await res.json()
       throw new Error(data.error || 'Errore nell\'annullamento')
     }
-    toast.success('Match annullato')
+    toast.success('Movimento scollegato')
     refetch()
   }
 

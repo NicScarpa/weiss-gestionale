@@ -4,8 +4,6 @@ export {
   getReconciliationStatus,
   reconcileVenueTransactions,
   confirmMatch,
-  manualMatch,
-  unmatch,
 } from './matcher'
 
 export {
