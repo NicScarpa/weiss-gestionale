@@ -79,6 +79,20 @@ describe('GET /api/customers/[id]', () => {
     expect(risposta.status).toBe(404)
   })
 
+  it('nega la lettura allo staff: la scheda mostra il codice fiscale in chiaro', async () => {
+    const creato = await cliente()
+    logout()
+    await entraCome('staff')
+
+    const risposta = await callRoute<Corpo, { id: string }>(
+      GET,
+      jsonRequest(`http://localhost/api/customers/${creato.id}`),
+      { id: creato.id }
+    )
+
+    expect(risposta.status).toBe(403)
+  })
+
   it('nega la lettura a chi non ha effettuato l\'accesso', async () => {
     const creato = await cliente()
     logout()
