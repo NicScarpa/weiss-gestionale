@@ -10,6 +10,10 @@ vi.mock('@/lib/prisma', () => ({
     journalEntry: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     costCenter: { findUnique: vi.fn(), findFirst: vi.fn() },
     account: { findMany: vi.fn() },
+    // `ricalcolaResiduoDocumenti` (agganciato in coda a riconciliazione e
+    // annullo) cerca la riga di banca collegata alla scrittura: qui non ce
+    // n'è mai una, quindi l'hook si ferma al `findFirst` e resta un no-op.
+    bankTransaction: { findFirst: vi.fn().mockResolvedValue(null), update: vi.fn() },
     scheduleReconciliation: {
       findFirst: vi.fn(),
       create: vi.fn(),

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { prisma } from '@/lib/prisma'
 import { setupIntegrationDb } from '@/test/integration/db'
 import { entraCome, logout } from '@/test/integration/auth-mock'
-import { callRoute, jsonRequest } from '@/test/integration/api'
+import { callRoute, jsonRequest, type RouteResponse } from '@/test/integration/api'
 import { creaMovimento, creaScadenza } from '@/test/integration/fixtures/scadenzario'
 import { POST as categorizza } from '../[id]/categorizza/route'
 import { POST as collega } from '../[id]/collega/route'
@@ -30,10 +30,24 @@ async function riga(venueId: string, contoId: string, importo: number, extra: { 
 
 type Corpo = { error?: string; code?: string; ok?: boolean; journalEntryId?: string; residuo?: number; creata?: boolean; scritturaRitirata?: boolean; toccate?: number; saltate?: number; dettagli?: Array<{ id: string; motivo: string }> }
 
-const post = (handler: Parameters<typeof callRoute>[0], url: string, id: string | null, body?: unknown) =>
-  id
-    ? callRoute<Corpo, { id: string }>(handler, jsonRequest(url, { method: 'POST', body }), { id })
-    : callRoute<Corpo>(handler, jsonRequest(url, { method: 'POST', body }))
+// `callRoute` è generico e il suo parametro `P` di default si perde quando lo
+// si referenzia senza istanziarlo (`Parameters<typeof callRoute>[0]` cade
+// sul vincolo `Record<string, string>`, non sul default): da qui i due
+// overload, uno per le rotte dinamiche (`[id]`) e uno per quella statica
+// (`categorizza-in-blocco`), ciascuno istanziato sul proprio `P`.
+type HandlerConId = Parameters<typeof callRoute<Corpo, { id: string }>>[0]
+type HandlerSenzaId = Parameters<typeof callRoute<Corpo>>[0]
+
+function post(handler: HandlerConId, url: string, id: string, body?: unknown): Promise<RouteResponse<Corpo>>
+function post(handler: HandlerSenzaId, url: string, id: null, body?: unknown): Promise<RouteResponse<Corpo>>
+// La firma d'implementazione non è visibile a chi chiama (la nascondono gli
+// overload sopra): l'unione dei due tipi concreti la rende compatibile con
+// entrambi senza ricorrere ad `any`; il cast su ciascun ramo sceglie quale.
+function post(handler: HandlerConId | HandlerSenzaId, url: string, id: string | null, body?: unknown) {
+  return id
+    ? callRoute<Corpo, { id: string }>(handler as HandlerConId, jsonRequest(url, { method: 'POST', body }), { id })
+    : callRoute<Corpo>(handler as HandlerSenzaId, jsonRequest(url, { method: 'POST', body }))
+}
 
 describe('le azioni contabili sull\'estratto conto', () => {
   beforeEach(async () => {
