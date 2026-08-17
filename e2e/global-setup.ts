@@ -15,11 +15,11 @@
  * `login.spec.ts` lo usa per verificare che la modale di cambio obbligatorio
  * compaia davvero.
  */
-import { request, type FullConfig } from '@playwright/test'
+import { type FullConfig } from '@playwright/test'
 import { config as caricaEnv } from 'dotenv'
 import { chiudiDb, rimettiCambioPasswordObbligatorio, sbloccaUtente } from './helpers/db'
 import { UTENTI } from './helpers/app'
-import { PERCORSO_SESSIONE } from './helpers/sessione'
+import { apriSessione, PERCORSO_SESSIONE } from './helpers/sessione'
 
 export default async function globalSetup(config: FullConfig) {
   // Il processo di Playwright non è il server Next: le variabili del `.env.local`
@@ -35,45 +35,12 @@ export default async function globalSetup(config: FullConfig) {
   const baseURL = config.projects[0]?.use?.baseURL
   if (!baseURL) throw new Error('baseURL mancante nella configurazione Playwright')
 
-  await apriSessioneAdmin(baseURL)
-}
-
-async function apriSessioneAdmin(baseURL: string) {
-  const ctx = await request.newContext({ baseURL })
-
-  try {
-    // `next dev` compila ogni rotta alla prima richiesta: la primissima
-    // chiamata a `/api/auth/csrf` arriverebbe mentre la rotta si compila e
-    // tornerebbe senza token, facendo fallire il login con `MissingCSRF` —
-    // che sembra un difetto di autenticazione e non lo è.
-    const csrf = await ctx.get('/api/auth/csrf', { timeout: 120_000 })
-    if (!csrf.ok()) throw new Error(`/api/auth/csrf ha risposto ${csrf.status()}`)
-    const { csrfToken } = (await csrf.json()) as { csrfToken: string }
-
-    await ctx.post('/api/auth/callback/credentials', {
-      form: {
-        csrfToken,
-        identifier: UTENTI.admin.username,
-        password: UTENTI.admin.password,
-        callbackUrl: baseURL,
-      },
-      timeout: 120_000,
-    })
-
-    // Il POST risponde con un redirect anche quando le credenziali sono
-    // sbagliate: l'unica prova che la sessione esista è chiederla.
-    const sessione = await ctx.get('/api/auth/session')
-    const corpo = (await sessione.json()) as { user?: { email?: string } } | null
-    if (!corpo?.user?.email) {
-      throw new Error(
-        "Login dell'admin non riuscito nel global setup: /api/auth/session non " +
-          'restituisce un utente. Database seedato? Server giusto? ' +
-          `Risposta: ${JSON.stringify(corpo)}`
-      )
-    }
-
-    await ctx.storageState({ path: PERCORSO_SESSIONE })
-  } finally {
-    await ctx.dispose()
-  }
+  // Il come sta in `helpers/sessione.ts`: la stessa procedura serve anche alle
+  // spec che aprono la sessione di un altro ruolo.
+  await apriSessione({
+    baseURL,
+    username: UTENTI.admin.username,
+    password: UTENTI.admin.password,
+    percorso: PERCORSO_SESSIONE,
+  })
 }

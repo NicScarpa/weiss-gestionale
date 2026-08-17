@@ -82,9 +82,9 @@ export function MobileNav({ role }: MobileNavProps) {
 
   return (
     <Sheet open={aperto} onOpenChange={setAperto}>
-      {/* Niente SheetTrigger: il bottone deve sparire da tablet in su, e
-          `asChild` con la classe di visibilità sul figlio si porta dietro
-          anche gli attributi del trigger. */}
+      {/* Il cassetto è controllato — apre e chiude anche in base al percorso —
+          quindi il bottone lo comanda direttamente, senza passare da
+          `SheetTrigger`: una sorgente di verità sola. */}
       <Button
         type="button"
         variant="ghost"

@@ -5,11 +5,18 @@ import { apriConSessioneAdmin } from './helpers/app'
  * Nessuno sfondamento orizzontale su un telefono stretto (390 px, iPhone 14).
  *
  * Il criterio è `main.scrollWidth <= main.clientWidth`, NON quello sul `body`:
- * in questa applicazione il layout della dashboard mette l'overflow su
- * `<main class="flex-1 overflow-auto">` (src/app/(dashboard)/layout.tsx:42),
+ * in questa applicazione il telaio mette l'overflow su
+ * `<main class="flex-1 overflow-auto">` (src/components/layout/app-shell.tsx),
  * quindi il body non scorre mai e misurarlo darebbe verde qualunque cosa
  * succeda dentro. Il test riporta comunque entrambe le misure nel messaggio di
  * errore, così quando diventa rosso si vede subito di quanto si sfonda.
+ *
+ * Attenzione a cosa NON copre: misura solo lo sfondamento, non quanto spazio
+ * resti al contenuto. Finché la barra laterale era visibile anche da telefono
+ * si prendeva 64px dei 390 (e altri 256 col pannello aperto) e questi test
+ * restavano verdi lo stesso, perché il testo si incolonnava invece di
+ * traboccare. La larghezza dell'area di contenuto la verifica
+ * `accesso-dipendente.spec.ts`.
  */
 
 const LARGHEZZA = 390

@@ -1,13 +1,15 @@
 import { defineConfig, devices } from '@playwright/test'
 import { config as caricaEnv } from 'dotenv'
-import { PERCORSO_SESSIONE } from './e2e/helpers/sessione'
+import { BASE_URL_E2E, PERCORSO_SESSIONE, PORTA_E2E } from './e2e/helpers/sessione'
 
 // Le spec leggono il database direttamente (vedi e2e/helpers/db.ts) e il
 // processo di Playwright non è il server Next: `.env.local` va caricato qui.
 caricaEnv({ path: '.env.local' })
 
-const PORTA = process.env.E2E_PORT ?? '3010'
-const BASE_URL = process.env.E2E_BASE_URL ?? `http://localhost:${PORTA}`
+// Porta e indirizzo stanno in `e2e/helpers/sessione.ts`: li legge anche chi apre
+// una sessione via API prima che esista un browser.
+const PORTA = PORTA_E2E
+const BASE_URL = BASE_URL_E2E
 
 /**
  * Configurazione della suite end-to-end che gira contro il server di sviluppo.
