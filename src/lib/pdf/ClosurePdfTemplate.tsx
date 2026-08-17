@@ -10,6 +10,15 @@ import {
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 import * as path from 'path'
+import {
+  calcolaTotaliPostazioni,
+  scomponiParziale,
+  formattaContatore,
+  formattaDeltaCaffe,
+  valoreDipendente,
+  meteoHeader,
+  WEATHER_EMOJI_PDF,
+} from './closure-pdf-data'
 
 // Register Avenir Next font
 Font.register({
@@ -92,9 +101,10 @@ interface ClosurePdfProps {
     }>
     partials: Array<{
       timeSlot: string
+      /** Totale del parziale: comprende già la quota POS. */
       receiptProgressive: number
+      /** Quota POS interna al totale, non un importo da sommare. */
       posProgressive: number
-      total: number
       coffeeCounter: number | null
       coffeeDelta: number | null
       weather: string | null
@@ -263,6 +273,14 @@ const s = StyleSheet.create({
   expColPaidBy: { width: '10%' },
   expColAmount: { width: '20%', paddingRight: 3 },
 
+  // Nota sotto la riga del totale postazioni
+  totalNote: {
+    fontSize: 6.5,
+    color: COLORS.mediumGray,
+    paddingLeft: 3,
+    paddingTop: 3,
+  },
+
   // Partials
   partialsContainer: {
     flexDirection: 'row',
@@ -334,8 +352,8 @@ const s = StyleSheet.create({
     paddingVertical: 2,
     alignItems: 'center',
   },
-  attColName: { width: '50%', paddingLeft: 3 },
-  attColShift: { width: '50%' },
+  attColName: { width: '65%', paddingLeft: 3 },
+  attColShift: { width: '35%', paddingRight: 3 },
 
   // Extra table
   extraColName: { width: '45%', paddingLeft: 3 },
@@ -385,6 +403,16 @@ function fmt(value: number | null | undefined): string {
   }).format(value)
 }
 
+/** Come fmt, ma lo zero resta «0,00»: in una ripartizione il trattino si legge come dato mancante. */
+function fmtSempre(value: number | null | undefined): string {
+  if (value === null || value === undefined || isNaN(value)) return '0,00'
+  return new Intl.NumberFormat('it-IT', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    useGrouping: true,
+  }).format(value)
+}
+
 function fmtEuro(value: number | null | undefined): string {
   if (value === null || value === undefined || isNaN(value)) return '-'
   if (value === 0) return '-'
@@ -403,23 +431,6 @@ function getDocTypeLabel(type: string): string {
 
 function cleanPayeeName(payee: string): string {
   return payee.replace(/^\[(EXTRA|PAGATO)\]\s*/, '')
-}
-
-const WEATHER_EMOJI_PDF: Record<string, string> = {
-  sunny: '\u2600\uFE0F',       // ☀️
-  cloudy: '\u2601\uFE0F',      // ☁️
-  rainy: '\uD83C\uDF27\uFE0F', // 🌧️
-  stormy: '\u26C8\uFE0F',      // ⛈️
-  snowy: '\u2744\uFE0F',       // ❄️
-  foggy: '\uD83C\uDF2B\uFE0F', // 🌫️
-}
-
-function getWeatherString(closure: ClosurePdfProps['closure']): string {
-  const parts: string[] = []
-  if (closure.weatherMorning) parts.push(`Matt: ${closure.weatherMorning}`)
-  if (closure.weatherAfternoon) parts.push(`Pom: ${closure.weatherAfternoon}`)
-  if (closure.weatherEvening) parts.push(`Sera: ${closure.weatherEvening}`)
-  return parts.join(' / ') || '-'
 }
 
 // Denomination definitions for cash count
@@ -483,7 +494,7 @@ function Header({ closure }: ClosurePdfProps) {
       </View>
       <View style={s.headerRight}>
         <Text style={s.headerDate}>{formattedDate}</Text>
-        <Text style={s.headerMeta}>METEO: {getWeatherString(closure)}</Text>
+        <Text style={s.headerMeta}>METEO: {meteoHeader(closure)}</Text>
         {closure.submittedBy && (
           <Text style={s.headerMeta}>
             Compilata: {closure.submittedBy.firstName} {closure.submittedBy.lastName}
@@ -500,20 +511,10 @@ function Header({ closure }: ClosurePdfProps) {
 }
 
 function StationsTable({ closure }: ClosurePdfProps) {
-  const totals = {
-    receiptAmount: closure.stations.reduce((sum, st) => sum + st.receiptAmount, 0),
-    receiptVat: closure.stations.reduce((sum, st) => sum + st.receiptVat, 0),
-    invoiceAmount: closure.stations.reduce((sum, st) => sum + st.invoiceAmount, 0),
-    suspendedAmount: closure.stations.reduce((sum, st) => sum + st.suspendedAmount, 0),
-    cashAmount: closure.stations.reduce((sum, st) => sum + st.cashAmount, 0),
-    posAmount: closure.stations.reduce((sum, st) => sum + st.posAmount, 0),
-    totalAmount: closure.stations.reduce((sum, st) => sum + st.totalAmount, 0),
-  }
-
-  // #9: Contanti totale include uscite pagate dalla cassa
-  const totalCashExpenses = closure.expenses
-    .filter(e => e.paidBy && e.paidBy !== 'ESTERNO')
-    .reduce((sum, e) => sum + e.amount, 0)
+  // La riga del totale porta il contante incassato, cioè quello rimasto in
+  // cassa più quello uscito per pagare le uscite; il totale è la somma esatta
+  // di quella colonna e del POS, così la riga quadra a vista.
+  const totals = calcolaTotaliPostazioni(closure.stations, closure.expenses)
 
   // #6: Nascondi postazioni con totalAmount = 0
   const activeStations = closure.stations.filter(st => st.totalAmount > 0)
@@ -552,10 +553,17 @@ function StationsTable({ closure }: ClosurePdfProps) {
         <Text style={[s.tableCellCenter, s.bold, s.stColVat]}>{fmtEuro(totals.receiptVat)}</Text>
         <Text style={[s.tableCellCenter, s.bold, s.stColInvoice]}>{fmtEuro(totals.invoiceAmount)}</Text>
         <Text style={[s.tableCellCenter, s.bold, s.stColSuspended]}>{fmtEuro(totals.suspendedAmount)}</Text>
-        <Text style={[s.tableCellCenter, s.bold, s.stColCash]}>{fmtEuro(totals.cashAmount + totalCashExpenses)}</Text>
+        <Text style={[s.tableCellCenter, s.bold, s.stColCash]}>{fmtEuro(totals.cashAmount)}</Text>
         <Text style={[s.tableCellCenter, s.bold, s.stColPos]}>{fmtEuro(totals.posAmount)}</Text>
         <Text style={[s.tableCellRight, s.bold, s.stColTotal]}>{fmtEuro(totals.totalAmount)}</Text>
       </View>
+      {/* Spiega perché i contanti del totale superano quelli delle postazioni */}
+      {totals.usciteDaCassa > 0 && (
+        <Text style={s.totalNote}>
+          Contanti: {fmtEuro(totals.cashAmount)} = {fmtEuro(totals.cashAmount - totals.usciteDaCassa)} rimasti in
+          cassa + {fmtEuro(totals.usciteDaCassa)} usati per le uscite
+        </Text>
+      )}
     </View>
   )
 }
@@ -566,26 +574,30 @@ function PartialsSection({ closure }: ClosurePdfProps) {
     <View>
       <Text style={s.sectionTitle}>PARZIALI ORARI</Text>
       <View style={s.partialsContainer}>
-        {closure.partials.map((p, idx) => (
-          <View key={idx} style={s.partialCard}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={s.partialTime}>Ore {p.timeSlot}</Text>
-              <Text style={[s.partialTime]}>
-                {p.weather && WEATHER_EMOJI_PDF[p.weather] ? WEATHER_EMOJI_PDF[p.weather] + ' ' : ''}
-                {fmt(p.total)} €
-              </Text>
-            </View>
-            <Text style={s.partialDetail}>
-              Cont. {fmt(p.receiptProgressive)} + POS {fmt(p.posProgressive)}
-            </Text>
-            {p.coffeeCounter !== null && (
+        {closure.partials.map((p, idx) => {
+          const parziale = scomponiParziale(p)
+          return (
+            <View key={idx} style={s.partialCard}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={s.partialTime}>Ore {p.timeSlot}</Text>
+                <Text style={[s.partialTime]}>
+                  {p.weather && WEATHER_EMOJI_PDF[p.weather] ? WEATHER_EMOJI_PDF[p.weather] + ' ' : ''}
+                  {fmtSempre(parziale.totale)} €
+                </Text>
+              </View>
+              {/* Il totale comprende già il POS: qui si dice solo com'è ripartito */}
               <Text style={s.partialDetail}>
-                Caffè: {p.coffeeCounter}
-                {p.coffeeDelta !== null ? ` (Δ ${p.coffeeDelta})` : ''}
+                di cui contanti {fmtSempre(parziale.contanti)} € · POS {fmtSempre(parziale.pos)} €
               </Text>
-            )}
-          </View>
-        ))}
+              {p.coffeeCounter !== null && (
+                <Text style={s.partialDetail}>
+                  Caffè: {formattaContatore(p.coffeeCounter)}
+                  {p.coffeeDelta !== null ? ` (${formattaDeltaCaffe(p.coffeeDelta)})` : ''}
+                </Text>
+              )}
+            </View>
+          )
+        })}
       </View>
     </View>
   )
@@ -667,6 +679,16 @@ function CashCountSection({ closure }: ClosurePdfProps) {
   )
 }
 
+/** Una riga del riquadro dipendenti: il nome a sinistra, le ore o il codice a destra. */
+function AttendanceRow({ a }: { a: ClosurePdfProps['closure']['attendance'][number] }) {
+  return (
+    <View style={s.attRow}>
+      <Text style={[s.tableCellText, s.attColName]}>{a.userName}</Text>
+      <Text style={[s.tableCellRight, s.attColShift]}>{valoreDipendente(a)}</Text>
+    </View>
+  )
+}
+
 function AttendanceSection({ closure }: ClosurePdfProps) {
   const staff = closure.attendance.filter(a => !a.isExtra)
   const extras = closure.attendance.filter(a => a.isExtra)
@@ -688,11 +710,7 @@ function AttendanceSection({ closure }: ClosurePdfProps) {
                 <Text style={[s.tableHeaderText, { width: '100%' }]}>MATTINA</Text>
               </View>
               {morningStaff.length > 0 ? morningStaff.map((a, idx) => (
-                <View key={idx} style={s.attRow}>
-                  <Text style={[s.tableCellText, { paddingLeft: 3 }]}>
-                    {a.userName}{a.statusCode ? ` (${a.statusCode})` : ''}
-                  </Text>
-                </View>
+                <AttendanceRow key={idx} a={a} />
               )) : (
                 <View style={s.attRow}>
                   <Text style={[s.tableCellText, { paddingLeft: 3, color: COLORS.lightGray }]}>-</Text>
@@ -705,11 +723,7 @@ function AttendanceSection({ closure }: ClosurePdfProps) {
                 <Text style={[s.tableHeaderText, { width: '100%' }]}>SERA</Text>
               </View>
               {eveningStaff.length > 0 ? eveningStaff.map((a, idx) => (
-                <View key={idx} style={s.attRow}>
-                  <Text style={[s.tableCellText, { paddingLeft: 3 }]}>
-                    {a.userName}{a.statusCode ? ` (${a.statusCode})` : ''}
-                  </Text>
-                </View>
+                <AttendanceRow key={idx} a={a} />
               )) : (
                 <View style={s.attRow}>
                   <Text style={[s.tableCellText, { paddingLeft: 3, color: COLORS.lightGray }]}>-</Text>
@@ -733,7 +747,7 @@ function AttendanceSection({ closure }: ClosurePdfProps) {
           {extras.map((a, idx) => (
             <View key={idx} style={[s.tableRow, idx % 2 === 1 ? s.tableRowAlt : {}]}>
               <Text style={[s.tableCellText, s.extraColName]}>{a.userName}</Text>
-              <Text style={[s.tableCellCenter, s.extraColHours]}>{a.hours ? `${a.hours}h` : '-'}</Text>
+              <Text style={[s.tableCellCenter, s.extraColHours]}>{a.hours ? `${String(a.hours).replace('.', ',')}h` : '-'}</Text>
               <Text style={[s.tableCellRight, s.extraColPay]}>{a.totalPay ? fmt(a.totalPay) : '-'}</Text>
               <Text style={[s.tableCellCenter, s.extraColPaid]}>{a.isPaid ? 'Sì' : 'No'}</Text>
             </View>
