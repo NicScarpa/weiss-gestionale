@@ -95,7 +95,10 @@ export function UserForm({ mode, initialData, onSubmit, onCancel }: UserFormProp
         ])
         if (venuesRes.ok) {
           const venuesData = await venuesRes.json()
-          setVenues(venuesData.data || [])
+          // `GET /api/venues` risponde `{ venues: [...] }`, non `{ data }`:
+          // letta con la chiave sbagliata la tendina «Sede» restava vuota e
+          // l'unica scelta possibile era «Nessuna sede».
+          setVenues(venuesData.venues || [])
         }
         if (rolesRes.ok) {
           const rolesData = await rolesRes.json()
