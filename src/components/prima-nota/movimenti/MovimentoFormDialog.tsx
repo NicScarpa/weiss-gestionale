@@ -222,6 +222,16 @@ export function MovimentoFormDialog({
   const accountTypes = accountTypesForEntryType(entryType)
   const accountId = form.watch('accountId')
 
+  /**
+   * La data di una scrittura nata da una riga della banca è quella della banca
+   * (spec estratto conto, decisione 2): `PUT /api/prima-nota/[id]` la rifiuta
+   * con un 409. Lasciare il campo aperto significava far scegliere una data
+   * per poi negarla — e il rifiuto riportava chi modificava davanti al modulo,
+   * dove un secondo «Aggiorna» salvava altro. Si cambia dall'estratto conto,
+   * scollegando la riga.
+   */
+  const dataDallaBanca = !!entry?.bankTransactionId
+
   // Stessa chiave di query di AccountCombobox (types): nessuna fetch
   // aggiuntiva, la mappa copre esattamente i conti che l'utente può
   // scegliere qui, inclusi eventuali conti legacy.
@@ -297,6 +307,7 @@ export function MovimentoFormDialog({
                         <FormControl>
                           <Button
                             variant="outline"
+                            disabled={dataDallaBanca}
                             className={cn(
                               "w-full pl-3 text-left font-normal",
                               !field.value && "text-muted-foreground"
@@ -318,6 +329,11 @@ export function MovimentoFormDialog({
                         />
                       </PopoverContent>
                     </Popover>
+                    {dataDallaBanca && (
+                      <FormDescription>
+                        Data dalla banca: si cambia dall&apos;estratto conto, scollegando la riga.
+                      </FormDescription>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}

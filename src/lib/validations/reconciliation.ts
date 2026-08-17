@@ -49,10 +49,44 @@ export const patchBankTransactionSchema = z
   .strict()
 export const CAMPI_SOLO_MANUALI = ['transactionDate', 'valueDate', 'amount'] as const
 
-// Match manuale
-export const matchTransactionSchema = z.object({
-  journalEntryId: z.string().min(1),
-})
+// Le azioni contabili della consegna B (spec, «Le azioni»). L'imputazione è
+// conto + centro: la categoria di budget si deriva dal conto e non si chiede.
+// `strict()` anche qui dentro: annidata nel corpo in blocco, senza sarebbe
+// l'unico punto in cui un campo di troppo — un `budgetCategoryId`, per dire —
+// verrebbe scartato in silenzio invece che rifiutato.
+export const imputazioneSchema = z
+  .object({
+    accountId: z.string().min(1),
+    costCenterId: z.string().min(1).optional(),
+  })
+  .strict()
+export const categorizzaSchema = imputazioneSchema
+
+// Collega: le scadenze con la quota di ciascuna, OPPURE una scrittura esistente
+// (la R4). Mai entrambe: la R4 si lega, non aggiunge documenti.
+export const collegaSchema = z
+  .object({
+    scadenze: z
+      .array(z.object({ scheduleId: z.string().min(1), amount: z.number().positive() }))
+      .min(1)
+      .max(50)
+      .optional(),
+    scritturaEsistenteId: z.string().min(1).optional(),
+  })
+  .strict()
+  .refine((v) => !!v.scadenze !== !!v.scritturaEsistenteId, {
+    message: 'Indica le scadenze oppure la scrittura esistente, non entrambe',
+  })
+
+// Categorizza in blocco: per elenco di id o per filtro, come le altre azioni in blocco.
+export const categorizzaInBloccoSchema = z
+  .object({
+    ids: z.array(z.string().min(1)).min(1).max(1000).optional(),
+    filtro: z.record(z.string(), z.string()).optional(),
+    imputazione: imputazioneSchema,
+  })
+  .strict()
+  .refine((v) => !!v.ids !== !!v.filtro, { message: 'Indica ids oppure filtro, non entrambi' })
 
 // Sposta in: la scheda in cui la riga si vede (spec, decisione 5).
 export const sezioneMovimentoSchema = z.enum(['ATTIVI', 'DELEGHE_F24', 'CBILL_PAGOPA'])
@@ -118,7 +152,6 @@ export const summaryQuerySchema = z.object({
 
 // Types inferiti
 export type CreateBankTransaction = z.infer<typeof createBankTransactionSchema>
-export type MatchTransaction = z.infer<typeof matchTransactionSchema>
 export type CreateEntryFromTransaction = z.infer<typeof createEntryFromTransactionSchema>
 export type ReconcileParams = z.infer<typeof reconcileSchema>
 export type CSVParserConfig = z.infer<typeof csvParserConfigSchema>

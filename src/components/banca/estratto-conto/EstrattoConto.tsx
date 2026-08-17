@@ -34,6 +34,9 @@ import { SchedeEstrattoConto } from './SchedeEstrattoConto'
 import { FiltriEstrattoConto as PannelloFiltri } from './FiltriEstrattoConto'
 import { SelettoreColonne } from './SelettoreColonne'
 import { TabellaEstrattoConto } from './TabellaEstrattoConto'
+import { CategorizzaDialog, type BersaglioCategorizza } from './CategorizzaDialog'
+import { CollegaFatturaDialog } from './CollegaFatturaDialog'
+import { ScollegaDialog } from './ScollegaDialog'
 import { BarraSelezione, type AzioneInBlocco } from './BarraSelezione'
 import { PaginazioneEstrattoConto } from './PaginazioneEstrattoConto'
 import { LegendaStati } from './LegendaStati'
@@ -49,6 +52,13 @@ export interface EstrattoContoProps {
 }
 
 const CHIAVE_QUERY_ESTRATTO = ['estratto-conto'] as const
+/**
+ * Le scritture della sotto-scheda e il loro contatore stanno sotto
+ * `['prima-nota']` (`MovimentiClient`): Categorizza, Collega e Scollega ne
+ * creano e ne ritirano, quindi vanno rilette insieme alla lista — altrimenti
+ * «Scritture (N)» resta al numero del caricamento finché non si rimonta.
+ */
+const CHIAVE_QUERY_PRIMA_NOTA = ['prima-nota'] as const
 
 async function leggiLista(filtri: Filtri): Promise<RispostaEstrattoConto> {
   const r = await fetch(`/api/bank-transactions?${filtriInSearchParams(filtri)}`)
@@ -100,6 +110,7 @@ const FILTRI_PULITI = {
   dateFrom: undefined,
   dateTo: undefined,
   status: undefined,
+  movimento: undefined,
 } satisfies Partial<Filtri>
 
 function ciSonoFiltri(filtri: Filtri): boolean {
@@ -110,7 +121,7 @@ function ciSonoFiltri(filtri: Filtri): boolean {
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
 
 /** Che cosa è successo, al singolare e al plurale: «1 movimenti» si legge male. */
-const FATTO: Record<AzioneInBlocco, [string, string]> = {
+const FATTO: Record<Exclude<AzioneInBlocco, 'categorizza'>, [string, string]> = {
   sposta: ['spostato', 'spostati'],
   cestino: ['nel Cestino', 'nel Cestino'],
   ripristina: ['ripristinato', 'ripristinati'],
@@ -161,11 +172,15 @@ export function EstrattoConto({ venueId, filtriIniziali, onFiltriChange }: Estra
   const [dettagliId, impostaDettagliId] = useState<string | null>(null)
   const [nuovoAperto, impostaNuovoAperto] = useState(false)
   const [importaAperto, impostaImportaAperto] = useState(false)
+  const [daCategorizzare, impostaDaCategorizzare] = useState<BersaglioCategorizza | null>(null)
+  const [daCollegare, impostaDaCollegare] = useState<RigaEstrattoConto | null>(null)
+  const [daScollegare, impostaDaScollegare] = useState<RigaEstrattoConto | null>(null)
 
   const queryClient = useQueryClient()
   /** Dopo ogni azione la lista si rilegge: i conteggi e i totali cambiano con lei. */
   const ricarica = () => {
     void queryClient.invalidateQueries({ queryKey: CHIAVE_QUERY_ESTRATTO })
+    void queryClient.invalidateQueries({ queryKey: CHIAVE_QUERY_PRIMA_NOTA })
   }
 
   const chiama = async (url: string, init: RequestInit, ok: string, ko: string) => {
@@ -175,6 +190,16 @@ export function EstrattoConto({ venueId, filtriIniziali, onFiltriChange }: Estra
   }
 
   const azioneInBlocco = async (azione: AzioneInBlocco, sezione?: SezioneMovimentoBancario) => {
+    if (azione === 'categorizza') {
+      // Non una rotta insiemistica ma un dialogo: la scelta di conto e centro
+      // vale per tutte le righe, poi il server le promuove una per una.
+      impostaDaCategorizzare(
+        tutteDelFiltro
+          ? { tipo: 'filtro', filtro: Object.fromEntries(filtriInSearchParams(filtri)), totale }
+          : { tipo: 'selezione', ids: [...selezionati] }
+      )
+      return
+    }
     // «Tutte le N del filtro» non è l'elenco di ciò che si è visto scorrere: le
     // righe le ricalcola il server dallo stesso filtro della lista, altrimenti
     // l'azione toccherebbe solo la pagina caricata.
@@ -286,6 +311,14 @@ export function EstrattoConto({ venueId, filtriIniziali, onFiltriChange }: Estra
         </Button>
       </div>
       <PannelloFiltri filtri={filtri} onCambia={cambiaFiltri} onCancellaFiltri={azzeraFiltri} />
+      {filtri.movimento && (
+        <div className="flex items-center gap-3 rounded-lg border bg-muted/50 px-3 py-2 text-sm">
+          <span>Stai guardando un solo movimento.</span>
+          <Button variant="link" size="sm" className="h-auto p-0" onClick={() => cambiaFiltri({ movimento: undefined, page: 1 })}>
+            Mostra tutti
+          </Button>
+        </div>
+      )}
       <div className="flex items-center justify-between text-sm text-muted-foreground">
         <span>
           {righe.length} di {totale}
@@ -369,6 +402,9 @@ export function EstrattoConto({ venueId, filtriIniziali, onFiltriChange }: Estra
               'Ripristino non riuscito'
             )
           }
+          onCategorizza={(riga) => impostaDaCategorizzare({ tipo: 'riga', riga })}
+          onCollega={(riga) => impostaDaCollegare(riga)}
+          onScollega={(riga) => impostaDaScollegare(riga)}
         />
       )}
       {totalePagine > 1 && (
@@ -394,6 +430,28 @@ export function EstrattoConto({ venueId, filtriIniziali, onFiltriChange }: Estra
       />
       <NuovoMovimentoDialog open={nuovoAperto} onOpenChange={impostaNuovoAperto} onCreato={ricarica} />
       <ImportDialog open={importaAperto} onOpenChange={impostaImportaAperto} onSuccess={ricarica} />
+      <CategorizzaDialog
+        bersaglio={daCategorizzare}
+        open={!!daCategorizzare}
+        onOpenChange={(aperto) => !aperto && impostaDaCategorizzare(null)}
+        onFatto={() => {
+          impostaSelezionati(new Set())
+          impostaTutteDelFiltro(false)
+          ricarica()
+        }}
+      />
+      <CollegaFatturaDialog
+        riga={daCollegare}
+        open={!!daCollegare}
+        onOpenChange={(aperto) => !aperto && impostaDaCollegare(null)}
+        onFatto={ricarica}
+      />
+      <ScollegaDialog
+        riga={daScollegare}
+        open={!!daScollegare}
+        onOpenChange={(aperto) => !aperto && impostaDaScollegare(null)}
+        onFatto={ricarica}
+      />
     </div>
   )
 }

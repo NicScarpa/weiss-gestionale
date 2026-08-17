@@ -117,6 +117,9 @@ function riga(id: string, extra: Partial<Record<string, unknown>> = {}) {
     modificato: false,
     stato: 'non_abbinato',
     residuo: 907.9,
+    origineScrittura: null,
+    residuoDocumenti: null,
+    proposta: false,
     ...extra,
   }
 }
@@ -141,11 +144,16 @@ function stubTutto(lista: unknown = RISPOSTA) {
   stubFetch([
     // Prima della lista: la ricerca si ferma al primo prefisso che combacia, e
     // «/api/bank-transactions» combacerebbe anche con questa.
+    ['/api/bank-transactions/categorizza-in-blocco', { toccate: 2, saltate: 0 }],
     ['/api/bank-transactions/azioni-in-blocco', { toccate: 2, saltate: 1 }],
     ['/api/bank-transactions', lista],
     // La rotta vera risponde `{ accounts: [...] }`, non `{ data: [...] }`.
     ['/api/bank-accounts', { accounts: [{ id: 'c1', name: 'Weiss' }] }],
     ['/api/banca/sincronizzazione', { conti: [] }],
+    ['/api/accounts', { accounts: [] }],
+    ['/api/cost-centers', { costCenters: [] }],
+    ['/api/scadenzario', { data: [] }],
+    ['/api/prima-nota', { data: [] }],
   ])
 }
 
@@ -214,8 +222,8 @@ describe('EstrattoConto', () => {
     await cliccare(perTesto('Causale', '[role="menuitemcheckbox"]'))
     await attendiChe(() => !perTesto('Causale', 'th'), 'la colonna nascosta')
     expect(perTesto('Descrizione', '[role="menuitemcheckbox"]')).toBeTruthy() // ancora aperto
-    expect(window.localStorage.getItem('weiss.estrattoConto.colonne')).toContain('"data"')
-    expect(window.localStorage.getItem('weiss.estrattoConto.colonne')).not.toContain('"causale"')
+    expect(window.localStorage.getItem('weiss.estrattoConto.colonneNascoste')).toContain('"causale"')
+    expect(window.localStorage.getItem('weiss.estrattoConto.colonneNascoste')).not.toContain('"data"')
   })
 
   // Le colonne nascoste stanno nel browser, che il server non ha: leggerle
@@ -388,5 +396,113 @@ describe('EstrattoConto', () => {
     expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
       '2 movimenti nel Cestino · 1 saltato perché collegato a una scrittura'
     )
+  })
+
+  it('mostra la colonna Categoria dalla scrittura collegata', async () => {
+    const collegata = riga('3', {
+      amount: -0.75, matchedEntryId: 'e1', status: 'MANUAL', stato: 'abbinato_manualmente', residuo: 0, residuoDocumenti: 0,
+      origineScrittura: 'CATEGORIZZA',
+      matchedEntry: { id: 'e1', date: '2026-08-14', description: 'Commissioni', debitAmount: null, creditAmount: 0.75, documentRef: null, account: { id: 'a1', code: '05.01', name: 'Commissioni bancarie' }, costCenter: { id: 'cc1', code: 'STR', name: 'Struttura' }, fette: 0 },
+    })
+    stubTutto({ ...RISPOSTA, data: [riga('1'), collegata] })
+    await montare(<EstrattoConto venueId="v1" filtriIniziali={FILTRI_DEFAULT} />)
+    await attendiChe(() => testoDellaPagina().includes('DITTA 1'), 'le righe')
+    expect(perTesto('Categoria', 'th')).toBeTruthy()
+    expect(testoDellaPagina()).toContain('05.01')
+    expect(testoDellaPagina()).toContain('Commissioni bancarie')
+  })
+
+  it('le azioni di riga: Categorizza e Riconcilia nel menu di una riga libera', async () => {
+    const collegata = riga('3', { matchedEntryId: 'e1', status: 'MANUAL', stato: 'abbinato_manualmente', residuo: 0, residuoDocumenti: 0, origineScrittura: 'COLLEGA',
+      matchedEntry: { id: 'e1', date: '2026-08-14', description: 'x', debitAmount: 907.9, creditAmount: null, documentRef: null, account: null, costCenter: null, fette: 0 } })
+    stubTutto({ ...RISPOSTA, data: [riga('1'), collegata] })
+    await montare(<EstrattoConto venueId="v1" filtriIniziali={FILTRI_DEFAULT} />)
+    await attendiChe(() => testoDellaPagina().includes('DITTA 1'), 'le righe')
+
+    // Il menu ⋯ della riga libera ha Categorizza e Riconcilia; Riconcilia porta alla pagina di riconciliazione filtrata.
+    const menu = document.querySelectorAll('button[aria-label="Altre azioni"]')[0]
+    await aprireMenu(menu)
+    await attendiChe(() => !!perTesto('Categorizza', '[role="menuitem"]'), 'il menu')
+    const riconcilia = perTesto('Riconcilia', '[role="menuitem"] a, a[role="menuitem"]') ?? perTesto('Riconcilia', 'a')
+    expect(riconcilia?.getAttribute('href')).toBe('/riconciliazione?movimento=1')
+
+    // Senza proposta non c'è nulla da scartare.
+    expect(perTesto('Scarta la proposta', '[role="menuitem"]')).toBeFalsy()
+
+    // Categorizza apre il dialogo sulla riga.
+    await cliccare(perTesto('Categorizza', '[role="menuitem"]'))
+    await attendiChe(() => testoDellaPagina().includes('Categorizza movimento'), 'il dialogo')
+  })
+
+  // Una riga con la proposta del vecchio motore dice «Non abbinato» e mostra
+  // 🔗 Collega, non ⛓️‍💥 Scollega: senza questa voce di menu la proposta non
+  // aveva nessuna via d'uscita, né qui né sulla vecchia pagina.
+  it('il menu di una riga con proposta offre «Scarta la proposta», e la conferma lo dice', async () => {
+    const conProposta = riga('5', {
+      matchedEntryId: 'e9', status: 'TO_REVIEW', stato: 'non_abbinato', residuo: 907.9, proposta: true,
+      matchConfidence: 0.8,
+      matchedEntry: { id: 'e9', date: '2026-08-14', description: 'proposta del motore', debitAmount: 907.9, creditAmount: null, documentRef: null, account: null, costCenter: null, fette: 0 },
+    })
+    stubTutto({ ...RISPOSTA, data: [conProposta] })
+    await montare(<EstrattoConto venueId="v1" filtriIniziali={FILTRI_DEFAULT} />)
+    await attendiChe(() => testoDellaPagina().includes('DITTA 5'), 'la riga')
+
+    // La proposta non è un legame: l'icona resta «Collega fattura».
+    expect(document.querySelectorAll('button[aria-label="Collega fattura"]')).toHaveLength(1)
+
+    await aprireMenu(document.querySelector('button[aria-label="Altre azioni"]'))
+    await attendiChe(() => !!perTesto('Categorizza', '[role="menuitem"]'), 'il menu')
+    await cliccare(perTesto('Scarta la proposta', '[role="menuitem"]'))
+
+    // La conferma parla della proposta, non di una scrittura da ritirare.
+    await attendiChe(() => testoDellaPagina().includes('Scartare la proposta?'), 'la conferma')
+    expect(testoDellaPagina()).toContain('il movimento torna «Non abbinato»')
+    await cliccare(perTesto('Scarta', '[role="alertdialog"] button'))
+    await attendiChe(
+      () => richieste.some((r) => r.url === '/api/bank-transactions/5/scollega' && r.init?.method === 'POST'),
+      'la rotta di scollegamento'
+    )
+  })
+
+  it('con «movimento» nell\'URL mostra il chip e «Mostra tutti» lo toglie', async () => {
+    stubTutto({ ...RISPOSTA, data: [riga('1')], pagination: { page: 1, limit: 100, total: 1, totalPages: 1 } })
+    await montare(<EstrattoConto venueId="v1" filtriIniziali={{ ...FILTRI_DEFAULT, movimento: '1' }} />)
+    await attendiChe(() => testoDellaPagina().includes('DITTA 1'), 'la riga')
+    expect(testoDellaPagina()).toContain('Stai guardando un solo movimento')
+    await cliccare(perTesto('Mostra tutti', 'button'))
+    await attendiChe(() => richiesteLista().some((u) => !u.includes('movimento=')), 'la lista intera')
+  })
+
+  it('«Categorizza» dalla barra della selezione apre il dialogo per le righe scelte', async () => {
+    stubTutto()
+    await montare(<EstrattoConto venueId="v1" filtriIniziali={FILTRI_DEFAULT} />)
+    await attendiChe(() => testoDellaPagina().includes('DITTA 1'), 'le righe')
+    await cliccare(document.querySelector('tbody [role="checkbox"]'))
+    await attendiChe(() => testoDellaPagina().includes('1 selezionato'), 'la barra')
+    await cliccare(perTesto('Categorizza', 'button'))
+    await attendiChe(() => testoDellaPagina().includes('Categorizza 1 movimento'), 'il dialogo')
+  })
+
+  it('Collega fattura sulla riga libera, Scollega su quella collegata, «Collega altra fattura» sulla parziale', async () => {
+    const collegata = riga('3', { matchedEntryId: 'e1', status: 'MANUAL', stato: 'abbinato_manualmente', residuo: 0, residuoDocumenti: 0, origineScrittura: 'COLLEGA',
+      matchedEntry: { id: 'e1', date: '2026-08-14', description: 'x', debitAmount: 907.9, creditAmount: null, documentRef: null, account: null, costCenter: null, fette: 0 } })
+    const parziale = riga('4', { amount: -100, matchedEntryId: 'e2', status: 'MANUAL', stato: 'parziale', residuo: 40, residuoDocumenti: 40, origineScrittura: 'COLLEGA',
+      matchedEntry: { id: 'e2', date: '2026-08-14', description: 'y', debitAmount: null, creditAmount: 100, documentRef: null, account: null, costCenter: null, fette: 0 } })
+    stubTutto({ ...RISPOSTA, data: [riga('1'), collegata, parziale] })
+    await montare(<EstrattoConto venueId="v1" filtriIniziali={FILTRI_DEFAULT} />)
+    await attendiChe(() => testoDellaPagina().includes('DITTA 1'), 'le righe')
+
+    expect(document.querySelectorAll('button[aria-label="Collega fattura"]')).toHaveLength(1)
+    expect(document.querySelectorAll('button[aria-label="Scollega"]')).toHaveLength(2)
+    expect(testoDellaPagina()).toContain('40,00') // il residuo accanto allo stato parziale
+
+    await cliccare(document.querySelector('button[aria-label="Collega fattura"]'))
+    await attendiChe(() => testoDellaPagina().includes('Collega fattura') && testoDellaPagina().includes('Fattura / scadenza'), 'il dialogo Collega')
+
+    // Scollega chiede conferma e poi chiama la rotta.
+    await cliccare(document.querySelectorAll('button[aria-label="Scollega"]')[0])
+    await attendiChe(() => testoDellaPagina().includes('Scollegare il movimento?'), 'la conferma')
+    await cliccare(perTesto('Scollega', '[role="alertdialog"] button'))
+    await attendiChe(() => richieste.some((r) => r.url === '/api/bank-transactions/3/scollega' && r.init?.method === 'POST'), 'la rotta di scollegamento')
   })
 })

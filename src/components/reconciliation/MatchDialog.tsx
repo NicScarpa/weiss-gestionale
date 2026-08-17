@@ -90,10 +90,10 @@ export function MatchDialog({
 
     setSubmitting(true)
     try {
-      const res = await fetch(`/api/bank-transactions/${transactionId}/match`, {
+      const res = await fetch(`/api/bank-transactions/${transactionId}/collega`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ journalEntryId: selectedEntryId }),
+        body: JSON.stringify({ scritturaEsistenteId: selectedEntryId }),
       })
 
       if (!res.ok) {
@@ -101,7 +101,7 @@ export function MatchDialog({
         throw new Error(data.error || 'Errore nel match')
       }
 
-      toast.success('Match effettuato con successo')
+      toast.success('Movimento collegato alla scrittura')
       onSuccess?.()
       chiudi(false)
     } catch (error) {

@@ -21,6 +21,14 @@ export function LegendaStati() {
           {ETICHETTE_STATO[stato]}
         </span>
       ))}
+      {/* Il puntino ambra compare sul «Non abbinato» e non è uno stato in più:
+          senza una riga di legenda resta un pallino che nessuno sa leggere. */}
+      <span className="inline-flex items-center gap-1.5">
+        <span aria-hidden>
+          <IconaStato stato="non_abbinato" residuo={0} proposta />
+        </span>
+        Puntino = c&apos;è una proposta da rivedere
+      </span>
       <span className="text-orange-600">€123 = Residuo</span>
     </div>
   )

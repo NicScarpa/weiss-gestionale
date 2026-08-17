@@ -15,7 +15,7 @@ async function contesto() {
   return { venueId: venue.id, contoId: conto.id, centroId: centro.id }
 }
 
-async function riga(venueId: string, contoId: string, dati: { data: string; importo: number; descrizione: string; causale?: string; sezione?: 'ATTIVI' | 'DELEGHE_F24' | 'CBILL_PAGOPA'; deletedAt?: Date; matchedEntryId?: string; status?: ReconciliationStatus }) {
+async function riga(venueId: string, contoId: string, dati: { data: string; importo: number; descrizione: string; causale?: string; sezione?: 'ATTIVI' | 'DELEGHE_F24' | 'CBILL_PAGOPA'; deletedAt?: Date; matchedEntryId?: string; status?: ReconciliationStatus; residuoDocumenti?: number }) {
   return prisma.bankTransaction.create({
     data: {
       venueId,
@@ -30,6 +30,7 @@ async function riga(venueId: string, contoId: string, dati: { data: string; impo
       sezione: dati.sezione ?? 'ATTIVI',
       deletedAt: dati.deletedAt ?? null,
       matchedEntryId: dati.matchedEntryId ?? null,
+      residuoDocumenti: dati.residuoDocumenti ?? null,
     },
   })
 }
@@ -85,20 +86,70 @@ describe('GET /api/bank-transactions — la lista dell\'estratto conto', () => {
     expect((await lista('search=nessuno')).body.data).toHaveLength(0)
   })
 
-  it('calcola lo stato della legenda per riga', async () => {
+  it('calcola lo stato della legenda per riga, dalla colonna del residuo', async () => {
     const { venueId, contoId, centroId } = await contesto()
+    const conto = await prisma.account.findFirstOrThrow({ where: { type: 'COSTO', isActive: true } })
     const scrittura = await prisma.journalEntry.create({
-      data: { venueId, date: new Date('2026-08-01'), registerType: 'BANK', description: 'Commissioni', creditAmount: 0.75, costCenterId: centroId },
+      data: { venueId, date: new Date('2026-08-01'), registerType: 'BANK', description: 'Commissioni', creditAmount: 0.75, costCenterId: centroId, accountId: conto.id },
     })
-    await riga(venueId, contoId, { data: '2026-08-01', importo: -0.75, descrizione: 'commissione', matchedEntryId: scrittura.id, status: 'MANUAL' })
-    await riga(venueId, contoId, { data: '2026-08-02', importo: -20, descrizione: 'libera' })
+    const parziale = await prisma.journalEntry.create({
+      data: { venueId, date: new Date('2026-08-02'), registerType: 'BANK', description: 'Bonifico', creditAmount: 100, costCenterId: centroId },
+    })
+    await riga(venueId, contoId, { data: '2026-08-01', importo: -0.75, descrizione: 'commissione', matchedEntryId: scrittura.id, status: 'MANUAL', residuoDocumenti: 0 })
+    await riga(venueId, contoId, { data: '2026-08-02', importo: -100, descrizione: 'parziale', matchedEntryId: parziale.id, status: 'MANUAL', residuoDocumenti: 40 })
+    await riga(venueId, contoId, { data: '2026-08-03', importo: -20, descrizione: 'libera' })
 
     const tutte = await lista('ordina=data&verso=asc')
     expect(tutte.body.data.map((r) => [r.descrizione, r.stato, r.residuo])).toEqual([
       ['commissione', 'abbinato_manualmente', 0],
+      ['parziale', 'parziale', 40],
       ['libera', 'non_abbinato', 20],
     ])
-    expect((await lista('soloNonRiconciliati=1')).body.data.map((r) => r.descrizione)).toEqual(['libera'])
+    // La Categoria viene dalla scrittura collegata.
+    expect(tutte.body.data[0].matchedEntry?.account?.code).toBe(conto.code)
+    expect(tutte.body.data[0].matchedEntry?.costCenter?.id).toBe(centroId)
+    expect(tutte.body.data[2].matchedEntry).toBeNull()
+  })
+
+  it('«Solo non riconciliati» prende le libere, i parziali e le proposte da rivedere', async () => {
+    const { venueId, contoId, centroId } = await contesto()
+    const s1 = await prisma.journalEntry.create({ data: { venueId, date: new Date('2026-08-01'), registerType: 'BANK', description: 'a', creditAmount: 10, costCenterId: centroId } })
+    const s2 = await prisma.journalEntry.create({ data: { venueId, date: new Date('2026-08-02'), registerType: 'BANK', description: 'b', creditAmount: 10, costCenterId: centroId } })
+    const s3 = await prisma.journalEntry.create({ data: { venueId, date: new Date('2026-08-03'), registerType: 'BANK', description: 'c', creditAmount: 10, costCenterId: centroId } })
+    await riga(venueId, contoId, { data: '2026-08-01', importo: -10, descrizione: 'chiusa', matchedEntryId: s1.id, status: 'MANUAL', residuoDocumenti: 0 })
+    await riga(venueId, contoId, { data: '2026-08-02', importo: -10, descrizione: 'parziale', matchedEntryId: s2.id, status: 'MANUAL', residuoDocumenti: 4 })
+    await riga(venueId, contoId, { data: '2026-08-03', importo: -10, descrizione: 'proposta', matchedEntryId: s3.id, status: 'TO_REVIEW', residuoDocumenti: 0 })
+    await riga(venueId, contoId, { data: '2026-08-04', importo: -10, descrizione: 'libera' })
+
+    const aperte = await lista('soloNonRiconciliati=1&ordina=data&verso=asc')
+    expect(aperte.body.data.map((r) => [r.descrizione, r.stato, r.proposta])).toEqual([
+      ['parziale', 'parziale', false],
+      ['proposta', 'non_abbinato', true],
+      ['libera', 'non_abbinato', false],
+    ])
+  })
+
+  it('«movimento» restringe la lista a una riga sola', async () => {
+    const { venueId, contoId } = await contesto()
+    const una = await riga(venueId, contoId, { data: '2026-08-01', importo: -1, descrizione: 'una' })
+    await riga(venueId, contoId, { data: '2026-08-02', importo: -2, descrizione: 'altra' })
+    const sola = await lista(`movimento=${una.id}`)
+    expect(sola.body.data.map((r) => r.descrizione)).toEqual(['una'])
+    expect(sola.body.pagination.total).toBe(1)
+  })
+
+  // Il collegamento profondo arriva dalla scheda Scritture e dalla pagina di
+  // riconciliazione, che non sanno in quale scheda stia la riga: se «Sposta in»
+  // l'ha portata in Deleghe F24, la sezione predefinita la nasconderebbe e il
+  // chip «Stai guardando un solo movimento» prometterebbe una riga che non c'è.
+  it('«movimento» trova la riga anche fuori dalla scheda Attivi', async () => {
+    const { venueId, contoId } = await contesto()
+    const delega = await riga(venueId, contoId, { data: '2026-08-01', importo: -300, descrizione: 'delega', sezione: 'DELEGHE_F24' })
+    await riga(venueId, contoId, { data: '2026-08-02', importo: -2, descrizione: 'altra' })
+
+    const sola = await lista(`movimento=${delega.id}`)
+    expect(sola.body.data.map((r) => r.descrizione)).toEqual(['delega'])
+    expect(sola.body.pagination.total).toBe(1)
   })
 
   // La pagina /riconciliazione (consegna B non ancora arrivata) manda ancora

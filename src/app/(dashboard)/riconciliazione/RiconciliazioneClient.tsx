@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -23,6 +25,12 @@ import { logger } from '@/lib/logger'
 type StatusFilter = 'all' | ReconciliationStatus
 
 export function RiconciliazioneClient() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  // Arrivando dalle Scritture con «dalla banca» o «Riconcilia»: la lista si
+  // restringe a quella riga sola, come fa l'estratto conto con lo stesso filtro.
+  const movimento = searchParams.get('movimento')
+
   // Sede unica dell'installazione: l'API ne restituisce una sola
   // (architettura single-venue, vedi src/lib/venue.ts)
   const { data: sedi, isError: erroreSedi, error: erroreSediDettaglio } = useQuery({
@@ -63,7 +71,7 @@ export function RiconciliazioneClient() {
     // Come prima del passaggio a TanStack Query: ogni montaggio ricarica.
     refetchOnMount: 'always',
     staleTime: 0,
-    queryKey: ['riconciliazione', venueId, statusFilter, page],
+    queryKey: ['riconciliazione', venueId, statusFilter, page, movimento],
     enabled: !!venueId,
     queryFn: async (): Promise<{
       summary: ReconciliationSummary
@@ -75,7 +83,7 @@ export function RiconciliazioneClient() {
         fetch(`/api/reconciliation/summary?venueId=${venueId}`),
         fetch(
           `/api/bank-transactions?venueId=${venueId}${statusFilter !== 'all' ? `&status=${statusFilter}` : ''
-          }&limit=100&page=${page}`
+          }&limit=100&page=${page}${movimento ? `&movimento=${encodeURIComponent(movimento)}` : ''}`
         ),
       ])
 
@@ -160,14 +168,17 @@ export function RiconciliazioneClient() {
   }
 
   const handleUnmatch = async (id: string) => {
-    const res = await fetch(`/api/bank-transactions/${id}/unmatch`, {
+    const res = await fetch(`/api/bank-transactions/${id}/scollega`, {
       method: 'POST',
     })
     if (!res.ok) {
       const data = await res.json()
       throw new Error(data.error || 'Errore nell\'annullamento')
     }
-    toast.success('Match annullato')
+    // Sulle righe da verificare la voce si chiama «Scarta proposta»: il
+    // messaggio dice la stessa cosa dell'estratto conto.
+    const stato = transactions.find((t) => t.id === id)?.status
+    toast.success(stato === 'TO_REVIEW' ? 'Proposta scartata' : 'Movimento scollegato')
     refetch()
   }
 
@@ -254,6 +265,18 @@ export function RiconciliazioneClient() {
 
       {/* Summary Cards */}
       <ReconciliationSummaryCards summary={summary} loading={loading} />
+
+      {movimento && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/50 px-3 py-2 text-sm">
+          <span>Stai guardando un solo movimento dell&apos;estratto conto.</span>
+          <Button variant="link" size="sm" className="h-auto p-0" onClick={() => router.replace('/riconciliazione')}>
+            Mostra tutti
+          </Button>
+          <Link href={`/prima-nota/movimenti?register=BANK&movimento=${encodeURIComponent(movimento)}`} className="ml-auto underline-offset-4 hover:underline">
+            Torna all&apos;estratto conto
+          </Link>
+        </div>
+      )}
 
       {/* Transactions Table */}
       <BankTransactionTable

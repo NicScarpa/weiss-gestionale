@@ -1,12 +1,14 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 import {
   ArrowLeftRightIcon,
   ArrowUpDownIcon,
   CalendarIcon,
+  Landmark,
   Link2,
 } from 'lucide-react'
 import { MovimentoRowActions } from './MovimentoRowActions'
@@ -198,6 +200,18 @@ export function MovimentiTable({
                             {REGISTER_LABELS[trasferimento.a]}
                           </span>
                         </div>
+                      )}
+                      {/* La scrittura nata da una riga della banca (o legata a
+                          mano) lo dice, e ci porta: è l'estratto conto la sua
+                          origine, e lì si scollega. */}
+                      {entry.bankTransactionId && (
+                        <Link
+                          href={`/prima-nota/movimenti?register=BANK&movimento=${entry.bankTransactionId}`}
+                          className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          <Landmark className="h-3 w-3 shrink-0" aria-hidden />
+                          dalla banca
+                        </Link>
                       )}
                     </td>
 

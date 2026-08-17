@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/prisma'
 import { MATCH_THRESHOLDS, MATCH_WEIGHTS } from '@/types/reconciliation'
 import type { ReconciliationStatus, MatchCandidate, ReconcileResult } from '@/types/reconciliation'
+import { ricalcolaResiduoDocumenti } from '@/lib/banca/residuo-documenti'
 
 interface BankTx {
   id: string
@@ -289,6 +290,11 @@ export async function reconcileVenueTransactions(
       },
     })
 
+    // L'aggancio a una scrittura esistente porta con sé il residuo dei suoi
+    // documenti sulla riga: senza, la legenda direbbe «abbinato» anche dove
+    // la scrittura copre solo una parte.
+    if (matchedEntryId) await ricalcolaResiduoDocumenti(prisma, matchedEntryId)
+
     // Aggiorna contatori
     if (newStatus === 'MATCHED') results.matched++
     else if (newStatus === 'TO_REVIEW') results.toReview++
@@ -338,83 +344,3 @@ export async function confirmMatch(
   })
 }
 
-/**
- * Esegue un match manuale tra transazione e movimento
- */
-export async function manualMatch(
-  transactionId: string,
-  journalEntryId: string,
-  userId: string
-): Promise<void> {
-  // Verifica che il movimento non sia già matchato
-  const existingMatch = await prisma.bankTransaction.findFirst({
-    where: {
-      matchedEntryId: journalEntryId,
-      id: { not: transactionId },
-    },
-  })
-
-  if (existingMatch) {
-    throw new Error('Questo movimento è già associato a un\'altra transazione')
-  }
-
-  // Calcola confidence per il match manuale
-  const [tx, entry] = await Promise.all([
-    prisma.bankTransaction.findUnique({ where: { id: transactionId } }),
-    prisma.journalEntry.findUnique({ where: { id: journalEntryId } }),
-  ])
-
-  if (!tx || !entry) {
-    throw new Error('Transazione o movimento non trovato')
-  }
-
-  const confidence = calculateMatchScore(
-    {
-      id: tx.id,
-      transactionDate: tx.transactionDate,
-      description: tx.description,
-      amount: Number(tx.amount),
-    },
-    {
-      id: entry.id,
-      date: entry.date,
-      description: entry.description,
-      debitAmount: entry.debitAmount ? Number(entry.debitAmount) : null,
-      creditAmount: entry.creditAmount ? Number(entry.creditAmount) : null,
-      documentRef: entry.documentRef,
-    }
-  )
-
-  await prisma.bankTransaction.update({
-    where: { id: transactionId },
-    data: {
-      status: 'MANUAL',
-      matchedEntryId: journalEntryId,
-      matchConfidence: confidence,
-      reconciledBy: userId,
-      reconciledAt: new Date(),
-    },
-  })
-}
-
-/**
- * Annulla un match (torna a PENDING).
- *
- * Restituisce `false` se la transazione non esiste più: l'aggiornamento è
- * condizionato, così una transazione cancellata non viene toccata e il
- * chiamante può rispondere "non trovata" invece di un guasto del server.
- */
-export async function unmatch(transactionId: string): Promise<boolean> {
-  const aggiornate = await prisma.bankTransaction.updateMany({
-    where: { id: transactionId },
-    data: {
-      status: 'PENDING',
-      matchedEntryId: null,
-      matchConfidence: null,
-      reconciledBy: null,
-      reconciledAt: null,
-    },
-  })
-
-  return aggiornate.count > 0
-}
