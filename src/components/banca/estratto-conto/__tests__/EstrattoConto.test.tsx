@@ -426,9 +426,42 @@ describe('EstrattoConto', () => {
     const riconcilia = perTesto('Riconcilia', '[role="menuitem"] a, a[role="menuitem"]') ?? perTesto('Riconcilia', 'a')
     expect(riconcilia?.getAttribute('href')).toBe('/riconciliazione?movimento=1')
 
+    // Senza proposta non c'è nulla da scartare.
+    expect(perTesto('Scarta la proposta', '[role="menuitem"]')).toBeFalsy()
+
     // Categorizza apre il dialogo sulla riga.
     await cliccare(perTesto('Categorizza', '[role="menuitem"]'))
     await attendiChe(() => testoDellaPagina().includes('Categorizza movimento'), 'il dialogo')
+  })
+
+  // Una riga con la proposta del vecchio motore dice «Non abbinato» e mostra
+  // 🔗 Collega, non ⛓️‍💥 Scollega: senza questa voce di menu la proposta non
+  // aveva nessuna via d'uscita, né qui né sulla vecchia pagina.
+  it('il menu di una riga con proposta offre «Scarta la proposta», e la conferma lo dice', async () => {
+    const conProposta = riga('5', {
+      matchedEntryId: 'e9', status: 'TO_REVIEW', stato: 'non_abbinato', residuo: 907.9, proposta: true,
+      matchConfidence: 0.8,
+      matchedEntry: { id: 'e9', date: '2026-08-14', description: 'proposta del motore', debitAmount: 907.9, creditAmount: null, documentRef: null, account: null, costCenter: null, fette: 0 },
+    })
+    stubTutto({ ...RISPOSTA, data: [conProposta] })
+    await montare(<EstrattoConto venueId="v1" filtriIniziali={FILTRI_DEFAULT} />)
+    await attendiChe(() => testoDellaPagina().includes('DITTA 5'), 'la riga')
+
+    // La proposta non è un legame: l'icona resta «Collega fattura».
+    expect(document.querySelectorAll('button[aria-label="Collega fattura"]')).toHaveLength(1)
+
+    await aprireMenu(document.querySelector('button[aria-label="Altre azioni"]'))
+    await attendiChe(() => !!perTesto('Categorizza', '[role="menuitem"]'), 'il menu')
+    await cliccare(perTesto('Scarta la proposta', '[role="menuitem"]'))
+
+    // La conferma parla della proposta, non di una scrittura da ritirare.
+    await attendiChe(() => testoDellaPagina().includes('Scartare la proposta?'), 'la conferma')
+    expect(testoDellaPagina()).toContain('il movimento torna «Non abbinato»')
+    await cliccare(perTesto('Scarta', '[role="alertdialog"] button'))
+    await attendiChe(
+      () => richieste.some((r) => r.url === '/api/bank-transactions/5/scollega' && r.init?.method === 'POST'),
+      'la rotta di scollegamento'
+    )
   })
 
   it('con «movimento» nell\'URL mostra il chip e «Mostra tutti» lo toglie', async () => {

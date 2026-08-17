@@ -51,11 +51,16 @@ export const CAMPI_SOLO_MANUALI = ['transactionDate', 'valueDate', 'amount'] as 
 
 // Le azioni contabili della consegna B (spec, «Le azioni»). L'imputazione è
 // conto + centro: la categoria di budget si deriva dal conto e non si chiede.
-export const imputazioneSchema = z.object({
-  accountId: z.string().min(1),
-  costCenterId: z.string().min(1).optional(),
-})
-export const categorizzaSchema = imputazioneSchema.strict()
+// `strict()` anche qui dentro: annidata nel corpo in blocco, senza sarebbe
+// l'unico punto in cui un campo di troppo — un `budgetCategoryId`, per dire —
+// verrebbe scartato in silenzio invece che rifiutato.
+export const imputazioneSchema = z
+  .object({
+    accountId: z.string().min(1),
+    costCenterId: z.string().min(1).optional(),
+  })
+  .strict()
+export const categorizzaSchema = imputazioneSchema
 
 // Collega: le scadenze con la quota di ciascuna, OPPURE una scrittura esistente
 // (la R4). Mai entrambe: la R4 si lega, non aggiunge documenti.
@@ -80,6 +85,7 @@ export const categorizzaInBloccoSchema = z
     filtro: z.record(z.string(), z.string()).optional(),
     imputazione: imputazioneSchema,
   })
+  .strict()
   .refine((v) => !!v.ids !== !!v.filtro, { message: 'Indica ids oppure filtro, non entrambi' })
 
 // Sposta in: la scheda in cui la riga si vede (spec, decisione 5).

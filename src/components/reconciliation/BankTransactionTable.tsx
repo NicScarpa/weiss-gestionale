@@ -208,15 +208,22 @@ export function BankTransactionTable({
                           </DropdownMenuItem>
                         )}
 
+                      {/* Anche su TO_REVIEW: una riga da verificare porta la
+                          proposta del motore, e senza questa voce non aveva
+                          nessuna via d'uscita — né qui né nell'estratto conto,
+                          dove una proposta non mostra Scollega. L'unica strada
+                          era confermare un abbinamento che si sa sbagliato per
+                          poi annullarlo. */}
                       {(tx.status === 'MATCHED' ||
                         tx.status === 'MANUAL' ||
-                        tx.status === 'IGNORED') &&
+                        tx.status === 'IGNORED' ||
+                        tx.status === 'TO_REVIEW') &&
                         onUnmatch && (
                           <DropdownMenuItem
                             onClick={() => handleAction(tx.id, () => onUnmatch(tx.id))}
                           >
                             <Undo2 className="mr-2 h-4 w-4" />
-                            Annulla
+                            {tx.status === 'TO_REVIEW' ? 'Scarta proposta' : 'Annulla'}
                           </DropdownMenuItem>
                         )}
                     </DropdownMenuContent>

@@ -398,9 +398,11 @@ function motivoDelBlocco(riga: RigaConLegami, gemella: boolean): Blocco | null {
     return {
       status: 409,
       corpo: {
+        // L'azione esiste e ha un nome: dire «sgancia l'abbinamento» senza
+        // dire dove lasciava davanti a un'istruzione non eseguibile.
         error:
-          `Il movimento${dove} è abbinato a una transazione bancaria: sgancia prima ` +
-          'l\'abbinamento, poi elimina il movimento',
+          `Il movimento${dove} è abbinato a una riga dell'estratto conto: usa Scollega ` +
+          'nell\'estratto conto, poi elimina il movimento',
       },
     }
   }

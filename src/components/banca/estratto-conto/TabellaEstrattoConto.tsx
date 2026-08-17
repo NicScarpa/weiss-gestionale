@@ -145,6 +145,16 @@ export function TabellaEstrattoConto(p: Props) {
                             </Link>
                           </DropdownMenuItem>
                         )}
+                        {/* La via d'uscita dalla proposta del vecchio motore:
+                            la riga dice «Non abbinato» e mostra 🔗, quindi
+                            Scollega da sola non comparirebbe mai — e la
+                            proposta resterebbe lì senza modo di rifiutarla. */}
+                        {r.proposta && (
+                          <DropdownMenuItem onClick={() => p.onScollega(r)}>
+                            <Unlink className="mr-2 h-4 w-4" aria-hidden />
+                            Scarta la proposta
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuSub>
                           <DropdownMenuSubTrigger>Sposta in</DropdownMenuSubTrigger>
                           <DropdownMenuSubContent>

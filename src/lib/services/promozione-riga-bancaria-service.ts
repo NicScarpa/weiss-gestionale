@@ -27,7 +27,9 @@ import { ricalcolaResiduoDocumenti } from '@/lib/banca/residuo-documenti'
  * «promuoviRigaBancaria, il servizio unico».
  *
  * Tutto in una transazione: la scrittura si CREA se la riga non ne ha, si
- * RIUSA se `matchedEntryId` è già valorizzato, si LEGA se arriva
+ * RIUSA se `matchedEntryId` è già valorizzato **e la riga non è una proposta**
+ * (`status = TO_REVIEW`: il vecchio motore scrive quella colonna senza che
+ * nessuno abbia confermato), si LEGA se arriva
  * `scritturaEsistenteId` (la R4); poi una riconciliazione per scadenza; la
  * riga passa a MANUAL (utente) o MATCHED (proposta). Un esito negativo dentro
  * la transazione è un'eccezione (`PromozioneRifiutata`) che la fa cadere per
@@ -153,6 +155,7 @@ async function aggiornaImputazione(tx: TransactionClient, journalEntryId: string
     where: { id: journalEntryId },
     select: {
       id: true,
+      closureId: true,
       costCenterId: true,
       costCenterSource: true,
       _count: { select: { allocations: true } },
@@ -163,6 +166,17 @@ async function aggiornaImputazione(tx: TransactionClient, journalEntryId: string
     throw new PromozioneRifiutata({
       outcome: 'imputazione_non_valida',
       motivo: 'La scrittura è ripartita su più conti dalla fattura: si modifica dalla prima nota',
+    })
+  }
+  // Le scritture generate da una chiusura di cassa si riclassificano solo dalla
+  // prima nota, dove il limite è dichiarato: `PUT /api/prima-nota/[id]` le apre
+  // al solo `admin` e al solo conto/centro, senza toccare `verified` né
+  // `categorizationSource`. Categorizza è aperta anche al `manager`: senza
+  // questo rifiuto sarebbe una porta di servizio su quella stessa regola.
+  if (scrittura.closureId) {
+    throw new PromozioneRifiutata({
+      outcome: 'imputazione_non_valida',
+      motivo: 'La scrittura viene da una chiusura di cassa: si riclassifica dalla prima nota',
     })
   }
   await esigiConto(tx, imputazione.accountId)
@@ -221,6 +235,7 @@ export async function promuoviRigaBancariaInTransazione(
       transactionDate: true,
       description: true,
       descrizione: true,
+      status: true,
       matchedEntryId: true,
       origineScrittura: true,
     },
@@ -236,6 +251,18 @@ export async function promuoviRigaBancariaInTransazione(
   const importo = arrotonda(Math.abs(Number(riga.amount)))
   const verso = Number(riga.amount) > 0 ? 'INCASSO' : 'USCITA'
   const scadenze = input.scadenze ?? []
+
+  /**
+   * Una riga `TO_REVIEW` porta la proposta del vecchio motore, che scrive
+   * `matchedEntryId` **senza conferma** (spec, «Gli stati»; `statoLegenda` la
+   * dice «Non abbinato»). Quel `matchedEntryId` non è un legame: la scrittura
+   * che indica è di un'altra operazione, e trattarla come «già promossa»
+   * significava riscriverne l'imputazione con Categorizza, appenderle le
+   * riconciliazioni di Collega e rifiutare la R4 con `riga_gia_collegata`.
+   * La proposta non ha riconciliazioni proprie — il vecchio motore scrive solo
+   * la colonna — quindi ignorarla non perde nulla.
+   */
+  const proposta = riga.status === 'TO_REVIEW'
 
   // Le scadenze si leggono PRIMA di creare la scrittura: il fornitore e la
   // fattura della prima decidono il conto e il riferimento del documento.
@@ -262,8 +289,10 @@ export async function promuoviRigaBancariaInTransazione(
   let creata = false
 
   if (input.scritturaEsistenteId) {
-    // La R4: si lega, non si crea.
-    if (riga.matchedEntryId && riga.matchedEntryId !== input.scritturaEsistenteId) {
+    // La R4: si lega, non si crea. Una riga con proposta si rilega alla
+    // scrittura scelta: rifiutarla indicava uno scollegamento che dalla pagina
+    // di riconciliazione non si poteva compiere.
+    if (riga.matchedEntryId && !proposta && riga.matchedEntryId !== input.scritturaEsistenteId) {
       throw new PromozioneRifiutata({ outcome: 'riga_gia_collegata', journalEntryId: riga.matchedEntryId })
     }
     const scrittura = await tx.journalEntry.findFirst({
@@ -283,7 +312,7 @@ export async function promuoviRigaBancariaInTransazione(
       })
     }
     journalEntryId = scrittura.id
-  } else if (riga.matchedEntryId) {
+  } else if (riga.matchedEntryId && !proposta) {
     // Già promossa: si riusa la scrittura; con un'imputazione la si aggiorna.
     journalEntryId = riga.matchedEntryId
     if (input.imputazione) await aggiornaImputazione(tx, journalEntryId, input.imputazione)
@@ -338,7 +367,10 @@ export async function promuoviRigaBancariaInTransazione(
     creata = true
   }
 
-  if (riga.matchedEntryId !== journalEntryId) {
+  // Anche quando l'id coincide, se la riga era una proposta: serve a portarla a
+  // MANUAL/MATCHED, a scrivere `origineScrittura` e ad azzerare la confidenza
+  // della proposta, che non descrive più nulla.
+  if (riga.matchedEntryId !== journalEntryId || proposta) {
     await tx.bankTransaction.update({
       where: { id: riga.id },
       data: {

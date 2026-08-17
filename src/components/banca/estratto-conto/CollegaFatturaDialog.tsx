@@ -273,7 +273,11 @@ function Modulo({ riga, onChiudi, onFatto }: { riga: RigaEstrattoConto; onChiudi
         </TabsContent>
 
         <TabsContent value="scrittura" className="mt-3 space-y-3">
-          <div className="max-h-[40vh] overflow-y-auto rounded-md border" role="radiogroup" aria-label="Scritture libere">
+          {/* Niente `role="radiogroup"` sul contenitore: fra il gruppo e i
+              `radio` ci sarebbero `ul`/`li`, ruoli che lì non sono ammessi, e
+              i `<input type="radio">` con lo stesso `name` formano già un
+              gruppo da sé. */}
+          <div className="max-h-[40vh] overflow-y-auto rounded-md border">
             {scritture.isPending ? (
               <p className="p-3 text-sm text-muted-foreground">Caricamento…</p>
             ) : (scritture.data ?? []).length === 0 ? (
@@ -296,6 +300,12 @@ function Modulo({ riga, onChiudi, onFatto }: { riga: RigaEstrattoConto; onChiudi
                         <span className="w-20 shrink-0 text-muted-foreground">{giorno(e.date)}</span>
                         <span className="min-w-0 flex-1 truncate" title={e.description}>
                           {e.description}
+                          {/* Il riferimento del documento distingue due
+                              scritture che si somigliano: è il campo che il
+                              server manda già e che qui si buttava. */}
+                          {e.documentRef && (
+                            <span className="ml-1 text-xs text-muted-foreground">· {e.documentRef}</span>
+                          )}
                           {e.account && <span className="ml-1 text-xs text-muted-foreground">{e.account.code}</span>}
                         </span>
                         <span className={cn('font-medium', stessoImporto && 'text-emerald-700')}>{formatCurrency(importo)}</span>

@@ -22,14 +22,21 @@ export function IconaStato({ stato, residuo, proposta = false }: { stato: StatoL
   const { Icona, classe } = STILE[stato]
   return (
     <span className="inline-flex items-center gap-1.5" title={ETICHETTE_STATO[stato]}>
-      {/* `role="img"`: su un elemento generico l'`aria-label` non viene letto,
-          e lo stato resterebbe un quadratino colorato e muto. */}
-      <span
-        role="img"
-        className={cn('relative inline-flex h-6 w-8 items-center justify-center rounded-md', classe)}
-        aria-label={ETICHETTE_STATO[stato]}
-      >
-        <Icona className="h-3.5 w-3.5" aria-hidden />
+      {/* Il puntino è FRATELLO del badge, non figlio: un `role="img"` dentro un
+          altro `role="img"` non viene mai annunciato — il badge è già una
+          foglia per il lettore di schermo — e «C'è una proposta da rivedere»
+          andava perduta. Il contenitore relativo è questo, così il puntino
+          resta all'angolo del badge e non dell'intera cella col residuo. */}
+      <span className="relative inline-flex">
+        {/* `role="img"`: su un elemento generico l'`aria-label` non viene letto,
+            e lo stato resterebbe un quadratino colorato e muto. */}
+        <span
+          role="img"
+          className={cn('inline-flex h-6 w-8 items-center justify-center rounded-md', classe)}
+          aria-label={ETICHETTE_STATO[stato]}
+        >
+          <Icona className="h-3.5 w-3.5" aria-hidden />
+        </span>
         {/* «C'è una proposta»: il puntino della spec sul Non abbinato (una
             proposta del motore da rivedere non è un abbinamento). */}
         {proposta && (

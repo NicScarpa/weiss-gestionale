@@ -7,13 +7,19 @@ import type { RigaEstrattoConto } from '@/types/reconciliation'
 /** Il `where` della lista. `deletedAt` è sempre esplicito: è ciò che apre o chiude il Cestino. */
 export function costruisciWhere(f: FiltriEstrattoConto, venueId: string): Prisma.BankTransactionWhereInput {
   const where: Prisma.BankTransactionWhereInput = { venueId }
-  if (f.cestino) {
+  // Il collegamento profondo a una riga sola (`?movimento=`) arriva dalla
+  // scheda Scritture e dalla pagina di riconciliazione, che non sanno dove la
+  // riga si trovi: «Sposta in» può averla portata in Deleghe F24 o nel
+  // Cestino. Filtrarla anche per scheda apriva una lista vuota sotto il chip
+  // «Stai guardando un solo movimento», che prometteva una riga inesistente.
+  if (f.movimento) {
+    where.id = f.movimento
+  } else if (f.cestino) {
     where.deletedAt = { not: null }
   } else {
     where.deletedAt = null
     where.sezione = f.sezione
   }
-  if (f.movimento) where.id = f.movimento
   if (f.tipo === 'entrate') where.amount = { gt: 0 }
   if (f.tipo === 'uscite') where.amount = { lt: 0 }
   if (f.bankAccountId) where.bankAccountId = f.bankAccountId

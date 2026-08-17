@@ -15,11 +15,32 @@ export function calcolaResiduoDocumenti(amount: number, importiRiconciliati: num
 }
 
 /**
+ * Blocca la riga di banca collegata alla scrittura, se c'è.
+ *
+ * L'ordine dei lock del piano è «riga di banca → movimento → scadenza», ed è
+ * ciò che la promozione fa. Chi entra dallo scadenzario (una riconciliazione o
+ * un annullo) blocca invece il movimento per primo e scrive sulla riga per
+ * ultimo, con `ricalcolaResiduoDocumenti`: due transazioni concorrenti sulla
+ * stessa coppia (riga R, scrittura E) si incrocerebbero — una tiene R e aspetta
+ * E, l'altra il contrario — e PostgreSQL ne abortirebbe una con 40P01. Questa
+ * query in testa rimette lo stesso ordine ovunque. `matched_entry_id` ha
+ * l'indice unico: è una lettura indicizzata, e vale il prezzo.
+ */
+export async function bloccaRigaBancaria(tx: TransactionClient, journalEntryId: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM bank_transactions WHERE matched_entry_id = ${journalEntryId} FOR UPDATE`
+}
+
+/**
  * Riscrive `residuoDocumenti` sulla riga di banca collegata alla scrittura, se
  * ce n'è una. Va chiamata DENTRO la transazione che ha appena creato o tolto
  * una riconciliazione, o collegato la riga: è l'unico modo perché la colonna
  * dica sempre ciò che dicono le riconciliazioni — la promozione non è l'unica
  * a scriverle, lo fa anche lo scadenzario su una scrittura promossa.
+ *
+ * Il lock della riga se l'è già preso chi chiama (`bloccaRigaBancaria` qui
+ * sopra, in testa alla riconciliazione e all'annullo; la promozione blocca la
+ * riga per id ancora prima di leggerla): questa `UPDATE` non ne apre uno nuovo
+ * fuori ordine.
  *
  * Restituisce il residuo scritto, `null` se nessuna riga viva è collegata (una
  * riga nel Cestino non può esserlo: il Cestino rifiuta le righe collegate).

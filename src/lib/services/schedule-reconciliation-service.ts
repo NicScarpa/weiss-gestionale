@@ -6,7 +6,7 @@ import { parseFatturaPA } from '@/lib/sdi/parser'
 import { righeDiSistema, type RigaDiSistema } from '@/lib/sdi/righe-di-sistema'
 import { TIPI_DOCUMENTO_NOTA_CREDITO } from '@/lib/services/invoice-schedule-service'
 import { applicaStimaSuScadenza, ricalcolaStimeFornitore } from '@/lib/scadenzario/stima-data-attesa'
-import { ricalcolaResiduoDocumenti } from '@/lib/banca/residuo-documenti'
+import { bloccaRigaBancaria, ricalcolaResiduoDocumenti } from '@/lib/banca/residuo-documenti'
 import {
   bloccaMovimento,
   bloccaScadenza,
@@ -769,6 +769,11 @@ export async function riconciliaInTransazione(
     confidence,
   }: ReconcileInput
 ) {
+  // L'ordine dei lock è «riga di banca → movimento → scadenza» ovunque: la
+  // promozione lo tiene, e da qui lo si tiene uguale. Chi entra dalla
+  // promozione ha già questa riga: il lock è suo e la query non aspetta.
+  await bloccaRigaBancaria(tx, journalEntryId)
+
   const entry = await bloccaMovimento(tx, journalEntryId, venueId)
   if (!entry) return { outcome: 'entry_not_found' } as const
 
@@ -1007,8 +1012,9 @@ export async function annullaRiconciliazioneInTransazione(
   if (!riferimento) return null
 
   // Stesso ordine di acquisizione dei lock della riconciliazione
-  // (movimento, poi scadenza): invertirlo qui basterebbe a produrre deadlock
-  // fra un annullo e una riconciliazione concorrenti.
+  // (riga di banca, movimento, scadenza): invertirlo qui basterebbe a produrre
+  // deadlock fra un annullo e una riconciliazione concorrenti.
+  await bloccaRigaBancaria(tx, riferimento.journalEntryId)
   const movimento = await bloccaMovimento(tx, riferimento.journalEntryId)
   await bloccaScadenza(tx, riferimento.scheduleId)
 

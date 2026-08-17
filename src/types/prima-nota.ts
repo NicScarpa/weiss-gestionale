@@ -200,6 +200,12 @@ export interface JournalEntryFormData {
   costCenterId?: string
   vatAmount?: number
   notes?: string
+  /**
+   * La riga dell'estratto conto da cui la scrittura è nata, se c'è: la sua
+   * data viene dalla banca e si cambia solo scollegando la riga (spec estratto
+   * conto, decisione 2). Il modulo la mostra in sola lettura.
+   */
+  bankTransactionId?: string
 }
 
 // Filtri lista movimenti

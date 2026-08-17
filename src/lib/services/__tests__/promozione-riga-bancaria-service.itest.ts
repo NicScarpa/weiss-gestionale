@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { prisma } from '@/lib/prisma'
 import { setupIntegrationDb } from '@/test/integration/db'
-import { venueDiTest, centroDiCosto } from '@/test/integration/fixtures/closures'
+import { venueDiTest, centroDiCosto, creaChiusura } from '@/test/integration/fixtures/closures'
 import { creaMovimento, creaScadenza, fornitoreDiTest, rileggiScadenza } from '@/test/integration/fixtures/scadenzario'
 import { promuoviRigaBancaria, scollegaRigaBancaria } from '../promozione-riga-bancaria-service'
 
@@ -28,6 +28,19 @@ async function rigaBanca(venueId: string, contoId: string, importo: number, extr
       importSource: 'PSD2_GOCARDLESS',
       status: 'PENDING',
     },
+  })
+}
+
+/**
+ * Una riga con la proposta del vecchio motore: `TO_REVIEW` e `matchedEntryId`
+ * scritto **senza** che nessuno abbia confermato. Non è un legame (spec, «Gli
+ * stati»), e la promozione non deve trattarlo come tale.
+ */
+async function rigaConProposta(venueId: string, contoId: string, importo: number, propostaId: string) {
+  const riga = await rigaBanca(venueId, contoId, importo)
+  return prisma.bankTransaction.update({
+    where: { id: riga.id },
+    data: { status: 'TO_REVIEW', matchedEntryId: propostaId, matchConfidence: 0.8 },
   })
 }
 
@@ -338,6 +351,105 @@ describe('promuoviRigaBancaria', () => {
     if (esito.outcome !== 'imputazione_non_valida') throw new Error('impossibile')
     expect(esito.code).toBe('CENTRO_DI_COSTO_OBBLIGATORIO')
     expect((await rigaDopo(riga.id)).matchedEntryId).toBeNull()
+  })
+
+  // Le tre azioni su una riga che porta una proposta del vecchio motore. Il
+  // `matchedEntryId` di una riga `TO_REVIEW` non è un legame: la scrittura che
+  // indica è di qualcun altro e nessuno l'ha confermata (spec, «Gli stati»).
+  it('Categorizza su una riga con proposta crea la scrittura sua e non tocca quella proposta', async () => {
+    const { venueId, contoId, contoCostoId } = await contesto()
+    const centro = await centroDiCosto('WEISS')
+    const proposta = await creaMovimento({ uscita: 100 })
+    const riga = await rigaConProposta(venueId, contoId, -100, proposta.id)
+    const propostaPrima = await scritturaGrezza(proposta.id)
+
+    const esito = await promuoviRigaBancaria({
+      bankTransactionId: riga.id, venueId, userId: null, origine: 'categorizza',
+      imputazione: { accountId: contoCostoId, costCenterId: centro },
+    })
+    if (esito.outcome !== 'ok') throw new Error(esito.outcome)
+    expect(esito.creata).toBe(true)
+    expect(esito.journalEntryId).not.toBe(proposta.id)
+
+    // L'imputazione della scrittura proposta resta quella che era: è di
+    // un'altra operazione, e Categorizza non deve riscriverla.
+    const propostaDopo = await scritturaGrezza(proposta.id)
+    expect(propostaDopo?.account_id).toBe(propostaPrima?.account_id ?? null)
+    expect(propostaDopo?.cost_center_id).toBe(propostaPrima?.cost_center_id)
+
+    const dopo = await rigaDopo(riga.id)
+    expect(dopo.matchedEntryId).toBe(esito.journalEntryId)
+    expect(dopo.status).toBe('MANUAL')
+    expect(dopo.origineScrittura).toBe('CATEGORIZZA')
+    // La confidenza era della proposta, che non c'è più.
+    expect(dopo.matchConfidence).toBeNull()
+  })
+
+  it('Collega scadenze su una riga con proposta scrive le riconciliazioni sulla scrittura nuova, non su quella proposta', async () => {
+    const { venueId, contoId } = await contesto()
+    const proposta = await creaMovimento({ uscita: 100 })
+    const scadenza = await creaScadenza({ importoTotale: 100 })
+    const riga = await rigaConProposta(venueId, contoId, -100, proposta.id)
+
+    const esito = await promuoviRigaBancaria({
+      bankTransactionId: riga.id, venueId, userId: null, origine: 'collega',
+      scadenze: [{ scheduleId: scadenza.id, amount: 100 }],
+    })
+    if (esito.outcome !== 'ok') throw new Error(esito.outcome)
+    expect(esito.creata).toBe(true)
+    // Una scadenza pagata da una scrittura che nessuno ha accettato è
+    // esattamente ciò che non deve succedere.
+    expect(await prisma.scheduleReconciliation.count({ where: { journalEntryId: proposta.id } })).toBe(0)
+    expect(await prisma.scheduleReconciliation.count({ where: { journalEntryId: esito.journalEntryId } })).toBe(1)
+
+    const dopo = await rigaDopo(riga.id)
+    expect(dopo.matchedEntryId).toBe(esito.journalEntryId)
+    expect(dopo.status).toBe('MANUAL')
+    expect(dopo.origineScrittura).toBe('COLLEGA')
+  })
+
+  it('Collega scrittura esistente su una riga con proposta la rilega senza 409', async () => {
+    const { venueId, contoId } = await contesto()
+    const proposta = await creaMovimento({ uscita: 100 })
+    const scelta = await creaMovimento({ uscita: 100, description: 'Incasso POS' })
+    const riga = await rigaConProposta(venueId, contoId, -100, proposta.id)
+
+    const esito = await promuoviRigaBancaria({
+      bankTransactionId: riga.id, venueId, userId: null, origine: 'collega', scritturaEsistenteId: scelta.id,
+    })
+    if (esito.outcome !== 'ok') throw new Error(esito.outcome)
+    expect(esito.creata).toBe(false)
+    expect(esito.journalEntryId).toBe(scelta.id)
+
+    const dopo = await rigaDopo(riga.id)
+    expect(dopo.matchedEntryId).toBe(scelta.id)
+    expect(dopo.status).toBe('MANUAL')
+    expect(dopo.origineScrittura).toBeNull()
+  })
+
+  it('Categorizza su una scrittura che viene da una chiusura di cassa si rifiuta', async () => {
+    const { venueId, contoId, contoCostoId } = await contesto()
+    const chiusura = await creaChiusura()
+    const daChiusura = await creaMovimento({ uscita: 100, closureId: chiusura.id, description: 'Incasso POS' })
+    const riga = await rigaBanca(venueId, contoId, -100)
+    // La R4 serve proprio ad agganciare una riga a una scrittura di chiusura.
+    const legata = await promuoviRigaBancaria({
+      bankTransactionId: riga.id, venueId, userId: null, origine: 'collega', scritturaEsistenteId: daChiusura.id,
+    })
+    if (legata.outcome !== 'ok') throw new Error(legata.outcome)
+    const prima = await scritturaGrezza(daChiusura.id)
+
+    const esito = await promuoviRigaBancaria({
+      bankTransactionId: riga.id, venueId, userId: null, origine: 'categorizza', imputazione: { accountId: contoCostoId },
+    })
+    expect(esito.outcome).toBe('imputazione_non_valida')
+    if (esito.outcome !== 'imputazione_non_valida') throw new Error('impossibile')
+    expect(esito.motivo).toContain('chiusura')
+    // Conto, centro e verifica della scrittura di chiusura restano intatti.
+    const dopo = await scritturaGrezza(daChiusura.id)
+    expect(dopo?.account_id).toBe(prima?.account_id ?? null)
+    expect(dopo?.cost_center_id).toBe(prima?.cost_center_id)
+    expect(dopo?.verified).toBe(prima?.verified)
   })
 
   it('un conto inesistente si rifiuta come imputazione non valida', async () => {

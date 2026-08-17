@@ -52,6 +52,13 @@ export interface EstrattoContoProps {
 }
 
 const CHIAVE_QUERY_ESTRATTO = ['estratto-conto'] as const
+/**
+ * Le scritture della sotto-scheda e il loro contatore stanno sotto
+ * `['prima-nota']` (`MovimentiClient`): Categorizza, Collega e Scollega ne
+ * creano e ne ritirano, quindi vanno rilette insieme alla lista — altrimenti
+ * «Scritture (N)» resta al numero del caricamento finché non si rimonta.
+ */
+const CHIAVE_QUERY_PRIMA_NOTA = ['prima-nota'] as const
 
 async function leggiLista(filtri: Filtri): Promise<RispostaEstrattoConto> {
   const r = await fetch(`/api/bank-transactions?${filtriInSearchParams(filtri)}`)
@@ -173,6 +180,7 @@ export function EstrattoConto({ venueId, filtriIniziali, onFiltriChange }: Estra
   /** Dopo ogni azione la lista si rilegge: i conteggi e i totali cambiano con lei. */
   const ricarica = () => {
     void queryClient.invalidateQueries({ queryKey: CHIAVE_QUERY_ESTRATTO })
+    void queryClient.invalidateQueries({ queryKey: CHIAVE_QUERY_PRIMA_NOTA })
   }
 
   const chiama = async (url: string, init: RequestInit, ok: string, ko: string) => {

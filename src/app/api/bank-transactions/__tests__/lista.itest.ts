@@ -138,6 +138,20 @@ describe('GET /api/bank-transactions — la lista dell\'estratto conto', () => {
     expect(sola.body.pagination.total).toBe(1)
   })
 
+  // Il collegamento profondo arriva dalla scheda Scritture e dalla pagina di
+  // riconciliazione, che non sanno in quale scheda stia la riga: se «Sposta in»
+  // l'ha portata in Deleghe F24, la sezione predefinita la nasconderebbe e il
+  // chip «Stai guardando un solo movimento» prometterebbe una riga che non c'è.
+  it('«movimento» trova la riga anche fuori dalla scheda Attivi', async () => {
+    const { venueId, contoId } = await contesto()
+    const delega = await riga(venueId, contoId, { data: '2026-08-01', importo: -300, descrizione: 'delega', sezione: 'DELEGHE_F24' })
+    await riga(venueId, contoId, { data: '2026-08-02', importo: -2, descrizione: 'altra' })
+
+    const sola = await lista(`movimento=${delega.id}`)
+    expect(sola.body.data.map((r) => r.descrizione)).toEqual(['delega'])
+    expect(sola.body.pagination.total).toBe(1)
+  })
+
   // La pagina /riconciliazione (consegna B non ancora arrivata) manda ancora
   // `?status=TO_REVIEW`: senza questo filtro tornerebbe tutto, non solo le
   // righe da rivedere.
