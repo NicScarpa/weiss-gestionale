@@ -118,6 +118,30 @@ export interface LottoDiProposte {
   createdAt: string
 }
 
+/**
+ * Una riga dello storico, cioè quello che seleziona `GET
+ * /api/riconciliazione-assistita/lotti`.
+ *
+ * Non è `LottoDiProposte` con qualche campo in meno: è un altro insieme. La
+ * lista porta i contatori persistiti (`contaProposte` e compagnia) che il
+ * dettaglio non manda — li ricalcola dalle proposte — e non porta
+ * `regoleUsate`, `sogliaMinima` né `aiReferto`, che servono solo dentro un
+ * lotto aperto. Tenerli separati evita di leggere campi che dalla lista non
+ * arrivano mai e che a runtime sarebbero `undefined`.
+ */
+export interface LottoNelloStorico {
+  id: string
+  dateFrom: string
+  dateTo: string
+  stato: string
+  contaProposte: number
+  contaApprovate: number
+  contaScartate: number
+  contaSuperate: number
+  aiRefertoAt: string | null
+  createdAt: string
+}
+
 export interface RispostaLotto {
   lotto: LottoDiProposte
   proposte: PropostaDiRiconciliazione[]

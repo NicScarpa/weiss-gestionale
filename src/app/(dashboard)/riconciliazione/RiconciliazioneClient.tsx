@@ -9,12 +9,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { CodaProposte, type FiltroFascia } from '@/components/riconciliazione/CodaProposte'
+import { StoricoLotti } from '@/components/riconciliazione/StoricoLotti'
 import { REGOLE_ATTIVE, SIGLE_ATTIVE } from '@/components/riconciliazione/regole'
 import { formatDateShort } from '@/lib/constants'
 import { romeDateKey } from '@/lib/timezone'
 import type {
   EsitoGenerazioneLotto,
-  LottoDiProposte,
+  LottoNelloStorico,
   RispostaLotto,
 } from '@/types/riconciliazione-assistita'
 
@@ -56,22 +57,28 @@ export function RiconciliazioneClient() {
   const lottoNellUrl = searchParams.get('lotto')
   const movimento = searchParams.get('movimento')
 
-  // Arrivando dall'estratto conto con «Riconcilia» c'è il movimento ma non il
-  // lotto: si apre l'ultima analisi fatta, che è quella in cui quel movimento
-  // ha una proposta se ce l'ha. Senza nessuna analisi, resta la pagina
-  // d'ingresso — col chip, così si capisce da dove si è arrivati.
+  // Lo storico delle analisi serve a due cose, e si legge ogni volta che
+  // manca `?lotto=`: mostrare le analisi già fatte nella pagina d'ingresso, e
+  // aprire l'ultima quando si arriva dall'estratto conto con «Riconcilia» —
+  // lì c'è il movimento ma non il lotto, e l'ultima analisi è quella in cui
+  // quel movimento ha una proposta se ce l'ha.
   const cercaUltimoLotto = !lottoNellUrl && !!movimento
   const { data: storico, isFetching: cercaInCorso } = useQuery({
     queryKey: ['riconciliazione', 'lotti'],
-    enabled: cercaUltimoLotto,
-    queryFn: async (): Promise<{ lotti: LottoDiProposte[] }> => {
+    enabled: !lottoNellUrl,
+    queryFn: async (): Promise<{ lotti: LottoNelloStorico[] }> => {
       const risposta = await fetch('/api/riconciliazione-assistita/lotti')
       if (!risposta.ok) throw new Error('Impossibile leggere lo storico delle analisi')
       return risposta.json()
     },
   })
 
-  const lottoId = lottoNellUrl ?? storico?.lotti?.[0]?.id ?? null
+  // Solo chi arriva da un movimento si vede aprire l'ultima analisi da sola:
+  // altrimenti la pagina d'ingresso salterebbe la scelta del periodo e
+  // mostrerebbe una coda che nessuno ha chiesto. Senza nessuna analisi resta
+  // comunque la pagina d'ingresso — col chip, così si capisce da dove si
+  // è arrivati.
+  const lottoId = lottoNellUrl ?? (cercaUltimoLotto ? (storico?.lotti[0]?.id ?? null) : null)
 
   const {
     data: lotto,
@@ -137,7 +144,13 @@ export function RiconciliazioneClient() {
     fasciaScelta ?? (!movimento && lotto && lotto.contatori.alta > 0 ? 'alta' : 'tutte')
 
   const aggiornaLotto = () =>
-    queryClient.invalidateQueries({ queryKey: ['riconciliazione', 'lotto', lottoId] })
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['riconciliazione', 'lotto', lottoId] }),
+      // I contatori dello storico sono quelli persistiti sul lotto: una
+      // decisione li muove, e senza questo «Riprendi» mostrerebbe la
+      // percentuale di prima.
+      queryClient.invalidateQueries({ queryKey: ['riconciliazione', 'lotti'] }),
+    ])
 
   const approva = async (id: string) => {
     const risposta = await fetch(`/api/riconciliazione-assistita/proposte/${id}/approva`, {
@@ -271,6 +284,11 @@ export function RiconciliazioneClient() {
               </p>
             )}
           </section>
+
+          {/* Chi torna il giorno dopo cerca prima di tutto il lotto lasciato a
+              metà: sta sopra le regole perché riprendere è più frequente che
+              leggere cosa fa il motore. */}
+          <StoricoLotti lotti={storico?.lotti ?? []} />
 
           {/* Lo stato di attesa didattico: dire cosa il motore sta per cercare
               vale più di un'illustrazione, e si legge anche mentre calcola. */}
