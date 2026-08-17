@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import type { SezioneMovimentoBancario } from '@/types/reconciliation'
 
-export type AzioneInBlocco = 'sposta' | 'cestino' | 'ripristina'
+export type AzioneInBlocco = 'sposta' | 'cestino' | 'ripristina' | 'categorizza'
 
 interface Props {
   selezionati: number
