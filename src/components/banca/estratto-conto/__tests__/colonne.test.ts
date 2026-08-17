@@ -29,21 +29,30 @@ describe('colonne visibili', () => {
     expect([...leggiColonneVisibili(m)]).toEqual(['data', 'importo'])
   })
 
-  // Una colonna che non esiste più (o un JSON rotto) non deve rompere la lista.
-  it('ignora identificativi sconosciuti e memoria corrotta', () => {
-    expect([
-      ...leggiColonneVisibili(memoria({ 'weiss.estrattoConto.colonne': '["data","fantasma"]' })),
-    ]).toEqual(['data'])
-    expect([...leggiColonneVisibili(memoria({ 'weiss.estrattoConto.colonne': '{rotto' }))]).toEqual(
-      COLONNE.map((c) => c.id)
-    )
+  // La memoria della consegna A elencava le VISIBILI: si legge una volta e si
+  // capisce cosa era nascosto fra le colonne di allora. Una colonna nuova
+  // (Categoria) nasce visibile anche per chi aveva già salvato.
+  it('legge la memoria della consegna A e mostra comunque la colonna nuova', () => {
+    expect([...leggiColonneVisibili(memoria({ 'weiss.estrattoConto.colonne': '["data","fantasma"]' }))]).toEqual(['data', 'categoria'])
+    expect([...leggiColonneVisibili(memoria({ 'weiss.estrattoConto.colonne': '{rotto' }))]).toEqual(COLONNE.map((c) => c.id))
   })
 
-  // L'ordine è del modulo, non della memoria: una colonna riattivata torna
-  // al suo posto invece di finire in fondo.
   it('rispetta l\'ordine delle colonne, non quello salvato', () => {
-    const m = memoria({ 'weiss.estrattoConto.colonne': '["importo","data"]' })
+    const m = memoria()
+    salvaColonneVisibili(m, new Set(['importo', 'data']))
     expect([...leggiColonneVisibili(m)]).toEqual(['data', 'importo'])
+  })
+
+  it('salva le NASCOSTE, così una colonna futura nasce visibile', () => {
+    const m = memoria()
+    salvaColonneVisibili(m, new Set(['data', 'descrizione', 'conto', 'categoria', 'stato', 'importo']))
+    expect(m.dati['weiss.estrattoConto.colonneNascoste']).toBe('["causale"]')
+    expect(m.dati['weiss.estrattoConto.colonne']).toBeUndefined()
+  })
+
+  it('la memoria nuova vince su quella vecchia', () => {
+    const m = memoria({ 'weiss.estrattoConto.colonne': '["data"]', 'weiss.estrattoConto.colonneNascoste': '["importo"]' })
+    expect([...leggiColonneVisibili(m)]).toEqual(['data', 'descrizione', 'causale', 'conto', 'categoria', 'stato'])
   })
 })
 

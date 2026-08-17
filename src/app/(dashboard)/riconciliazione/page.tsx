@@ -1,10 +1,17 @@
+import { Suspense } from 'react'
 import { RiconciliazioneClient } from './RiconciliazioneClient'
 
 export const metadata = {
-  title: 'Riconciliazione Bancaria | Weiss Gestionale',
-  description: 'Importa e riconcilia i movimenti bancari',
+  title: 'Riconciliazione assistita | Weiss Gestionale',
+  // L'import dell'estratto conto vive nella prima nota: qui si rivedono le
+  // proposte del motore, una per volta.
+  description: 'Rivedi le proposte di abbinamento fra movimenti bancari e scadenze',
 }
 
 export default function RiconciliazionePage() {
-  return <RiconciliazioneClient />
+  return (
+    <Suspense fallback={null}>
+      <RiconciliazioneClient />
+    </Suspense>
+  )
 }

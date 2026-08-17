@@ -7,6 +7,10 @@ sezioni 1.1-1.6) restano valide e non vengono ripetute qui.
 
 ---
 
+> **Aggiornamento del 17 agosto — consegna B.** Il piano `docs/superpowers/plans/2026-08-17-estratto-conto-in-prima-nota-consegna-b.md` è stato eseguito sul branch `banca/estratto-conto-consegna-b`: `promuoviRigaBancaria`/`scollegaRigaBancaria` (`src/lib/services/promozione-riga-bancaria-service.ts`), colonne `origine_scrittura` e `residuo_documenti` (migrazione `20260817090000_azioni_contabili_estratto_conto`), rotte `[id]/categorizza`, `[id]/collega`, `[id]/scollega`, `categorizza-in-blocco` (via `match`/`unmatch`, cricchetto 250), la colonna Categoria, i dialoghi Categorizza / Collega fattura / Scollega, «dalla banca» nella scheda Scritture, `?movimento=` sull'estratto conto e sulla vecchia riconciliazione. Il piano A2 (task 3) ora riusa il servizio. Prossimo passo dopo il merge: il piano A2, task 3-7.
+
+---
+
 ## 1. Dove siamo, in tre righe
 
 1. **PR #27 «l'estratto conto nella prima nota, consegna A» è MERGIATA** su `main`

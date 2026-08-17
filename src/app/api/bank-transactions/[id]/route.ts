@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { findMatchCandidates } from '@/lib/reconciliation'
 import { getVenueId } from '@/lib/venue'
 import { withAuth } from '@/lib/api-utils'
 import { patchBankTransactionSchema, CAMPI_SOLO_MANUALI } from '@/lib/validations/reconciliation'
@@ -72,25 +71,9 @@ export async function GET(
       )
     }
 
-    // Se la transazione non è ancora matchata, cerca candidati
-    let matchCandidates: Awaited<ReturnType<typeof findMatchCandidates>> = []
-    if (
-      transaction.status === 'PENDING' ||
-      transaction.status === 'UNMATCHED' ||
-      transaction.status === 'TO_REVIEW'
-    ) {
-      matchCandidates = await findMatchCandidates(
-        {
-          id: transaction.id,
-          transactionDate: transaction.transactionDate,
-          description: transaction.description,
-          amount: Number(transaction.amount),
-        },
-        transaction.venueId,
-        10
-      )
-    }
-
+    // I candidati del vecchio auto-match non si calcolano più: li leggeva solo
+    // `MatchDialog`, che è caduto con la pagina vecchia. Gli abbinamenti li
+    // propone la coda assistita, che ha un motore suo e un punteggio spiegato.
     return NextResponse.json({
       ...transaction,
       amount: Number(transaction.amount),
@@ -111,7 +94,6 @@ export async function GET(
               : null,
           }
         : null,
-      matchCandidates,
     })
   } catch (error) {
     logger.error('GET /api/bank-transactions/[id] error', error)

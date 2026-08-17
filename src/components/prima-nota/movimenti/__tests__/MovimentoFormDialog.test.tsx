@@ -103,6 +103,101 @@ function montaModuloCon(entryType: EntryType, registerType: RegisterType = 'CASH
   return onSave
 }
 
+/** Il bottone della data: porta la data formattata, o «Seleziona data» se vuota. */
+function bottoneData(): HTMLButtonElement {
+  const bottone = Array.from(document.querySelectorAll('button')).find(
+    (b) => b.textContent?.includes('/') || b.textContent?.includes('Seleziona data')
+  )
+  if (!bottone) throw new Error('Bottone della data non trovato')
+  return bottone
+}
+
+/**
+ * La data di una scrittura nata da una riga della banca viene dalla banca
+ * (spec estratto conto, decisione 2): la rotta la rifiuta con un 409, e un
+ * campo che si può compilare per sentirsi dire di no è un campo di troppo.
+ */
+describe('MovimentoFormDialog, la data che viene dalla banca', () => {
+  it('non si modifica da qui quando la scrittura è legata a una riga bancaria', () => {
+    render(
+      conQueryClient(
+        <MovimentoFormDialog
+          open
+          onSave={vi.fn()}
+          entry={{
+            date: new Date('2026-08-05'),
+            registerType: 'BANK',
+            entryType: 'USCITA',
+            amount: 68.93,
+            description: 'Commissioni',
+            bankTransactionId: 'riga-1',
+          }}
+        />
+      )
+    )
+
+    expect(bottoneData().disabled).toBe(true)
+    expect(document.body.textContent).toContain('Data dalla banca')
+  })
+
+  it('resta modificabile su una scrittura che dalla banca non viene', () => {
+    render(
+      conQueryClient(
+        <MovimentoFormDialog
+          open
+          onSave={vi.fn()}
+          entry={{
+            date: new Date('2026-08-05'),
+            registerType: 'BANK',
+            entryType: 'USCITA',
+            amount: 68.93,
+            description: 'Commissioni',
+          }}
+        />
+      )
+    )
+
+    expect(bottoneData().disabled).toBe(false)
+    expect(document.body.textContent).not.toContain('Data dalla banca')
+  })
+
+  /**
+   * Il modulo si azzera solo quando il salvataggio è andato a buon fine: dopo
+   * un rifiuto del server resta com'è. Azzerandolo si perdeva ciò che era
+   * stato scritto e — peggio — il centro di costo tornava al default, così un
+   * secondo «Aggiorna» ne salvava uno diverso senza dirlo. Chi chiama deve
+   * quindi lasciar salire l'errore: è ciò che fa `handleSave` di
+   * `MovimentiClient`.
+   */
+  it('dopo un rifiuto del server il modulo non si azzera', async () => {
+    const errori = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const onSave = vi.fn().mockRejectedValue(new Error('La data di questa scrittura viene dalla banca'))
+    render(
+      conQueryClient(
+        <MovimentoFormDialog
+          open
+          onSave={onSave}
+          entry={{
+            date: new Date('2026-08-05'),
+            registerType: 'BANK',
+            entryType: 'USCITA',
+            amount: 68.93,
+            description: 'Commissioni',
+            costCenterId: 'centro-weiss',
+          }}
+        />
+      )
+    )
+
+    await salva()
+
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(campo('description').value).toBe('Commissioni')
+    expect(campo('amount').value).toBe('68.93')
+    errori.mockRestore()
+  })
+})
+
 describe('MovimentoFormDialog, campo IVA', () => {
   it('salva il movimento quando l\'IVA non viene compilata', async () => {
     const onSave = montaModulo()

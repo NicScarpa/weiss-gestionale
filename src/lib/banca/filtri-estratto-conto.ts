@@ -25,6 +25,10 @@ export const filtriEstrattoContoSchema = z.object({
   // Non ha un ingresso in `filtriInSearchParams`: serve solo alla pagina
   // `/riconciliazione`, che compone da sé `?status=TO_REVIEW` finché esiste.
   status: reconciliationStatusSchema.optional(),
+  // Il collegamento profondo a una riga sola («dalla banca» nella scheda
+  // Scritture, `/riconciliazione?movimento=`): la lista mostra quella riga e un
+  // chip per tornare a tutte.
+  movimento: z.string().min(1).max(50).optional(),
   ordina: z.enum(ORDINA).default('data'),
   verso: z.enum(['asc', 'desc']).default('desc'),
   page: z.coerce.number().int().min(1).default(1),
@@ -68,6 +72,7 @@ export function filtriInSearchParams(f: FiltriEstrattoConto, base = new URLSearc
   metti('search', f.search, undefined)
   metti('dateFrom', f.dateFrom, undefined)
   metti('dateTo', f.dateTo, undefined)
+  metti('movimento', f.movimento, undefined)
   metti('ordina', f.ordina, FILTRI_DEFAULT.ordina)
   metti('verso', f.verso, FILTRI_DEFAULT.verso)
   metti('page', f.page, FILTRI_DEFAULT.page)

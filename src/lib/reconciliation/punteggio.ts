@@ -1,5 +1,6 @@
 import { stringSimilarity, daysDifference } from './matcher'
 import { normalizzaTesto, contieneRiferimento, estraiPartiteIva } from './causale'
+import { PESI } from './scala'
 
 /**
  * Il punteggio di una coppia movimento-scadenza, da 0 a 100.
@@ -23,30 +24,16 @@ import { normalizzaTesto, contieneRiferimento, estraiPartiteIva } from './causal
  * è 90, quindi ogni motivazione porta un segno.
  */
 
-export const PESI = {
-  IMPORTO: 30,
-  RIFERIMENTO: 20,
-  CONTROPARTE: 20,
-  DATA: 15,
-  CODICE_BANCA: 10,
-  UNICITA: 5,
-  /** Il bonus quando esiste esattamente un'altra alternativa plausibile. */
-  UNICITA_PARZIALE: 2,
-} as const
-
 /**
- * Le soglie delle fasce.
- *
- * ALTA è una stima da rivedere dopo la prima misurazione sui movimenti veri:
- * è la fascia che si approva in blocco senza aprire le schede, quindi un falso
- * positivo lì è un errore contabile che nessuno vede passare. Sta qui, in un
- * posto solo, proprio perché va cambiata guardando un numero.
+ * Pesi, soglie e classificazione stanno in `./scala`, un modulo senza import, e
+ * di qui si ri-esportano perché chi già li prendeva da `punteggio` non debba
+ * cambiare riga. La ragione della separazione è scritta là: la schermata della
+ * coda ha bisogno delle stesse costanti, e non può risalire fino a qui senza
+ * trascinarsi Prisma nel bundle del browser (`punteggio` → `matcher` →
+ * `@/lib/prisma`).
  */
-export const SOGLIE = {
-  ALTA: 85,
-  MEDIA: 60,
-  MINIMA: 40,
-} as const
+export { PESI, SOGLIE, fascia } from './scala'
+export type { Fascia } from './scala'
 
 /** Differenze sotto questa soglia sono arrotondamenti, non discrepanze. */
 export const TOLLERANZA = 0.01
@@ -103,12 +90,6 @@ export interface ContestoValutazione {
   alias: Map<string, string>
   /** bankTransactionCode → metodi di pagamento compatibili */
   mappaCodiciBanca: Map<string, string[]>
-}
-
-export function fascia(punteggio: number): 'alta' | 'media' | 'bassa' {
-  if (punteggio >= SOGLIE.ALTA) return 'alta'
-  if (punteggio >= SOGLIE.MEDIA) return 'media'
-  return 'bassa'
 }
 
 /** L'importo del movimento nel verso che interessa la scadenza; 0 se sbagliato. */

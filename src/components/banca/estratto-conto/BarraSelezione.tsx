@@ -1,4 +1,4 @@
-import { ChevronDown, RotateCcw, Trash2, X } from 'lucide-react'
+import { ChevronDown, RotateCcw, Tag, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import type { SezioneMovimentoBancario } from '@/types/reconciliation'
 
-export type AzioneInBlocco = 'sposta' | 'cestino' | 'ripristina'
+export type AzioneInBlocco = 'sposta' | 'cestino' | 'ripristina' | 'categorizza'
 
 interface Props {
   selezionati: number
@@ -60,6 +60,13 @@ export function BarraSelezione({
       )}
 
       <div className="ml-auto flex flex-wrap items-center gap-2">
+        {!nelCestino && (
+          <Button variant="outline" size="sm" onClick={() => onAzione('categorizza')}>
+            <Tag className="mr-1 h-4 w-4" aria-hidden />
+            Categorizza
+          </Button>
+        )}
+
         {!nelCestino && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

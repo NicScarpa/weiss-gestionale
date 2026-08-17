@@ -1,6 +1,7 @@
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
-import { ArrowDownLeft, ArrowUpRight, Pencil, Trash2, RotateCcw, MoreHorizontal } from 'lucide-react'
+import Link from 'next/link'
+import { ArrowDownLeft, ArrowUpRight, Pencil, Trash2, RotateCcw, MoreHorizontal, Tag, ArrowLeftRight, Link2, Unlink } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -35,6 +36,9 @@ interface Props {
   onSposta: (riga: RigaEstrattoConto, sezione: SezioneMovimentoBancario) => void
   onCestino: (riga: RigaEstrattoConto) => void
   onRipristina: (riga: RigaEstrattoConto) => void
+  onCategorizza: (riga: RigaEstrattoConto) => void
+  onCollega: (riga: RigaEstrattoConto) => void
+  onScollega: (riga: RigaEstrattoConto) => void
 }
 
 const SEZIONI: Array<{ valore: SezioneMovimentoBancario; etichetta: string }> = [
@@ -94,6 +98,19 @@ export function TabellaEstrattoConto(p: Props) {
                 <Button variant="ghost" size="icon" aria-label="Modifica" onClick={() => p.onModifica(r)}>
                   <Pencil className="h-4 w-4" aria-hidden />
                 </Button>
+                {/* Collega fattura / Scollega: l'icona cambia con lo stato del
+                    legame (spec, «Le azioni»); una proposta da rivedere non è un
+                    legame. Nel Cestino non si tocca la contabilità. */}
+                {!p.filtri.cestino &&
+                  (r.matchedEntryId && !r.proposta ? (
+                    <Button variant="ghost" size="icon" aria-label="Scollega" onClick={() => p.onScollega(r)}>
+                      <Unlink className="h-4 w-4" aria-hidden />
+                    </Button>
+                  ) : (
+                    <Button variant="ghost" size="icon" aria-label="Collega fattura" onClick={() => p.onCollega(r)}>
+                      <Link2 className="h-4 w-4" aria-hidden />
+                    </Button>
+                  ))}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="icon" aria-label="Altre azioni">
@@ -102,36 +119,63 @@ export function TabellaEstrattoConto(p: Props) {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     {!p.filtri.cestino && (
-                      <DropdownMenuSub>
-                        <DropdownMenuSubTrigger>Sposta in</DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent>
-                          {SEZIONI.filter((s) => s.valore !== r.sezione).map((s) => (
-                            <DropdownMenuItem key={s.valore} onClick={() => p.onSposta(r, s.valore)}>
-                              {s.etichetta}
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuSubContent>
-                      </DropdownMenuSub>
+                      <>
+                        <DropdownMenuItem onClick={() => p.onCategorizza(r)}>
+                          <Tag className="mr-2 h-4 w-4" aria-hidden />
+                          Categorizza
+                        </DropdownMenuItem>
+                        {/* Un bonifico che copre più fatture si può completare senza
+                            scollegare: la promozione riusa la scrittura. */}
+                        {r.stato === 'parziale' && (
+                          <DropdownMenuItem onClick={() => p.onCollega(r)}>
+                            <Link2 className="mr-2 h-4 w-4" aria-hidden />
+                            Collega altra fattura
+                          </DropdownMenuItem>
+                        )}
+                        {/* Riconcilia porta allo strumento, filtrato su questa
+                            riga: oggi la pagina di riconciliazione, domani la
+                            coda delle proposte allo stesso indirizzo. Solo
+                            sulle righe non collegate: una collegata non ha
+                            nulla da riconciliare. */}
+                        {(!r.matchedEntryId || r.proposta) && (
+                          <DropdownMenuItem asChild>
+                            <Link href={`/riconciliazione?movimento=${r.id}`}>
+                              <ArrowLeftRight className="mr-2 h-4 w-4" aria-hidden />
+                              Riconcilia
+                            </Link>
+                          </DropdownMenuItem>
+                        )}
+                        {/* La via d'uscita dalla proposta del vecchio motore:
+                            la riga dice «Non abbinato» e mostra 🔗, quindi
+                            Scollega da sola non comparirebbe mai — e la
+                            proposta resterebbe lì senza modo di rifiutarla. */}
+                        {r.proposta && (
+                          <DropdownMenuItem onClick={() => p.onScollega(r)}>
+                            <Unlink className="mr-2 h-4 w-4" aria-hidden />
+                            Scarta la proposta
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuSub>
+                          <DropdownMenuSubTrigger>Sposta in</DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent>
+                            {SEZIONI.filter((s) => s.valore !== r.sezione).map((s) => (
+                              <DropdownMenuItem key={s.valore} onClick={() => p.onSposta(r, s.valore)}>
+                                {s.etichetta}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                      </>
                     )}
                     <DropdownMenuItem onClick={() => p.onDettagli(r)}>Vedi dettagli</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
                 {p.filtri.cestino ? (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Ripristina"
-                    onClick={() => p.onRipristina(r)}
-                  >
+                  <Button variant="ghost" size="icon" aria-label="Ripristina" onClick={() => p.onRipristina(r)}>
                     <RotateCcw className="h-4 w-4" aria-hidden />
                   </Button>
                 ) : (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Sposta nel Cestino"
-                    onClick={() => p.onCestino(r)}
-                  >
+                  <Button variant="ghost" size="icon" aria-label="Sposta nel Cestino" onClick={() => p.onCestino(r)}>
                     <Trash2 className="h-4 w-4" aria-hidden />
                   </Button>
                 )}
@@ -185,8 +229,33 @@ function cella(id: IdColonna, r: RigaEstrattoConto) {
       )
     case 'conto':
       return r.bankAccount ? <Badge className="bg-violet-700 hover:bg-violet-700">{r.bankAccount.name}</Badge> : '—'
+    case 'categoria': {
+      const scrittura = r.matchedEntry
+      // Una proposta da rivedere porta una scrittura che nessuno ha confermato:
+      // la sua categoria non è ancora quella della riga.
+      if (!scrittura || r.proposta) return <span className="text-muted-foreground">—</span>
+      // Dalla scrittura collegata (spec, decisione 3): conto e centro; senza
+      // conto (una R4 senza imputazione, o una collega senza fornitore) si
+      // dice «da imputare» — è collegata, ma la categoria manca ancora.
+      return (
+        <div className="max-w-[16rem]">
+          {scrittura.account ? (
+            <span className="block truncate" title={`${scrittura.account.code} ${scrittura.account.name}`}>
+              <span className="font-mono text-xs text-muted-foreground">{scrittura.account.code}</span> {scrittura.account.name}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">da imputare</span>
+          )}
+          {scrittura.costCenter && (
+            <span className="block truncate text-xs text-muted-foreground" title={scrittura.costCenter.name}>
+              {scrittura.costCenter.code} · {scrittura.costCenter.name}
+            </span>
+          )}
+        </div>
+      )
+    }
     case 'stato':
-      return <IconaStato stato={r.stato} residuo={r.residuo} />
+      return <IconaStato stato={r.stato} residuo={r.residuo} proposta={r.proposta} />
     case 'importo': {
       const entrata = r.amount > 0
       return (

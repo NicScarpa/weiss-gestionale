@@ -4,10 +4,17 @@ import { CAMPI_BADGE } from './cronologia'
 import { statoLegenda } from './stato-legenda'
 import type { RigaEstrattoConto } from '@/types/reconciliation'
 
-/** Il `where` della lista. `deletedAt` è sempre esplicito: è ciò che apre o chiude il Cestino. */
+/** Il `where` della lista. `deletedAt` è esplicito — è ciò che apre o chiude il Cestino — salvo col collegamento profondo a una riga (`movimento`), che la mostra dovunque sia. */
 export function costruisciWhere(f: FiltriEstrattoConto, venueId: string): Prisma.BankTransactionWhereInput {
   const where: Prisma.BankTransactionWhereInput = { venueId }
-  if (f.cestino) {
+  // Il collegamento profondo a una riga sola (`?movimento=`) arriva dalla
+  // scheda Scritture e dalla pagina di riconciliazione, che non sanno dove la
+  // riga si trovi: «Sposta in» può averla portata in Deleghe F24 o nel
+  // Cestino. Filtrarla anche per scheda apriva una lista vuota sotto il chip
+  // «Stai guardando un solo movimento», che prometteva una riga inesistente.
+  if (f.movimento) {
+    where.id = f.movimento
+  } else if (f.cestino) {
     where.deletedAt = { not: null }
   } else {
     where.deletedAt = null
@@ -16,10 +23,12 @@ export function costruisciWhere(f: FiltriEstrattoConto, venueId: string): Prisma
   if (f.tipo === 'entrate') where.amount = { gt: 0 }
   if (f.tipo === 'uscite') where.amount = { lt: 0 }
   if (f.bankAccountId) where.bankAccountId = f.bankAccountId
-  // Consegna A: «non riconciliata» = senza scrittura. I parziali entreranno
-  // con la consegna B, quando il residuo dei documenti sarà denormalizzato
-  // sulla riga e filtrabile in SQL.
-  if (f.soloNonRiconciliati) where.matchedEntryId = null
+  // «Non riconciliata» = Non abbinato + Parzialmente abbinato (spec, «Gli
+  // stati»): senza scrittura, con una proposta da rivedere, o col residuo dei
+  // documenti ancora aperto. In `AND`, perché `OR` è della ricerca.
+  if (f.soloNonRiconciliati) {
+    where.AND = [{ OR: [{ matchedEntryId: null }, { status: 'TO_REVIEW' }, { residuoDocumenti: { gt: 0 } }] }]
+  }
   if (f.status) where.status = f.status
   if (f.dateFrom || f.dateTo) {
     where.transactionDate = {
@@ -58,6 +67,9 @@ export const SELEZIONE_RIGA = {
   include: {
     venue: { select: { id: true, name: true, code: true } },
     bankAccount: { select: { id: true, name: true } },
+    // La scrittura collegata porta la Categoria (conto e centro) e il numero di
+    // fette; il residuo dei documenti NON si somma qui: sta sulla riga
+    // (`residuoDocumenti`), ed è la stessa colonna che filtra.
     matchedEntry: {
       select: {
         id: true,
@@ -66,7 +78,9 @@ export const SELEZIONE_RIGA = {
         debitAmount: true,
         creditAmount: true,
         documentRef: true,
-        scheduleReconciliations: { where: { status: 'VERIFIED' as const }, select: { amount: true } },
+        account: { select: { id: true, code: true, name: true } },
+        costCenter: { select: { id: true, code: true, name: true } },
+        _count: { select: { allocations: true } },
       },
     },
     // Il badge «Modificato» guarda solo i campi del movimento: spostare di
@@ -79,11 +93,12 @@ export const SELEZIONE_RIGA = {
 
 export function mappaRiga(r: Prisma.BankTransactionGetPayload<typeof SELEZIONE_RIGA>): RigaEstrattoConto {
   const amount = Number(r.amount)
-  const { stato, residuo } = statoLegenda({
+  const residuoDocumenti = r.residuoDocumenti === null ? null : Number(r.residuoDocumenti)
+  const { stato, residuo, proposta } = statoLegenda({
     matchedEntryId: r.matchedEntryId,
     status: r.status,
     amount,
-    importiRiconciliati: r.matchedEntry?.scheduleReconciliations.map((x) => Number(x.amount)) ?? [],
+    residuoDocumenti,
   })
   const { _count, matchedEntry, ...resto } = r
   return {
@@ -91,6 +106,7 @@ export function mappaRiga(r: Prisma.BankTransactionGetPayload<typeof SELEZIONE_R
     amount,
     balanceAfter: r.balanceAfter ? Number(r.balanceAfter) : null,
     matchConfidence: r.matchConfidence ? Number(r.matchConfidence) : null,
+    residuoDocumenti,
     matchedEntry: matchedEntry
       ? {
           id: matchedEntry.id,
@@ -99,10 +115,14 @@ export function mappaRiga(r: Prisma.BankTransactionGetPayload<typeof SELEZIONE_R
           debitAmount: matchedEntry.debitAmount ? Number(matchedEntry.debitAmount) : null,
           creditAmount: matchedEntry.creditAmount ? Number(matchedEntry.creditAmount) : null,
           documentRef: matchedEntry.documentRef,
+          account: matchedEntry.account,
+          costCenter: matchedEntry.costCenter,
+          fette: matchedEntry._count.allocations,
         }
       : null,
     modificato: _count.modifiche > 0,
     stato,
     residuo,
+    proposta,
   }
 }

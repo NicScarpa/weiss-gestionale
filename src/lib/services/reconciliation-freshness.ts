@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { TOLLERANZA } from '@/lib/reconciliation/punteggio'
 
@@ -23,8 +24,70 @@ const STATI_APERTI = ['in_attesa']
 /** Stati di scadenza che rendono la proposta impossibile. */
 const STATI_SCADENZA_CHIUSI = ['pagata', 'annullata']
 
-/** Stati di movimento che rendono la proposta impossibile. */
+/**
+ * Stati di movimento che rendono la proposta impossibile.
+ *
+ * `TO_REVIEW` **non** è fra questi: è la proposta del vecchio motore, che
+ * scrive `matchedEntryId` senza che nessuno abbia confermato. Non è un legame
+ * (spec dell'estratto conto, «Gli stati»), e infatti
+ * `promuoviRigaBancariaInTransazione` tratta quella riga come libera.
+ */
 const STATI_MOVIMENTO_CHIUSI = ['MATCHED', 'MANUAL', 'IGNORED']
+
+/**
+ * Le due parti di una proposta, nella forma minima che serve a giudicarla.
+ * Ogni `select` che porti almeno questi campi va bene: i campi in più non
+ * disturbano.
+ */
+export interface PartiDellaProposta {
+  bankTransaction: { status: string; deletedAt: Date | null } | null
+  gambe: Array<{
+    importo: Prisma.Decimal
+    schedule: {
+      stato: string
+      importoTotale: Prisma.Decimal
+      importoPagato: Prisma.Decimal
+      deletedAt: Date | null
+    } | null
+  }>
+}
+
+/**
+ * Perché la proposta non è più approvabile — la frase che l'utente legge —
+ * oppure `null` se lo è ancora.
+ *
+ * Funzione pura: la usano sia la rilettura della coda (`aggiornaFreschezza`,
+ * qui sotto) sia l'approvazione, che rifà lo stesso controllo dentro la
+ * transazione. Due liste di stati scritte in due posti si sarebbero scollegate
+ * al primo stato nuovo, e il difetto sarebbe stato invisibile: la coda avrebbe
+ * mostrato approvabile ciò che l'approvazione rifiuta, o peggio il contrario.
+ */
+export function motivoSuperamento(proposta: PartiDellaProposta): string | null {
+  const movimento = proposta.bankTransaction
+  if (movimento) {
+    if (movimento.deletedAt !== null) return 'Il movimento bancario è nel Cestino'
+    if (STATI_MOVIMENTO_CHIUSI.includes(movimento.status)) {
+      return 'Il movimento bancario è già stato riconciliato altrove'
+    }
+  }
+
+  for (const gamba of proposta.gambe) {
+    const scadenza = gamba.schedule
+    if (!scadenza) continue
+    if (scadenza.deletedAt !== null) return 'La scadenza è stata cancellata'
+    if (STATI_SCADENZA_CHIUSI.includes(scadenza.stato)) return `La scadenza è ${scadenza.stato}`
+    // Il residuo non basta più a coprire la quota che la proposta rivendica.
+    // La tolleranza viene da `punteggio.ts`, dove vive per tutta la fase:
+    // un centesimo scritto qui a mano si scollegherebbe dal resto al primo
+    // ritocco.
+    const residuo = Number(scadenza.importoTotale) - Number(scadenza.importoPagato)
+    if (residuo + TOLLERANZA < Number(gamba.importo)) {
+      return 'La scadenza non ha più residuo sufficiente per questa proposta'
+    }
+  }
+
+  return null
+}
 
 export async function aggiornaFreschezza(batchId: string, venueId: string): Promise<number> {
   const proposte = await prisma.reconciliationProposal.findMany({
@@ -45,30 +108,7 @@ export async function aggiornaFreschezza(batchId: string, venueId: string): Prom
     },
   })
 
-  const daSuperare: string[] = []
-
-  for (const proposta of proposte) {
-    const movimento = proposta.bankTransaction
-    if (movimento && (movimento.deletedAt !== null || STATI_MOVIMENTO_CHIUSI.includes(movimento.status))) {
-      daSuperare.push(proposta.id)
-      continue
-    }
-
-    const gambaMorta = proposta.gambe.some((gamba) => {
-      const scadenza = gamba.schedule
-      if (!scadenza) return false
-      if (scadenza.deletedAt !== null) return true
-      if (STATI_SCADENZA_CHIUSI.includes(scadenza.stato)) return true
-      // Il residuo non basta più a coprire la quota che la proposta rivendica.
-      // La tolleranza viene da `punteggio.ts`, dove vive per tutta la fase:
-      // un centesimo scritto qui a mano si scollegherebbe dal resto al primo
-      // ritocco.
-      const residuo = Number(scadenza.importoTotale) - Number(scadenza.importoPagato)
-      return residuo + TOLLERANZA < Number(gamba.importo)
-    })
-
-    if (gambaMorta) daSuperare.push(proposta.id)
-  }
+  const daSuperare = proposte.filter((proposta) => motivoSuperamento(proposta) !== null).map((p) => p.id)
 
   if (daSuperare.length === 0) return 0
 

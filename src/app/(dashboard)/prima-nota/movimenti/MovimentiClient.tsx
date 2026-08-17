@@ -324,6 +324,14 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Errore sconosciuto'
       toast.error(message)
+      // L'errore risale al modulo, che così NON si azzera: il dialogo resta
+      // aperto dopo un rifiuto del server (il 409 sulla data che viene dalla
+      // banca, per dirne uno) e deve mostrare ancora ciò che c'era. Inghiottito
+      // qui, il modulo credeva di aver salvato e si riportava ai valori di
+      // partenza — compreso il centro di costo, che tornava al default: un
+      // secondo «Aggiorna», gesto naturale dopo un errore, ne salvava un altro
+      // senza dirlo a nessuno.
+      throw error
     } finally {
       setIsSubmitting(false)
     }
@@ -528,6 +536,10 @@ export function MovimentiClient({ budgetCategories }: MovimentiClientProps) {
           costCenterId: selectedEntry.costCenterId ?? undefined,
           vatAmount: selectedEntry.vatAmount ? Number(selectedEntry.vatAmount) : undefined,
           notes: selectedEntry.notes ?? undefined,
+          // La data di una scrittura che viene dalla banca non si modifica da
+          // qui: il modulo la mostra in sola lettura invece di far scegliere
+          // una data che la route rifiuta con un 409.
+          bankTransactionId: selectedEntry.bankTransactionId ?? undefined,
         } : undefined}
         open={dialogOpen}
         onOpenChange={(open) => {

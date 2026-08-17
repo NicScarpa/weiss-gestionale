@@ -58,7 +58,7 @@ La protezione va **conservata**: è misurata (falsi positivi all'1,63% con numer
 - Consumes: niente.
 - Produces: `contieneRiferimento(causale: string, numeroDocumento: string): boolean` — firma invariata, comportamento più permissivo solo dove i separatori originali delimitano davvero.
 
-- [ ] **Step 1: Scrivere i test dei sette casi veri**
+- [x] **Step 1: Scrivere i test dei sette casi veri**
 
 In `src/lib/reconciliation/__tests__/causale.test.ts`, dentro `describe('contieneRiferimento')`:
 
@@ -110,13 +110,13 @@ In `src/lib/reconciliation/__tests__/causale.test.ts`, dentro `describe('contien
   })
 ```
 
-- [ ] **Step 2: Eseguirli e vederli fallire**
+- [x] **Step 2: Eseguirli e vederli fallire**
 
 Run: `PATH="/Users/nicolascarpa/.nvm/versions/node/v22.22.0/bin:$PATH" npx vitest run src/lib/reconciliation/__tests__/causale.test.ts`
 
 Expected: **FAIL** sui quattro casi del primo `describe` (`expected false to be true`). I test del secondo `describe` devono già passare: sono la protezione che c'è. Se fallisce uno di quelli, il caso è stato scritto male.
 
-- [ ] **Step 3: Normalizzare conservando le posizioni**
+- [x] **Step 3: Normalizzare conservando le posizioni**
 
 In `src/lib/reconciliation/causale.ts`, accanto a `soloAlfanumerici`:
 
@@ -156,7 +156,7 @@ function cifraIn(testo: string, indice: number): boolean {
 }
 ```
 
-- [ ] **Step 4: Decidere il confine sull'originale**
+- [x] **Step 4: Decidere il confine sull'originale**
 
 Sostituire il corpo di `contieneRiferimento`:
 
@@ -191,13 +191,13 @@ export function contieneRiferimento(causale: string, numeroDocumento: string): b
 }
 ```
 
-- [ ] **Step 5: Eseguire i test e vederli passare**
+- [x] **Step 5: Eseguire i test e vederli passare**
 
 Run: `PATH="/Users/nicolascarpa/.nvm/versions/node/v22.22.0/bin:$PATH" npx vitest run src/lib/reconciliation/`
 
 Expected: tutti verdi, compresi i test preesistenti — che descrivono la protezione misurata e **non vanno modificati**. Se uno di quelli diventa rosso, la correzione è troppo larga: fermarsi e capire quale.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/lib/reconciliation/causale.ts src/lib/reconciliation/__tests__/causale.test.ts
@@ -217,7 +217,7 @@ Il criterio di accettazione della correzione **non è «i test passano»** ma un
 - Consumes: `contieneRiferimento` corretta dal Task 1.
 - Produces: niente codice; un numero verificato.
 
-- [ ] **Step 1: Rifare il dump di produzione**
+- [x] **Step 1: Rifare il dump di produzione**
 
 ```bash
 /opt/homebrew/opt/libpq/bin/pg_dump "$DATABASE_URL_PRODUZIONE" --no-owner --no-privileges -f /tmp/produzione.sql
@@ -225,7 +225,7 @@ Il criterio di accettazione della correzione **non è «i test passano»** ma un
 
 Il `DATABASE_URL` sta nel `.env`; **non** eseguire comandi Prisma di scrittura contro quella stringa.
 
-- [ ] **Step 2: Misurare**
+- [x] **Step 2: Misurare**
 
 ```bash
 SENZA_SNAPSHOT=1 DUMP=/tmp/produzione.sql DB_MISURA=misura_dopo \
@@ -235,7 +235,7 @@ SENZA_SNAPSHOT=1 DUMP=/tmp/produzione.sql DB_MISURA=misura_dopo \
 
 Expected: **`Lotto generato: 13 alte, ...`** contro le 7 di prima.
 
-- [ ] **Step 3: Verificare che le tredici siano tutte corrette**
+- [x] **Step 3: Verificare che le tredici siano tutte corrette**
 
 ```bash
 DB_MISURA=misura_dopo PATH="/Users/nicolascarpa/.nvm/versions/node/v22.22.0/bin:$PATH" \
@@ -244,11 +244,11 @@ DB_MISURA=misura_dopo PATH="/Users/nicolascarpa/.nvm/versions/node/v22.22.0/bin:
 
 Expected: `abbinamenti su importo NON univoco: 0`. **Se compare anche uno solo, la correzione ha portato un falso positivo dentro la fascia che si approva in blocco: fermarsi.** È l'errore peggiore possibile, e il piano si interrompe qui finché non è capito.
 
-- [ ] **Step 4: Scrivere il risultato nel rapporto**
+- [x] **Step 4: Scrivere il risultato nel rapporto**
 
 Aggiungere a `scripts/riconciliazione/README.md` una sezione 6 con: il numero prima e dopo, l'elenco delle proposte entrate, e l'esito del controllo di ambiguità. Numeri veri, incollati.
 
-- [ ] **Step 5: Buttare il database di misura e committare**
+- [x] **Step 5: Buttare il database di misura e committare**
 
 ```bash
 /opt/homebrew/opt/postgresql@16/bin/dropdb -h 127.0.0.1 -p 5433 misura_dopo
@@ -267,7 +267,7 @@ git commit -m "chore(riconciliazione): la fascia Alta passa da 7 a 13, misurato"
 - Create: `src/lib/services/__tests__/reconciliation-decision-service.itest.ts`
 
 **Interfaces:**
-- Consumes: `riconciliaInTransazione(tx, input)` e `dopoLaRiconciliazione(risultato, input)` da `src/lib/services/schedule-reconciliation-service.ts` (estratte il 15 agosto proprio perché Prisma non annida transazioni interattive); `toDebitCredit` da `src/lib/prima-nota-utils.ts:162`; `risolviCentroDiCosto` da `src/lib/services/cost-center-service.ts:149`.
+- Consumes: `promuoviRigaBancariaInTransazione(tx, input)`, `PromozioneRifiutata`, `PromozioneInTransazione` da `src/lib/services/promozione-riga-bancaria-service.ts` (consegna B dell'estratto conto: il servizio unico che crea la scrittura BANK dalla riga, la lega, scrive le riconciliazioni e il residuo — questo task NON crea più la scrittura da sé); `dopoLaRiconciliazione` da `src/lib/services/schedule-reconciliation-service.ts` per le code fuori transazione.
 - Produces:
   ```ts
   export type EsitoApprovazione =
@@ -284,7 +284,7 @@ git commit -m "chore(riconciliazione): la fascia Alta passa da 7 a 13, misurato"
   }): Promise<EsitoApprovazione>
   ```
 
-- [ ] **Step 1: Scrivere il test d'integrazione**
+- [x] **Step 1: Scrivere il test d'integrazione**
 
 Creare `src/lib/services/__tests__/reconciliation-decision-service.itest.ts` sul modello di `src/app/api/scadenzario/[id]/paga-in-contanti/__tests__/paga-in-contanti.itest.ts`. Casi:
 
@@ -307,32 +307,35 @@ it('il saldo banca si muove esattamente dell\'importo del movimento', async () =
 })
 ```
 
-- [ ] **Step 2: Eseguirlo e vederlo fallire**
+- [x] **Step 2: Eseguirlo e vederlo fallire**
 
 Run: `TEST_DB_SUFFIX=decisione PATH="/Users/nicolascarpa/.nvm/versions/node/v22.22.0/bin:$PATH" npm run test:integration -- reconciliation-decision`
 Expected: FAIL — il modulo non esiste.
 
-- [ ] **Step 3: Scrivere il servizio**
+- [x] **Step 3: Scrivere il servizio**
 
 `approvaProposta` in una sola `prisma.$transaction`:
 
-1. blocca la proposta (`SELECT ... FOR UPDATE` via `findFirst` dentro la transazione) e verifica `stato === 'in_attesa'`;
+1. blocca la proposta (`SELECT ... FOR UPDATE` via `$queryRaw` dentro la transazione) e verifica `stato === 'in_attesa'`;
 2. rilegge le due parti e **ricontrolla la freschezza** (decisione 6 della spec madre): se la scadenza è già `pagata`/`annullata`, o la riga bancaria ha già `matchedEntryId`, marca la proposta `superata` e restituisce senza scrivere altro;
-3. se `bankTransaction.matchedEntryId` è nullo, **crea il `JournalEntry`** con `date: bankTransaction.transactionDate`, `registerType: 'BANK'`, verso da `toDebitCredit`, `description: bankTransaction.description`, `verified: true`, centro da `risolviCentroDiCosto` sul conto della fattura della prima gamba; poi aggiorna la riga bancaria con `matchedEntryId` e `status: 'MATCHED'`;
-4. per ogni gamba chiama `riconciliaInTransazione(tx, { scheduleId, journalEntryId, venueId, userId, amount: gamba.importo, source: 'PROPOSAL', confidence: punteggio / 100 })`;
-5. aggiorna la proposta a `approvata` con `decisoDaId` e `decisoAt`, e incrementa `contaApprovate` sul lotto.
+3. chiama **`promuoviRigaBancariaInTransazione(tx, { bankTransactionId, venueId, userId, origine: 'proposta', confidence: punteggio / 100, scadenze: gambe.map((g) => ({ scheduleId: g.scheduleId, amount: Number(g.importo) })) })`** — oppure, se la proposta è una **R4** (`journalEntryId` valorizzato, nessuna gamba), `{ …, origine: 'proposta', scritturaEsistenteId: proposta.journalEntryId }`. È il servizio a creare la scrittura BANK (data, dare/avere, descrizione, conto dal fornitore della scadenza, centro via `risolviCentroDiCosto`), a legarla (`matchedEntryId`, `status: 'MATCHED'`, `origineScrittura: 'PROPOSTA'`), a scrivere le `ScheduleReconciliation` con `source: 'PROPOSAL'` e il residuo dei documenti sulla riga. Un esito negativo arriva come eccezione `PromozioneRifiutata`: la si lascia salire (la transazione cade per intero) e **fuori** dalla transazione la si cattura e si traduce in `{ outcome: 'riconciliazione_rifiutata', motivo }` (dal campo `esito` dell'eccezione: `importo_eccedente`, `riconciliazione_rifiutata`, `scrittura_gia_collegata_ad_altra_riga`… → il motivo lo dà `rispostaPerEsito` di `src/lib/banca/esiti-promozione.ts`, campo `corpo.error`);
+4. aggiorna la proposta a `approvata` con `decisoDaId` e `decisoAt`, e incrementa `contaApprovate` sul lotto; restituisce anche `seguiti` della promozione.
 
-Fuori dalla transazione: `dopoLaRiconciliazione` per ciascun esito, come fa la rotta del pagamento in contanti.
+Fuori dalla transazione: per ogni voce di `seguiti`, `dopoLaRiconciliazione(voce.risultato, voce.input)`, come fa la rotta del pagamento in contanti.
 
-- [ ] **Step 4: Scrivere la rotta**
+Lo scarto di una proposta approvata (se un giorno servirà «annulla approvazione») passa da `scollegaRigaBancaria` dello stesso modulo: ritira solo ciò che la promozione ha creato.
+
+**Nota (17 ago, dopo la consegna B).** Una riga con `status = TO_REVIEW` porta un `matchedEntryId` scritto dal vecchio motore che **non** è un legame: `promuoviRigaBancariaInTransazione` la tratta come libera (ramo di creazione, o rilegame se arriva `scritturaEsistenteId`). Quindi il controllo di freschezza del punto 2 va scritto così: «la riga bancaria ha già `matchedEntryId` **e** `status !== 'TO_REVIEW'`» ⇒ superata; e per una proposta R4 si passa sempre `scritturaEsistenteId: proposta.journalEntryId`, altrimenti l'approvazione crea una scrittura nuova invece di confermare quella indicata.
+
+- [x] **Step 4: Scrivere la rotta**
 
 `POST /api/riconciliazione-assistita/proposte/[id]/approva`, ruolo `admin` o `manager`, `getVenueId()`, traduzione degli esiti: `proposta_non_trovata` → 404, `gia_decisa` → 409, `superata` → 409 col motivo, `riconciliazione_rifiutata` → 422, `ok` → 200 con `createAuditLog`.
 
-- [ ] **Step 5: Test unitario della rotta**
+- [x] **Step 5: Test unitario della rotta**
 
 Sul modello di `src/app/api/scadenzario/[id]/paga-in-contanti/__tests__/route.test.ts`: mock del servizio, e una asserzione per ciascuna traduzione di esito, più il 403 al dipendente.
 
-- [ ] **Step 6: Eseguire tutto**
+- [x] **Step 6: Eseguire tutto**
 
 ```bash
 PATH="/Users/nicolascarpa/.nvm/versions/node/v22.22.0/bin:$PATH" npx vitest run src/app/api/riconciliazione-assistita/
@@ -340,7 +343,7 @@ TEST_DB_SUFFIX=decisione PATH="/Users/nicolascarpa/.nvm/versions/node/v22.22.0/b
 PATH="/Users/nicolascarpa/.nvm/versions/node/v22.22.0/bin:$PATH" node scripts/check-route-auth.mjs --ratchet
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/lib/services/reconciliation-decision-service.ts src/lib/services/__tests__/reconciliation-decision-service.itest.ts "src/app/api/riconciliazione-assistita/proposte"
@@ -369,7 +372,7 @@ git commit -m "feat(riconciliazione): approvare promuove la riga bancaria a movi
   }): Promise<{ outcome: 'ok' } | { outcome: 'proposta_non_trovata' } | { outcome: 'gia_decisa'; stato: string }>
   ```
 
-- [ ] **Step 1: Scrivere i test**
+- [x] **Step 1: Scrivere i test**
 
 ```ts
 it('«salta per ora» marca la proposta scartata e non scrive esclusioni', async () => {})
@@ -382,21 +385,21 @@ it('la coppia esclusa non ricompare in un lotto rigenerato', async () => {
 })
 ```
 
-- [ ] **Step 2: Eseguirli e vederli fallire**
+- [x] **Step 2: Eseguirli e vederli fallire**
 
 Run: `TEST_DB_SUFFIX=scarto PATH="/Users/nicolascarpa/.nvm/versions/node/v22.22.0/bin:$PATH" npm run test:integration -- reconciliation-decision`
 
-- [ ] **Step 3: Implementare, e verificare che `generaLotto` legga le esclusioni**
+- [x] **Step 3: Implementare, e verificare che `generaLotto` legga le esclusioni**
 
 `scartaProposta` aggiorna lo stato a `scartata`, incrementa `contaScartate`, e con `perSempre` crea una `ReconciliationExclusion` per ogni gamba (`bankTransactionId` + `scheduleId`).
 
 **Prima di scrivere**, leggere `src/lib/services/reconciliation-batch-service.ts` e verificare se `generaLotto` già esclude le coppie in `ReconciliationExclusion`. Se non lo fa, aggiungerlo è parte di questo task: senza, la seconda porta non produce alcun effetto e il terzo test resta rosso.
 
-- [ ] **Step 4: La rotta**
+- [x] **Step 4: La rotta**
 
 `POST /api/riconciliazione-assistita/proposte/[id]/scarta` con corpo `{ perSempre: boolean, motivo?: string }`.
 
-- [ ] **Step 5: Eseguire e committare**
+- [x] **Step 5: Eseguire e committare**
 
 ```bash
 git add src/lib/services/ "src/app/api/riconciliazione-assistita/proposte"
@@ -417,7 +420,7 @@ git commit -m "feat(riconciliazione): scartare per ora, oppure per sempre"
 - Consumes: `POST /api/riconciliazione-assistita/lotti` (genera), `GET /api/riconciliazione-assistita/lotti/[id]` (legge), e le due rotte dei Task 3-4.
 - Produces: `<CodaProposte lottoId />`, `<SchedaProposta proposta onApprova onScarta />`.
 
-- [ ] **Step 1: Leggere cosa restituisce la rotta del lotto**
+- [x] **Step 1: Leggere cosa restituisce la rotta del lotto**
 
 Run: `sed -n '1,80p' "src/app/api/riconciliazione-assistita/lotti/[id]/route.ts"`
 
@@ -434,7 +437,7 @@ fattori    data 15 · importo 30 · unicita 5 · codiceBanca 10 · controparte 1
 ✓ Unico abbinamento possibile
 ```
 
-- [ ] **Step 2: Scrivere il test della scheda**
+- [x] **Step 2: Scrivere il test della scheda**
 
 Creare `src/components/riconciliazione/__tests__/SchedaProposta.test.tsx` con `fireEvent`, **non** `@testing-library/user-event`. Casi:
 
@@ -449,11 +452,11 @@ it('«Non propormelo mai più» chiede conferma prima di chiamare', () => {})
 it("l'errore del server resta visibile e non chiude la scheda", () => {})
 ```
 
-- [ ] **Step 3: Eseguirlo e vederlo fallire**
+- [x] **Step 3: Eseguirlo e vederlo fallire**
 
 Run: `PATH="/Users/nicolascarpa/.nvm/versions/node/v22.22.0/bin:$PATH" npx vitest run src/components/riconciliazione/`
 
-- [ ] **Step 4: Scrivere i componenti**
+- [x] **Step 4: Scrivere i componenti**
 
 `SchedaProposta`: a sinistra il movimento (data, importo, causale **intera**), a destra la scadenza con la sua fattura; sotto la barra segmentata dei sei fattori e le motivazioni col segno; in fondo le tre azioni.
 
@@ -461,13 +464,15 @@ Run: `PATH="/Users/nicolascarpa/.nvm/versions/node/v22.22.0/bin:$PATH" npx vites
 
 `RiconciliazioneClient`: la pagina d'ingresso con due date, le scorciatoie «Quest'anno» e «Tutto», «Calcola Proposte»; e lo stato di attesa didattico — l'elenco delle regole con sigla e descrizione — al posto di una pagina vuota.
 
+`RiconciliazioneClient` legge anche `?movimento=<id>` (`useSearchParams`, la pagina è già in `Suspense`): con quel parametro la coda mostra solo le proposte di quella riga bancaria (`bankTransactionId`), con un chip «Stai guardando un solo movimento · Mostra tutti» e il ritorno all'estratto conto (`/prima-nota/movimenti?register=BANK&movimento=<id>`). È l'indirizzo che l'azione «Riconcilia» dell'estratto conto apre già dalla consegna B: sostituendo la pagina, il contratto resta.
+
 Vincoli di forma già pagati altrove: solo token semantici (`text-muted-foreground`, `bg-card`), mai colori cablati; `min-w-0` sui contenitori che ospitano la causale, che è lunga; se si usa un `Dialog`, `sm:max-w-*` e non `max-w-*`.
 
-- [ ] **Step 5: Provare nel browser su un lotto vero**
+- [x] **Step 5: Provare nel browser su un lotto vero**
 
 Avviare il server con un database locale (**non** la produzione), generare un lotto, e guardare: la causale non deve traboccare, le tre azioni devono essere raggiungibili, e il tema scuro non deve produrre testo invisibile.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/components/riconciliazione "src/app/(dashboard)/riconciliazione"
@@ -482,18 +487,18 @@ git commit -m "feat(riconciliazione): la coda delle proposte, con i fattori e le
 - Create: `src/components/riconciliazione/StoricoLotti.tsx`
 - Modify: `src/app/(dashboard)/riconciliazione/RiconciliazioneClient.tsx`
 
-- [ ] **Step 1: Il test**
+- [x] **Step 1: Il test**
 
 ```tsx
 it('elenca i lotti col periodo, i contatori e la percentuale decisa', () => {})
 it('«Riprendi» riapre la coda di quel lotto', () => {})
 ```
 
-- [ ] **Step 2: Vederlo fallire, poi implementare**
+- [x] **Step 2: Vederlo fallire, poi implementare**
 
 Una riga per lotto: periodo, `contaProposte`, `contaApprovate`, `contaScartate`, percentuale decisa, e «Riprendi». Il lavoro di riconciliazione è lungo e si interrompe: poterlo riprendere è la ragione per cui il lotto si persiste.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/components/riconciliazione "src/app/(dashboard)/riconciliazione"
@@ -504,14 +509,14 @@ git commit -m "feat(riconciliazione): lo storico dei lotti, con Riprendi"
 
 ## Task 7: Verifica finale
 
-- [ ] **Step 1: Le suite**
+- [x] **Step 1: Le suite**
 
 ```bash
 PATH="/Users/nicolascarpa/.nvm/versions/node/v22.22.0/bin:$PATH" npm run test:run
 TEST_DB_SUFFIX=finale PATH="/Users/nicolascarpa/.nvm/versions/node/v22.22.0/bin:$PATH" npm run test:integration
 ```
 
-- [ ] **Step 2: I cricchetti**
+- [x] **Step 2: I cricchetti**
 
 ```bash
 PATH="/Users/nicolascarpa/.nvm/versions/node/v22.22.0/bin:$PATH" npm run lint
@@ -522,7 +527,7 @@ PATH="/Users/nicolascarpa/.nvm/versions/node/v22.22.0/bin:$PATH" node scripts/ch
 PATH="/Users/nicolascarpa/.nvm/versions/node/v22.22.0/bin:$PATH" npm run knip
 ```
 
-- [ ] **Step 3: Le due build, che hanno severità diverse**
+- [x] **Step 3: Le due build, che hanno severità diverse**
 
 ```bash
 DATABASE_URL='postgresql://placeholder:placeholder@localhost:5432/placeholder' NEXTAUTH_URL='http://localhost:3000' NEXTAUTH_SECRET='placeholder' AUTH_SECRET='placeholder' PATH="/Users/nicolascarpa/.nvm/versions/node/v22.22.0/bin:$PATH" npx next build --webpack
@@ -531,7 +536,7 @@ DATABASE_URL='postgresql://placeholder:placeholder@localhost:5432/placeholder' N
 
 Mai incanalare in `tail`: il codice d'uscita diventerebbe quello di `tail`.
 
-- [ ] **Step 4: La domanda che chiude il taglio**
+- [x] **Step 4: La domanda che chiude il taglio**
 
 Si arriva a questa schermata dalla navigazione? `/riconciliazione` esiste già nel menu: verificare che porti alla coda nuova e non alla pagina vecchia.
 
