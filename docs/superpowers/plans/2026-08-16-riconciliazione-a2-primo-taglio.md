@@ -267,7 +267,7 @@ git commit -m "chore(riconciliazione): la fascia Alta passa da 7 a 13, misurato"
 - Create: `src/lib/services/__tests__/reconciliation-decision-service.itest.ts`
 
 **Interfaces:**
-- Consumes: `riconciliaInTransazione(tx, input)` e `dopoLaRiconciliazione(risultato, input)` da `src/lib/services/schedule-reconciliation-service.ts` (estratte il 15 agosto proprio perché Prisma non annida transazioni interattive); `toDebitCredit` da `src/lib/prima-nota-utils.ts:162`; `risolviCentroDiCosto` da `src/lib/services/cost-center-service.ts:149`.
+- Consumes: `promuoviRigaBancariaInTransazione(tx, input)`, `PromozioneRifiutata`, `PromozioneInTransazione` da `src/lib/services/promozione-riga-bancaria-service.ts` (consegna B dell'estratto conto: il servizio unico che crea la scrittura BANK dalla riga, la lega, scrive le riconciliazioni e il residuo — questo task NON crea più la scrittura da sé); `dopoLaRiconciliazione` da `src/lib/services/schedule-reconciliation-service.ts` per le code fuori transazione.
 - Produces:
   ```ts
   export type EsitoApprovazione =
@@ -316,13 +316,14 @@ Expected: FAIL — il modulo non esiste.
 
 `approvaProposta` in una sola `prisma.$transaction`:
 
-1. blocca la proposta (`SELECT ... FOR UPDATE` via `findFirst` dentro la transazione) e verifica `stato === 'in_attesa'`;
+1. blocca la proposta (`SELECT ... FOR UPDATE` via `$queryRaw` dentro la transazione) e verifica `stato === 'in_attesa'`;
 2. rilegge le due parti e **ricontrolla la freschezza** (decisione 6 della spec madre): se la scadenza è già `pagata`/`annullata`, o la riga bancaria ha già `matchedEntryId`, marca la proposta `superata` e restituisce senza scrivere altro;
-3. se `bankTransaction.matchedEntryId` è nullo, **crea il `JournalEntry`** con `date: bankTransaction.transactionDate`, `registerType: 'BANK'`, verso da `toDebitCredit`, `description: bankTransaction.description`, `verified: true`, centro da `risolviCentroDiCosto` sul conto della fattura della prima gamba; poi aggiorna la riga bancaria con `matchedEntryId` e `status: 'MATCHED'`;
-4. per ogni gamba chiama `riconciliaInTransazione(tx, { scheduleId, journalEntryId, venueId, userId, amount: gamba.importo, source: 'PROPOSAL', confidence: punteggio / 100 })`;
-5. aggiorna la proposta a `approvata` con `decisoDaId` e `decisoAt`, e incrementa `contaApprovate` sul lotto.
+3. chiama **`promuoviRigaBancariaInTransazione(tx, { bankTransactionId, venueId, userId, origine: 'proposta', confidence: punteggio / 100, scadenze: gambe.map((g) => ({ scheduleId: g.scheduleId, amount: Number(g.importo) })) })`** — oppure, se la proposta è una **R4** (`journalEntryId` valorizzato, nessuna gamba), `{ …, origine: 'proposta', scritturaEsistenteId: proposta.journalEntryId }`. È il servizio a creare la scrittura BANK (data, dare/avere, descrizione, conto dal fornitore della scadenza, centro via `risolviCentroDiCosto`), a legarla (`matchedEntryId`, `status: 'MATCHED'`, `origineScrittura: 'PROPOSTA'`), a scrivere le `ScheduleReconciliation` con `source: 'PROPOSAL'` e il residuo dei documenti sulla riga. Un esito negativo arriva come eccezione `PromozioneRifiutata`: la si lascia salire (la transazione cade per intero) e **fuori** dalla transazione la si cattura e si traduce in `{ outcome: 'riconciliazione_rifiutata', motivo }` (dal campo `esito` dell'eccezione: `importo_eccedente`, `riconciliazione_rifiutata`, `scrittura_gia_collegata_ad_altra_riga`… → il motivo lo dà `rispostaPerEsito` di `src/lib/banca/esiti-promozione.ts`, campo `corpo.error`);
+4. aggiorna la proposta a `approvata` con `decisoDaId` e `decisoAt`, e incrementa `contaApprovate` sul lotto; restituisce anche `seguiti` della promozione.
 
-Fuori dalla transazione: `dopoLaRiconciliazione` per ciascun esito, come fa la rotta del pagamento in contanti.
+Fuori dalla transazione: per ogni voce di `seguiti`, `dopoLaRiconciliazione(voce.risultato, voce.input)`, come fa la rotta del pagamento in contanti.
+
+Lo scarto di una proposta approvata (se un giorno servirà «annulla approvazione») passa da `scollegaRigaBancaria` dello stesso modulo: ritira solo ciò che la promozione ha creato.
 
 - [ ] **Step 4: Scrivere la rotta**
 
@@ -460,6 +461,8 @@ Run: `PATH="/Users/nicolascarpa/.nvm/versions/node/v22.22.0/bin:$PATH" npx vites
 `CodaProposte`: ordinamento per punteggio decrescente, filtro per fascia (Alta ≥ 85, Media 50-84, Bassa < 50), e il conteggio per fascia in cima.
 
 `RiconciliazioneClient`: la pagina d'ingresso con due date, le scorciatoie «Quest'anno» e «Tutto», «Calcola Proposte»; e lo stato di attesa didattico — l'elenco delle regole con sigla e descrizione — al posto di una pagina vuota.
+
+`RiconciliazioneClient` legge anche `?movimento=<id>` (`useSearchParams`, la pagina è già in `Suspense`): con quel parametro la coda mostra solo le proposte di quella riga bancaria (`bankTransactionId`), con un chip «Stai guardando un solo movimento · Mostra tutti» e il ritorno all'estratto conto (`/prima-nota/movimenti?register=BANK&movimento=<id>`). È l'indirizzo che l'azione «Riconcilia» dell'estratto conto apre già dalla consegna B: sostituendo la pagina, il contratto resta.
 
 Vincoli di forma già pagati altrove: solo token semantici (`text-muted-foreground`, `bg-card`), mai colori cablati; `min-w-0` sui contenitori che ospitano la causale, che è lunga; se si usa un `Dialog`, `sm:max-w-*` e non `max-w-*`.
 
