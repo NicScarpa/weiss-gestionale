@@ -122,3 +122,46 @@ describe('Nuovo Dipendente - tendine Ruolo e Sede', () => {
     expect(vociAperte()).toEqual(['Weiss Cafè (WEISS)'])
   })
 })
+
+/**
+ * La data di fine del contratto a termine.
+ *
+ * Compare solo quando serve — sul tempo indeterminato sarebbe una casella che
+ * chiede una cosa inesistente — ed è obbligatoria quando compare: un contratto
+ * a termine senza termine non permette di avvisare nessuno della scadenza.
+ */
+describe('Nuovo Dipendente - fine del contratto', () => {
+  async function scegliTipoContratto(etichetta: string) {
+    await apri(tendina('Seleziona tipo contratto'))
+    const voce = Array.from(document.querySelectorAll('[role="option"]')).find(
+      (o) => o.textContent?.trim() === etichetta
+    )
+    if (!voce) throw new Error(`Voce «${etichetta}» non trovata fra i tipi di contratto`)
+    await act(async () => {
+      fireEvent.click(voce)
+    })
+  }
+
+  function campoFineContratto(): HTMLInputElement | null {
+    return document.querySelector<HTMLInputElement>('#contractEndDate')
+  }
+
+  it('non chiede la fine finché il contratto non è a termine', async () => {
+    await montaModulo()
+    expect(campoFineContratto()).toBeNull()
+  })
+
+  it('la chiede quando il contratto è a tempo determinato', async () => {
+    await montaModulo()
+    await scegliTipoContratto('Tempo Determinato')
+
+    expect(campoFineContratto()).not.toBeNull()
+  })
+
+  it('non la chiede sul tempo indeterminato', async () => {
+    await montaModulo()
+    await scegliTipoContratto('Tempo Indeterminato')
+
+    expect(campoFineContratto()).toBeNull()
+  })
+})

@@ -22,6 +22,7 @@ const fieldLabels: Record<string, string> = {
   contractHoursWeek: 'Ore settimanali',
   workDaysPerWeek: 'Giorni lavorativi',
   hireDate: 'Data assunzione',
+  contractEndDate: 'Data fine contratto',
   terminationDate: 'Data cessazione',
   vatNumber: 'Partita IVA',
   fiscalCode: 'Codice Fiscale',
@@ -130,6 +131,7 @@ const updateStaffSchema = z.object({
   /** Regola con cui si calcolano le sue ore. Null = quella predefinita. */
   timekeepingPolicyId: z.string().nullable().optional(),
   hireDate: z.string().nullable().optional(),
+  contractEndDate: z.string().nullable().optional(),
   terminationDate: z.string().nullable().optional(),
 
   // Dati fiscali (per occasionali/freelance)
@@ -212,6 +214,7 @@ export async function GET(
         timekeepingPolicyId: true,
         workDaysPerWeek: true,
         hireDate: true,
+        contractEndDate: true,
         terminationDate: true,
 
         // Dati fiscali
@@ -378,6 +381,12 @@ export async function PUT(
     if (validatedData.hireDate !== undefined) {
       updateData.hireDate = validatedData.hireDate ? new Date(validatedData.hireDate) : null
     }
+    if (validatedData.contractEndDate !== undefined) {
+      updateData.contractEndDate = validatedData.contractEndDate
+        ? new Date(validatedData.contractEndDate)
+        : null
+    }
+
     if (validatedData.terminationDate !== undefined) {
       updateData.terminationDate = validatedData.terminationDate ? new Date(validatedData.terminationDate) : null
     }
@@ -452,6 +461,7 @@ export async function PUT(
         timekeepingPolicyId: true,
         workDaysPerWeek: true,
         hireDate: true,
+        contractEndDate: true,
         terminationDate: true,
         vatNumber: true,
         fiscalCode: true,

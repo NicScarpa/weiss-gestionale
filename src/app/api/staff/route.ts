@@ -32,6 +32,9 @@ const createStaffSchema = z.object({
   contractHoursWeek: z.number().min(0).max(60).nullable().optional(),
   workDaysPerWeek: z.number().min(1).max(7).nullable().optional(),
   hireDate: z.string().min(1, 'Data assunzione richiesta'),
+  /// Scadenza prevista del contratto a termine: obbligatoria sul tempo
+  /// determinato (il refine sotto), assente sugli altri tipi.
+  contractEndDate: z.string().nullable().optional(),
   terminationDate: z.string().nullable().optional(),
 
   // Dati fiscali
@@ -52,6 +55,29 @@ const createStaffSchema = z.object({
   hourlyRateHoliday: z.number().min(0).nullable().optional(),
   hourlyRateNight: z.number().min(0).nullable().optional(),
 })
+  /**
+   * Un contratto a termine senza termine non è un dato utilizzabile: nessuno
+   * può essere avvisato della scadenza di una data che non c'è. La regola sta
+   * qui, sullo schema, perché è una proprietà del contratto e non della
+   * schermata che lo compila.
+   */
+  .refine(
+    (dati) => dati.contractType !== 'TEMPO_DETERMINATO' || !!dati.contractEndDate,
+    {
+      path: ['contractEndDate'],
+      message: 'Il contratto a tempo determinato richiede la data di fine',
+    }
+  )
+  .refine(
+    (dati) =>
+      !dati.contractEndDate ||
+      !dati.hireDate ||
+      new Date(dati.contractEndDate) >= new Date(dati.hireDate),
+    {
+      path: ['contractEndDate'],
+      message: 'La data di fine non può precedere quella di assunzione',
+    }
+  )
 
 // Schema per aggiornamento staff
 const updateStaffSchema = z.object({
@@ -291,6 +317,7 @@ export async function POST(request: NextRequest) {
         contractHoursWeek: validatedData.contractHoursWeek ?? null,
         workDaysPerWeek: validatedData.workDaysPerWeek ?? null,
         hireDate: new Date(validatedData.hireDate),
+        contractEndDate: validatedData.contractEndDate ? new Date(validatedData.contractEndDate) : null,
         terminationDate: validatedData.terminationDate ? new Date(validatedData.terminationDate) : null,
         // Dati fiscali
         vatNumber: validatedData.vatNumber ?? null,
