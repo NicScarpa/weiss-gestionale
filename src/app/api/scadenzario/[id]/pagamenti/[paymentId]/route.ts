@@ -33,7 +33,10 @@ export async function DELETE(
 
       const payment = await tx.schedulePayment.findFirst({
         where: { id: paymentId, scheduleId: id },
-        select: { id: true, reconciliation: { select: { id: true } } },
+        select: {
+          id: true,
+          reconciliation: { select: { id: true, source: true, journalEntryId: true } },
+        },
       })
       if (!payment) return { errore: 'pagamento' } as const
 
@@ -41,8 +44,21 @@ export async function DELETE(
       // annulla la riconciliazione, che ritira anche le fette ereditate sul
       // movimento. Cancellarlo qui lascerebbe la riconciliazione a puntare
       // nel vuoto.
-      if (payment.reconciliation) {
+      //
+      // Il pagamento registrato a mano è il caso opposto: il legame e la
+      // scrittura di prima nota li ha creati il pagamento stesso, quindi
+      // spariscono con lui. Rimandare anche qui alla «riconciliazione da
+      // annullare» indicherebbe un'azione che l'utente non ha mai compiuto e
+      // che dalla schermata non può compiere.
+      if (payment.reconciliation && payment.reconciliation.source !== 'MANUAL') {
         return { errore: 'riconciliato', reconciliationId: payment.reconciliation.id } as const
+      }
+
+      if (payment.reconciliation) {
+        await tx.scheduleReconciliation.delete({ where: { id: payment.reconciliation.id } })
+        // Le scritture contabili non si cancellano: si ritirano con `deletedAt`
+        // (SOFT_DELETE_MODELS in src/lib/prisma.ts).
+        await tx.journalEntry.delete({ where: { id: payment.reconciliation.journalEntryId } })
       }
 
       await tx.schedulePayment.delete({ where: { id: paymentId } })

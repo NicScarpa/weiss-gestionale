@@ -11,6 +11,18 @@ import {
 import { POST as POST_pagamento } from '@/app/api/scadenzario/[id]/pagamenti/route'
 
 /**
+ * Un conto di costo su cui imputare la scrittura che il pagamento genera.
+ * `DEFAULT_STR` perché il centro di costo si risolve dal piano, senza doverlo
+ * indicare: qui interessa il pagamento, non l'imputazione.
+ */
+async function contoDiCosto(): Promise<string> {
+  const conto = await prisma.account.findFirstOrThrow({
+    where: { type: 'COSTO', isActive: true, costCenterRule: 'DEFAULT_STR' },
+  })
+  return conto.id
+}
+
+/**
  * Lo scalino che mancava fra «Da pagare» e «Pagata».
  *
  * Una fattura con una rata su due saldata — o con l'unica rata saldata a metà —
@@ -24,7 +36,7 @@ async function paga(scheduleId: string, importo: number) {
     POST_pagamento,
     jsonRequest(`/api/scadenzario/${scheduleId}/pagamenti`, {
       method: 'POST',
-      body: { importo, dataPagamento: '2026-08-10' },
+      body: { importo, dataPagamento: '2026-08-10', accountId: await contoDiCosto() },
     }),
     { id: scheduleId }
   )

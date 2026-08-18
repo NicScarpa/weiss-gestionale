@@ -74,6 +74,9 @@ interface ScadenzaBloccata {
   supplierId: string | null
   dataScadenza: Date
   dataAttesaSource: string | null
+  descrizione: string
+  numeroDocumento: string | null
+  controparteNome: string | null
 }
 
 /**
@@ -110,6 +113,13 @@ export async function bloccaScadenza(
       supplierId: true,
       dataScadenza: true,
       dataAttesaSource: true,
+      // Servono a chi dalla scadenza genera la scrittura di prima nota: la
+      // descrizione, il numero del documento e il nome della controparte
+      // finiscono nel movimento. Stanno nella stessa lettura perché è già
+      // sotto lock e una seconda query non aggiungerebbe nulla.
+      descrizione: true,
+      numeroDocumento: true,
+      controparteNome: true,
     },
   })
 }

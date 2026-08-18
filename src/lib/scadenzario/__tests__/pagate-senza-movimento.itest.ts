@@ -8,6 +8,36 @@ import { GET as GET_lista } from '@/app/api/scadenzario/route'
 import { POST as POST_pagamento } from '@/app/api/scadenzario/[id]/pagamenti/route'
 import { POST as POST_riconciliazione } from '@/app/api/scadenzario/[id]/riconciliazioni/route'
 import { DELETE as DELETE_scadenza } from '@/app/api/scadenzario/[id]/route'
+import { prisma } from '@/lib/prisma'
+import { ricalcolaStatoSchedule } from '@/lib/scadenzario/stato-schedule'
+
+/**
+ * Un pagamento **senza** movimento di prima nota.
+ *
+ * Dalla rotta non se ne ottengono più: registrare un pagamento crea anche la
+ * scrittura e il legame. Restano però i pagamenti scritti prima che quella
+ * strada esistesse, ed è esattamente ciò che questo contatore serve a
+ * scovare — quindi il caso si costruisce qui, direttamente.
+ */
+async function pagamentoSenzaMovimento(scheduleId: string, importo: number) {
+  const pagamento = await prisma.schedulePayment.create({
+    data: { scheduleId, importo, dataPagamento: new Date('2026-08-11') },
+  })
+  await ricalcolaStatoSchedule(prisma, scheduleId)
+  return pagamento
+}
+
+/**
+ * Un conto di costo su cui imputare la scrittura che il pagamento genera.
+ * `DEFAULT_STR` perché il centro di costo si risolve dal piano, senza doverlo
+ * indicare: qui interessa il pagamento, non l'imputazione.
+ */
+async function contoDiCosto(): Promise<string> {
+  const conto = await prisma.account.findFirstOrThrow({
+    where: { type: 'COSTO', isActive: true, costCenterRule: 'DEFAULT_STR' },
+  })
+  return conto.id
+}
 
 /**
  * Il buco che questo test presidia: una scadenza si può dichiarare pagata
@@ -53,14 +83,7 @@ describe('scadenze pagate senza movimento', () => {
   it('conta la scadenza saldata con un pagamento manuale', async () => {
     const scadenza = await creaScadenza({ importoTotale: 100, tipo: 'passiva' })
 
-    await callRoute(
-      POST_pagamento,
-      jsonRequest(`/api/scadenzario/${scadenza.id}/pagamenti`, {
-        method: 'POST',
-        body: { importo: 100, dataPagamento: '2026-08-11' },
-      }),
-      { id: scadenza.id }
-    )
+    await pagamentoSenzaMovimento(scadenza.id, 100)
 
     const summary = await leggiSummary()
     expect(summary.pagateSenzaMovimento).toBe(1)
@@ -87,14 +110,7 @@ describe('scadenze pagate senza movimento', () => {
   it('conta anche il pagamento parziale, per la sola quota pagata', async () => {
     const scadenza = await creaScadenza({ importoTotale: 100, tipo: 'passiva' })
 
-    await callRoute(
-      POST_pagamento,
-      jsonRequest(`/api/scadenzario/${scadenza.id}/pagamenti`, {
-        method: 'POST',
-        body: { importo: 40, dataPagamento: '2026-08-11' },
-      }),
-      { id: scadenza.id }
-    )
+    await pagamentoSenzaMovimento(scadenza.id, 40)
 
     const summary = await leggiSummary()
     expect(summary.pagateSenzaMovimento).toBe(1)
@@ -104,14 +120,7 @@ describe('scadenze pagate senza movimento', () => {
   it('la scadenza pagata a mano e poi annullata non compare né nel contatore né nella lista filtrata', async () => {
     const scadenza = await creaScadenza({ importoTotale: 100, tipo: 'passiva' })
 
-    await callRoute(
-      POST_pagamento,
-      jsonRequest(`/api/scadenzario/${scadenza.id}/pagamenti`, {
-        method: 'POST',
-        body: { importo: 100, dataPagamento: '2026-08-11' },
-      }),
-      { id: scadenza.id }
-    )
+    await pagamentoSenzaMovimento(scadenza.id, 100)
 
     // Prima dell'annullamento il fenomeno è visibile su entrambe le strade
     expect((await leggiSummary()).pagateSenzaMovimento).toBe(1)
@@ -134,25 +143,11 @@ describe('scadenze pagate senza movimento', () => {
   it('un filtro ?stato= esplicito resta in vigore insieme a pagateSenzaMovimento', async () => {
     // Pagata per intero: stato 'pagata', nessun movimento collegato
     const pagataIntera = await creaScadenza({ importoTotale: 100, tipo: 'passiva' })
-    await callRoute(
-      POST_pagamento,
-      jsonRequest(`/api/scadenzario/${pagataIntera.id}/pagamenti`, {
-        method: 'POST',
-        body: { importo: 100, dataPagamento: '2026-08-11' },
-      }),
-      { id: pagataIntera.id }
-    )
+    await pagamentoSenzaMovimento(pagataIntera.id, 100)
 
     // Pagata in parte: stato 'parzialmente_pagata', anche questa senza movimento
     const pagataParziale = await creaScadenza({ importoTotale: 100, tipo: 'passiva' })
-    await callRoute(
-      POST_pagamento,
-      jsonRequest(`/api/scadenzario/${pagataParziale.id}/pagamenti`, {
-        method: 'POST',
-        body: { importo: 40, dataPagamento: '2026-08-11' },
-      }),
-      { id: pagataParziale.id }
-    )
+    await pagamentoSenzaMovimento(pagataParziale.id, 40)
 
     // Entrambe soddisfano pagateSenzaMovimento da sole
     expect(await leggiListaPagateSenzaMovimento()).toHaveLength(2)

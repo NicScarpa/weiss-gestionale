@@ -15,6 +15,18 @@ import { PATCH as PATCH_stato } from '@/app/api/scadenzario/[id]/stato/route'
 import { PATCH as PATCH_scadenza, DELETE as DELETE_scadenza } from '@/app/api/scadenzario/[id]/route'
 
 /**
+ * Un conto di costo su cui imputare la scrittura che il pagamento genera.
+ * `DEFAULT_STR` perché il centro di costo si risolve dal piano, senza doverlo
+ * indicare: qui interessa il pagamento, non l'imputazione.
+ */
+async function contoDiCosto(): Promise<string> {
+  const conto = await prisma.account.findFirstOrThrow({
+    where: { type: 'COSTO', isActive: true, costCenterRule: 'DEFAULT_STR' },
+  })
+  return conto.id
+}
+
+/**
  * Pagamenti manuali e cambi di stato.
  *
  * Tre percorsi che scrivevano sulla scadenza ognuno con la propria aritmetica:
@@ -33,7 +45,7 @@ async function registraPagamento(scheduleId: string, importo: number, dataPagame
     POST_pagamento,
     jsonRequest(`/api/scadenzario/${scheduleId}/pagamenti`, {
       method: 'POST',
-      body: { importo, dataPagamento },
+      body: { importo, dataPagamento, accountId: await contoDiCosto() },
     }),
     { id: scheduleId }
   )

@@ -14,6 +14,17 @@ import { SchedulePaymentMethod, SCHEDULE_PAYMENT_METHOD_LABELS } from '@/types/s
 import { formatCurrency } from '@/lib/formatters'
 import { CalendarIcon } from 'lucide-react'
 import { format } from 'date-fns'
+import { AccountCombobox } from '@/components/prima-nota/shared/AccountCombobox'
+import { useCostCenters } from '@/components/prima-nota/shared/CostCenterSelect'
+import { useAccountsForCombobox, buildCostCenterRuleMap } from '@/hooks/useImputableAccounts'
+import type { AccountType } from '@prisma/client'
+
+/**
+ * Una scadenza passiva si paga su un conto di costo, una attiva si incassa su
+ * un conto di ricavo: la finestra non sa quale delle due sia, quindi li offre
+ * entrambi e lascia scegliere.
+ */
+const CONTI_IMPUTABILI: AccountType[] = ['COSTO', 'RICAVO']
 import { it } from 'date-fns/locale'
 
 interface PaymentDialogProps {
@@ -39,6 +50,10 @@ export interface PaymentFormData {
   metodo?: SchedulePaymentMethod
   riferimento?: string
   note?: string
+  /** Conto su cui imputare la scrittura di prima nota generata dal pagamento. */
+  accountId: string
+  /** Solo quando il conto scelto lo pretende. */
+  costCenterId?: string
 }
 
 export function PaymentDialog({
@@ -91,7 +106,20 @@ function ModuloPagamento({
   const [metodo, setMetodo] = useState<SchedulePaymentMethod | undefined>()
   const [riferimento, setRiferimento] = useState('')
   const [note, setNote] = useState('')
+  const [accountId, setAccountId] = useState<string | undefined>()
+  const [costCenterId, setCostCenterId] = useState<string | undefined>()
+  const [errore, setErrore] = useState<string | null>(null)
   const [invioInCorso, setInvioInCorso] = useState(false)
+
+  // Il conto decide se serve anche un centro di costo: alcuni conti del piano
+  // lo pretendono, e senza il campo qui il server rifiuterebbe il pagamento
+  // indicando un'azione che da questa finestra non si potrebbe compiere.
+  const { data: contiPerRegola = [] } = useAccountsForCombobox(CONTI_IMPUTABILI)
+  const regolaCentro = accountId
+    ? buildCostCenterRuleMap(contiPerRegola).get(accountId)
+    : undefined
+  const centroObbligatorio = regolaCentro === 'OBBLIGATORIO'
+  const { data: centriDiCosto = [] } = useCostCenters()
 
   /**
    * Il solo `disabled` sul bottone non basta: fra il click e il re-render
@@ -104,6 +132,17 @@ function ModuloPagamento({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (invioRef.current) return
+
+    if (!accountId) {
+      setErrore('Scegli il conto su cui imputare il pagamento in prima nota')
+      return
+    }
+    if (centroObbligatorio && !costCenterId) {
+      setErrore('Il conto scelto richiede un centro di costo')
+      return
+    }
+    setErrore(null)
+
     invioRef.current = true
     setInvioInCorso(true)
 
@@ -114,6 +153,8 @@ function ModuloPagamento({
         metodo,
         riferimento: riferimento || undefined,
         note: note || undefined,
+        accountId,
+        costCenterId: costCenterId || undefined,
       })
     } catch (error) {
       toast.error(
@@ -131,7 +172,53 @@ function ModuloPagamento({
   const inAttesa = isLoading || invioInCorso
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+      {errore && (
+        <p className="rounded-md border border-destructive/20 bg-destructive/10 p-2 text-sm text-destructive">
+          {errore}
+        </p>
+      )}
+
+      {/* Conto: il pagamento nasce anche come scrittura di prima nota, e la
+          scadenza non porta con sé un conto su cui imputarla. */}
+      <div className="space-y-2">
+        <Label>Conto *</Label>
+        <AccountCombobox
+          types={CONTI_IMPUTABILI}
+          value={accountId}
+          onChange={(scelto) => {
+            setAccountId(scelto)
+            setCostCenterId(undefined)
+          }}
+          placeholder="Su quale conto va registrato"
+          disabled={isLoading || invioInCorso}
+        />
+        <p className="text-xs text-muted-foreground">
+          Il pagamento viene registrato anche in prima nota, su questo conto
+        </p>
+      </div>
+
+      {centroObbligatorio && (
+        <div className="space-y-2">
+          <Label>Centro di costo *</Label>
+          <Select value={costCenterId} onValueChange={setCostCenterId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Seleziona centro di costo" />
+            </SelectTrigger>
+            <SelectContent>
+              {centriDiCosto.map((centro) => (
+                <SelectItem key={centro.id} value={centro.id}>
+                  {centro.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Il conto scelto lo richiede
+          </p>
+        </div>
+      )}
+
       {/* Importo */}
       <div className="space-y-2">
         <Label htmlFor="importo">Importo pagato *</Label>
