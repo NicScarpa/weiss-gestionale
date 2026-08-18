@@ -203,3 +203,33 @@ export function estraiPartiteIva(causale: string): string[] {
   }
   return [...trovate]
 }
+
+/**
+ * Le sigle societarie che la banca tronca e che non identificano nessuno: due
+ * fornitori diversi possono essere entrambi «SRL», mentre la parte che li
+ * distingue è quella davanti.
+ *
+ * Si tolgono solo in coda o in testa, mai in mezzo: «SAS DI ROSSI» perderebbe
+ * la sigla giusta, ma «CARTOTECNICA SAS ROSSI» non deve perdere nulla dal
+ * mezzo del nome.
+ */
+const FORME_SOCIETARIE = [
+  'SRLS', 'SRL', 'SPA', 'SNC', 'SAS', 'SAPA', 'SCARL', 'SCRL', 'SC', 'SS',
+  'SOCIETA COOPERATIVA', 'COOPERATIVA', 'COOP', 'DI', 'C',
+]
+
+/** `FERRO DISTRIBUZIONE SRL` → `FERRO DISTRIBUZIONE`. */
+export function senzaFormaSocietaria(nomeNormalizzato: string): string {
+  let nome = nomeNormalizzato
+  // Più passate: «MAINCART SRL» ha una sigla sola, ma «ROSSI E C SNC» ne ha due.
+  for (let giro = 0; giro < 3; giro++) {
+    const prima = nome
+    for (const forma of FORME_SOCIETARIE) {
+      nome = nome.replace(new RegExp(`\\s+${forma}$`), '').trim()
+      nome = nome.replace(new RegExp(`^${forma}\\s+`), '').trim()
+    }
+    if (nome === prima) break
+  }
+  // Se restasse solo la sigla, il nome originale vale più del niente.
+  return nome.length >= 3 ? nome : nomeNormalizzato
+}

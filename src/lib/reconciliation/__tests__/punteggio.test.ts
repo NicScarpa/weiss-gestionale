@@ -241,13 +241,17 @@ describe('il fattore codice banca', () => {
     expect(esito.fattori.codiceBanca).toBe(PESI.CODICE_BANCA)
   })
 
-  it('non dà nulla e lo motiva quando il codice contraddice il metodo atteso', () => {
+  it('dà metà punteggio, e lo motiva, quando il codice contraddice il metodo atteso', () => {
+    // Fino al 17 agosto 2026 il disaccordo azzerava il fattore. La decisione è
+    // cambiata guardando una proposta vera: il metodo scritto sulla scadenza è
+    // un'intenzione presa dalla fattura, il codice della banca è un fatto già
+    // accaduto, e quei dieci punti valevano il salto di un'intera fascia.
     const esito = valutaCoppia(
       movimento({ bankTransactionCode: '13//05' }),
       scadenza({ metodoPagamento: 'bonifico' }),
       { alias: new Map(), mappaCodiciBanca: mappa }
     )!
-    expect(esito.fattori.codiceBanca).toBe(0)
+    expect(esito.fattori.codiceBanca).toBe(PESI.CODICE_BANCA / 2)
     expect(esito.motivazioni.some((m) => m.segno === '-' && /codice/i.test(m.testo))).toBe(true)
   })
 
@@ -344,5 +348,119 @@ describe('il riferimento di una proposta cumulativa vale per tutte le sue gambe'
       CONTESTO_VUOTO
     )
     expect(esito?.fattori.riferimento).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * I tre casi arrivano da una proposta vera del 17 agosto 2026, guardata a
+ * schermo dall'utente: 9.897,17 € a FERRO DISTRIBUZIONE SRL, importo identico,
+ * riferimento della fattura nella causale, unico abbinamento possibile — e 65
+ * punti su 100, cioè fascia Media.
+ *
+ * Il motore aveva ragione su ogni singola regola e torto sul risultato. Le
+ * regole erano scritte come se il dato in arrivo dalla banca fosse completo,
+ * mentre l'estratto conto tronca le ragioni sociali e il metodo di pagamento
+ * scritto in fattura è un'intenzione, non un fatto.
+ */
+describe('l’elasticità che i dati veri pretendono', () => {
+  /** La causale vera, con «SRL» mangiato e il riferimento incollato al nome. */
+  const CAUSALE_FERRO =
+    'Bonifico tramite Internet Banking *INSTANT DEL 14/07/2026 ORE 09:37 ID.07084000413396844864990649 90IT BEN FERRO DISTRIBUZIONEFT 000000000006358/02'
+
+  it('riconosce la controparte quando la banca ha troncato la forma societaria', () => {
+    // In anagrafica «FERRO DISTRIBUZIONE SRL», in causale «FERRO DISTRIBUZIONEFT»:
+    // il nome c'è tutto tranne la sigla, e cercarlo intero lo fa sparire.
+    const esito = valutaCoppia(
+      movimento({ causale: CAUSALE_FERRO, importo: -9897.17 }),
+      scadenza({
+        controparteNome: 'FERRO DISTRIBUZIONE SRL',
+        residuo: 9897.17,
+        numeroDocumento: '000000000006358/02',
+      }),
+      CONTESTO_VUOTO
+    )
+
+    expect(esito).not.toBeNull()
+    expect(esito!.fattori.controparte).toBeGreaterThanOrEqual(16)
+  })
+
+  it('vale per le forme societarie che si incontrano davvero', () => {
+    for (const [nomeAnagrafica, comeLaScriveLaBanca] of [
+      ['FERRO DISTRIBUZIONE SRL', 'BEN FERRO DISTRIBUZIONE FT 1'],
+      ['DISTILLERIA NARDINI S.P.A.', 'BEN DISTILLERIA NARDINI ORDINE I/72955'],
+      ['SARATOGA S.N.C.', 'BEN SARATOGA 177 2026'],
+      ['MA.IN.CART. S.R.L.', 'SDD MA.IN.CART. Ft.N.3300/00/2026'],
+    ] as const) {
+      const esito = valutaCoppia(
+        movimento({ causale: comeLaScriveLaBanca }),
+        scadenza({ controparteNome: nomeAnagrafica }),
+        CONTESTO_VUOTO
+      )
+      expect(esito, nomeAnagrafica).not.toBeNull()
+      expect(esito!.fattori.controparte, nomeAnagrafica).toBeGreaterThanOrEqual(12)
+    }
+  })
+
+  it('non regala punti a un nome che nella causale non c’è', () => {
+    // L'elasticità serve a non perdere i dati veri, non a far combaciare tutto:
+    // togliendo la sigla resta un nome, e quello deve esserci.
+    const esito = valutaCoppia(
+      movimento({ causale: CAUSALE_FERRO }),
+      scadenza({ controparteNome: 'COMMERCIALE ADRIATICA SRL' }),
+      CONTESTO_VUOTO
+    )
+    expect(esito!.fattori.controparte).toBe(0)
+  })
+
+  it('il metodo di pagamento che non combacia non azzera il fattore', () => {
+    // «Pagamento in contanti» scritto in fattura e un bonifico dello stesso
+    // importo con il numero del documento: è cambiato il modo di pagare, non è
+    // un'altra fattura. Il codice della banca resta un indizio, non un veto.
+    const contesto: ContestoValutazione = {
+      alias: new Map(),
+      mappaCodiciBanca: new Map([['48', ['bonifico']]]),
+    }
+
+    const concorde = valutaCoppia(
+      movimento({ bankTransactionCode: '48' }),
+      scadenza({ metodoPagamento: 'bonifico' }),
+      contesto
+    )
+    const discorde = valutaCoppia(
+      movimento({ bankTransactionCode: '48' }),
+      scadenza({ metodoPagamento: 'contanti' }),
+      contesto
+    )
+
+    expect(concorde!.fattori.codiceBanca).toBe(PESI.CODICE_BANCA)
+    // Meno di chi concorda, ma non zero: la differenza fra i due non può valere
+    // il salto di un'intera fascia.
+    expect(discorde!.fattori.codiceBanca).toBeGreaterThan(0)
+    expect(discorde!.fattori.codiceBanca).toBeLessThan(PESI.CODICE_BANCA)
+  })
+
+  it('la proposta vera del 17 agosto arriva in fascia Alta', () => {
+    // Importo identico, riferimento presente, controparte giusta, unico
+    // abbinamento: era la prova che il punteggio raccontava male la realtà.
+    const contesto: ContestoValutazione = {
+      alias: new Map(),
+      mappaCodiciBanca: new Map([['48', ['sdd']]]),
+    }
+    const esito = valutaCoppia(
+      movimento({ causale: CAUSALE_FERRO, importo: -9897.17, bankTransactionCode: '48' }),
+      scadenza({
+        controparteNome: 'FERRO DISTRIBUZIONE SRL',
+        residuo: 9897.17,
+        numeroDocumento: '000000000006358/02',
+        dataScadenza: new Date('2026-06-30'),
+        metodoPagamento: 'bonifico',
+      }),
+      contesto
+    )
+
+    expect(esito).not.toBeNull()
+    // `valutaCoppia` restituisce il parziale: il bonus di unicità lo aggiunge
+    // chi conosce le alternative, e qui l'abbinamento è unico (5/5 a schermo).
+    expect(fascia(esito!.punteggioParziale + PESI.UNICITA)).toBe('alta')
   })
 })

@@ -1,5 +1,5 @@
 import { stringSimilarity, daysDifference } from './matcher'
-import { normalizzaTesto, contieneRiferimento, estraiPartiteIva } from './causale'
+import { normalizzaTesto, contieneRiferimento, estraiPartiteIva, senzaFormaSocietaria } from './causale'
 import { PESI } from './scala'
 
 /**
@@ -216,11 +216,37 @@ function punteggioControparte(
       motivazioni.push({ testo: 'Nome della controparte presente nella causale', segno: '+' })
       return 18
     }
+
+    // Senza la forma societaria. L'estratto conto tronca le ragioni sociali —
+    // «FERRO DISTRIBUZIONE SRL» in anagrafica diventa «FERRO DISTRIBUZIONEFT»
+    // in causale, col riferimento incollato — e cercare il nome intero fa
+    // sparire una controparte che è lì sotto gli occhi. La sigla è anche la
+    // parte meno distintiva del nome: toglierla non allarga il campo, perché
+    // ciò che resta deve comunque comparire per intero.
+    const nudo = senzaFormaSocietaria(nome)
+    if (nudo !== nome && nudo.length >= 8 && causaleNormalizzata.includes(nudo)) {
+      motivazioni.push({
+        testo: 'Nome della controparte presente nella causale, senza la forma societaria',
+        segno: '+',
+      })
+      return 18
+    }
+
     if (nome.length >= 4 && causaleNormalizzata.includes(nome)) {
       motivazioni.push({ testo: 'Nome breve della controparte presente nella causale', segno: '+' })
       return 12
     }
-    const somiglianza = stringSimilarity(causaleNormalizzata, nome)
+    if (nudo !== nome && nudo.length >= 4 && causaleNormalizzata.includes(nudo)) {
+      motivazioni.push({ testo: 'Nome breve della controparte presente nella causale', segno: '+' })
+      return 12
+    }
+
+    // Il ripiego per somiglianza confrontava il nome con la causale **intera**:
+    // ventitré caratteri contro centocinquanta danno 0,138 contro una soglia di
+    // 0,6, quindi non è mai scattato da quando esiste. Si confronta invece con
+    // la finestra di causale che gli somiglia di più, che è la domanda vera:
+    // «questo nome compare, storpiato, da qualche parte qui dentro?»
+    const somiglianza = somiglianzaMigliore(causaleNormalizzata, nudo)
     if (somiglianza >= 0.6) {
       motivazioni.push({ testo: 'Nome della controparte simile a quello nella causale', segno: '+' })
       return 6
@@ -229,6 +255,32 @@ function punteggioControparte(
 
   motivazioni.push({ testo: 'Controparte non riconosciuta nella causale', segno: '-' })
   return 0
+}
+
+/**
+ * La somiglianza fra un nome e la porzione di causale che gli assomiglia di
+ * più, invece che con la causale intera: su un testo lungo il rapporto fra le
+ * lunghezze schiaccia il punteggio a valori che nessuna soglia sensata supera.
+ */
+function somiglianzaMigliore(causale: string, nome: string): number {
+  if (nome.length < 4) return 0
+
+  const parole = causale.split(' ')
+  const quante = Math.max(1, nome.split(' ').length)
+  let migliore = 0
+
+  for (let i = 0; i < parole.length; i++) {
+    // Si guardano le finestre lunghe quanto il nome, e una parola in più: la
+    // banca a volte incolla il riferimento all'ultima parola del nome.
+    for (const larghezza of [quante, quante + 1]) {
+      const finestra = parole.slice(i, i + larghezza).join(' ')
+      if (!finestra) continue
+      const punteggio = stringSimilarity(finestra, nome)
+      if (punteggio > migliore) migliore = punteggio
+    }
+  }
+
+  return migliore
 }
 
 function punteggioCodiceBanca(
@@ -250,11 +302,20 @@ function punteggioCodiceBanca(
     return PESI.CODICE_BANCA
   }
 
+  // Il metodo scritto sulla scadenza è un'**intenzione**, presa dalla fattura o
+  // dall'anagrafica; il codice della banca è un **fatto** già accaduto. Quando
+  // discordano, di solito è l'intenzione a essere vecchia: una fattura che dice
+  // «contanti» pagata con un bonifico dello stesso importo e con il suo numero
+  // in causale è la stessa fattura, pagata in un altro modo.
+  //
+  // Prima il disaccordo azzerava il fattore, e quei dieci punti valevano il
+  // salto di un'intera fascia. Ora vale la metà di una conferma: resta un
+  // indizio, non è più un veto.
   motivazioni.push({
-    testo: `Il codice operazione indica ${attesi.join(' o ')}, ma la scadenza dice ${scadenza.metodoPagamento}`,
+    testo: `Il codice operazione indica ${attesi.join(' o ')} e la scadenza dice ${scadenza.metodoPagamento}: può essere cambiato il modo di pagare`,
     segno: '-',
   })
-  return 0
+  return Math.round(PESI.CODICE_BANCA / 2)
 }
 
 /**
