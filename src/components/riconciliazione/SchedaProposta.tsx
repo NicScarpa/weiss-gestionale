@@ -12,6 +12,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -46,6 +47,12 @@ interface Props {
   onApprova: (id: string) => Promise<void>
   /** Rifiuta con un `Error` che porta il messaggio del server. */
   onScarta: (id: string, opzioni: { perSempre: boolean; motivo?: string }) => Promise<void>
+  /**
+   * Presenti solo quando la coda permette la selezione multipla: senza, la
+   * scheda non mostra alcuna casella e resta com'era.
+   */
+  selezionata?: boolean
+  onSelezione?: () => void
   /** La prima della coda: è quella su cui si sta decidendo adesso. */
   inEvidenza?: boolean
 }
@@ -124,7 +131,14 @@ function BarraFattori({ fattori }: { fattori: FattoriProposta }) {
   )
 }
 
-export function SchedaProposta({ proposta, onApprova, onScarta, inEvidenza = false }: Props) {
+export function SchedaProposta({
+  proposta,
+  onApprova,
+  onScarta,
+  inEvidenza = false,
+  selezionata,
+  onSelezione,
+}: Props) {
   const [azione, setAzione] = React.useState<'approva' | 'salta' | 'mai' | null>(null)
   const [errore, setErrore] = React.useState<string | null>(null)
   const [chiedeConferma, setChiedeConferma] = React.useState(false)
@@ -160,13 +174,32 @@ export function SchedaProposta({ proposta, onApprova, onScarta, inEvidenza = fal
 
   return (
     <article
+      // Selezionata batte in evidenza: quando si sta componendo un gruppo, ciò
+      // che conta è quali schede ne fanno parte, non quale sarebbe la prossima.
       className={cn(
-        'rounded-lg border bg-card p-4 text-card-foreground shadow-sm',
-        inEvidenza && 'ring-2 ring-primary/40'
+        'rounded-lg border bg-card p-4 text-card-foreground shadow-sm transition-colors',
+        inEvidenza && !selezionata && 'ring-2 ring-primary/40',
+        selezionata && 'border-primary bg-primary/5 ring-2 ring-primary'
       )}
+      data-selezionata={onSelezione ? String(!!selezionata) : undefined}
       aria-label={`Proposta ${proposta.regola} da ${proposta.punteggio} punti`}
     >
       <header className="flex flex-wrap items-center gap-2 border-b pb-3">
+        {onSelezione && (
+          // La casella sta dove l'occhio va già — accanto al punteggio — e
+          // porta la sua etichetta: un quadratino solo, in un margine, non lo
+          // vede nessuno.
+          <label className="mr-1 flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-2 py-1 text-sm font-medium hover:bg-accent">
+            <Checkbox
+              data-selezione-proposta=""
+              className="size-5 border-2"
+              checked={!!selezionata}
+              onCheckedChange={onSelezione}
+              aria-label={`Seleziona la proposta da ${proposta.punteggio} punti`}
+            />
+            Seleziona
+          </label>
+        )}
         <Badge variant={VARIANTE_FASCIA[classificazione]}>{ETICHETTA_FASCIA[classificazione]}</Badge>
         <span className="text-2xl font-semibold tabular-nums">{proposta.punteggio}</span>
         <span className="text-xs text-muted-foreground">su 100</span>

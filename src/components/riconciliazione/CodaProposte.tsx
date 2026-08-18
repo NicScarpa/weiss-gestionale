@@ -182,10 +182,11 @@ export function CodaProposte({
       </div>
 
       {onApprovaInBlocco && visibili.length > 0 && (
-        <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/50 px-3 py-2">
-          <label className="flex items-center gap-2 text-sm">
+        <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-lg border-2 bg-background px-3 py-2.5 shadow-sm">
+          <label className="flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-2 py-1 text-sm font-medium hover:bg-accent">
             <Checkbox
               data-seleziona-tutte=""
+              className="size-5 border-2"
               checked={tutteVisibiliScelte}
               onCheckedChange={commutaTutte}
               aria-label={`Seleziona tutte le proposte in questa fascia (${visibili.length})`}
@@ -219,29 +220,17 @@ export function CodaProposte({
       ) : (
         <div className="space-y-4">
           {visibili.map((proposta, indice) => (
-            <div key={proposta.id} className="flex items-start gap-3">
-              {onApprovaInBlocco && (
-                <Checkbox
-                  data-selezione-proposta=""
-                  className="mt-6"
-                  checked={selezionate.has(proposta.id)}
-                  onCheckedChange={() => commuta(proposta.id)}
-                  aria-label={`Seleziona la proposta da ${formatCurrency(
-                    Math.abs(importoNumerico(proposta.bankTransaction?.amount))
-                  )}`}
-                />
-              )}
-              <div className="min-w-0 flex-1">
-                <SchedaProposta
-                  proposta={proposta}
-                  onApprova={onApprova}
-                  onScarta={onScarta}
-                  // La prima è quella su cui si sta decidendo: la coda è a scheda
-                  // singola nel senso che l'attenzione va in un posto solo.
-                  inEvidenza={indice === 0}
-                />
-              </div>
-            </div>
+            <SchedaProposta
+              key={proposta.id}
+              proposta={proposta}
+              onApprova={onApprova}
+              onScarta={onScarta}
+              // La prima è quella su cui si sta decidendo: la coda è a scheda
+              // singola nel senso che l'attenzione va in un posto solo.
+              inEvidenza={indice === 0}
+              selezionata={selezionate.has(proposta.id)}
+              onSelezione={onApprovaInBlocco ? () => commuta(proposta.id) : undefined}
+            />
           ))}
         </div>
       )}

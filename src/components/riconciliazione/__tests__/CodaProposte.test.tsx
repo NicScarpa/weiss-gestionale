@@ -129,6 +129,20 @@ describe('CodaProposte — selezione multipla', () => {
     expect(document.body.textContent).toContain('2 selezionate')
   })
 
+it('una proposta selezionata si distingue a colpo d’occhio dalle altre', async () => {
+    // Con ventisei schede identiche, sapere quali sono già state prese non può
+    // dipendere da un quadratino di sedici pixel in un margine.
+    monta({ onApprovaInBlocco: async () => {} })
+
+    await act(async () => {
+      fireEvent.click(caselle()[1])
+    })
+
+    const schede = Array.from(document.querySelectorAll('article[data-selezionata]'))
+    expect(schede).toHaveLength(3)
+    expect(schede.map((s) => s.getAttribute('data-selezionata'))).toEqual(['false', 'true', 'false'])
+  })
+
   it('chiede conferma e solo dopo approva, passando gli id scelti', async () => {
     const chiamate: string[][] = []
     monta({ onApprovaInBlocco: async (ids) => { chiamate.push(ids) } })
