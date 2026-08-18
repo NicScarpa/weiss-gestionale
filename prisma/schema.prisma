@@ -26,6 +26,11 @@ model User {
   contractHoursWeek            Decimal?                      @map("contract_hours_week") @db.Decimal(4, 1)
   contractType                 ContractType?                 @map("contract_type")
   hireDate                     DateTime?                     @map("hire_date") @db.Date
+  /// Fine del contratto a termine, distinta da `terminationDate` che registra
+  /// la cessazione avvenuta: questa è la scadenza *prevista*, e serve a farsi
+  /// avvisare in tempo per decidere del rinnovo. Obbligatoria sul tempo
+  /// determinato, assente sugli altri tipi.
+  contractEndDate              DateTime?                     @map("contract_end_date") @db.Date
   hourlyRateBase               Decimal?                      @map("hourly_rate_base") @db.Decimal(10, 2)
   hourlyRateExtra              Decimal?                      @map("hourly_rate_extra") @db.Decimal(10, 2)
   hourlyRateHoliday            Decimal?                      @map("hourly_rate_holiday") @db.Decimal(10, 2)
@@ -2728,6 +2733,9 @@ enum NotificationType {
   NEW_DOCUMENT
   /// La sincronizzazione bancaria notturna è fallita. Destinatari: gli admin.
   BANK_SYNC_FAILED
+  /// Un contratto a termine sta per scadere. Destinatari: admin e manager —
+  /// serve a loro per decidere del rinnovo, non alla persona interessata.
+  CONTRACT_EXPIRING
   GENERAL
 }
 

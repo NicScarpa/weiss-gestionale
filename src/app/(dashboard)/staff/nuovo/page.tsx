@@ -72,6 +72,7 @@ export default function NuovoDipendentePage() {
   const [workDaysPerWeek, setWorkDaysPerWeek] = useState('')
   const [contractHoursWeek, setContractHoursWeek] = useState('')
   const [hireDate, setHireDate] = useState('')
+  const [contractEndDate, setContractEndDate] = useState('')
 
   // Form state - Disponibilità Extra
   const [availableDays, setAvailableDays] = useState<number[]>([])
@@ -155,6 +156,9 @@ export default function NuovoDipendentePage() {
     if (!roleId) missingFields.push('Ruolo')
     if (!contractType) missingFields.push('Tipo Contratto')
     if (!hireDate) missingFields.push('Data Assunzione')
+    if (contractType === 'TEMPO_DETERMINATO' && !contractEndDate) {
+      missingFields.push('Data Fine Contratto')
+    }
 
     if (missingFields.length > 0) {
       toast.error(`Campi obbligatori mancanti: ${missingFields.join(', ')}`)
@@ -202,6 +206,7 @@ export default function NuovoDipendentePage() {
       workDaysPerWeek: workDaysPerWeek ? parseInt(workDaysPerWeek) : null,
       contractHoursWeek: contractHoursWeek ? parseFloat(contractHoursWeek) : null,
       hireDate,
+      contractEndDate: contractEndDate || null,
       availableDays: isExtra ? availableDays : [],
       availableHolidays: isExtra ? availableHolidays : false,
       hourlyRateBase: hourlyRateBase ? parseFloat(hourlyRateBase) : null,
@@ -373,6 +378,7 @@ export default function NuovoDipendentePage() {
                 <Label htmlFor="contractType">Tipo Contratto *</Label>
                 <Select value={contractType} onValueChange={(value) => {
                   setContractType(value)
+                  if (value !== 'TEMPO_DETERMINATO') setContractEndDate('')
                   if (EXTRA_ONLY_CONTRACTS.includes(value as typeof EXTRA_ONLY_CONTRACTS[number])) {
                     setIsExtra(true)
                   }
@@ -399,6 +405,28 @@ export default function NuovoDipendentePage() {
                 />
               </div>
             </div>
+
+            {/* La fine del contratto compare solo dove esiste: su un tempo
+                indeterminato sarebbe una casella che chiede una data che non
+                c'è. Serve a farsi avvisare prima della scadenza, in tempo per
+                parlare del rinnovo. */}
+            {contractType === 'TEMPO_DETERMINATO' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="contractEndDate">Data Fine Contratto *</Label>
+                  <Input
+                    id="contractEndDate"
+                    type="date"
+                    min={hireDate || undefined}
+                    value={contractEndDate}
+                    onChange={(e) => setContractEndDate(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Riceverai un avviso 15 giorni prima della scadenza
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Tipo Staff */}
             <div className="space-y-4 p-4 border rounded-lg bg-muted/30">

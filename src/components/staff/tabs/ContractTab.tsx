@@ -35,6 +35,7 @@ export function ContractTab({ employee, isAdmin, userId, userRole }: ContractTab
     contractType: employee.contractType as ContractType,
     isFixedStaff: employee.isFixedStaff,
     hireDate: employee.hireDate?.split('T')[0] || '',
+    contractEndDate: employee.contractEndDate?.split('T')[0] || '',
     terminationDate: employee.terminationDate?.split('T')[0] || '',
     workDaysPerWeek: employee.workDaysPerWeek,
     contractHoursWeek: employee.contractHoursWeek !== null ? Number(employee.contractHoursWeek) : null,
@@ -85,6 +86,7 @@ export function ContractTab({ employee, isAdmin, userId, userRole }: ContractTab
         body: JSON.stringify({
           ...data,
           hireDate: data.hireDate || null,
+          contractEndDate: data.contractEndDate || null,
           terminationDate: data.terminationDate || null,
           vatNumber: data.vatNumber || null,
         }),
@@ -140,6 +142,7 @@ export function ContractTab({ employee, isAdmin, userId, userRole }: ContractTab
                   ...prev,
                   contractType: v as ContractType,
                   hireDate: ['LAVORATORE_OCCASIONALE', 'LIBERO_PROFESSIONISTA'].includes(v) ? '' : prev.hireDate,
+                  contractEndDate: v === 'TEMPO_DETERMINATO' ? prev.contractEndDate : '',
                   terminationDate: ['LAVORATORE_OCCASIONALE', 'LIBERO_PROFESSIONISTA', 'TEMPO_INDETERMINATO'].includes(v) ? '' : prev.terminationDate,
                 }))}
                 disabled={!isAdmin}
@@ -177,6 +180,27 @@ export function ContractTab({ employee, isAdmin, userId, userRole }: ContractTab
                   disabled={!isAdmin}
                 />
               </div>
+              {/* La scadenza *prevista* del contratto a termine, da non
+                  confondere con la cessazione qui accanto: quella registra un
+                  rapporto finito, questa fa scattare l'avviso 15 giorni prima
+                  perché ci sia tempo di parlare del rinnovo. */}
+              {formData.contractType === 'TEMPO_DETERMINATO' && (
+                <div className="space-y-2">
+                  <Label>Data fine contratto *</Label>
+                  <Input
+                    type="date"
+                    min={formData.hireDate || undefined}
+                    value={formData.contractEndDate}
+                    onChange={e =>
+                      setFormData(prev => ({ ...prev, contractEndDate: e.target.value }))
+                    }
+                    disabled={!isAdmin}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Avviso 15 giorni prima della scadenza
+                  </p>
+                </div>
+              )}
               {showEndDate && (
                 <div className="space-y-2">
                   <Label>Data cessazione</Label>
