@@ -18,6 +18,8 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
+import { basePubblica } from '@/lib/gocardless/parametri'
+
 const PANNELLO = '/impostazioni/banche-e-conti'
 
 export async function GET(request: NextRequest) {
@@ -26,5 +28,20 @@ export async function GET(request: NextRequest) {
     ? `${PANNELLO}?collegamento=${encodeURIComponent(riferimento)}`
     : PANNELLO
 
-  return NextResponse.redirect(new URL(destinazione, request.url), 307)
+  // La base è l'indirizzo pubblico configurato, non `request.url`. Dietro il
+  // proxy di Railway il server ascolta su `localhost:8080`: `request.url`
+  // porta quell'host, e un redirect assoluto costruito su di esso manda il
+  // browser verso una porta che sulla macchina di chi naviga non esiste.
+  //
+  // Non è teoria: è successo qui il 13 agosto 2026, nel momento esatto in cui
+  // questa rotta è stata dichiarata pubblica. Prima il difetto era coperto —
+  // a rispondere era il middleware, che rimandava al login — e si è visto
+  // solo quando la rotta ha cominciato a rispondere da sé.
+  //
+  // Fuori dalla produzione si ricade su `request.url`, che in locale è
+  // l'indirizzo giusto: un ambiente di sviluppo senza `APP_URL` non deve
+  // smettere di funzionare per questo.
+  const base = basePubblica() ?? request.url
+
+  return NextResponse.redirect(new URL(destinazione, base), 307)
 }

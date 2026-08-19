@@ -11,6 +11,26 @@
 import { ConfigurazioneMancante } from './errori'
 
 /**
+ * L'indirizzo pubblico dell'applicazione, senza barra finale, o `null` se
+ * non è configurato.
+ *
+ * `APP_URL` prima, poi `NEXTAUTH_URL`: quest'ultima è l'indirizzo che
+ * un'installazione ha *sempre*, perché senza il login non funzionerebbe,
+ * mentre `APP_URL` è servita a lungo solo a `urlDiRitorno` — ed è esattamente
+ * per questo che in produzione mancava.
+ *
+ * **Serve perché in produzione `request.url` non è l'indirizzo pubblico.**
+ * Dietro il proxy di Railway il server ascolta su `localhost:8080`, e un
+ * `new URL('/qualcosa', request.url)` produce un redirect verso quell'host —
+ * cioè verso il nulla, per chi sta navigando. Finché una rotta è protetta il
+ * difetto non si vede, perché a rispondere è il middleware; si scopre il
+ * giorno in cui quella rotta diventa pubblica.
+ */
+export function basePubblica(): string | null {
+  return (process.env.APP_URL ?? process.env.NEXTAUTH_URL)?.replace(/\/$/, '') ?? null
+}
+
+/**
  * Dove la banca rimanda a fine autenticazione.
  *
  * Ordine: l'indirizzo esplicito, poi `APP_URL`, poi `NEXTAUTH_URL`.
@@ -35,7 +55,7 @@ export function urlDiRitorno(ambiente: string | undefined = process.env.NODE_ENV
   const esplicito = process.env.GOCARDLESS_REDIRECT_URI
   if (esplicito) return esplicito
 
-  const base = (process.env.APP_URL ?? process.env.NEXTAUTH_URL)?.replace(/\/$/, '')
+  const base = basePubblica()
   if (base) return `${base}/api/gocardless/callback`
 
   if (ambiente === 'production') {
